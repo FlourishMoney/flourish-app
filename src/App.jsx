@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Home, Calendar, CreditCard, Sparkles, Users, User,
-  Bell, Settings, ShoppingCart, Coffee,
+  Bell, Settings as LucideSettings, ShoppingCart, Coffee,
   Zap, Package, Film, Music, Pill, Shirt,
   TrendingUp, Shield, CheckCircle,
   Target, PiggyBank, DollarSign,
@@ -277,7 +277,7 @@ const ICON_MAP = {
   users:     Users,
   user:      User,
   bell:      Bell,
-  settings:  Settings,
+  settings:  LucideSettings,
   bank:      BarChart2,
   cart:      ShoppingCart,
   coffee:    Coffee,
@@ -4283,7 +4283,6 @@ input,button,select,textarea { font-family:inherit; }
               );
             })}
             </div>
-          </div>
           </div>
           </>
         )}
