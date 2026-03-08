@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Home, Calendar, CreditCard, Sparkles, Users, User,
   Bell, Settings as LucideSettings, ShoppingCart, Coffee,
@@ -215,6 +215,111 @@ const DEMO = {
   income:      1_847.50,
   netWorthAdd:   1_840,   // mock savings/TFSA for net worth calc
 };
+
+// ─── PLAID API HELPERS ────────────────────────────────────────────────────────
+async function callPlaid(action, params={}) {
+  const res = await fetch("/api/plaid", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, ...params }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const err = new Error(data.error || "Plaid error");
+    err.needs_reconnect = data.needs_reconnect || false;
+    throw err;
+  }
+  return data;
+}
+
+// Plaid Personal Finance Category (PFC) primary values → Flourish display meta
+const CAT_META = {
+  FOOD_AND_DRINK:            { cat:"Coffee & Dining", icon:"🍕", color:"#D97A3A" },
+  GROCERIES:                 { cat:"Groceries",       icon:"🛒", color:"#2E8B2E" },
+  GENERAL_MERCHANDISE:       { cat:"Shopping",        icon:"🛍️", color:"#C45898" },
+  CLOTHING_AND_ACCESSORIES:  { cat:"Shopping",        icon:"👕", color:"#C45898" },
+  TRANSPORTATION:            { cat:"Gas & Transport", icon:"⛽", color:"#CFA03E" },
+  TRAVEL:                    { cat:"Travel",          icon:"✈️", color:"#4A8FCC" },
+  ENTERTAINMENT:             { cat:"Entertainment",   icon:"🎬", color:"#8A5FC8" },
+  PERSONAL_CARE:             { cat:"Health",          icon:"💊", color:"#4A8FCC" },
+  MEDICAL:                   { cat:"Health",          icon:"💊", color:"#4A8FCC" },
+  UTILITIES:                 { cat:"Utilities",       icon:"⚡", color:"#CFA03E" },
+  LOAN_PAYMENTS:             { cat:"Bills",           icon:"📱", color:"#CFA03E" },
+  RENT_AND_UTILITIES:        { cat:"Utilities",       icon:"🏠", color:"#CFA03E" },
+  HOME_IMPROVEMENT:          { cat:"Home",            icon:"🔨", color:"#CFA03E" },
+  INCOME:                    { cat:"Income",          icon:"💰", color:"#6FE494" },
+  TRANSFER_IN:               { cat:"Income",          icon:"💰", color:"#6FE494" },
+  TRANSFER_OUT:              { cat:"Transfer",        icon:"↔️", color:"#888"    },
+  BANK_FEES:                 { cat:"Fees",            icon:"🏦", color:"#888"    },
+  GENERAL_SERVICES:          { cat:"Services",        icon:"⚙️", color:"#888"    },
+  GOVERNMENT_AND_NON_PROFIT: { cat:"Services",        icon:"🏛️", color:"#888"    },
+  EDUCATION:                 { cat:"Education",       icon:"📚", color:"#4A8FCC" },
+  // Legacy Plaid category strings (pre-PFC API)
+  "Food and Drink":          { cat:"Coffee & Dining", icon:"🍕", color:"#D97A3A" },
+  "Shops":                   { cat:"Shopping",        icon:"🛍️", color:"#C45898" },
+  "Travel":                  { cat:"Gas & Transport", icon:"⛽", color:"#CFA03E" },
+  "Transfer":                { cat:"Transfer",        icon:"↔️", color:"#888"    },
+  "Payment":                 { cat:"Bills",           icon:"📱", color:"#CFA03E" },
+  "Recreation":              { cat:"Entertainment",   icon:"🎬", color:"#8A5FC8" },
+  "Healthcare":              { cat:"Health",          icon:"💊", color:"#4A8FCC" },
+};
+
+function normaliseTxns(plaidTxns) {
+  return plaidTxns.map((t, i) => {
+    // Match exact key, then try stripping underscores for legacy, then prefix
+    const rawCat = t.category || "OTHER";
+    const meta = CAT_META[rawCat]
+      || CAT_META[rawCat.replace(/_/g," ")]
+      || Object.entries(CAT_META).find(([k]) => rawCat.startsWith(k))?.[1]
+      || { cat:"Other", icon:"💳", color:"#888" };
+    // Compute day-of-week (0=Sun) — used by spending charts & patterns
+    const d = t.date ? new Date(t.date + "T12:00:00") : new Date();
+    return {
+      id:         t.id || `plaid_${i}`,
+      date:       t.date,
+      name:       t.name,
+      amount:     t.amount,     // positive = expense (matches MOCK_TXN convention)
+      cat:        meta.cat,
+      icon:       meta.icon,
+      color:      meta.color,
+      dow:        d.getDay(),   // 0–6; matches shape expected by spend screens
+      pending:    t.pending || false,
+      account_id: t.account_id,
+      currency:   t.currency || "CAD",
+      logo:       t.logo_url || null,
+    };
+  });
+}
+
+// ─── Plaid Link SDK hook ──────────────────────────────────────────────────────
+// Loads Plaid CDN script once. Uses a ref for onSuccess so the handler is
+// never stale even if the callback closes over fresh state.
+function usePlaidLinkSDK(linkToken, onSuccess) {
+  const [sdkReady, setSdkReady] = useState(false);
+  const [sdkError, setSdkError] = useState(false);
+  const onSuccessRef = useRef(onSuccess);
+  useEffect(() => { onSuccessRef.current = onSuccess; }, [onSuccess]);
+
+  useEffect(() => {
+    if (window.Plaid) { setSdkReady(true); return; }
+    const script = document.createElement("script");
+    script.src = "https://cdn.plaid.com/link/v2/stable/link-initialize.js";
+    script.onload  = () => setSdkReady(true);
+    script.onerror = () => setSdkError(true);
+    document.head.appendChild(script);
+  }, []);
+
+  const openPlaidLink = useCallback(() => {
+    if (!sdkReady || !window.Plaid || !linkToken) return;
+    window.Plaid.create({
+      token: linkToken,
+      onSuccess: (...args) => onSuccessRef.current(...args),
+      onExit: (err, meta) => { if (err) console.warn("Plaid exit:", err, meta); },
+    }).open();
+  }, [sdkReady, linkToken]);
+
+  return { openPlaidLink, plaidReady: sdkReady && !!linkToken, plaidSdkError: sdkError };
+}
 
 const MOCK_TXN = [
   {id:"t1", date:"2026-03-06",name:"Loblaws",         amount:67.43,  cat:"Groceries",      icon:"🛒",color:"#2E8B2E",dow:4},
@@ -1941,7 +2046,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
 
   const fetchInsight = async () => {
     setLoading(true);
-    const txns = (data.transactions || MOCK_TXN).slice(0, 15).map(t=>`${t.merchant} $${Math.abs(t.amount)}`).join(", ");
+    const txns = (data.transactions || MOCK_TXN).slice(0, 15).map(t=>`${t.name||t.merchant||"Purchase"} $${Math.abs(t.amount)}`).join(", ");
     const {score} = calcHealthScore(data);
     const prompt = `You are a warm financial coach. The user just completed their weekly money check-in. Their current Financial Health Score is ${score}/100. Their money mood this week: ${moods.find(m=>m.val===mood)?.label||"Neutral"}. Biggest spending surprise: ${surprise||"none"}. Financial win: ${win||"none"}. Recent transactions: ${txns}. Give ONE specific, encouraging action they can take this week to improve their Financial Health Score by 2-5 points. Keep it to 2 sentences max. Be warm and concrete.`;
     try {
@@ -2066,19 +2171,71 @@ function Onboarding({onComplete}){
   const [bills,setBills]=useState([{name:"Rent/Mortgage",amount:"",date:"1"},{name:"Hydro/Electric",amount:"",date:"11"},{name:"Phone",amount:"",date:"15"}]);
   const [debts,setDebts]=useState([{name:"Credit Card",balance:"3420",rate:"19.99",min:"68"}]);
   const [bankStage,setBankStage]=useState("select");
-  const [selBank,setSelBank]=useState(null);
-  const [bankCreds,setBankCreds]=useState({user:"",pass:""});
-  const [mfa,setMfa]=useState("");
   const [bankProg,setBankProg]=useState(0);
+  const [bankError,setBankError]=useState(null);
   const [connAccts,setConnAccts]=useState([]);
+  const [plaidTxns,setPlaidTxns]=useState([]);
+  const [linkToken,setLinkToken]=useState(null);
 
+  // Fetch Plaid link_token as soon as user hits the bank step
+  const [linkTokenLoading, setLinkTokenLoading] = useState(false);
 
+  const fetchLinkToken = useCallback(()=>{
+    if(linkToken) return; // already have one
+    setLinkTokenLoading(true);
+    setBankError(null);
+    callPlaid("create_link_token",{country:p.country})
+      .then(d=>{ setLinkToken(d.link_token); setLinkTokenLoading(false); })
+      .catch(()=>{ setBankError("Could not reach Plaid — check your connection and try again."); setLinkTokenLoading(false); });
+  },[linkToken, p.country]); // eslint-disable-line
 
-  const doAuth=()=>setBankStage("mfa");
-  const doMfa=()=>{
-    setBankStage("loading");let prog=0;
-    const t=setInterval(()=>{prog+=Math.random()*15;if(prog>=100){prog=100;clearInterval(t);setTimeout(()=>{setConnAccts(MOCK_ACCOUNTS);setBankStage("done");},300);}setBankProg(Math.min(prog,100));},160);
-  };
+  useEffect(()=>{ if(step===3) fetchLinkToken(); },[step]); // eslint-disable-line
+
+  // Called by Plaid Link after user authenticates
+  const onPlaidSuccess=useCallback(async(publicToken,metadata)=>{
+    setBankStage("loading");setBankProg(0);setBankError(null);
+    // Bug fix: declare timer outside try so catch can always clear it
+    let progTimer=null;
+    try{
+      progTimer=setInterval(()=>setBankProg(v=>Math.min(v+7,88)),220);
+      const ex=await callPlaid("exchange_token",{
+        public_token:publicToken,
+        institution_name:metadata?.institution?.name||"Your Bank",
+      });
+      const [acctData,txnData]=await Promise.all([
+        callPlaid("get_accounts",{access_token:ex.access_token}),
+        // Bug fix: guard against undefined transactions array from backend
+        callPlaid("get_transactions",{access_token:ex.access_token,days:90}),
+      ]);
+      clearInterval(progTimer);setBankProg(100);
+      setTimeout(()=>{
+        setConnAccts(acctData.accounts.map(a=>({
+          id:a.id,
+          name:`${ex.institution_name} ••${a.mask||"????"}`,
+          type:a.subtype||a.type,
+          balance:a.type==="credit"?-(a.balance.current||0):(a.balance.available??a.balance.current??0),
+          institution:ex.institution_name,
+        })));
+        // Bug fix: guard txnData.transactions — backend may return undefined on error
+        setPlaidTxns(normaliseTxns(txnData.transactions||[]));
+        setBankStage("done");
+      },400);
+    }catch(err){
+      // Bug fix: always clear the progress interval even if exchange fails
+      if(progTimer) clearInterval(progTimer);
+      // Bug fix: surface needs_reconnect errors distinctly
+      const msg = err.message?.includes("needs_reconnect") || err.needs_reconnect
+        ? "Your bank session expired. Please reconnect your bank."
+        : "Connection failed: "+err.message;
+      setBankError(msg);
+      setBankStage("select");
+    }
+  },[]);
+
+  const {openPlaidLink,plaidReady,plaidSdkError}=usePlaidLinkSDK(linkToken,onPlaidSuccess);
+  const isLinkReady = plaidReady && !linkTokenLoading;
+  const initError   = plaidSdkError ? "Plaid SDK failed to load — try refreshing the page." : null;
+
   const skipBank=()=>{setConnAccts([{id:"m1",name:"Chequing",type:"checking",balance:DEMO.balance,institution:"Manual"}]);setBankStage("done");};
   const addBill=()=>setBills([...bills,{name:"",amount:"",date:"1"}]);
   const rmBill=i=>setBills(bills.filter((_,x)=>x!==i));
@@ -2086,7 +2243,7 @@ function Onboarding({onComplete}){
   const addDebt=()=>setDebts([...debts,{name:"",balance:"",rate:"",min:""}]);
   const rmDebt=i=>setDebts(debts.filter((_,x)=>x!==i));
   const upDebt=(i,f,v)=>setDebts(debts.map((d,x)=>x===i?{...d,[f]:v}:d));
-  const finish=()=>onComplete({profile:p,incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),accounts:connAccts,transactions:MOCK_TXN,bankConnected:connAccts.some(a=>a.institution!=="Manual")});
+  const finish=()=>onComplete({profile:p,incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),accounts:connAccts,transactions:plaidTxns.length?plaidTxns:MOCK_TXN,bankConnected:connAccts.some(a=>a.institution!=="Manual")});
 
   const banks=(CC[p.country]?.banks||CC.CA.banks);
 
@@ -2245,64 +2402,74 @@ function Onboarding({onComplete}){
       <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Connect your bank</div>
       <div style={{color:C.muted,fontSize:14,marginBottom:16}}>Live transactions unlock AI coaching and real overdraft warnings.</div>
       {bankStage==="select"&&<>
+        {/* Trust bar */}
         <div style={{background:C.tealDim,border:`1px solid ${C.teal}44`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
           <div style={{color:C.tealBright,fontWeight:700,marginBottom:8}}>🔒 Powered by Plaid</div>
-          {[["✅","Read-only. We can never move your money"],["✅","256-bit encryption, bank-level security"],["✅","Live balances + 30 days of transactions"],["✅","Disconnect at any time from settings"]].map(([ico,t],i)=><div key={i} style={{display:"flex",gap:8,padding:"3px 0",color:C.cream,fontSize:13}}><span>{ico}</span><span>{t}</span></div>)}
+          {[["✅","Read-only. We can never move your money"],["✅","256-bit encryption, bank-level security"],["✅","Live balances + 90 days of transactions"],["✅","Disconnect any time from settings"]].map(([ico,t],i)=>(
+            <div key={i} style={{display:"flex",gap:8,padding:"3px 0",color:C.cream,fontSize:13}}><span>{ico}</span><span>{t}</span></div>
+          ))}
         </div>
-        {banks.map(bank=>(
-          <button key={bank.name} onClick={()=>{setSelBank(bank);setBankStage("auth");}} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"13px 18px",color:C.cream,fontSize:14,fontWeight:600,display:"flex",alignItems:"center",gap:12,cursor:"pointer",fontFamily:"inherit",width:"100%",marginBottom:8,textAlign:"left",transition:"all .2s"}}
-            onMouseEnter={e=>{e.currentTarget.style.borderColor=bank.color+"88";e.currentTarget.style.background=bank.color+"11";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.card;}}>
-            <div style={{width:36,height:36,borderRadius:10,background:bank.color+"18",display:"flex",alignItems:"center",justifyContent:"center"}}><Icon id="bank" size={17} color={bank.color} strokeWidth={1.5}/></div>
-            <span style={{flex:1}}>{bank.name}</span><span style={{color:C.muted,fontSize:12}}>Connect →</span>
-          </button>
-        ))}
+
+        {/* Error state with retry */}
+        {(bankError||initError)&&(
+          <div style={{background:"#ff444422",border:"1px solid #ff444466",borderRadius:12,padding:"12px 16px",marginBottom:12}}>
+            <div style={{color:"#ff8888",fontSize:13,marginBottom:8}}>{bankError||initError}</div>
+            {!initError&&<button onClick={()=>{setLinkToken(null);fetchLinkToken();}} style={{background:"none",border:"1px solid #ff888844",borderRadius:8,padding:"6px 14px",color:"#ff8888",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>↺ Retry</button>}
+          </div>
+        )}
+
+        {/* Main CTA button */}
+        <button
+          onClick={isLinkReady?openPlaidLink:undefined}
+          disabled={!isLinkReady||!!initError}
+          style={{width:"100%",background:isLinkReady&&!initError?`linear-gradient(135deg,${C.teal},${C.tealBright})`:"rgba(255,255,255,0.06)",border:isLinkReady&&!initError?"none":`1px solid ${C.border}`,borderRadius:14,padding:"15px 18px",color:"white",fontSize:15,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:10,cursor:isLinkReady&&!initError?"pointer":"default",fontFamily:"inherit",marginBottom:10,transition:"all .3s",opacity:isLinkReady&&!initError?1:0.55}}>
+          {linkTokenLoading?(
+            <><span style={{width:18,height:18,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"white",display:"inline-block",animation:"pulse 0.8s linear infinite"}}/><span>Connecting to Plaid…</span></>
+          ):(
+            <><span style={{fontSize:20}}>🏦</span><span>{isLinkReady?"Connect My Bank Securely →":initError?"SDK unavailable":"Ready"}</span></>
+          )}
+        </button>
+
+        <div style={{color:C.muted,fontSize:11,textAlign:"center",marginBottom:14}}>
+          {initError?"Please refresh and try again":linkTokenLoading?"Preparing secure connection…":"Supports TD, RBC, Chase, BoA, and 11,000+ more"}
+        </div>
+
         <div style={{marginTop:6}}><Btn label="Skip — enter manually" onClick={skipBank} outline color={C.muted} small/></div>
       </>}
-      {bankStage==="auth"&&<>
-        <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:14}}>
-          <button onClick={()=>setBankStage("select")} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,color:C.cream,borderRadius:10,padding:"7px 14px",cursor:"pointer",fontSize:13}}>← Back</button>
-          <div><div style={{color:C.cream,fontWeight:700}}>{selBank?.name}</div><div style={{color:C.muted,fontSize:12}}>Secured by Plaid · read-only</div></div>
-        </div>
-        <div style={{background:C.tealDim,border:`1px solid ${C.teal}44`,borderRadius:14,padding:"12px 16px",marginBottom:14}}>
-          <div style={{color:C.tealBright,fontSize:13}}>🔒 You'll be redirected to {selBank?.name} to authenticate securely via Plaid.</div>
-        </div>
-        <Inp label="Continue to your bank" value={bankCreds.user} onChange={v=>setBankCreds({...bankCreds,user:v})} placeholder="Your username"/>
-        <Inp label="Password" value={bankCreds.pass} onChange={v=>setBankCreds({...bankCreds,pass:v})} type="password" placeholder="Your password"/>
-        <Btn label="Sign In Securely →" onClick={doAuth} disabled={!bankCreds.user||!bankCreds.pass}/>
-      </>}
-      {bankStage==="mfa"&&<div style={{textAlign:"center"}}>
-        <div style={{marginBottom:14,display:"flex",justifyContent:"center"}}><Icon id="user" size={48} color={C.teal} strokeWidth={1.35}/></div>
-        <div style={{fontSize:20,fontWeight:800,color:C.cream,fontFamily:"Georgia,serif",marginBottom:8}}>Verify It's You</div>
-        <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,marginBottom:20}}>{selBank?.name} sent a code to your phone ending in ••7392</div>
-        <input value={mfa} onChange={e=>setMfa(e.target.value.slice(0,6))} placeholder="• • • • • •" maxLength={6}
-          style={{width:"100%",background:C.cardAlt,border:`1px solid ${mfa.length===6?C.teal:C.border}`,borderRadius:12,outline:"none",color:C.cream,fontSize:24,padding:"14px",fontFamily:"monospace",textAlign:"center",letterSpacing:8,boxSizing:"border-box",marginBottom:14,transition:"border .2s"}}/>
-        <Btn label="Verify & Connect" onClick={doMfa} disabled={mfa.length!==6}/>
-      </div>}
+
       {bankStage==="loading"&&<div style={{textAlign:"center",padding:"40px 0"}}>
         <div style={{marginBottom:14,display:"flex",justifyContent:"center",filter:"drop-shadow(0 0 20px #3CB54A55)"}}><FlourishMark size={54}/></div>
-        <div style={{color:C.greenBright,fontWeight:700,fontSize:18,marginBottom:8}}>Importing your data…</div>
-        <div style={{color:C.muted,fontSize:13,marginBottom:22}}>Fetching accounts and 30 days of transactions</div>
+        <div style={{color:C.greenBright,fontWeight:700,fontSize:18,marginBottom:8}}>
+          {bankProg<35?"Exchanging credentials…":bankProg<70?"Fetching your accounts…":"Importing transactions…"}
+        </div>
+        <div style={{color:C.muted,fontSize:13,marginBottom:22}}>Securely syncing 90 days of history</div>
         <div style={{background:"rgba(255,255,255,0.06)",borderRadius:99,height:6,overflow:"hidden",margin:"0 10px"}}>
-          <div style={{width:`${bankProg}%`,height:"100%",background:`linear-gradient(90deg,${C.green},${C.teal})`,borderRadius:99,transition:"width .2s"}}/>
+          <div style={{width:`${bankProg}%`,height:"100%",background:`linear-gradient(90deg,${C.green},${C.teal})`,borderRadius:99,transition:"width .4s ease-out"}}/>
         </div>
         <div style={{color:C.muted,fontSize:12,marginTop:8}}>{Math.round(bankProg)}%</div>
       </div>}
+
       {bankStage==="done"&&<div>
         <div style={{textAlign:"center",marginBottom:16}}>
-          <div style={{marginBottom:10,display:"flex",justifyContent:"center",width:80,height:80,borderRadius:"50%",background:C.green+"22",border:`1px solid ${C.green}44`,margin:"0 auto 10px"}}><Icon id="check" size={40} color={C.greenBright} strokeWidth={1.9}/></div>
+          <div style={{width:80,height:80,borderRadius:"50%",background:C.green+"22",border:`1px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px"}}><Icon id="check" size={40} color={C.greenBright} strokeWidth={1.9}/></div>
           <div style={{fontSize:20,fontWeight:800,color:C.greenBright,fontFamily:"Georgia,serif"}}>Connected!</div>
-          <div style={{color:C.mutedHi,fontSize:13,marginTop:4}}>{connAccts.length} accounts · {MOCK_TXN.length} transactions imported</div>
+          <div style={{color:C.mutedHi,fontSize:13,marginTop:4}}>
+            {connAccts.length} account{connAccts.length!==1?"s":""} · {plaidTxns.length||MOCK_TXN.length} transactions imported
+          </div>
         </div>
         {connAccts.map((a,i)=>(
           <div key={i} style={{background:C.cardAlt,border:`1px solid ${C.green}44`,borderRadius:14,padding:"13px 16px",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div><div style={{color:C.cream,fontWeight:700}}>{a.name}</div><div style={{color:C.muted,fontSize:12}}>{a.institution} · {a.type}</div></div>
+            <div>
+              <div style={{color:C.cream,fontWeight:700}}>{a.name}</div>
+              <div style={{color:C.muted,fontSize:12}}>{a.institution} · {a.type}{a.pending?" · ⏳ pending":""}</div>
+            </div>
             <div style={{textAlign:"right"}}>
-              <div style={{color:a.balance>=0?C.greenBright:C.red,fontWeight:800}}>${Math.abs(a.balance).toLocaleString()}</div>
+              <div style={{color:a.balance>=0?C.greenBright:C.red,fontWeight:800}}>${Math.abs(a.balance).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
               <Chip label={a.balance>=0?"Asset":"Credit"} color={a.balance>=0?C.green:C.red}/>
             </div>
           </div>
         ))}
-        <Btn label="Continue →" onClick={()=>setStep(4)}/>
+        <Btn label="Let's go →" onClick={()=>setStep(4)}/>
       </div>}
     </div>,
 
@@ -2392,7 +2559,7 @@ function Onboarding({onComplete}){
         ["📅",`${bills.filter(b=>b.name&&b.amount).length} bills in your 2-week forecast`],
         ["📉",debts.filter(d=>d.name&&d.balance).length>0?"Debt payoff simulator built — drag to see your date":"No debt tracked — incredible!"],
         ["💳",p.creditKnown?`Credit score ${p.creditScore} tracked — coaching personalised`:"Credit score estimated from your data"],
-        ["🧠",`AI coach ready to analyze your ${MOCK_TXN.length} transactions`],
+        ["🧠",`AI coach ready to analyze your ${plaidTxns.length||MOCK_TXN.length} transactions`],
         ["🔔","Overdraft alerts and coach notifications on"],
         [p.status==="single"?"🧘":"💑",p.status==="single"?"Weekly solo check-in ready":"Couples money meeting ready"],
         [p.hasKids?"👧":"🎓",p.hasKids?"Kids Zone unlocked":"Money School unlocked"],
