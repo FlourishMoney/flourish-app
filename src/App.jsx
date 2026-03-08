@@ -2993,7 +2993,7 @@ function Goals({data}){
         <div style={{marginBottom:16}}>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
             <div style={{color:C.cream,fontSize:13,fontWeight:600}}>Extra monthly payment</div>
-            <div style={{color:C.purpleBright,fontWeight:800,fontSize:20}}>+${extra}<span style={{color:C.muted,fontSize:12}}>/mo</span></div>
+            <div style={{color:C.purpleBright,fontWeight:800,fontSize:20}}>+{extra}<span style={{color:C.muted,fontSize:12}}>/mo</span></div>
           </div>
           <input type="range" min={0} max={500} step={10} value={extra} onChange={e=>setExtra(Number(e.target.value))} style={{width:"100%",accentColor:C.purple,height:6,cursor:"pointer","--thumb-color":C.purple}}/>
           <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}><span style={{color:C.muted,fontSize:10}}>+$0 (min only)</span><span style={{color:C.muted,fontSize:10}}>+$500/mo</span></div>
