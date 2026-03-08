@@ -774,13 +774,13 @@ function TimeMachine({data}) {
                       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:ev.isPayday||ev.bills.length>0?3:0}}>
                         {ev.day===0?"Today":ev.day===1?"Tomorrow":ev.date.toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}
                       </div>
-                      {ev.isPayday && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>+${FinancialCalcEngine.cashFlow(data).monthlyIncome.toFixed(0)} paycheck</div>}
+                      {ev.isPayday && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${FinancialCalcEngine.cashFlow(data).monthlyIncome.toFixed(0)} paycheck`}</div>}
                       {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${b.amount}</div>)}
                       {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                     </div>
                     <div style={{textAlign:"right",flexShrink:0,minWidth:80}}>
                       {/* Base balance */}
-                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>${baseBalance.toFixed(0)}</div>
+                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${baseBalance.toFixed(0)}`}</div>
                       {/* What-if overlay balance */}
                       {overlayBal !== null && (
                         <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:11,color:overlayLow?C.redBright:C.purpleBright,marginTop:2}}>
@@ -858,12 +858,12 @@ function FinancialTimeline({data}) {
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:2}}>{label}</div>
-                      {ev.isPayday && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>+${monthlyIncome.toFixed(0)} paycheck</div>}
+                      {ev.isPayday && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${monthlyIncome.toFixed(0)} paycheck`}</div>}
                       {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${b.amount}</div>)}
                       {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
-                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>${ev.balance.toFixed(0)}</div>
+                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${ev.balance.toFixed(0)}`}</div>
                       <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
                     </div>
                   </div>
@@ -1204,7 +1204,7 @@ function WealthForecast({data}) {
       <div style={{background:C.surface,borderRadius:14,padding:"14px 16px",border:`1px solid ${C.border}`}}>
         <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
           <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Extra monthly investment</span>
-          <span style={{color:C.greenBright,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${extra}/mo</span>
+          <span style={{color:C.greenBright,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{extra}/mo</span>
         </div>
         <input type="range" min={0} max={1000} step={25} value={extra} onChange={e=>setExtra(Number(e.target.value))}
           style={{width:"100%",accentColor:C.green,cursor:"pointer"}}/>
@@ -1379,7 +1379,7 @@ function MoneyWrapped({data, onClose}) {
       content:(
         <div style={{textAlign:"center"}}>
           <div style={{color:"#ffffff88",fontSize:11,letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",marginBottom:12}}>Your spending story</div>
-          <div style={{fontFamily:"'Playfair Display',serif",fontSize:48,fontWeight:900,color:"#fff",letterSpacing:-1,marginBottom:6}}>${(totalSpent/1000).toFixed(1)}k</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:48,fontWeight:900,color:"#fff",letterSpacing:-1,marginBottom:6}}>{`$${(totalSpent/1000).toFixed(1)}k`}</div>
           <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:20}}>spent across {txns.length} transactions</div>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {[
@@ -2843,12 +2843,12 @@ function PlanAhead({data}){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
           <div>
             <div style={{color:isToday?C.greenBright:C.mutedHi,fontWeight:isToday?700:400,fontSize:13}}>{isToday?"Today":day.d.toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}</div>
-            {day.income>0&&<div style={{color:C.green,fontWeight:700,fontSize:14,marginTop:3}}>+${day.income.toLocaleString()} deposited</div>}
+            {day.income>0&&<div style={{color:C.green,fontWeight:700,fontSize:14,marginTop:3}}>{`+$${day.income.toLocaleString()} deposited`}</div>}
             {day.bills.map((b,j)=><div key={j} style={{color:C.red,fontSize:13,marginTop:3}}>📤 {b.name}: –${parseFloat(b.amount).toFixed(2)}</div>)}
             {isToday&&!day.income&&!day.bills.length&&<div style={{color:C.muted,fontSize:12,marginTop:2}}>No scheduled activity</div>}
           </div>
           <div style={{textAlign:"right"}}>
-            <div style={{fontSize:18,fontWeight:800,fontFamily:"Georgia,serif",color:neg?C.redBright:low?C.goldBright:C.greenBright}}>${day.balance.toFixed(2)}</div>
+            <div style={{fontSize:18,fontWeight:800,fontFamily:"Georgia,serif",color:neg?C.redBright:low?C.goldBright:C.greenBright}}>{`$${day.balance.toFixed(2)}`}</div>
             <div style={{color:C.muted,fontSize:10}}>balance</div>
           </div>
         </div>
@@ -2909,7 +2909,7 @@ function SpendScreen({data}){
     {tab==="breakdown"&&<>
       <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
         <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2}}>Total Spent This Month</div>
-        <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>${totalSpent.toFixed(0)}</div>
+        <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>{`$${totalSpent.toFixed(0)}`}</div>
       </Card>
       {stats.topCats.map(([cat,amt],i)=>{
         const colors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
@@ -2981,7 +2981,7 @@ function Goals({data}){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
           <div>
             <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4}}>{debt.name}</div>
-            <div style={{fontSize:36,fontWeight:900,color:C.purpleBright,fontFamily:"Georgia,serif",letterSpacing:-1}}>${bal.toLocaleString()}</div>
+            <div style={{fontSize:36,fontWeight:900,color:C.purpleBright,fontFamily:"Georgia,serif",letterSpacing:-1}}>{`$${bal.toLocaleString()}`}</div>
             <div style={{color:C.muted,fontSize:12}}>{rate}% interest · ${minPay}/mo minimum</div>
           </div>
           <div style={{textAlign:"right",background:C.green+"18",borderRadius:12,padding:"8px 12px",border:`1px solid ${C.green}33`}}>
@@ -3009,9 +3009,9 @@ function Goals({data}){
           </div>
         </div>
         {extra>0&&<div style={{marginTop:12,padding:"12px 14px",background:C.purple+"15",borderRadius:12,border:`1px solid ${C.purple}44`}}>
-          <div style={{color:C.cream,fontSize:13,lineHeight:1.55}}>💡 Adding <strong style={{color:C.purpleBright}}>${extra}/month</strong> frees you <strong style={{color:C.greenBright}}>{toYM(saved)} earlier</strong> and saves <strong style={{color:C.goldBright}}>${Math.round(intSaved).toLocaleString()}</strong> in interest.</div>
+          <div style={{color:C.cream,fontSize:13,lineHeight:1.55}}>💡 Adding <strong style={{color:C.purpleBright}}>+{extra}/month</strong> frees you <strong style={{color:C.greenBright}}>{toYM(saved)} earlier</strong> and saves <strong style={{color:C.goldBright}}>{`$${Math.round(intSaved).toLocaleString()}`}</strong> in interest.</div>
         </div>}
-      </div>
+      </div>}
       <Card>
         <div style={{color:C.cream,fontWeight:700,marginBottom:12}}>Payoff Method</div>
         <div style={{display:"flex",gap:8}}>
