@@ -3575,6 +3575,7 @@ function AICoach({data, isOnline=true}){ // Obsidian dark
       })}
     </Card>
     {!generated&&!loading&&(
+      <>
       {/* ── BEHAVIOR INSIGHTS from BehaviorEngine ── */}
       {behaviorData.insights.length>0&&!chatMode&&(
         <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:4}}>
@@ -3601,6 +3602,7 @@ function AICoach({data, isOnline=true}){ // Obsidian dark
         onMouseEnter={e=>e.currentTarget.style.opacity=".88"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
         Analyze My Spending
       </button>
+      </>
     )}
     {loading&&<Card style={{textAlign:"center",padding:"30px 20px"}}>
       <div style={{marginBottom:12,display:"flex",justifyContent:"center"}}><Icon id="sparkles" size={38} color={C.green} strokeWidth={1.3}/></div>
@@ -4261,6 +4263,7 @@ input,button,select,textarea { font-family:inherit; }
         </div>
         <div style={{flex:1,padding:"16px 18px 120px",overflowY:"auto",overscrollBehavior:"contain"}}>{content()}</div>
         {!showNotifs&&!showSettings&&(
+          <>
           {/* Floating pill nav */}
           <div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",zIndex:50,width:"calc(100% - 48px)",maxWidth:382}}>
             <div style={{background:"rgba(15,23,32,0.92)",backdropFilter:"blur(28px)",WebkitBackdropFilter:"blur(28px)",borderRadius:28,border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 40px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.07)",padding:"8px 10px",display:"flex",justifyContent:"space-around"}}>
@@ -4282,6 +4285,7 @@ input,button,select,textarea { font-family:inherit; }
             </div>
           </div>
           </div>
+          </>
         )}
       </div>
     </div>
