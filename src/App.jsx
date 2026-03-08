@@ -210,6 +210,12 @@ const CAT_ICON = {
 };
 function txnIcon(txn){return CAT_ICON[txn.cat]||"card";}
 
+const DEMO = {
+  balance:     1_243.88,
+  income:      1_847.50,
+  netWorthAdd:   1_840,   // mock savings/TFSA for net worth calc
+};
+
 const MOCK_TXN = [
   {id:"t1", date:"2026-03-06",name:"Loblaws",         amount:67.43,  cat:"Groceries",      icon:"🛒",color:"#2E8B2E",dow:4},
   {id:"t2", date:"2026-03-06",name:"Tim Hortons",      amount:4.85,   cat:"Coffee & Dining",icon:"☕",color:"#D97A3A",dow:4},
@@ -259,12 +265,6 @@ const MOCK_ACCOUNTS_US = [
 ];
 
 // ─── DEMO DEFAULTS — used when no real data is connected ─────────────────────
-const DEMO = {
-  balance:     1_243.88,
-  income:      1_847.50,
-  netWorthAdd:   1_840,   // mock savings/TFSA for net worth calc
-};
-
 
 // ── ICON SYSTEM: Lucide React ─────────────────────────────────────────────────
 
