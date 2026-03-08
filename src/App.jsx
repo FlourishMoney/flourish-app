@@ -426,158 +426,6 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
 // ██ "What should happen with my money today?"                                 ██
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const AutopilotEngine = {
-  /**
-   * ADAPTIVE AUTOPILOT ENGINE
-   * Continuously adjusts the daily money plan based on:
-   *   1. Behavior patterns (spikeRatio, stability)
-   *   2. Forecast risk (upcoming low-balance events)
-   *   3. Income schedule (detects payday from onboarding data)
-   *   4. Risk mode (Low / Medium / High) that gates all allocations
-   */
-  generate(data) {
-    const { safeAmount, balance, soonBills, riskLevel: rawRisk } = SafeSpendEngine.calculate(data);
-    const { monthlyIncome, cashFlow, totalExpenses } = FinancialCalcEngine.cashFlow(data);
-    const { forecast, overdraftRisk, lowBalanceWarnings } = ForecastEngine.generate(data, 30);
-    const { spendingStability, spikeRatio } = BehaviorEngine.analyze(data);
-    const debts = (data.debts || []).sort((a,b) => parseFloat(b.rate||0) - parseFloat(a.rate||0));
-    const goals  = data.goals || [];
-    const today  = new Date();
-    const todayNum = today.getDate();
-
-    // ── ADAPTIVE: Detect payday from income frequency data ───────────────────
-    const incomes = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
-    const freq = incomes[0]?.freq || "monthly";
-    let daysLeft;
-    if (freq === "biweekly") {
-      // Approximate: next biweekly is in 7–14 days
-      daysLeft = 14 - (todayNum % 14);
-    } else if (freq === "weekly") {
-      daysLeft = 7 - (todayNum % 7);
-    } else {
-      // Monthly: 1st or 15th
-      daysLeft = todayNum < 15 ? (15 - todayNum) :
-        Math.ceil((new Date(today.getFullYear(), today.getMonth()+1, 1) - today) / 86400000);
-    }
-    daysLeft = Math.max(1, daysLeft);
-
-    // ── ADAPTIVE: Base safeDaily, then adjust for behavior ───────────────────
-    let safeDaily = daysLeft > 0 ? Math.floor(safeAmount / daysLeft) : safeAmount;
-
-    // Behavior adjustment ①: spike ratio → tighten daily limit
-    if (spikeRatio > 1.4) {
-      const reduction = Math.round(safeDaily * 0.15);
-      safeDaily = Math.max(0, safeDaily - reduction);
-    }
-    // Behavior adjustment ②: consistent underspend → loosen daily limit
-    if (spendingStability > 0.85 && spikeRatio < 1.1) {
-      safeDaily = Math.round(safeDaily * 1.08);
-    }
-
-    // ── ADAPTIVE: Forecast-driven pre-emptive tightening ─────────────────────
-    // If balance will drop dangerously within 7 days, reduce today's limit now
-    const nearTermLow = lowBalanceWarnings.find(w => w.day <= 7);
-    if (nearTermLow) {
-      const daysUntilLow = nearTermLow.day;
-      const urgency = 1 - (daysUntilLow / 7); // 0 = 7 days away, 1 = tomorrow
-      safeDaily = Math.round(safeDaily * (1 - urgency * 0.30));
-    }
-
-    // ── ADAPTIVE: Risk mode gates all downstream allocations ─────────────────
-    // Derived from SafeSpendEngine risk + forecast signals
-    const forecastDanger = overdraftRisk.length > 0;
-    const mode = forecastDanger ? "high" :
-                 rawRisk === "critical" || rawRisk === "high" ? "high" :
-                 rawRisk === "medium" || nearTermLow ? "medium" : "low";
-
-    const modeMultipliers = {
-      low:    { savings: 0.40, debt: 0.40, goal: 0.50 },
-      medium: { savings: 0.20, debt: 0.30, goal: 0.25 },
-      high:   { savings: 0,    debt: 0,    goal: 0    },
-    };
-    const mult = modeMultipliers[mode];
-
-    // ── Safe floor & surplus ──────────────────────────────────────────────────
-    const safeFloor = monthlyIncome * 0.15;
-    const surplus = Math.max(0,
-      balance
-      - soonBills.reduce((s,b) => s + parseFloat(b.amount||0), 0)
-      - (totalExpenses / 30 * daysLeft)   // forecast remaining spend this period
-      - safeFloor
-    );
-
-    // ── ① Daily spend limit (adaptive) ───────────────────────────────────────
-    const dailySpendLimit = Math.max(0, safeDaily);
-
-    // ── ② Savings transfer (mode-gated, adaptive amount) ─────────────────────
-    let savingsTransfer = 0;
-    let savingsTarget = "Emergency Fund";
-    if (mode !== "high" && surplus > monthlyIncome * 0.12) {
-      const efMonths = typeof FinancialCalcEngine.emergencyFundMonths === 'function' ? FinancialCalcEngine.emergencyFundMonths(data) : 0;
-      const invAcct  = (data.accounts||[]).find(a => a.type === "investment");
-      savingsTarget  = efMonths < 3 ? "Emergency Fund" : invAcct ? "TFSA / Investment" : "Savings";
-      // Adaptive: reduce savings amount if spending is volatile
-      const volatilityFactor = spendingStability > 0.7 ? 1.0 : 0.7;
-      savingsTransfer = Math.round(surplus * mult.savings * volatilityFactor);
-    }
-
-    // ── ③ Debt acceleration (mode-gated) ─────────────────────────────────────
-    let debtPayment = 0;
-    let debtTarget  = null;
-    const remainAfterSavings = surplus - savingsTransfer;
-    if (mode !== "high" && remainAfterSavings > 30 && debts.length > 0 && parseFloat(debts[0].rate||0) > 8) {
-      debtPayment = Math.round(Math.min(remainAfterSavings * mult.debt, 200));
-      debtTarget  = debts[0];
-    }
-
-    // ── ④ Goal contribution (mode-gated) ─────────────────────────────────────
-    let goalContribution = 0;
-    let goalTarget = null;
-    const remainAfterDebt = remainAfterSavings - debtPayment;
-    if (mode === "low" && remainAfterDebt > 20 && goals.length > 0) {
-      goalContribution = Math.round(remainAfterDebt * mult.goal);
-      goalTarget = goals[0];
-    }
-
-    // ── ⑤ Buffer ─────────────────────────────────────────────────────────────
-    const buffer = Math.max(0, balance - dailySpendLimit - savingsTransfer - debtPayment - goalContribution);
-
-    // ── ⑥ Adaptive alerts (contextual, not generic) ──────────────────────────
-    const alerts = [];
-    if (mode === "high") {
-      const msg = forecastDanger
-        ? `Balance projected to go negative in ${overdraftRisk[0]?.day} days. Hold all non-essential spending.`
-        : "Cash is critically low. Bills protection mode active — savings and extras paused.";
-      alerts.push({ type:"danger", msg });
-    } else if (nearTermLow) {
-      alerts.push({ type:"warning", msg:`Balance drops near your safety floor in ${nearTermLow.day} days — daily limit tightened by 15% as a precaution.` });
-    }
-    if (spikeRatio > 1.4 && mode !== "high") {
-      alerts.push({ type:"tip", msg:`Payday spike habit detected (+${Math.round((spikeRatio-1)*100)}%). Daily limit reduced by 15% to smooth your cash flow.` });
-    }
-
-    // ── ⑦ Adherence — based on spending stability (0-100) ────────────────────
-    const adherence = Math.min(100, Math.round(spendingStability * 100));
-
-    // ── ⑧ Mode label for UI ──────────────────────────────────────────────────
-    const modeLabel = mode === "low" ? "On Track" : mode === "medium" ? "Monitor" : "At Risk";
-    const adaptations = [
-      spikeRatio > 1.4 && `Limit -15% (payday spike habit)`,
-      nearTermLow && `Limit tightened (low balance in ${nearTermLow.day}d)`,
-      spendingStability > 0.85 && `Limit +8% (consistent spending)`,
-      mode === "high" && `Extras paused (protect bills first)`,
-    ].filter(Boolean);
-
-    return {
-      dailySpendLimit, savingsTransfer, savingsTarget,
-      debtPayment, debtTarget, goalContribution, goalTarget,
-      buffer, alerts, mode, modeLabel,
-      daysLeft, adherence, surplus, adaptations,
-      riskLevel: rawRisk,
-    };
-  }
-};
-
 // ── AUTOPILOT CARD (Dashboard component) ──────────────────────────────────────
 function AutopilotCard({data, setScreen}) {
   const [revealed, setRevealed] = useState(false);
@@ -1824,6 +1672,159 @@ const BehaviorEngine = {
     return { insights, spikeRatio, subTotal, diningTotal, spendingStability: Math.max(0, 1 - cv) };
   }
 };
+
+const AutopilotEngine = {
+  /**
+   * ADAPTIVE AUTOPILOT ENGINE
+   * Continuously adjusts the daily money plan based on:
+   *   1. Behavior patterns (spikeRatio, stability)
+   *   2. Forecast risk (upcoming low-balance events)
+   *   3. Income schedule (detects payday from onboarding data)
+   *   4. Risk mode (Low / Medium / High) that gates all allocations
+   */
+  generate(data) {
+    const { safeAmount, balance, soonBills, riskLevel: rawRisk } = SafeSpendEngine.calculate(data);
+    const { monthlyIncome, cashFlow, totalExpenses } = FinancialCalcEngine.cashFlow(data);
+    const { forecast, overdraftRisk, lowBalanceWarnings } = ForecastEngine.generate(data, 30);
+    const { spendingStability, spikeRatio } = BehaviorEngine.analyze(data);
+    const debts = (data.debts || []).sort((a,b) => parseFloat(b.rate||0) - parseFloat(a.rate||0));
+    const goals  = data.goals || [];
+    const today  = new Date();
+    const todayNum = today.getDate();
+
+    // ── ADAPTIVE: Detect payday from income frequency data ───────────────────
+    const incomes = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
+    const freq = incomes[0]?.freq || "monthly";
+    let daysLeft;
+    if (freq === "biweekly") {
+      // Approximate: next biweekly is in 7–14 days
+      daysLeft = 14 - (todayNum % 14);
+    } else if (freq === "weekly") {
+      daysLeft = 7 - (todayNum % 7);
+    } else {
+      // Monthly: 1st or 15th
+      daysLeft = todayNum < 15 ? (15 - todayNum) :
+        Math.ceil((new Date(today.getFullYear(), today.getMonth()+1, 1) - today) / 86400000);
+    }
+    daysLeft = Math.max(1, daysLeft);
+
+    // ── ADAPTIVE: Base safeDaily, then adjust for behavior ───────────────────
+    let safeDaily = daysLeft > 0 ? Math.floor(safeAmount / daysLeft) : safeAmount;
+
+    // Behavior adjustment ①: spike ratio → tighten daily limit
+    if (spikeRatio > 1.4) {
+      const reduction = Math.round(safeDaily * 0.15);
+      safeDaily = Math.max(0, safeDaily - reduction);
+    }
+    // Behavior adjustment ②: consistent underspend → loosen daily limit
+    if (spendingStability > 0.85 && spikeRatio < 1.1) {
+      safeDaily = Math.round(safeDaily * 1.08);
+    }
+
+    // ── ADAPTIVE: Forecast-driven pre-emptive tightening ─────────────────────
+    // If balance will drop dangerously within 7 days, reduce today's limit now
+    const nearTermLow = lowBalanceWarnings.find(w => w.day <= 7);
+    if (nearTermLow) {
+      const daysUntilLow = nearTermLow.day;
+      const urgency = 1 - (daysUntilLow / 7); // 0 = 7 days away, 1 = tomorrow
+      safeDaily = Math.round(safeDaily * (1 - urgency * 0.30));
+    }
+
+    // ── ADAPTIVE: Risk mode gates all downstream allocations ─────────────────
+    // Derived from SafeSpendEngine risk + forecast signals
+    const forecastDanger = overdraftRisk.length > 0;
+    const mode = forecastDanger ? "high" :
+                 rawRisk === "critical" || rawRisk === "high" ? "high" :
+                 rawRisk === "medium" || nearTermLow ? "medium" : "low";
+
+    const modeMultipliers = {
+      low:    { savings: 0.40, debt: 0.40, goal: 0.50 },
+      medium: { savings: 0.20, debt: 0.30, goal: 0.25 },
+      high:   { savings: 0,    debt: 0,    goal: 0    },
+    };
+    const mult = modeMultipliers[mode];
+
+    // ── Safe floor & surplus ──────────────────────────────────────────────────
+    const safeFloor = monthlyIncome * 0.15;
+    const surplus = Math.max(0,
+      balance
+      - soonBills.reduce((s,b) => s + parseFloat(b.amount||0), 0)
+      - (totalExpenses / 30 * daysLeft)   // forecast remaining spend this period
+      - safeFloor
+    );
+
+    // ── ① Daily spend limit (adaptive) ───────────────────────────────────────
+    const dailySpendLimit = Math.max(0, safeDaily);
+
+    // ── ② Savings transfer (mode-gated, adaptive amount) ─────────────────────
+    let savingsTransfer = 0;
+    let savingsTarget = "Emergency Fund";
+    if (mode !== "high" && surplus > monthlyIncome * 0.12) {
+      const efMonths = typeof FinancialCalcEngine.emergencyFundMonths === 'function' ? FinancialCalcEngine.emergencyFundMonths(data) : 0;
+      const invAcct  = (data.accounts||[]).find(a => a.type === "investment");
+      savingsTarget  = efMonths < 3 ? "Emergency Fund" : invAcct ? "TFSA / Investment" : "Savings";
+      // Adaptive: reduce savings amount if spending is volatile
+      const volatilityFactor = spendingStability > 0.7 ? 1.0 : 0.7;
+      savingsTransfer = Math.round(surplus * mult.savings * volatilityFactor);
+    }
+
+    // ── ③ Debt acceleration (mode-gated) ─────────────────────────────────────
+    let debtPayment = 0;
+    let debtTarget  = null;
+    const remainAfterSavings = surplus - savingsTransfer;
+    if (mode !== "high" && remainAfterSavings > 30 && debts.length > 0 && parseFloat(debts[0].rate||0) > 8) {
+      debtPayment = Math.round(Math.min(remainAfterSavings * mult.debt, 200));
+      debtTarget  = debts[0];
+    }
+
+    // ── ④ Goal contribution (mode-gated) ─────────────────────────────────────
+    let goalContribution = 0;
+    let goalTarget = null;
+    const remainAfterDebt = remainAfterSavings - debtPayment;
+    if (mode === "low" && remainAfterDebt > 20 && goals.length > 0) {
+      goalContribution = Math.round(remainAfterDebt * mult.goal);
+      goalTarget = goals[0];
+    }
+
+    // ── ⑤ Buffer ─────────────────────────────────────────────────────────────
+    const buffer = Math.max(0, balance - dailySpendLimit - savingsTransfer - debtPayment - goalContribution);
+
+    // ── ⑥ Adaptive alerts (contextual, not generic) ──────────────────────────
+    const alerts = [];
+    if (mode === "high") {
+      const msg = forecastDanger
+        ? `Balance projected to go negative in ${overdraftRisk[0]?.day} days. Hold all non-essential spending.`
+        : "Cash is critically low. Bills protection mode active — savings and extras paused.";
+      alerts.push({ type:"danger", msg });
+    } else if (nearTermLow) {
+      alerts.push({ type:"warning", msg:`Balance drops near your safety floor in ${nearTermLow.day} days — daily limit tightened by 15% as a precaution.` });
+    }
+    if (spikeRatio > 1.4 && mode !== "high") {
+      alerts.push({ type:"tip", msg:`Payday spike habit detected (+${Math.round((spikeRatio-1)*100)}%). Daily limit reduced by 15% to smooth your cash flow.` });
+    }
+
+    // ── ⑦ Adherence — based on spending stability (0-100) ────────────────────
+    const adherence = Math.min(100, Math.round(spendingStability * 100));
+
+    // ── ⑧ Mode label for UI ──────────────────────────────────────────────────
+    const modeLabel = mode === "low" ? "On Track" : mode === "medium" ? "Monitor" : "At Risk";
+    const adaptations = [
+      spikeRatio > 1.4 && `Limit -15% (payday spike habit)`,
+      nearTermLow && `Limit tightened (low balance in ${nearTermLow.day}d)`,
+      spendingStability > 0.85 && `Limit +8% (consistent spending)`,
+      mode === "high" && `Extras paused (protect bills first)`,
+    ].filter(Boolean);
+
+    return {
+      dailySpendLimit, savingsTransfer, savingsTarget,
+      debtPayment, debtTarget, goalContribution, goalTarget,
+      buffer, alerts, mode, modeLabel,
+      daysLeft, adherence, surplus, adaptations,
+      riskLevel: rawRisk,
+    };
+  }
+};
+
 
 // ── ENGINE 5: FINANCIAL HEALTH SCORE ENGINE (spec-compliant weights) ──────────
 // Weights from Flourish spec: Savings 25%, Debt 20%, Emergency 20%,
