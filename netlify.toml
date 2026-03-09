@@ -3,12 +3,19 @@
   publish   = "dist"
 
 [build.environment]
-  NODE_VERSION = "18"
+  NODE_VERSION           = "18"
+  SECRETS_SCAN_OMIT_KEYS = "PLAID_ENV"
 
 # Redirect: app calls /api/coach → Netlify function
 [[redirects]]
   from   = "/api/coach"
   to     = "/.netlify/functions/coach"
+  status = 200
+
+# Redirect: app calls /api/plaid → Netlify function
+[[redirects]]
+  from   = "/api/plaid"
+  to     = "/.netlify/functions/plaid"
   status = 200
 
 # SPA fallback — all routes → index.html
