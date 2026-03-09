@@ -5,9 +5,9 @@
  * Actions: create_link_token | exchange_token | get_accounts | get_transactions | remove_item
  *
  * Env vars (Netlify → Site Settings → Environment Variables):
- *   PLAID_CLIENT_ID  = 69add556a35e23000d87be48
- *   PLAID_SECRET     = 11c0e1c30527d73b7e166c7476e32e
- *   PLAID_ENV        = sandbox   →  development  →  production
+ *   PLAID_CLIENT_ID  — your Plaid client ID
+ *   PLAID_SECRET     — your Plaid secret
+ *   PLAID_ENV        — sandbox | development | production
  */
 
 "use strict";
