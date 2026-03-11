@@ -4387,7 +4387,7 @@ function WidgetScreen({data,onBack}){
     <div style={{background:C.isDark?`linear-gradient(135deg,${C.greenDim} 0%,${C.card} 100%)`:C.card,borderRadius:22,border:`1px solid ${C.green}33`,padding:"20px"}}>
       <div style={{fontWeight:700,fontSize:15,color:C.cream,marginBottom:3,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>🍎</span> Add to iPhone Home Screen</div>
       <div style={{color:C.muted,fontSize:12,marginBottom:14,marginLeft:26}}>iOS 16+ · Safari required</div>
-      {[["1","Open flourishmoney.app in Safari"],["2","Tap the Share button (⬆️) at the bottom"],["3","Scroll and tap "Add to Home Screen""],["4","Tap Add — the app icon appears instantly"],["5","Long-press the icon → "Edit Home Screen" → add as widget"]].map(([n,step])=>(
+      {[["1","Open flourishmoney.app in Safari"],["2","Tap the Share button (⬆️) at the bottom"],["3","Scroll and tap 'Add to Home Screen'"],["4","Tap Add — the app icon appears instantly"],["5","Long-press the icon → 'Edit Home Screen' → add as widget"]].map(([n,step])=>(
         <div key={n} style={{display:"flex",gap:12,alignItems:"flex-start",marginBottom:10}}>
           <div style={{width:22,height:22,borderRadius:99,background:C.greenDim,border:`1px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
             <span style={{color:C.greenBright,fontSize:10,fontWeight:800}}>{n}</span>
@@ -4401,7 +4401,7 @@ function WidgetScreen({data,onBack}){
     <div style={{background:C.isDark?`linear-gradient(135deg,${C.blueDim} 0%,${C.card} 100%)`:C.card,borderRadius:22,border:`1px solid ${C.blue}33`,padding:"20px"}}>
       <div style={{fontWeight:700,fontSize:15,color:C.cream,marginBottom:3,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>🤖</span> Add to Android Home Screen</div>
       <div style={{color:C.muted,fontSize:12,marginBottom:14,marginLeft:26}}>Chrome · Android 8+</div>
-      {[["1","Open flourishmoney.app in Chrome"],["2","Tap the three-dot menu (⋮) top right"],["3","Tap "Add to Home screen""],["4","Confirm — icon appears on your home screen"],["5","On Samsung: long-press icon → "Add widget" in Home screen editor"]].map(([n,step])=>(
+      {[["1","Open flourishmoney.app in Chrome"],["2","Tap the three-dot menu (⋮) top right"],["3","Tap 'Add to Home screen'"],["4","Confirm — icon appears on your home screen"],["5","On Samsung: long-press icon → 'Add widget' in Home screen editor"]].map(([n,step])=>(
         <div key={n} style={{display:"flex",gap:12,alignItems:"flex-start",marginBottom:10}}>
           <div style={{width:22,height:22,borderRadius:99,background:C.blueDim,border:`1px solid ${C.blue}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
             <span style={{color:C.blueBright,fontSize:10,fontWeight:800}}>{n}</span>
