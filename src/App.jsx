@@ -9,23 +9,29 @@ import {
 } from "lucide-react";
 
 const STYLES = `
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
-@keyframes fadeUp    { from{opacity:0;transform:translateY(22px)}  to{opacity:1;transform:translateY(0)} }
-@keyframes fadeIn    { from{opacity:0}                              to{opacity:1} }
-@keyframes slideUp   { from{opacity:0;transform:translateY(10px)}  to{opacity:1;transform:translateY(0)} }
-@keyframes slideIn   { from{opacity:0;transform:translateX(-14px)} to{opacity:1;transform:translateX(0)} }
-@keyframes pulse     { 0%,100%{opacity:1} 50%{opacity:0.45} }
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+@keyframes fadeUp    { from{opacity:0;transform:translateY(24px) scale(0.98)} to{opacity:1;transform:translateY(0) scale(1)} }
+@keyframes fadeIn    { from{opacity:0} to{opacity:1} }
+@keyframes slideUp   { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+@keyframes slideIn   { from{opacity:0;transform:translateX(-16px)} to{opacity:1;transform:translateX(0)} }
+@keyframes pulse     { 0%,100%{opacity:1} 50%{opacity:0.4} }
 @keyframes shimmer   { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
-@keyframes mintGlow  { 0%,100%{box-shadow:0 0 0 0 rgba(0,214,143,0)} 50%{box-shadow:0 0 60px 8px rgba(0,214,143,0.12)} }
-@keyframes goldGlow  { 0%,100%{box-shadow:0 0 0 0 rgba(240,196,66,0)} 50%{box-shadow:0 0 60px 8px rgba(240,196,66,0.10)} }
-@keyframes ringPulse { 0%{transform:scale(1);opacity:0.7} 100%{transform:scale(2.4);opacity:0} }
+@keyframes mintGlow  { 0%,100%{box-shadow:0 0 0 0 rgba(0,214,143,0)} 50%{box-shadow:0 0 70px 10px rgba(0,214,143,0.14)} }
+@keyframes goldGlow  { 0%,100%{box-shadow:0 0 0 0 rgba(240,196,66,0)} 50%{box-shadow:0 0 60px 8px rgba(240,196,66,0.12)} }
+@keyframes ringPulse { 0%{transform:scale(1);opacity:0.7} 100%{transform:scale(2.6);opacity:0} }
 @keyframes spin      { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
-@keyframes floatUp   { 0%{transform:translateY(0)} 50%{transform:translateY(-4px)} 100%{transform:translateY(0)} }
-@keyframes numberIn  { from{opacity:0;transform:translateY(8px) scale(0.97)} to{opacity:1;transform:translateY(0) scale(1)} }
+@keyframes floatUp   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
+@keyframes numberIn  { from{opacity:0;transform:translateY(10px) scale(0.96)} to{opacity:1;transform:translateY(0) scale(1)} }
 @keyframes gradShift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+@keyframes breathe   { 0%,100%{opacity:0.5;transform:scale(1)} 50%{opacity:0.9;transform:scale(1.04)} }
+@keyframes orbit     { from{transform:translate(-50%,-50%) rotate(0deg) translateX(110px)} to{transform:translate(-50%,-50%) rotate(360deg) translateX(110px)} }
+@keyframes logoFloat { 0%,100%{transform:translateY(0) rotate(-1deg)} 50%{transform:translateY(-6px) rotate(1deg)} }
 * { -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; box-sizing:border-box; }
+*:focus-visible { outline:2px solid rgba(0,214,143,0.55); outline-offset:2px; border-radius:4px; }
+::selection { background:rgba(0,214,143,0.25); color:#fff; }
 ::-webkit-scrollbar { width:0; background:transparent; }
 input,button,select,textarea { font-family:inherit; }
+button { cursor:pointer; }
 `;
 
 
@@ -147,59 +153,45 @@ const CC = {
   },
 };
 
-const C = {
-  // ── Backgrounds ─────────────────────────────────────────────
-  bg:         "#060A0E",
-  surface:    "#0C1219",
-  card:       "#0F1720",
-  cardAlt:    "#141F2A",
-  // ── Text ────────────────────────────────────────────────────
-  cream:      "#EDE8E1",
-  muted:      "rgba(237,232,225,0.55)",
-  mutedHi:    "rgba(237,232,225,0.82)",
-  // ── Glass surfaces ──────────────────────────────────────────
-  glass:      "rgba(12,18,25,0.72)",
-  glassBright:"rgba(18,28,38,0.80)",
-  glassEdge:  "rgba(255,255,255,0.055)",
-  glassEdgeHi:"rgba(255,255,255,0.10)",
-  // ── Mint green (primary positive) ───────────────────────────
-  green:      "#00D68F",
-  greenBright:"#00EFA0",
-  greenDim:   "rgba(0,214,143,0.11)",
-  // ── Gold (attention / money) ─────────────────────────────────
-  gold:       "#E8B84B",
-  goldBright: "#F5CC6A",
-  goldDim:    "rgba(232,184,75,0.11)",
-  // ── Red (danger) ────────────────────────────────────────────
-  red:        "#FF4F6A",
-  redBright:  "#FF6B84",
-  redDim:     "rgba(255,79,106,0.11)",
-  // ── Blue ─────────────────────────────────────────────────────
-  blue:       "#4DA8FF",
-  blueBright: "#6DBCFF",
-  blueDim:    "rgba(77,168,255,0.11)",
-  // ── Teal ─────────────────────────────────────────────────────
-  teal:       "#00C8E0",
-  tealBright: "#22D8EE",
-  tealDim:    "rgba(0,200,224,0.11)",
-  // ── Orange ──────────────────────────────────────────────────
-  orange:     "#FF8C42",
-  orangeBright:"#FFA060",
-  orangeDim:  "rgba(255,140,66,0.11)",
-  // ── Purple ──────────────────────────────────────────────────
-  purple:     "#9B7DFF",
-  purpleBright:"#B09AFF",
-  purpleDim:  "rgba(155,125,255,0.11)",
-  // ── Pink ────────────────────────────────────────────────────
-  pink:       "#FF6B9D",
-  pinkBright: "#FF85AE",
-  pinkDim:    "rgba(255,107,157,0.11)",
-  // ── Borders & hero ──────────────────────────────────────────
-  border:     "rgba(255,255,255,0.07)",
-  borderHi:   "rgba(255,255,255,0.15)",
-  heroGreen:  "linear-gradient(160deg,#061510 0%,#0A1E14 45%,#060A0E 100%)",
-  heroRed:    "linear-gradient(160deg,#160609 0%,#1E0A0E 45%,#060A0E 100%)",
+// ─── THEME PALETTES ──────────────────────────────────────────────────────────
+const DARK_C = {
+  bg:"#050810",surface:"#0A1018",card:"#0D1520",cardAlt:"#121D2A",
+  cream:"#EDE9E2",muted:"rgba(237,233,226,0.50)",mutedHi:"rgba(237,233,226,0.80)",
+  glass:"rgba(10,16,24,0.75)",glassBright:"rgba(16,26,38,0.82)",
+  glassEdge:"rgba(255,255,255,0.06)",glassEdgeHi:"rgba(255,255,255,0.12)",
+  green:"#00CC85",greenBright:"#00E89A",greenDim:"rgba(0,204,133,0.12)",
+  gold:"#E8B84B",goldBright:"#F5CC6A",goldDim:"rgba(232,184,75,0.11)",
+  red:"#FF4F6A",redBright:"#FF6B84",redDim:"rgba(255,79,106,0.11)",
+  blue:"#4DA8FF",blueBright:"#6DBCFF",blueDim:"rgba(77,168,255,0.11)",
+  teal:"#00C8E0",tealBright:"#22D8EE",tealDim:"rgba(0,200,224,0.11)",
+  orange:"#FF8C42",orangeBright:"#FFA060",orangeDim:"rgba(255,140,66,0.11)",
+  purple:"#9B7DFF",purpleBright:"#B09AFF",purpleDim:"rgba(155,125,255,0.11)",
+  pink:"#FF6B9D",pinkBright:"#FF85AE",pinkDim:"rgba(255,107,157,0.11)",
+  border:"rgba(255,255,255,0.07)",borderHi:"rgba(255,255,255,0.15)",
+  heroGreen:"linear-gradient(160deg,#061510 0%,#0A1E14 45%,#060A0E 100%)",
+  heroRed:"linear-gradient(160deg,#160609 0%,#1E0A0E 45%,#060A0E 100%)",
+  shadow:"rgba(0,0,0,0.45)",shadowHi:"rgba(0,0,0,0.70)",isDark:true,
 };
+const LIGHT_C = {
+  bg:"#F4F1EB",surface:"#FDFCFA",card:"#FFFFFF",cardAlt:"#EDEAE4",
+  cream:"#1A2035",muted:"rgba(26,32,53,0.44)",mutedHi:"rgba(26,32,53,0.72)",
+  glass:"rgba(255,255,255,0.84)",glassBright:"rgba(255,255,255,0.94)",
+  glassEdge:"rgba(0,0,0,0.07)",glassEdgeHi:"rgba(0,0,0,0.13)",
+  green:"#00935F",greenBright:"#00A86D",greenDim:"rgba(0,147,95,0.10)",
+  gold:"#B87010",goldBright:"#CC8018",goldDim:"rgba(184,112,16,0.10)",
+  red:"#D42E4A",redBright:"#E84060",redDim:"rgba(212,46,74,0.08)",
+  blue:"#2472C8",blueBright:"#3386D8",blueDim:"rgba(36,114,200,0.09)",
+  teal:"#008AA0",tealBright:"#009DB5",tealDim:"rgba(0,138,160,0.10)",
+  orange:"#C45E10",orangeBright:"#D86C1A",orangeDim:"rgba(196,94,16,0.10)",
+  purple:"#5840BC",purpleBright:"#6A52CC",purpleDim:"rgba(88,64,188,0.10)",
+  pink:"#BC3070",pinkBright:"#CC4282",pinkDim:"rgba(188,48,112,0.10)",
+  border:"rgba(0,0,0,0.08)",borderHi:"rgba(0,0,0,0.17)",
+  heroGreen:"linear-gradient(160deg,#E4F5EE 0%,#EEF9F3 45%,#F4F1EB 100%)",
+  heroRed:"linear-gradient(160deg,#FDE6EC 0%,#FEECF1 45%,#F4F1EB 100%)",
+  shadow:"rgba(0,0,0,0.08)",shadowHi:"rgba(0,0,0,0.16)",isDark:false,
+};
+// Mutable reference — FlourishApp reassigns this before each render pass
+let C = DARK_C;
 
 
 const CAT_ICON = {
@@ -1550,6 +1542,16 @@ function EmptyState({icon, title, body, action, onAction, color}) {
 
 // ── FLOURISH LOGO MARK ────────────────────────────────────────────────────────
 function FlourishMark({ size = 24, style = {} }) {
+  return (
+    <img
+      src={`data:image/png;base64,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`}
+      width={size}
+      height={size}
+      alt="Flourish"
+      style={{ flexShrink: 0, display: "block", borderRadius: size > 30 ? Math.round(size * 0.28) : 0, ...style }}
+    />
+  );
+}) {
   const id = `fg_${size}`;
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0, display: "block", ...style }}>
@@ -1619,66 +1621,71 @@ function computeStats(txns) {
 function Card({children,style={},glow,onClick}){
   const [h,setH]=useState(false);
   return <div onClick={onClick} onMouseEnter={()=>onClick&&setH(true)} onMouseLeave={()=>onClick&&setH(false)}
-    style={{background:C.card,borderRadius:22,padding:"18px 20px",
-    border:`1px solid ${h?C.borderHi:C.border}`,
-    boxShadow:glow?`0 8px 48px ${glow}22, 0 2px 8px rgba(0,0,0,0.55)`:h?"0 8px 48px rgba(0,0,0,0.6)":"0 4px 28px rgba(0,0,0,0.45)",
-    transition:"all .25s cubic-bezier(.4,0,.2,1)",cursor:onClick?"pointer":"default",
-    backdropFilter:"blur(12px)",...style}}>{children}</div>;
+    style={{background:C.card,borderRadius:24,padding:"18px 20px",
+    border:`1px solid ${h&&onClick?C.borderHi:C.border}`,
+    boxShadow:glow?`0 0 0 1px ${glow}18, 0 8px 40px ${glow}20, 0 2px 12px rgba(0,0,0,0.5)`:h&&onClick?"0 10px 48px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.06)":"0 4px 24px rgba(0,0,0,0.40), 0 0 0 1px rgba(255,255,255,0.02)",
+    transform:h&&onClick?"translateY(-2px)":"none",
+    transition:"all .25s cubic-bezier(.16,1,.3,1)",cursor:onClick?"pointer":"default",
+    backdropFilter:"blur(16px)",...style}}>{children}</div>;
 }
 function Bar({v,max,color=C.green,h=7}){
-  return <div style={{background:"rgba(255,255,255,0.06)",borderRadius:99,height:h,overflow:"hidden"}}>
-    <div style={{width:`${Math.min(v/max*100,100)}%`,height:"100%",borderRadius:99,
-    background:v>max?`linear-gradient(90deg,${C.red},${C.redBright})`:
-    color===C.green?`linear-gradient(90deg,${C.green},${C.greenBright})`:color,
-    transition:"width 1.1s cubic-bezier(.4,0,.2,1)",boxShadow:`0 0 8px ${v>max?C.red:color}44`}}/>
+  const pct=Math.min(v/max*100,100);
+  const barColor=v>max?`linear-gradient(90deg,${C.red},${C.redBright})`:color===C.green?`linear-gradient(90deg,${C.green},${C.greenBright})`:color;
+  return <div style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.06)",borderRadius:99,height:h,overflow:"hidden",position:"relative"}}>
+    <div style={{width:`${pct}%`,height:"100%",borderRadius:99,background:barColor,
+    transition:"width 1.2s cubic-bezier(.16,1,.3,1)",
+    boxShadow:`0 0 ${h*1.5}px ${v>max?C.red:color}55`}}/>
   </div>;
 }
 function Chip({label,color,size=11,icon}){
-  return <span style={{background:color+"18",color,borderRadius:99,padding:"3px 10px",fontSize:size,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"inline-flex",alignItems:"center",gap:3}}>{icon&&<span style={{fontSize:size}}>{icon}</span>}{label}</span>;
+  return <span style={{background:color+"18",color,borderRadius:99,padding:"4px 11px",fontSize:size,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"inline-flex",alignItems:"center",gap:4,border:`1px solid ${color}30`,letterSpacing:0.1}}>{icon&&<span style={{fontSize:size}}>{icon}</span>}{label}</span>;
 }
 function Toggle({on,onChange}){
   return <div onClick={()=>onChange(!on)} style={{width:48,height:28,borderRadius:99,cursor:"pointer",
-    background:on?C.green:"rgba(255,255,255,0.10)",position:"relative",
+    background:on?C.green:C.isDark?"rgba(255,255,255,0.10)":"rgba(0,0,0,0.10)",position:"relative",
     transition:"background .3s",flexShrink:0,
     boxShadow:on?`0 0 12px ${C.green}44`:"none"}}>
     <div style={{position:"absolute",top:4,left:on?24:4,width:20,height:20,borderRadius:"50%",
-    background:on?"#fff":C.mutedHi,transition:"left .28s cubic-bezier(.4,0,.2,1)",
+    background:on?"#fff":C.isDark?"rgba(237,233,226,0.55)":"rgba(26,32,53,0.40)",transition:"left .28s cubic-bezier(.4,0,.2,1)",
     boxShadow:"0 1px 6px rgba(0,0,0,0.6)"}}/>
   </div>;
 }
 function Btn({label,onClick,color=C.green,outline,small,disabled,full=true,icon}){
   return <button onClick={onClick} disabled={disabled}
-    style={{background:outline?"transparent":color,
-    border:`1.5px solid ${outline?color+"88":"transparent"}`,
-    color:outline?color:"#060A0E",
-    borderRadius:14,padding:small?"8px 20px":"13px 26px",
-    fontWeight:800,fontSize:small?12:14,
+    style={{background:outline?"transparent":`linear-gradient(135deg,${color} 0%,${color}dd 100%)`,
+    border:`1.5px solid ${outline?color+"99":C.isDark?"rgba(255,255,255,0.15)":"rgba(0,0,0,0.12)"}`,
+    color:outline?color:C.isDark?"#021208":"#FFFFFF",
+    borderRadius:16,padding:small?"9px 20px":"14px 28px",
+    fontWeight:800,fontSize:small?12:14,letterSpacing:0.2,
     cursor:disabled?"not-allowed":"pointer",opacity:disabled?.35:1,
     display:"flex",alignItems:"center",gap:7,justifyContent:"center",
     width:full?"100%":"auto",
     fontFamily:"'Plus Jakarta Sans',sans-serif",
-    boxShadow:!outline&&!disabled?`0 4px 20px ${color}44`:"none",
-    transition:"all .2s cubic-bezier(.4,0,.2,1)"}}
-    onMouseEnter={e=>!disabled&&(e.currentTarget.style.transform="translateY(-1px)")}
-    onMouseLeave={e=>!disabled&&(e.currentTarget.style.transform="none")}>
+    boxShadow:!outline&&!disabled?`0 0 0 1px ${color}22, 0 6px 24px ${color}44, inset 0 1px 0 rgba(255,255,255,0.22)`:"none",
+    transition:"all .25s cubic-bezier(.16,1,.3,1)"}}
+    onMouseEnter={e=>{if(!disabled){e.currentTarget.style.transform="translateY(-2px) scale(1.01)";e.currentTarget.style.boxShadow=outline?"none":`0 0 0 1px ${color}33, 0 10px 32px ${color}55, inset 0 1px 0 rgba(255,255,255,0.22)`;}}}
+    onMouseLeave={e=>{if(!disabled){e.currentTarget.style.transform="translateY(0) scale(1)";e.currentTarget.style.boxShadow=!outline?`0 0 0 1px ${color}22, 0 6px 24px ${color}44, inset 0 1px 0 rgba(255,255,255,0.22)`:"none";}}}>
     {icon&&<span>{icon}</span>}{label}
   </button>;
 }
 function Inp({label,value,onChange,type="text",prefix,placeholder,note,sm}){
-  return <div style={{marginBottom:sm?10:14}}>
-    {label&&<div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:5,fontWeight:700}}>{label}</div>}
-    <div style={{display:"flex",alignItems:"center",background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",transition:"border .2s"}} onFocus={e=>e.currentTarget.style.borderColor=C.green+"66"} onBlur={e=>e.currentTarget.style.borderColor=C.border}>
-      {prefix&&<div style={{padding:"0 12px",color:C.muted,fontSize:14,borderRight:`1px solid ${C.border}`}}>{prefix}</div>}
+  const [focused,setFocused]=useState(false);
+  return <div style={{marginBottom:sm?10:16}}>
+    {label&&<div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,marginBottom:6,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>}
+    <div style={{display:"flex",alignItems:"center",background:C.isDark?`rgba(255,255,255,${focused?0.07:0.04})`:focused?C.surface:C.cardAlt,border:`1.5px solid ${focused?C.green+"77":C.border}`,borderRadius:16,overflow:"hidden",transition:"all .2s cubic-bezier(.16,1,.3,1)",boxShadow:focused?`0 0 0 3px ${C.green}18`:""}}>
+      {prefix&&<div style={{padding:"0 14px",color:focused?C.mutedHi:C.muted,fontSize:14,borderRight:`1px solid ${C.border}`,transition:"color .2s"}}>{prefix}</div>}
       <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
-        style={{flex:1,background:"none",border:"none",outline:"none",color:C.cream,fontSize:sm?13:15,padding:sm?"9px 12px":"12px 14px",fontFamily:"inherit"}}/>
+        onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
+        style={{flex:1,background:"none",border:"none",outline:"none",color:C.cream,fontSize:sm?13:15,padding:sm?"10px 13px":"13px 15px",fontFamily:"inherit"}}/>
     </div>
-    {note&&<div style={{color:C.muted,fontSize:10,marginTop:4}}>{note}</div>}
+    {note&&<div style={{color:C.muted,fontSize:10,marginTop:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{note}</div>}
   </div>;
 }
 function Sel({label,value,onChange,options}){
-  return <div style={{marginBottom:14}}>
-    {label&&<div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:5,fontWeight:700}}>{label}</div>}
-    <select value={value} onChange={e=>onChange(e.target.value)} style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,color:C.cream,fontSize:14,padding:"12px 14px",fontFamily:"inherit",outline:"none",cursor:"pointer"}}>
+  return <div style={{marginBottom:16}}>
+    {label&&<div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,marginBottom:6,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>}
+    <select value={value} onChange={e=>onChange(e.target.value)} style={{width:"100%",background:C.isDark?`rgba(255,255,255,0.04)`:C.cardAlt,border:`1.5px solid ${C.border}`,borderRadius:16,color:C.cream,fontSize:14,padding:"13px 15px",fontFamily:"inherit",outline:"none",cursor:"pointer",transition:"border .2s"}}
+      onFocus={e=>e.target.style.borderColor=C.green+"77"} onBlur={e=>e.target.style.borderColor=C.border}>
       {options.map(o=><option key={o.value} value={o.value} style={{background:C.bg}}>{o.label}</option>)}
     </select>
   </div>;
@@ -2391,45 +2398,44 @@ function Onboarding({onComplete}){
     // 0: Welcome
     <div style={{minHeight:"70vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"20px 0",position:"relative"}}>
       {/* Background decorative rings */}
-      <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:320,height:320,borderRadius:"50%",border:`1px solid ${C.green}10`,pointerEvents:"none"}}/>
-      <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:240,height:240,borderRadius:"50%",border:`1px solid ${C.green}18`,pointerEvents:"none"}}/>
-      <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:160,height:160,borderRadius:"50%",border:`1px solid ${C.green}25`,pointerEvents:"none"}}/>
+      <div style={{position:"absolute",top:"42%",left:"50%",transform:"translate(-50%,-50%)",width:340,height:340,borderRadius:"50%",border:`1px solid ${C.green}12`,pointerEvents:"none"}}/>
+      <div style={{position:"absolute",top:"42%",left:"50%",transform:"translate(-50%,-50%)",width:250,height:250,borderRadius:"50%",border:`1px solid ${C.green}1C`,pointerEvents:"none"}}/>
+      <div style={{position:"absolute",top:"42%",left:"50%",transform:"translate(-50%,-50%)",width:170,height:170,borderRadius:"50%",border:`1px solid ${C.green}2B`,pointerEvents:"none"}}/>
       {/* Ambient glow */}
-      <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-60%)",width:280,height:280,borderRadius:"50%",background:`radial-gradient(circle,${C.green}10 0%,transparent 70%)`,pointerEvents:"none"}}/>
+      <div style={{position:"absolute",top:"42%",left:"50%",transform:"translate(-50%,-60%)",width:300,height:300,borderRadius:"50%",background:`radial-gradient(circle,${C.green}15 0%,transparent 70%)`,pointerEvents:"none",animation:"breathe 7s ease-in-out infinite"}}/>
 
       {/* Logo mark */}
-      <div style={{position:"relative",marginBottom:28}}>
-        <div style={{width:88,height:88,borderRadius:28,background:"rgba(0,214,143,0.12)",border:"1.5px solid rgba(0,214,143,0.3)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",boxShadow:"0 8px 32px #3CB54A22, 0 2px 8px rgba(0,0,0,0.10)"}}><FlourishMark size={52}/></div>
-        <div style={{position:"absolute",bottom:-6,right:-6,width:26,height:26,borderRadius:99,background:C.greenBright,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13}}>✦</div>
+      <div style={{position:"relative",marginBottom:32,animation:"logoFloat 5s ease-in-out infinite"}}>
+        <div style={{width:96,height:96,borderRadius:30,background:C.isDark?"linear-gradient(145deg,rgba(0,204,133,0.14) 0%,rgba(0,204,133,0.06) 100%)":"linear-gradient(145deg,rgba(0,147,95,0.10) 0%,rgba(0,147,95,0.04) 100%)",border:`1.5px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",boxShadow:"0 0 0 1px rgba(255,255,255,0.04), 0 12px 48px rgba(0,204,133,0.18), 0 4px 16px rgba(0,0,0,0.30)",backdropFilter:"blur(12px)"}}><FlourishMark size={58}/></div>
       </div>
 
       {/* Wordmark */}
-      <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:46,color:C.cream,lineHeight:1,letterSpacing:-1.5,marginBottom:8}}>
+      <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:50,color:C.cream,lineHeight:0.95,letterSpacing:-2,marginBottom:10,background:`linear-gradient(160deg,${C.cream} 40%,rgba(237,233,226,0.65) 100%)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>
         Flourish
       </div>
-      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,color:C.green,letterSpacing:3,textTransform:"uppercase",fontWeight:600,marginBottom:20}}>
+      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,color:C.green,letterSpacing:3.5,textTransform:"uppercase",fontWeight:700,marginBottom:22,opacity:0.9}}>
         Money coaching that grows with you
       </div>
 
       {/* Tagline */}
-      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.mutedHi,fontSize:15,lineHeight:1.8,maxWidth:300,marginBottom:32}}>
+      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.muted,fontSize:15,lineHeight:1.85,maxWidth:300,marginBottom:34}}>
         Know exactly where you stand.<br/>
-        <span style={{color:C.cream}}>Before you spend. Not after.</span>
+        <span style={{color:C.cream,fontWeight:600}}>Before you spend. Not after.</span>
       </div>
 
       {/* Feature pills */}
       <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center",marginBottom:36,maxWidth:340}}>
         {[["","Overdraft warnings"],["","Cash flow forecast"],["","AI coaching"],["","Credit score"],["","Tax credits"],["","Family tools"]].map(([icon,text],i)=>(
-          <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:99,padding:"7px 14px",color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:6,animation:`fadeUp 0.4s ease ${100+i*60}ms both`}}>
+          <div key={i} style={{background:C.isDark?"rgba(255,255,255,0.05)":C.surface,border:`1px solid ${C.border}`,borderRadius:99,padding:"7px 15px",color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:6,animation:`fadeUp 0.4s ease ${100+i*60}ms both`,backdropFilter:"blur(8px)"}}>
             <span style={{fontSize:14}}>{icon}</span>{text}
           </div>
         ))}
       </div>
 
       {/* CTA */}
-      <button onClick={()=>setStep(1)} style={{background:`linear-gradient(135deg,${C.green} 0%,${C.greenBright} 100%)`,color:"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:16,padding:"16px 40px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 8px 32px ${C.green}40`,letterSpacing:0.5,transition:"all .2s"}}
-        onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 12px 40px ${C.green}55`;}}
-        onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow=`0 8px 32px ${C.green}40`;}}>
+      <button onClick={()=>setStep(1)} style={{background:`linear-gradient(135deg,${C.green} 0%,${C.greenBright} 100%)`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:16,padding:"17px 44px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:`0 0 0 1px ${C.green}22, 0 10px 40px ${C.green}44, inset 0 1px 0 rgba(255,255,255,0.30)`,letterSpacing:0.3,transition:"all .25s cubic-bezier(.16,1,.3,1)"}}
+        onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px) scale(1.02)";e.currentTarget.style.boxShadow=`0 0 0 1px ${C.green}33, 0 16px 52px ${C.green}55, inset 0 1px 0 rgba(255,255,255,0.30)`;}}
+        onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0) scale(1)";e.currentTarget.style.boxShadow=`0 0 0 1px ${C.green}22, 0 10px 40px ${C.green}44, inset 0 1px 0 rgba(255,255,255,0.30)`;}}>
         Build My Financial Plan →
       </button>
 
@@ -2583,7 +2589,7 @@ function Onboarding({onComplete}){
           {bankProg<35?"Exchanging credentials…":bankProg<70?"Fetching your accounts…":"Importing transactions…"}
         </div>
         <div style={{color:C.muted,fontSize:13,marginBottom:22}}>Securely syncing 90 days of history</div>
-        <div style={{background:"rgba(255,255,255,0.06)",borderRadius:99,height:6,overflow:"hidden",margin:"0 10px"}}>
+        <div style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.06)",borderRadius:99,height:6,overflow:"hidden",margin:"0 10px"}}>
           <div style={{width:`${bankProg}%`,height:"100%",background:`linear-gradient(90deg,${C.green},${C.teal})`,borderRadius:99,transition:"width .4s ease-out"}}/>
         </div>
         <div style={{color:C.muted,fontSize:12,marginTop:8}}>{Math.round(bankProg)}%</div>
@@ -2717,8 +2723,8 @@ function Onboarding({onComplete}){
         [p.status==="single"?"🧘":"💑",p.status==="single"?"Weekly solo check-in ready":"Couples money meeting ready"],
         [p.hasKids?"👧":"🎓",p.hasKids?"Kids Zone unlocked":"Money School unlocked"],
       ].map(([icon,text],i)=>(
-        <div key={i} style={{background:C.cardAlt,borderRadius:12,padding:"12px 16px",display:"flex",gap:10,alignItems:"center",border:`1px solid ${C.borderHi}`,marginBottom:8,textAlign:"left"}}>
-          <Icon id="check" size={16} color={C.green} strokeWidth={2.5}/><span style={{color:C.cream,fontSize:14,flex:1}}>{text}</span>
+        <div key={i} style={{background:`linear-gradient(135deg,${C.greenDim} 0%,${C.cardAlt} 100%)`,borderRadius:16,padding:"13px 16px",display:"flex",gap:12,alignItems:"center",border:`1px solid rgba(0,204,133,0.18)`,marginBottom:8,textAlign:"left",animation:`fadeUp 0.4s cubic-bezier(.16,1,.3,1) ${i*60}ms both`}}>
+          <div style={{width:28,height:28,borderRadius:99,background:C.greenDim,border:`1px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon id="check" size={14} color={C.greenBright} strokeWidth={2.5}/></div><span style={{color:C.cream,fontSize:14,flex:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{text}</span>
         </div>
       ))}
       <div style={{marginTop:20}}><Btn label="Open My Dashboard →" onClick={finish}/></div>
@@ -2726,13 +2732,13 @@ function Onboarding({onComplete}){
   ];
 
   return (
-    <div style={{background:C.bg,minHeight:"100vh",display:"flex",justifyContent:"center",fontFamily:"'Helvetica Neue',sans-serif"}}>
+    <div style={{background:C.bg,minHeight:"100vh",display:"flex",justifyContent:"center",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"background .4s"}}>
       <div style={{width:"100%",maxWidth:430,padding:"28px 20px 60px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
-          <div style={{display:"flex",alignItems:"center",gap:7}}><FlourishMark size={20}/><span>flourish</span></div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}><FlourishMark size={22} style={{borderRadius:6}}/><span style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:18,background:`linear-gradient(130deg,${C.cream} 30%,rgba(237,233,226,0.65) 100%)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",letterSpacing:-0.4}}>flourish</span></div>
           {step>0&&step<7&&<button onClick={()=>setStep(s=>s-1)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:14}}>← Back</button>}
         </div>
-        {step>0&&step<7&&<div style={{display:"flex",gap:4,marginBottom:28}}>{Array.from({length:7}).map((_,i)=><div key={i} style={{height:3,borderRadius:99,flex:i===step-1?2.5:1,background:i<step?C.green:C.border,transition:"all .4s"}}/>)}</div>}
+        {step>0&&step<7&&<div style={{display:"flex",gap:3,marginBottom:28}}>{Array.from({length:7}).map((_,i)=><div key={i} style={{height:3,borderRadius:99,flex:i===step-1?3:1,background:i<step?`linear-gradient(90deg,${C.green},${C.greenBright})`:C.border,transition:"all .45s cubic-bezier(.16,1,.3,1)",boxShadow:i<step?`0 0 8px ${C.green}44`:"none"}}/>)}</div>}
         {screens[step]}
       </div>
     </div>
@@ -2756,7 +2762,7 @@ function Notifications({onClose}){
   return <div style={{color:C.cream}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
       <div>
-        <div style={{fontSize:22,fontWeight:800,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif"}}>Notifications</div>
+        <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Notifications</div>
         {unread>0&&<div style={{color:C.red,fontSize:12,fontWeight:700}}>{unread} unread</div>}
       </div>
       <div style={{display:"flex",gap:8}}>
@@ -2766,7 +2772,7 @@ function Notifications({onClose}){
     </div>
     {notifs.map(n=>(
       <div key={n.id} onClick={()=>setNotifs(ns=>ns.map(x=>x.id===n.id?{...x,read:true}:x))}
-        style={{background:n.read?C.card:n.color+"0F",borderRadius:16,padding:"15px 17px",border:`1px solid ${n.read?C.border:n.color+"44"}`,marginBottom:10,cursor:"pointer",position:"relative"}}>
+        style={{background:n.read?C.card:n.color+"12",borderRadius:20,padding:"15px 17px",border:`1px solid ${n.read?C.border:n.color+"44"}`,marginBottom:10,cursor:"pointer",position:"relative",transition:"all .2s"}}>
         <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
           <div style={{width:40,height:40,borderRadius:12,background:n.color+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon id={n.icon||"bell"} size={18} color={n.color} strokeWidth={1.5}/></div>
           <div style={{flex:1}}>
@@ -2846,18 +2852,18 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
 
       {/* ── Top status bar ───────────────────────────────────────────────── */}
       <div style={{...anim(0),display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:2}}>
-        <div style={{display:"flex",alignItems:"center",gap:6}}>
-          <div style={{width:7,height:7,borderRadius:"50%",background:C.green,boxShadow:`0 0 10px ${C.green}`,animation:"pulse 2.5s ease-in-out infinite"}}/>
-          <span style={{color:C.mutedHi,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>6 engines live</span>
-          <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginLeft:2}}>· Adaptive Autopilot</span>
+        <div style={{display:"flex",alignItems:"center",gap:7,background:"rgba(0,204,133,0.06)",border:"1px solid rgba(0,204,133,0.12)",borderRadius:99,padding:"4px 10px"}}>
+          <div style={{width:6,height:6,borderRadius:"50%",background:C.green,boxShadow:`0 0 8px ${C.green}`,animation:"pulse 2.8s ease-in-out infinite",flexShrink:0}}/>
+          <span style={{color:C.green,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>Live</span>
+          <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>· 6 engines</span>
         </div>
-        <span style={{color:C.mutedHi,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{new Date().toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}</span>
+        <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2}}>{new Date().toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}</span>
       </div>
 
       {/* ── Greeting + Bell ──────────────────────────────────────────────── */}
       <div style={{...anim(30),display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div>
-          <div style={{fontSize:26,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",lineHeight:1.15}}>
+          <div style={{fontSize:27,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",lineHeight:1.15,letterSpacing:-0.5}}>
             Hey {data.profile.name} 👋
           </div>
           <div style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>
@@ -2892,8 +2898,8 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         {/* ── HERO: Safe to Spend ── full width ─────────────────────────── */}
         <div style={{...anim(60),gridColumn:"1 / -1",cursor:"pointer",position:"relative",overflow:"hidden",borderRadius:28,
           background:overdraft
-            ?"linear-gradient(155deg,rgba(24,6,16,0.92) 0%,rgba(32,8,16,0.85) 45%,rgba(12,5,10,0.90) 100%)"
-            :"linear-gradient(155deg,rgba(5,21,9,0.92) 0%,rgba(8,30,13,0.85) 45%,rgba(6,10,14,0.90) 100%)",
+            ?(C.isDark?"linear-gradient(155deg,rgba(24,6,16,0.92) 0%,rgba(32,8,16,0.85) 45%,rgba(12,5,10,0.90) 100%)":"linear-gradient(155deg,rgba(255,240,244,0.96) 0%,rgba(255,232,238,0.94) 45%,rgba(244,241,235,0.96) 100%)")
+            :(C.isDark?"linear-gradient(155deg,rgba(5,21,9,0.92) 0%,rgba(8,30,13,0.85) 45%,rgba(6,10,14,0.90) 100%)":"linear-gradient(155deg,rgba(236,252,244,0.96) 0%,rgba(228,250,238,0.94) 45%,rgba(244,241,235,0.96) 100%)"),
           backdropFilter:"blur(24px)",
           WebkitBackdropFilter:"blur(24px)",
           border:`1px solid ${heroColor}28`,
@@ -2903,15 +2909,15 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           <div style={{position:"absolute",top:-60,right:-60,width:280,height:280,borderRadius:"50%",background:`radial-gradient(circle,${heroColor}16 0%,transparent 65%)`,pointerEvents:"none"}}/>
           <div style={{position:"absolute",bottom:-40,left:-40,width:200,height:200,borderRadius:"50%",background:`radial-gradient(circle,${heroColor}09 0%,transparent 70%)`,pointerEvents:"none"}}/>
           {/* Dot grid texture */}
-          <div style={{position:"absolute",inset:0,backgroundImage:`radial-gradient(circle,${heroColor}20 1px,transparent 1px)`,backgroundSize:"26px 26px",pointerEvents:"none",opacity:0.35}}/>
+          <div style={{position:"absolute",inset:0,backgroundImage:`radial-gradient(circle,${heroColor}18 1px,transparent 1px)`,backgroundSize:"24px 24px",pointerEvents:"none",opacity:0.45,maskImage:"radial-gradient(ellipse 100% 80% at 50% 50%,black 40%,transparent 100%)"}}/>
           <div style={{position:"relative",padding:"24px 24px 20px"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
               <div style={{width:6,height:6,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 10px ${heroColor}`}}/>
               <span style={{color:heroColorBright+"99",fontSize:9,textTransform:"uppercase",letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Today's Safe Limit</span>
             </div>
-            <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.9,marginBottom:16}}>
-              <span style={{fontSize:22,color:heroColorBright+"88",verticalAlign:"top",marginTop:10,display:"inline-block"}}>$</span>
-              <span style={{fontSize:72,color:heroColorBright,letterSpacing:-3}}>
+            <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.88,marginBottom:18}}>
+              <span style={{fontSize:24,color:heroColorBright+"77",verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
+              <span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`}}>
                 <CountUp to={safe} decimals={2} dur={1200}/>
               </span>
             </div>
@@ -2963,7 +2969,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
               <HealthScoreRing score={adjScore} size={68} strokeW={7} bonus={checkInBonus}/>
               <div>
                 <div style={{display:"flex",alignItems:"baseline",gap:4}}>
-                  <span style={{fontSize:32,fontWeight:900,color:scoreColor,fontFamily:"'Playfair Display',serif",lineHeight:1,letterSpacing:-1}}>{adjScore}</span>
+                  <span style={{fontSize:34,fontWeight:900,color:scoreColor,fontFamily:"'Playfair Display',serif",lineHeight:1,letterSpacing:-1.5,textShadow:`0 0 24px ${scoreColor}55`}}>{adjScore}</span>
                   <span style={{color:C.muted,fontSize:11}}>/100</span>
                 </div>
                 <div style={{color:scoreColor,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginTop:3}}>{scoreGrade}</div>
@@ -3214,10 +3220,10 @@ function PlanAhead({data}){
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     {!hasBills&&<EmptyState icon="📅" title="No bills tracked yet" body="Add your recurring bills in Settings to see a personalized cash-flow forecast." action={null} color={C.teal}/>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <div><div style={{fontSize:22,fontWeight:800,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif"}}>2-Week Forecast</div><div style={{color:C.muted,fontSize:12,marginTop:2}}>Your financial crystal ball</div></div>
-      <div style={{display:"flex",gap:6}}>{[7,14].map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"33":C.cardAlt,border:`1px solid ${range===r?C.teal:C.border}`,color:range===r?C.teal:C.muted,borderRadius:99,padding:"5px 14px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>{r}d</button>)}</div>
+      <div><div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>2-Week Forecast</div><div style={{color:C.muted,fontSize:12,marginTop:3}}>Your financial crystal ball</div></div>
+      <div style={{display:"flex",gap:6,background:C.surface,borderRadius:12,padding:3}}>{[7,14].map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"6px 16px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .22s"}}>{r}d</button>)}</div>
     </div>
-    <div style={{background:C.cardAlt,borderRadius:12,padding:"9px 13px",border:`1px solid ${C.border}`,display:"flex",gap:7,alignItems:"flex-start"}}>
+    <div style={{background:C.isDark?"rgba(255,255,255,0.03)":C.surface,borderRadius:14,padding:"10px 14px",border:`1px solid ${C.border}`,display:"flex",gap:8,alignItems:"flex-start"}}>
       <span style={{fontSize:12,flexShrink:0,marginTop:1}}>ℹ️</span>
       <span style={{color:C.muted,fontSize:10.5,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>Forecast is based on your income schedule and bill data. Actual balances may differ. Not financial advice.</span>
     </div>
@@ -3225,10 +3231,10 @@ function PlanAhead({data}){
       <div style={{color:C.redBright,fontWeight:800,marginBottom:4}}>Projected Overdraft</div>
       <div style={{color:C.cream,fontSize:13,lineHeight:1.5}}>Balance hits <strong style={{color:C.red}}>${minBalance.toFixed(2)}</strong> before your next deposit. Reduce spending now.</div>
     </div>}
-    <Card style={{border:`1px solid ${C.teal}33`}}>
+    <Card style={{border:`1px solid ${C.teal}33`,background:`linear-gradient(135deg,rgba(0,200,224,0.05) 0%,${C.card} 100%)`}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:connected.length>0?10:0}}>
-        <div><div style={{color:C.teal,fontWeight:700,fontSize:14}}>🔌 Connected Providers</div><div style={{color:C.muted,fontSize:11}}>{connected.length} live · auto-update</div></div>
-        <button onClick={()=>setShowConnect(s=>!s)} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.teal,borderRadius:99,padding:"5px 14px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>{showConnect?"Done":"+ Connect"}</button>
+        <div><div style={{color:C.tealBright,fontWeight:700,fontSize:14}}>🔌 Connected Providers</div><div style={{color:C.muted,fontSize:11,marginTop:2}}>{connected.length} live · auto-update</div></div>
+        <button onClick={()=>setShowConnect(s=>!s)} style={{background:C.teal+"28",border:`1px solid ${C.teal}55`,color:C.tealBright,borderRadius:99,padding:"6px 15px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .2s"}}>{showConnect?"Done":"+ Connect"}</button>
       </div>
       {connected.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:showConnect?10:0}}>
         {connected.map(name=>{const p=PROVIDERS.find(x=>x.name===name);return p?<div key={name} style={{background:(p.color||C.teal)+"22",border:`1px solid ${(p.color||C.teal)}44`,borderRadius:99,padding:"3px 10px",display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:12}}>{p.icon}</span><span style={{color:C.cream,fontSize:11,fontWeight:600}}>{name}</span><span style={{color:C.green,fontSize:10}}>✓</span></div>:null;})}
@@ -3243,13 +3249,13 @@ function PlanAhead({data}){
         ))}
       </div>}
     </Card>
-    <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,fontWeight:700}}>Day-by-Day Cash Flow</div>
+    <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.8,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
     {days.filter((d,i)=>i===0||d.income>0||d.bills.length>0).map((day,i)=>{
       const isToday=day.idx===0,neg=day.balance<0,low=day.balance<150&&day.balance>=0;
-      return <div key={i} style={{background:isToday?C.greenDim:neg?C.redDim:C.card,borderRadius:16,padding:"14px 16px",border:`1px solid ${isToday?C.green+"55":neg?C.red+"55":low?C.gold+"44":C.border}`}}>
+      return <div key={i} style={{background:isToday?C.greenDim:neg?C.redDim:C.card,borderRadius:20,padding:"16px 18px",border:`1px solid ${isToday?C.green+"55":neg?C.red+"55":low?C.gold+"44":C.border}`,boxShadow:isToday?`0 0 24px ${C.green}18`:neg?`0 0 24px ${C.red}18`:"none"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
           <div>
-            <div style={{color:isToday?C.greenBright:C.mutedHi,fontWeight:isToday?700:400,fontSize:13}}>{isToday?"Today":day.d.toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}</div>
+            <div style={{color:isToday?C.greenBright:C.mutedHi,fontWeight:isToday?700:500,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{isToday?"Today ✦":day.d.toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}</div>
             {day.income>0&&<div style={{color:C.green,fontWeight:700,fontSize:14,marginTop:3}}>{`+$${day.income.toLocaleString()} deposited`}</div>}
             {day.bills.map((b,j)=><div key={j} style={{color:C.red,fontSize:13,marginTop:3}}>📤 {b.name}: –${parseFloat(b.amount).toFixed(2)}</div>)}
             {isToday&&!day.income&&!day.bills.length&&<div style={{color:C.muted,fontSize:12,marginTop:2}}>No scheduled activity</div>}
@@ -3290,32 +3296,34 @@ function SpendScreen({data}){
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <div><div style={{fontSize:22,fontWeight:800,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif"}}>Spending</div><div style={{color:C.muted,fontSize:12}}>Live from your bank</div></div>
+      <div><div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Spending</div><div style={{color:C.muted,fontSize:12,marginTop:3}}>Live from your bank</div></div>
       <div style={{textAlign:"right"}}><div style={{color:C.red,fontWeight:800,fontSize:15}}>–${totalSpent.toFixed(0)}</div><div style={{color:C.green,fontSize:11}}>+${totalIn.toFixed(0)} in</div></div>
     </div>
-    <div style={{display:"flex",gap:6}}>
-      {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"22":C.cardAlt,border:`1px solid ${tab===t?C.orange:C.border}`,color:tab===t?C.orangeBright:C.muted,borderRadius:10,padding:"8px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
+    <div style={{display:"flex",gap:6,background:C.surface,borderRadius:16,padding:4}}>
+      {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeBright:C.muted,borderRadius:12,padding:"9px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
         {t==="txn"?"Transactions":t==="breakdown"?"Breakdown":"Smart Cuts"}
       </button>)}
     </div>
     {tab==="txn"&&<>
-      <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4}}>
-        {cats.map(c=><button key={c} onClick={()=>setCatFilter(c)} style={{background:catFilter===c?C.orange+"33":C.cardAlt,border:`1px solid ${catFilter===c?C.orange:C.border}`,color:catFilter===c?C.orangeBright:C.muted,borderRadius:99,padding:"4px 12px",cursor:"pointer",fontSize:11,fontWeight:700,whiteSpace:"nowrap",fontFamily:"inherit"}}>{c}</button>)}
+      <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none"}}>
+        {cats.map(c=><button key={c} onClick={()=>setCatFilter(c)} style={{background:catFilter===c?C.orange+"28":"rgba(255,255,255,0.04)",border:`1px solid ${catFilter===c?C.orange+"66":"rgba(255,255,255,0.08)"}`,color:catFilter===c?C.orangeBright:C.muted,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700,whiteSpace:"nowrap",fontFamily:"inherit",transition:"all .2s",flexShrink:0}}>{c}</button>)}
       </div>
       {filtered.map(txn=>(
-        <div key={txn.id} style={{background:C.card,borderRadius:14,padding:"13px 16px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:40,height:40,borderRadius:12,background:txn.color+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon id={txnIcon(txn)} size={18} color={txn.color} strokeWidth={1.5}/></div>
-          <div style={{flex:1}}>
-            <div style={{color:C.cream,fontWeight:600,fontSize:14}}>{txn.name}</div>
-            <div style={{display:"flex",gap:6,marginTop:2}}><Chip label={txn.cat} color={txn.color} size={10}/><span style={{color:C.muted,fontSize:10}}>{txn.date}</span></div>
+        <div key={txn.id} style={{background:C.card,borderRadius:18,padding:"14px 16px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:13,transition:"all .2s",cursor:"default"}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor=C.borderHi;e.currentTarget.style.background=C.isDark?C.cardAlt:C.surface;}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.card;}}>
+          <div style={{width:42,height:42,borderRadius:14,background:txn.color+"18",border:`1px solid ${txn.color}28`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon id={txnIcon(txn)} size={19} color={txn.color} strokeWidth={1.5}/></div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{color:C.cream,fontWeight:600,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txn.name}</div>
+            <div style={{display:"flex",gap:6,marginTop:3,alignItems:"center"}}><Chip label={txn.cat} color={txn.color} size={10}/><span style={{color:C.muted,fontSize:10}}>{txn.date}</span>{txn.pending&&<Chip label="Pending" color={C.gold} size={9}/>}</div>
           </div>
-          <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:700,fontSize:15}}>{txn.amount<0?"+":"–"}${Math.abs(txn.amount).toFixed(2)}</div>
+          <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif",flexShrink:0}}>{txn.amount<0?"+":"–"}${Math.abs(txn.amount).toFixed(2)}</div>
         </div>
       ))}
     </>}
     {tab==="breakdown"&&<>
       <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
-        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2}}>Total Spent This Month</div>
+        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Spent This Month</div>
         <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>{`$${totalSpent.toFixed(0)}`}</div>
       </Card>
       {stats.topCats.map(([cat,amt],i)=>{
@@ -3333,7 +3341,7 @@ function SpendScreen({data}){
     </>}
     {tab==="cuts"&&<>
       <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
-        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2}}>Potential Monthly Savings</div>
+        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Potential Monthly Savings</div>
         <div style={{fontSize:32,fontWeight:900,color:C.goldBright,fontFamily:"Georgia,serif"}}>$200–350</div>
         <div style={{color:C.muted,fontSize:12}}>from {cuts.length} suggestions based on your real transactions</div>
       </Card>
@@ -3670,7 +3678,7 @@ function Family({data,household,setHousehold}){
   };
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <div><div style={{fontSize:22,fontWeight:800,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif"}}>Family</div><div style={{color:C.muted,fontSize:12}}>Money is a team sport</div></div>
+    <div><div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Family</div><div style={{color:C.muted,fontSize:12}}>Money is a team sport</div></div>
     <div style={{display:"flex",gap:6}}>
       {[["meeting",isCouple?"Money Meeting":"Check-In"],["kids","Kids Zone"],["household","Household"]].map(([t,lbl])=>(
         <button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.purple+"22":C.cardAlt,border:`1px solid ${tab===t?C.purple:C.border}`,color:tab===t?C.purpleBright:C.muted,borderRadius:12,padding:"10px",cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit"}}>
@@ -3923,8 +3931,8 @@ function AICoach({data, isOnline=true}){ // Obsidian dark
   if(chatMode)return(
     <div style={{display:"flex",flexDirection:"column",height:"70vh"}}>
       <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:16}}>
-        <button onClick={()=>setChatMode(false)} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,color:C.cream,borderRadius:10,padding:"7px 14px",cursor:"pointer",fontSize:13}}>← Back</button>
-        <div><div style={{fontSize:18,fontWeight:800,color:C.cream,fontFamily:"Georgia,serif"}}>Ask Your Coach</div><div style={{color:C.muted,fontSize:11}}>Has full access to your transaction data</div></div>
+        <button onClick={()=>setChatMode(false)} style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.06)",border:`1px solid ${C.border}`,color:C.mutedHi,borderRadius:12,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .2s",letterSpacing:0.2}}>← Back</button>
+        <div><div style={{fontSize:20,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.3}}>Ask Your Coach</div><div style={{color:C.muted,fontSize:11}}>Has full access to your transaction data</div></div>
       </div>
       <div ref={chatRef} style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:12,marginBottom:14}}>
         <div style={{background:C.greenDim,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.green}44`,alignSelf:"flex-start",maxWidth:"85%"}}>
@@ -3938,8 +3946,8 @@ function AICoach({data, isOnline=true}){ // Obsidian dark
           </div>
         ))}
         {chatLoading&&<div style={{background:C.greenDim,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.green}44`,alignSelf:"flex-start"}}>
-          <div style={{color:C.cream,fontWeight:700,fontSize:12,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><FlourishMark size={16}/><span>Flourish</span></div>
-          <div style={{display:"flex",gap:5}}>{[0,1,2].map(i=><div key={i} style={{width:7,height:7,borderRadius:"50%",background:C.green,opacity:.3+i*.3}}/>)}</div>
+          <div style={{color:C.cream,fontWeight:700,fontSize:12,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><FlourishMark size={16}/><span>Flourish</span></div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>{[0,1,2].map(i=><div key={i} style={{width:7,height:7,borderRadius:"50%",background:C.green,animation:`pulse 1.4s ease-in-out ${i*0.22}s infinite`}}/>)}</div>
         </div>}
       </div>
       <div style={{display:"flex",gap:10,background:C.cardAlt,borderRadius:14,padding:"10px 14px",border:`1px solid ${C.border}`}}>
@@ -4018,7 +4026,7 @@ function AICoach({data, isOnline=true}){ // Obsidian dark
       <div style={{display:"flex",justifyContent:"center",gap:6,marginTop:16}}>{[0,1,2,3].map(i=><div key={i} style={{width:8,height:8,borderRadius:"50%",background:C.green,opacity:.3+i*.2}}/>)}</div>
     </Card>}
     {insights.length>0&&<>
-      <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,fontWeight:700}}>Your Personalized Insights</div>
+      <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.8,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your Personalized Insights</div>
       {insights.map((ins,i)=>{
         const tc=typeColors[ins.type]||C.blue;
         return <Card key={i} glow={tc} style={{border:`1px solid ${tc}33`}}>
@@ -4084,9 +4092,9 @@ function CreditScreen({data}){
   ].filter(Boolean);
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <div style={{fontSize:22,fontWeight:800,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif"}}>Credit Score</div>
-    <div style={{display:"flex",gap:6}}>
-      {["overview","factors","improve","connect"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?scoreColor+"22":C.cardAlt,border:`1px solid ${tab===t?scoreColor:C.border}`,color:tab===t?scoreColor:C.muted,borderRadius:10,padding:"8px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
+    <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Credit Score</div>
+    <div style={{display:"flex",gap:6,background:C.surface,borderRadius:16,padding:4}}>
+      {["overview","factors","improve","connect"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?scoreColor+"28":"transparent",border:`1px solid ${tab===t?scoreColor+"55":"transparent"}`,color:tab===t?scoreColor:C.muted,borderRadius:12,padding:"9px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
         {t==="overview"?"Score":t==="factors"?"Factors":t==="improve"?"Improve":"Connect"}
       </button>)}
     </div>
@@ -4100,7 +4108,7 @@ function CreditScreen({data}){
         <div style={{fontSize:64,fontWeight:900,fontFamily:"Georgia,serif",color:scoreColor,lineHeight:1}}>{score}</div>
         <Chip label={`${scoreIcon} ${scoreTier}`} color={scoreColor} size={14}/>
         <div style={{color:C.muted,fontSize:12,marginTop:10,marginBottom:20}}>Out of 900 · {known?"Entered by you":"Estimated"}</div>
-        <div style={{background:"rgba(255,255,255,0.06)",borderRadius:99,height:10,overflow:"hidden",position:"relative",marginBottom:8}}>
+        <div style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.06)",borderRadius:99,height:10,overflow:"hidden",position:"relative",marginBottom:8}}>
           {[{pct:16.7,color:C.red},{pct:16.7,color:C.orange},{pct:16.7,color:C.gold},{pct:16.7,color:C.teal},{pct:16.6,color:C.greenBright},{pct:16.6,color:C.green}].reduce((acc,seg)=>{
             const segments=[...acc.segs,<div key={acc.pos} style={{position:"absolute",left:`${acc.pos}%`,width:`${seg.pct}%`,height:"100%",background:seg.color,opacity:.35}}/>];
             return{pos:acc.pos+seg.pct,segs:segments};
@@ -4195,13 +4203,260 @@ function CreditScreen({data}){
   </div>;
 }
 
+
+// ─── WIDGET SCREEN ────────────────────────────────────────────────────────────
+function WidgetScreen({data,onBack}){
+  const _ss=SafeSpendEngine.calculate(data);
+  const safe=_ss.safeAmount;
+  const bal=_ss.balance;
+  const overdraft=_ss.overdraft;
+  const soonBills=_ss.soonBills||[];
+  const nextBill=soonBills[0];
+  const {score:healthScore}=calcHealthScore(data);
+  const heroColor=overdraft?C.red:C.green;
+  const heroColorBright=overdraft?C.redBright:C.greenBright;
+  const today=new Date().toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"});
+
+  // Shared widget shell
+  const WShell=({w,h,children})=>(
+    <div style={{width:w,height:h,borderRadius:22,overflow:"hidden",
+      boxShadow:"0 12px 48px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.10)",
+      position:"relative",flexShrink:0}}>
+      {children}
+    </div>
+  );
+
+  // ── Small 2×2 Widget ──────────────────────────────────────────
+  const SmallWidget=()=>(
+    <WShell w={158} h={158}>
+      <div style={{width:"100%",height:"100%",background:overdraft
+        ?"linear-gradient(145deg,#1A040C,#120208)"
+        :"linear-gradient(145deg,#051810,#090F18)",
+        padding:"18px 16px",display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <FlourishMark size={24}/>
+          <div style={{width:8,height:8,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 8px ${heroColor}`}}/>
+        </div>
+        <div>
+          <div style={{color:heroColorBright+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:3}}>Safe to Spend</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:32,color:heroColorBright,letterSpacing:-1,lineHeight:1}}>${Math.round(safe)}</div>
+          <div style={{color:"rgba(237,233,226,0.55)",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>{today}</div>
+        </div>
+      </div>
+    </WShell>
+  );
+
+  // ── Medium 2×4 Widget ──────────────────────────────────────────
+  const MediumWidget=()=>(
+    <WShell w={338} h={158}>
+      <div style={{width:"100%",height:"100%",background:overdraft
+        ?"linear-gradient(145deg,#1A040C,#120208)"
+        :"linear-gradient(145deg,#051810,#090F18)",
+        padding:"18px 20px",display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{display:"flex",alignItems:"center",gap:7}}><FlourishMark size={20}/><span style={{color:"rgba(237,233,226,0.6)",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>flourish</span></div>
+          <div style={{color:"rgba(237,233,226,0.4)",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{today}</div>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+          <div>
+            <div style={{color:heroColorBright+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:3}}>Safe to Spend</div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:38,color:heroColorBright,letterSpacing:-1,lineHeight:1}}>${Math.round(safe)}</div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{color:"rgba(237,233,226,0.4)",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:1}}>Balance</div>
+            <div style={{color:"rgba(237,233,226,0.85)",fontSize:16,fontWeight:700,fontFamily:"'Playfair Display',serif"}}>${bal.toFixed(0)}</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          {nextBill&&<div style={{flex:1,background:"rgba(255,255,255,0.05)",borderRadius:10,padding:"6px 10px"}}>
+            <div style={{color:"rgba(237,233,226,0.4)",fontSize:8,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:1}}>Next bill</div>
+            <div style={{color:DARK_C.goldBright,fontSize:11,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>{nextBill.name} · ${parseFloat(nextBill.amount).toFixed(0)}</div>
+          </div>}
+          <div style={{background:"rgba(255,255,255,0.05)",borderRadius:10,padding:"6px 10px",minWidth:56,textAlign:"center"}}>
+            <div style={{color:"rgba(237,233,226,0.4)",fontSize:8,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:1}}>Health</div>
+            <div style={{color:"rgba(237,233,226,0.9)",fontSize:14,fontWeight:800,fontFamily:"'Playfair Display',serif",marginTop:1}}>{healthScore}</div>
+          </div>
+        </div>
+      </div>
+    </WShell>
+  );
+
+  // ── Large 4×4 Widget ──────────────────────────────────────────
+  const LargeWidget=()=>(
+    <WShell w={338} h={338}>
+      <div style={{width:"100%",height:"100%",background:overdraft
+        ?"linear-gradient(165deg,#1A040C,#120208,#0A0510)"
+        :"linear-gradient(165deg,#051810,#080D18,#050810)",
+        padding:"20px",display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{display:"flex",alignItems:"center",gap:7}}><FlourishMark size={20}/><span style={{color:"rgba(237,233,226,0.65)",fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>flourish</span></div>
+          <div style={{background:`rgba(${overdraft?"255,79,106":"0,204,133"},0.15)`,borderRadius:99,padding:"3px 10px",display:"flex",alignItems:"center",gap:5}}>
+            <div style={{width:5,height:5,borderRadius:"50%",background:heroColorBright}}/><span style={{color:heroColorBright,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{overdraft?"Overdraft risk":"Looking good"}</span>
+          </div>
+        </div>
+        <div style={{background:`rgba(${overdraft?"255,79,106":"0,204,133"},0.08)`,borderRadius:16,padding:"14px 16px",border:`1px solid ${heroColor}28`}}>
+          <div style={{color:heroColorBright+"77",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:4}}>Safe to Spend Today</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:46,color:heroColorBright,letterSpacing:-2,lineHeight:1}}>${Math.round(safe)}</div>
+          <div style={{color:"rgba(237,233,226,0.45)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Balance: ${bal.toFixed(2)}</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div style={{background:"rgba(0,204,133,0.08)",border:"1px solid rgba(0,204,133,0.15)",borderRadius:14,padding:"11px 12px"}}>
+            <div style={{color:"rgba(0,232,154,0.5)",fontSize:8,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Health Score</div>
+            <div style={{color:"rgba(0,232,154,0.95)",fontWeight:900,fontSize:24,fontFamily:"'Playfair Display',serif",marginTop:3,letterSpacing:-0.5}}>{healthScore}</div>
+          </div>
+          <div style={{background:"rgba(232,184,75,0.08)",border:"1px solid rgba(232,184,75,0.15)",borderRadius:14,padding:"11px 12px"}}>
+            <div style={{color:"rgba(245,204,106,0.5)",fontSize:8,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Due Soon</div>
+            <div style={{color:"rgba(245,204,106,0.95)",fontWeight:900,fontSize:24,fontFamily:"'Playfair Display',serif",marginTop:3,letterSpacing:-0.5}}>${Math.round(_ss.upcomingBills)}</div>
+          </div>
+        </div>
+        <div>
+          {soonBills.slice(0,2).map((b,i)=>(
+            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:i===0?`1px solid rgba(255,255,255,0.06)`:"none"}}>
+              <span style={{color:"rgba(237,233,226,0.55)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name}</span>
+              <span style={{color:DARK_C.goldBright,fontSize:10,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${parseFloat(b.amount).toFixed(0)}</span>
+            </div>
+          ))}
+          {soonBills.length===0&&<div style={{color:"rgba(237,233,226,0.3)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"center",paddingTop:4}}>No bills due soon ✓</div>}
+        </div>
+      </div>
+    </WShell>
+  );
+
+  const [wSize,setWSize]=useState("medium");
+  const sizes=[["small","Small"],["medium","Medium"],["large","Large"]];
+
+  // Phone frame mockup wrapping the widget preview
+  const PhoneFrame=({children,wW,wH})=>{
+    const frameW=Math.max(wW+40,200);
+    const frameH=wH+100;
+    return (
+      <div style={{position:"relative",width:frameW,margin:"0 auto"}}>
+        {/* Phone shell */}
+        <div style={{background:"linear-gradient(145deg,#1C1C1E,#2C2C2E)",borderRadius:40,padding:"16px 12px",boxShadow:"0 20px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.10), inset 0 1px 0 rgba(255,255,255,0.08)",display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
+          {/* Notch */}
+          <div style={{width:80,height:6,background:"#000",borderRadius:99,opacity:0.8}}/>
+          {/* Home screen bg */}
+          <div style={{borderRadius:24,overflow:"hidden",background:"linear-gradient(145deg,#0D1117,#161B22,#0D1117)",padding:8,width:"100%",display:"flex",justifyContent:"center",alignItems:"center",minHeight:wH+16}}>
+            {/* Grid dots simulating other home screen icons */}
+            <div style={{position:"absolute",opacity:0.08,display:"grid",gridTemplateColumns:"repeat(4,40px)",gap:18,pointerEvents:"none"}}>
+              {Array(12).fill(0).map((_,i)=><div key={i} style={{width:40,height:40,borderRadius:12,background:"rgba(255,255,255,0.8)"}}/>)}
+            </div>
+            {children}
+          </div>
+          {/* Home indicator */}
+          <div style={{width:100,height:4,background:"rgba(255,255,255,0.3)",borderRadius:99}}/>
+        </div>
+      </div>
+    );
+  };
+
+  return <div style={{display:"flex",flexDirection:"column",gap:20}}>
+    <div style={{display:"flex",gap:10,alignItems:"center"}}>
+      <button onClick={onBack} style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.05)",border:`1px solid ${C.border}`,color:C.mutedHi,borderRadius:12,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>← Back</button>
+      <div>
+        <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Home Screen Widget</div>
+        <div style={{color:C.muted,fontSize:12,marginTop:2}}>Live data on your home screen</div>
+      </div>
+    </div>
+
+    {/* Size selector tabs */}
+    <div style={{display:"flex",gap:6,background:C.surface,borderRadius:16,padding:4}}>
+      {sizes.map(([s,label])=>(
+        <button key={s} onClick={()=>setWSize(s)}
+          style={{flex:1,background:wSize===s?C.green+"28":"transparent",border:`1px solid ${wSize===s?C.green+"55":"transparent"}`,
+          color:wSize===s?C.greenBright:C.muted,borderRadius:12,padding:"9px 0",cursor:"pointer",fontSize:12,fontWeight:700,
+          fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
+          {label}
+        </button>
+      ))}
+    </div>
+
+    {/* Widget preview in phone frame */}
+    <div style={{background:C.card,borderRadius:24,padding:"32px 20px",border:`1px solid ${C.border}`,overflow:"hidden",position:"relative"}}>
+      {/* Ambient bg */}
+      <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse 80% 60% at 50% 50%,${C.green}08 0%,transparent 70%)`,pointerEvents:"none"}}/>
+      <div style={{position:"relative"}}>
+        {wSize==="small"&&<PhoneFrame wW={158} wH={158}><SmallWidget/></PhoneFrame>}
+        {wSize==="medium"&&<PhoneFrame wW={338} wH={158}><MediumWidget/></PhoneFrame>}
+        {wSize==="large"&&<PhoneFrame wW={338} wH={338}><LargeWidget/></PhoneFrame>}
+      </div>
+    </div>
+
+    {/* iOS setup */}
+    <div style={{background:C.isDark?`linear-gradient(135deg,${C.greenDim} 0%,${C.card} 100%)`:C.card,borderRadius:22,border:`1px solid ${C.green}33`,padding:"20px"}}>
+      <div style={{fontWeight:700,fontSize:15,color:C.cream,marginBottom:3,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>🍎</span> Add to iPhone Home Screen</div>
+      <div style={{color:C.muted,fontSize:12,marginBottom:14,marginLeft:26}}>iOS 16+ · Safari required</div>
+      {[["1","Open flourishmoney.app in Safari"],["2","Tap the Share button (⬆️) at the bottom"],["3","Scroll and tap "Add to Home Screen""],["4","Tap Add — the app icon appears instantly"],["5","Long-press the icon → "Edit Home Screen" → add as widget"]].map(([n,step])=>(
+        <div key={n} style={{display:"flex",gap:12,alignItems:"flex-start",marginBottom:10}}>
+          <div style={{width:22,height:22,borderRadius:99,background:C.greenDim,border:`1px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            <span style={{color:C.greenBright,fontSize:10,fontWeight:800}}>{n}</span>
+          </div>
+          <span style={{color:C.mutedHi,fontSize:13,lineHeight:1.5,paddingTop:1}}>{step}</span>
+        </div>
+      ))}
+    </div>
+
+    {/* Android setup */}
+    <div style={{background:C.isDark?`linear-gradient(135deg,${C.blueDim} 0%,${C.card} 100%)`:C.card,borderRadius:22,border:`1px solid ${C.blue}33`,padding:"20px"}}>
+      <div style={{fontWeight:700,fontSize:15,color:C.cream,marginBottom:3,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>🤖</span> Add to Android Home Screen</div>
+      <div style={{color:C.muted,fontSize:12,marginBottom:14,marginLeft:26}}>Chrome · Android 8+</div>
+      {[["1","Open flourishmoney.app in Chrome"],["2","Tap the three-dot menu (⋮) top right"],["3","Tap "Add to Home screen""],["4","Confirm — icon appears on your home screen"],["5","On Samsung: long-press icon → "Add widget" in Home screen editor"]].map(([n,step])=>(
+        <div key={n} style={{display:"flex",gap:12,alignItems:"flex-start",marginBottom:10}}>
+          <div style={{width:22,height:22,borderRadius:99,background:C.blueDim,border:`1px solid ${C.blue}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            <span style={{color:C.blueBright,fontSize:10,fontWeight:800}}>{n}</span>
+          </div>
+          <span style={{color:C.mutedHi,fontSize:13,lineHeight:1.5,paddingTop:1}}>{step}</span>
+        </div>
+      ))}
+    </div>
+
+    {/* Native widget roadmap note */}
+    <div style={{background:C.surface,borderRadius:16,padding:"14px 18px",border:`1px solid ${C.border}`,display:"flex",gap:12,alignItems:"flex-start"}}>
+      <span style={{fontSize:16,flexShrink:0}}>⚡</span>
+      <div>
+        <div style={{color:C.cream,fontWeight:600,fontSize:13,marginBottom:3}}>True native widgets coming soon</div>
+        <div style={{color:C.muted,fontSize:12,lineHeight:1.6}}>Full iOS WidgetKit and Android Glance widgets are on our roadmap — showing live balance and safe-spend right on your lock screen without opening the app.</div>
+      </div>
+    </div>
+  </div>;
+}
+
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
-function Settings({data,onClose,onReset}){
+function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget}){
   const [notifToggles,setNotifToggles]=useState({overdraft:true,bills:true,coach:true,meeting:false,patterns:true});
+  const handleShare=()=>{
+    const url="https://flourishmoney.app";
+    const text="I've been using Flourish to track my spending and it actually tells me exactly how much I can spend today. Worth checking out.";
+    if(navigator.share){navigator.share({title:"Flourish Money",text,url}).catch(()=>{});}
+    else{navigator.clipboard?.writeText(url).then(()=>alert("Link copied! Share it with a friend 🌱")).catch(()=>window.open(url,"_blank"));}
+  };
   return <div style={{color:C.cream}}>
     <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:20}}>
-      <button onClick={onClose} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,color:C.cream,borderRadius:10,padding:"7px 14px",cursor:"pointer",fontSize:13}}>← Back</button>
-      <div style={{fontSize:22,fontWeight:800,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif"}}>Settings</div>
+      <button onClick={onClose} style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.05)",border:`1px solid ${C.border}`,color:C.mutedHi,borderRadius:12,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .2s",letterSpacing:0.2}}>← Back</button>
+      <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Settings</div>
+    </div>
+    {/* ── Appearance ─────────────────────────────────────────── */}
+    <div style={{background:C.card,borderRadius:20,border:`1px solid ${C.border}`,overflow:"hidden",marginBottom:10}}>
+      <div style={{padding:"13px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:`1px solid ${C.border}`}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:36,height:36,borderRadius:11,background:theme==="dark"?"rgba(155,125,255,0.15)":"rgba(255,200,60,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{theme==="dark"?"🌙":"☀️"}</div>
+          <div>
+            <div style={{color:C.cream,fontWeight:600,fontSize:14}}>{theme==="dark"?"Dark Mode":"Light Mode"}</div>
+            <div style={{color:C.muted,fontSize:11,marginTop:1}}>Follows system · manual override</div>
+          </div>
+        </div>
+        <Toggle on={theme==="dark"} onChange={()=>toggleTheme&&toggleTheme()}/>
+      </div>
+      <button onClick={onOpenWidget} style={{width:"100%",padding:"13px 18px",background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"inherit"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:36,height:36,borderRadius:11,background:C.greenDim,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>📱</div>
+          <div style={{textAlign:"left"}}>
+            <div style={{color:C.cream,fontWeight:600,fontSize:14}}>Home Screen Widget</div>
+            <div style={{color:C.muted,fontSize:11,marginTop:1}}>Preview & install your widget</div>
+          </div>
+        </div>
+        <span style={{color:C.muted,fontSize:18}}>›</span>
+      </button>
     </div>
     <button onClick={handleShare} style={{background:`linear-gradient(135deg,${C.green},#1A3D2A)`,borderRadius:18,padding:"16px 20px",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"inherit",width:"100%",marginBottom:10}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -4213,19 +4468,42 @@ function Settings({data,onClose,onReset}){
       </div>
       <span style={{background:"rgba(255,255,255,0.15)",borderRadius:99,padding:"6px 14px",color:"#fff",fontSize:11,fontWeight:700}}>Share ↗</span>
     </button>
-    {[{icon:"user",label:"Profile & Income",sub:`${data.profile.name} · ${data.profile.country}`},{icon:"🏦",label:"Connected Accounts",sub:`${data.accounts?.length||0} accounts`},{icon:"calendar",label:"Manage Bills",sub:`${data.bills?.length||0} tracked`},{icon:"trendUp",label:"Manage Debts",sub:`${data.debts?.length||0} in plan`},{icon:"target",label:"Savings Goals",sub:"Emergency fund & more"},{icon:"users",label:"Family Settings",sub:`${data.profile.status} · ${data.profile.hasKids?"has kids":"no kids"}`}].map((item,i)=>(
-      <div key={i} style={{background:C.card,borderRadius:16,padding:"14px 18px",marginBottom:10,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12,cursor:"pointer",transition:"all .2s"}}
-        onMouseEnter={e=>e.currentTarget.style.borderColor=C.borderHi} onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>
-        <span style={{fontSize:22}}>{item.icon}</span>
-        <div style={{flex:1}}><div style={{color:C.cream,fontWeight:600}}>{item.label}</div><div style={{color:C.muted,fontSize:12}}>{item.sub}</div></div>
-        <span style={{color:C.muted}}>›</span>
+    {[
+      {icon:"user",  color:C.purple, label:"Profile & Income",    sub:`${data.profile.name} · ${data.profile.country}`},
+      {icon:"bank",  color:C.blue,   label:"Connected Accounts",  sub:`${data.accounts?.length||0} accounts`},
+      {icon:"calendar",color:C.teal, label:"Manage Bills",        sub:`${data.bills?.length||0} tracked`},
+      {icon:"trendUp",color:C.orange,label:"Manage Debts",        sub:`${data.debts?.length||0} in plan`},
+      {icon:"target", color:C.gold,  label:"Savings Goals",       sub:"Emergency fund & more"},
+      {icon:"users",  color:C.pink,  label:"Family Settings",     sub:`${data.profile.status} · ${data.profile.hasKids?"has kids":"no kids"}`},
+    ].map((item,i)=>(
+      <div key={i} style={{background:C.card,borderRadius:18,padding:"13px 16px",marginBottom:8,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:13,cursor:"pointer",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}
+        onMouseEnter={e=>{e.currentTarget.style.borderColor=item.color+"55";e.currentTarget.style.transform="translateX(2px)";}}
+        onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.transform="none";}}>
+        <div style={{width:38,height:38,borderRadius:12,background:item.color+"18",border:`1px solid ${item.color}28`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <Icon id={item.icon} size={18} color={item.color} strokeWidth={1.6}/>
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{color:C.cream,fontWeight:600,fontSize:14}}>{item.label}</div>
+          <div style={{color:C.muted,fontSize:12,marginTop:1}}>{item.sub}</div>
+        </div>
+        <span style={{color:C.muted,fontSize:20,fontWeight:300}}>›</span>
       </div>
     ))}
-    <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,fontWeight:700,marginTop:20,marginBottom:10}}>Notifications</div>
-    {[["overdraft","zap","Overdraft warnings"],["bills","calendar","Bill due soon alerts"],["coach","sparkles","AI coach insights"],["meeting","users","Money meeting reminders"],["patterns","chartUp","Spending pattern alerts"]].map(([key,icon,label])=>(
-      <div key={key} style={{background:C.card,borderRadius:14,padding:"13px 16px",marginBottom:8,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12}}>
-        <span style={{fontSize:20}}>{icon}</span>
-        <div style={{color:C.cream,fontSize:14,flex:1}}>{label}</div>
+    <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.8,fontWeight:700,marginTop:20,marginBottom:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Notifications</div>
+    {[
+      ["overdraft","zap",    C.red,   "Overdraft warnings"],
+      ["bills",   "calendar",C.gold,  "Bill due soon alerts"],
+      ["coach",   "sparkles",C.green, "AI coach insights"],
+      ["meeting", "users",   C.teal,  "Money meeting reminders"],
+      ["patterns","chartUp", C.blue,  "Spending pattern alerts"],
+    ].map(([key,icon,color,label])=>(
+      <div key={key} style={{background:C.card,borderRadius:16,padding:"13px 16px",marginBottom:8,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:13}}>
+        <div style={{width:36,height:36,borderRadius:11,background:color+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <Icon id={icon} size={16} color={color} strokeWidth={1.6}/>
+        </div>
+        <div style={{flex:1}}>
+          <div style={{color:C.cream,fontSize:14,fontWeight:600}}>{label}</div>
+        </div>
         <Toggle on={notifToggles[key]} onChange={v=>setNotifToggles(t=>({...t,[key]:v}))}/>
       </div>
     ))}
@@ -4370,7 +4648,7 @@ function Paywall({onClose,onUpgrade,country}){
   ];
 
   return(
-    <div style={{background:C.bg,minHeight:"100vh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center"}}>
+    <div style={{background:C.bg,minHeight:"100vh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s"}}>
       <div style={{width:"100%",maxWidth:430,padding:"24px 20px 60px"}}>
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}>
@@ -4475,12 +4753,29 @@ export default function FlourishApp(){
   const [showWhatIf,setShowWhatIf]=useState(false);
   const [showWrapped,setShowWrapped]=useState(false);
   const [isOnline,setIsOnline]=useState(()=>navigator.onLine);
+  // ── Theme ───────────────────────────────────────────────────────
+  const [theme,setTheme]=useState(()=>{
+    try{ const t=localStorage.getItem("flourish_theme"); if(t==="light"||t==="dark")return t; }catch{}
+    return window.matchMedia?.("(prefers-color-scheme: light)").matches?"light":"dark";
+  });
   const {w}=useWindowSize();
   const isDesktop=w>=960;
 
   // ── Persist state changes to localStorage ──────────────────────
   useEffect(()=>{ saveState({onboarded,appData,household,isPremium,checkInBonus}); },
     [onboarded,appData,household,isPremium,checkInBonus]);
+  useEffect(()=>{ try{localStorage.setItem("flourish_theme",theme);}catch{} },[theme]);
+
+  // ── System dark/light preference listener ──────────────────────
+  useEffect(()=>{
+    const mq=window.matchMedia?.("(prefers-color-scheme: light)");
+    if(!mq)return;
+    const handler=e=>{
+      try{ if(!localStorage.getItem("flourish_theme_manual"))setTheme(e.matches?"light":"dark"); }catch{}
+    };
+    mq.addEventListener("change",handler);
+    return()=>mq.removeEventListener("change",handler);
+  },[]);
 
   // ── Online/offline detection ────────────────────────────────────
   useEffect(()=>{
@@ -4491,8 +4786,13 @@ export default function FlourishApp(){
     return()=>{window.removeEventListener("online",on);window.removeEventListener("offline",off);};
   },[]);
 
-  // ── Offline banner (shown as overlay, not blocking) ───────────
-  // rendered inside the main shell below
+  // ── Apply theme palette BEFORE any render ───────────────────────
+  C = theme==="light" ? LIGHT_C : DARK_C;
+  const toggleTheme=()=>{
+    const next=theme==="dark"?"light":"dark";
+    setTheme(next);
+    try{localStorage.setItem("flourish_theme_manual","1");}catch{}
+  };
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} onClose={()=>setShowWhatIf(false)}/>;
@@ -4508,7 +4808,7 @@ export default function FlourishApp(){
 
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)}/>;
-    if(showSettings)return <Settings data={appData} onClose={()=>setShowSettings(false)} onReset={handleReset}/>;
+    if(showSettings)return <Settings data={appData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}}/>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold}/>;
@@ -4516,6 +4816,7 @@ export default function FlourishApp(){
     if(screen==="family")return <Family data={dataWithHousehold} household={household} setHousehold={setHousehold}/>;
     if(screen==="goals")return <Goals data={dataWithHousehold} onUpgrade={()=>setShowPaywall(true)}/>;
     if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
+    if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)}/>;
   };
 
@@ -4606,7 +4907,7 @@ input,button,select,textarea { font-family:inherit; }
       {/* ── DESKTOP MAIN CONTENT ────────────────────────────────────── */}
       <div style={{flex:1,minHeight:"100vh",display:"flex",flexDirection:"column",maxWidth:"calc(100vw - 240px)"}}>
         {/* Top bar */}
-        <div style={{padding:"20px 36px 16px",background:`${C.bg}F8`,backdropFilter:"blur(12px)",position:"sticky",top:0,zIndex:20,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid ${C.border}`}}>
+        <div style={{padding:"20px 36px 16px",background:C.isDark?`${C.bg}F8`:`${C.bg}EE`,backdropFilter:"blur(12px)",position:"sticky",top:0,zIndex:20,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid ${C.border}`}}>
           <div>
             <div style={{color:C.cream,fontWeight:700,fontSize:18,fontFamily:"'Playfair Display',serif"}}>
               {showNotifs?"Notifications":showSettings?"Settings":screen==="home"?"Dashboard":screen==="plan"?"Plan Ahead":screen==="spend"?"Spending":screen==="coach"?"AI Coach":screen==="family"?"Family":screen==="goals"||screen==="credit"?"Goals & Wealth":"Dashboard"}
@@ -4641,12 +4942,13 @@ input,button,select,textarea { font-family:inherit; }
 
   // ── MOBILE LAYOUT ────────────────────────────────────────────────────────
   return(
-    <div style={{background:C.bg,minHeight:"100vh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center"}}>
+    <div style={{background:C.bg,minHeight:"100vh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
       {/* Ambient mesh background */}
       <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
-        <div style={{position:"absolute",top:-200,left:-200,width:600,height:600,borderRadius:"50%",background:"radial-gradient(circle,rgba(0,214,143,0.04) 0%,transparent 70%)"}}/>
-        <div style={{position:"absolute",bottom:-150,right:-150,width:500,height:500,borderRadius:"50%",background:"radial-gradient(circle,rgba(155,125,255,0.04) 0%,transparent 70%)"}}/>
+        <div style={{position:"absolute",top:-220,left:-180,width:640,height:640,borderRadius:"50%",background:C.isDark?"radial-gradient(circle,rgba(0,204,133,0.055) 0%,transparent 68%)":"radial-gradient(circle,rgba(0,147,95,0.07) 0%,transparent 68%)",animation:"breathe 8s ease-in-out infinite"}}/>
+        <div style={{position:"absolute",bottom:-160,right:-160,width:540,height:540,borderRadius:"50%",background:C.isDark?"radial-gradient(circle,rgba(155,125,255,0.045) 0%,transparent 68%)":"radial-gradient(circle,rgba(88,64,188,0.05) 0%,transparent 68%)",animation:"breathe 10s ease-in-out infinite 2s"}}/>
+        <div style={{position:"absolute",top:"40%",right:-100,width:360,height:360,borderRadius:"50%",background:C.isDark?"radial-gradient(circle,rgba(77,168,255,0.025) 0%,transparent 70%)":"radial-gradient(circle,rgba(36,114,200,0.04) 0%,transparent 70%)",animation:"breathe 12s ease-in-out infinite 4s"}}/>
       </div>
       <div style={{width:"100%",maxWidth:430,minHeight:"100vh",display:"flex",flexDirection:"column",position:"relative",zIndex:1}}>
         {/* ── OFFLINE BANNER ─────────────────────────── */}
@@ -4656,10 +4958,10 @@ input,button,select,textarea { font-family:inherit; }
             <span style={{color:C.goldBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700}}>Offline — AI features paused. Your data is saved.</span>
           </div>
         )}
-        <div style={{padding:"14px 20px 12px",background:"rgba(6,10,14,0.85)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",position:"sticky",top:0,zIndex:30,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+        <div style={{padding:"14px 20px 12px",background:C.isDark?"rgba(5,8,16,0.90)":"rgba(244,241,235,0.92)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",position:"sticky",top:0,zIndex:30,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 1px 0 rgba(255,255,255,0.025)"}}>
           <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{display:"flex",alignItems:"center",gap:9,background:"none",border:"none",cursor:"pointer",padding:0}}>
-            <FlourishMark size={22}/>
-            <span style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:17,color:C.cream,letterSpacing:-0.3}}>flourish</span>
+            <FlourishMark size={24} style={{borderRadius:7}}/>
+            <span style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:19,color:C.cream,letterSpacing:-0.5,background:`linear-gradient(130deg,${C.cream} 40%,rgba(237,233,226,0.7) 100%)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>flourish</span>
           </button>
           <div style={{display:"flex",gap:8}}>
             <button onClick={()=>{setShowSettings(false);setShowNotifs(true);}} style={{position:"relative",background:"rgba(255,255,255,0.07)",border:`1px solid ${unread>0?C.red+"55":C.border}`,borderRadius:12,padding:"8px 12px",cursor:"pointer"}}>
@@ -4673,20 +4975,20 @@ input,button,select,textarea { font-family:inherit; }
         {!showNotifs&&!showSettings&&(
           <>
           {/* Floating pill nav */}
-          <div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",zIndex:50,width:"calc(100% - 48px)",maxWidth:382}}>
-            <div style={{background:"rgba(15,23,32,0.92)",backdropFilter:"blur(28px)",WebkitBackdropFilter:"blur(28px)",borderRadius:28,border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 40px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.07)",padding:"8px 10px",display:"flex",justifyContent:"space-around"}}>
+          <div style={{position:"fixed",bottom:16,left:"50%",transform:"translateX(-50%)",zIndex:50,width:"calc(100% - 40px)",maxWidth:390}}>
+            <div style={{background:C.isDark?"rgba(10,16,24,0.94)":"rgba(253,252,250,0.95)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",borderRadius:30,border:`1px solid ${C.border}`,boxShadow:"0 12px 48px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.02), inset 0 1px 0 rgba(255,255,255,0.06)",padding:"8px 8px",display:"flex",justifyContent:"space-around"}}>
             {ALL_NAV.map(n=>{
               const active=(screen===n.id||(n.id==="goals"&&screen==="credit"))&&!showNotifs&&!showSettings;
               return(
-                <button key={n.id} onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen(n.id);}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:20,transition:"all .22s"}}>
-                  <div style={{width:38,height:28,borderRadius:14,
-                    background:active?`linear-gradient(135deg,${C.green}30,${C.teal}18)`:"transparent",
+                <button key={n.id} onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen(n.id);}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"5px 8px",borderRadius:22,transition:"all .28s cubic-bezier(.16,1,.3,1)"}}>
+                  <div style={{width:40,height:30,borderRadius:16,
+                    background:active?`linear-gradient(135deg,rgba(0,204,133,0.22) 0%,rgba(0,232,154,0.12) 100%)`:"transparent",
                     display:"flex",alignItems:"center",justifyContent:"center",
-                    transition:"all .22s",
-                    boxShadow:active?`0 0 14px ${C.green}33`:"none"}}>
-                    <Icon id={n.icon} size={18} color={active?C.greenBright:C.muted} strokeWidth={active?2:1.4}/>
+                    transition:"all .28s cubic-bezier(.16,1,.3,1)",
+                    boxShadow:active?`0 2px 12px rgba(0,204,133,0.30), inset 0 1px 0 rgba(0,232,154,0.20)`:"none"}}>
+                    <Icon id={n.icon} size={18} color={active?C.greenBright:C.muted} strokeWidth={active?2.2:1.4}/>
                   </div>
-                  <span style={{fontSize:9,fontWeight:active?800:500,fontFamily:"'Plus Jakarta Sans',sans-serif",color:active?C.greenBright:C.muted,letterSpacing:active?0.2:0,transition:"all .22s"}}>{n.label}</span>
+                  <span style={{fontSize:9.5,fontWeight:active?800:500,fontFamily:"'Plus Jakarta Sans',sans-serif",color:active?C.greenBright:C.muted,letterSpacing:active?0.3:0,transition:"all .28s cubic-bezier(.16,1,.3,1)"}}>{n.label}</span>
                 </button>
               );
             })}
