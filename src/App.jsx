@@ -7,6 +7,13 @@ import {
   Target, PiggyBank, DollarSign,
   ShoppingBag, Flame, Star, Car, BarChart2
 } from "lucide-react";
+import { createClient } from "@supabase/supabase-js";
+
+// ── Supabase client ────────────────────────────────────────────────────────────
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+);
 
 const STYLES = `
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
@@ -4738,12 +4745,147 @@ function clearState() {
   try { localStorage.removeItem(STORAGE_KEY); } catch {}
 }
 
+
+// ── AUTH SCREEN ───────────────────────────────────────────────────────────────
+function AuthScreen({ onAuth }) {
+  const [mode, setMode] = useState("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [qrUrl, setQrUrl] = useState("");
+  const [factorId, setFactorId] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  const handleSignup = async () => {
+    setLoading(true); setError("");
+    const { error } = await supabase.auth.signUp({ email, password });
+    if (error) { setError(error.message); setLoading(false); return; }
+    setSuccess("Check your email to confirm your account, then log in.");
+    setMode("login"); setLoading(false);
+  };
+
+  const handleLogin = async () => {
+    setLoading(true); setError("");
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) { setError(error.message); setLoading(false); return; }
+    const { data: factors } = await supabase.auth.mfa.listFactors();
+    const totpFactor = factors?.totp?.[0];
+    if (!totpFactor) {
+      const { data: enroll, error: enrollErr } = await supabase.auth.mfa.enroll({ factorType: "totp", issuer: "Flourish Money" });
+      if (enrollErr) { setError(enrollErr.message); setLoading(false); return; }
+      setQrUrl(enroll.totp.qr_code);
+      setFactorId(enroll.id);
+      setMode("mfa_setup");
+    } else if (totpFactor.status === "verified") {
+      const { data: challenge } = await supabase.auth.mfa.challenge({ factorId: totpFactor.id });
+      setFactorId(totpFactor.id);
+      setMode("mfa_verify");
+    } else {
+      onAuth(data.user);
+    }
+    setLoading(false);
+  };
+
+  const handleMFASetup = async () => {
+    setLoading(true); setError("");
+    const { data: challenge } = await supabase.auth.mfa.challenge({ factorId });
+    const { error } = await supabase.auth.mfa.verify({ factorId, challengeId: challenge.id, code: mfaCode });
+    if (error) { setError("Invalid code — try again."); setLoading(false); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    onAuth(user);
+    setLoading(false);
+  };
+
+  const handleMFAVerify = async () => {
+    setLoading(true); setError("");
+    const { data: challenge } = await supabase.auth.mfa.challenge({ factorId });
+    const { error } = await supabase.auth.mfa.verify({ factorId, challengeId: challenge.id, code: mfaCode });
+    if (error) { setError("Invalid code — try again."); setLoading(false); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    onAuth(user);
+    setLoading(false);
+  };
+
+  const inpStyle = {
+    width: "100%", padding: "14px 16px", borderRadius: 14,
+    background: "rgba(255,255,255,0.06)", border: "1.5px solid rgba(255,255,255,0.12)",
+    color: "#EDE9E2", fontSize: 15, fontFamily: "Plus Jakarta Sans,sans-serif",
+    outline: "none", boxSizing: "border-box", marginBottom: 12
+  };
+
+  const btnStyle = (active) => ({
+    width: "100%", padding: "15px", borderRadius: 14, border: "none",
+    background: active ? "linear-gradient(135deg,#00D68F,#00B37A)" : "rgba(0,214,143,0.3)",
+    color: "#021208", fontWeight: 800, fontSize: 15,
+    fontFamily: "Plus Jakarta Sans,sans-serif", cursor: active ? "pointer" : "not-allowed",
+    boxShadow: active ? "0 4px 20px rgba(0,214,143,0.4)" : "none"
+  });
+
+  return (
+    <div style={{ minHeight: "100dvh", background: "#050D09", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ width: "100%", maxWidth: 400, animation: "fadeUp .5s ease both" }}>
+        <div style={{ textAlign: "center", marginBottom: 36 }}>
+          <div style={{ fontSize: 44, marginBottom: 8 }}>🌿</div>
+          <div style={{ fontFamily: "Playfair Display,serif", fontSize: 28, fontWeight: 900, color: "#EDE9E2" }}>Flourish</div>
+          <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "Plus Jakarta Sans,sans-serif", marginTop: 4 }}>Your financial coach</div>
+        </div>
+        <div style={{ background: "#0D1F12", borderRadius: 24, padding: 28, border: "1px solid rgba(255,255,255,0.08)" }}>
+          {mode === "mfa_setup" && (
+            <div>
+              <div style={{ fontFamily: "Playfair Display,serif", fontSize: 20, fontWeight: 900, color: "#EDE9E2", marginBottom: 6 }}>Set up 2-factor auth</div>
+              <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "Plus Jakarta Sans,sans-serif", marginBottom: 20, lineHeight: 1.6 }}>Scan this QR code with Google Authenticator, then enter the 6-digit code.</div>
+              {qrUrl && <img src={qrUrl} alt="MFA QR" style={{ width: "100%", borderRadius: 12, marginBottom: 16, background: "#fff", padding: 8 }} />}
+              <input style={{ ...inpStyle, letterSpacing: 6, textAlign: "center", fontSize: 22 }} placeholder="000000" value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g,""))} maxLength={6} />
+              {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
+              <button style={btnStyle(!loading && mfaCode.length === 6)} onClick={handleMFASetup} disabled={loading || mfaCode.length !== 6}>{loading ? "Verifying..." : "Verify & Continue"}</button>
+            </div>
+          )}
+          {mode === "mfa_verify" && (
+            <div>
+              <div style={{ fontFamily: "Playfair Display,serif", fontSize: 20, fontWeight: 900, color: "#EDE9E2", marginBottom: 6 }}>Enter your code</div>
+              <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "Plus Jakarta Sans,sans-serif", marginBottom: 20 }}>Open Google Authenticator and enter the 6-digit code for Flourish Money.</div>
+              <input style={{ ...inpStyle, letterSpacing: 6, textAlign: "center", fontSize: 22 }} placeholder="000000" value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g,""))} maxLength={6} />
+              {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
+              <button style={btnStyle(!loading && mfaCode.length === 6)} onClick={handleMFAVerify} disabled={loading || mfaCode.length !== 6}>{loading ? "Verifying..." : "Log In"}</button>
+            </div>
+          )}
+          {(mode === "login" || mode === "signup") && (
+            <div>
+              <div style={{ display: "flex", background: "rgba(255,255,255,0.05)", borderRadius: 12, padding: 3, marginBottom: 24 }}>
+                {["login","signup"].map(m => (
+                  <button key={m} onClick={() => { setMode(m); setError(""); setSuccess(""); }}
+                    style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", cursor: "pointer", fontFamily: "Plus Jakarta Sans,sans-serif", fontWeight: 700, fontSize: 13,
+                      background: mode === m ? "#00D68F" : "transparent", color: mode === m ? "#021208" : "#6B7A6E" }}>
+                    {m === "login" ? "Log In" : "Sign Up"}
+                  </button>
+                ))}
+              </div>
+              {success && <div style={{ color: "#00D68F", fontSize: 13, marginBottom: 16, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10 }}>{success}</div>}
+              <input style={inpStyle} type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} />
+              <input style={{ ...inpStyle, marginBottom: 20 }} type="password" placeholder="Password (min 8 characters)" value={password} onChange={e => setPassword(e.target.value)} />
+              {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
+              <button style={btnStyle(!loading && email && password.length >= 8)} onClick={mode === "login" ? handleLogin : handleSignup} disabled={loading || !email || password.length < 8}>
+                {loading ? "..." : mode === "login" ? "Log In" : "Create Account"}
+              </button>
+              {mode === "signup" && <div style={{ color: "#6B7A6E", fontSize: 11, textAlign: "center", marginTop: 14, lineHeight: 1.5 }}>By signing up you agree to our Terms of Service and Privacy Policy.</div>}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function FlourishApp(){
   // ── Hydrate from localStorage on first render ──────────────────
   const saved = loadState();
   const [onboarded,setOnboarded]=useState(()=>saved?.onboarded||false);
   const [appData,setAppData]=useState(()=>saved?.appData||null);
   const [screen,setScreen]=useState("home");
+  const [user,setUser]=useState(null);
+  const [authLoading,setAuthLoading]=useState(true);
   const [showNotifs,setShowNotifs]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
   const [household,setHousehold]=useState(()=>saved?.household||null);
@@ -4761,6 +4903,18 @@ export default function FlourishApp(){
   });
   const {w}=useWindowSize();
   const isDesktop=w>=960;
+
+  // ── Supabase auth session check ────────────────────────────────
+  useEffect(()=>{
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setAuthLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   // ── Persist state changes to localStorage ──────────────────────
   useEffect(()=>{ saveState({onboarded,appData,household,isPremium,checkInBonus}); },
@@ -4794,6 +4948,10 @@ export default function FlourishApp(){
     setTheme(next);
     try{localStorage.setItem("flourish_theme_manual","1");}catch{}
   };
+
+  // ── Auth gate ───────────────────────────────────────────────────
+  if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{fontSize:36,animation:"pulse 1.5s infinite"}}>🌿</div></div>;
+  if(!user)return <AuthScreen onAuth={u=>setUser(u)}/>;
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} onClose={()=>setShowWhatIf(false)}/>;
