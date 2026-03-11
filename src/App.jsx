@@ -1551,7 +1551,8 @@ function FlourishMark({ size = 24, style = {} }) {
       style={{ flexShrink: 0, display: "block", borderRadius: size > 30 ? Math.round(size * 0.28) : 0, ...style }}
     />
   );
-}) {
+}
+function FlourishGlyph({ size = 24, style = {} }) {
   const id = `fg_${size}`;
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0, display: "block", ...style }}>
