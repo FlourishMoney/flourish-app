@@ -6,6 +6,15 @@
   NODE_VERSION           = "18"
   SECRETS_SCAN_OMIT_KEYS = "PLAID_ENV"
 
+# Security headers
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' cdn.plaid.com; connect-src 'self' api.anthropic.com cdn.plaid.com production.plaid.com sandbox.plaid.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
+
 # Redirect: app calls /api/coach → Netlify function
 [[redirects]]
   from   = "/api/coach"
