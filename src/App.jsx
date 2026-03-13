@@ -1582,6 +1582,17 @@ function FlourishGlyph({ size = 24, style = {} }) {
     </svg>
   );
 }
+// ─── DIAMOND ONLY (no wordmark) — use at small sizes / next to text ──────────
+function FlourishDiamond({ size = 24, style = {} }) {
+  // Two rotated ellipses forming the Flourish diamond mark (no text)
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" fill="none"
+      style={{ flexShrink:0, display:"block", ...style }}>
+      <ellipse cx="50" cy="50" rx="21" ry="45" transform="rotate(45 50 50)"  fill="#3CB87A"/>
+      <ellipse cx="50" cy="50" rx="21" ry="45" transform="rotate(-45 50 50)" fill="#1A6B40" opacity="0.85"/>
+    </svg>
+  );
+}
 // ─── LEGACY IMG REMOVED ───────────────────────────────────────────────────────
 function _FlourishMarkOld({ size = 24, style = {} }) {
   return (
@@ -2591,14 +2602,11 @@ function Onboarding({onComplete}){
       <div style={{position:"absolute",top:"42%",left:"50%",transform:"translate(-50%,-60%)",width:300,height:300,borderRadius:"50%",background:`radial-gradient(circle,${C.green}15 0%,transparent 70%)`,pointerEvents:"none",animation:"breathe 7s ease-in-out infinite"}}/>
 
       {/* Logo mark */}
-      <div style={{position:"relative",marginBottom:32,animation:"logoFloat 5s ease-in-out infinite"}}>
-        <div style={{width:96,height:96,borderRadius:30,background:C.isDark?"linear-gradient(145deg,rgba(0,204,133,0.14) 0%,rgba(0,204,133,0.06) 100%)":"linear-gradient(145deg,rgba(0,147,95,0.10) 0%,rgba(0,147,95,0.04) 100%)",border:`1.5px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",boxShadow:"0 0 0 1px rgba(255,255,255,0.04), 0 12px 48px rgba(0,204,133,0.18), 0 4px 16px rgba(0,0,0,0.30)",backdropFilter:"blur(12px)"}}><FlourishMark size={58}/></div>
+      <div style={{position:"relative",marginBottom:16,animation:"logoFloat 5s ease-in-out infinite"}}>
+        <div style={{width:96,height:96,borderRadius:30,background:C.isDark?"linear-gradient(145deg,rgba(0,204,133,0.14) 0%,rgba(0,204,133,0.06) 100%)":"linear-gradient(145deg,rgba(0,147,95,0.10) 0%,rgba(0,147,95,0.04) 100%)",border:`1.5px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",boxShadow:"0 0 0 1px rgba(255,255,255,0.04), 0 12px 48px rgba(0,204,133,0.18), 0 4px 16px rgba(0,0,0,0.30)",backdropFilter:"blur(12px)"}}><FlourishDiamond size={56}/></div>
       </div>
+      <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:38,letterSpacing:-1,marginBottom:24,lineHeight:1,background:`linear-gradient(130deg,${C.cream} 30%,rgba(237,233,226,0.65) 100%)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>flourish</div>
 
-      {/* Wordmark */}
-      <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:50,color:C.cream,lineHeight:0.95,letterSpacing:-2,marginBottom:10,background:`linear-gradient(160deg,${C.cream} 40%,rgba(237,233,226,0.65) 100%)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>
-        Flourish
-      </div>
       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,color:C.green,letterSpacing:3.5,textTransform:"uppercase",fontWeight:700,marginBottom:22,opacity:0.9}}>
         Money coaching that grows with you
       </div>
@@ -2932,10 +2940,11 @@ function Onboarding({onComplete}){
   return (
     <div style={{background:C.bg,minHeight:"100vh",display:"flex",justifyContent:"center",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"background .4s"}}>
       <div style={{width:"100%",maxWidth:430,padding:"28px 20px 60px"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
-          <div style={{display:"flex",alignItems:"center",gap:8}}><FlourishMark size={22} style={{borderRadius:6}}/><span style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:18,background:`linear-gradient(130deg,${C.cream} 30%,rgba(237,233,226,0.65) 100%)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",letterSpacing:-0.4}}>flourish</span></div>
-          {step>0&&step<7&&<button onClick={()=>setStep(s=>s-1)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:14}}>← Back</button>}
-        </div>
+        {step>0&&step<7&&(
+          <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",marginBottom:24}}>
+            <button onClick={()=>setStep(s=>s-1)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:14}}>← Back</button>
+          </div>
+        )}
         {step>0&&step<7&&<div style={{display:"flex",gap:3,marginBottom:28}}>{Array.from({length:7}).map((_,i)=><div key={i} style={{height:3,borderRadius:99,flex:i===step-1?3:1,background:i<step?`linear-gradient(90deg,${C.green},${C.greenBright})`:C.border,transition:"all .45s cubic-bezier(.16,1,.3,1)",boxShadow:i<step?`0 0 8px ${C.green}44`:"none"}}/>)}</div>}
         {screens[step]}
       </div>
