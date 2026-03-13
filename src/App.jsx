@@ -5664,8 +5664,8 @@ function AuthScreen({ onAuth }) {
                 ))}
               </div>
               {success && <div style={{ color: "#00D68F", fontSize: 13, marginBottom: 16, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10 }}>{success}</div>}
-              <input style={inpStyle} type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} />
-              <input style={{ ...inpStyle, marginBottom: 20 }} type="password" placeholder="Password (min 8 characters)" value={password} onChange={e => setPassword(e.target.value)} />
+              <input style={inpStyle} type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" name="email" />
+              <input style={{ ...inpStyle, marginBottom: 20 }} type="password" placeholder="Password (min 8 characters)" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" name="password" />
               {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
               <button style={btnStyle(!loading && email && password.length >= 8)} onClick={mode === "login" ? handleLogin : handleSignup} disabled={loading || !email || password.length < 8}>
                 {loading ? "..." : mode === "login" ? "Log In" : "Create Account"}
