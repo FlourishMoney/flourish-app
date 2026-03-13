@@ -3958,11 +3958,13 @@ function Family({data,household,setHousehold}){
   const [tab,setTab]=useState("meeting");
   const isCouple=data.profile.status!=="single";
   const [householdTab,setHouseholdTab]=useState("join");
+  const [householdCode,setHouseholdCode]=useState("");
   const [started,setStarted]=useState(false);
   const [checks,setChecks]=useState({});
   const [notes,setNotes]=useState({});
   const [mood,setMood]=useState(null);
   const [done2,setDone2]=useState(false);
+  const [expandedItem,setExpandedItem]=useState(null);
   const [kidAge,setKidAge]=useState("8-12");
   const [showChoreIntegrations,setShowChoreIntegrations]=useState(false);
   const [chores,setChores]=useState([
@@ -4117,23 +4119,142 @@ function Family({data,household,setHousehold}){
           <Chip label={`${doneCount}/${meetingMetrics.length} done`} color={doneCount===meetingMetrics.length?C.green:C.purple}/>
           <div style={{display:"flex",gap:3}}>{meetingMetrics.map((a,i)=><div key={i} style={{width:28,height:3,borderRadius:99,background:checks[a.id]?C.purple:C.border,transition:"background .3s"}}/>)}</div>
         </div>
-        {meetingMetrics.map(item=>(
+        {meetingMetrics.map(item=>{
+          const isExpanded=expandedItem===item.id;
+          // Build the rich data panel for each item
+          const DataPanel=(()=>{
+            if(item.id==="bills"){
+              const allBills=(data.bills||[]).map(b=>{
+                const today2=new Date();
+                const due=new Date(today2.getFullYear(),today2.getMonth(),parseInt(b.dueDay||1));
+                if(due<today2)due.setMonth(due.getMonth()+1);
+                const days=Math.round((due-today2)/(1000*60*60*24));
+                return{...b,days};
+              }).sort((a,b)=>a.days-b.days);
+              return allBills.length===0?<div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0"}}>No bills tracked yet — add them in Settings</div>:
+              <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:8}}>
+                {allBills.slice(0,6).map((b,i)=>{
+                  const urgency=b.days<=3?C.redBright:b.days<=7?C.goldBright:C.greenBright;
+                  return<div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:C.bg,borderRadius:10,border:`1px solid ${urgency}22`}}>
+                    <div style={{width:6,height:6,borderRadius:"50%",background:urgency,flexShrink:0}}/>
+                    <span style={{color:C.cream,fontSize:12,flex:1,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{b.name}</span>
+                    <span style={{color:C.muted,fontSize:11}}>{b.days===0?"today":b.days===1?"tomorrow":`${b.days}d`}</span>
+                    <span style={{color:urgency,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${parseFloat(b.amount||0).toFixed(0)}</span>
+                  </div>;
+                })}
+                <div style={{display:"flex",justifyContent:"space-between",padding:"6px 10px",marginTop:2}}>
+                  <span style={{color:C.muted,fontSize:11}}>Total coming up</span>
+                  <span style={{color:C.cream,fontSize:12,fontWeight:700}}>${allBills.reduce((a,b)=>a+parseFloat(b.amount||0),0).toFixed(0)}/mo</span>
+                </div>
+              </div>;
+            }
+            if(item.id==="spend"){
+              const cats=Object.entries(topSpend).sort((a,b)=>b[1]-a[1]).slice(0,5);
+              const maxAmt=cats[0]?.[1]||1;
+              const totalSpend=cats.reduce((a,c)=>a+c[1],0);
+              return cats.length===0?<div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0"}}>No transactions yet</div>:
+              <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>
+                {cats.map(([cat,amt],i)=><div key={i}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                    <span style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{cat}</span>
+                    <span style={{color:C.cream,fontSize:11,fontWeight:700}}>${amt.toFixed(0)}<span style={{color:C.muted,fontSize:10}}> ({((amt/totalSpend)*100).toFixed(0)}%)</span></span>
+                  </div>
+                  <div style={{height:5,background:C.border,borderRadius:99,overflow:"hidden"}}>
+                    <div style={{width:`${(amt/maxAmt)*100}%`,height:"100%",background:i===0?C.tealBright:i===1?C.purpleBright:i===2?C.goldBright:C.muted,borderRadius:99,transition:"width .4s"}}/>
+                  </div>
+                </div>)}
+                <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderTop:`1px solid ${C.border}`,marginTop:2}}>
+                  <span style={{color:C.muted,fontSize:11}}>Total tracked spend</span>
+                  <span style={{color:C.cream,fontSize:12,fontWeight:700}}>${totalSpend.toFixed(0)}/mo</span>
+                </div>
+              </div>;
+            }
+            if(item.id==="debt"){
+              const debts=(data.debts||[]).slice().sort((a,b)=>parseFloat(b.apr||0)-parseFloat(a.apr||0));
+              return debts.length===0?<div style={{color:C.greenBright,fontSize:12,textAlign:"center",padding:"8px 0"}}>🎉 No debts tracked — incredible!</div>:
+              <div style={{display:"flex",flexDirection:"column",gap:5,marginTop:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",padding:"4px 10px"}}>
+                  <span style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1}}>Debt (avalanche order)</span>
+                  <span style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1}}>APR</span>
+                </div>
+                {debts.map((d,i)=>{
+                  const bal=parseFloat(d.balance||0);
+                  const apr=parseFloat(d.apr||0);
+                  const interestPerMo=(bal*(apr/100)/12);
+                  return<div key={i} style={{padding:"8px 10px",background:C.bg,borderRadius:10,border:`1px solid ${i===0?C.redBright+"33":C.border}`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                      <span style={{color:C.cream,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{d.name||"Debt"}</span>
+                      <span style={{color:i===0?C.redBright:C.muted,fontSize:12,fontWeight:700}}>{apr}%</span>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between"}}>
+                      <span style={{color:C.orangeBright,fontSize:11}}>Balance: ${bal.toLocaleString()}</span>
+                      <span style={{color:C.muted,fontSize:10}}>Interest: ${interestPerMo.toFixed(0)}/mo · Min: ${parseFloat(d.min||0).toFixed(0)}/mo</span>
+                    </div>
+                  </div>;
+                })}
+                <div style={{color:C.muted,fontSize:10,fontStyle:"italic",padding:"4px 2px"}}>Avalanche method: pay minimums on all, attack highest APR first. Saves the most interest.</div>
+              </div>;
+            }
+            if(item.id==="goal"){
+              const goals=data.goals||[];
+              const mSavings=cashFlow>0?cashFlow:0;
+              return goals.length===0?<div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0"}}>No goals set yet — add one in Goals</div>:
+              <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>
+                {goals.map((g,i)=>{
+                  const target=parseFloat(g.target||g.amount||1000);
+                  const saved=parseFloat(g.saved||g.current||0);
+                  const pct=Math.min(100,(saved/target)*100);
+                  const remaining=target-saved;
+                  const moToGo=mSavings>0?Math.ceil(remaining/mSavings):null;
+                  return<div key={i} style={{padding:"10px 12px",background:C.bg,borderRadius:12,border:`1px solid ${C.border}`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+                      <span style={{color:C.cream,fontSize:12,fontWeight:700}}>{g.name||g.label||"Goal"}</span>
+                      <span style={{color:C.purpleBright,fontSize:11,fontWeight:700}}>{pct.toFixed(0)}%</span>
+                    </div>
+                    <div style={{height:6,background:C.border,borderRadius:99,overflow:"hidden",marginBottom:4}}>
+                      <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${C.purple},${C.purpleBright})`,borderRadius:99}}/>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between"}}>
+                      <span style={{color:C.muted,fontSize:10}}>${saved.toLocaleString()} saved of ${target.toLocaleString()}</span>
+                      {moToGo&&<span style={{color:C.muted,fontSize:10}}>~{moToGo} mo to go</span>}
+                    </div>
+                  </div>;
+                })}
+              </div>;
+            }
+            // wins/win/mood/next — show previous notes if any
+            const prevKey=`flourish_prev_notes_${item.id}`;
+            const prevNote=typeof localStorage!=="undefined"?localStorage.getItem(prevKey):null;
+            return prevNote?<div style={{marginTop:8,padding:"8px 12px",background:C.purpleDim,borderRadius:10,border:`1px solid ${C.purple}33`}}>
+              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Last week</div>
+              <div style={{color:C.cream,fontSize:12,lineHeight:1.5}}>{prevNote}</div>
+            </div>:null;
+          })();
+          return(
           <div key={item.id} style={{background:checks[item.id]?C.purpleDim:C.card,borderRadius:16,padding:"16px 18px",border:`1px solid ${checks[item.id]?C.purple+"66":C.border}`,transition:"all .3s"}}>
             <div style={{display:"flex",gap:12}}>
               <div onClick={()=>setChecks(c=>({...c,[item.id]:!c[item.id]}))} style={{width:22,height:22,borderRadius:6,border:`2px solid ${checks[item.id]?C.purple:C.border}`,background:checks[item.id]?C.purple:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2,transition:"all .2s"}}>
                 {checks[item.id]&&<span style={{color:C.bg,fontSize:12,fontWeight:900}}>✓</span>}
               </div>
               <div style={{flex:1}}>
-                <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:2}}>{item.icon} {item.title}</div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:2}}>
+                  <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{item.icon} {item.title}</div>
+                  <button onClick={()=>setExpandedItem(isExpanded?null:item.id)}
+                    style={{background:isExpanded?C.purple+"33":C.cardAlt,border:`1px solid ${isExpanded?C.purple+"55":C.border}`,borderRadius:8,padding:"3px 8px",color:isExpanded?C.purpleBright:C.muted,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0,marginLeft:8}}>
+                    {isExpanded?"▲ hide":"📊 data"}
+                  </button>
+                </div>
                 <div style={{color:item.metricColor,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,background:item.metricColor+"18",borderRadius:8,padding:"4px 10px",display:"inline-block"}}>{item.metric}</div>
                 <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5,marginBottom:8,marginTop:4}}>{item.desc}</div>
+                {isExpanded&&DataPanel&&<div style={{borderTop:`1px solid ${C.border}`,paddingTop:8,marginBottom:8}}>{DataPanel}</div>}
                 <div style={{color:C.muted,fontSize:11,fontStyle:"italic",marginBottom:6}}>{item.prompt}</div>
                 <textarea value={notes[item.id]||""} onChange={e=>setNotes(n=>({...n,[item.id]:e.target.value}))} placeholder="Notes…"
                   style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,color:C.cream,padding:"9px 12px",fontSize:13,fontFamily:"inherit",resize:"none",outline:"none",height:60,boxSizing:"border-box"}}/>
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
         {!isCouple&&<Card>
           <div style={{color:C.cream,fontWeight:700,marginBottom:10}}>How do you feel right now?</div>
           <div style={{display:"flex",gap:8,justifyContent:"center"}}>
@@ -4264,7 +4385,6 @@ function Family({data,household,setHousehold}){
 
     {/* ── HOUSEHOLD TAB ── */}
     {tab==="household"&&(()=>{
-      const [householdCode,setHouseholdCode]=useState("");
       const genCode=()=>"FLRSH"+Math.random().toString(36).substring(2,5).toUpperCase();
       if(household){return(
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -4399,6 +4519,37 @@ function WidgetScreen({data,onBack}){
     </WShell>
   );
 
+  // Compute cashFlow for widget
+  const {cashFlow:wCashFlow}=FinancialCalcEngine.cashFlow(data);
+  // Check-in streak from localStorage
+  const wStreak=(()=>{try{return parseInt(localStorage.getItem("flourish_streak")||"0");}catch{return 0;}})();
+
+  // Shared widget stat tile (dark always)
+  const WTile=({label,value,color="rgba(237,233,226,0.9)",bg="rgba(255,255,255,0.05)"})=>(
+    <div style={{background:bg,borderRadius:10,padding:"6px 10px",flex:1,minWidth:0}}>
+      <div style={{color:"rgba(237,233,226,0.4)",fontSize:8,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:1,marginBottom:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</div>
+      <div style={{color,fontSize:13,fontWeight:800,fontFamily:"'Playfair Display',serif",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{value}</div>
+    </div>
+  );
+
+  // Build list of active medium tiles (up to 3 slots, Safe always first)
+  const medTiles=[
+    wContent.balance&&{label:"Balance",value:`$${bal.toFixed(0)}`,color:"rgba(237,233,226,0.85)"},
+    wContent.health&&{label:"Health",value:`${healthScore}/100`,color:"rgba(0,232,154,0.9)"},
+    wContent.nextBill&&nextBill&&{label:"Next Bill",value:`${nextBill.name} $${parseFloat(nextBill.amount).toFixed(0)}`,color:"rgba(245,204,106,0.95)"},
+    wContent.cashFlow&&{label:"Cash Flow",value:`${wCashFlow>=0?"+":""}$${Math.round(wCashFlow)}/mo`,color:wCashFlow>=0?"rgba(0,232,154,0.9)":"rgba(255,79,106,0.9)"},
+    wContent.streak&&{label:"Streak",value:`${wStreak} days 🔥`,color:"rgba(237,233,226,0.85)"},
+  ].filter(Boolean).slice(0,3);
+
+  // Build list of active large grid tiles
+  const largeTiles=[
+    wContent.balance&&{label:"Balance",value:`$${bal.toFixed(0)}`,bg:"rgba(255,255,255,0.05)",color:"rgba(237,233,226,0.9)"},
+    wContent.health&&{label:"Health Score",value:`${healthScore}`,bg:"rgba(0,204,133,0.08)",color:"rgba(0,232,154,0.95)"},
+    wContent.nextBill&&{label:"Due Soon",value:`$${Math.round(_ss.upcomingBills)}`,bg:"rgba(232,184,75,0.08)",color:"rgba(245,204,106,0.95)"},
+    wContent.cashFlow&&{label:"Cash Flow",value:`${wCashFlow>=0?"+":""}$${Math.round(wCashFlow)}`,bg:wCashFlow>=0?"rgba(0,204,133,0.08)":"rgba(255,79,106,0.08)",color:wCashFlow>=0?"rgba(0,232,154,0.95)":"rgba(255,79,106,0.95)"},
+    wContent.streak&&{label:"Streak",value:`${wStreak}d 🔥`,bg:"rgba(161,140,255,0.08)",color:"rgba(179,161,255,0.95)"},
+  ].filter(Boolean);
+
   // ── Medium 2×4 Widget ──────────────────────────────────────────
   const MediumWidget=()=>(
     <WShell w={338} h={158}>
@@ -4415,21 +4566,14 @@ function WidgetScreen({data,onBack}){
             <div style={{color:heroColorBright+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:3}}>Safe to Spend</div>
             <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:38,color:heroColorBright,letterSpacing:-1,lineHeight:1}}>${Math.round(safe)}</div>
           </div>
-          <div style={{textAlign:"right"}}>
-            <div style={{color:"rgba(237,233,226,0.4)",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:1}}>Balance</div>
-            <div style={{color:"rgba(237,233,226,0.85)",fontSize:16,fontWeight:700,fontFamily:"'Playfair Display',serif"}}>${bal.toFixed(0)}</div>
-          </div>
-        </div>
-        <div style={{display:"flex",gap:6}}>
-          {nextBill&&<div style={{flex:1,background:"rgba(255,255,255,0.05)",borderRadius:10,padding:"6px 10px"}}>
-            <div style={{color:"rgba(237,233,226,0.4)",fontSize:8,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:1}}>Next bill</div>
-            <div style={{color:DARK_C.goldBright,fontSize:11,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>{nextBill.name} · ${parseFloat(nextBill.amount).toFixed(0)}</div>
+          {medTiles.length>0&&<div style={{textAlign:"right"}}>
+            <div style={{color:"rgba(237,233,226,0.4)",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:1}}>{medTiles[0].label}</div>
+            <div style={{color:medTiles[0].color,fontSize:16,fontWeight:700,fontFamily:"'Playfair Display',serif"}}>{medTiles[0].value}</div>
           </div>}
-          <div style={{background:"rgba(255,255,255,0.05)",borderRadius:10,padding:"6px 10px",minWidth:56,textAlign:"center"}}>
-            <div style={{color:"rgba(237,233,226,0.4)",fontSize:8,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:1}}>Health</div>
-            <div style={{color:"rgba(237,233,226,0.9)",fontSize:14,fontWeight:800,fontFamily:"'Playfair Display',serif",marginTop:1}}>{healthScore}</div>
-          </div>
         </div>
+        {medTiles.length>1&&<div style={{display:"flex",gap:6}}>
+          {medTiles.slice(1).map((t,i)=><WTile key={i} {...t}/>)}
+        </div>}
       </div>
     </WShell>
   );
@@ -4440,7 +4584,7 @@ function WidgetScreen({data,onBack}){
       <div style={{width:"100%",height:"100%",background:overdraft
         ?"linear-gradient(165deg,#1A040C,#120208,#0A0510)"
         :"linear-gradient(165deg,#051810,#080D18,#050810)",
-        padding:"20px",display:"flex",flexDirection:"column",gap:14}}>
+        padding:"20px",display:"flex",flexDirection:"column",gap:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div style={{display:"flex",alignItems:"center",gap:7}}><FlourishMark size={20}/><span style={{color:"rgba(237,233,226,0.65)",fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>flourish</span></div>
           <div style={{background:`rgba(${overdraft?"255,79,106":"0,204,133"},0.15)`,borderRadius:99,padding:"3px 10px",display:"flex",alignItems:"center",gap:5}}>
@@ -4450,19 +4594,17 @@ function WidgetScreen({data,onBack}){
         <div style={{background:`rgba(${overdraft?"255,79,106":"0,204,133"},0.08)`,borderRadius:16,padding:"14px 16px",border:`1px solid ${heroColor}28`}}>
           <div style={{color:heroColorBright+"77",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:4}}>Safe to Spend Today</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:46,color:heroColorBright,letterSpacing:-2,lineHeight:1}}>${Math.round(safe)}</div>
-          <div style={{color:"rgba(237,233,226,0.45)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Balance: ${bal.toFixed(2)}</div>
+          {wContent.balance&&<div style={{color:"rgba(237,233,226,0.45)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Balance: ${bal.toFixed(2)}</div>}
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          <div style={{background:"rgba(0,204,133,0.08)",border:"1px solid rgba(0,204,133,0.15)",borderRadius:14,padding:"11px 12px"}}>
-            <div style={{color:"rgba(0,232,154,0.5)",fontSize:8,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Health Score</div>
-            <div style={{color:"rgba(0,232,154,0.95)",fontWeight:900,fontSize:24,fontFamily:"'Playfair Display',serif",marginTop:3,letterSpacing:-0.5}}>{healthScore}</div>
-          </div>
-          <div style={{background:"rgba(232,184,75,0.08)",border:"1px solid rgba(232,184,75,0.15)",borderRadius:14,padding:"11px 12px"}}>
-            <div style={{color:"rgba(245,204,106,0.5)",fontSize:8,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Due Soon</div>
-            <div style={{color:"rgba(245,204,106,0.95)",fontWeight:900,fontSize:24,fontFamily:"'Playfair Display',serif",marginTop:3,letterSpacing:-0.5}}>${Math.round(_ss.upcomingBills)}</div>
-          </div>
-        </div>
-        <div>
+        {largeTiles.length>0&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {largeTiles.slice(0,4).map((t,i)=>(
+            <div key={i} style={{background:t.bg,border:`1px solid ${t.color.replace("0.9","0.15").replace("0.95","0.15")}`,borderRadius:14,padding:"11px 12px"}}>
+              <div style={{color:t.color.replace(/[\d.]+\)$/,"0.5)"),fontSize:8,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{t.label}</div>
+              <div style={{color:t.color,fontWeight:900,fontSize:24,fontFamily:"'Playfair Display',serif",marginTop:3,letterSpacing:-0.5}}>{t.value}</div>
+            </div>
+          ))}
+        </div>}
+        {wContent.nextBill&&<div>
           {soonBills.slice(0,2).map((b,i)=>(
             <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:i===0?`1px solid rgba(255,255,255,0.06)`:"none"}}>
               <span style={{color:"rgba(237,233,226,0.55)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name}</span>
@@ -4470,7 +4612,7 @@ function WidgetScreen({data,onBack}){
             </div>
           ))}
           {soonBills.length===0&&<div style={{color:"rgba(237,233,226,0.3)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"center",paddingTop:4}}>No bills due soon ✓</div>}
-        </div>
+        </div>}
       </div>
     </WShell>
   );
@@ -4788,7 +4930,9 @@ function DesktopSidebar({data,setScreen}){
 
 
 // ─── AI COACH ─────────────────────────────────────────────────────────────────
-function AICoach({data, isOnline}){
+function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}}){
+  const FREE_LIMIT=5;
+  const freeMsgsLeft=isPremium?Infinity:Math.max(0,FREE_LIMIT-coachMsgCount);
   const [messages, setMessages] = useState([
     {role:"assistant", content:"Hey! I'm your Flourish AI Coach 👋 I can see your spending patterns, balances, and financial data. What would you like to work on today?"}
   ]);
@@ -4829,6 +4973,7 @@ Keep responses concise (3-5 sentences max), practical, and friendly. Use $ amoun
   const send = async ()=>{
     const text = input.trim();
     if(!text || loading) return;
+    if(!isPremium && freeMsgsLeft<=0){ onUpgrade(); return; }
     setInput("");
     setError("");
     const newMessages = [...messages, {role:"user", content:text}];
@@ -4846,6 +4991,7 @@ Keep responses concise (3-5 sentences max), practical, and friendly. Use $ amoun
       if(!res.ok) throw new Error(`Server error ${res.status}`);
       const json = await res.json();
       const reply = json.content?.[0]?.text || json.reply || "Sorry, I couldn't get a response. Try again.";
+      onSend(); // only count on successful response
       setMessages(prev=>[...prev, {role:"assistant", content:reply}]);
     } catch(e){
       setError("Couldn't reach the coach. Check your connection and try again.");
@@ -4872,13 +5018,17 @@ Keep responses concise (3-5 sentences max), practical, and friendly. Use $ amoun
           <div style={{width:38,height:38,borderRadius:12,background:`linear-gradient(135deg,${C.purple}33,${C.purple}11)`,border:`1px solid ${C.purple}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
             <Icon id="sparkles" size={19} color={C.purpleBright} strokeWidth={1.5}/>
           </div>
-          <div>
+          <div style={{flex:1}}>
             <div style={{color:C.cream,fontWeight:800,fontSize:15}}>AI Coach</div>
             <div style={{color:isOnline?C.green:C.muted,fontSize:11,fontWeight:600,display:"flex",alignItems:"center",gap:4}}>
               <div style={{width:6,height:6,borderRadius:"50%",background:isOnline?C.green:C.muted}}/>
               {isOnline?"Live · Your real data":"Offline"}
             </div>
           </div>
+          {!isPremium&&<div onClick={onUpgrade} style={{background:freeMsgsLeft>0?C.purple+"22":C.red+"22",border:`1px solid ${freeMsgsLeft>0?C.purple+"44":C.red+"44"}`,borderRadius:10,padding:"5px 10px",cursor:"pointer",textAlign:"center"}}>
+            <div style={{color:freeMsgsLeft>0?C.purpleBright:C.redBright,fontSize:12,fontWeight:800}}>{freeMsgsLeft}/{FREE_LIMIT}</div>
+            <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>free left</div>
+          </div>}
         </div>
       </div>
 
@@ -5110,7 +5260,7 @@ function PremiumGate({feature,desc,onUpgrade}){
       <button onClick={onUpgrade} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.purple}40`}}>
         Unlock Flourish Plus →
       </button>
-      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>7-day free trial · Cancel anytime</div>
+      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>14-day free trial · Cancel anytime</div>
     </div>
   );
 }
@@ -5199,10 +5349,10 @@ function Paywall({onClose,onUpgrade,country}){
 
         {/* CTA */}
         <button onClick={onUpgrade} style={{width:"100%",background:`linear-gradient(135deg,${C.purple} 0%,${C.purpleBright} 100%)`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:16,padding:"16px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 8px 32px ${C.purple}40`,marginBottom:12}}>
-          Start Free 7-Day Trial →
+          Start Free 14-Day Trial →
         </button>
         <div style={{textAlign:"center",color:C.muted,fontSize:11,lineHeight:1.7}}>
-          7 days free, then {plans[selected].price}. Cancel anytime.<br/>
+          14 days free, then {plans[selected].price}. Cancel anytime.<br/>
           Payment processed securely. No hidden fees.
         </div>
 
@@ -5399,6 +5549,24 @@ export default function FlourishApp(){
   const [household,setHousehold]=useState(()=>saved?.household||null);
   const [isPremium,setIsPremium]=useState(()=>saved?.isPremium||false);
   const [showPaywall,setShowPaywall]=useState(false);
+  // ── Trial timer ──────────────────────────────────────────────
+  const [trialStart]=useState(()=>{
+    try{
+      const s=localStorage.getItem("flourish_trial_start");
+      if(s)return new Date(s);
+      const now=new Date().toISOString();
+      localStorage.setItem("flourish_trial_start",now);
+      return new Date(now);
+    }catch{return new Date();}
+  });
+  const trialDaysUsed=Math.floor((Date.now()-trialStart.getTime())/(1000*60*60*24));
+  const trialDaysLeft=Math.max(0,14-trialDaysUsed);
+  const trialExpired=trialDaysUsed>=14&&!isPremium;
+  // ── AI Coach free message count ──────────────────────────────
+  const [coachMsgCount,setCoachMsgCount]=useState(()=>{
+    try{return parseInt(localStorage.getItem("flourish_coach_msgs")||"0");}catch{return 0;}
+  });
+  const bumpCoachMsg=()=>setCoachMsgCount(n=>{const v=n+1;try{localStorage.setItem("flourish_coach_msgs",String(v));}catch{}return v;});
   const [checkInBonus,setCheckInBonus]=useState(()=>saved?.checkInBonus||0);
   const [showCheckIn,setShowCheckIn]=useState(false);
   const [showWhatIf,setShowWhatIf]=useState(false);
@@ -5485,7 +5653,7 @@ export default function FlourishApp(){
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold}/>;
-    if(screen==="coach")return isPremium?<AICoach data={dataWithHousehold} isOnline={isOnline}/>:<PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;
+    if(screen==="coach"){const freeCoachAllowed=!isPremium&&coachMsgCount<5&&!trialExpired;const showCoach=isPremium||freeCoachAllowed;if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)}/>; if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="AI Coach" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>; return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;}
     if(screen==="family")return <Family data={dataWithHousehold} household={household} setHousehold={setHousehold}/>;
     if(screen==="goals")return <Goals data={dataWithHousehold} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab}/>;
     if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
@@ -5559,12 +5727,25 @@ input,button,select,textarea { font-family:inherit; }
 
         {/* Sidebar footer */}
         <div style={{padding:"16px 12px",borderTop:`1px solid ${C.border}`}}>
+          {/* Trial status in sidebar */}
+          {!isPremium&&(
+            <div onClick={()=>setShowPaywall(true)} style={{background:trialExpired?"#180800":trialDaysLeft<=2?C.orange+"18":C.purple+"18",border:`1px solid ${trialExpired?C.red+"44":trialDaysLeft<=2?C.orange+"44":C.purple+"33"}`,borderRadius:12,padding:"10px 14px",marginBottom:8,cursor:"pointer",transition:"all .18s"}}>
+              <div style={{color:trialExpired?C.redBright:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>
+                {trialExpired?"Trial ended 🔒":trialDaysLeft===0?"Trial ends today ⚠️":`${trialDaysLeft} day${trialDaysLeft===1?"":"s"} left`}
+              </div>
+              <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Upgrade to Flourish Plus →</div>
+              {!trialExpired&&<div style={{height:3,background:C.border,borderRadius:99,marginTop:6,overflow:"hidden"}}>
+                <div style={{width:`${Math.max(4,(trialDaysLeft/14)*100)}%`,height:"100%",background:trialDaysLeft<=2?C.orange:C.purple,borderRadius:99}}/>
+              </div>}
+            </div>
+          )}
           {appData&&<div style={{background:C.card,borderRadius:12,padding:"12px 14px",marginBottom:8}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <div style={{width:32,height:32,borderRadius:99,background:C.green+"22",border:`1px solid ${C.green}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}><Icon id="user" size={15} color={C.green} strokeWidth={1.5}/></div>
               <div>
                 <div style={{color:C.cream,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{appData.profile?.name||"User"}</div>
                 {household&&<div style={{color:C.green,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🏠 Household connected</div>}
+                {isPremium&&<div style={{color:C.goldBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ Flourish Plus</div>}
               </div>
             </div>
           </div>}
@@ -5629,6 +5810,27 @@ input,button,select,textarea { font-family:inherit; }
           <div style={{position:"fixed",top:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,zIndex:9999,background:"#180800",borderBottom:`2px solid ${C.orange}44`,padding:"9px 20px",display:"flex",alignItems:"center",gap:10}}>
             <span style={{fontSize:14}}>📡</span>
             <span style={{color:C.goldBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700}}>Offline — AI features paused. Your data is saved.</span>
+          </div>
+        )}
+        {/* ── TRIAL BANNER ─────────────────────────── */}
+        {!isPremium&&!trialExpired&&trialDaysLeft<=7&&(
+          <div style={{background:trialDaysLeft<=2?"#1A0800":`linear-gradient(90deg,${C.purple}22,${C.purpleDim})`,borderBottom:`1px solid ${trialDaysLeft<=2?C.orange+"55":C.purple+"44"}`,padding:"8px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+            <span style={{fontSize:13}}>{trialDaysLeft<=2?"⚠️":"✨"}</span>
+            <span style={{color:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700,flex:1}}>
+              {trialDaysLeft===0?"Trial ends today":"Trial: "+trialDaysLeft+" day"+(trialDaysLeft===1?"":"s")+" left"}
+            </span>
+            <button onClick={()=>setShowPaywall(true)} style={{background:trialDaysLeft<=2?"linear-gradient(135deg,"+C.orange+","+C.gold+")":"linear-gradient(135deg,"+C.purple+","+C.purpleBright+")",border:"none",borderRadius:8,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+              Upgrade →
+            </button>
+          </div>
+        )}
+        {trialExpired&&(
+          <div style={{background:"#180800",borderBottom:`2px solid ${C.red}55`,padding:"10px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+            <span style={{fontSize:13}}>🔒</span>
+            <span style={{color:C.redBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700,flex:1}}>Your free trial has ended</span>
+            <button onClick={()=>setShowPaywall(true)} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:8,padding:"6px 14px",color:"#fff",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+              Upgrade Now
+            </button>
           </div>
         )}
         <div style={{padding:"14px 20px 12px",background:C.isDark?"rgba(5,8,16,0.90)":"rgba(244,241,235,0.92)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",position:"sticky",top:0,zIndex:30,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 1px 0 rgba(255,255,255,0.025)"}}>
