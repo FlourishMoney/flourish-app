@@ -27,7 +27,7 @@ const CORS = {
 
 // Plaid REST wrapper — 8s timeout so we never exceed Netlify's 10s limit
 async function plaid(endpoint, body) {
-  const env  = process.env.PLAID_ENV || "sandbox";
+  const env  = (process.env.PLAID_ENV || "sandbox").trim().toLowerCase();
   const base = PLAID_BASE[env] || PLAID_BASE.sandbox;
 
   const controller = new AbortController();
@@ -39,8 +39,8 @@ async function plaid(endpoint, body) {
       method: "POST",
       headers: {
         "Content-Type":    "application/json",
-        "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID,
-        "PLAID-SECRET":    process.env.PLAID_SECRET,
+        "PLAID-CLIENT-ID": (process.env.PLAID_CLIENT_ID || "").trim(),
+        "PLAID-SECRET":    (process.env.PLAID_SECRET || "").trim(),
         "Plaid-Version":   "2020-09-14",
       },
       body:   JSON.stringify(body),
