@@ -5405,10 +5405,10 @@ export default function FlourishApp(){
   const [showWrapped,setShowWrapped]=useState(false);
   const [isOnline,setIsOnline]=useState(()=>navigator.onLine);
   const [dashLayout,setDashLayout]=useState(()=>{
-  const [goalsTab,setGoalsTab]=useState("sim");
     try{ const s=localStorage.getItem('flourish_dash_layout'); if(s) return JSON.parse(s); }catch{}
     return DASH_TILES.map(t=>({id:t.id,visible:true}));
   });
+  const [goalsTab,setGoalsTab]=useState("sim");
   // ── Theme ───────────────────────────────────────────────────────
   const [theme,setTheme]=useState(()=>{
     try{ const t=localStorage.getItem("flourish_theme"); if(t==="light"||t==="dark")return t; }catch{}
