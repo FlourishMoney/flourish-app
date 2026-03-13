@@ -5796,32 +5796,8 @@ export default function FlourishApp(){
     try{localStorage.setItem("flourish_theme_manual","1");}catch{}
   };
 
-  // ── Auth gate ───────────────────────────────────────────────────
-  if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
-  if(!user)return <AuthScreen onAuth={u=>setUser(u)}/>;
-
-  if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
-  if(showWhatIf)return <WhatIfSimulator data={appData||{}} onClose={()=>setShowWhatIf(false)}/>;
-  if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
-  if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}} onViewLegal={s=>setScreen(s)}/>;
-  if(showPaywall)return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;
-
-  const unread=INIT_NOTIFS.filter(n=>!n.read).length;
-  const dataWithHousehold={...appData,household,isPremium};
-
-  // ── Pass isOnline down to AICoach + reset helper ──────────────
-  const handleReset = () => { clearState(); window.location.reload(); };
-
-  // ── Plaid Update Mode (re-auth expired bank sessions) ─────────
-  const handleReconnectBank = ()=>{
-    if(reconnectLoading) return;
-    setReconnectLoading(true);
-    callPlaid("create_link_token",{ access_token: plaidAccessToken })
-      .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
-      .catch(()=>{ setReconnectLoading(false); alert("Could not start reconnect — please try again."); });
-  };
+  // ── Plaid reconnect success handler (must be before early returns — Rules of Hooks) ──
   const onReconnectSuccess = useCallback((publicToken)=>{
-    // After re-auth, exchange new public token, refresh accounts + transactions
     callPlaid("exchange_token",{ public_token: publicToken, institution_name: "Your Bank" })
       .then(ex=>{
         try{ localStorage.setItem("flourish_plaid_token", ex.access_token); }catch{}
@@ -5846,6 +5822,32 @@ export default function FlourishApp(){
   },[]);
   const { openPlaidLink: openReconnectLink } = usePlaidLinkSDK(reconnectToken, onReconnectSuccess);
   useEffect(()=>{ if(reconnectToken) openReconnectLink(); },[reconnectToken]); // eslint-disable-line
+
+  // ── Auth gate ───────────────────────────────────────────────────
+  if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
+  if(!user)return <AuthScreen onAuth={u=>setUser(u)}/>;
+
+  if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
+  if(showWhatIf)return <WhatIfSimulator data={appData||{}} onClose={()=>setShowWhatIf(false)}/>;
+  if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
+  if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}} onViewLegal={s=>setScreen(s)}/>;
+  if(showPaywall)return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;
+
+  const unread=INIT_NOTIFS.filter(n=>!n.read).length;
+  const dataWithHousehold={...appData,household,isPremium};
+
+  // ── Pass isOnline down to AICoach + reset helper ──────────────
+  const handleReset = () => { clearState(); window.location.reload(); };
+
+  // ── Plaid Update Mode (re-auth expired bank sessions) ─────────
+  const handleReconnectBank = ()=>{
+    if(reconnectLoading) return;
+    setReconnectLoading(true);
+    callPlaid("create_link_token",{ access_token: plaidAccessToken })
+      .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
+      .catch(()=>{ setReconnectLoading(false); alert("Could not start reconnect — please try again."); });
+  };
+
 
   // ── Plaid Offboarding — remove Item from Plaid when user disconnects ───────
   const disconnectBank = async ()=>{
