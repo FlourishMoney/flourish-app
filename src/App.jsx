@@ -2485,7 +2485,7 @@ function DashCustomize({ layout, onChange, onClose }) {
 }
 
 // ─── ONBOARDING ───────────────────────────────────────────────────────────────
-function Onboarding({onComplete}){
+function Onboarding({onComplete,onViewLegal}){
   const [step,setStep]=useState(0);
   const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false});
   const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment"}]);
@@ -2669,8 +2669,8 @@ function Onboarding({onComplete}){
       <div style={{marginTop:20,padding:"12px 16px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`,maxWidth:320,textAlign:"left"}}>
         <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7}}>
           By continuing you agree to our{" "}
-          <a href="https://flourishmoney.app/terms" target="_blank" rel="noopener noreferrer" style={{color:C.green,textDecoration:"none",fontWeight:600}}>Terms of Service</a>{" "}and{" "}
-          <a href="https://flourishmoney.app/privacy" target="_blank" rel="noopener noreferrer" style={{color:C.green,textDecoration:"none",fontWeight:600}}>Privacy Policy</a>
+          <button onClick={()=>onViewLegal&&onViewLegal("terms")} style={{background:"none",border:"none",padding:0,color:C.green,textDecoration:"none",fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Terms of Service</button>{" "}and{" "}
+          <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,color:C.green,textDecoration:"none",fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Privacy Policy</button>
           , and consent to the collection and processing of your financial data in accordance with PIPEDA (Canada) and applicable US privacy laws.
         </div>
       </div>
@@ -5243,6 +5243,128 @@ function CreditScreen({data}){
   );
 }
 
+// ─── PRIVACY POLICY ───────────────────────────────────────────────────────────
+function PrivacyPolicy({onBack}){
+  const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
+  const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
+  const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
+  const last="March 13, 2026";
+  return(
+    <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
+        <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.cream,cursor:"pointer",...s,fontSize:13}}>← Back</button>
+        <div>
+          <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream}}>Privacy Policy</div>
+          <div style={{...s,fontSize:11,color:C.muted}}>Last updated {last}</div>
+        </div>
+      </div>
+
+      <div style={{...p,background:C.card,borderRadius:14,padding:"14px 16px",border:`1px solid ${C.border}`,marginBottom:4}}>
+        Flourish Money is operated by <strong style={{color:C.cream}}>GrowSmart Inc.</strong> ("we", "us", or "our"). This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use the Flourish Money application ("App"), available at flourishmoney.app.
+      </div>
+
+      <div style={h2}>1. Information We Collect</div>
+      <div style={p}><strong style={{color:C.cream}}>Information you provide directly:</strong> First name, country and province/state, relationship status, income sources, account balances, bills, debts, savings goals, and financial transactions you enter manually or via bank connection (Plaid). We also collect an email address and password when you create an account.</div>
+      <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Information collected automatically:</strong> Device type, operating system, app version, usage patterns (screens viewed, features used), and crash reports. We do not collect your IP address for tracking purposes.</div>
+      <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Bank connection data (Plaid):</strong> If you connect your bank, Plaid Inc. retrieves account balances and transaction history on our behalf. We receive read-only access to this data. We do not store your banking credentials. Plaid's privacy policy applies to that connection.</div>
+
+      <div style={h2}>2. How We Use Your Information</div>
+      <div style={p}>We use your financial data solely to provide the Flourish Money service — including your Financial Health Score, spending insights, AI coaching, budgeting, debt tracking, and goals. Specifically we use it to: power your personalized AI Coach (via Anthropic's Claude API), calculate your financial health metrics, surface relevant opportunities and warnings, and improve the App. We do not sell your personal information to third parties. We do not use your financial data for advertising profiling.</div>
+
+      <div style={h2}>3. Legal Basis for Processing (Canada — PIPEDA)</div>
+      <div style={p}>For users in Canada, we collect and process your personal information with your knowledge and consent in accordance with the <em>Personal Information Protection and Electronic Documents Act</em> (PIPEDA) and applicable provincial privacy laws. You may withdraw consent at any time by deleting your account. We retain data only as long as necessary to provide the service or as required by law.</div>
+
+      <div style={h2}>4. Legal Basis for Processing (United States)</div>
+      <div style={p}>For US residents, we comply with applicable state and federal privacy laws. California residents have rights under the CCPA/CPRA including the right to know, delete, and opt out of sale of personal information. We do not sell personal information. To exercise your rights, contact us at privacy@flourishmoney.app.</div>
+
+      <div style={h2}>5. Data Storage & Security</div>
+      <div style={p}>Your data is stored on your device (locally via localStorage) and, if you create an account, in our secure cloud database provided by Supabase (hosted in data centres compliant with SOC 2 Type II). Data transmitted between your device and our servers is encrypted using TLS 1.2+. AI coaching queries are processed by Anthropic's API and are subject to Anthropic's data-handling policies — no conversation history is stored server-side by Flourish.</div>
+
+      <div style={h2}>6. Data Sharing</div>
+      <div style={p}>We share data with the following service providers solely to operate the App:</div>
+      <div style={{...p,marginTop:8,paddingLeft:16}}>• <strong style={{color:C.cream}}>Anthropic</strong> — AI coaching responses (transaction summaries sent as context)</div>
+      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Plaid</strong> — Bank account connectivity (if you choose to connect)</div>
+      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Supabase</strong> — Account authentication and encrypted cloud data storage</div>
+      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Netlify</strong> — App hosting and serverless function processing</div>
+      <div style={{...p,marginTop:8}}>We do not share your data with advertisers, data brokers, or any other third parties.</div>
+
+      <div style={h2}>7. Your Rights</div>
+      <div style={p}>You have the right to access, correct, or delete your personal information at any time. You can delete your account and all associated data from Settings → Delete Account. For data requests or questions, contact us at privacy@flourishmoney.app. We will respond within 30 days.</div>
+
+      <div style={h2}>8. Children's Privacy</div>
+      <div style={p}>The App is not intended for individuals under the age of 18. We do not knowingly collect personal information from minors. If we learn that we have collected personal information from a minor, we will promptly delete it.</div>
+
+      <div style={h2}>9. Changes to This Policy</div>
+      <div style={p}>We may update this Privacy Policy periodically. We will notify you of material changes via the App or by email. Continued use of the App after changes constitutes your acceptance of the updated policy.</div>
+
+      <div style={h2}>10. Contact Us</div>
+      <div style={p}>GrowSmart Inc. / Flourish Money<br/>Email: <span style={{color:C.green}}>privacy@flourishmoney.app</span><br/>Website: flourishmoney.app</div>
+    </div>
+  );
+}
+
+// ─── TERMS OF SERVICE ─────────────────────────────────────────────────────────
+function TermsOfService({onBack}){
+  const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
+  const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
+  const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
+  const last="March 13, 2026";
+  return(
+    <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
+        <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.cream,cursor:"pointer",...s,fontSize:13}}>← Back</button>
+        <div>
+          <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream}}>Terms of Service</div>
+          <div style={{...s,fontSize:11,color:C.muted}}>Last updated {last}</div>
+        </div>
+      </div>
+
+      <div style={{...p,background:C.card,borderRadius:14,padding:"14px 16px",border:`1px solid ${C.border}`,marginBottom:4}}>
+        Please read these Terms of Service carefully before using Flourish Money. By accessing or using the App, you agree to be bound by these Terms. If you do not agree, do not use the App.
+      </div>
+
+      <div style={h2}>1. About Flourish Money</div>
+      <div style={p}>Flourish Money ("App") is a personal finance management tool operated by <strong style={{color:C.cream}}>GrowSmart Inc.</strong> ("Company", "we", "us"). The App provides budgeting, spending tracking, financial health scoring, AI-powered coaching, and goal-setting tools for personal use.</div>
+
+      <div style={h2}>2. Eligibility</div>
+      <div style={p}>You must be at least 18 years old and a resident of Canada or the United States to use Flourish Money. By using the App, you represent and warrant that you meet these requirements.</div>
+
+      <div style={h2}>3. Not Financial Advice</div>
+      <div style={{...p,background:`${C.gold}11`,borderRadius:12,padding:"12px 14px",border:`1px solid ${C.gold}33`}}>⚠️ <strong style={{color:C.goldBright}}>Important:</strong> Flourish Money is an educational financial tool, not a licensed financial advisor. The AI Coach, insights, scores, and all content in the App are for informational purposes only and do not constitute financial, investment, tax, or legal advice. Always consult a qualified financial professional before making significant financial decisions.</div>
+
+      <div style={h2}>4. Account Registration</div>
+      <div style={p}>You may use Flourish Money with a guest account (data stored locally) or create a registered account with your email and password. You are responsible for maintaining the confidentiality of your account credentials and for all activity that occurs under your account. You must notify us immediately at hello@flourishmoney.app of any unauthorized use.</div>
+
+      <div style={h2}>5. Bank Connectivity (Plaid)</div>
+      <div style={p}>If you choose to connect your bank accounts, you authorize us to use Plaid Inc. to access your financial institution on your behalf. This access is read-only; we cannot initiate transactions. Your banking credentials are never shared with or stored by Flourish Money. By connecting your bank, you also agree to Plaid's End User Privacy Policy.</div>
+
+      <div style={h2}>6. Acceptable Use</div>
+      <div style={p}>You agree not to: use the App for any unlawful purpose; attempt to reverse-engineer, decompile, or hack the App; use the App to process another person's financial data without their consent; resell or sublicense the App; or interfere with the security or integrity of the App or its infrastructure.</div>
+
+      <div style={h2}>7. Subscription & Billing</div>
+      <div style={p}><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</div>
+
+      <div style={h2}>8. Intellectual Property</div>
+      <div style={p}>The App, including its design, logo, code, AI systems, and content, is the exclusive property of GrowSmart Inc. and is protected by copyright, trademark, and other intellectual property laws. You receive a limited, non-exclusive, non-transferable licence to use the App for personal, non-commercial purposes.</div>
+
+      <div style={h2}>9. Disclaimer of Warranties</div>
+      <div style={p}>THE APP IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED. WE DO NOT WARRANT THAT THE APP WILL BE UNINTERRUPTED, ERROR-FREE, OR THAT FINANCIAL DATA WILL BE ACCURATE OR COMPLETE. YOUR USE OF THE APP IS AT YOUR SOLE RISK.</div>
+
+      <div style={h2}>10. Limitation of Liability</div>
+      <div style={p}>TO THE MAXIMUM EXTENT PERMITTED BY LAW, GROWSMART INC. SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES ARISING FROM YOUR USE OF OR INABILITY TO USE THE APP, EVEN IF WE HAVE BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES. OUR TOTAL LIABILITY SHALL NOT EXCEED THE AMOUNT YOU PAID US IN THE 12 MONTHS PRIOR TO THE CLAIM.</div>
+
+      <div style={h2}>11. Governing Law</div>
+      <div style={p}>These Terms shall be governed by the laws of the Province of Ontario and the federal laws of Canada applicable therein, without regard to conflict of law principles. For US users, disputes may alternatively be resolved under the laws of your state of residence to the extent required by applicable law.</div>
+
+      <div style={h2}>12. Changes to These Terms</div>
+      <div style={p}>We reserve the right to modify these Terms at any time. We will notify you of material changes via the App or email. Continued use of the App after changes constitutes your acceptance of the updated Terms.</div>
+
+      <div style={h2}>13. Contact</div>
+      <div style={p}>GrowSmart Inc. / Flourish Money<br/>Email: <span style={{color:C.green}}>hello@flourishmoney.app</span><br/>Website: flourishmoney.app</div>
+    </div>
+  );
+}
+
 // ─── PREMIUM GATE ─────────────────────────────────────────────────────────────
 function PremiumGate({feature,desc,onUpgrade}){
   return(
@@ -5641,7 +5763,7 @@ export default function FlourishApp(){
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} onClose={()=>setShowWhatIf(false)}/>;
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
-  if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}}/>;
+  if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}} onViewLegal={s=>setScreen(s)}/>;
   if(showPaywall)return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;
 
   const unread=INIT_NOTIFS.filter(n=>!n.read).length;
@@ -5661,6 +5783,8 @@ export default function FlourishApp(){
     if(screen==="goals")return <Goals data={dataWithHousehold} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab}/>;
     if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
+    if(screen==="privacy")return <PrivacyPolicy onBack={()=>setScreen("home")}/>;
+    if(screen==="terms")return <TermsOfService onBack={()=>setScreen("home")}/>;
     return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/>;
   };
 
