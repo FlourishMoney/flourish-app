@@ -1374,7 +1374,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {opportunities.map(o=>(
-          <button key={o.id} onClick={()=>{if(o.tab)setGoalsTab(o.tab);setScreen(o.screen);}} style={{background:C.card,border:`1.5px solid ${o.color}28`,borderRadius:18,padding:"14px 16px",cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",gap:12,alignItems:"flex-start",transition:"all .18s",width:"100%"}}
+          <button key={o.id} onClick={()=>{if(o.tab&&setGoalsTab)setGoalsTab(o.tab);setScreen(o.screen);}} style={{background:C.card,border:`1.5px solid ${o.color}28`,borderRadius:18,padding:"14px 16px",cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",gap:12,alignItems:"flex-start",transition:"all .18s",width:"100%"}}
             onMouseEnter={e=>{e.currentTarget.style.borderColor=o.color+"66";e.currentTarget.style.background=o.color+"08";}}
             onMouseLeave={e=>{e.currentTarget.style.borderColor=o.color+"28";e.currentTarget.style.background=C.card;}}>
             <span style={{fontSize:20,flexShrink:0,marginTop:1}}>{o.icon}</span>
@@ -5490,7 +5490,7 @@ export default function FlourishApp(){
     if(screen==="goals")return <Goals data={dataWithHousehold} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab}/>;
     if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
-    return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout}/>;
+    return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/>;
   };
 
   const ALL_NAV=[
@@ -5599,7 +5599,7 @@ input,button,select,textarea { font-family:inherit; }
         {/* Two-column for home, single for others */}
         {screen==="home"&&!showNotifs&&!showSettings?(
           <div style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:28,padding:"28px 36px 40px",overflowY:"auto",flex:1}}>
-            <div><Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={true} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout}/></div>
+            <div><Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={true} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/></div>
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
               <DesktopSidebar data={dataWithHousehold} setScreen={setScreen}/>
             </div>
