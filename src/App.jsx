@@ -5235,8 +5235,8 @@ function AuthScreen({ onAuth }) {
     <div style={{ minHeight: "100dvh", background: "#050D09", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div style={{ width: "100%", maxWidth: 400, animation: "fadeUp .5s ease both" }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ marginBottom: 4, display: "flex", justifyContent: "center" }}><FlourishGlyph size={52}/></div>
-          <div style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: 22, fontWeight: 800, color: "#EDE9E2", letterSpacing: "-0.5px", marginBottom: 2 }}>flourish</div>
+          <div style={{ marginBottom: 8, display: "flex", justifyContent: "center" }}><FlourishMark size={72}/></div>
+          <div style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: 24, fontWeight: 800, color: "#EDE9E2", letterSpacing: "-0.5px", marginTop: 6, marginBottom: 2 }}>flourish</div>
           <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "Plus Jakarta Sans,sans-serif", marginTop: 4 }}>Your financial coach</div>
         </div>
         <div style={{ background: "#0D1F12", borderRadius: 24, padding: 28, border: "1px solid rgba(255,255,255,0.08)" }}>
@@ -5363,7 +5363,7 @@ export default function FlourishApp(){
   };
 
   // ── Auth gate ───────────────────────────────────────────────────
-  if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishGlyph size={52}/></div></div>;
+  if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
   if(!user)return <AuthScreen onAuth={u=>setUser(u)}/>;
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
