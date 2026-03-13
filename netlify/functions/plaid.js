@@ -72,6 +72,9 @@ exports.handler = async (event) => {
   try { body = JSON.parse(event.body || "{}"); }
   catch { return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Invalid JSON" }) }; }
 
+  // DEBUG — remove after fixing
+  console.log("[Plaid debug] ENV:", process.env.PLAID_ENV, "| CLIENT_ID length:", (process.env.PLAID_CLIENT_ID||"").length, "| SECRET length:", (process.env.PLAID_SECRET||"").length);
+
   if (!process.env.PLAID_CLIENT_ID || !process.env.PLAID_SECRET) {
     return {
       statusCode: 500, headers: CORS,
