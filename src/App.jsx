@@ -5214,7 +5214,7 @@ function AuthScreen({ onAuth }) {
     <div style={{ minHeight: "100dvh", background: "#050D09", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div style={{ width: "100%", maxWidth: 400, animation: "fadeUp .5s ease both" }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ fontSize: 44, marginBottom: 8 }}>🌿</div>
+          <div style={{ marginBottom: 12, display: "flex", justifyContent: "center" }}><FlourishMark size={64}/></div>
           <div style={{ fontFamily: "Playfair Display,serif", fontSize: 28, fontWeight: 900, color: "#EDE9E2" }}>Flourish</div>
           <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "Plus Jakarta Sans,sans-serif", marginTop: 4 }}>Your financial coach</div>
         </div>
@@ -5342,7 +5342,7 @@ export default function FlourishApp(){
   };
 
   // ── Auth gate ───────────────────────────────────────────────────
-  if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{fontSize:36,animation:"pulse 1.5s infinite"}}>🌿</div></div>;
+  if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><FlourishMark size={64}/></div>;
   if(!user)return <AuthScreen onAuth={u=>setUser(u)}/>;
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
