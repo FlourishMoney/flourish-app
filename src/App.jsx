@@ -5277,6 +5277,16 @@ function AuthScreen({ onAuth }) {
                 {loading ? "..." : mode === "login" ? "Log In" : "Create Account"}
               </button>
               {mode === "signup" && <div style={{ color: "#6B7A6E", fontSize: 11, textAlign: "center", marginTop: 14, lineHeight: 1.5 }}>By signing up you agree to our Terms of Service and Privacy Policy.</div>}
+
+              {/* Dev bypass — remove before public launch */}
+              <div style={{ marginTop: 24, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 16, textAlign: "center" }}>
+                <button
+                  onClick={() => onAuth({ id: "dev-user", email: "amanda@flourishmoney.app", app_metadata: {}, user_metadata: {} })}
+                  style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, padding: "9px 20px", color: "#6B7A6E", fontSize: 12, fontFamily: "Plus Jakarta Sans,sans-serif", cursor: "pointer", letterSpacing: 0.3 }}
+                >
+                  Skip login (dev only)
+                </button>
+              </div>
             </div>
           )}
         </div>
