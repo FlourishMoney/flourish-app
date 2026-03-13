@@ -27,7 +27,7 @@ exports.handler = async function(event) {
   switch (type) {
     case "insights":
       anthropicBody = {
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 1000,
         system: payload.system,
         messages: [{ role: "user", content: payload.prompt }],
@@ -35,7 +35,7 @@ exports.handler = async function(event) {
       break;
     case "chat":
       anthropicBody = {
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 1000,
         system: payload.system,
         messages: payload.messages,
@@ -43,14 +43,14 @@ exports.handler = async function(event) {
       break;
     case "checkin":
       anthropicBody = {
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 150,
         messages: [{ role: "user", content: payload.prompt }],
       };
       break;
     case "simulator":
       anthropicBody = {
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 350,
         messages: [{ role: "user", content: payload.prompt }],
       };
