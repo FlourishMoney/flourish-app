@@ -1301,7 +1301,7 @@ function WealthForecast({data}) {
 }
 
 // ── OPPORTUNITY DETECTION ──────────────────────────────────────────────────────
-function OpportunityDetector({data, setScreen}) {
+function OpportunityDetector({data, setScreen, setGoalsTab}) {
   const txns = data.transactions || MOCK_TXN;
   const debts = data.debts || [];
   const cc = CC[data.profile?.country || "CA"];
@@ -1329,7 +1329,7 @@ function OpportunityDetector({data, setScreen}) {
       id:"refi", icon:"💳", color:C.orange,
       title:`Refinance ${highRateDebt.name}`,
       detail:`At ${highRateDebt.rate}% you're overpaying. A 6.5% personal loan could save ~$${saving}/yr in interest.`,
-      action:"Debt Plan", screen:"goals", badge:"Save $"+saving+"/yr"
+      action:"Debt Plan", screen:"goals", tab:"sim", badge:"Save $"+saving+"/yr"
     });
   }
 
@@ -1339,14 +1339,14 @@ function OpportunityDetector({data, setScreen}) {
       id:"tax", icon:"🍁", color:C.red,
       title:"Tax benefits you may qualify for",
       detail:`Based on your profile you may be eligible for the Canada Workers Benefit, GST/HST credit, or Ontario Trillium Benefit.`,
-      action:"Tax Tips", screen:"goals", badge:"Claim now"
+      action:"Tax Tips", screen:"goals", tab:"tax", badge:"Claim now"
     });
   } else {
     opportunities.push({
       id:"tax", icon:"🦅", color:C.blue,
       title:"US tax credits available",
       detail:`You may qualify for the Earned Income Tax Credit or Saver's Credit — worth up to $2,000/yr.`,
-      action:"Tax Tips", screen:"goals", badge:"Claim now"
+      action:"Tax Tips", screen:"goals", tab:"tax", badge:"Claim now"
     });
   }
 
@@ -1358,7 +1358,7 @@ function OpportunityDetector({data, setScreen}) {
       id:"hisa", icon:"🏦", color:C.gold,
       title:`Earn more on your savings`,
       detail:`$${bal.toFixed(0)} in savings at typical 0.3% earns $${(bal*0.003).toFixed(0)}/yr. A HISA at 4%+ earns $${(bal*0.04).toFixed(0)}/yr.`,
-      action:"Learn More", screen:"goals", badge:"+$"+(Math.round((bal*0.04)-(bal*0.003)))+"/yr"
+      action:"Learn More", screen:"goals", tab:"learn", badge:"+$"+(Math.round((bal*0.04)-(bal*0.003)))+"/yr"
     });
   }
 
@@ -1374,7 +1374,7 @@ function OpportunityDetector({data, setScreen}) {
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {opportunities.map(o=>(
-          <button key={o.id} onClick={()=>setScreen(o.screen)} style={{background:C.card,border:`1.5px solid ${o.color}28`,borderRadius:18,padding:"14px 16px",cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",gap:12,alignItems:"flex-start",transition:"all .18s",width:"100%"}}
+          <button key={o.id} onClick={()=>{if(o.tab)setGoalsTab(o.tab);setScreen(o.screen);}} style={{background:C.card,border:`1.5px solid ${o.color}28`,borderRadius:18,padding:"14px 16px",cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",gap:12,alignItems:"flex-start",transition:"all .18s",width:"100%"}}
             onMouseEnter={e=>{e.currentTarget.style.borderColor=o.color+"66";e.currentTarget.style.background=o.color+"08";}}
             onMouseLeave={e=>{e.currentTarget.style.borderColor=o.color+"28";e.currentTarget.style.background=C.card;}}>
             <span style={{fontSize:20,flexShrink:0,marginTop:1}}>{o.icon}</span>
@@ -3015,7 +3015,7 @@ function Notifications({onClose}){
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
-function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout}){
+function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab}){
   const [mounted,setMounted]=useState(false);
   const [expandedTile,setExpandedTile]=useState(null);
   const [showCustomize,setShowCustomize]=useState(false);
@@ -3175,10 +3175,10 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         <div style={{...anim(110),gridColumn:"1 / -1",display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
           {[
             {label:"Due Soon",value:`$${soonTotal.toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
-            {label:totalDebt>0?"Total Debt":"Debt Free!",value:totalDebt>0?`$${(totalDebt/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals"},
+            {label:totalDebt>0?"Total Debt":"Debt Free!",value:totalDebt>0?`$${(totalDebt/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
             {label:"Net Worth",value:`${netWorth>=0?"+":""}$${(Math.abs(netWorth)/1000).toFixed(1)}k`,sub:"↑ trending",color:C.teal,icon:"chartUp",screen:"plan"},
           ].map((s,i)=>(
-            <div key={i} onClick={()=>setScreen(s.screen)} style={{...glass(s.color),borderRadius:20,padding:"14px 12px 12px",textAlign:"center",position:"relative",overflow:"hidden",cursor:"pointer",transition:"transform .2s, box-shadow .2s"}}
+            <div key={i} onClick={()=>{if(s.tab&&setGoalsTab)setGoalsTab(s.tab);setScreen(s.screen);}} style={{...glass(s.color),borderRadius:20,padding:"14px 12px 12px",textAlign:"center",position:"relative",overflow:"hidden",cursor:"pointer",transition:"transform .2s, box-shadow .2s"}}
               onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 12px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)`;}}
               onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04)";}}>
               <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at 50% 0%,${s.color}14 0%,transparent 70%)`,pointerEvents:"none"}}/>
@@ -3308,7 +3308,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
 
         {/* ── OPPORTUNITY DETECTOR ─────────────────────────────────────── */}
         {isVisible('opportunity')&&<div style={{...anim(255),gridColumn:"1 / -1",...glass(C.gold),borderRadius:22,overflow:"hidden"}}>
-          <OpportunityDetector data={data} setScreen={setScreen}/>
+          <OpportunityDetector data={data} setScreen={setScreen} setGoalsTab={setGoalsTab}/>
         </div>}
 
         {/* ── HEALTH SCORE PILLARS: progressive disclosure ───────────────── */}
@@ -3389,11 +3389,11 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         {isVisible('quicknav')&&<div style={{...anim(320),gridColumn:"1 / -1",display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           {[
             {label:"2-Week Forecast",icon:"calendar",screen:"plan",color:C.teal,sub:"Cash flow ahead"},
-            {label:"Debt Simulator",icon:"trendUp",screen:"goals",color:C.purple,sub:"Drag to freedom date"},
+            {label:"Debt Simulator",icon:"trendUp",screen:"goals",tab:"sim",color:C.purple,sub:"Drag to freedom date"},
             {label:"AI Coach",icon:"sparkles",screen:"coach",color:C.green,sub:"Ask anything · powered by Claude",hero:true},
             {label:data.profile.status==="single"?"Solo Check-In":"Money Meeting",icon:data.profile.status==="single"?"🧘":"💑",screen:"family",color:C.pink,sub:"Weekly ritual"},
           ].concat(onWhatIf?[{label:"What If?",icon:"sparkles",screen:null,color:C.teal,sub:"Simulate any decision",whatIf:true}]:[]).map((a,i)=>(
-            <button key={a.label} onClick={()=>a.whatIf?onWhatIf():setScreen(a.screen)}
+            <button key={a.label} onClick={()=>a.whatIf?onWhatIf():(a.tab&&setGoalsTab&&setGoalsTab(a.tab),setScreen(a.screen))}
               style={{...glass(a.color,a.hero?C.green+"44":a.color+"1A"),borderRadius:20,padding:"18px 16px",cursor:"pointer",textAlign:"left",fontFamily:"inherit",transition:"all .25s",position:"relative",overflow:"hidden"}}
               onMouseEnter={e=>{e.currentTarget.style.borderColor=a.color+"66";e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 14px 40px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06)`;}}
               onMouseLeave={e=>{e.currentTarget.style.borderColor=a.hero?C.green+"44":a.color+"1A";e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04)";}}>
@@ -3624,8 +3624,8 @@ function SpendScreen({data}){
 
 
 // ─── GOALS ────────────────────────────────────────────────────────────────────
-function Goals({data}){
-  const [tab,setTab]=useState("sim");
+function Goals({data,initialTab="sim"}){
+  const [tab,setTab]=useState(initialTab);
   const [selDebt,setSelDebt]=useState(0);
   const [extra,setExtra]=useState(50);
   const [method,setMethod]=useState("avalanche");
@@ -3768,52 +3768,117 @@ function Goals({data}){
       const cfg=CC[data.profile?.country||"CA"];
       const tips=cfg.taxTips;
       const highPriority=tips.filter(t=>t.priority==="high");
-      const other=tips.filter(t=>t.priority!=="high");
-      return <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <div style={{background:C.goldDim,border:`1px solid ${C.gold}33`,borderRadius:16,padding:"14px 16px"}}>
-          <div style={{color:C.goldBright,fontWeight:700,fontSize:13,marginBottom:4}}>{cfg.flag} {cfg.name}-specific tax opportunities</div>
-          <div style={{color:C.muted,fontSize:12,lineHeight:1.6}}>Based on your country. Many people leave thousands unclaimed each year. Review each one.</div>
+      const medPriority=tips.filter(t=>t.priority!=="high");
+      const totalSavings=highPriority.length+" high-priority credits identified";
+      return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+
+        {/* Hero banner */}
+        <div style={{background:`linear-gradient(135deg,${C.gold}18 0%,${C.gold}08 100%)`,border:`1px solid ${C.gold}40`,borderRadius:20,padding:"18px 20px",position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",top:-18,right:-18,fontSize:64,opacity:0.08}}>💰</div>
+          <div style={{color:C.goldBright,fontWeight:800,fontSize:13,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{cfg.flag} {cfg.name}-Specific Tax Opportunities</div>
+          <div style={{color:C.muted,fontSize:12,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>Most people leave thousands on the table. These are the credits and benefits you may be missing right now.</div>
+          <div style={{display:"flex",gap:10}}>
+            <div style={{background:C.gold+"22",borderRadius:12,padding:"8px 14px",textAlign:"center"}}>
+              <div style={{color:C.goldBright,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{highPriority.length}</div>
+              <div style={{color:C.muted,fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:0.8}}>High Priority</div>
+            </div>
+            <div style={{background:C.teal+"18",borderRadius:12,padding:"8px 14px",textAlign:"center"}}>
+              <div style={{color:C.tealBright,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{cfg.benefitsChecker.length}</div>
+              <div style={{color:C.muted,fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:0.8}}>Benefits</div>
+            </div>
+            <div style={{background:C.green+"18",borderRadius:12,padding:"8px 14px",textAlign:"center",flex:1}}>
+              <div style={{color:C.greenBright,fontWeight:900,fontSize:14,fontFamily:"'Playfair Display',serif"}}>$$$</div>
+              <div style={{color:C.muted,fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:0.8}}>Unclaimed</div>
+            </div>
+          </div>
         </div>
-        {highPriority.length>0&&<div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,paddingLeft:2}}>🔥 High Priority</div>}
-        {tips.map((tip,i)=>(
-          <div key={i} style={{background:C.card,borderRadius:18,padding:"18px",border:`1px solid ${tip.priority==="high"?C.gold+"44":C.border}`,position:"relative",overflow:"hidden"}}>
-            {tip.priority==="high"&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${C.gold},${C.goldBright})`}}/>}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-              <div style={{flex:1,paddingRight:12}}>
-                <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif",lineHeight:1.3,marginBottom:6}}>{tip.title}</div>
-                <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65}}>{tip.body}</div>
-              </div>
-              <div style={{textAlign:"center",flexShrink:0}}>
-                <div style={{fontSize:20}}>{tip.flag}</div>
-                {tip.priority==="high"&&<div style={{color:C.goldBright,fontSize:8,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginTop:2}}>Priority</div>}
-              </div>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:10,borderTop:`1px solid ${C.border}`}}>
-              <div>
-                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1}}>Potential savings</div>
-                <div style={{color:C.goldBright,fontWeight:800,fontSize:15}}>{tip.savings}</div>
-              </div>
-              <div style={{background:C.gold+"18",border:`1px solid ${C.gold}33`,borderRadius:99,padding:"6px 14px",color:C.goldBright,fontSize:11,fontWeight:700,cursor:"pointer"}}>
-                {tip.action} →
-              </div>
-            </div>
+
+        {/* High Priority Section */}
+        {highPriority.length>0&&<>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{height:1,flex:1,background:C.gold+"33"}}/>
+            <span style={{color:C.goldBright,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🔥 High Priority</span>
+            <div style={{height:1,flex:1,background:C.gold+"33"}}/>
           </div>
-        ))}
-        {/* Benefits checker */}
-        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,paddingLeft:2,marginTop:4}}>🎁 Benefits You May Not Be Claiming</div>
+          {highPriority.map((tip,i)=>(
+            <div key={i} style={{background:C.card,borderRadius:20,padding:"18px 20px",border:`1.5px solid ${C.gold}44`,position:"relative",overflow:"hidden"}}>
+              <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:`linear-gradient(90deg,${C.gold},${C.goldBright})`}}/>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                <div style={{flex:1,paddingRight:12}}>
+                  <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif",lineHeight:1.3,marginBottom:6}}>{tip.title}</div>
+                  <div style={{color:C.mutedHi,fontSize:12.5,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{tip.body}</div>
+                </div>
+                <div style={{background:C.gold+"18",borderRadius:12,padding:"8px 10px",textAlign:"center",flexShrink:0,minWidth:56}}>
+                  <div style={{fontSize:18}}>{tip.flag}</div>
+                  <div style={{color:C.goldBright,fontSize:8,fontWeight:800,textTransform:"uppercase",letterSpacing:0.8,marginTop:3}}>Priority</div>
+                </div>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:12,borderTop:`1px solid ${C.gold}22`}}>
+                <div>
+                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>Potential savings</div>
+                  <div style={{color:C.goldBright,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{tip.savings}</div>
+                </div>
+                <button style={{background:`linear-gradient(135deg,${C.gold}33,${C.gold}18)`,border:`1px solid ${C.gold}55`,borderRadius:99,padding:"8px 16px",color:C.goldBright,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                  {tip.action} →
+                </button>
+              </div>
+            </div>
+          ))}
+        </>}
+
+        {/* Other Tips Section */}
+        {medPriority.length>0&&<>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
+            <div style={{height:1,flex:1,background:C.border}}/>
+            <span style={{color:C.muted,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Also Worth Reviewing</span>
+            <div style={{height:1,flex:1,background:C.border}}/>
+          </div>
+          {medPriority.map((tip,i)=>(
+            <div key={i} style={{background:C.card,borderRadius:18,padding:"16px 18px",border:`1px solid ${C.border}`,position:"relative",overflow:"hidden"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                <div style={{flex:1,paddingRight:10}}>
+                  <div style={{color:C.cream,fontWeight:700,fontSize:14,fontFamily:"'Playfair Display',serif",lineHeight:1.3,marginBottom:5}}>{tip.title}</div>
+                  <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.65,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{tip.body}</div>
+                </div>
+                <div style={{fontSize:18,flexShrink:0,marginLeft:8}}>{tip.flag}</div>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:10,borderTop:`1px solid ${C.border}`}}>
+                <div style={{color:C.tealBright,fontWeight:700,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{tip.savings}</div>
+                <button style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:99,padding:"6px 14px",color:C.mutedHi,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                  {tip.action} →
+                </button>
+              </div>
+            </div>
+          ))}
+        </>}
+
+        {/* Benefits Checker */}
+        <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
+          <div style={{height:1,flex:1,background:C.teal+"33"}}/>
+          <span style={{color:C.tealBright,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🎁 Benefits You May Not Be Claiming</span>
+          <div style={{height:1,flex:1,background:C.teal+"33"}}/>
+        </div>
         {cfg.benefitsChecker.map((b,i)=>(
-          <div key={i} style={{background:C.card,borderRadius:14,padding:"14px 16px",border:`1px solid ${C.teal}22`,display:"flex",gap:12,alignItems:"flex-start"}}>
-            <div style={{fontSize:24,flexShrink:0}}>{b.icon}</div>
-            <div style={{flex:1}}>
-              <div style={{color:C.cream,fontWeight:700,fontSize:13,marginBottom:2}}>{b.name}</div>
-              <div style={{color:C.muted,fontSize:12,marginBottom:4}}>{b.eligible}</div>
+          <div key={i} style={{background:C.card,borderRadius:16,padding:"14px 18px",border:`1px solid ${C.teal}28`,display:"flex",gap:14,alignItems:"center"}}>
+            <div style={{width:44,height:44,borderRadius:14,background:C.teal+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{b.icon}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{color:C.cream,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>{b.name}</div>
+              <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>{b.eligible}</div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{color:C.tealBright,fontWeight:700,fontSize:13}}>{b.amount}</span>
-                <span style={{color:C.teal,fontSize:11,fontWeight:600}}>{b.apply} →</span>
+                <span style={{color:C.tealBright,fontWeight:800,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{b.amount}</span>
+                <span style={{color:C.tealBright,fontSize:11,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.apply} →</span>
               </div>
             </div>
           </div>
         ))}
+
+        {/* Bottom nudge */}
+        <div style={{background:C.green+"10",border:`1px solid ${C.green}28`,borderRadius:16,padding:"14px 18px",textAlign:"center",marginTop:4}}>
+          <div style={{fontSize:20,marginBottom:6}}>🌱</div>
+          <div style={{color:C.greenBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>Not sure what applies to you?</div>
+          <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Ask your AI Coach — tell it your situation and it will identify exactly which credits you qualify for.</div>
+        </div>
+
       </div>;
     })()}
 
@@ -5340,6 +5405,7 @@ export default function FlourishApp(){
   const [showWrapped,setShowWrapped]=useState(false);
   const [isOnline,setIsOnline]=useState(()=>navigator.onLine);
   const [dashLayout,setDashLayout]=useState(()=>{
+  const [goalsTab,setGoalsTab]=useState("sim");
     try{ const s=localStorage.getItem('flourish_dash_layout'); if(s) return JSON.parse(s); }catch{}
     return DASH_TILES.map(t=>({id:t.id,visible:true}));
   });
@@ -5416,12 +5482,12 @@ export default function FlourishApp(){
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)}/>;
     if(showSettings)return <Settings data={appData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}}/>;
-    if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout}/>;
+    if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold}/>;
     if(screen==="coach")return isPremium?<AICoach data={dataWithHousehold} isOnline={isOnline}/>:<PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;
     if(screen==="family")return <Family data={dataWithHousehold} household={household} setHousehold={setHousehold}/>;
-    if(screen==="goals")return <Goals data={dataWithHousehold} onUpgrade={()=>setShowPaywall(true)}/>;
+    if(screen==="goals")return <Goals data={dataWithHousehold} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab}/>;
     if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout}/>;
