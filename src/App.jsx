@@ -5027,6 +5027,9 @@ function PremiumGate({feature,desc,onUpgrade}){
 // ─── PAYWALL ──────────────────────────────────────────────────────────────────
 function Paywall({onClose,onUpgrade,country}){
   const [selected,setSelected]=useState("annual");
+  const [promo,setPromo]=useState("");
+  const [promoError,setPromoError]=useState("");
+  const PROMO_CODES=["FLOURISH2026","AMANDA","FOUNDER","GROWSMART","BETA100"];
   const isCA=country==="CA";
   const plans={
     annual:{label:"Annual",price:isCA?"$79.99/yr":"$59.99/yr",monthly:isCA?"$6.67/mo":"$5.00/mo",save:"Save 33%",badge:"Best Value"},
@@ -5084,6 +5087,24 @@ function Paywall({onClose,onUpgrade,country}){
             </div>
           ))}
         </div>
+
+        {/* Promo code */}
+        <div style={{display:"flex",gap:8,marginBottom:12}}>
+          <input
+            value={promo}
+            onChange={e=>{setPromo(e.target.value.toUpperCase());setPromoError("");}}
+            placeholder="Promo code"
+            style={{flex:1,background:C.card,border:`1.5px solid ${promoError?C.red:C.border}`,borderRadius:12,padding:"11px 14px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none"}}
+          />
+          <button
+            onClick={()=>{
+              if(PROMO_CODES.includes(promo.trim())){onUpgrade();}
+              else{setPromoError("Invalid code");}
+            }}
+            style={{background:C.purple+"22",border:`1.5px solid ${C.purple}44`,borderRadius:12,padding:"11px 16px",color:C.purpleBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",whiteSpace:"nowrap"}}
+          >Apply</button>
+        </div>
+        {promoError&&<div style={{color:C.red,fontSize:11,marginBottom:8,textAlign:"center"}}>{promoError}</div>}
 
         {/* CTA */}
         <button onClick={onUpgrade} style={{width:"100%",background:`linear-gradient(135deg,${C.purple} 0%,${C.purpleBright} 100%)`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:16,padding:"16px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 8px 32px ${C.purple}40`,marginBottom:12}}>
@@ -5214,7 +5235,8 @@ function AuthScreen({ onAuth }) {
     <div style={{ minHeight: "100dvh", background: "#050D09", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div style={{ width: "100%", maxWidth: 400, animation: "fadeUp .5s ease both" }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ marginBottom: 12, display: "flex", justifyContent: "center" }}><FlourishMark size={64}/></div>
+          <div style={{ marginBottom: 4, display: "flex", justifyContent: "center" }}><FlourishGlyph size={52}/></div>
+          <div style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: 22, fontWeight: 800, color: "#EDE9E2", letterSpacing: "-0.5px", marginBottom: 2 }}>flourish</div>
           <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "Plus Jakarta Sans,sans-serif", marginTop: 4 }}>Your financial coach</div>
         </div>
         <div style={{ background: "#0D1F12", borderRadius: 24, padding: 28, border: "1px solid rgba(255,255,255,0.08)" }}>
@@ -5341,7 +5363,7 @@ export default function FlourishApp(){
   };
 
   // ── Auth gate ───────────────────────────────────────────────────
-  if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><FlourishMark size={64}/></div>;
+  if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishGlyph size={52}/></div></div>;
   if(!user)return <AuthScreen onAuth={u=>setUser(u)}/>;
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
