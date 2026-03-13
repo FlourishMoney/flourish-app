@@ -667,14 +667,31 @@ function AutopilotCard({data, setScreen}) {
     },
   ].filter(Boolean);
 
+  const autoBg = C.isDark
+    ? `linear-gradient(155deg,#061510 0%,#0B1E14 50%,#080D10 100%)`
+    : `linear-gradient(155deg,rgba(0,204,133,0.06) 0%,rgba(0,180,115,0.04) 50%,rgba(0,147,95,0.05) 100%)`;
+  const autoText      = C.isDark ? "rgba(255,255,255,0.85)"  : C.text;
+  const autoMuted     = C.isDark ? "rgba(255,255,255,0.40)"  : C.muted;
+  const autoSubtle    = C.isDark ? "rgba(255,255,255,0.35)"  : C.muted;
+  const autoDivider   = C.isDark ? "rgba(255,255,255,0.06)"  : C.border;
+  const autoTrack     = C.isDark ? "rgba(255,255,255,0.08)"  : "rgba(0,0,0,0.07)";
+  const autoChipBg    = C.isDark ? "rgba(255,255,255,0.07)"  : "rgba(0,0,0,0.05)";
+  const autoChipText  = C.isDark ? "rgba(255,255,255,0.40)"  : C.muted;
+  const autoAlertBg   = C.isDark ? "rgba(255,100,100,0.12)"  : "rgba(220,60,60,0.08)";
+  const autoAlertBdr  = C.isDark ? "rgba(255,100,100,0.25)"  : "rgba(220,60,60,0.25)";
+  const autoAlertText = C.isDark ? "rgba(255,160,160,0.9)"   : "#c0392b";
+  const autoItemMuted = C.isDark ? "rgba(255,255,255,0.30)"  : C.muted;
+  const autoBorder    = C.isDark ? `1px solid ${C.green}30`  : `1px solid ${C.green}40`;
+  const autoShadow    = C.isDark ? `0 16px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.03), inset 0 1px 0 rgba(0,214,143,0.08)` : `0 4px 24px rgba(0,180,115,0.12), 0 1px 0 rgba(0,204,133,0.15)`;
+
   return (
-    <div style={{background:`linear-gradient(155deg,#061510 0%,#0B1E14 50%,#080D10 100%)`,borderRadius:26,overflow:"hidden",border:`1px solid ${C.green}30`,boxShadow:`0 16px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.03), inset 0 1px 0 rgba(0,214,143,0.08)`,backdropFilter:"blur(12px)"}}>
+    <div style={{background:autoBg,borderRadius:26,overflow:"hidden",border:autoBorder,boxShadow:autoShadow,backdropFilter:"blur(12px)"}}>
       {/* Header */}
       <div style={{padding:"18px 20px 0",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div>
-          <div style={{color:"rgba(237,232,225,0.4)",fontSize:9,textTransform:"uppercase",letterSpacing:3,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:5}}>Autopilot · {today}</div>
+          <div style={{color:autoMuted,fontSize:9,textTransform:"uppercase",letterSpacing:3,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:5}}>Autopilot · {today}</div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:"#fff",lineHeight:1.2}}>Today's Money Plan</div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.text,lineHeight:1.2}}>Today's Money Plan</div>
             <span style={{background:C.teal+"33",color:C.tealBright,fontSize:8,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,letterSpacing:1,textTransform:"uppercase",padding:"3px 7px",borderRadius:99,border:`1px solid ${C.teal}44`}}>Adaptive</span>
           </div>
         </div>
@@ -687,35 +704,35 @@ function AutopilotCard({data, setScreen}) {
 
       {/* Alert banner */}
       {plan.alerts.length > 0 && (
-        <div style={{margin:"12px 20px 0",background:"rgba(255,100,100,0.12)",border:"1px solid rgba(255,100,100,0.25)",borderRadius:12,padding:"10px 14px",display:"flex",gap:8,alignItems:"flex-start"}}>
+        <div style={{margin:"12px 20px 0",background:autoAlertBg,border:`1px solid ${autoAlertBdr}`,borderRadius:12,padding:"10px 14px",display:"flex",gap:8,alignItems:"flex-start"}}>
           <span style={{fontSize:14,flexShrink:0}}>⚠️</span>
-          <span style={{color:"rgba(255,160,160,0.9)",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{plan.alerts[0].msg}</span>
+          <span style={{color:autoAlertText,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{plan.alerts[0].msg}</span>
         </div>
       )}
 
       {/* Line items */}
       <div style={{padding:"14px 20px 6px",display:"flex",flexDirection:"column",gap:10}}>
         {lineItems.map((item,i)=>(
-          <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:10,borderBottom:i<lineItems.length-1?"1px solid rgba(255,255,255,0.06)":"none"}}>
+          <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:10,borderBottom:i<lineItems.length-1?`1px solid ${autoDivider}`:"none"}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <span style={{fontSize:18,flexShrink:0}}>{item.icon}</span>
               <div>
-                <div style={{color:"rgba(255,255,255,0.85)",fontWeight:600,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.label}</div>
-                <div style={{color:"rgba(255,255,255,0.35)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>{item.detail}</div>
+                <div style={{color:autoText,fontWeight:600,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.label}</div>
+                <div style={{color:autoSubtle,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>{item.detail}</div>
               </div>
             </div>
-            <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:18,color:item.color==="muted"?"rgba(255,255,255,0.3)":item.color,flexShrink:0}}>{item.amount}</div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:18,color:item.color==="muted"?autoItemMuted:item.color,flexShrink:0}}>{item.amount}</div>
           </div>
         ))}
       </div>
 
       {/* Weekly adherence bar */}
-      <div style={{margin:"0 20px",padding:"12px 0 16px",borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+      <div style={{margin:"0 20px",padding:"12px 0 16px",borderTop:`1px solid ${autoDivider}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-          <span style={{color:"rgba(255,255,255,0.4)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,textTransform:"uppercase",letterSpacing:0.8}}>Plan adherence</span>
+          <span style={{color:autoMuted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,textTransform:"uppercase",letterSpacing:0.8}}>Plan adherence</span>
           <span style={{color:plan.adherence>=75?C.greenBright:plan.adherence>=50?C.goldBright:C.redBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800}}>{plan.adherence}%</span>
         </div>
-        <div style={{height:4,borderRadius:99,background:"rgba(255,255,255,0.08)",overflow:"hidden"}}>
+        <div style={{height:4,borderRadius:99,background:autoTrack,overflow:"hidden"}}>
           <div style={{height:"100%",width:`${plan.adherence}%`,background:`linear-gradient(to right,${plan.adherence>=75?C.green:plan.adherence>=50?C.gold:C.red}88,${plan.adherence>=75?C.greenBright:plan.adherence>=50?C.goldBright:C.redBright})`,borderRadius:99,transition:"width 1.2s ease"}}/>
         </div>
       </div>
@@ -723,7 +740,7 @@ function AutopilotCard({data, setScreen}) {
       {plan.adaptations && plan.adaptations.length > 0 && (
         <div style={{margin:"0 0 4px",padding:"0 0 12px",display:"flex",gap:5,flexWrap:"wrap"}}>
           {plan.adaptations.map((a,i)=>(
-            <span key={i} style={{background:"rgba(255,255,255,0.07)",color:"rgba(255,255,255,0.4)",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,padding:"3px 8px",borderRadius:99,letterSpacing:0.3}}>⚙ {a}</span>
+            <span key={i} style={{background:autoChipBg,color:autoChipText,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,padding:"3px 8px",borderRadius:99,letterSpacing:0.3}}>⚙ {a}</span>
           ))}
         </div>
       )}
