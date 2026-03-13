@@ -2512,7 +2512,7 @@ function Onboarding({onComplete,onViewLegal}){
     setBankError(null);
     callPlaid("create_link_token",{country:p.country})
       .then(d=>{ setLinkToken(d.link_token); setLinkTokenLoading(false); })
-      .catch(()=>{ setBankError("Could not reach Plaid — check your connection and try again."); setLinkTokenLoading(false); });
+      .catch((err)=>{ setBankError("Plaid error: " + (err?.message || "Could not reach Plaid — check your connection and try again.")); setLinkTokenLoading(false); });
   },[linkToken, p.country]); // eslint-disable-line
 
   useEffect(()=>{ if(step===3) fetchLinkToken(); },[step]); // eslint-disable-line
