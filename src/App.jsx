@@ -4984,8 +4984,11 @@ Keep responses concise (3-5 sentences max), practical, and friendly. Use $ amoun
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
-          system: buildContext(),
-          messages: newMessages.map(m=>({role:m.role, content:m.content})),
+          type: "chat",
+          payload: {
+            system: buildContext(),
+            messages: newMessages.map(m=>({role:m.role, content:m.content})),
+          },
         }),
       });
       if(!res.ok) throw new Error(`Server error ${res.status}`);
