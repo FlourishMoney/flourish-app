@@ -101,6 +101,8 @@ exports.handler = async (event) => {
             country_codes: [country],
             language:      "en",
             transactions:  { days_requested: 90 },
+            // Required for OAuth (Canadian banks like TD, RBC, Scotiabank in production)
+            redirect_uri:  "https://flourishmoney.app/",
           };
       const data = await plaid("/link/token/create", linkBody);
       return ok({ link_token: data.link_token });
