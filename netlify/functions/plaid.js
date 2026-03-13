@@ -85,14 +85,24 @@ exports.handler = async (event) => {
     // 1. create_link_token
     if (action === "create_link_token") {
       const country = body.country === "US" ? "US" : "CA";
-      const data = await plaid("/link/token/create", {
-        user:          { client_user_id: body.user_id || "flourish-user" },
-        client_name:   "Flourish Money",
-        products:      ["transactions", "auth"],
-        country_codes: [country],
-        language:      "en",
-        transactions:  { days_requested: 90 },
-      });
+      // Update mode: if access_token provided, re-auth an existing Item (ITEM_LOGIN_REQUIRED)
+      const isUpdate = !!body.access_token;
+      const linkBody = isUpdate
+        ? {
+            user:         { client_user_id: body.user_id || "flourish-user" },
+            client_name:  "Flourish Money",
+            access_token: body.access_token,
+            language:     "en",
+          }
+        : {
+            user:          { client_user_id: body.user_id || "flourish-user" },
+            client_name:   "Flourish Money",
+            products:      ["transactions", "auth"],
+            country_codes: [country],
+            language:      "en",
+            transactions:  { days_requested: 90 },
+          };
+      const data = await plaid("/link/token/create", linkBody);
       return ok({ link_token: data.link_token });
     }
 

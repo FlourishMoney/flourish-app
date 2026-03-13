@@ -232,6 +232,10 @@ async function callPlaid(action, params={}) {
   if (!res.ok) {
     const err = new Error(data.error || "Plaid error");
     err.needs_reconnect = data.needs_reconnect || false;
+    // Signal the top-level app to show the reconnect banner
+    if(data.needs_reconnect && typeof window.__flourishReconnect === "function") {
+      window.__flourishReconnect();
+    }
     throw err;
   }
   return data;
@@ -2524,6 +2528,8 @@ function Onboarding({onComplete,onViewLegal}){
         public_token:publicToken,
         institution_name:metadata?.institution?.name||"Your Bank",
       });
+      // Persist access_token so we can re-launch update mode if session expires
+      try{ localStorage.setItem("flourish_plaid_token", ex.access_token); }catch{}
       const [acctData,txnData]=await Promise.all([
         callPlaid("get_accounts",{access_token:ex.access_token}),
         // Bug fix: guard against undefined transactions array from backend
@@ -4747,7 +4753,7 @@ function WidgetScreen({data,onBack}){
 }
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
-function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget}){
+function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onDeleteData,bankConnected,needsReconnect,reconnectLoading,onReconnect}){
   const [notifToggles,setNotifToggles]=useState({overdraft:true,bills:true,coach:true,meeting:false,patterns:true});
   const handleShare=()=>{
     const url="https://flourishmoney.app";
@@ -4832,10 +4838,32 @@ function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget}){
         <Toggle on={notifToggles[key]} onChange={v=>setNotifToggles(t=>({...t,[key]:v}))}/>
       </div>
     ))}
-    <div style={{marginTop:24,padding:"16px",background:C.redDim,borderRadius:16,border:`1px solid ${C.red}33`}}>
+    {/* ── Bank reconnect banner ──────────────────────────────── */}
+    {needsReconnect&&bankConnected&&(
+      <div style={{marginTop:16,padding:"14px 16px",background:`${C.gold}15`,borderRadius:16,border:`1px solid ${C.gold}44`,display:"flex",alignItems:"center",gap:12}}>
+        <span style={{fontSize:22}}>🔗</span>
+        <div style={{flex:1}}>
+          <div style={{color:C.goldBright,fontWeight:700,fontSize:13}}>Bank session expired</div>
+          <div style={{color:C.muted,fontSize:12,marginTop:2}}>Reconnect to refresh your data</div>
+        </div>
+        <button onClick={onReconnect} disabled={reconnectLoading} style={{background:C.gold,border:"none",borderRadius:10,padding:"8px 14px",color:"#000",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",opacity:reconnectLoading?0.6:1}}>
+          {reconnectLoading?"…":"Reconnect"}
+        </button>
+      </div>
+    )}
+    {/* ── Disconnect bank ──────────────────────────────────────── */}
+    {bankConnected&&(
+      <div style={{marginTop:10,padding:"14px 16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
+        <div style={{color:C.cream,fontWeight:700,fontSize:13,marginBottom:4}}>Connected Bank</div>
+        <div style={{color:C.mutedHi,fontSize:12,marginBottom:12}}>Removes read-only access from Flourish. Your bank account is not affected.</div>
+        <Btn label="Disconnect Bank" onClick={onDisconnectBank} color={C.orange} small/>
+      </div>
+    )}
+    {/* ── Delete all data ──────────────────────────────────────── */}
+    <div style={{marginTop:10,padding:"16px",background:C.redDim,borderRadius:16,border:`1px solid ${C.red}33`}}>
       <div style={{color:C.red,fontWeight:700,marginBottom:4}}>Delete All Data</div>
-      <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>Remove all your financial data from Flourish. This cannot be undone.</div>
-      <Btn label="Delete My Data" onClick={()=>{if(window.confirm("Delete all your data? This cannot be undone.")){clearState();window.location.reload();}}} color={C.red} small/>
+      <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>Permanently removes all data from Flourish and revokes any bank connections. This cannot be undone.</div>
+      <Btn label="Delete My Data" onClick={onDeleteData||onReset} color={C.red} small/>
     </div>
     {onReset&&(
       <button onClick={()=>{if(window.confirm("Reset app and go back to setup?"))onReset();}} style={{width:"100%",marginTop:8,background:"none",border:`1px solid ${C.border}`,borderRadius:14,padding:"11px",fontFamily:"inherit",fontWeight:600,color:C.muted,cursor:"pointer",fontSize:12}}>
@@ -5674,6 +5702,11 @@ export default function FlourishApp(){
   const [household,setHousehold]=useState(()=>saved?.household||null);
   const [isPremium,setIsPremium]=useState(()=>saved?.isPremium||false);
   const [showPaywall,setShowPaywall]=useState(false);
+  // ── Plaid reconnect state ─────────────────────────────────────
+  const [plaidAccessToken,setPlaidAccessToken]=useState(()=>{ try{return localStorage.getItem("flourish_plaid_token")||null;}catch{return null;} });
+  const [needsReconnect,setNeedsReconnect]=useState(false);
+  const [reconnectToken,setReconnectToken]=useState(null);
+  const [reconnectLoading,setReconnectLoading]=useState(false);
   // ── Trial timer ──────────────────────────────────────────────
   const [trialStart]=useState(()=>{
     try{
@@ -5725,6 +5758,13 @@ export default function FlourishApp(){
   // ── Persist state changes to localStorage ──────────────────────
   useEffect(()=>{ saveState({onboarded,appData,household,isPremium,checkInBonus}); },
     [onboarded,appData,household,isPremium,checkInBonus]);
+
+  // ── Detect needs_reconnect from any Plaid API error in child components ──
+  // Components can call window.__flourishReconnect() to trigger the banner
+  useEffect(()=>{
+    window.__flourishReconnect=()=>setNeedsReconnect(true);
+    return()=>{ delete window.__flourishReconnect; };
+  },[]);
   useEffect(()=>{ try{localStorage.setItem("flourish_theme",theme);}catch{} },[theme]);
   useEffect(()=>{ try{localStorage.setItem('flourish_dash_layout',JSON.stringify(dashLayout));}catch{} },[dashLayout]);
 
@@ -5772,9 +5812,65 @@ export default function FlourishApp(){
   // ── Pass isOnline down to AICoach + reset helper ──────────────
   const handleReset = () => { clearState(); window.location.reload(); };
 
+  // ── Plaid Update Mode (re-auth expired bank sessions) ─────────
+  const handleReconnectBank = ()=>{
+    if(reconnectLoading) return;
+    setReconnectLoading(true);
+    callPlaid("create_link_token",{ access_token: plaidAccessToken })
+      .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
+      .catch(()=>{ setReconnectLoading(false); alert("Could not start reconnect — please try again."); });
+  };
+  const onReconnectSuccess = useCallback((publicToken)=>{
+    // After re-auth, exchange new public token, refresh accounts + transactions
+    callPlaid("exchange_token",{ public_token: publicToken, institution_name: "Your Bank" })
+      .then(ex=>{
+        try{ localStorage.setItem("flourish_plaid_token", ex.access_token); }catch{}
+        setPlaidAccessToken(ex.access_token);
+        return Promise.all([
+          callPlaid("get_accounts",{ access_token: ex.access_token }),
+          callPlaid("get_transactions",{ access_token: ex.access_token, days: 90 }),
+        ]);
+      })
+      .then(([acctData, txnData])=>{
+        const accounts = acctData.accounts.map(a=>({
+          id:a.id, name:a.name, type:a.subtype||a.type,
+          balance: a.type==="credit"?-(a.balance.current||0):(a.balance.available??a.balance.current??0),
+          institution: "Your Bank",
+        }));
+        const transactions = normaliseTxns(txnData.transactions||[]);
+        setAppData(d=>({...d, accounts, transactions, bankConnected:true }));
+        setNeedsReconnect(false);
+        setReconnectToken(null);
+      })
+      .catch(err=>{ console.error("Reconnect failed", err); });
+  },[]);
+  const { openPlaidLink: openReconnectLink } = usePlaidLinkSDK(reconnectToken, onReconnectSuccess);
+  useEffect(()=>{ if(reconnectToken) openReconnectLink(); },[reconnectToken]); // eslint-disable-line
+
+  // ── Plaid Offboarding — remove Item from Plaid when user disconnects ───────
+  const disconnectBank = async ()=>{
+    if(!plaidAccessToken) return;
+    try{ await callPlaid("remove_item",{ access_token: plaidAccessToken }); }catch(e){ console.warn("remove_item:", e.message); }
+    try{ localStorage.removeItem("flourish_plaid_token"); }catch{}
+    setPlaidAccessToken(null);
+    setNeedsReconnect(false);
+    setAppData(d=>({...d, accounts:[{id:"m1",name:"Chequing",type:"checking",balance:0,institution:"Manual"}], transactions: d.transactions||[], bankConnected:false }));
+  };
+
+  const deleteAllData = async ()=>{
+    if(!window.confirm("Delete all your data? This cannot be undone.")) return;
+    // Plaid offboarding: revoke access token before wiping local data
+    if(plaidAccessToken){
+      try{ await callPlaid("remove_item",{ access_token: plaidAccessToken }); }catch{}
+    }
+    clearState();
+    try{ localStorage.removeItem("flourish_plaid_token"); }catch{}
+    window.location.reload();
+  };
+
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)}/>;
-    if(showSettings)return <Settings data={appData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}}/>;
+    if(showSettings)return <Settings data={appData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank}/>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold}/>;
