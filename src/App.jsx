@@ -5215,7 +5215,6 @@ function AuthScreen({ onAuth }) {
       <div style={{ width: "100%", maxWidth: 400, animation: "fadeUp .5s ease both" }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
           <div style={{ marginBottom: 12, display: "flex", justifyContent: "center" }}><FlourishMark size={64}/></div>
-          <div style={{ fontFamily: "Playfair Display,serif", fontSize: 28, fontWeight: 900, color: "#EDE9E2" }}>Flourish</div>
           <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "Plus Jakarta Sans,sans-serif", marginTop: 4 }}>Your financial coach</div>
         </div>
         <div style={{ background: "#0D1F12", borderRadius: 24, padding: 28, border: "1px solid rgba(255,255,255,0.08)" }}>
