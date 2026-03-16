@@ -993,7 +993,7 @@ function FinancialTimeline({data}) {
                       {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
-                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${ev.balance.toFixed(0)}`}</div>
+                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${(ev.balance||0).toFixed(0)}`}</div>
                       <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
                     </div>
                   </div>
@@ -2225,7 +2225,7 @@ function calcHealthScore(data) {
   const pillars = [
     {label:"Savings Rate",    pts:srScore, max:25, detail:`${Math.round(savingsRate*100)}% savings rate`},
     {label:"Debt Ratio",      pts:drScore, max:20, detail:`${Math.round(debtRatio*100)}% of annual income`},
-    {label:"Emergency Fund",  pts:efScore, max:20, detail:`${efMonths.toFixed(1)} months covered`},
+    {label:"Emergency Fund",  pts:efScore, max:20, detail:`${(efMonths||0).toFixed(1)} months covered`},
     {label:"Stability",       pts:ssScore, max:15, detail:`Spending consistency`},
     {label:"Investments",     pts:ivScore, max:10, detail:hasInv?`$${(invBal||0).toFixed(0)} invested`:`Not started`},
     {label:"Credit",          pts:crScore, max:10, detail:`Score ~${rawCredit}`},
@@ -3308,12 +3308,12 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════
-          BENTO GRID — 2-column base, items span as needed
+          BENTO GRID — rendered in user's custom order from dashLayout
       ═══════════════════════════════════════════════════════════════════ */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
 
         {/* ── HERO: Safe to Spend ── full width ─────────────────────────── */}
-        <div style={{...anim(60),gridColumn:"1 / -1",cursor:"pointer",position:"relative",overflow:"hidden",borderRadius:28,
+        <div style={{...anim(60),cursor:"pointer",position:"relative",overflow:"hidden",borderRadius:28,
           background:overdraft
             ?(C.isDark?"linear-gradient(155deg,rgba(24,6,16,0.92) 0%,rgba(32,8,16,0.85) 45%,rgba(12,5,10,0.90) 100%)":"linear-gradient(155deg,rgba(255,240,244,0.96) 0%,rgba(255,232,238,0.94) 45%,rgba(244,241,235,0.96) 100%)")
             :(C.isDark?"linear-gradient(155deg,rgba(5,21,9,0.92) 0%,rgba(8,30,13,0.85) 45%,rgba(6,10,14,0.90) 100%)":"linear-gradient(155deg,rgba(236,252,244,0.96) 0%,rgba(228,250,238,0.94) 45%,rgba(244,241,235,0.96) 100%)"),
@@ -3367,7 +3367,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         </div>
 
         {/* ── BENTO ROW 1: 3 mini stat tiles inside 2-col span ──────────── */}
-        <div style={{...anim(110),gridColumn:"1 / -1",display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+        <div style={{...anim(110),display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
           {[
             {label:"Due Soon",value:`$${(soonTotal||0).toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
             {label:totalDebt>0?"Total Debt":"Debt Free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
@@ -3387,7 +3387,8 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           ))}
         </div>
 
-        {/* ── HEALTH SCORE — left tile ───────────────────────────────────── */}
+        {/* ── HEALTH + STREAK — 2-col row ─────────────────────────────────── */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
         <div style={{...anim(140),...glass(scoreBase),borderRadius:24,padding:"18px 16px 16px",position:"relative",overflow:"hidden"}}>
           <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at 0% 100%,${scoreBase}18 0%,transparent 65%)`,pointerEvents:"none"}}/>
           <div style={{position:"relative"}}>
@@ -3435,9 +3436,10 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           </div>
         </div>
 
+        </div>{/* end health+streak 2-col */}
         {/* ── GENERATIVE TILE: urgent bill warning if needed ─────────────── */}
         {urgentBill&&(
-          <div style={{...anim(170),gridColumn:"1 / -1",...glass(C.red,C.red+"33"),borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("plan")}>
+          <div style={{...anim(170),...glass(C.red,C.red+"33"),borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("plan")}>
             <div style={{width:44,height:44,borderRadius:14,background:C.red+"20",border:`1px solid ${C.red}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>⚠️</div>
             <div style={{flex:1}}>
               <div style={{color:C.redBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{urgentBill.name} due in {parseInt(urgentBill.date)-today} day{parseInt(urgentBill.date)-today===1?"":"s"}</div>
@@ -3449,18 +3451,18 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
 
         {/* ── PAYDAY SAVINGS NUDGE: generative, only on payday ─────────── */}
         {isPayday&&!urgentBill&&(
-          <div style={{...anim(170),gridColumn:"1 / -1",...glass(C.green,C.green+"33"),borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("goals")}>
+          <div style={{...anim(170),...glass(C.green,C.green+"33"),borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("goals")}>
             <div style={{width:44,height:44,borderRadius:14,background:C.green+"20",border:`1px solid ${C.green}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>💸</div>
             <div style={{flex:1}}>
               <div style={{color:C.greenBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Payday! Save before you spend</div>
-              <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>Transfer ${(safe*0.2).toFixed(0)} to savings first · See your goals</div>
+              <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>Transfer ${((safe||0)*0.2).toFixed(0)} to savings first · See your goals</div>
             </div>
             <span style={{color:C.green,fontSize:18}}>→</span>
           </div>
         )}
 
         {/* ── NET WORTH SPARKLINE — full width ──────────────────────────── */}
-        {isVisible('networth')&&<div style={{...anim(190),gridColumn:"1 / -1",...glass(C.teal),borderRadius:22,padding:"18px 20px 16px"}}>
+        {isVisible('networth')&&<div style={{...anim(190),...glass(C.teal),borderRadius:22,padding:"18px 20px 16px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
             <div>
               <div style={{...label11(C.muted),marginBottom:4}}>Net Worth Trend</div>
@@ -3487,27 +3489,27 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         </div>}
 
         {/* ── DECISION ENGINE ───────────────────────────────────────────── */}
-        {isVisible('decision')&&<div style={{...anim(210),gridColumn:"1 / -1",...glass(C.purple),borderRadius:22,overflow:"hidden"}}>
+        {isVisible('decision')&&<div style={{...anim(210),...glass(C.purple),borderRadius:22,overflow:"hidden"}}>
           <DecisionEngine data={data} safe={safe} bal={bal} monthlyIncome={monthlyIncome} soonBills={soonBills} todayDate={today} setScreen={setScreen}/>
         </div>}
 
         {/* ── AUTOPILOT ─────────────────────────────────────────────────── */}
-        {isVisible('autopilot')&&<div style={{...anim(225),gridColumn:"1 / -1",...glass(C.blue),borderRadius:22,overflow:"hidden"}}>
+        {isVisible('autopilot')&&<div style={{...anim(225),...glass(C.blue),borderRadius:22,overflow:"hidden"}}>
           <AutopilotCard data={data} setScreen={setScreen}/>
         </div>}
 
         {/* ── TIME MACHINE — forecast graph ─────────────────────────────── */}
-        {isVisible('forecast')&&<div style={{...anim(240),gridColumn:"1 / -1",...glass(C.green),borderRadius:22,padding:"18px 18px 14px"}}>
+        {isVisible('forecast')&&<div style={{...anim(240),...glass(C.green),borderRadius:22,padding:"18px 18px 14px"}}>
           <TimeMachine data={data}/>
         </div>}
 
         {/* ── OPPORTUNITY DETECTOR ─────────────────────────────────────── */}
-        {isVisible('opportunity')&&<div style={{...anim(255),gridColumn:"1 / -1",...glass(C.gold),borderRadius:22,overflow:"hidden"}}>
+        {isVisible('opportunity')&&<div style={{...anim(255),...glass(C.gold),borderRadius:22,overflow:"hidden"}}>
           <OpportunityDetector data={data} setScreen={setScreen} setGoalsTab={setGoalsTab}/>
         </div>}
 
         {/* ── HEALTH SCORE PILLARS: progressive disclosure ───────────────── */}
-        {isVisible('health')&&<div style={{...anim(270),gridColumn:"1 / -1",...glass(scoreBase),borderRadius:22,padding:"14px 18px",cursor:"pointer",transition:"border-color .2s"}}
+        {isVisible('health')&&<div style={{...anim(270),...glass(scoreBase),borderRadius:22,padding:"14px 18px",cursor:"pointer",transition:"border-color .2s"}}
           onClick={()=>setExpandedTile(expandedTile==="pillars"?null:"pillars")}
           onMouseEnter={e=>e.currentTarget.style.borderColor=scoreBase+"33"}
           onMouseLeave={e=>e.currentTarget.style.borderColor=C.glassEdge}>
@@ -3543,7 +3545,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           const sc=score>=750?C.greenBright:score>=700?C.tealBright:score>=650?C.goldBright:score>=600?C.orangeBright:C.redBright;
           const scBase=score>=750?C.green:score>=700?C.teal:score>=650?C.gold:score>=600?C.orange:C.red;
           const lbl=score>=750?"Excellent":score>=700?"Good":score>=650?"Fair":score>=600?"Poor":"Very Poor";
-          return <div style={{...anim(285),gridColumn:"1 / -1",...glass(scBase),borderRadius:22,padding:"16px 20px",cursor:"pointer",display:"flex",alignItems:"center",gap:16,overflow:"hidden",position:"relative"}} onClick={()=>setScreen("goals")}>
+          return <div style={{...anim(285),...glass(scBase),borderRadius:22,padding:"16px 20px",cursor:"pointer",display:"flex",alignItems:"center",gap:16,overflow:"hidden",position:"relative"}} onClick={()=>setScreen("goals")}>
             <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at 0% 50%,${scBase}14 0%,transparent 60%)`,pointerEvents:"none"}}/>
             <div style={{width:52,height:52,borderRadius:16,background:scBase+"20",border:`1.5px solid ${scBase}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
               <span style={{fontSize:22,fontWeight:900,color:sc,fontFamily:"'Playfair Display',serif"}}>{score>=750?"A":score>=700?"B":score>=650?"C":"D"}</span>
@@ -3566,7 +3568,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
 
         {/* ── PREMIUM UPGRADE ───────────────────────────────────────────── */}
         {!data.isPremium&&onUpgrade&&(
-          <div onClick={onUpgrade} style={{...anim(300),gridColumn:"1 / -1",...glass(C.purple,C.purple+"33"),borderRadius:20,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}
+          <div onClick={onUpgrade} style={{...anim(300),...glass(C.purple,C.purple+"33"),borderRadius:20,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}
             onMouseEnter={e=>e.currentTarget.style.borderColor=C.purple+"55"}
             onMouseLeave={e=>e.currentTarget.style.borderColor=C.purple+"22"}>
             <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -3581,7 +3583,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         )}
 
         {/* ── QUICK NAV BENTO ───────────────────────────────────────────── */}
-        {isVisible('quicknav')&&<div style={{...anim(320),gridColumn:"1 / -1",display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        {isVisible('quicknav')&&<div style={{...anim(320),display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           {[
             {label:"2-Week Forecast",icon:"calendar",screen:"plan",color:C.teal,sub:"Cash flow ahead"},
             {label:"Debt Simulator",icon:"trendUp",screen:"goals",tab:"sim",color:C.purple,sub:"Drag to freedom date"},
@@ -3603,7 +3605,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
 
         {/* ── URGENT ALERT ──────────────────────────────────────────────── */}
         {INIT_NOTIFS.filter(n=>!n.read&&n.type==="urgent").slice(0,1).map(n=>(
-          <div key={n.id} style={{...anim(340),gridColumn:"1 / -1",...glass(C.red,C.red+"33"),borderRadius:18,padding:"14px 16px",display:"flex",gap:12,alignItems:"flex-start",cursor:"pointer"}} onClick={()=>setShowNotifs(true)}>
+          <div key={n.id} style={{...anim(340),...glass(C.red,C.red+"33"),borderRadius:18,padding:"14px 16px",display:"flex",gap:12,alignItems:"flex-start",cursor:"pointer"}} onClick={()=>setShowNotifs(true)}>
             <span style={{fontSize:22,flexShrink:0}}>{n.icon}</span>
             <div style={{flex:1}}>
               <div style={{color:C.redBright,fontWeight:700,fontSize:13,marginBottom:3,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{n.title}</div>
@@ -3733,6 +3735,32 @@ function PlanAhead({data}){
 }
 
 // ─── SPEND ────────────────────────────────────────────────────────────────────
+function AddCustomCategory({onAdd}){
+  const [show,setShow]=useState(false);
+  const [val,setVal]=useState("");
+  const save=()=>{
+    if(!val.trim()) return;
+    const existing=JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]");
+    localStorage.setItem("flourish_custom_cats",JSON.stringify([...existing,val.trim()]));
+    onAdd(val.trim());
+    setVal(""); setShow(false);
+  };
+  if(!show) return (
+    <button onClick={()=>setShow(true)} style={{background:"none",border:`1px dashed ${C.green}55`,borderRadius:10,padding:"8px 16px",color:C.green,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",width:"100%"}}>
+      + Add custom category
+    </button>
+  );
+  return (
+    <div style={{display:"flex",gap:8,alignItems:"center"}}>
+      <input value={val} onChange={e=>setVal(e.target.value)} placeholder="Category name…"
+        onKeyDown={e=>{if(e.key==="Enter") save();}}
+        style={{flex:1,background:C.cardAlt,border:`1px solid ${C.green}`,borderRadius:10,padding:"8px 12px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}} autoFocus/>
+      <button onClick={save} style={{background:C.green,border:"none",borderRadius:10,padding:"8px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>Add</button>
+      <button onClick={()=>{setShow(false);setVal("");}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 12px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>Cancel</button>
+    </div>
+  );
+}
+
 function SpendScreen({data}){
   const [tab,setTab]=useState("txn");
   const [catFilter,setCatFilter]=useState("All");
@@ -3758,7 +3786,7 @@ function SpendScreen({data}){
 
   const cuts=[
     stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee is adding up",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month totalling $${stats.coffee.toFixed(2)}. That's $${(stats.coffee*12).toFixed(0)}/year. Making coffee at home 4 days a week cuts this by 60%.`,saving:`$${Math.round(stats.coffee*0.6)}/mo`,effort:"Low",color:C.orange},
-    stats.delivery>0&&{id:2,icon:"package",title:"Food delivery every week",body:`$${stats.delivery.toFixed(2)} on delivery this month. One fewer order per week saves $40–60/month reliably. Your wallet will notice in 30 days.`,saving:"$50/mo",effort:"Low",color:C.orange},
+    stats.delivery>0&&{id:2,icon:"package",title:"Food delivery every week",body:`$${(stats.delivery||0).toFixed(2)} on delivery this month. One fewer order per week saves $40–60/month reliably. Your wallet will notice in 30 days.`,saving:"$50/mo",effort:"Low",color:C.orange},
     {id:3,icon:"bag",title:"Amazon impulse purchases",body:"Try the 48-hour rule: add to cart, wait 2 days. Most impulse buys get removed without regret. Studies show this cuts impulse spend by 30–40%.",saving:"$40–70/mo",effort:"Low",color:C.pink},
     stats.subs>0&&{id:4,icon:"zap",title:"Subscriptions creeping up",body:`$${(stats.subs||0).toFixed(2)}/mo in subscriptions. Go through each one — did you use it last month? Most households find 1–2 to cancel painlessly.`,saving:"$15–35/mo",effort:"Low",color:C.purple},
     {id:5,icon:"chartUp",title:`${stats.busiest} is your expensive day`,body:`You spend significantly more on ${stats.busiest}s than any other day. Knowing this is half the battle — awareness alone cuts it 20–30%.`,saving:"$30–60/mo",effort:"Very Low",color:C.blue},
@@ -3794,23 +3822,7 @@ function SpendScreen({data}){
               ))}
             </div>
             {/* Add custom category */}
-            {(()=>{
-              const [showCustomCat, setShowCustomCat] = React.useState(false);
-              const [newCat, setNewCat] = React.useState("");
-              return showCustomCat ? (
-                <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                  <input value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="Category name…"
-                    onKeyDown={e=>{if(e.key==="Enter"&&newCat.trim()){const existing=JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]");localStorage.setItem("flourish_custom_cats",JSON.stringify([...existing,newCat.trim()]));recat(recatTxn,newCat.trim());setNewCat("");setShowCustomCat(false);}}}
-                    style={{flex:1,background:C.cardAlt,border:`1px solid ${C.green}`,borderRadius:10,padding:"8px 12px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}} autoFocus/>
-                  <button onClick={()=>{if(newCat.trim()){const existing=JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]");localStorage.setItem("flourish_custom_cats",JSON.stringify([...existing,newCat.trim()]));recat(recatTxn,newCat.trim());}}} style={{background:C.green,border:"none",borderRadius:10,padding:"8px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Add</button>
-                  <button onClick={()=>{setShowCustomCat(false);setNewCat("");}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 12px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
-                </div>
-              ) : (
-                <button onClick={()=>setShowCustomCat(true)} style={{background:"none",border:`1px dashed ${C.green}55`,borderRadius:10,padding:"8px 16px",color:C.green,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",width:"100%"}}>
-                  + Add custom category
-                </button>
-              );
-            })()}
+            <AddCustomCategory onAdd={(cat)=>recat(recatTxn,cat)}/>
           </div>
           {/* Safe bottom padding for mobile */}
           <div style={{height:"env(safe-area-inset-bottom, 16px)",flexShrink:0}}/>
@@ -5021,8 +5033,96 @@ function WidgetScreen({data,onBack}){
 }
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
+// ─── SETTINGS SECTION INLINE CONTENT ─────────────────────────────────────────
+function SettingsSectionContent({sectionKey,data,color,onAddBank,onDisconnectBank,bankConnected,needsReconnect,reconnectLoading,onReconnect}){
+  const s={background:C.card,border:`1px solid ${color}33`,borderRadius:"0 0 18px 18px",padding:"16px 18px",marginBottom:8,borderTop:`1px solid ${color}22`};
+  const row={display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.border}`};
+  const val={color:C.cream,fontSize:13,fontWeight:600};
+  const lbl={color:C.muted,fontSize:12};
+
+  if(sectionKey==="profile") return (
+    <div style={s}>
+      {[["Name",data.profile?.name||"—"],["Country",data.profile?.country||"CA"],["Status",data.profile?.status||"—"],["Has Kids",data.profile?.hasKids?"Yes":"No"]].map(([k,v])=>(
+        <div key={k} style={row}><span style={lbl}>{k}</span><span style={val}>{v}</span></div>
+      ))}
+      <div style={{color:C.muted,fontSize:11,marginTop:10}}>Edit your profile during onboarding reset, or contact support.</div>
+    </div>
+  );
+
+  if(sectionKey==="accounts") return (
+    <div style={s}>
+      {(data.accounts||[]).length===0
+        ? <div style={{color:C.muted,fontSize:13,marginBottom:12}}>No bank accounts connected yet. Tap below to connect your bank.</div>
+        : (data.accounts||[]).map((a,i)=>(
+          <div key={i} style={{...row,borderBottom:i<(data.accounts.length-1)?`1px solid ${C.border}`:"none"}}>
+            <div><div style={{color:C.cream,fontSize:13,fontWeight:600}}>{a.name}</div><div style={{color:C.muted,fontSize:11}}>{a.type} · {a.institution}</div></div>
+            <span style={{color:a.balance>=0?C.greenBright:C.red,fontWeight:700,fontSize:13}}>{a.balance>=0?"$":"–$"}{Math.abs(a.balance||0).toFixed(2)}</span>
+          </div>
+        ))
+      }
+      <button onClick={onAddBank} style={{width:"100%",marginTop:12,background:color+"18",border:`1px solid ${color}44`,borderRadius:10,padding:"10px",color,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        + Connect Another Bank
+      </button>
+    </div>
+  );
+
+  if(sectionKey==="bills") return (
+    <div style={s}>
+      {(data.bills||[]).length===0
+        ? <div style={{color:C.muted,fontSize:13}}>No bills tracked. Add bills to see your cash-flow forecast.</div>
+        : (data.bills||[]).map((b,i)=>(
+          <div key={i} style={{...row,borderBottom:i<(data.bills.length-1)?`1px solid ${C.border}`:"none"}}>
+            <span style={lbl}>{b.name}</span>
+            <div style={{textAlign:"right"}}><span style={val}>${parseFloat(b.amount||0).toFixed(2)}</span><span style={{...lbl,marginLeft:8}}>due {b.date}{([11,12,13].includes(parseInt(b.date))?"th":["st","nd","rd"][parseInt(b.date||0)%10-1]||"th")}</span></div>
+          </div>
+        ))
+      }
+      <div style={{color:C.muted,fontSize:11,marginTop:10,lineHeight:1.5}}>Bills auto-detect when your bank is connected. To add bills manually, use the <strong>Plan</strong> screen.</div>
+    </div>
+  );
+
+  if(sectionKey==="debts") return (
+    <div style={s}>
+      {(data.debts||[]).length===0
+        ? <div style={{color:C.muted,fontSize:13}}>No debts tracked yet. Go to <strong style={{color:C.orange}}>Goals → Debt Simulator</strong> to add debts and see your payoff date.</div>
+        : (data.debts||[]).map((d,i)=>(
+          <div key={i} style={{...row,borderBottom:i<(data.debts.length-1)?`1px solid ${C.border}`:"none"}}>
+            <div><div style={{color:C.cream,fontSize:13,fontWeight:600}}>{d.name}</div><div style={{color:C.muted,fontSize:11}}>{d.rate}% interest</div></div>
+            <span style={{color:C.red,fontWeight:700,fontSize:13}}>${parseFloat(d.balance||0).toLocaleString()}</span>
+          </div>
+        ))
+      }
+    </div>
+  );
+
+  if(sectionKey==="goals") return (
+    <div style={s}>
+      {(data.goals||[]).length===0
+        ? <div style={{color:C.muted,fontSize:13}}>No savings goals set yet. Go to <strong style={{color:C.gold}}>Goals</strong> to add your first goal.</div>
+        : (data.goals||[]).map((g,i)=>(
+          <div key={i} style={{...row,borderBottom:i<(data.goals.length-1)?`1px solid ${C.border}`:"none"}}>
+            <span style={lbl}>{g.name||g.label||"Goal"}</span>
+            <span style={val}>${parseFloat(g.target||g.amount||0).toLocaleString()}</span>
+          </div>
+        ))
+      }
+    </div>
+  );
+
+  if(sectionKey==="family") return (
+    <div style={s}>
+      {[["Status",data.profile?.status||"single"],["Partner",data.profile?.partnerName||"Not linked"],["Kids",data.profile?.hasKids?"Yes":"No"],["Country",data.profile?.country||"CA"]].map(([k,v])=>(
+        <div key={k} style={row}><span style={lbl}>{k}</span><span style={val}>{v}</span></div>
+      ))}
+    </div>
+  );
+
+  return null;
+}
+
 function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,bankConnected,needsReconnect,reconnectLoading,onReconnect}){
   const [notifToggles,setNotifToggles]=useState({overdraft:true,bills:true,coach:true,meeting:false,patterns:true});
+  const [activeSection,setActiveSection]=useState(null);
   const handleShare=()=>{
     const url="https://flourishmoney.app";
     const text="I've been using Flourish to track my spending and it actually tells me exactly how much I can spend today. Worth checking out.";
@@ -5057,15 +5157,17 @@ function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconn
         <span style={{color:C.muted,fontSize:18}}>›</span>
       </button>
     </div>
-    <button onClick={handleShare} style={{background:`linear-gradient(135deg,${C.green},#1A3D2A)`,borderRadius:18,padding:"16px 20px",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"inherit",width:"100%",marginBottom:10}}>
-      <div style={{display:"flex",alignItems:"center",gap:12}}>
-        <FlourishMark size={32} style={{borderRadius:8}}/>
+    <button onClick={handleShare} style={{background:"linear-gradient(135deg,#0D3320 0%,#0A2518 100%)",borderRadius:18,padding:"20px 22px",border:"1px solid rgba(0,204,133,0.25)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"inherit",width:"100%",marginBottom:10,boxShadow:"0 4px 24px rgba(0,204,133,0.12)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:14}}>
+        <div style={{width:44,height:44,borderRadius:14,background:"rgba(0,204,133,0.15)",border:"1px solid rgba(0,204,133,0.3)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <FlourishMark size={28}/>
+        </div>
         <div style={{textAlign:"left"}}>
-          <div style={{color:"#fff",fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15}}>Share Flourish</div>
-          <div style={{color:"rgba(255,255,255,0.55)",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>Invite a friend · help them thrive</div>
+          <div style={{color:"#fff",fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15,letterSpacing:-0.3}}>Share Flourish</div>
+          <div style={{color:"rgba(255,255,255,0.45)",fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3}}>Invite a friend · help them thrive</div>
         </div>
       </div>
-      <span style={{background:"rgba(255,255,255,0.15)",borderRadius:99,padding:"6px 14px",color:"#fff",fontSize:11,fontWeight:700}}>Share ↗</span>
+      <div style={{background:"rgba(0,204,133,0.2)",border:"1px solid rgba(0,204,133,0.35)",borderRadius:99,padding:"7px 16px",color:"#00CC85",fontSize:12,fontWeight:700,letterSpacing:0.2,flexShrink:0}}>Share ↗</div>
     </button>
     {[
         {icon:"user",  color:C.purple, label:"Profile & Income",    sub:`${data.profile?.name||"You"} · ${data.profile?.country||"CA"}`,   key:"profile"},
@@ -5074,21 +5176,27 @@ function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconn
         {icon:"trendUp",color:C.orange,label:"Manage Debts",        sub:`${data.debts?.length||0} in plan`,                  key:"debts"},
         {icon:"target", color:C.gold,  label:"Savings Goals",       sub:"Emergency fund & more",                             key:"goals"},
         {icon:"users",  color:C.pink,  label:"Family Settings",     sub:`${data.profile?.status||"single"} · ${data.profile?.hasKids?"has kids":"no kids"}`, key:"family"},
-      ].map((item,i)=>(
-        <div key={i}
-          style={{background:C.card,borderRadius:18,padding:"13px 16px",marginBottom:8,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:13,cursor:"pointer",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}
-          onMouseEnter={e=>{e.currentTarget.style.borderColor=item.color+"55";e.currentTarget.style.transform="translateX(2px)";}}
-          onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.transform="none";}}>
-        <div style={{width:38,height:38,borderRadius:12,background:item.color+"18",border:`1px solid ${item.color}28`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-          <Icon id={item.icon} size={18} color={item.color} strokeWidth={1.6}/>
+      ].map((item,i)=>{
+        const isActive = activeSection === item.key;
+        return (
+        <div key={i}>
+          <div
+            onClick={()=>setActiveSection(isActive ? null : item.key)}
+            style={{background:isActive?item.color+"14":C.card,borderRadius:isActive?"18px 18px 0 0":18,padding:"13px 16px",marginBottom:isActive?0:8,border:`1px solid ${isActive?item.color+"55":C.border}`,borderBottom:isActive?"none":"",display:"flex",alignItems:"center",gap:13,cursor:"pointer",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}
+            onMouseEnter={e=>{if(!isActive){e.currentTarget.style.borderColor=item.color+"55";e.currentTarget.style.transform="translateX(2px)";}}}
+            onMouseLeave={e=>{if(!isActive){e.currentTarget.style.borderColor=C.border;e.currentTarget.style.transform="none";}}}>
+            <div style={{width:38,height:38,borderRadius:12,background:item.color+"18",border:`1px solid ${item.color}28`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <Icon id={item.icon} size={18} color={item.color} strokeWidth={1.6}/>
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{color:C.cream,fontWeight:600,fontSize:14}}>{item.label}</div>
+              <div style={{color:C.muted,fontSize:12,marginTop:1}}>{item.sub}</div>
+            </div>
+            <span style={{color:isActive?item.color:C.muted,fontSize:16,fontWeight:300,transition:"transform .2s",transform:isActive?"rotate(90deg)":"none",display:"inline-block"}}>›</span>
+          </div>
+          {isActive&&<SettingsSectionContent sectionKey={item.key} data={data} color={item.color} onAddBank={onAddBank} onDisconnectBank={onDisconnectBank} bankConnected={bankConnected} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={onReconnect}/>}
         </div>
-        <div style={{flex:1,minWidth:0}}>
-          <div style={{color:C.cream,fontWeight:600,fontSize:14}}>{item.label}</div>
-          <div style={{color:C.muted,fontSize:12,marginTop:1}}>{item.sub}</div>
-        </div>
-        <span style={{color:C.muted,fontSize:20,fontWeight:300}}>›</span>
-      </div>
-    ))}
+      );})}
     )}
     <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.8,fontWeight:700,marginTop:20,marginBottom:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Notifications</div>
     {[
@@ -5279,7 +5387,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const topCats = Object.entries(
       txns.filter(t=>t.amount>0 && t.cat!=="Income")
         .reduce((acc,t)=>{acc[t.cat]=(acc[t.cat]||0)+t.amount;return acc;},{})
-    ).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`${k}: $${v.toFixed(0)}`).join(", ");
+    ).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`${k}: $${(v||0).toFixed(0)}`).join(", ");
 
     return `You are a warm, expert personal finance coach for Flourish Money (${country==="CA"?"Canada":"USA"}).
 User financial snapshot:
@@ -6181,8 +6289,8 @@ export default function FlourishApp(){
   };
 
   // ── Plaid reconnect success handler (must be before early returns — Rules of Hooks) ──
-  const onReconnectSuccess = useCallback((publicToken)=>{
-    callPlaid("exchange_token",{ public_token: publicToken, institution_name: "Your Bank" })
+  const onReconnectSuccess = useCallback((publicToken, metadata)=>{
+    callPlaid("exchange_token",{ public_token: publicToken, institution_name: metadata?.institution?.name||"Your Bank" })
       .then(ex=>{
         try{
         // Multi-bank: save to array
@@ -6200,10 +6308,13 @@ export default function FlourishApp(){
         ]);
       })
       .then(([acctData, txnData])=>{
+        const instName = metadata?.institution?.name||"Your Bank";
         const accounts = acctData.accounts.map(a=>({
-          id:a.id, name:a.name, type:a.subtype||a.type,
-          balance: a.type==="credit"?-(a.balance.current||0):(a.balance.available??a.balance.current??0),
-          institution: "Your Bank",
+          id:a.id,
+          name:`${instName} ••${a.mask||"????"}`,
+          type:a.subtype||a.type,
+          balance: a.type==="credit"?-(a.balance.current||0):(a.balance.current??a.balance.available??0),
+          institution: instName,
         }));
         const transactions = normaliseTxns(txnData.transactions||[]);
         setAppData(d=>({...d, accounts, transactions, bankConnected:true }));
