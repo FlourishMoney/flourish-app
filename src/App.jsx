@@ -582,7 +582,8 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
   const today = todayDate || new Date().getDate();
   const paydayGuess = today < 15 ? 15 : 1;
   const daysToPayday = paydayGuess >= today ? paydayGuess - today : (31 - today + paydayGuess);
-  const incomeAmt = (data.incomes||[]).reduce((s,i)=>s+parseFloat(i.amount||0),0) || DEMO.income;
+  const _toMo = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:a; };
+  const incomeAmt = (data.incomes||[]).reduce((s,i)=>s+_toMo(i.amount,i.freq),0) || DEMO.income;
 
   // Decision Engine calculations
   const daysLeft = daysToPayday > 0 ? daysToPayday : 14;
@@ -909,7 +910,7 @@ function TimeMachine({data}) {
                     </div>
                     <div style={{textAlign:"right",flexShrink:0,minWidth:80}}>
                       {/* Base balance */}
-                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${baseBalance.toFixed(0)}`}</div>
+                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${(baseBalance||0).toFixed(0)}`}</div>
                       {/* What-if overlay balance */}
                       {overlayBal !== null && (
                         <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:11,color:overlayLow?C.redBright:C.purpleBright,marginTop:2}}>
@@ -1451,7 +1452,8 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
 function MoneyWrapped({data, onClose}) {
   const [slide, setSlide] = useState(0);
   const txns = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
-  const income = (data.incomes||[]).reduce((s,i)=>s+parseFloat(i.amount||0),0)*12 || 50400;
+  const _toMoW = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:a; };
+  const income = ((data.incomes||[]).reduce((s,i)=>s+_toMoW(i.amount,i.freq),0) || 4200) * 12;
   const totalSpent = txns.reduce((s,t)=>s+Math.abs(t.amount),0);
   const totalDebt = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.balance||0),0);
   const invBal = (data.accounts||[]).filter(a=>a.type==="investment").reduce((s,a)=>s+parseFloat(a.balance||0),0);
@@ -1486,11 +1488,11 @@ function MoneyWrapped({data, onClose}) {
       content:(
         <div style={{textAlign:"center"}}>
           <div style={{color:"#ffffff88",fontSize:11,letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",marginBottom:12}}>Your net worth changed by</div>
-          <div style={{fontFamily:"'Playfair Display',serif",fontSize:64,fontWeight:900,color:netWorthChange>=0?"#6EF0A0":"#FF7070",letterSpacing:-2,lineHeight:1,marginBottom:8}}>{netWorthChange>=0?"+":""}{netWorthChange>=0?`$${(netWorthChange/1000).toFixed(1)}k`:`-$${Math.abs(netWorthChange/1000).toFixed(1)}k`}</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:64,fontWeight:900,color:netWorthChange>=0?"#6EF0A0":"#FF7070",letterSpacing:-2,lineHeight:1,marginBottom:8}}>{netWorthChange>=0?"+":""}{netWorthChange>=0?`$${((netWorthChange||0)/1000).toFixed(1)}k`:`-$${(Math.abs(netWorthChange||0)/1000).toFixed(1)}k`}</div>
           <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:24}}>{netWorthChange>=0?"You grew richer this year 🚀":"You're building the foundation 🏗️"}</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
             {[
-              {label:"Invested",   val:`$${(invBal/1000).toFixed(1)}k`, icon:"📈"},
+              {label:"Invested",   val:`$${((invBal||0)/1000).toFixed(1)}k`, icon:"📈"},
               {label:"Health Score", val:`${score}/100`,               icon:"💚"},
             ].map((s,i)=>(
               <div key={i} style={{background:"rgba(255,255,255,0.12)",borderRadius:16,padding:"14px 12px",textAlign:"center"}}>
@@ -1513,9 +1515,9 @@ function MoneyWrapped({data, onClose}) {
           <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:20}}>spent across {txns.length} transactions</div>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {[
-              {label:"Biggest splurge", val:biggestTxn?`$${Math.abs(biggestTxn.amount).toFixed(0)} — ${biggestTxn.merchant||biggestTxn.name}`:"None", icon:"💸", color:"#FF9EBC"},
-              {label:"Top category",    val:`${topCat[0]} ($${Number(topCat[1]).toFixed(0)})`, icon:"🏆", color:"#FFD166"},
-              {label:"Lowest spend",    val:`${lowestCat[0]} ($${Number(lowestCat[1]).toFixed(0)})`, icon:"✨", color:"#6EF0A0"},
+              {label:"Biggest splurge", val:biggestTxn?`$${Math.abs(biggestTxn.amount||0).toFixed(0)} — ${biggestTxn.merchant||biggestTxn.name}`:"None", icon:"💸", color:"#FF9EBC"},
+              {label:"Top category",    val:`${topCat[0]} ($${Number(topCat[1]||0).toFixed(0)})`, icon:"🏆", color:"#FFD166"},
+              {label:"Lowest spend",    val:`${lowestCat[0]} ($${Number(lowestCat[1]||0).toFixed(0)})`, icon:"✨", color:"#6EF0A0"},
             ].map((item,i)=>(
               <div key={i} style={{background:"rgba(255,255,255,0.1)",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,textAlign:"left"}}>
                 <span style={{fontSize:22,flexShrink:0}}>{item.icon}</span>
@@ -1783,7 +1785,7 @@ function Sel({label,value,onChange,options}){
 function CountUp({to,prefix="",decimals=0,dur=900}){
   const [v,setV]=useState(0);
   useEffect(()=>{let s=0;const step=to/(dur/16);const t=setInterval(()=>{s=Math.min(s+step,to);setV(s);if(s>=to)clearInterval(t);},16);return()=>clearInterval(t);},[to]);
-  return <span>{prefix}{v.toFixed(decimals)}</span>;
+  return <span>{prefix}{(v||0).toFixed(decimals)}</span>;
 }
 
 
@@ -3716,9 +3718,9 @@ function SpendScreen({data}){
   const [catFilter,setCatFilter]=useState("All");
   const [dismissed,setDismissed]=useState([]);
   const isDemo=!data.bankConnected;
-  const txns=isDemo?(data.transactions||[]):(data.transactions||[]);
+  const txns=data.transactions||[];
   const stats=computeStats(txns);
-  const cats=["All",...Array.from(new Set(txns.map(t=>getCat(t))))];
+  // Declare getCat BEFORE cats — avoids Temporal Dead Zone error
   const [recatTxn,setRecatTxn]=useState(null);
   const catOverrides = JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
   const getCat = (t) => catOverrides[t.id] || t.cat;
@@ -3727,6 +3729,7 @@ function SpendScreen({data}){
     localStorage.setItem("flourish_cat_overrides", JSON.stringify(updated));
     setRecatTxn(null);
   };
+  const cats=["All",...Array.from(new Set(txns.map(t=>getCat(t))))];
   const filtered=catFilter==="All"?txns:txns.filter(t=>getCat(t)===catFilter);
   const totalSpent=txns.filter(t=>t.amount>0).reduce((a,t)=>a+t.amount,0);
   const totalIn=txns.filter(t=>t.amount<0).reduce((a,t)=>a+Math.abs(t.amount),0);
@@ -3741,7 +3744,9 @@ function SpendScreen({data}){
 
   const ALL_CATS = ["Food & Drink","Groceries","Transport","Shopping","Entertainment","Bills & Utilities","Health","Income","Subscriptions","Travel","Other"];
 
-    return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    if(!isDemo && txns.length === 0) return <EmptyState icon="💳" title="No transactions yet" body="Your transactions are loading from your bank. Check back in a moment — or pull to refresh." action="Refresh" onAction={()=>window.location.reload()} color={C.orange}/>;
+
+  return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     {/* Re-categorize bottom sheet */}
     {recatTxn&&(
       <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.5)"}} onClick={()=>setRecatTxn(null)}>

@@ -13,7 +13,7 @@
     X-Frame-Options = "SAMEORIGIN"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.plaid.com *.plaid.com; connect-src 'self' api.anthropic.com cdn.plaid.com production.plaid.com sandbox.plaid.com *.plaid.com qhcccjkmvijrybagkvyw.supabase.co; style-src 'self' 'unsafe-inline' *.plaid.com; img-src 'self' data: *.plaid.com; frame-src *.plaid.com cdn.plaid.com; worker-src blob:;"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.plaid.com *.plaid.com; connect-src 'self' api.anthropic.com cdn.plaid.com production.plaid.com sandbox.plaid.com *.plaid.com qhcccjkmvijrybagkvyw.supabase.co; style-src 'self' 'unsafe-inline' *.plaid.com https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: *.plaid.com; frame-src *.plaid.com cdn.plaid.com; worker-src blob:;"
 
 # Redirect: app calls /api/coach → Netlify function
 [[redirects]]
