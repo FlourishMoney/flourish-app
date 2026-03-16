@@ -2543,7 +2543,7 @@ function DashCustomize({ layout, onChange, onClose }) {
 function Onboarding({onComplete,onViewLegal}){
   const [step,setStep]=useState(0);
   const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false});
-  const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment"}]);
+  const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment",isVariable:false}]);
   const [bills,setBills]=useState([{name:"",amount:"",date:""}]);
   const [debts,setDebts]=useState([{name:"",balance:"",rate:"",min:""}]);
   const [bankStage,setBankStage]=useState("select");
@@ -2580,7 +2580,15 @@ function Onboarding({onComplete,onViewLegal}){
         institution_name:metadata?.institution?.name||"Your Bank",
       });
       // Persist access_token so we can re-launch update mode if session expires
-      try{ localStorage.setItem("flourish_plaid_token", ex.access_token); }catch{}
+      try{
+        // Multi-bank: save to array
+        const existing = JSON.parse(localStorage.getItem("flourish_plaid_tokens")||"[]");
+        const bankId = "bank_" + Date.now();
+        const updated = [...existing, {id:bankId,token:ex.access_token,institution:ex.institution_name||"Your Bank"}];
+        localStorage.setItem("flourish_plaid_tokens", JSON.stringify(updated));
+        // Keep legacy key for backwards compatibility
+        localStorage.setItem("flourish_plaid_token", ex.access_token);
+      }catch{}
       // Fetch accounts only — fast (~1s). Transactions load silently on dashboard.
       const acctData = await callPlaid("get_accounts",{access_token:ex.access_token});
       clearInterval(progTimer);setBankProg(100);
@@ -2594,8 +2602,12 @@ function Onboarding({onComplete,onViewLegal}){
       }));
 
       setTimeout(()=>{
-        setConnAccts(mappedAccounts);
-        // No transactions yet — fetched silently on first dashboard load
+        // Append to existing connected accounts (multi-bank support)
+        setConnAccts(prev => {
+          const existingIds = new Set(prev.map(a=>a.id));
+          const newAccts = mappedAccounts.filter(a=>!existingIds.has(a.id));
+          return [...prev, ...newAccts];
+        });
         setPlaidTxns([]);
         setDetectedBills([]);
         setBankStage("done");
@@ -2745,7 +2757,95 @@ function Onboarding({onComplete,onViewLegal}){
       <Btn label="Continue →" onClick={()=>setStep(2)} disabled={!p.name}/>
     </div>,
 
-    // 2: Income
+    // 2: Bank Connection
+    <div>
+      <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Connect your bank</div>
+      <div style={{color:C.muted,fontSize:14,marginBottom:16}}>Live transactions unlock AI coaching and real overdraft warnings.</div>
+      {bankStage==="select"&&<>
+        {/* Trust bar */}
+        <div style={{background:C.tealDim,border:`1px solid ${C.teal}44`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
+          <div style={{color:C.tealBright,fontWeight:700,marginBottom:8}}>🔒 Powered by Plaid</div>
+          {[["✅","Read-only. We can never move your money"],["✅","256-bit encryption, bank-level security"],["✅","Live balances + 90 days of transactions"],["✅","Disconnect any time from settings"]].map(([ico,t],i)=>(
+            <div key={i} style={{display:"flex",gap:8,padding:"3px 0",color:C.cream,fontSize:13}}><span>{ico}</span><span>{t}</span></div>
+          ))}
+        </div>
+
+        {/* Error state with retry */}
+        {(bankError||initError)&&(
+          <div style={{background:"#ff444422",border:"1px solid #ff444466",borderRadius:12,padding:"12px 16px",marginBottom:12}}>
+            <div style={{color:"#ff8888",fontSize:13,marginBottom:8}}>{bankError||initError}</div>
+            {!initError&&<button onClick={()=>{setLinkToken(null);fetchLinkToken();}} style={{background:"none",border:"1px solid #ff888844",borderRadius:8,padding:"6px 14px",color:"#ff8888",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>↺ Retry</button>}
+          </div>
+        )}
+
+        {/* Main CTA button */}
+        <button
+          onClick={isLinkReady?openPlaidLink:undefined}
+          disabled={!isLinkReady||!!initError}
+          style={{width:"100%",background:isLinkReady&&!initError?`linear-gradient(135deg,${C.teal},${C.tealBright})`:"rgba(255,255,255,0.06)",border:isLinkReady&&!initError?"none":`1px solid ${C.border}`,borderRadius:14,padding:"15px 18px",color:"white",fontSize:15,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:10,cursor:isLinkReady&&!initError?"pointer":"default",fontFamily:"inherit",marginBottom:10,transition:"all .3s",opacity:isLinkReady&&!initError?1:0.55}}>
+          {linkTokenLoading?(
+            <><span style={{width:18,height:18,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"white",display:"inline-block",animation:"pulse 0.8s linear infinite"}}/><span>Connecting to Plaid…</span></>
+          ):(
+            <><span style={{fontSize:20}}>🏦</span><span>{isLinkReady?"Connect My Bank Securely →":initError?"SDK unavailable":"Ready"}</span></>
+          )}
+        </button>
+
+        <div style={{color:C.muted,fontSize:11,textAlign:"center",marginBottom:14}}>
+          {initError?"Please refresh and try again":linkTokenLoading?"Preparing secure connection…":"Supports TD, RBC, Chase, BoA, and 11,000+ more"}
+        </div>
+
+        <div style={{marginTop:6}}><Btn label="Skip — enter manually" onClick={skipBank} outline color={C.muted} small/></div>
+
+        {/* Statement upload */}
+        <div style={{marginTop:10,background:C.cardAlt,borderRadius:14,padding:'12px 14px',border:`1px solid ${C.border}`}}>
+          <div style={{color:C.mutedHi,fontWeight:600,fontSize:12,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📄 Or upload a bank statement</div>
+          <label style={{display:'block',cursor:'pointer'}}>
+            <input type="file" accept=".pdf,.csv" style={{display:'none'}} onChange={handleStatementUpload} disabled={stmtStatus==='parsing'}/>
+            <div style={{background:stmtStatus==='parsing'?C.card:`linear-gradient(135deg,${C.gold}22,${C.gold}0A)`,border:`1px dashed ${stmtStatus==='error'?C.red:stmtStatus==='done'?C.green:C.gold}`,borderRadius:10,padding:'10px 14px',textAlign:'center',color:stmtStatus==='error'?C.redBright:stmtStatus==='done'?C.greenBright:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,transition:'all .2s'}}>
+              {stmtStatus==='parsing'?`⏳ ${stmtMsg}`:stmtStatus==='done'?`✓ ${stmtMsg}`:stmtStatus==='error'?`⚠ ${stmtMsg}`:'Choose PDF or CSV →'}
+            </div>
+          </label>
+          {!stmtStatus&&<div style={{color:C.muted,fontSize:11,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Supports most Canadian & US bank exports. AI parses PDFs automatically.</div>}
+        </div>
+      </>}
+
+      {bankStage==="loading"&&<div style={{textAlign:"center",padding:"40px 0"}}>
+        <div style={{marginBottom:14,display:"flex",justifyContent:"center",filter:"drop-shadow(0 0 20px #3CB54A55)"}}><FlourishMark size={54}/></div>
+        <div style={{color:C.greenBright,fontWeight:700,fontSize:18,marginBottom:8}}>
+          {bankProg<35?"Exchanging credentials…":bankProg<70?"Fetching your accounts…":"Importing transactions…"}
+        </div>
+        <div style={{color:C.muted,fontSize:13,marginBottom:22}}>Securely syncing 90 days of history</div>
+        <div style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.06)",borderRadius:99,height:6,overflow:"hidden",margin:"0 10px"}}>
+          <div style={{width:`${bankProg}%`,height:"100%",background:`linear-gradient(90deg,${C.green},${C.teal})`,borderRadius:99,transition:"width .4s ease-out"}}/>
+        </div>
+        <div style={{color:C.muted,fontSize:12,marginTop:8}}>{Math.round(bankProg)}%</div>
+      </div>}
+
+      {bankStage==="done"&&<div>
+        <div style={{textAlign:"center",marginBottom:16}}>
+          <div style={{width:80,height:80,borderRadius:"50%",background:C.green+"22",border:`1px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px"}}><Icon id="check" size={40} color={C.greenBright} strokeWidth={1.9}/></div>
+          <div style={{fontSize:20,fontWeight:800,color:C.greenBright,fontFamily:"Georgia,serif"}}>Connected!</div>
+          <div style={{color:C.mutedHi,fontSize:13,marginTop:4}}>
+            {connAccts.length} account{connAccts.length!==1?"s":""} connected across {new Set(connAccts.map(a=>a.institution)).size} bank{new Set(connAccts.map(a=>a.institution)).size!==1?"s":""}
+          </div>
+        </div>
+        {connAccts.map((a,i)=>(
+          <div key={i} style={{background:C.cardAlt,border:`1px solid ${C.green}44`,borderRadius:14,padding:"13px 16px",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{color:C.cream,fontWeight:700}}>{a.name}</div>
+              <div style={{color:C.muted,fontSize:12}}>{a.institution} · {a.type}{a.pending?" · ⏳ pending":""}</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{color:a.balance>=0?C.greenBright:C.red,fontWeight:800}}>${Math.abs(a.balance).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+              <Chip label={a.balance>=0?"Asset":"Credit"} color={a.balance>=0?C.green:C.red}/>
+            </div>
+          </div>
+        ))}
+        <Btn label="Let's go →" onClick={()=>setStep(3)}/>
+      </div>}
+    </div>,
+
+    // 3: Income (after bank — auto-detection runs first)
     <div>
       <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:30,color:C.cream,marginBottom:6,letterSpacing:-0.5}}>Your income</div>
       <div style={{color:C.muted,fontSize:14,marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
@@ -2839,95 +2939,7 @@ function Onboarding({onComplete,onViewLegal}){
       <div style={{background:C.goldDim,border:`1px solid ${C.gold}44`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
         <div style={{color:C.goldBright,fontSize:13,lineHeight:1.6}}>💡 Include every source — even irregular ones. Flourish maps all income vs. bills to warn you <strong>before</strong> you hit zero.</div>
       </div>
-      <Btn label="Continue →" onClick={()=>setStep(3)} disabled={!incomes.some(i=>i.amount||(i.isVariable&&i.typicalAmount))}/>
-    </div>,
-
-    // 3: Bank Connection
-    <div>
-      <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Connect your bank</div>
-      <div style={{color:C.muted,fontSize:14,marginBottom:16}}>Live transactions unlock AI coaching and real overdraft warnings.</div>
-      {bankStage==="select"&&<>
-        {/* Trust bar */}
-        <div style={{background:C.tealDim,border:`1px solid ${C.teal}44`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
-          <div style={{color:C.tealBright,fontWeight:700,marginBottom:8}}>🔒 Powered by Plaid</div>
-          {[["✅","Read-only. We can never move your money"],["✅","256-bit encryption, bank-level security"],["✅","Live balances + 90 days of transactions"],["✅","Disconnect any time from settings"]].map(([ico,t],i)=>(
-            <div key={i} style={{display:"flex",gap:8,padding:"3px 0",color:C.cream,fontSize:13}}><span>{ico}</span><span>{t}</span></div>
-          ))}
-        </div>
-
-        {/* Error state with retry */}
-        {(bankError||initError)&&(
-          <div style={{background:"#ff444422",border:"1px solid #ff444466",borderRadius:12,padding:"12px 16px",marginBottom:12}}>
-            <div style={{color:"#ff8888",fontSize:13,marginBottom:8}}>{bankError||initError}</div>
-            {!initError&&<button onClick={()=>{setLinkToken(null);fetchLinkToken();}} style={{background:"none",border:"1px solid #ff888844",borderRadius:8,padding:"6px 14px",color:"#ff8888",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>↺ Retry</button>}
-          </div>
-        )}
-
-        {/* Main CTA button */}
-        <button
-          onClick={isLinkReady?openPlaidLink:undefined}
-          disabled={!isLinkReady||!!initError}
-          style={{width:"100%",background:isLinkReady&&!initError?`linear-gradient(135deg,${C.teal},${C.tealBright})`:"rgba(255,255,255,0.06)",border:isLinkReady&&!initError?"none":`1px solid ${C.border}`,borderRadius:14,padding:"15px 18px",color:"white",fontSize:15,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:10,cursor:isLinkReady&&!initError?"pointer":"default",fontFamily:"inherit",marginBottom:10,transition:"all .3s",opacity:isLinkReady&&!initError?1:0.55}}>
-          {linkTokenLoading?(
-            <><span style={{width:18,height:18,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"white",display:"inline-block",animation:"pulse 0.8s linear infinite"}}/><span>Connecting to Plaid…</span></>
-          ):(
-            <><span style={{fontSize:20}}>🏦</span><span>{isLinkReady?"Connect My Bank Securely →":initError?"SDK unavailable":"Ready"}</span></>
-          )}
-        </button>
-
-        <div style={{color:C.muted,fontSize:11,textAlign:"center",marginBottom:14}}>
-          {initError?"Please refresh and try again":linkTokenLoading?"Preparing secure connection…":"Supports TD, RBC, Chase, BoA, and 11,000+ more"}
-        </div>
-
-        <div style={{marginTop:6}}><Btn label="Skip — enter manually" onClick={skipBank} outline color={C.muted} small/></div>
-
-        {/* Statement upload */}
-        <div style={{marginTop:10,background:C.cardAlt,borderRadius:14,padding:'12px 14px',border:`1px solid ${C.border}`}}>
-          <div style={{color:C.mutedHi,fontWeight:600,fontSize:12,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📄 Or upload a bank statement</div>
-          <label style={{display:'block',cursor:'pointer'}}>
-            <input type="file" accept=".pdf,.csv" style={{display:'none'}} onChange={handleStatementUpload} disabled={stmtStatus==='parsing'}/>
-            <div style={{background:stmtStatus==='parsing'?C.card:`linear-gradient(135deg,${C.gold}22,${C.gold}0A)`,border:`1px dashed ${stmtStatus==='error'?C.red:stmtStatus==='done'?C.green:C.gold}`,borderRadius:10,padding:'10px 14px',textAlign:'center',color:stmtStatus==='error'?C.redBright:stmtStatus==='done'?C.greenBright:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,transition:'all .2s'}}>
-              {stmtStatus==='parsing'?`⏳ ${stmtMsg}`:stmtStatus==='done'?`✓ ${stmtMsg}`:stmtStatus==='error'?`⚠ ${stmtMsg}`:'Choose PDF or CSV →'}
-            </div>
-          </label>
-          {!stmtStatus&&<div style={{color:C.muted,fontSize:11,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Supports most Canadian & US bank exports. AI parses PDFs automatically.</div>}
-        </div>
-      </>}
-
-      {bankStage==="loading"&&<div style={{textAlign:"center",padding:"40px 0"}}>
-        <div style={{marginBottom:14,display:"flex",justifyContent:"center",filter:"drop-shadow(0 0 20px #3CB54A55)"}}><FlourishMark size={54}/></div>
-        <div style={{color:C.greenBright,fontWeight:700,fontSize:18,marginBottom:8}}>
-          {bankProg<35?"Exchanging credentials…":bankProg<70?"Fetching your accounts…":"Importing transactions…"}
-        </div>
-        <div style={{color:C.muted,fontSize:13,marginBottom:22}}>Securely syncing 90 days of history</div>
-        <div style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.06)",borderRadius:99,height:6,overflow:"hidden",margin:"0 10px"}}>
-          <div style={{width:`${bankProg}%`,height:"100%",background:`linear-gradient(90deg,${C.green},${C.teal})`,borderRadius:99,transition:"width .4s ease-out"}}/>
-        </div>
-        <div style={{color:C.muted,fontSize:12,marginTop:8}}>{Math.round(bankProg)}%</div>
-      </div>}
-
-      {bankStage==="done"&&<div>
-        <div style={{textAlign:"center",marginBottom:16}}>
-          <div style={{width:80,height:80,borderRadius:"50%",background:C.green+"22",border:`1px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px"}}><Icon id="check" size={40} color={C.greenBright} strokeWidth={1.9}/></div>
-          <div style={{fontSize:20,fontWeight:800,color:C.greenBright,fontFamily:"Georgia,serif"}}>Connected!</div>
-          <div style={{color:C.mutedHi,fontSize:13,marginTop:4}}>
-            {connAccts.length} account{connAccts.length!==1?"s":""} · {plaidTxns.length||MOCK_TXN.length} transactions imported
-          </div>
-        </div>
-        {connAccts.map((a,i)=>(
-          <div key={i} style={{background:C.cardAlt,border:`1px solid ${C.green}44`,borderRadius:14,padding:"13px 16px",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <div style={{color:C.cream,fontWeight:700}}>{a.name}</div>
-              <div style={{color:C.muted,fontSize:12}}>{a.institution} · {a.type}{a.pending?" · ⏳ pending":""}</div>
-            </div>
-            <div style={{textAlign:"right"}}>
-              <div style={{color:a.balance>=0?C.greenBright:C.red,fontWeight:800}}>${Math.abs(a.balance).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-              <Chip label={a.balance>=0?"Asset":"Credit"} color={a.balance>=0?C.green:C.red}/>
-            </div>
-          </div>
-        ))}
-        <Btn label="Let's go →" onClick={()=>setStep(4)}/>
-      </div>}
+      <Btn label="Continue →" onClick={()=>setStep(4)} disabled={!incomes.some(i=>i.amount||(i.isVariable&&i.typicalAmount))}/>
     </div>,
 
     // 4: Bills
@@ -4838,7 +4850,7 @@ function WidgetScreen({data,onBack}){
 }
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
-function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onDeleteData,bankConnected,needsReconnect,reconnectLoading,onReconnect}){
+function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,bankConnected,needsReconnect,reconnectLoading,onReconnect}){
   const [notifToggles,setNotifToggles]=useState({overdraft:true,bills:true,coach:true,meeting:false,patterns:true});
   const handleShare=()=>{
     const url="https://flourishmoney.app";
@@ -4939,9 +4951,33 @@ function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconn
     {/* ── Disconnect bank ──────────────────────────────────────── */}
     {bankConnected&&(
       <div style={{marginTop:10,padding:"14px 16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
-        <div style={{color:C.cream,fontWeight:700,fontSize:13,marginBottom:4}}>Connected Bank</div>
-        <div style={{color:C.mutedHi,fontSize:12,marginBottom:12}}>Removes read-only access from Flourish. Your bank account is not affected.</div>
-        <Btn label="Disconnect Bank" onClick={onDisconnectBank} color={C.orange} small/>
+        <div style={{color:C.cream,fontWeight:700,fontSize:13,marginBottom:8}}>Connected Banks</div>
+        {/* Show each connected bank */}
+        {(()=>{
+          const tokens = JSON.parse(localStorage.getItem("flourish_plaid_tokens")||"[]");
+          const legacy = localStorage.getItem("flourish_plaid_token");
+          const banks = tokens.length > 0 ? tokens : (legacy ? [{id:"bank_0",token:legacy,institution:"Your Bank"}] : []);
+          return banks.map((b,i)=>(
+            <div key={b.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i<banks.length-1?`1px solid ${C.border}`:"none"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{width:28,height:28,borderRadius:8,background:C.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>🏦</div>
+                <div style={{color:C.cream,fontSize:13,fontWeight:600}}>{b.institution}</div>
+              </div>
+              <button onClick={()=>{
+                if(!window.confirm(`Disconnect ${b.institution}?`)) return;
+                const updated = banks.filter(x=>x.id!==b.id);
+                localStorage.setItem("flourish_plaid_tokens", JSON.stringify(updated));
+                if(updated.length===0){localStorage.removeItem("flourish_plaid_token");onDisconnectBank();}
+                else{ localStorage.setItem("flourish_plaid_token", updated[0].token); window.location.reload(); }
+              }} style={{background:"none",border:`1px solid ${C.orange}44`,borderRadius:8,padding:"4px 10px",color:C.orange,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+                Disconnect
+              </button>
+            </div>
+          ));
+        })()}
+        <button onClick={onAddBank} style={{width:"100%",marginTop:12,background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:10,padding:"10px",color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+          + Connect Another Bank
+        </button>
       </div>
     )}
     {/* ── Delete all data ──────────────────────────────────────── */}
@@ -5778,7 +5814,19 @@ export default function FlourishApp(){
   const [isPremium,setIsPremium]=useState(()=>saved?.isPremium||false);
   const [showPaywall,setShowPaywall]=useState(false);
   // ── Plaid reconnect state ─────────────────────────────────────
-  const [plaidAccessToken,setPlaidAccessToken]=useState(()=>{ try{return localStorage.getItem("flourish_plaid_token")||null;}catch{return null;} });
+  // Multi-bank: store array of {id, token, institution}
+  const [plaidTokens,setPlaidTokens]=useState(()=>{
+    try{
+      // Migrate legacy single token
+      const legacy = localStorage.getItem("flourish_plaid_token");
+      const arr = JSON.parse(localStorage.getItem("flourish_plaid_tokens")||"null");
+      if(arr) return arr;
+      if(legacy) return [{id:"bank_0",token:legacy,institution:"Your Bank"}];
+      return [];
+    }catch{return [];}
+  });
+  // Keep legacy plaidAccessToken for reconnect compatibility
+  const plaidAccessToken = plaidTokens[0]?.token || null;
   const [needsReconnect,setNeedsReconnect]=useState(false);
   const [reconnectToken,setReconnectToken]=useState(null);
   const [reconnectLoading,setReconnectLoading]=useState(false);
@@ -5831,6 +5879,11 @@ export default function FlourishApp(){
   }, []);
 
   // ── Persist state changes to localStorage ──────────────────────
+  // Persist plaid tokens array
+  useEffect(()=>{
+    try{ localStorage.setItem("flourish_plaid_tokens", JSON.stringify(plaidTokens)); }catch{}
+  },[plaidTokens]);
+
   useEffect(()=>{ saveState({onboarded,appData,household,isPremium,checkInBonus}); },
     [onboarded,appData,household,isPremium,checkInBonus]);
 
@@ -5839,31 +5892,37 @@ export default function FlourishApp(){
   useEffect(()=>{
     if(!onboarded || !appData?.bankConnected) return;
     if(appData?.transactions?.length > 0) return; // already have transactions
-    const token = localStorage.getItem("flourish_plaid_token");
-    if(!token) return;
+    const tokens = JSON.parse(localStorage.getItem("flourish_plaid_tokens")||"[]");
+    const legacyToken = localStorage.getItem("flourish_plaid_token");
+    const allTokens = tokens.length > 0 ? tokens : (legacyToken ? [{id:"bank_0",token:legacyToken,institution:"Your Bank"}] : []);
+    if(allTokens.length === 0) return;
     // Small delay so dashboard renders first
     const timer = setTimeout(async()=>{
       try {
-        const txnData = await callPlaid("get_transactions",{access_token:token,days:90});
-        const normalised = normaliseTxns(txnData.transactions||[]);
-        if(normalised.length === 0) return;
-        // Auto-detect income and bills from real data
-        const detectedIncome = detectIncomeFromTxns(normalised);
-        const detectedBills = detectRecurringBills(normalised);
+        // Fetch transactions from ALL connected banks in parallel
+        const results = await Promise.allSettled(
+          allTokens.map(t => callPlaid("get_transactions",{access_token:t.token,days:90}))
+        );
+        const allTxns = results
+          .filter(r => r.status === "fulfilled")
+          .flatMap(r => normaliseTxns(r.value.transactions||[]));
+        // Sort combined transactions by date
+        allTxns.sort((a,b) => a.date < b.date ? 1 : -1);
+        if(allTxns.length === 0) return;
+        // Auto-detect income and bills from combined data
+        const detectedIncome = detectIncomeFromTxns(allTxns);
+        const detectedBills = detectRecurringBills(allTxns);
         setAppData(prev=>({
           ...prev,
-          transactions: normalised,
-          // Pre-fill incomes if not already set by user
+          transactions: allTxns,
           incomes: detectedIncome && (!prev.incomes?.some(i=>i.amount))
             ? [{id:1,label:detectedIncome.label,amount:String(detectedIncome.typical),freq:"monthly",type:"employment",isVariable:detectedIncome.isVariable,typicalAmount:String(detectedIncome.typical),lowAmount:String(detectedIncome.low),highAmount:String(detectedIncome.high),autoDetected:true}]
             : prev.incomes,
-          // Pre-fill bills if not already set
           bills: detectedBills?.length > 0 && (!prev.bills?.some(b=>b.name))
             ? detectedBills.map(b=>({name:b.name,amount:b.amount,date:b.date}))
             : prev.bills,
         }));
       } catch(e) {
-        // Silent failure — transactions will load next time
         console.warn("[Flourish] Background transaction fetch failed:", e.message);
       }
     }, 1500);
@@ -5911,7 +5970,15 @@ export default function FlourishApp(){
   const onReconnectSuccess = useCallback((publicToken)=>{
     callPlaid("exchange_token",{ public_token: publicToken, institution_name: "Your Bank" })
       .then(ex=>{
-        try{ localStorage.setItem("flourish_plaid_token", ex.access_token); }catch{}
+        try{
+        // Multi-bank: save to array
+        const existing = JSON.parse(localStorage.getItem("flourish_plaid_tokens")||"[]");
+        const bankId = "bank_" + Date.now();
+        const updated = [...existing, {id:bankId,token:ex.access_token,institution:ex.institution_name||"Your Bank"}];
+        localStorage.setItem("flourish_plaid_tokens", JSON.stringify(updated));
+        // Keep legacy key for backwards compatibility
+        localStorage.setItem("flourish_plaid_token", ex.access_token);
+      }catch{}
         setPlaidAccessToken(ex.access_token);
         return Promise.all([
           callPlaid("get_accounts",{ access_token: ex.access_token }),
@@ -5983,7 +6050,7 @@ export default function FlourishApp(){
 
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)}/>;
-    if(showSettings)return <Settings data={appData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank}/>;
+    if(showSettings)return <Settings data={appData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={()=>handleReconnectBank()} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank}/>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold}/>;
