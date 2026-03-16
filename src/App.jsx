@@ -2486,9 +2486,14 @@ function DashCustomize({ layout, onChange, onClose }) {
 
   const save = () => { onChange(items); onClose(); };
   const toggle = (id) => setItems(prev => prev.map(t => t.id===id ? {...t, visible:!t.visible} : t));
+  const toggleLock = (id) => setItems(prev => prev.map(t => t.id===id ? {...t, locked:!t.locked} : t));
   const onDragStart = (id) => setDragging(id);
   const onDragEnter = (id) => {
     if (!dragging || dragging === id) return;
+    // Don't move locked tiles
+    const dragItem = items.find(t=>t.id===dragging);
+    const targetItem = items.find(t=>t.id===id);
+    if(dragItem?.locked || targetItem?.locked) return;
     setDragOver(id);
     setItems(prev => {
       const from = prev.findIndex(t=>t.id===dragging);
@@ -2514,20 +2519,26 @@ function DashCustomize({ layout, onChange, onClose }) {
           const m = meta(tile.id);
           return (
             <div key={tile.id}
-              draggable
-              onDragStart={()=>onDragStart(tile.id)}
+              draggable={!tile.locked}
+              onDragStart={()=>!tile.locked&&onDragStart(tile.id)}
               onDragEnter={()=>onDragEnter(tile.id)}
               onDragEnd={onDragEnd}
               style={{display:'flex',alignItems:'center',gap:12,padding:'12px 14px',borderRadius:14,marginBottom:8,
-                background: dragOver===tile.id ? C.green+'14' : C.cardAlt,
-                border:`1px solid ${tile.visible ? C.green+'33' : C.border}`,
-                cursor:'grab',transition:'all .15s',opacity:tile.visible?1:0.5}}>
-              <span style={{fontSize:18,cursor:'grab',color:C.muted,userSelect:'none'}}>☰</span>
+                background: dragOver===tile.id ? C.green+'14' : tile.locked ? C.gold+'08' : C.cardAlt,
+                border:`1px solid ${tile.locked ? C.gold+'44' : tile.visible ? C.green+'33' : C.border}`,
+                cursor:tile.locked?'default':'grab',transition:'all .15s',opacity:tile.visible?1:0.5}}>
+              <span style={{fontSize:18,cursor:tile.locked?'default':'grab',color:tile.locked?C.gold:C.muted,userSelect:'none'}}>{tile.locked?'📌':'☰'}</span>
               <span style={{fontSize:20}}>{m.icon}</span>
               <div style={{flex:1,color:C.cream,fontWeight:600,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{m.label}</div>
-              <div onClick={()=>toggle(tile.id)}
-                style={{width:40,height:22,borderRadius:99,background:tile.visible?C.green:'rgba(255,255,255,0.08)',border:`1px solid ${tile.visible?C.green:C.border}`,position:'relative',cursor:'pointer',transition:'background .2s',flexShrink:0}}>
-                <div style={{position:'absolute',top:2,left:tile.visible?20:2,width:16,height:16,borderRadius:'50%',background:'white',transition:'left .2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}}/>
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <button onClick={()=>toggleLock(tile.id)} title={tile.locked?"Unlock":"Lock position"}
+                  style={{background:tile.locked?C.gold+'22':'transparent',border:`1px solid ${tile.locked?C.gold+'55':C.border}`,borderRadius:10,width:44,height:44,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>
+                  {tile.locked?'🔒':'🔓'}
+                </button>
+                <div onClick={()=>toggle(tile.id)}
+                  style={{width:40,height:22,borderRadius:99,background:tile.visible?C.green:'rgba(255,255,255,0.08)',border:`1px solid ${tile.visible?C.green:C.border}`,position:'relative',cursor:'pointer',transition:'background .2s',flexShrink:0}}>
+                  <div style={{position:'absolute',top:2,left:tile.visible?20:2,width:16,height:16,borderRadius:'50%',background:'white',transition:'left .2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}}/>
+                </div>
               </div>
             </div>
           );
@@ -2875,58 +2886,55 @@ function Onboarding({onComplete,onViewLegal}){
               style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}}/>
           </div>
           {/* Variable income — auto flag or manual toggle */}
-          {inc.autoDetected && inc.isVariable && (
-            <div style={{background:C.goldDim,border:`1px solid ${C.gold}33`,borderRadius:10,padding:"8px 12px",marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:14}}>📊</span>
-              <div style={{color:C.goldBright,fontSize:12,lineHeight:1.5}}>We detected your income varies. We've set low/typical/high automatically — tap any value to adjust.</div>
-            </div>
-          )}
-          {!inc.autoDetected&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-            <div style={{color:C.muted,fontSize:11,fontWeight:600}}>My income varies month to month</div>
-            <button onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,isVariable:!inc.isVariable,amount:inc.isVariable?inc.typicalAmount||"":inc.amount}:x))}
-              style={{width:44,height:24,borderRadius:99,background:inc.isVariable?C.green:C.cardAlt,border:`1px solid ${inc.isVariable?C.green:C.border}`,cursor:"pointer",position:"relative",transition:"all .2s",flexShrink:0}}>
-              <div style={{position:"absolute",top:2,left:inc.isVariable?22:2,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"all .2s"}}/>
-            </button>
-          </div>}
-          {!inc.isVariable&&<div style={{display:"flex",gap:10,marginBottom:10}}>
-            <div style={{flex:1}}>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Take-Home Amount</div>
-              <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
-                <span style={{color:C.muted,padding:"0 10px",fontSize:14}}>$</span>
-                <input value={inc.amount} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,amount:e.target.value}:x))}
-                  type="number" placeholder="0.00"
-                  style={{flex:1,background:"none",border:"none",padding:"10px 12px 10px 0",color:C.cream,fontSize:14,fontFamily:"inherit",outline:"none"}}/>
+          {/* Income amount — single field only. App calculates everything else. */}
+          {inc.autoDetected ? (
+            // Bank connected — show detected amount, allow adjustment
+            <div style={{marginBottom:10}}>
+              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>
+                {inc.isVariable ? "Average Monthly Take-Home" : "Monthly Take-Home (detected)"}
               </div>
+              <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.green}44`,borderRadius:10,overflow:"hidden"}}>
+                <span style={{color:C.muted,padding:"0 10px",fontSize:14}}>$</span>
+                <input value={inc.amount} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,amount:e.target.value,typicalAmount:e.target.value}:x))}
+                  type="number"
+                  style={{flex:1,background:"none",border:"none",padding:"10px 12px 10px 0",color:C.greenBright,fontSize:16,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
+                <span style={{color:C.green,fontSize:11,fontWeight:700,paddingRight:10}}>Auto ✓</span>
+              </div>
+              {inc.isVariable&&<div style={{color:C.muted,fontSize:11,marginTop:6}}>📊 Income varies — we detected your range and will use it for planning.</div>}
             </div>
-            <div style={{flex:1}}>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Frequency</div>
-              <select value={inc.freq} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,freq:e.target.value}:x))}
-                style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}>
-                <option value="weekly">Weekly</option>
-                <option value="biweekly">Every 2 weeks</option>
-                <option value="semimonthly">Twice a month</option>
-                <option value="monthly">Monthly</option>
-              </select>
-            </div>
-          </div>}
-          {inc.isVariable&&<div style={{marginBottom:10}}>
-            <div style={{background:C.goldDim,border:`1px solid ${C.gold}33`,borderRadius:12,padding:"10px 14px",marginBottom:10}}>
-              <div style={{color:C.goldBright,fontSize:12,lineHeight:1.6}}>💡 We'll use your <strong>typical</strong> month for planning, <strong>low</strong> month for safe-spend (conservative), and <strong>high</strong> month for goal projections.</div>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-              {[["lowAmount","Low Month","😬"],["typicalAmount","Typical Month","😊"],["highAmount","High Month","🚀"]].map(([field,label,emoji])=>(
-                <div key={field}>
-                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>{emoji} {label}</div>
-                  <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${field==="typicalAmount"?C.green:C.border}`,borderRadius:10,overflow:"hidden"}}>
-                    <span style={{color:C.muted,padding:"0 6px",fontSize:13}}>$</span>
-                    <input value={inc[field]||""} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,[field]:e.target.value,amount:field==="typicalAmount"?e.target.value:x.amount}:x))}
-                      type="number" placeholder="0"
-                      style={{flex:1,background:"none",border:"none",padding:"8px 8px 8px 0",color:field==="typicalAmount"?C.greenBright:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:field==="typicalAmount"?700:400}}/>
+          ) : (
+            // No bank — ask for last paycheque only
+            <div style={{marginBottom:10}}>
+              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Your Last Paycheque (take-home)</div>
+              <div style={{display:"flex",gap:10}}>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                    <span style={{color:C.muted,padding:"0 10px",fontSize:14}}>$</span>
+                    <input value={inc.amount} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,amount:e.target.value}:x))}
+                      type="number" placeholder="e.g. 2100"
+                      style={{flex:1,background:"none",border:"none",padding:"10px 12px 10px 0",color:C.cream,fontSize:14,fontFamily:"inherit",outline:"none"}}/>
                   </div>
                 </div>
-              ))}
+                <div style={{flex:1}}>
+                  <select value={inc.freq} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,freq:e.target.value}:x))}
+                    style={{width:"100%",height:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}>
+                    <option value="weekly">Weekly</option>
+                    <option value="biweekly">Every 2 weeks</option>
+                    <option value="semimonthly">Twice a month</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:10}}>
+                <div style={{color:C.muted,fontSize:11}}>Income varies month to month?</div>
+                <button onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,isVariable:!inc.isVariable}:x))}
+                  style={{width:44,height:24,borderRadius:99,background:inc.isVariable?C.green:C.cardAlt,border:`1px solid ${inc.isVariable?C.green:C.border}`,cursor:"pointer",position:"relative",transition:"all .2s",flexShrink:0}}>
+                  <div style={{position:"absolute",top:2,left:inc.isVariable?22:2,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"all .2s"}}/>
+                </button>
+              </div>
+              {inc.isVariable&&<div style={{color:C.muted,fontSize:11,marginTop:6,lineHeight:1.5}}>💡 No problem — enter your typical paycheque. We'll use it for planning and adjust as we learn your patterns.</div>}
             </div>
-          </div>}
+          )}
           <div>
             <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Type</div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -2955,12 +2963,14 @@ function Onboarding({onComplete,onViewLegal}){
         <div style={{color:C.muted,fontSize:14,marginBottom:14}}>
           We found <span style={{color:C.tealBright,fontWeight:700}}>{detectedBills.length} recurring bills</span> from your transactions. Amounts are averaged — edit anything that looks off.
         </div>
+      ):connAccts.some(a=>a.institution!=="Manual")?(
+        <div style={{background:C.tealDim,border:`1px solid ${C.teal}33`,borderRadius:14,padding:"12px 16px",marginBottom:14}}>
+          <div style={{color:C.tealBright,fontWeight:700,fontSize:13,marginBottom:2}}>✦ Bills will auto-detect</div>
+          <div style={{color:C.muted,fontSize:12}}>Your bank is connected. Recurring bills will be detected automatically once your transactions load. You can also add them manually below.</div>
+        </div>
       ):(
-        <div style={{color:C.muted,fontSize:14,marginBottom:14}}>Everything that comes out monthly.</div>
+        <div style={{color:C.muted,fontSize:14,marginBottom:14}}>Add your regular monthly bills. You can always update these later.</div>
       )}
-      {detectedBills===null&&<div style={{background:C.tealDim,border:`1px solid ${C.teal}33`,borderRadius:14,padding:"12px 16px",marginBottom:14,color:C.tealBright,fontSize:13}}>
-        💡 Connect your bank to auto-detect recurring bills from your transactions.
-      </div>}
       {bills.map((b,i)=>(
         <div key={i} style={{background:C.cardAlt,borderRadius:16,padding:"14px 16px",border:`1px solid ${b.auto?C.teal+"66":C.border}`,marginBottom:10}}>
           {b.auto&&<div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
@@ -3078,17 +3088,61 @@ function Onboarding({onComplete,onViewLegal}){
 
 // ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
 const NOTIF_COLORS = {autopilot:"#00CC85",bill:"#E8B84B",win:"#00C8E0",score:"#00CC85",behavior:"#FF8C42",opportunity:"#9B7DFF",urgent:"#FF4F6A"};
+// INIT_NOTIFS — only generic onboarding notifications
+// Bill-due, debt, and spending notifications are generated dynamically from real user data
 const INIT_NOTIFS=[
-  {id:1,icon:"bell",title:"Today's safe spend: $47",body:"Based on your balance, bills, and forecast. Stay on track!",read:false,time:"9:01 AM",type:"autopilot",color:NOTIF_COLORS.autopilot},
-  {id:2,icon:"calendar",title:"Rent due in 3 days",body:"$1,850 → Landlord. Your balance covers it — you're good.",read:false,time:"8:30 AM",type:"bill",color:NOTIF_COLORS.bill},
-  {id:3,icon:"target",title:"Debt payoff milestone!",body:"You're 68% through your Visa. At this rate, done by Oct 2025.",read:true,time:"Yesterday",type:"win",color:NOTIF_COLORS.win},
-  {id:4,icon:"chartUp",title:"Score improved +2 this week",body:"Your Financial Health Score is now 74. Keep it up!",read:true,time:"Yesterday",type:"score",color:NOTIF_COLORS.score},
-  {id:5,icon:"zap",title:"Spending spike detected",body:"You spent 38% more in the 3 days after payday. Move $200 to savings now?",read:true,time:"Mar 6",type:"behavior",color:NOTIF_COLORS.behavior},
-  {id:6,icon:"sparkles",title:"You could save $47/mo",body:"3 subscriptions you haven't used this month total $47. Review them in Spend.",read:true,time:"Mar 5",type:"opportunity",color:NOTIF_COLORS.opportunity},
+  {id:1,icon:"sparkles",title:"Welcome to Flourish 🌱",body:"Your financial dashboard is ready. Connect your bank to unlock live insights.",read:false,time:"Just now",type:"autopilot",color:NOTIF_COLORS.autopilot},
 ];
 
-function Notifications({onClose}){
-  const [notifs,setNotifs]=useState(INIT_NOTIFS);
+// Generate real notifications from user's actual bills and data
+function buildLiveNotifs(data) {
+  const notifs = [];
+  const today = new Date();
+  const todayDate = today.getDate();
+  const bills = data?.bills || [];
+  const accounts = data?.accounts || [];
+  const debts = data?.debts || [];
+  const balance = accounts.filter(a=>a.type==="checking"||a.type==="savings").reduce((s,a)=>s+(a.balance||0),0);
+
+  // Bill due soon notifications (real bills only)
+  bills.filter(b=>b.name&&b.amount).forEach((b,i) => {
+    const dueDay = parseInt(b.date||0);
+    if(!dueDay) return;
+    const daysUntil = dueDay >= todayDate ? dueDay - todayDate : (30 - todayDate + dueDay);
+    if(daysUntil <= 5) {
+      const covers = balance >= parseFloat(b.amount||0);
+      notifs.push({
+        id: `bill_${i}`,
+        icon:"calendar",
+        title:`${b.name} due in ${daysUntil === 0 ? "today" : daysUntil + " day" + (daysUntil===1?"":"s")}`,
+        body:`$${parseFloat(b.amount).toFixed(2)}. ${covers ? "Your balance covers it — you're good." : "You may want to transfer funds before this hits."}`,
+        read:false,
+        time:`${dueDay}${[11,12,13].includes(dueDay)?"th":["st","nd","rd"][dueDay%10-1]||"th"}`,
+        type:"bill",
+        color:covers?NOTIF_COLORS.bill:NOTIF_COLORS.urgent,
+      });
+    }
+  });
+
+  // Debt milestone notifications (real debts only)
+  debts.filter(d=>d.name&&d.balance&&d.originalBalance).forEach((d,i) => {
+    const pct = Math.round((1 - parseFloat(d.balance)/parseFloat(d.originalBalance))*100);
+    if(pct >= 25 && pct % 25 === 0) {
+      notifs.push({
+        id:`debt_${i}`,icon:"target",
+        title:`${d.name} is ${pct}% paid off! 🎉`,
+        body:`$${parseFloat(d.balance).toLocaleString()} remaining. Keep going!`,
+        read:true,time:"Today",type:"win",color:NOTIF_COLORS.win,
+      });
+    }
+  });
+
+  return notifs;
+}
+
+function Notifications({onClose, data}){
+  const liveNotifs = data ? [...buildLiveNotifs(data), ...INIT_NOTIFS] : INIT_NOTIFS;
+  const [notifs,setNotifs]=useState(liveNotifs);
   const unread=notifs.filter(n=>!n.read).length;
   return <div style={{color:C.cream}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
@@ -3142,7 +3196,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const monthlyIncome = FinancialCalcEngine.cashFlow(data).monthlyIncome;
   const totalDebt=(data.debts||[]).reduce((a,d)=>a+parseFloat(d.balance||0),0);
   const netWorth=bal+DEMO.netWorthAdd-totalDebt;
-  const unread=INIT_NOTIFS.filter(n=>!n.read).length;
+  const unread=appData ? buildLiveNotifs(appData).filter(n=>!n.read).length + INIT_NOTIFS.filter(n=>!n.read).length : INIT_NOTIFS.filter(n=>!n.read).length;
   const spark=[-4200,-3800,-3100,-2600,-1900,netWorth];
   const sMin=Math.min(...spark),sMax=Math.max(...spark);
   const sN=spark.map(v=>90-((v-sMin)/(sMax-sMin)||0)*70);
@@ -3652,8 +3706,16 @@ function SpendScreen({data}){
   const isDemo=!data.bankConnected;
   const txns=isDemo?(data.transactions||[]):(data.transactions||[]);
   const stats=computeStats(txns);
-  const cats=["All",...Array.from(new Set(txns.map(t=>t.cat)))];
-  const filtered=catFilter==="All"?txns:txns.filter(t=>t.cat===catFilter);
+  const cats=["All",...Array.from(new Set(txns.map(t=>getCat(t))))];
+  const [recatTxn,setRecatTxn]=useState(null);
+  const catOverrides = JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
+  const getCat = (t) => catOverrides[t.id] || t.cat;
+  const recat = (txn, newCat) => {
+    const updated = {...catOverrides, [txn.id]: newCat};
+    localStorage.setItem("flourish_cat_overrides", JSON.stringify(updated));
+    setRecatTxn(null);
+  };
+  const filtered=catFilter==="All"?txns:txns.filter(t=>getCat(t)===catFilter);
   const totalSpent=txns.filter(t=>t.amount>0).reduce((a,t)=>a+t.amount,0);
   const totalIn=txns.filter(t=>t.amount<0).reduce((a,t)=>a+Math.abs(t.amount),0);
 
@@ -3665,9 +3727,28 @@ function SpendScreen({data}){
     {id:5,icon:"chartUp",title:`${stats.busiest} is your expensive day`,body:`You spend significantly more on ${stats.busiest}s than any other day. Knowing this is half the battle — awareness alone cuts it 20–30%.`,saving:"$30–60/mo",effort:"Very Low",color:C.blue},
   ].filter(Boolean).filter(s=>!dismissed.includes(s.id));
 
-  return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+  const ALL_CATS = ["Food & Drink","Groceries","Transport","Shopping","Entertainment","Bills & Utilities","Health","Income","Subscriptions","Travel","Other"];
+
+    return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    {/* Re-categorize bottom sheet */}
+    {recatTxn&&(
+      <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.5)"}} onClick={()=>setRecatTxn(null)}>
+        <div style={{background:C.card,borderRadius:"24px 24px 0 0",padding:"20px 20px 40px",width:"100%",maxWidth:480,border:`1px solid ${C.border}`,boxShadow:"0 -8px 40px rgba(0,0,0,0.4)"}} onClick={e=>e.stopPropagation()}>
+          <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 16px"}}/>
+          <div style={{color:C.cream,fontWeight:800,fontSize:15,marginBottom:4}}>Change Category</div>
+          <div style={{color:C.muted,fontSize:12,marginBottom:16,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{recatTxn.name}</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            {ALL_CATS.map(cat=>(
+              <button key={cat} onClick={()=>recat(recatTxn,cat)} style={{background:getCat(recatTxn)===cat?C.orange+"33":C.cardAlt,border:`1px solid ${getCat(recatTxn)===cat?C.orange:C.border}`,color:getCat(recatTxn)===cat?C.orangeBright:C.muted,borderRadius:99,padding:"7px 14px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>
+                {cat}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    )}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <div><div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Spending</div><div style={{color:isDemo?C.gold:C.muted,fontSize:12,marginTop:3}}>{isDemo?"Sample data · connect your bank for real insights":"Live from your bank"}</div></div>
+      <div><div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Transactions</div><div style={{color:isDemo?C.gold:C.muted,fontSize:12,marginTop:3}}>{isDemo?"Sample data · connect your bank for real insights":"Live from your bank"}</div></div>
       <div style={{textAlign:"right"}}><div style={{color:C.red,fontWeight:800,fontSize:15}}>–${totalSpent.toFixed(0)}</div><div style={{color:C.green,fontSize:11}}>+${totalIn.toFixed(0)} in</div></div>
     </div>
     <div style={{display:"flex",gap:6,background:C.surface,borderRadius:16,padding:4}}>
@@ -3686,7 +3767,13 @@ function SpendScreen({data}){
           <div style={{width:42,height:42,borderRadius:14,background:txn.color+"18",border:`1px solid ${txn.color}28`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon id={txnIcon(txn)} size={19} color={txn.color} strokeWidth={1.5}/></div>
           <div style={{flex:1,minWidth:0}}>
             <div style={{color:C.cream,fontWeight:600,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txn.name}</div>
-            <div style={{display:"flex",gap:6,marginTop:3,alignItems:"center"}}><Chip label={txn.cat} color={txn.color} size={10}/><span style={{color:C.muted,fontSize:10}}>{txn.date}</span>{txn.pending&&<Chip label="Pending" color={C.gold} size={9}/>}</div>
+            <div style={{display:"flex",gap:6,marginTop:3,alignItems:"center"}}>
+              <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.color+"18",border:`1px solid ${txn.color}33`,borderRadius:99,padding:"2px 8px",color:txn.color,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
+                {getCat(txn)} <span style={{opacity:0.6,fontSize:9}}>✎</span>
+              </button>
+              <span style={{color:C.muted,fontSize:10}}>{txn.date}</span>
+              {txn.pending&&<Chip label="Pending" color={C.gold} size={9}/>}
+            </div>
           </div>
           <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif",flexShrink:0}}>{txn.amount<0?"+":"–"}${Math.abs(txn.amount).toFixed(2)}</div>
         </div>
@@ -5122,7 +5209,11 @@ User financial snapshot:
 - Top categories: ${topCats||"no data"}
 - Accounts: ${accounts.map(a=>`${a.name} (${a.type}) $${a.balance}`).join("; ")||"none linked"}
 - Country: ${country}
-Keep responses concise (3-5 sentences max), practical, and friendly. Use $ amounts when relevant. Never be preachy.`;
+Keep responses concise (3-5 sentences max), practical, and friendly. Use $ amounts when relevant. Never be preachy.
+CRITICAL RULES:
+- The balances and transactions shown are live from the user's bank via Plaid. NEVER suggest the data might be wrong, outdated, or inaccurate. NEVER recommend the user check their bank app instead — Flourish IS their financial view.
+- If a user says their balance looks wrong, acknowledge it and suggest they refresh their connection in Settings, but never imply Flourish's data is unreliable.
+- Never mention Plaid by name to users.`;
   };
 
   const send = async ()=>{
@@ -5650,7 +5741,7 @@ function Paywall({onClose,onUpgrade,country}){
 const NAV=[
   {id:"home",  icon:"home",     label:"Home"},
   {id:"plan",  icon:"calendar", label:"Plan"},
-  {id:"spend", icon:"card",     label:"Spend"},
+  {id:"spend", icon:"card",     label:"Transactions"},
   {id:"coach", icon:"sparkles", label:"Coach"},
   {id:"family",icon:"users",    label:"Family"},
 ];
@@ -5861,7 +5952,7 @@ export default function FlourishApp(){
   const [isOnline,setIsOnline]=useState(()=>navigator.onLine);
   const [dashLayout,setDashLayout]=useState(()=>{
     try{ const s=localStorage.getItem('flourish_dash_layout'); if(s) return JSON.parse(s); }catch{}
-    return DASH_TILES.map(t=>({id:t.id,visible:true}));
+    return DASH_TILES.map(t=>({id:t.id,visible:true,locked:false}));
   });
   const [goalsTab,setGoalsTab]=useState("sim");
   // ── Theme ───────────────────────────────────────────────────────
@@ -5915,6 +6006,27 @@ export default function FlourishApp(){
         // Sort combined transactions by date
         allTxns.sort((a,b) => a.date < b.date ? 1 : -1);
         if(allTxns.length === 0) return;
+        // Also refresh account balances with real-time data now that we have time
+        try {
+          const tokens2 = JSON.parse(localStorage.getItem("flourish_plaid_tokens")||"[]");
+          const legacyToken2 = localStorage.getItem("flourish_plaid_token");
+          const allTok = tokens2.length > 0 ? tokens2 : (legacyToken2 ? [{id:"b0",token:legacyToken2}] : []);
+          const balResults = await Promise.allSettled(
+            allTok.map(t => callPlaid("get_accounts",{access_token:t.token}))
+          );
+          const freshAccounts = balResults
+            .filter(r=>r.status==="fulfilled")
+            .flatMap(r=>r.value.accounts.map(a=>({
+              id:a.id,
+              name:a.name,
+              type:a.subtype||a.type,
+              balance:a.type==="credit"?-(a.balance.current||0):(a.balance.available??a.balance.current??0),
+              institution:a.institution||"Bank",
+            })));
+          if(freshAccounts.length > 0) {
+            setAppData(prev=>({...prev, accounts:freshAccounts}));
+          }
+        } catch(e) { /* silent — cached balances still shown */ }
         // Auto-detect income and bills from combined data
         const detectedIncome = detectIncomeFromTxns(allTxns);
         const detectedBills = detectRecurringBills(allTxns);
@@ -6055,7 +6167,7 @@ export default function FlourishApp(){
   };
 
   const content=()=>{
-    if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)}/>;
+    if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
     if(showSettings)return <Settings data={appData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={()=>handleReconnectBank()} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank}/>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold}/>;
@@ -6073,7 +6185,7 @@ export default function FlourishApp(){
   const ALL_NAV=[
     {id:"home",  icon:"home",    label:"Home"},
     {id:"plan",  icon:"calendar",label:"Plan"},
-    {id:"spend", icon:"card",    label:"Spend"},
+    {id:"spend", icon:"card",    label:"Transactions"},
     {id:"coach", icon:"sparkles",label:"Coach"},
     {id:"family",icon:"users",   label:"Family"},
     {id:"goals", icon:"chartUp", label:"Goals"},
