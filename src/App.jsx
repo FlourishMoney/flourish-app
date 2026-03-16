@@ -4193,7 +4193,7 @@ function detectPayroll(transactions, existingIncomes) {
 }
 
 function IncomeDetectionBanner({transactions, incomes, setAppData}){
-  const [dismissed, setDismissed] = React.useState(()=>{
+  const [dismissed, setDismissed] = useState(()=>{
     try { return JSON.parse(localStorage.getItem("flourish_dismissed_income")||"[]"); } catch { return []; }
   });
   const candidates = detectPayroll(transactions, incomes).filter(c => !dismissed.includes(c.name));
@@ -4234,9 +4234,9 @@ function IncomeDetectionBanner({transactions, incomes, setAppData}){
 }
 
 function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetBudget}){
-  const [open, setOpen] = React.useState(false);
-  const [editBudget, setEditBudget] = React.useState(false);
-  const [budgetVal, setBudgetVal] = React.useState(budget ? String(budget) : "");
+  const [open, setOpen] = useState(false);
+  const [editBudget, setEditBudget] = useState(false);
+  const [budgetVal, setBudgetVal] = useState(budget ? String(budget) : "");
   const pct = totalSpent > 0 ? Math.round(amt/totalSpent*100) : 0;
   const budgetPct = budget > 0 ? Math.min(100, Math.round((amt/budget)*100)) : null;
   const overBudget = budget > 0 && amt > budget;
