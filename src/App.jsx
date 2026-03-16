@@ -33,6 +33,7 @@ const STYLES = `
 @keyframes breathe   { 0%,100%{opacity:0.5;transform:scale(1)} 50%{opacity:0.9;transform:scale(1.04)} }
 @keyframes orbit     { from{transform:translate(-50%,-50%) rotate(0deg) translateX(110px)} to{transform:translate(-50%,-50%) rotate(360deg) translateX(110px)} }
 @keyframes logoFloat { 0%,100%{transform:translateY(0) rotate(-1deg)} 50%{transform:translateY(-6px) rotate(1deg)} }
+@keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
 * { -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; box-sizing:border-box; }
 *:focus-visible { outline:2px solid rgba(0,214,143,0.55); outline-offset:2px; border-radius:4px; }
 ::selection { background:rgba(0,214,143,0.25); color:#fff; }
@@ -472,11 +473,11 @@ const MOCK_ACCOUNTS = [
   {id:"a5",name:"TD e-Series RRSP ••9910",type:"investment",balance:8650.00,institution:"TD Bank",ticker:"TDB902",gain:890,gainPct:11.4},
 ];
 const MOCK_ACCOUNTS_US = [
-  {id:"a1",name:"Chase Checking ••2891",type:"checking",balance:DEMO.balance,institution:"Chase"},
-  {id:"a2",name:"Chase Savings ••5504",type:"savings",balance:1840.00,institution:"Chase"},
-  {id:"a3",name:"Chase Sapphire ••4471",type:"credit",balance:-3420.00,institution:"Chase"},
-  {id:"a4",name:"Fidelity Roth IRA ••0033",type:"investment",balance:14200.00,institution:"Fidelity",ticker:"FXAIX",gain:2980,gainPct:26.5},
-  {id:"a5",name:"Fidelity 401(k) ••8812",type:"investment",balance:23400.00,institution:"Fidelity",ticker:"Target 2055",gain:3890,gainPct:19.9},
+  {id:"u1",name:"Chase Checking ••2891",type:"checking",balance:DEMO.balance,institution:"Chase"},
+  {id:"u2",name:"Chase Savings ••5504",type:"savings",balance:1840.00,institution:"Chase"},
+  {id:"u3",name:"Chase Sapphire ••4471",type:"credit",balance:-3420.00,institution:"Chase"},
+  {id:"u4",name:"Fidelity Roth IRA ••0033",type:"investment",balance:14200.00,institution:"Fidelity",ticker:"FXAIX",gain:2980,gainPct:26.5},
+  {id:"u5",name:"Fidelity 401(k) ••8812",type:"investment",balance:23400.00,institution:"Fidelity",ticker:"Target 2055",gain:3890,gainPct:19.9},
 ];
 
 // ─── DEMO DEFAULTS — used when no real data is connected ─────────────────────
@@ -2628,7 +2629,7 @@ function Onboarding({onComplete,onViewLegal}){
 
       {/* Logo mark */}
       <div style={{position:"relative",marginBottom:16,animation:"logoFloat 5s ease-in-out infinite"}}>
-        <div style={{width:96,height:96,borderRadius:30,background:C.isDark?"linear-gradient(145deg,rgba(0,204,133,0.14) 0%,rgba(0,204,133,0.06) 100%)":"linear-gradient(145deg,rgba(0,147,95,0.10) 0%,rgba(0,147,95,0.04) 100%)",border:`1.5px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",boxShadow:"0 0 0 1px rgba(255,255,255,0.04), 0 12px 48px rgba(0,204,133,0.18), 0 4px 16px rgba(0,0,0,0.30)",backdropFilter:"blur(12px)"}}><FlourishDiamond size={56}/></div>
+        <div style={{width:96,height:96,borderRadius:30,background:C.isDark?"linear-gradient(145deg,rgba(0,204,133,0.14) 0%,rgba(0,204,133,0.06) 100%)":"linear-gradient(145deg,rgba(0,147,95,0.10) 0%,rgba(0,147,95,0.04) 100%)",border:`1.5px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",boxShadow:"0 0 0 1px rgba(255,255,255,0.04), 0 12px 48px rgba(0,204,133,0.18), 0 4px 16px rgba(0,0,0,0.30)",backdropFilter:"blur(12px)"}}><FlourishMark size={56} style={{borderRadius:16}}/></div>
       </div>
       <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:38,letterSpacing:-1,marginBottom:24,lineHeight:1,background:`linear-gradient(130deg,${C.cream} 30%,rgba(237,233,226,0.65) 100%)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>flourish</div>
 
@@ -3551,7 +3552,7 @@ function SpendScreen({data}){
   const [tab,setTab]=useState("txn");
   const [catFilter,setCatFilter]=useState("All");
   const [dismissed,setDismissed]=useState([]);
-  const isDemo=!(data.transactions&&data.transactions.length>0);
+  const isDemo=!data.bankConnected;
   const txns=isDemo?MOCK_TXN:data.transactions;
   const stats=computeStats(txns);
   const cats=["All",...Array.from(new Set(txns.map(t=>t.cat)))];
@@ -3560,16 +3561,16 @@ function SpendScreen({data}){
   const totalIn=txns.filter(t=>t.amount<0).reduce((a,t)=>a+Math.abs(t.amount),0);
 
   const cuts=[
-    {id:1,icon:"☕",title:"Coffee is adding up",body:`${stats.coffeeCount} coffee runs this month totalling $${stats.coffee.toFixed(2)}. That's $${(stats.coffee*12).toFixed(0)}/year. Making coffee at home 4 days a week cuts this by 60%.`,saving:`$${Math.round(stats.coffee*0.6)}/mo`,effort:"Low",color:C.orange},
-    {id:2,icon:"🍕",title:"Food delivery every week",body:`$${stats.delivery.toFixed(2)} on delivery this month. One fewer order per week saves $40–60/month reliably. Your wallet will notice in 30 days.`,saving:"$50/mo",effort:"Low",color:C.orange},
-    {id:3,icon:"📦",title:"Amazon impulse purchases",body:"3 Amazon orders this month. Try the 48-hour rule: add to cart, wait 2 days. Most impulse buys get removed without regret.",saving:"$40–70/mo",effort:"Low",color:C.pink},
-    {id:4,icon:"calendar",title:"Subscriptions creeping up",body:`$${stats.subs.toFixed(2)}/mo in subscriptions. Go through each one — did you use it last month? Most households find 1–2 to cancel painlessly.`,saving:"$15–35/mo",effort:"Low",color:C.purple},
+    stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee is adding up",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month totalling $${stats.coffee.toFixed(2)}. That's $${(stats.coffee*12).toFixed(0)}/year. Making coffee at home 4 days a week cuts this by 60%.`,saving:`$${Math.round(stats.coffee*0.6)}/mo`,effort:"Low",color:C.orange},
+    stats.delivery>0&&{id:2,icon:"package",title:"Food delivery every week",body:`$${stats.delivery.toFixed(2)} on delivery this month. One fewer order per week saves $40–60/month reliably. Your wallet will notice in 30 days.`,saving:"$50/mo",effort:"Low",color:C.orange},
+    {id:3,icon:"bag",title:"Amazon impulse purchases",body:"Try the 48-hour rule: add to cart, wait 2 days. Most impulse buys get removed without regret. Studies show this cuts impulse spend by 30–40%.",saving:"$40–70/mo",effort:"Low",color:C.pink},
+    stats.subs>0&&{id:4,icon:"zap",title:"Subscriptions creeping up",body:`$${stats.subs.toFixed(2)}/mo in subscriptions. Go through each one — did you use it last month? Most households find 1–2 to cancel painlessly.`,saving:"$15–35/mo",effort:"Low",color:C.purple},
     {id:5,icon:"chartUp",title:`${stats.busiest} is your expensive day`,body:`You spend significantly more on ${stats.busiest}s than any other day. Knowing this is half the battle — awareness alone cuts it 20–30%.`,saving:"$30–60/mo",effort:"Very Low",color:C.blue},
-  ].filter(s=>!dismissed.includes(s.id));
+  ].filter(Boolean).filter(s=>!dismissed.includes(s.id));
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <div><div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Spending</div><div style={{color:C.muted,fontSize:12,marginTop:3}}>Live from your bank</div></div>
+      <div><div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Spending</div><div style={{color:isDemo?C.gold:C.muted,fontSize:12,marginTop:3}}>{isDemo?"Sample data · connect your bank for real insights":"Live from your bank"}</div></div>
       <div style={{textAlign:"right"}}><div style={{color:C.red,fontWeight:800,fontSize:15}}>–${totalSpent.toFixed(0)}</div><div style={{color:C.green,fontSize:11}}>+${totalIn.toFixed(0)} in</div></div>
     </div>
     <div style={{display:"flex",gap:6,background:C.surface,borderRadius:16,padding:4}}>
@@ -3633,13 +3634,15 @@ function SpendScreen({data}){
 
 
 // ─── GOALS ────────────────────────────────────────────────────────────────────
-function Goals({data,initialTab="sim"}){
+function Goals({data,initialTab="sim",onUpgrade}){
   const [tab,setTab]=useState(initialTab);
+  useEffect(()=>{ setTab(initialTab); },[initialTab]);
   const [selDebt,setSelDebt]=useState(0);
   const [extra,setExtra]=useState(50);
   const [method,setMethod]=useState("avalanche");
   const debts=data.debts||[];
-  const debt=debts.length>0?debts[selDebt]:{name:"Credit Card",balance:"3420",rate:"19.99",min:"68"};
+  const safeSelDebt=Math.min(selDebt,Math.max(0,debts.length-1));
+  const debt=debts.length>0?debts[safeSelDebt]:{name:"Credit Card",balance:"3420",rate:"19.99",min:"68"};
   const noDebts = debts.length === 0;
   const bal=parseFloat(debt.balance||0),rate=parseFloat(debt.rate||0),minPay=parseFloat(debt.min||68);
   const mRate=rate/100/12;
@@ -3664,7 +3667,7 @@ function Goals({data,initialTab="sim"}){
     </div>
     {tab==="sim"&&<>
       {noDebts&&<EmptyState icon="🎯" title="No debts tracked yet" body="Add debts during setup to simulate payoff strategies and see how much interest you can save." action="Go back to Setup" onAction={()=>{}} color={C.purple}/>}
-      {!noDebts&&debts.length>1&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{debts.map((d,i)=><button key={i} onClick={()=>setSelDebt(i)} style={{background:selDebt===i?C.purple+"33":C.cardAlt,border:`1px solid ${selDebt===i?C.purple:C.border}`,color:selDebt===i?C.purpleBright:C.muted,borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>{d.name}</button>)}</div>}
+      {!noDebts&&debts.length>1&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{debts.map((d,i)=><button key={i} onClick={()=>setSelDebt(i)} style={{background:safeSelDebt===i?C.purple+"33":C.cardAlt,border:`1px solid ${selDebt===i?C.purple:C.border}`,color:safeSelDebt===i?C.purpleBright:C.muted,borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>{d.name}</button>)}</div>}
       {!noDebts&&<div style={{background:`linear-gradient(135deg,${C.purpleDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"20px 22px",border:`1px solid ${C.purple}44`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
           <div>
@@ -4982,7 +4985,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const accounts = data.accounts||[];
     const profile = data.profile||{};
     const country = profile.country||"CA";
-    const income = parseFloat(profile.income||DEMO.income);
+    const income = (data.incomes||[]).reduce((s,i)=>s+parseFloat(i.amount||0),0) || DEMO.income;
     const balance = parseFloat((accounts[0]?.balance||DEMO.balance).toString().replace(/,/g,""));
     const spending = txns.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
     const topCats = Object.entries(
@@ -5141,7 +5144,6 @@ Keep responses concise (3-5 sentences max), practical, and friendly. Use $ amoun
           </svg>
         </button>
       </div>
-      <style>{`@keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}`}</style>
     </div>
   );
 }
@@ -5155,7 +5157,7 @@ function CreditScreen({data}){
   // Score derived from behavioral signals (mock until Plaid/bureau integration)
   const txns = data.transactions||[];
   const accounts = data.accounts||[];
-  const income = parseFloat(profile.income||DEMO.income)*2.2; // monthly
+  const income = ((data.incomes||[]).reduce((s,i)=>s+parseFloat(i.amount||0),0) || DEMO.income)*2.2; // monthly
   const spending = txns.filter(t=>t.amount>0&&t.cat!=="Income").reduce((s,t)=>s+t.amount,0);
   const utilization = Math.min(1, spending / Math.max(income, 1));
   const baseScore = isCA ? 720 : 718;
@@ -5881,12 +5883,12 @@ export default function FlourishApp(){
   };
 
   const ALL_NAV=[
-    {id:"home",icon:"◈",label:"Home"},
-    {id:"plan",icon:"🗓",label:"Plan"},
-    {id:"spend",icon:"💳",label:"Spend"},
-    {id:"coach",icon:"sparkles",label:"Coach"},
-    {id:"family",icon:"👪",label:"Family"},
-    {id:"goals",icon:"chartUp",label:"Goals"},
+    {id:"home",  icon:"home",    label:"Home"},
+    {id:"plan",  icon:"calendar",label:"Plan"},
+    {id:"spend", icon:"card",    label:"Spend"},
+    {id:"coach", icon:"sparkles",label:"Coach"},
+    {id:"family",icon:"users",   label:"Family"},
+    {id:"goals", icon:"chartUp", label:"Goals"},
   ];
 
   const globalStyles=`
