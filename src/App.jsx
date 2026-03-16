@@ -1454,7 +1454,7 @@ function MoneyWrapped({data, onClose}) {
   const txns = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
   const _toMoW = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:a; };
   const income = ((data.incomes||[]).reduce((s,i)=>s+_toMoW(i.amount,i.freq),0) || 4200) * 12;
-  const totalSpent = txns.reduce((s,t)=>s+Math.abs(t.amount),0);
+  const totalSpent = txns.reduce((s,t)=>s+Math.abs(t.amount||0),0) || 0;
   const totalDebt = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.balance||0),0);
   const invBal = (data.accounts||[]).filter(a=>a.type==="investment").reduce((s,a)=>s+parseFloat(a.balance||0),0);
   const bal = parseFloat((data.accounts?.[0]?.balance||0).toString().replace(/,/g,""));
@@ -1511,7 +1511,7 @@ function MoneyWrapped({data, onClose}) {
       content:(
         <div style={{textAlign:"center"}}>
           <div style={{color:"#ffffff88",fontSize:11,letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",marginBottom:12}}>Your spending story</div>
-          <div style={{fontFamily:"'Playfair Display',serif",fontSize:48,fontWeight:900,color:"#fff",letterSpacing:-1,marginBottom:6}}>{`$${(totalSpent/1000).toFixed(1)}k`}</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:48,fontWeight:900,color:"#fff",letterSpacing:-1,marginBottom:6}}>{`$${((totalSpent||0)/1000).toFixed(1)}k`}</div>
           <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:20}}>spent across {txns.length} transactions</div>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {[
@@ -1804,8 +1804,20 @@ const FinancialCalcEngine = {
   netWorth(data) {
     const accounts = data.accounts || [];
     const debts    = data.debts    || [];
-    const assets      = accounts.reduce((s,a) => s + parseFloat(a.balance||0), 0);
-    const liabilities = debts.reduce((s,d) => s + parseFloat(d.balance||0), 0);
+    // Assets: only positive-balance accounts (checking, savings, investment)
+    // Credit accounts have negative balances and are already captured in liabilities
+    const ASSET_TYPES = new Set(["checking","savings","depository","investment","brokerage"]);
+    const assets = accounts
+      .filter(a => ASSET_TYPES.has(a.type))
+      .reduce((s,a) => s + Math.max(0, parseFloat(a.balance||0)), 0);
+    // Liabilities: credit card balances from accounts + any manually entered debts
+    const creditFromAccounts = accounts
+      .filter(a => a.type === "credit" || a.type === "credit card")
+      .reduce((s,a) => s + Math.abs(parseFloat(a.balance||0)), 0);
+    const manualDebts = debts.reduce((s,d) => s + parseFloat(d.balance||0), 0);
+    // Avoid double-counting: use max of manual debts vs credit accounts
+    // (user may have added credit cards both ways)
+    const liabilities = Math.max(creditFromAccounts, manualDebts);
     return { assets, liabilities, netWorth: assets - liabilities };
   },
 
@@ -1813,8 +1825,14 @@ const FinancialCalcEngine = {
   cashFlow(data) {
     const incomes = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
     const bills   = data.bills || [];
-    const txns    = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
-    // Convert each income source to monthly based on its frequency
+    // Filter to current month only — 90 days of txns ≠ 1 month of spending
+    const now = new Date();
+    const txns = (data.transactions || []).filter(t => {
+      if(t.amount <= 0) return false; // expenses are positive
+      if(!t.date) return false;
+      const d = new Date(t.date + "T12:00:00");
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    });
     const toMonthly = (amt, freq) => {
       const a = parseFloat(amt||0);
       switch(freq) {
@@ -1822,12 +1840,13 @@ const FinancialCalcEngine = {
         case "biweekly":    return a * 2.167;
         case "semimonthly": return a * 2;
         case "monthly":     return a;
-        default:            return a * 2.167; // default biweekly
+        default:            return a * 2.167;
       }
     };
     const monthlyIncome = incomes.reduce((s,i) => s + toMonthly(i.amount, i.freq), 0) || 4200;
     const monthlyBills    = bills.reduce((s,b) => s + parseFloat(b.amount||0), 0);
-    const monthlySpend    = txns.filter(t=>t.cat!=="Transfer").reduce((s,t) => s + Math.abs(t.amount), 0) || monthlyIncome * 0.68;
+    // monthlySpend: this month's transactions excluding transfers
+    const monthlySpend    = txns.filter(t=>t.cat!=="Transfer"&&t.cat!=="Income"&&t.cat!=="Fees").reduce((s,t) => s + t.amount, 0) || monthlyIncome * 0.68;
     const totalExpenses   = Math.max(monthlyBills, monthlySpend);
     return { monthlyIncome, monthlyBills, monthlySpend, totalExpenses,
              cashFlow: monthlyIncome - totalExpenses };
@@ -1885,16 +1904,26 @@ const SafeSpendEngine = {
     const accounts = data.accounts || [];
     const bills    = data.bills    || [];
     const debts    = data.debts    || [];
-    const today    = new Date().getDate();
 
     const balance  = accounts
       .filter(a => ["checking","savings","depository"].includes(a.type))
       .reduce((s,a) => s + parseFloat(a.balance||0), 0) ||
       0;
 
-    // Bills due in the next 10 days
+    // Bills due in the next 10 days — use real date arithmetic to handle month boundaries
+    const todayDate = new Date();
+    const in10Days  = new Date(todayDate); in10Days.setDate(todayDate.getDate() + 10);
     const upcomingBills = bills
-      .filter(b => { const d = parseInt(b.date); return d >= today && d <= today + 10; })
+      .filter(b => {
+        const dueDay = parseInt(b.date);
+        if(!dueDay) return false;
+        // Build this month's due date
+        const thisMonth = new Date(todayDate.getFullYear(), todayDate.getMonth(), dueDay);
+        // Build next month's due date
+        const nextMonth = new Date(todayDate.getFullYear(), todayDate.getMonth()+1, dueDay);
+        return (thisMonth >= todayDate && thisMonth <= in10Days) ||
+               (nextMonth >= todayDate && nextMonth <= in10Days);
+      })
       .reduce((s,b) => s + parseFloat(b.amount||0), 0);
 
     // Minimum debt payments due this month
@@ -1918,7 +1947,14 @@ const SafeSpendEngine = {
       balance, upcomingBills, debtPayments, safetyBuf, savingsAlloc,
       safeAmount, riskLevel,
       overdraft: upcomingBills > balance,
-      soonBills: bills.filter(b => { const d = parseInt(b.date); return d >= today && d <= today + 10; }),
+      soonBills: bills.filter(b => {
+        const dueDay = parseInt(b.date);
+        if(!dueDay) return false;
+        const thisMonth = new Date(todayDate.getFullYear(), todayDate.getMonth(), dueDay);
+        const nextMonth = new Date(todayDate.getFullYear(), todayDate.getMonth()+1, dueDay);
+        return (thisMonth >= todayDate && thisMonth <= in10Days) ||
+               (nextMonth >= todayDate && nextMonth <= in10Days);
+      }),
     };
   }
 };
@@ -1959,7 +1995,10 @@ const ForecastEngine = {
       const d = new Date(today); d.setDate(todayNum + i);
       const dayNum  = d.getDate();
       const isPayday = getIsPayday(dayNum, i);
-      const dayBills = bills.filter(b => parseInt(b.date) === dayNum);
+      const dayBills = bills.filter(b => {
+        const bd = parseInt(b.date);
+        return bd === dayNum && bd > 0;
+      });
       const inc  = isPayday ? paycheque : 0;
       // Day 0 = today: balance is already current, don't deduct spending again
       // All other days: deduct daily spend regardless of payday (you still spend on paydays)
@@ -3259,11 +3298,105 @@ function Notifications({onClose, data, onMarkAllRead}){
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
+
+// ─── NET WORTH HISTORY ────────────────────────────────────────────────────────
+function snapshotNetWorth(netWorth) {
+  try {
+    const key = "flourish_nw_history";
+    const history = JSON.parse(localStorage.getItem(key)||"[]");
+    const today = new Date().toISOString().slice(0,7); // "2026-03"
+    // Only snapshot once per month
+    if(history.length > 0 && history[history.length-1].month === today) {
+      // Update this month's snapshot
+      history[history.length-1].v = netWorth;
+    } else {
+      history.push({ month: today, v: netWorth });
+    }
+    // Keep last 12 months
+    const trimmed = history.slice(-12);
+    localStorage.setItem(key, JSON.stringify(trimmed));
+    return trimmed;
+  } catch { return []; }
+}
+
+function getNetWorthHistory() {
+  try { return JSON.parse(localStorage.getItem("flourish_nw_history")||"[]"); } catch { return []; }
+}
+
+function NetWorthSparkline({history, color}){
+  if(!history || history.length < 2) return null;
+  const vals = history.map(h=>h.v);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const range = max - min || 1;
+  const w = 80, h = 28;
+  const pts = vals.map((v,i) => {
+    const x = (i / (vals.length-1)) * w;
+    const y = h - ((v - min) / range) * h;
+    return `${x},${y}`;
+  }).join(" ");
+  const last = vals[vals.length-1];
+  const first = vals[0];
+  const trend = last > first ? "up" : last < first ? "down" : "flat";
+  const trendColor = trend==="up" ? "#00CC85" : trend==="down" ? "#FF4F6A" : "#888";
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:6,marginTop:4}}>
+      <svg width={w} height={h} style={{overflow:"visible"}}>
+        <polyline fill="none" stroke={trendColor} strokeWidth="1.5"
+          strokeLinecap="round" strokeLinejoin="round" points={pts}/>
+        <circle cx={pts.split(" ").slice(-1)[0].split(",")[0]} cy={pts.split(" ").slice(-1)[0].split(",")[1]}
+          r="2.5" fill={trendColor}/>
+      </svg>
+      <span style={{color:trendColor,fontSize:10,fontWeight:700}}>
+        {trend==="up"?"↑":trend==="down"?"↓":"→"} {Math.abs(last-first)>0?`$${Math.abs(((last-first)/1000)).toFixed(1)}k ${trend==="up"?"up":"down"} since ${history[0].month}`:"stable"}
+      </span>
+    </div>
+  );
+}
+
+
+// ─── BACKGROUND REFRESH (Plus only, 30-min rate limit) ───────────────────────
+async function backgroundRefresh(isPremium, setAppData) {
+  if(!isPremium) return;
+  const accessToken = localStorage.getItem("flourish_plaid_token");
+  if(!accessToken) return;
+  const lastFetch = parseInt(localStorage.getItem("flourish_last_refresh")||"0");
+  const THIRTY_MIN = 30 * 60 * 1000;
+  if(Date.now() - lastFetch < THIRTY_MIN) return;
+  try {
+    const [acctData, txnData] = await Promise.all([
+      callPlaid("get_accounts", { access_token: accessToken }),
+      callPlaid("get_transactions", { access_token: accessToken, days: 90 }),
+    ]);
+    const normalisedTxns = normaliseTxns(txnData.transactions||[]);
+    setAppData(prev => ({
+      ...prev,
+      accounts: acctData.accounts.map(a => ({
+        id: a.id,
+        name: a.name,
+        type: a.subtype||a.type,
+        balance: a.type==="credit" ? -(a.balance.current||0) : (a.balance.current??a.balance.available??0),
+        institution: prev.accounts?.find(p=>p.id===a.id)?.institution||"Bank",
+      })),
+      transactions: normalisedTxns.length > 0 ? normalisedTxns : prev.transactions,
+    }));
+    localStorage.setItem("flourish_last_refresh", Date.now().toString());
+  } catch { /* silent failure */ }
+}
+
 function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab}){
   const [mounted,setMounted]=useState(false);
   const [expandedTile,setExpandedTile]=useState(null);
   const [showCustomize,setShowCustomize]=useState(false);
+  const [nwHistory,setNwHistory]=useState(()=>getNetWorthHistory());
   useEffect(()=>{const t=setTimeout(()=>setMounted(true),60);return()=>clearTimeout(t);},[]);
+  useEffect(()=>{
+    if(data.bankConnected) {
+      const { netWorth: nw } = FinancialCalcEngine.netWorth(data);
+      const h = snapshotNetWorth(nw);
+      setNwHistory(h);
+    }
+  },[data.bankConnected]);
 
   const isVisible = id => !dashLayout || (dashLayout.find(t=>t.id===id)?.visible !== false);
   const tileOrder = dashLayout ? dashLayout.map(t=>t.id) : DASH_TILES.map(t=>t.id);
@@ -3336,7 +3469,12 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         <div style={{display:"flex",alignItems:"center",gap:7,background:"rgba(0,204,133,0.06)",border:"1px solid rgba(0,204,133,0.12)",borderRadius:99,padding:"4px 10px"}}>
           <div style={{width:6,height:6,borderRadius:"50%",background:C.green,boxShadow:`0 0 8px ${C.green}`,animation:"pulse 2.8s ease-in-out infinite",flexShrink:0}}/>
           <span style={{color:C.green,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>Live</span>
-          <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>· 6 engines</span>
+          <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{
+            (()=>{ const l=localStorage.getItem("flourish_last_refresh");
+              if(!l) return "· 6 engines";
+              const m=Math.round((Date.now()-parseInt(l))/60000);
+              return m<1?"· just refreshed":m<60?`· updated ${m}m ago`:"· 6 engines"; })()
+          }</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2}}>{new Date().toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}</span>
@@ -3438,7 +3576,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           {[
             {label:"Due Soon",value:`$${(soonTotal||0).toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
             {label:totalDebt>0?"Total Debt":"Debt Free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
-            {label:"Net Worth",value:`${netWorth>=0?"+":""}$${(Math.abs(netWorth)/1000).toFixed(1)}k`,sub:"↑ trending",color:C.teal,icon:"chartUp",screen:"plan"},
+            {label:"Net Worth",value:`${netWorth>=0?"+":""}$${(Math.abs(netWorth)/1000).toFixed(1)}k`,sub:"total net worth",color:C.teal,icon:"chartUp",screen:"plan"},
           ].map((s,i)=>(
             <div key={i} onClick={()=>{if(s.tab&&setGoalsTab)setGoalsTab(s.tab);setScreen(s.screen);}} style={{...glass(s.color),borderRadius:20,padding:"14px 12px 12px",textAlign:"center",position:"relative",overflow:"hidden",cursor:"pointer",transition:"transform .2s, box-shadow .2s"}}
               onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 12px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)`;}}
@@ -3535,7 +3673,12 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
               <div style={{...label11(C.muted),marginBottom:4}}>Net Worth Trend</div>
               <div style={{color:C.tealBright,fontWeight:900,fontSize:26,fontFamily:"'Playfair Display',Georgia,serif",lineHeight:1,letterSpacing:-1}}>{netWorth>=0?"+":""}<span style={{fontSize:14,verticalAlign:"super",marginRight:1}}>$</span><CountUp to={Math.abs(netWorth)} decimals={0}/></div>
             </div>
-            <div style={{background:C.teal+"20",border:`1px solid ${C.teal}33`,borderRadius:99,padding:"4px 12px",color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>↑ +$2,300 / mo</div>
+            <div style={{background:C.teal+"20",border:`1px solid ${C.teal}33`,borderRadius:99,padding:"4px 12px",color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>
+              {nwHistory.length>1
+                ? (() => { const delta=nwHistory[nwHistory.length-1].v - nwHistory[0].v;
+                    return `${delta>=0?"↑ +":"↓ –"}$${Math.abs(delta/1000).toFixed(1)}k since ${nwHistory[0].month}`; })()
+                : "Track your net worth over time"}
+            </div>
           </div>
           <svg width="100%" height="52" viewBox={`0 0 ${spark.length*50} 100`} preserveAspectRatio="none" style={{display:"block",overflow:"visible"}}>
             <defs>
@@ -3550,8 +3693,13 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             <polygon points={`0,100 ${sN.map((y,i)=>`${i*50},${y}`).join(" ")} ${(spark.length-1)*50},100`} fill="url(#sgv5)"/>
             {sN.map((y,i)=><circle key={i} cx={i*50} cy={y} r={i===sN.length-1?5:2.5} fill={i===sN.length-1?C.tealBright:C.teal} style={i===sN.length-1?{filter:`drop-shadow(0 0 5px ${C.teal})`}:{}}/>)}
           </svg>
+          {nwHistory.length > 1 && <NetWorthSparkline history={nwHistory} color={C.teal}/>}
           <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
-            {["Oct","Nov","Dec","Jan","Feb","Now"].map((m,i)=><span key={i} style={{color:i===5?C.tealBright:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:i===5?700:400}}>{m}</span>)}
+            {(nwHistory.length>1 ? nwHistory : [{month:"—"},{month:"—"},{month:"—"},{month:"Now"}]).map((h,i,arr)=>(
+              <span key={i} style={{color:i===arr.length-1?C.tealBright:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:i===arr.length-1?700:400}}>
+                {h.month?.slice(5)||h.month||"—"}
+              </span>
+            ))}
           </div>
         </div>}
 
@@ -4011,24 +4159,144 @@ function AddCustomCategory({onAdd}){
   );
 }
 
-function ExpandableCatCard({cat, amt, totalSpent, color, catTxns}){
-  const [open, setOpen] = React.useState(false);
-  const pct = totalSpent > 0 ? Math.round(amt/totalSpent*100) : 0;
+// ─── INCOME AUTO-DETECTOR ────────────────────────────────────────────────────
+function detectPayroll(transactions, existingIncomes) {
+  // Find large recurring negative-amount transactions (deposits)
+  // Negative = money coming IN per Plaid convention
+  const deposits = (transactions||[]).filter(t => t.amount < -200);
+  if(deposits.length === 0) return [];
+
+  // Group by name similarity
+  const groups = {};
+  deposits.forEach(t => {
+    // Normalise name: strip numbers, dates, make lowercase key
+    const key = t.name.replace(/\d+/g,'').replace(/[^a-z ]/gi,'').trim().toLowerCase().substring(0,20);
+    if(!groups[key]) groups[key] = {name:t.name, key, amounts:[], dates:[]};
+    groups[key].amounts.push(Math.abs(t.amount));
+    groups[key].dates.push(t.date);
+  });
+
+  // Keep only groups with 2+ occurrences (recurring = likely payroll)
+  const candidates = Object.values(groups)
+    .filter(g => g.amounts.length >= 2)
+    .map(g => ({
+      name: g.name,
+      avgAmount: Math.round(g.amounts.reduce((s,a)=>s+a,0)/g.amounts.length),
+      count: g.amounts.length,
+    }))
+    .sort((a,b) => b.avgAmount - a.avgAmount)
+    .slice(0,3);
+
+  // Filter out already-added income sources
+  const existingAmts = new Set((existingIncomes||[]).map(i=>Math.round(parseFloat(i.amount||0))));
+  return candidates.filter(c => !existingAmts.has(c.avgAmount));
+}
+
+function IncomeDetectionBanner({transactions, incomes, setAppData}){
+  const [dismissed, setDismissed] = React.useState(()=>{
+    try { return JSON.parse(localStorage.getItem("flourish_dismissed_income")||"[]"); } catch { return []; }
+  });
+  const candidates = detectPayroll(transactions, incomes).filter(c => !dismissed.includes(c.name));
+  if(candidates.length === 0) return null;
+
+  const c0 = candidates[0];
+  const dismiss = () => {
+    const updated = [...dismissed, c0.name];
+    setDismissed(updated);
+    try { localStorage.setItem("flourish_dismissed_income", JSON.stringify(updated)); } catch {}
+  };
+  const addIncome = () => {
+    if(setAppData) setAppData(prev=>({...prev,
+      incomes:[...(prev.incomes||[]), {id:Date.now(),label:c0.name,amount:String(c0.avgAmount),freq:"biweekly",type:"employment",isVariable:false}]
+    }));
+    dismiss();
+  };
+
   return (
-    <Card style={{cursor:"pointer"}} onClick={()=>setOpen(o=>!o)}>
+    <div style={{background:`linear-gradient(135deg,${C.green}12,${C.teal}08)`,border:`1px solid ${C.green}44`,borderRadius:16,padding:"14px 16px",display:"flex",gap:12,alignItems:"flex-start"}}>
+      <span style={{fontSize:20,flexShrink:0}}>💡</span>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{color:C.greenBright,fontWeight:700,fontSize:13,marginBottom:2}}>Looks like a regular deposit</div>
+        <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5}}>
+          <strong style={{color:C.cream}}>{c0.name}</strong> appears {c0.count}× averaging <strong style={{color:C.greenBright}}>${c0.avgAmount.toLocaleString()}</strong>. Is this your paycheque?
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:10}}>
+          <button onClick={addIncome} style={{background:C.green,border:"none",borderRadius:99,padding:"7px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>
+            Yes, add as income ✓
+          </button>
+          <button onClick={dismiss} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"7px 12px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>
+            Not a paycheque
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetBudget}){
+  const [open, setOpen] = React.useState(false);
+  const [editBudget, setEditBudget] = React.useState(false);
+  const [budgetVal, setBudgetVal] = React.useState(budget ? String(budget) : "");
+  const pct = totalSpent > 0 ? Math.round(amt/totalSpent*100) : 0;
+  const budgetPct = budget > 0 ? Math.min(100, Math.round((amt/budget)*100)) : null;
+  const overBudget = budget > 0 && amt > budget;
+
+  const saveBudget = () => {
+    const v = parseFloat(budgetVal);
+    if(onSetBudget) onSetBudget(cat, isNaN(v) || v <= 0 ? null : v);
+    setEditBudget(false);
+  };
+
+  return (
+    <Card style={{cursor:"pointer"}} onClick={()=>!editBudget&&setOpen(o=>!o)}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <span style={{color:C.cream,fontSize:14,display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:20}}>{catTxns[0]?.icon||"💰"}</span>{cat}
         </span>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <span style={{color,fontWeight:700}}>${(amt||0).toFixed(0)} <span style={{color:C.muted,fontSize:11}}>({catTxns.length}×)</span></span>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{color:overBudget?C.red:color,fontWeight:700}}>${(amt||0).toFixed(0)}
+            {budget>0&&<span style={{color:overBudget?C.redBright:C.muted,fontSize:11}}> / ${(budget||0).toFixed(0)}</span>}
+            <span style={{color:C.muted,fontSize:11}}> ({catTxns.length}×)</span>
+          </span>
           <span style={{color:C.muted,fontSize:14,transition:"transform .2s",transform:open?"rotate(90deg)":"none",display:"inline-block"}}>›</span>
         </div>
       </div>
-      <Bar v={amt} max={totalSpent} color={color}/>
-      <div style={{color:C.muted,fontSize:11,marginTop:4}}>{pct}% of spending this month</div>
+      {/* Spending bar */}
+      <Bar v={amt} max={budget>0?budget:totalSpent} color={overBudget?C.red:color}/>
+      {/* Budget progress */}
+      {budget>0&&(
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+          <div style={{color:overBudget?C.redBright:C.muted,fontSize:11,fontWeight:overBudget?700:400}}>
+            {overBudget ? `⚠️ $${((amt||0)-(budget||0)).toFixed(0)} over budget` : `${budgetPct||0}% of $${(budget||0).toFixed(0)} budget`}
+          </div>
+          <div style={{color:C.muted,fontSize:10}}>{pct}% of total</div>
+        </div>
+      )}
+      {!budget&&<div style={{color:C.muted,fontSize:11,marginTop:4}}>{pct}% of spending this month</div>}
       {open&&(
-        <div style={{marginTop:12,borderTop:`1px solid ${C.border}`,paddingTop:10}}>
+        <div style={{marginTop:12,borderTop:`1px solid ${C.border}`,paddingTop:10}} onClick={e=>e.stopPropagation()}>
+          {/* Budget setter */}
+          <div style={{marginBottom:10,padding:"8px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
+            {editBudget ? (
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <span style={{color:C.muted,fontSize:12,flexShrink:0}}>Monthly budget:</span>
+                <div style={{display:"flex",alignItems:"center",flex:1,background:C.card,border:`1px solid ${color}`,borderRadius:8,overflow:"hidden"}}>
+                  <span style={{color:C.muted,padding:"0 6px",fontSize:12}}>$</span>
+                  <input value={budgetVal} onChange={e=>setBudgetVal(e.target.value)} type="number" placeholder="0"
+                    autoFocus onKeyDown={e=>e.key==="Enter"&&saveBudget()}
+                    style={{flex:1,background:"none",border:"none",padding:"6px 4px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+                </div>
+                <button onClick={saveBudget} style={{background:color,border:"none",borderRadius:8,padding:"6px 10px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✓</button>
+                <button onClick={()=>setEditBudget(false)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 8px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✕</button>
+              </div>
+            ) : (
+              <button onClick={e=>{e.stopPropagation();setBudgetVal(budget?String(budget):"");setEditBudget(true);}}
+                style={{background:"none",border:"none",color:budget?color:C.muted,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",padding:0}}>
+                {budget ? `📊 Budget: $${budget}/mo — tap to edit` : "＋ Set monthly budget for this category"}
+              </button>
+            )}
+          </div>
+          {/* Transaction list */}
           {catTxns.length===0
             ? <div style={{color:C.muted,fontSize:12}}>No transactions in this category this month.</div>
             : catTxns.sort((a,b)=>b.amount-a.amount).slice(0,10).map((t,j)=>(
@@ -4052,6 +4320,7 @@ function SpendScreen({data, setAppData}){
   const [tab,setTab]=useState("txn");
   const [catFilter,setCatFilter]=useState("All");
   const [dismissed,setDismissed]=useState([]);
+  const [period,setPeriod]=useState("month");
   const isDemo=!data.bankConnected;
   const txns=data.transactions||[];
   // Filter to current month for "this month" stats
@@ -4075,11 +4344,12 @@ function SpendScreen({data, setAppData}){
     setRecatTxn(null);
   };
   const cats=["All",...Array.from(new Set(txns.map(t=>getCat(t))))];
-  const filtered=catFilter==="All"?txns.filter(t=>getCat(t)!=="Transfer"):txns.filter(t=>getCat(t)===catFilter);
+  const filtered=catFilter==="All"?displayTxns.filter(t=>getCat(t)!=="Transfer"):displayTxns.filter(t=>getCat(t)===catFilter);
   // Exclude transfers (Interac e-transfers between accounts) from spending totals
   const EXCLUDE_CATS = new Set(["Transfer","Income"]);
-  const totalSpent=thisMonthTxns.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))).reduce((a,t)=>a+t.amount,0);
-  const totalIn=thisMonthTxns.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
+  const displayTxns = period==="month" ? thisMonthTxns : txns;
+  const totalSpent=displayTxns.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))).reduce((a,t)=>a+t.amount,0);
+  const totalIn=displayTxns.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
 
   const cuts=[
     stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee is adding up",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month totalling $${stats.coffee.toFixed(2)}. That's $${(stats.coffee*12).toFixed(0)}/year. Making coffee at home 4 days a week cuts this by 60%.`,saving:`$${Math.round(stats.coffee*0.6)}/mo`,effort:"Low",color:C.orange},
@@ -4201,15 +4471,33 @@ function SpendScreen({data, setAppData}){
       </div>
     )}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <div><div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Transactions</div><div style={{color:isDemo?C.gold:C.muted,fontSize:12,marginTop:3}}>{isDemo?"Sample data · connect your bank for real insights":"Live from your bank"}</div></div>
-      <div style={{textAlign:"right"}}><div style={{color:C.red,fontWeight:800,fontSize:15}}>–${(totalSpent||0).toFixed(0)}</div><div style={{color:C.green,fontSize:11}}>+${(totalIn||0).toFixed(0)} in</div></div>
+      <div>
+        <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Transactions</div>
+        <div style={{color:isDemo?C.gold:C.muted,fontSize:12,marginTop:3}}>{isDemo?"Sample data · connect your bank for real insights":"Live from your bank"}</div>
+      </div>
+      <div style={{textAlign:"right"}}>
+        <div style={{color:C.red,fontWeight:800,fontSize:15}}>–${(totalSpent||0).toFixed(0)}</div>
+        <div style={{color:C.green,fontSize:11}}>+${(totalIn||0).toFixed(0)} in</div>
+        <div style={{color:C.muted,fontSize:10,marginTop:2}}>{period==="month"?monthLabel:"Last 90 days"}</div>
+      </div>
     </div>
+
+    {!isDemo&&<IncomeDetectionBanner transactions={txns} incomes={data.incomes} setAppData={setAppData}/>}
     <div style={{display:"flex",gap:6,background:C.surface,borderRadius:16,padding:4}}>
       {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeBright:C.muted,borderRadius:12,padding:"9px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
         {t==="txn"?"Transactions":t==="breakdown"?"Breakdown":"Smart Cuts"}
       </button>)}
     </div>
     {tab==="txn"&&<>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+        <span style={{color:C.muted,fontSize:11}}>Period:</span>
+        {["month","all"].map(p=>(
+          <button key={p} onClick={()=>setPeriod(p)}
+            style={{background:period===p?C.orange+"28":"none",border:`1px solid ${period===p?C.orange+"66":C.border}`,color:period===p?C.orangeBright:C.muted,borderRadius:99,padding:"4px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
+            {p==="month"?monthLabel:"Last 90 days"}
+          </button>
+        ))}
+      </div>
       <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none"}}>
         {cats.map(c=><button key={c} onClick={()=>setCatFilter(c)} style={{background:catFilter===c?C.orange+"28":"rgba(255,255,255,0.04)",border:`1px solid ${catFilter===c?C.orange+"66":"rgba(255,255,255,0.08)"}`,color:catFilter===c?C.orangeBright:C.muted,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700,whiteSpace:"nowrap",fontFamily:"inherit",transition:"all .2s",flexShrink:0}}>{c}</button>)}
       </div>
@@ -4248,7 +4536,13 @@ function SpendScreen({data, setAppData}){
       {stats.topCats.map(([cat,amt],i)=>{
         const colors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
         const catTxns=thisMonthTxns.filter(t=>getCat(t)===cat&&t.amount>0);
-        return <ExpandableCatCard key={i} cat={cat} amt={amt} totalSpent={totalSpent} color={colors[i%6]} catTxns={catTxns}/>;
+        const budget = (data.budgets||{})[cat] || null;
+        return <ExpandableCatCard key={i} cat={cat} amt={amt} totalSpent={totalSpent} color={colors[i%6]} catTxns={catTxns}
+          budget={budget} onSetBudget={(cat,val)=>{
+            if(setAppData) setAppData(prev=>({...prev,budgets:{...(prev.budgets||{}),
+              ...(val===null ? Object.fromEntries(Object.entries(prev.budgets||{}).filter(([k])=>k!==cat)) : {[cat]:val})
+            }}));
+          }}/>;
       })}
     </>}
     {tab==="cuts"&&<>
@@ -6908,6 +7202,13 @@ export default function FlourishApp(){
   },[]);
   const { openPlaidLink: openReconnectLink } = usePlaidLinkSDK(reconnectToken, onReconnectSuccess);
   useEffect(()=>{ if(reconnectToken) openReconnectLink(); },[reconnectToken]); // eslint-disable-line
+
+  // ── Background refresh — Plus only, fires 2s after bank data is ready ─────────
+  useEffect(()=>{
+    if(!appData?.bankConnected) return;
+    const timer = setTimeout(()=>{ backgroundRefresh(isPremium, setAppData); }, 2000);
+    return ()=>clearTimeout(timer);
+  },[appData?.bankConnected, isPremium]);
 
   // ── Auth gate ───────────────────────────────────────────────────
   if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
