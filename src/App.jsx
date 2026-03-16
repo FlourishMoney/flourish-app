@@ -1858,15 +1858,21 @@ const FinancialCalcEngine = {
 
   /** Average daily spend from transaction history */
   avgDailySpend(data) {
-    // Expenses: positive amounts, excluding transfers between accounts and income
     const txns = (data.transactions || []).filter(t =>
       t.amount > 0 &&
       t.cat !== "Transfer" &&
       t.cat !== "Income" &&
       t.cat !== "Fees"
     );
+    if(txns.length === 0) return 0;
     const total = txns.reduce((s,t) => s + Math.abs(t.amount), 0);
-    return total / 30; // assume 30-day window
+    // Calculate actual date span from transaction history (max 90 days)
+    const dates = txns.map(t => new Date(t.date)).filter(d => !isNaN(d));
+    const daySpan = dates.length > 1
+      ? Math.max(1, Math.round((Math.max(...dates) - Math.min(...dates)) / (1000*60*60*24)))
+      : 30;
+    const normalisedDays = Math.min(90, Math.max(14, daySpan));
+    return total / normalisedDays;
   },
 };
 
@@ -1955,7 +1961,10 @@ const ForecastEngine = {
       const isPayday = getIsPayday(dayNum, i);
       const dayBills = bills.filter(b => parseInt(b.date) === dayNum);
       const inc  = isPayday ? paycheque : 0;
-      const out  = dayBills.reduce((s,b) => s + parseFloat(b.amount||0), 0) + (isPayday ? 0 : avgDaily * 0.8);
+      // Day 0 = today: balance is already current, don't deduct spending again
+      // All other days: deduct daily spend regardless of payday (you still spend on paydays)
+      const dailySpend = i === 0 ? 0 : avgDaily * 0.8;
+      const out  = dayBills.reduce((s,b) => s + parseFloat(b.amount||0), 0) + dailySpend;
       running = running + inc - out;
 
       const entry = { day: i, date: d, balance: running, income: inc, expenses: out,
@@ -2596,6 +2605,26 @@ function Onboarding({onComplete,onViewLegal}){
   const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment",isVariable:false}]);
   const [bills,setBills]=useState([{name:"",amount:"",date:""}]);
   const [debts,setDebts]=useState([{name:"",balance:"",rate:"",min:""}]);
+  // Pre-populate debts from connected credit card accounts when user reaches debt step
+  useEffect(()=>{
+    if(step !== 5) return;
+    const creditAccts = connAccts.filter(a =>
+      a.type === "credit" || a.type === "credit card" ||
+      a.subtype === "credit card" || a.type === "line of credit"
+    );
+    if(creditAccts.length === 0) return;
+    // Only pre-populate if user hasn't touched debts yet (all blank)
+    const untouched = debts.every(d => !d.name && !d.balance);
+    if(!untouched) return;
+    const prePopulated = creditAccts.map(a => ({
+      name: a.name || "Credit Card",
+      balance: Math.abs(a.balance || 0).toFixed(2),
+      rate: "",
+      min: "",
+      fromBank: true,
+    }));
+    setDebts(prePopulated);
+  }, [step]);
   const [bankStage,setBankStage]=useState("select");
   const [bankProg,setBankProg]=useState(0);
   const [bankError,setBankError]=useState(null);
@@ -3034,13 +3063,20 @@ function Onboarding({onComplete,onViewLegal}){
 
     // 5: Debts
     <div>
-      <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Any debt?</div>
-      <div style={{color:C.muted,fontSize:14,marginBottom:20}}>No judgment — we'll build a real payoff plan with a simulator.</div>
+      <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Your debts</div>
+      <div style={{color:C.muted,fontSize:14,marginBottom:20}}>
+        {connAccts.some(a=>a.type==="credit"||a.type==="credit card")
+          ? "We've pulled in your credit cards. Add the interest rate and minimum payment for each — or skip."
+          : "No judgment — we'll build a real payoff plan with a simulator."}
+      </div>
       {debts.map((d,i)=>(
         <div key={i} style={{background:C.cardAlt,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}`,marginBottom:10}}>
           <div style={{display:"flex",gap:8}}>
             <div style={{flex:1}}>
-              <Inp label="Name" value={d.name} onChange={v=>upDebt(i,"name",v)} placeholder="Visa, Car Loan…" sm/>
+              <div style={{position:"relative"}}>
+                <Inp label="Name" value={d.name} onChange={v=>upDebt(i,"name",v)} placeholder="Visa, Car Loan…" sm/>
+                {d.fromBank&&<span style={{position:"absolute",top:0,right:0,fontSize:9,fontWeight:700,color:C.greenBright,background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"1px 6px"}}>from bank</span>}
+              </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <Inp label="Balance $" value={d.balance} onChange={v=>upDebt(i,"balance",v)} type="number" sm/>
                 <Inp label="Rate %" value={d.rate} onChange={v=>upDebt(i,"rate",v)} type="number" sm/>
@@ -3845,10 +3881,34 @@ function PlanAhead({data, setAppData}){
       <div><div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>2-Week Forecast</div><div style={{color:C.muted,fontSize:12,marginTop:3}}>Your financial crystal ball</div></div>
       <div style={{display:"flex",gap:6,background:C.surface,borderRadius:12,padding:3}}>{[7,14].map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"6px 16px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .22s"}}>{r}d</button>)}</div>
     </div>
-    <div style={{background:C.isDark?"rgba(255,255,255,0.03)":C.surface,borderRadius:14,padding:"10px 14px",border:`1px solid ${C.border}`,display:"flex",gap:8,alignItems:"flex-start"}}>
-      <span style={{fontSize:12,flexShrink:0,marginTop:1}}>ℹ️</span>
-      <span style={{color:C.muted,fontSize:10.5,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>Forecast is based on your income schedule and bill data. Actual balances may differ. Not financial advice.</span>
-    </div>
+    {(()=>{
+      const _fbal = SafeSpendEngine.calculate(data).balance;
+      const _favg = FinancialCalcEngine.avgDailySpend(data);
+      const _ffreq = (data.incomes||[])[0]?.freq||"biweekly";
+      const _fIncome = FinancialCalcEngine.cashFlow(data).monthlyIncome;
+      const _fPay = _ffreq==="monthly"?_fIncome:_ffreq==="semimonthly"?_fIncome/2:_ffreq==="weekly"?_fIncome/4.333:_fIncome/2.167;
+      return (
+        <div style={{background:C.isDark?"rgba(255,255,255,0.03)":C.surface,borderRadius:14,padding:"12px 16px",border:`1px solid ${C.border}`}}>
+          <div style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:8}}>
+            <span style={{fontSize:12,flexShrink:0,marginTop:1}}>ℹ️</span>
+            <span style={{color:C.muted,fontSize:10.5,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>Forecast projects forward from today using your bank balance, income schedule, bills, and average daily spending. Not financial advice.</span>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+            {[
+              ["Starting balance", `$${(_fbal||0).toFixed(0)}`],
+              ["Est. daily spend", `$${(_favg||0).toFixed(0)}/day`],
+              ["Pay frequency", _ffreq],
+              ["Est. paycheque", `$${(_fPay||0).toFixed(0)}`],
+            ].map(([lbl,val])=>(
+              <div key={lbl} style={{background:C.card,borderRadius:10,padding:"7px 10px",border:`1px solid ${C.border}`}}>
+                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>{lbl}</div>
+                <div style={{color:C.cream,fontSize:12,fontWeight:700}}>{val}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    })()}
     {willGoNeg&&<div style={{background:C.redDim,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.red}55`}}>
       <div style={{color:C.redBright,fontWeight:800,marginBottom:4}}>Projected Overdraft</div>
       <div style={{color:C.cream,fontSize:13,lineHeight:1.5}}>Balance hits <strong style={{color:C.red}}>${(minBalance||0).toFixed(2)}</strong> before your next deposit. Reduce spending now.</div>
