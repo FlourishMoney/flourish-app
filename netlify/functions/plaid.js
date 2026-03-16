@@ -32,7 +32,7 @@ async function plaid(endpoint, body) {
   const base = PLAID_BASE[env] || PLAID_BASE.sandbox;
 
   const controller = new AbortController();
-  const timeout    = setTimeout(() => controller.abort(), 8000);
+  const timeout    = setTimeout(() => controller.abort(), 9500);
 
   let res;
   try {

@@ -2533,21 +2533,40 @@ function Onboarding({onComplete,onViewLegal}){
       });
       // Persist access_token so we can re-launch update mode if session expires
       try{ localStorage.setItem("flourish_plaid_token", ex.access_token); }catch{}
-      const [acctData,txnData]=await Promise.all([
-        callPlaid("get_accounts",{access_token:ex.access_token}),
-        // Bug fix: guard against undefined transactions array from backend
-        callPlaid("get_transactions",{access_token:ex.access_token,days:90}),
-      ]);
-      clearInterval(progTimer);setBankProg(100);
+      // Step 1: Get accounts first (fast) — show connected immediately
+      const acctData = await callPlaid("get_accounts",{access_token:ex.access_token});
+      clearInterval(progTimer);setBankProg(80);
+
+      // Show accounts to user right away
+      const mappedAccounts = acctData.accounts.map(a=>({
+        id:a.id,
+        name:`${ex.institution_name} ••${a.mask||"????"}`,
+        type:a.subtype||a.type,
+        balance:a.type==="credit"?-(a.balance.current||0):(a.balance.available??a.balance.current??0),
+        institution:ex.institution_name,
+      }));
+      setConnAccts(mappedAccounts);
+
+      // Step 2: Fetch transactions separately with retry — slower, don't block UI
+      let txnData = {transactions:[]};
+      let txnAttempts = 0;
+      while(txnAttempts < 3) {
+        try {
+          txnData = await callPlaid("get_transactions",{access_token:ex.access_token,days:90});
+          break; // success
+        } catch(txnErr) {
+          txnAttempts++;
+          if(txnAttempts >= 3) {
+            // After 3 attempts give up gracefully — user can still proceed
+            console.warn("[Flourish] Transactions fetch failed after 3 attempts:", txnErr.message);
+            break;
+          }
+          await new Promise(r=>setTimeout(r, 1500)); // wait 1.5s before retry
+        }
+      }
+
+      setBankProg(100);
       setTimeout(()=>{
-        setConnAccts(acctData.accounts.map(a=>({
-          id:a.id,
-          name:`${ex.institution_name} ••${a.mask||"????"}`,
-          type:a.subtype||a.type,
-          balance:a.type==="credit"?-(a.balance.current||0):(a.balance.available??a.balance.current??0),
-          institution:ex.institution_name,
-        })));
-        // Bug fix: guard txnData.transactions — backend may return undefined on error
         const normalised = normaliseTxns(txnData.transactions||[]);
         setPlaidTxns(normalised);
         // Auto-detect recurring bills from real transaction data
