@@ -1702,7 +1702,7 @@ function computeStats(txns) {
     if(t.name.toLowerCase().includes("uber eats")||t.name.toLowerCase().includes("doordash"))delivery+=t.amount;
     if(t.cat==="Subscriptions")subs+=t.amount;
   });
-  const totalSpent=sp.reduce((a,t)=>a+t.amount,0);
+  const totalSpent=sp.filter(t=>t.cat!=="Transfer"&&t.cat!=="Income").reduce((a,t)=>a+t.amount,0);
   const topCats=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,6);
   const days=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   const busiest=days[Object.entries(byDow).sort((a,b)=>b[1]-a[1])[0][0]];
@@ -1826,7 +1826,7 @@ const FinancialCalcEngine = {
     };
     const monthlyIncome = incomes.reduce((s,i) => s + toMonthly(i.amount, i.freq), 0) || 4200;
     const monthlyBills    = bills.reduce((s,b) => s + parseFloat(b.amount||0), 0);
-    const monthlySpend    = txns.reduce((s,t) => s + Math.abs(t.amount), 0) || monthlyIncome * 0.68;
+    const monthlySpend    = txns.filter(t=>t.cat!=="Transfer").reduce((s,t) => s + Math.abs(t.amount), 0) || monthlyIncome * 0.68;
     const totalExpenses   = Math.max(monthlyBills, monthlySpend);
     return { monthlyIncome, monthlyBills, monthlySpend, totalExpenses,
              cashFlow: monthlyIncome - totalExpenses };
@@ -1857,7 +1857,13 @@ const FinancialCalcEngine = {
 
   /** Average daily spend from transaction history */
   avgDailySpend(data) {
-    const txns = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
+    // Expenses: positive amounts, excluding transfers between accounts and income
+    const txns = (data.transactions || []).filter(t =>
+      t.amount > 0 &&
+      t.cat !== "Transfer" &&
+      t.cat !== "Income" &&
+      t.cat !== "Fees"
+    );
     const total = txns.reduce((s,t) => s + Math.abs(t.amount), 0);
     return total / 30; // assume 30-day window
   },
@@ -2523,12 +2529,14 @@ function DashCustomize({ layout, onChange, onClose }) {
 
   return (
     <div style={{position:'fixed',inset:0,zIndex:9000,display:'flex',alignItems:'flex-end',justifyContent:'center',background:'rgba(0,0,0,0.55)',backdropFilter:'blur(4px)'}} onClick={onClose}>
-      <div style={{width:'100%',maxWidth:430,background:C.card,borderRadius:'24px 24px 0 0',padding:'24px 20px 40px',boxShadow:'0 -8px 48px rgba(0,0,0,0.5)'}} onClick={e=>e.stopPropagation()}>
+      <div style={{width:'100%',maxWidth:430,background:C.card,borderRadius:'24px 24px 0 0',maxHeight:'85vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 48px rgba(0,0,0,0.5)'}} onClick={e=>e.stopPropagation()}>
         <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:'0 auto 20px'}}/>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
           <div style={{color:C.cream,fontWeight:800,fontSize:18,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Customize Dashboard</div>
           <span style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Drag to reorder</span>
         </div>
+        </div>
+        <div style={{overflowY:'auto',flex:1,paddingBottom:8}}>
         {items.map(tile => {
           const m = meta(tile.id);
           return (
@@ -2557,6 +2565,8 @@ function DashCustomize({ layout, onChange, onClose }) {
             </div>
           );
         })}
+        </div>
+        <div style={{padding:'0 0 8px',flexShrink:0}}>
         <button onClick={save} style={{width:'100%',background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:'none',borderRadius:14,padding:'14px',color:'#fff',fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer',marginTop:8}}>Save Layout</button>
         <button onClick={()=>{setItems(DASH_TILES.map(t=>({id:t.id,visible:true})));}} style={{width:'100%',background:'none',border:'none',color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer',marginTop:8,padding:'6px'}}>Reset to default</button>
       </div>
@@ -3271,7 +3281,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
       <div style={{...anim(30),display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div>
           <div style={{fontSize:27,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",lineHeight:1.15,letterSpacing:-0.5}}>
-            Hey {data.profile.name} 👋
+            Hey {data.profile?.name||"there"} 👋
           </div>
           <div style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>
             {urgentBill?`⚠️ ${urgentBill.name} due in ${parseInt(urgentBill.date)-today} day${parseInt(urgentBill.date)-today===1?"":"s"}`:isPayday?"🎉 Payday — great time to save":"Here's your financial pulse"}
@@ -3328,12 +3338,22 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                 <CountUp to={safe} decimals={2} dur={1200}/>
               </span>
             </div>
-            {/* Balance + actions row */}
+            {/* Balance + accounts breakdown */}
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-              <div>
-                <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Balance </span>
-                <span style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>${bal.toFixed(2)}</span>
-                <span style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}> · bills out</span>
+              <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
+                {(()=>{
+                  const accts = data.accounts||[];
+                  const chequing = accts.filter(a=>a.type==="checking"||a.type==="depository").reduce((s,a)=>s+(a.balance||0),0);
+                  const savings = accts.filter(a=>a.type==="savings").reduce((s,a)=>s+(a.balance||0),0);
+                  const creditOwed = accts.filter(a=>a.type==="credit").reduce((s,a)=>s+Math.abs(a.balance||0),0);
+                  return <>
+                    {chequing > 0 && <div><span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:0.8}}>Chequing</span><div style={{color:C.greenBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${(chequing||0).toFixed(2)}</div></div>}
+                    {savings > 0 && <div><span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:0.8}}>Savings</span><div style={{color:C.tealBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${(savings||0).toFixed(2)}</div></div>}
+                    {creditOwed > 0 && <div><span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:0.8}}>Credit Owing</span><div style={{color:C.red,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>–${(creditOwed||0).toFixed(2)}</div></div>}
+                    {chequing === 0 && savings === 0 && creditOwed === 0 && <div><span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Balance </span><span style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>${(bal||0).toFixed(2)}</span></div>}
+                  </>;
+                })()}
+                <span style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>· bills out</span>
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
                 {onWhatIf&&<button onClick={e=>{e.stopPropagation();onWhatIf();}} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:10,padding:"5px 11px",borderRadius:99,cursor:"pointer"}}>What if? →</button>}
@@ -3601,7 +3621,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
 // ─── PLAN AHEAD ───────────────────────────────────────────────────────────────
 function PlanAhead({data}){
   const [range,setRange]=useState(14);
-  const [connected,setConnected]=useState(["Netflix","Hydro One"]);
+  const [connected,setConnected]=useState([]);  // Start empty — user connects their own
   const [showConnect,setShowConnect]=useState(false);
   const [connecting,setConnecting]=useState(null);
   const [customProviders,setCustomProviders]=useState([]);
@@ -3629,7 +3649,7 @@ function PlanAhead({data}){
 
   const hasBills = (data.bills||[]).length > 0;
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    {!hasBills&&<EmptyState icon="📅" title="No bills tracked yet" body="Add your recurring bills in Settings to see a personalized cash-flow forecast." action={null} color={C.teal}/>}
+    {!hasBills&&<EmptyState icon="📅" title="No bills tracked yet" body="Add your recurring bills to see a personalized cash-flow forecast." action="Go to Settings" onAction={()=>window.dispatchEvent(new CustomEvent("flourish:settings"))} color={C.teal}/>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <div><div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>2-Week Forecast</div><div style={{color:C.muted,fontSize:12,marginTop:3}}>Your financial crystal ball</div></div>
       <div style={{display:"flex",gap:6,background:C.surface,borderRadius:12,padding:3}}>{[7,14].map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"6px 16px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .22s"}}>{r}d</button>)}</div>
@@ -3640,11 +3660,11 @@ function PlanAhead({data}){
     </div>
     {willGoNeg&&<div style={{background:C.redDim,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.red}55`}}>
       <div style={{color:C.redBright,fontWeight:800,marginBottom:4}}>Projected Overdraft</div>
-      <div style={{color:C.cream,fontSize:13,lineHeight:1.5}}>Balance hits <strong style={{color:C.red}}>${minBalance.toFixed(2)}</strong> before your next deposit. Reduce spending now.</div>
+      <div style={{color:C.cream,fontSize:13,lineHeight:1.5}}>Balance hits <strong style={{color:C.red}}>${(minBalance||0).toFixed(2)}</strong> before your next deposit. Reduce spending now.</div>
     </div>}
     <Card style={{border:`1px solid ${C.teal}33`,background:`linear-gradient(135deg,rgba(0,200,224,0.05) 0%,${C.card} 100%)`}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:connected.length>0?10:0}}>
-        <div><div style={{color:C.tealBright,fontWeight:700,fontSize:14}}>🔌 Connected Providers</div><div style={{color:C.muted,fontSize:11,marginTop:2}}>{connected.length} live · auto-update</div></div>
+        <div><div style={{color:C.tealBright,fontWeight:700,fontSize:14}}>📅 Bill Autopilot</div><div style={{color:C.muted,fontSize:11,marginTop:2}}>{connected.length} live · auto-update</div></div>
         <button onClick={()=>setShowConnect(s=>!s)} style={{background:C.teal+"28",border:`1px solid ${C.teal}55`,color:C.tealBright,borderRadius:99,padding:"6px 15px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .2s"}}>{showConnect?"Done":"+ Connect"}</button>
       </div>
       {connected.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:showConnect?10:0}}>
@@ -3730,9 +3750,11 @@ function SpendScreen({data}){
     setRecatTxn(null);
   };
   const cats=["All",...Array.from(new Set(txns.map(t=>getCat(t))))];
-  const filtered=catFilter==="All"?txns:txns.filter(t=>getCat(t)===catFilter);
-  const totalSpent=txns.filter(t=>t.amount>0).reduce((a,t)=>a+t.amount,0);
-  const totalIn=txns.filter(t=>t.amount<0).reduce((a,t)=>a+Math.abs(t.amount),0);
+  const filtered=catFilter==="All"?txns.filter(t=>getCat(t)!=="Transfer"):txns.filter(t=>getCat(t)===catFilter);
+  // Exclude transfers (Interac e-transfers between accounts) from spending totals
+  const EXCLUDE_CATS = new Set(["Transfer","Income"]);
+  const totalSpent=txns.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))).reduce((a,t)=>a+t.amount,0);
+  const totalIn=txns.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
 
   const cuts=[
     stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee is adding up",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month totalling $${stats.coffee.toFixed(2)}. That's $${(stats.coffee*12).toFixed(0)}/year. Making coffee at home 4 days a week cuts this by 60%.`,saving:`$${Math.round(stats.coffee*0.6)}/mo`,effort:"Low",color:C.orange},
@@ -3749,24 +3771,55 @@ function SpendScreen({data}){
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     {/* Re-categorize bottom sheet */}
     {recatTxn&&(
-      <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.5)"}} onClick={()=>setRecatTxn(null)}>
-        <div style={{background:C.card,borderRadius:"24px 24px 0 0",padding:"20px 20px 40px",width:"100%",maxWidth:480,border:`1px solid ${C.border}`,boxShadow:"0 -8px 40px rgba(0,0,0,0.4)"}} onClick={e=>e.stopPropagation()}>
-          <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 16px"}}/>
-          <div style={{color:C.cream,fontWeight:800,fontSize:15,marginBottom:4}}>Change Category</div>
-          <div style={{color:C.muted,fontSize:12,marginBottom:16,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{recatTxn.name}</div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-            {ALL_CATS.map(cat=>(
-              <button key={cat} onClick={()=>recat(recatTxn,cat)} style={{background:getCat(recatTxn)===cat?C.orange+"33":C.cardAlt,border:`1px solid ${getCat(recatTxn)===cat?C.orange:C.border}`,color:getCat(recatTxn)===cat?C.orangeBright:C.muted,borderRadius:99,padding:"7px 14px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>
-                {cat}
-              </button>
-            ))}
+      <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={()=>setRecatTxn(null)}>
+        <div style={{background:C.card,borderRadius:"24px 24px 0 0",width:"100%",maxWidth:520,border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",display:"flex",flexDirection:"column",maxHeight:"80vh"}} onClick={e=>e.stopPropagation()}>
+          {/* Fixed header */}
+          <div style={{padding:"16px 20px 12px",flexShrink:0,borderBottom:`1px solid ${C.border}`}}>
+            <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{color:C.cream,fontWeight:800,fontSize:15}}>Change Category</div>
+                <div style={{color:C.muted,fontSize:11,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:280}}>{recatTxn.name}</div>
+              </div>
+              <button onClick={()=>setRecatTxn(null)} style={{background:"none",border:"none",color:C.muted,fontSize:20,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>✕</button>
+            </div>
           </div>
+          {/* Scrollable categories */}
+          <div style={{overflowY:"auto",padding:"16px 20px",flex:1}}>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
+              {[...ALL_CATS, ...(JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]"))].map(cat=>(
+                <button key={cat} onClick={()=>recat(recatTxn,cat)} style={{background:getCat(recatTxn)===cat?C.orange+"33":C.cardAlt,border:`1px solid ${getCat(recatTxn)===cat?C.orange:C.border}`,color:getCat(recatTxn)===cat?C.orangeBright:C.muted,borderRadius:99,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",minHeight:36}}>
+                  {cat}
+                </button>
+              ))}
+            </div>
+            {/* Add custom category */}
+            {(()=>{
+              const [showCustomCat, setShowCustomCat] = React.useState(false);
+              const [newCat, setNewCat] = React.useState("");
+              return showCustomCat ? (
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <input value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="Category name…"
+                    onKeyDown={e=>{if(e.key==="Enter"&&newCat.trim()){const existing=JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]");localStorage.setItem("flourish_custom_cats",JSON.stringify([...existing,newCat.trim()]));recat(recatTxn,newCat.trim());setNewCat("");setShowCustomCat(false);}}}
+                    style={{flex:1,background:C.cardAlt,border:`1px solid ${C.green}`,borderRadius:10,padding:"8px 12px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}} autoFocus/>
+                  <button onClick={()=>{if(newCat.trim()){const existing=JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]");localStorage.setItem("flourish_custom_cats",JSON.stringify([...existing,newCat.trim()]));recat(recatTxn,newCat.trim());}}} style={{background:C.green,border:"none",borderRadius:10,padding:"8px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Add</button>
+                  <button onClick={()=>{setShowCustomCat(false);setNewCat("");}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 12px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                </div>
+              ) : (
+                <button onClick={()=>setShowCustomCat(true)} style={{background:"none",border:`1px dashed ${C.green}55`,borderRadius:10,padding:"8px 16px",color:C.green,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",width:"100%"}}>
+                  + Add custom category
+                </button>
+              );
+            })()}
+          </div>
+          {/* Safe bottom padding for mobile */}
+          <div style={{height:"env(safe-area-inset-bottom, 16px)",flexShrink:0}}/>
         </div>
       </div>
     )}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <div><div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Transactions</div><div style={{color:isDemo?C.gold:C.muted,fontSize:12,marginTop:3}}>{isDemo?"Sample data · connect your bank for real insights":"Live from your bank"}</div></div>
-      <div style={{textAlign:"right"}}><div style={{color:C.red,fontWeight:800,fontSize:15}}>–${(totalSpent||0).toFixed(0)}</div><div style={{color:C.green,fontSize:11}}>+${totalIn.toFixed(0)} in</div></div>
+      <div style={{textAlign:"right"}}><div style={{color:C.red,fontWeight:800,fontSize:15}}>–${(totalSpent||0).toFixed(0)}</div><div style={{color:C.green,fontSize:11}}>+${(totalIn||0).toFixed(0)} in</div></div>
     </div>
     <div style={{display:"flex",gap:6,background:C.surface,borderRadius:16,padding:4}}>
       {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeBright:C.muted,borderRadius:12,padding:"9px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
@@ -3799,7 +3852,7 @@ function SpendScreen({data}){
     {tab==="breakdown"&&<>
       <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
         <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Spent This Month</div>
-        <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>{`$${(totalSpent||0).toFixed(0)}`}</div>
+        <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>{`$${(totalSpent||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</div>
       </Card>
       {stats.topCats.map(([cat,amt],i)=>{
         const colors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
@@ -3875,7 +3928,7 @@ function Goals({data,initialTab="sim",onUpgrade}){
       ))}
     </div>
     {tab==="sim"&&<>
-      {noDebts&&<EmptyState icon="🎯" title="No debts tracked yet" body="Add debts during setup to simulate payoff strategies and see how much interest you can save." action="Go back to Setup" onAction={()=>{}} color={C.purple}/>}
+      {noDebts&&<EmptyState icon="🎯" title="No debts tracked yet" body="Add debts during setup to simulate payoff strategies and see how much interest you can save." action="Add Debts in Settings" onAction={()=>window.dispatchEvent(new CustomEvent("flourish:settings"))} color={C.purple}/>}
       {!noDebts&&debts.length>1&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{debts.map((d,i)=><button key={i} onClick={()=>setSelDebt(i)} style={{background:safeSelDebt===i?C.purple+"33":C.cardAlt,border:`1px solid ${selDebt===i?C.purple:C.border}`,color:safeSelDebt===i?C.purpleBright:C.muted,borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>{d.name}</button>)}</div>}
       {!noDebts&&<div style={{background:`linear-gradient(135deg,${C.purpleDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"20px 22px",border:`1px solid ${C.purple}44`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
@@ -5006,7 +5059,7 @@ function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconn
     </div>
     <button onClick={handleShare} style={{background:`linear-gradient(135deg,${C.green},#1A3D2A)`,borderRadius:18,padding:"16px 20px",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"inherit",width:"100%",marginBottom:10}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
-        <span style={{fontSize:26}}>🌱</span>
+        <FlourishMark size={32} style={{borderRadius:8}}/>
         <div style={{textAlign:"left"}}>
           <div style={{color:"#fff",fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15}}>Share Flourish</div>
           <div style={{color:"rgba(255,255,255,0.55)",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>Invite a friend · help them thrive</div>
@@ -5015,16 +5068,17 @@ function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconn
       <span style={{background:"rgba(255,255,255,0.15)",borderRadius:99,padding:"6px 14px",color:"#fff",fontSize:11,fontWeight:700}}>Share ↗</span>
     </button>
     {[
-      {icon:"user",  color:C.purple, label:"Profile & Income",    sub:`${data.profile.name} · ${data.profile.country}`},
-      {icon:"bank",  color:C.blue,   label:"Connected Accounts",  sub:`${data.accounts?.length||0} accounts`},
-      {icon:"calendar",color:C.teal, label:"Manage Bills",        sub:`${data.bills?.length||0} tracked`},
-      {icon:"trendUp",color:C.orange,label:"Manage Debts",        sub:`${data.debts?.length||0} in plan`},
-      {icon:"target", color:C.gold,  label:"Savings Goals",       sub:"Emergency fund & more"},
-      {icon:"users",  color:C.pink,  label:"Family Settings",     sub:`${data.profile.status} · ${data.profile.hasKids?"has kids":"no kids"}`},
-    ].map((item,i)=>(
-      <div key={i} style={{background:C.card,borderRadius:18,padding:"13px 16px",marginBottom:8,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:13,cursor:"pointer",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}
-        onMouseEnter={e=>{e.currentTarget.style.borderColor=item.color+"55";e.currentTarget.style.transform="translateX(2px)";}}
-        onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.transform="none";}}>
+        {icon:"user",  color:C.purple, label:"Profile & Income",    sub:`${data.profile?.name||"You"} · ${data.profile?.country||"CA"}`,   key:"profile"},
+        {icon:"bank",  color:C.blue,   label:"Connected Accounts",  sub:`${data.accounts?.length||0} accounts`,              key:"accounts"},
+        {icon:"calendar",color:C.teal, label:"Manage Bills",        sub:`${data.bills?.length||0} tracked`,                  key:"bills"},
+        {icon:"trendUp",color:C.orange,label:"Manage Debts",        sub:`${data.debts?.length||0} in plan`,                  key:"debts"},
+        {icon:"target", color:C.gold,  label:"Savings Goals",       sub:"Emergency fund & more",                             key:"goals"},
+        {icon:"users",  color:C.pink,  label:"Family Settings",     sub:`${data.profile?.status||"single"} · ${data.profile?.hasKids?"has kids":"no kids"}`, key:"family"},
+      ].map((item,i)=>(
+        <div key={i}
+          style={{background:C.card,borderRadius:18,padding:"13px 16px",marginBottom:8,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:13,cursor:"pointer",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor=item.color+"55";e.currentTarget.style.transform="translateX(2px)";}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.transform="none";}}>
         <div style={{width:38,height:38,borderRadius:12,background:item.color+"18",border:`1px solid ${item.color}28`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
           <Icon id={item.icon} size={18} color={item.color} strokeWidth={1.6}/>
         </div>
@@ -5035,6 +5089,7 @@ function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconn
         <span style={{color:C.muted,fontSize:20,fontWeight:300}}>›</span>
       </div>
     ))}
+    )}
     <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.8,fontWeight:700,marginTop:20,marginBottom:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Notifications</div>
     {[
       ["overdraft","zap",    C.red,   "Overdraft warnings"],
@@ -5066,8 +5121,8 @@ function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconn
         </button>
       </div>
     )}
-    {/* ── Disconnect bank ──────────────────────────────────────── */}
-    {bankConnected&&(
+    {/* ── Bank connection ──────────────────────────────────────── */}
+    {(bankConnected || true)&&(
       <div style={{marginTop:10,padding:"14px 16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
         <div style={{color:C.cream,fontWeight:700,fontSize:13,marginBottom:8}}>Connected Banks</div>
         {/* Show each connected bank */}
@@ -5245,6 +5300,11 @@ CRITICAL RULES:
     const text = input.trim();
     if(!text || loading) return;
     if(!isPremium && freeMsgsLeft<=0){ onUpgrade(); return; }
+    // Detect if user is asking about balance mismatch
+    const isBalanceQuestion = (text.toLowerCase().includes("balance") && 
+      (text.toLowerCase().includes("wrong") || text.toLowerCase().includes("match") || 
+       text.toLowerCase().includes("correct") || text.toLowerCase().includes("right") ||
+       text.toLowerCase().includes("different") || text.toLowerCase().includes("off")));
     setInput("");
     setError("");
     const newMessages = [...messages, {role:"user", content:text}];
@@ -5266,7 +5326,11 @@ CRITICAL RULES:
       const json = await res.json();
       const reply = json.content?.[0]?.text || json.reply || "Sorry, I couldn't get a response. Try again.";
       onSend(); // only count on successful response
-      setMessages(prev=>[...prev, {role:"assistant", content:reply}]);
+      setMessages(prev=>{
+        const msgs = [...prev, {role:"assistant", content:reply}];
+        if(isBalanceQuestion) msgs.push({role:"assistant",content:"💡 If your balance doesn't match your bank app, I can help reconcile it. Upload your latest bank statement PDF or CSV in the **Transactions** screen — I'll compare the numbers and flag any discrepancies.",isSystem:true});
+        return msgs;
+      });
     } catch(e){
       setError("Couldn't reach the coach. Check your connection and try again.");
       setMessages(prev=>prev.slice(0,-1)); // remove the user msg so they can retry
@@ -6078,6 +6142,13 @@ export default function FlourishApp(){
     window.__flourishReconnect=()=>setNeedsReconnect(true);
     return()=>{ delete window.__flourishReconnect; };
   },[]);
+
+  // Allow child components to open Settings via custom event
+  useEffect(()=>{
+    const handler = () => setShowSettings(true);
+    window.addEventListener("flourish:settings", handler);
+    return () => window.removeEventListener("flourish:settings", handler);
+  },[]);
   useEffect(()=>{ try{localStorage.setItem("flourish_theme",theme);}catch{} },[theme]);
   useEffect(()=>{ try{localStorage.setItem('flourish_dash_layout',JSON.stringify(dashLayout));}catch{} },[dashLayout]);
 
@@ -6164,9 +6235,11 @@ export default function FlourishApp(){
   const handleReconnectBank = ()=>{
     if(reconnectLoading) return;
     setReconnectLoading(true);
-    callPlaid("create_link_token",{ access_token: plaidAccessToken })
+    // If we have an access token, reconnect existing item; otherwise create new link
+    const payload = plaidAccessToken ? { access_token: plaidAccessToken } : {};
+    callPlaid("create_link_token", payload)
       .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
-      .catch(()=>{ setReconnectLoading(false); alert("Could not start reconnect — please try again."); });
+      .catch(()=>{ setReconnectLoading(false); alert("Could not start bank connection — please try again."); });
   };
 
 
