@@ -442,8 +442,8 @@ const MOCK_TXN = [
   {id:"t8", date:"2026-03-03",name:"Amazon.ca",        amount:34.99,  cat:"Shopping",       icon:"📦",color:"#C45898",dow:1},
   {id:"t9", date:"2026-03-02",name:"Uber Eats",        amount:28.40,  cat:"Coffee & Dining",icon:"🍕",color:"#D97A3A",dow:0},
   {id:"t10",date:"2026-03-01",name:"LCBO",             amount:24.15,  cat:"Shopping",       icon:"🛍️",color:"#C45898",dow:6},
-  {id:"t11",date:"2026-02-29",name:"Walmart",          amount:89.22,  cat:"Groceries",      icon:"🛒",color:"#2E8B2E",dow:5},
-  {id:"t12",date:"2026-02-28",name:"Hydro One",        amount:124.00, cat:"Utilities",      icon:"⚡",color:"#CFA03E",dow:4},
+  {id:"t11",date:"2026-02-28",name:"Walmart",          amount:89.22,  cat:"Groceries",      icon:"🛒",color:"#2E8B2E",dow:5},
+  {id:"t12",date:"2026-02-27",name:"Hydro One",        amount:124.00, cat:"Utilities",      icon:"⚡",color:"#CFA03E",dow:4},
   {id:"t13",date:"2026-02-28",name:"Starbucks",        amount:6.50,   cat:"Coffee & Dining",icon:"☕",color:"#D97A3A",dow:4},
   {id:"t14",date:"2026-02-27",name:"Spotify",          amount:11.99,  cat:"Subscriptions",  icon:"🎵",color:"#8A5FC8",dow:3},
   {id:"t15",date:"2026-02-27",name:"Rexall Pharmacy",  amount:18.40,  cat:"Health",         icon:"💊",color:"#4A8FCC",dow:3},
@@ -674,7 +674,7 @@ function AutopilotCard({data, setScreen}) {
   const autoBg = C.isDark
     ? `linear-gradient(155deg,#061510 0%,#0B1E14 50%,#080D10 100%)`
     : `linear-gradient(155deg,rgba(0,204,133,0.06) 0%,rgba(0,180,115,0.04) 50%,rgba(0,147,95,0.05) 100%)`;
-  const autoText      = C.isDark ? "rgba(255,255,255,0.85)"  : C.text;
+  const autoText      = C.isDark ? "rgba(255,255,255,0.85)"  : C.cream;
   const autoMuted     = C.isDark ? "rgba(255,255,255,0.40)"  : C.muted;
   const autoSubtle    = C.isDark ? "rgba(255,255,255,0.35)"  : C.muted;
   const autoDivider   = C.isDark ? "rgba(255,255,255,0.06)"  : C.border;
@@ -695,7 +695,7 @@ function AutopilotCard({data, setScreen}) {
         <div>
           <div style={{color:autoMuted,fontSize:9,textTransform:"uppercase",letterSpacing:3,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:5}}>Autopilot · {today}</div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.text,lineHeight:1.2}}>Today's Money Plan</div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.cream,lineHeight:1.2}}>Today's Money Plan</div>
             <span style={{background:C.teal+"33",color:C.tealBright,fontSize:8,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,letterSpacing:1,textTransform:"uppercase",padding:"3px 7px",borderRadius:99,border:`1px solid ${C.teal}44`}}>Adaptive</span>
           </div>
         </div>
@@ -1103,7 +1103,7 @@ Respond ONLY with valid JSON (no markdown) like:
 // ── MONEY PERSONALITY ──────────────────────────────────────────────────────────
 function calcPersonality(txns, data) {
   const t = txns || MOCK_TXN;
-  const neg = t.filter(x => x.amount < 0);
+  const neg = t.filter(x => x.amount > 0);  // expenses are positive
   const total = neg.reduce((s,x) => s + Math.abs(x.amount), 0) || 1;
 
   const food    = neg.filter(x=>["Food","Coffee","Dining"].includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
@@ -1312,7 +1312,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
   const opportunities = [];
 
   // Subscription audit
-  const subTxns = txns.filter(t => t.cat === "Subscriptions" && t.amount < 0);
+  const subTxns = txns.filter(t => t.cat === "Subscriptions" && t.amount > 0);  // expenses are positive
   const subTotal = subTxns.reduce((s,t) => s + Math.abs(t.amount), 0);
   if (subTotal > 40) {
     const dupes = subTxns.length > 3 ? subTxns.slice(-2).map(t=>t.merchant||t.name).join(", ") : subTxns.map(t=>t.merchant||t.name).join(", ");
@@ -1400,7 +1400,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
 // ── MONEY WRAPPED ──────────────────────────────────────────────────────────────
 function MoneyWrapped({data, onClose}) {
   const [slide, setSlide] = useState(0);
-  const txns = (data.transactions || MOCK_TXN).filter(t => t.amount < 0);
+  const txns = (data.transactions || MOCK_TXN).filter(t => t.amount > 0);  // expenses are positive
   const income = (data.incomes||[]).reduce((s,i)=>s+parseFloat(i.amount||0),0)*12 || 50400;
   const totalSpent = txns.reduce((s,t)=>s+Math.abs(t.amount),0);
   const totalDebt = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.balance||0),0);
@@ -1760,7 +1760,7 @@ const FinancialCalcEngine = {
   cashFlow(data) {
     const incomes = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
     const bills   = data.bills || [];
-    const txns    = (data.transactions || MOCK_TXN).filter(t => t.amount < 0);
+    const txns    = (data.transactions || MOCK_TXN).filter(t => t.amount > 0);  // expenses are positive
     const monthlyIncome   = incomes.reduce((s,i) => s + parseFloat(i.amount||0), 0) || 4200;
     const monthlyBills    = bills.reduce((s,b) => s + parseFloat(b.amount||0), 0);
     const monthlySpend    = txns.reduce((s,t) => s + Math.abs(t.amount), 0) || monthlyIncome * 0.68;
@@ -1794,7 +1794,7 @@ const FinancialCalcEngine = {
 
   /** Average daily spend from transaction history */
   avgDailySpend(data) {
-    const txns = (data.transactions || MOCK_TXN).filter(t => t.amount < 0);
+    const txns = (data.transactions || MOCK_TXN).filter(t => t.amount > 0);  // expenses are positive
     const total = txns.reduce((s,t) => s + Math.abs(t.amount), 0);
     return total / 30; // assume 30-day window
   },
@@ -1894,7 +1894,7 @@ const ForecastEngine = {
 
 const BehaviorEngine = {
   analyze(data) {
-    const txns   = (data.transactions || MOCK_TXN).filter(t => t.amount < 0);
+    const txns   = (data.transactions || MOCK_TXN).filter(t => t.amount > 0);  // expenses are positive
     const income = FinancialCalcEngine.cashFlow(data).monthlyIncome;
     const insights = [];
 
@@ -1984,10 +1984,12 @@ const AutopilotEngine = {
       daysLeft = 14 - (todayNum % 14);
     } else if (freq === "weekly") {
       daysLeft = 7 - (todayNum % 7);
+    } else if (freq === "semimonthly") {
+      // Twice a month: 1st and 15th
+      daysLeft = todayNum < 15 ? (15 - todayNum) : (new Date(today.getFullYear(), today.getMonth()+1, 1) - today) / 86400000;
     } else {
-      // Monthly: 1st or 15th
-      daysLeft = todayNum < 15 ? (15 - todayNum) :
-        Math.ceil((new Date(today.getFullYear(), today.getMonth()+1, 1) - today) / 86400000);
+      // Monthly: next 1st
+      daysLeft = Math.ceil((new Date(today.getFullYear(), today.getMonth()+1, 1) - today) / 86400000);
     }
     daysLeft = Math.max(1, daysLeft);
 
@@ -2512,7 +2514,7 @@ function Onboarding({onComplete,onViewLegal}){
     setBankError(null);
     callPlaid("create_link_token",{country:p.country})
       .then(d=>{ setLinkToken(d.link_token); setLinkTokenLoading(false); })
-      .catch((err)=>{ setBankError("Could not connect to your bank — please check your connection and try again."); setLinkTokenLoading(false); });
+      .catch(()=>{ setBankError("Could not connect to your bank — please check your connection and try again."); setLinkTokenLoading(false); });
   },[linkToken, p.country]); // eslint-disable-line
 
   useEffect(()=>{ if(step===3) fetchLinkToken(); },[step]); // eslint-disable-line
@@ -2977,13 +2979,14 @@ function Onboarding({onComplete,onViewLegal}){
 
 
 // ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
+const NOTIF_COLORS = {autopilot:"#00CC85",bill:"#E8B84B",win:"#00C8E0",score:"#00CC85",behavior:"#FF8C42",opportunity:"#9B7DFF",urgent:"#FF4F6A"};
 const INIT_NOTIFS=[
-  {id:1,icon:"💡",title:"Today's safe spend: $47",body:"Based on your balance, bills, and forecast. Stay on track!",read:false,time:"9:01 AM",type:"autopilot"},
-  {id:2,icon:"📅",title:"Rent due in 3 days",body:"$1,850 → Landlord. Your balance covers it — you're good.",read:false,time:"8:30 AM",type:"bill"},
-  {id:3,icon:"🎯",title:"Debt payoff milestone!",body:"You're 68% through your Visa. At this rate, done by Oct 2025.",read:true,time:"Yesterday",type:"win"},
-  {id:4,icon:"📈",title:"Score improved +2 this week",body:"Your Financial Health Score is now 74. Keep it up!",read:true,time:"Yesterday",type:"score"},
-  {id:5,icon:"🧠",title:"Spending spike detected",body:"You spent 38% more in the 3 days after payday. Move $200 to savings now?",read:true,time:"Mar 6",type:"behavior"},
-  {id:6,icon:"💰",title:"You could save $47/mo",body:"3 subscriptions you haven't used this month total $47. Review them in Spend.",read:true,time:"Mar 5",type:"opportunity"},
+  {id:1,icon:"bell",title:"Today's safe spend: $47",body:"Based on your balance, bills, and forecast. Stay on track!",read:false,time:"9:01 AM",type:"autopilot",color:NOTIF_COLORS.autopilot},
+  {id:2,icon:"calendar",title:"Rent due in 3 days",body:"$1,850 → Landlord. Your balance covers it — you're good.",read:false,time:"8:30 AM",type:"bill",color:NOTIF_COLORS.bill},
+  {id:3,icon:"target",title:"Debt payoff milestone!",body:"You're 68% through your Visa. At this rate, done by Oct 2025.",read:true,time:"Yesterday",type:"win",color:NOTIF_COLORS.win},
+  {id:4,icon:"chartUp",title:"Score improved +2 this week",body:"Your Financial Health Score is now 74. Keep it up!",read:true,time:"Yesterday",type:"score",color:NOTIF_COLORS.score},
+  {id:5,icon:"zap",title:"Spending spike detected",body:"You spent 38% more in the 3 days after payday. Move $200 to savings now?",read:true,time:"Mar 6",type:"behavior",color:NOTIF_COLORS.behavior},
+  {id:6,icon:"sparkles",title:"You could save $47/mo",body:"3 subscriptions you haven't used this month total $47. Review them in Spend.",read:true,time:"Mar 5",type:"opportunity",color:NOTIF_COLORS.opportunity},
 ];
 
 function Notifications({onClose}){
@@ -3650,7 +3653,7 @@ function Goals({data,initialTab="sim"}){
   const toYM=(m)=>{if(m>=600)return"Never";const y=Math.floor(m/12),mo=m%12;return y>0?`${y}y ${mo}m`:`${mo}mo`;};
   const payoffDate=()=>{const d=new Date();d.setMonth(d.getMonth()+curr.months);return d.toLocaleDateString("en",{month:"long",year:"numeric"});};
   const totalDebt=debts.reduce((a,d)=>a+parseFloat(d.balance||0),0);
-  const netWorth=1243.88+DEMO.netWorthAdd-totalDebt;
+  const netWorth=parseFloat((data?.accounts?.[0]?.balance||1243.88).toString().replace(/,/g,""))+DEMO.netWorthAdd-totalDebt;
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{fontSize:22,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Goals & Wealth</div><div style={{background:CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue+"22":C.green+"22",border:`1px solid ${CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}33`,borderRadius:99,padding:"4px 12px",color:CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blueBright:C.greenBright,fontSize:11,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{CC[data?.profile?.country||"CA"]?.flag} {CC[data?.profile?.country||"CA"]?.currency}</div></div>
