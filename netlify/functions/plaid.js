@@ -137,7 +137,7 @@ exports.handler = async (event) => {
     if (action === "get_accounts") {
       const { access_token } = body;
       if (!access_token) return e400("access_token required");
-      const data = await plaid("/accounts/balance/get", { access_token });
+      const data = await plaid("/accounts/get", { access_token });
       return ok({
         accounts: data.accounts.map(a => ({
           id:      a.account_id,
