@@ -4011,7 +4011,7 @@ function AddCustomCategory({onAdd}){
   );
 }
 
-function SpendScreen({data}){
+function SpendScreen({data, setAppData}){
   const [tab,setTab]=useState("txn");
   const [catFilter,setCatFilter]=useState("All");
   const [dismissed,setDismissed]=useState([]);
@@ -4020,6 +4020,8 @@ function SpendScreen({data}){
   const stats=computeStats(txns);
   // Declare getCat BEFORE cats — avoids Temporal Dead Zone error
   const [recatTxn,setRecatTxn]=useState(null);
+  const [markBillTxn,setMarkBillTxn]=useState(null);
+  const [billForm,setBillForm]=useState({name:"",amount:"",date:"1"});
   const catOverrides = JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
   const getCat = (t) => catOverrides[t.id] || t.cat;
   const recat = (txn, newCat) => {
@@ -4047,6 +4049,71 @@ function SpendScreen({data}){
     if(!isDemo && txns.length === 0) return <EmptyState icon="💳" title="No transactions yet" body="Your transactions are loading from your bank. Check back in a moment — or pull to refresh." action="Refresh" onAction={()=>window.location.reload()} color={C.orange}/>;
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    {/* Mark as Bill modal */}
+    {markBillTxn&&(
+      <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setMarkBillTxn(null)}>
+        <div style={{background:C.bg,borderRadius:"24px 24px 0 0",width:"100%",maxWidth:520,border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",padding:"0 0 env(safe-area-inset-bottom,16px)"}} onClick={e=>e.stopPropagation()}>
+          <div style={{padding:"16px 20px 14px",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
+            <div style={{color:C.cream,fontWeight:800,fontSize:16}}>Add to Monthly Bills</div>
+            <div style={{color:C.muted,fontSize:12,marginTop:3}}>This will add it to your forecast and Plan screen.</div>
+          </div>
+          <div style={{padding:"16px 20px 20px"}}>
+            <div style={{marginBottom:12}}>
+              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Bill Name</div>
+              <input value={billForm.name} onChange={e=>setBillForm(v=>({...v,name:e.target.value}))}
+                style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.cream,fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+              <div>
+                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Monthly Amount</div>
+                <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.green}`,borderRadius:10,overflow:"hidden"}}>
+                  <span style={{color:C.muted,padding:"0 10px",fontSize:14}}>$</span>
+                  <input value={billForm.amount} onChange={e=>setBillForm(v=>({...v,amount:e.target.value}))} type="number"
+                    style={{flex:1,background:"none",border:"none",padding:"10px 10px 10px 0",color:C.cream,fontSize:14,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
+                </div>
+              </div>
+              <div>
+                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Day Due</div>
+                <select value={billForm.date} onChange={e=>setBillForm(v=>({...v,date:e.target.value}))}
+                  style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}>
+                  {Array.from({length:28},(_,i)=>{const n=i+1;const s=[11,12,13].includes(n)?"th":["st","nd","rd"][n%10-1]||"th";return <option key={n} value={String(n)}>{n}{s}</option>;})}
+                </select>
+              </div>
+            </div>
+            <div style={{background:C.teal+"12",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",marginBottom:16}}>
+              <div style={{color:C.tealBright,fontSize:12,fontWeight:600}}>💡 This will also update your cash-flow forecast</div>
+              <div style={{color:C.muted,fontSize:11,marginTop:2}}>Your Plan screen will now include ${billForm.amount}/month on the {billForm.date}{([11,12,13].includes(parseInt(billForm.date))?"th":["st","nd","rd"][parseInt(billForm.date||0)%10-1]||"th")}.</div>
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <button
+                disabled={!billForm.name||!billForm.amount}
+                onClick={()=>{
+                  if(!billForm.name||!billForm.amount) return;
+                  if(setAppData){
+                    const billName = billForm.name.trim().toLowerCase();
+                    const alreadyExists = (data.bills||[]).some(b=>b.name.trim().toLowerCase()===billName);
+                    if(!alreadyExists){
+                      setAppData(prev=>({...prev,bills:[...(prev.bills||[]),{name:billForm.name.trim(),amount:billForm.amount,date:billForm.date}]}));
+                    } // end if(!alreadyExists)
+                    // Also recategorise the transaction as Bills
+                    const overrides=JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
+                    localStorage.setItem("flourish_cat_overrides",JSON.stringify({...overrides,[markBillTxn.id]:"Bills"}));
+                  }
+                  setMarkBillTxn(null);setBillForm({name:"",amount:"",date:"1"});
+                }}
+                style={{flex:1,background:billForm.name&&billForm.amount?C.green:"rgba(255,255,255,0.08)",border:"none",borderRadius:12,padding:"13px",color:"#fff",fontWeight:800,fontSize:14,cursor:billForm.name&&billForm.amount?"pointer":"default",fontFamily:"inherit",opacity:!billForm.name||!billForm.amount?0.4:1}}>
+                Add to Bills ✓
+              </button>
+              <button onClick={()=>setMarkBillTxn(null)}
+                style={{background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"13px 18px",color:C.muted,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
     {/* Re-categorize bottom sheet */}
     {recatTxn&&(
       <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={()=>setRecatTxn(null)}>
@@ -4055,11 +4122,20 @@ function SpendScreen({data}){
           <div style={{padding:"16px 20px 12px",flexShrink:0,borderBottom:`1px solid ${C.border}`}}>
             <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div>
+              <div style={{flex:1,minWidth:0}}>
                 <div style={{color:C.cream,fontWeight:800,fontSize:15}}>Change Category</div>
-                <div style={{color:C.muted,fontSize:11,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:280}}>{recatTxn.name}</div>
+                <div style={{color:C.muted,fontSize:11,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:240}}>{recatTxn.name}</div>
               </div>
-              <button onClick={()=>setRecatTxn(null)} style={{background:"none",border:"none",color:C.muted,fontSize:20,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>✕</button>
+              <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
+                {setAppData&&recatTxn.amount>0&&<button onClick={()=>{
+                  const day=recatTxn.date?new Date(recatTxn.date+"T12:00:00").getDate():new Date().getDate();
+                  setBillForm({name:recatTxn.name,amount:(recatTxn.amount||0).toFixed(2),date:String(day)});
+                  setMarkBillTxn(recatTxn);setRecatTxn(null);
+                }} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,borderRadius:99,padding:"6px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                  + Add to Bills
+                </button>}
+                <button onClick={()=>setRecatTxn(null)} style={{background:"none",border:"none",color:C.muted,fontSize:20,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>✕</button>
+              </div>
             </div>
           </div>
           {/* Scrollable categories */}
@@ -6858,7 +6934,7 @@ export default function FlourishApp(){
     if(showSettings)return <Settings data={appData} setAppData={setAppData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}}/>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData}/>;
-    if(screen==="spend")return <SpendScreen data={dataWithHousehold}/>;
+    if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData}/>;
     if(screen==="coach"){const freeCoachAllowed=!isPremium&&coachMsgCount<5&&!trialExpired;const showCoach=isPremium||freeCoachAllowed;if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)}/>; if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="AI Coach" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>; return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;}
     if(screen==="family")return <Family data={dataWithHousehold} household={household} setHousehold={setHousehold}/>;
     if(screen==="goals")return <Goals data={dataWithHousehold} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab}/>;
