@@ -431,7 +431,7 @@ function detectRecurringBills(txns) {
 
     bills.push({
       name:    displayName,
-      amount:  avg.toFixed(2),
+      amount:  (avg||0).toFixed(2),
       date:    String(dayMode),
       auto:    true,   // flag so UI can show "detected" badge
       avgNote: txList.length >= 3 ? `avg of last ${Math.min(txList.length,3)} months` : "estimated",
@@ -582,7 +582,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
   const today = todayDate || new Date().getDate();
   const paydayGuess = today < 15 ? 15 : 1;
   const daysToPayday = paydayGuess >= today ? paydayGuess - today : (31 - today + paydayGuess);
-  const incomeAmt = parseFloat(data.profile?.income || DEMO.income);
+  const incomeAmt = (data.incomes||[]).reduce((s,i)=>s+parseFloat(i.amount||0),0) || DEMO.income;
 
   // Decision Engine calculations
   const daysLeft = daysToPayday > 0 ? daysToPayday : 14;
@@ -715,7 +715,7 @@ function AutopilotCard({data, setScreen}) {
       color:C.gold, detail:"progress toward your goal",
     },
     plan.buffer > 100 && {
-      icon:"🔒", label:"Untouched buffer", amount:`$${plan.buffer.toFixed(0)}`,
+      icon:"🔒", label:"Untouched buffer", amount:`$${(plan.buffer||0).toFixed(0)}`,
       color:C.muted, detail:"stays in your account",
     },
   ].filter(Boolean);
@@ -903,7 +903,7 @@ function TimeMachine({data}) {
                       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:ev.isPayday||ev.bills.length>0?3:0}}>
                         {ev.day===0?"Today":ev.day===1?"Tomorrow":ev.date.toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}
                       </div>
-                      {ev.isPayday && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${FinancialCalcEngine.cashFlow(data).monthlyIncome.toFixed(0)} paycheck`}</div>}
+                      {ev.isPayday && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(FinancialCalcEngine.cashFlow(data).monthlyIncome||0).toFixed(0)} paycheck`}</div>}
                       {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${b.amount}</div>)}
                       {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                     </div>
@@ -913,9 +913,9 @@ function TimeMachine({data}) {
                       {/* What-if overlay balance */}
                       {overlayBal !== null && (
                         <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:11,color:overlayLow?C.redBright:C.purpleBright,marginTop:2}}>
-                          → ${overlayBal.toFixed(0)}
+                          → ${(overlayBal||0).toFixed(0)}
                           <span style={{color:overlaydiff<0?C.redBright:C.greenBright,fontSize:9,marginLeft:3}}>
-                            ({overlaydiff>0?"+":""}{overlaydiff.toFixed(0)})
+                            ({overlaydiff>0?"+":""}{(overlaydiff||0).toFixed(0)})
                           </span>
                         </div>
                       )}
@@ -987,7 +987,7 @@ function FinancialTimeline({data}) {
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:2}}>{label}</div>
-                      {ev.isPayday && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${monthlyIncome.toFixed(0)} paycheck`}</div>}
+                      {ev.isPayday && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(monthlyIncome||0).toFixed(0)} paycheck`}</div>}
                       {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${b.amount}</div>)}
                       {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                     </div>
@@ -1022,7 +1022,7 @@ function WhatIfSimulator({data, onClose}) {
   ];
 
   const bal = parseFloat((data.accounts?.[0]?.balance || DEMO.balance).toString().replace(/,/g,""));
-  const monthlyIncome = parseFloat(data.profile?.income || DEMO.income) * 2.2;
+  const monthlyIncome = ((data.incomes||[]).reduce((s,i)=>s+parseFloat(i.amount||0),0) || DEMO.income);
   const totalDebt = (data.debts||[]).reduce((s,d) => s + parseFloat(d.balance||0), 0);
   const bills = (data.bills||[]).reduce((s,b) => s + parseFloat(b.amount||0), 0);
   const {score} = calcHealthScore(data);
@@ -1035,7 +1035,7 @@ function WhatIfSimulator({data, onClose}) {
     setResult(null);
 
     const prompt = `You are a financial simulator. The user wants to know the impact of: "${qText}".
-Current financial data: Balance $${bal.toFixed(0)}, Monthly income ~$${monthlyIncome.toFixed(0)}, Total debt $${totalDebt.toFixed(0)}, Monthly bills $${bills.toFixed(0)}, Financial Health Score ${score}/100.
+Current financial data: Balance $${(bal||0).toFixed(0)}, Monthly income ~$${(monthlyIncome||0).toFixed(0)}, Total debt $${totalDebt.toFixed(0)}, Monthly bills $${bills.toFixed(0)}, Financial Health Score ${score}/100.
 Respond ONLY with valid JSON (no markdown) like:
 {"cashImpact":"safe"|"tight"|"risky","cashDetail":"1 sentence","debtImpact":"none"|"increases"|"decreases","debtDetail":"1 sentence","savingsDelay":"none"|"X weeks"|"X months","healthScoreDelta":-5,"healthDetail":"1 sentence","verdict":"Go for it"|"Proceed carefully"|"Think twice"|"Not recommended","verdictReason":"1 sentence","tip":"1 actionable alternative if risky, else empty string"}`;
 
@@ -1268,9 +1268,10 @@ function MoneyPersonality({data}) {
 function WealthForecast({data}) {
   const [extra, setExtra] = useState(0);
   const [horizon, setHorizon] = useState(20);
-  const monthlyIncome = (data.incomes||[]).reduce((s,i)=>s+parseFloat(i.amount||0),0) || 4200;
+  const toMonthlyAmt = (amt, freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:a; };
+    const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMonthlyAmt(i.amount,i.freq),0) || 4200;
   const totalDebt = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.balance||0),0);
-  const bal = parseFloat((data.accounts?.[0]?.balance||1243).toString().replace(/,/g,""));
+  const bal = parseFloat((data.accounts?.[0]?.balance||0).toString().replace(/,/g,""));
   const invBal = (data.accounts||[]).filter(a=>a.type==="investment").reduce((s,a)=>s+parseFloat(a.balance||0),0);
   const savingsRate = 0.10; // assume 10% baseline savings
   const monthlyInvest = monthlyIncome * savingsRate + extra;
@@ -1293,7 +1294,7 @@ function WealthForecast({data}) {
   const vals = scenarios.map(s => project(s.monthly, horizon));
   const maxVal = Math.max(...vals);
 
-  const fmt = n => n >= 1000000 ? `$${(n/1000000).toFixed(2)}M` : `$${(n/1000).toFixed(0)}k`;
+  const fmt = n => { const v=n||0; return v >= 1000000 ? `$${(v/1000000).toFixed(2)}M` : `$${(v/1000).toFixed(0)}k`; };
 
   return (
     <div style={{background:C.card,borderRadius:20,padding:"20px",border:`1px solid ${C.border}`}}>
@@ -1367,7 +1368,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
     const dupes = subTxns.length > 3 ? subTxns.slice(-2).map(t=>t.merchant||t.name).join(", ") : subTxns.map(t=>t.merchant||t.name).join(", ");
     opportunities.push({
       id:"subs", icon:"📱", color:C.teal,
-      title:`$${subTotal.toFixed(0)}/mo in subscriptions`,
+      title:`$${(subTotal||0).toFixed(0)}/mo in subscriptions`,
       detail:`${subTxns.length} active subscriptions detected. Cancelling unused ones could free $${Math.round(subTotal*0.3)}/mo.`,
       action:"Review", screen:"spend", badge:"Save $"+Math.round(subTotal*0.3)+"/mo"
     });
@@ -1410,7 +1411,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
     if (bal > 500) opportunities.push({
       id:"hisa", icon:"🏦", color:C.gold,
       title:`Earn more on your savings`,
-      detail:`$${bal.toFixed(0)} in savings at typical 0.3% earns $${(bal*0.003).toFixed(0)}/yr. A HISA at 4%+ earns $${(bal*0.04).toFixed(0)}/yr.`,
+      detail:`$${(bal||0).toFixed(0)} in savings at typical 0.3% earns $${(bal*0.003).toFixed(0)}/yr. A HISA at 4%+ earns $${(bal*0.04).toFixed(0)}/yr.`,
       action:"Learn More", screen:"goals", tab:"learn", badge:"+$"+(Math.round((bal*0.04)-(bal*0.003)))+"/yr"
     });
   }
@@ -1454,7 +1455,7 @@ function MoneyWrapped({data, onClose}) {
   const totalSpent = txns.reduce((s,t)=>s+Math.abs(t.amount),0);
   const totalDebt = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.balance||0),0);
   const invBal = (data.accounts||[]).filter(a=>a.type==="investment").reduce((s,a)=>s+parseFloat(a.balance||0),0);
-  const bal = parseFloat((data.accounts?.[0]?.balance||1243).toString().replace(/,/g,""));
+  const bal = parseFloat((data.accounts?.[0]?.balance||0).toString().replace(/,/g,""));
 
   // Category analysis
   const cats = {};
@@ -1462,7 +1463,7 @@ function MoneyWrapped({data, onClose}) {
   const topCat = Object.entries(cats).sort((a,b)=>b[1]-a[1])[0] || ["Food","340"];
   const lowestCat = Object.entries(cats).sort((a,b)=>a[1]-b[1])[0] || ["Transport","45"];
   const biggestTxn = txns.sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount))[0];
-  const netWorthChange = Math.round(invBal + bal - totalDebt + 2400); // mock positive change
+  const netWorthChange = Math.round(invBal + bal - totalDebt);
   const {score} = calcHealthScore(data);
   const year = new Date().getFullYear();
 
@@ -1810,7 +1811,18 @@ const FinancialCalcEngine = {
     const incomes = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
     const bills   = data.bills || [];
     const txns    = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
-    const monthlyIncome   = incomes.reduce((s,i) => s + parseFloat(i.amount||0), 0) || 4200;
+    // Convert each income source to monthly based on its frequency
+    const toMonthly = (amt, freq) => {
+      const a = parseFloat(amt||0);
+      switch(freq) {
+        case "weekly":      return a * 4.333;
+        case "biweekly":    return a * 2.167;
+        case "semimonthly": return a * 2;
+        case "monthly":     return a;
+        default:            return a * 2.167; // default biweekly
+      }
+    };
+    const monthlyIncome = incomes.reduce((s,i) => s + toMonthly(i.amount, i.freq), 0) || 4200;
     const monthlyBills    = bills.reduce((s,b) => s + parseFloat(b.amount||0), 0);
     const monthlySpend    = txns.reduce((s,t) => s + Math.abs(t.amount), 0) || monthlyIncome * 0.68;
     const totalExpenses   = Math.max(monthlyBills, monthlySpend);
@@ -1837,7 +1849,7 @@ const FinancialCalcEngine = {
     const { totalExpenses } = FinancialCalcEngine.cashFlow(data);
     const liquidSavings = accounts
       .filter(a => ["savings","checking"].includes(a.type))
-      .reduce((s,a) => s + parseFloat(a.balance||0), 0) || 1243;
+      .reduce((s,a) => s + parseFloat(a.balance||0), 0) || 0;
     return totalExpenses > 0 ? liquidSavings / totalExpenses : 0;
   },
 
@@ -1863,7 +1875,7 @@ const SafeSpendEngine = {
     const balance  = accounts
       .filter(a => ["checking","savings"].includes(a.type))
       .reduce((s,a) => s + parseFloat(a.balance||0), 0) ||
-      parseFloat((accounts[0]?.balance||1243.88).toString().replace(/,/g,""));
+      0;
 
     // Bills due in the next 10 days
     const upcomingBills = bills
@@ -1973,7 +1985,7 @@ const BehaviorEngine = {
       insights.push({
         type:"warning", icon:"📱", priority:"medium", color: C.teal,
         title:"Subscription creep detected",
-        body:`${subTxns.length} recurring subscriptions totalling $${subTotal.toFixed(0)}/mo. That's ${Math.round(subTotal/income*100)}% of your income.`,
+        body:`${subTxns.length} recurring subscriptions totalling $${(subTotal||0).toFixed(0)}/mo. That's ${Math.round(subTotal/income*100)}% of your income.`,
         saving: `$${Math.round(subTotal * 0.35)}/mo potential saving`
       });
     }
@@ -2207,7 +2219,7 @@ function calcHealthScore(data) {
     {label:"Debt Ratio",      pts:drScore, max:20, detail:`${Math.round(debtRatio*100)}% of annual income`},
     {label:"Emergency Fund",  pts:efScore, max:20, detail:`${efMonths.toFixed(1)} months covered`},
     {label:"Stability",       pts:ssScore, max:15, detail:`Spending consistency`},
-    {label:"Investments",     pts:ivScore, max:10, detail:hasInv?`$${invBal.toFixed(0)} invested`:`Not started`},
+    {label:"Investments",     pts:ivScore, max:10, detail:hasInv?`$${(invBal||0).toFixed(0)} invested`:`Not started`},
     {label:"Credit",          pts:crScore, max:10, detail:`Score ~${rawCredit}`},
   ];
   return { score, pillars, breakdown:{ srScore, drScore, efScore, ssScore, ivScore, crScore } };
@@ -3195,7 +3207,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const today       = new Date().getDate();
   const monthlyIncome = FinancialCalcEngine.cashFlow(data).monthlyIncome;
   const totalDebt=(data.debts||[]).reduce((a,d)=>a+parseFloat(d.balance||0),0);
-  const netWorth=bal+DEMO.netWorthAdd-totalDebt;
+  const netWorth=bal+((data?.accounts||[]).filter(a=>a.type==="savings"||a.type==="investment").reduce((s,a)=>s+(a.balance||0),0))-totalDebt;
   const unread=INIT_NOTIFS.filter(n=>!n.read).length + (data ? buildLiveNotifs(data).filter(n=>!n.read).length : 0);
   const spark=[-4200,-3800,-3100,-2600,-1900,netWorth];
   const sMin=Math.min(...spark),sMax=Math.max(...spark);
@@ -3335,8 +3347,8 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         {/* ── BENTO ROW 1: 3 mini stat tiles inside 2-col span ──────────── */}
         <div style={{...anim(110),gridColumn:"1 / -1",display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
           {[
-            {label:"Due Soon",value:`$${soonTotal.toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
-            {label:totalDebt>0?"Total Debt":"Debt Free!",value:totalDebt>0?`$${(totalDebt/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
+            {label:"Due Soon",value:`$${(soonTotal||0).toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
+            {label:totalDebt>0?"Total Debt":"Debt Free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
             {label:"Net Worth",value:`${netWorth>=0?"+":""}$${(Math.abs(netWorth)/1000).toFixed(1)}k`,sub:"↑ trending",color:C.teal,icon:"chartUp",screen:"plan"},
           ].map((s,i)=>(
             <div key={i} onClick={()=>{if(s.tab&&setGoalsTab)setGoalsTab(s.tab);setScreen(s.screen);}} style={{...glass(s.color),borderRadius:20,padding:"14px 12px 12px",textAlign:"center",position:"relative",overflow:"hidden",cursor:"pointer",transition:"transform .2s, box-shadow .2s"}}
@@ -3686,7 +3698,7 @@ function PlanAhead({data}){
             {isToday&&!day.income&&!day.bills.length&&<div style={{color:C.muted,fontSize:12,marginTop:2}}>No scheduled activity</div>}
           </div>
           <div style={{textAlign:"right"}}>
-            <div style={{fontSize:18,fontWeight:800,fontFamily:"Georgia,serif",color:neg?C.redBright:low?C.goldBright:C.greenBright}}>{`$${day.balance.toFixed(2)}`}</div>
+            <div style={{fontSize:18,fontWeight:800,fontFamily:"Georgia,serif",color:neg?C.redBright:low?C.goldBright:C.greenBright}}>{`$${(day.balance||0).toFixed(2)}`}</div>
             <div style={{color:C.muted,fontSize:10}}>balance</div>
           </div>
         </div>
@@ -3723,7 +3735,7 @@ function SpendScreen({data}){
     stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee is adding up",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month totalling $${stats.coffee.toFixed(2)}. That's $${(stats.coffee*12).toFixed(0)}/year. Making coffee at home 4 days a week cuts this by 60%.`,saving:`$${Math.round(stats.coffee*0.6)}/mo`,effort:"Low",color:C.orange},
     stats.delivery>0&&{id:2,icon:"package",title:"Food delivery every week",body:`$${stats.delivery.toFixed(2)} on delivery this month. One fewer order per week saves $40–60/month reliably. Your wallet will notice in 30 days.`,saving:"$50/mo",effort:"Low",color:C.orange},
     {id:3,icon:"bag",title:"Amazon impulse purchases",body:"Try the 48-hour rule: add to cart, wait 2 days. Most impulse buys get removed without regret. Studies show this cuts impulse spend by 30–40%.",saving:"$40–70/mo",effort:"Low",color:C.pink},
-    stats.subs>0&&{id:4,icon:"zap",title:"Subscriptions creeping up",body:`$${stats.subs.toFixed(2)}/mo in subscriptions. Go through each one — did you use it last month? Most households find 1–2 to cancel painlessly.`,saving:"$15–35/mo",effort:"Low",color:C.purple},
+    stats.subs>0&&{id:4,icon:"zap",title:"Subscriptions creeping up",body:`$${(stats.subs||0).toFixed(2)}/mo in subscriptions. Go through each one — did you use it last month? Most households find 1–2 to cancel painlessly.`,saving:"$15–35/mo",effort:"Low",color:C.purple},
     {id:5,icon:"chartUp",title:`${stats.busiest} is your expensive day`,body:`You spend significantly more on ${stats.busiest}s than any other day. Knowing this is half the battle — awareness alone cuts it 20–30%.`,saving:"$30–60/mo",effort:"Very Low",color:C.blue},
   ].filter(Boolean).filter(s=>!dismissed.includes(s.id));
 
@@ -3749,7 +3761,7 @@ function SpendScreen({data}){
     )}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <div><div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Transactions</div><div style={{color:isDemo?C.gold:C.muted,fontSize:12,marginTop:3}}>{isDemo?"Sample data · connect your bank for real insights":"Live from your bank"}</div></div>
-      <div style={{textAlign:"right"}}><div style={{color:C.red,fontWeight:800,fontSize:15}}>–${totalSpent.toFixed(0)}</div><div style={{color:C.green,fontSize:11}}>+${totalIn.toFixed(0)} in</div></div>
+      <div style={{textAlign:"right"}}><div style={{color:C.red,fontWeight:800,fontSize:15}}>–${(totalSpent||0).toFixed(0)}</div><div style={{color:C.green,fontSize:11}}>+${totalIn.toFixed(0)} in</div></div>
     </div>
     <div style={{display:"flex",gap:6,background:C.surface,borderRadius:16,padding:4}}>
       {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeBright:C.muted,borderRadius:12,padding:"9px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
@@ -3782,7 +3794,7 @@ function SpendScreen({data}){
     {tab==="breakdown"&&<>
       <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
         <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Spent This Month</div>
-        <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>{`$${totalSpent.toFixed(0)}`}</div>
+        <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>{`$${(totalSpent||0).toFixed(0)}`}</div>
       </Card>
       {stats.topCats.map(([cat,amt],i)=>{
         const colors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
@@ -3790,7 +3802,7 @@ function SpendScreen({data}){
         return <Card key={i}>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
             <span style={{color:C.cream,fontSize:14,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:20}}>{catTxns[0]?.icon||"💰"}</span>{cat}</span>
-            <span style={{color:colors[i%6],fontWeight:700}}>${amt.toFixed(0)} <span style={{color:C.muted,fontSize:11}}>({catTxns.length}×)</span></span>
+            <span style={{color:colors[i%6],fontWeight:700}}>${(amt||0).toFixed(0)} <span style={{color:C.muted,fontSize:11}}>({catTxns.length}×)</span></span>
           </div>
           <Bar v={amt} max={totalSpent} color={colors[i%6]}/>
           <div style={{color:C.muted,fontSize:11,marginTop:4}}>{Math.round(amt/totalSpent*100)}% of spending</div>
@@ -3800,7 +3812,14 @@ function SpendScreen({data}){
     {tab==="cuts"&&<>
       <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
         <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Potential Monthly Savings</div>
-        <div style={{fontSize:32,fontWeight:900,color:C.goldBright,fontFamily:"Georgia,serif"}}>$200–350</div>
+        <div style={{fontSize:32,fontWeight:900,color:C.goldBright,fontFamily:"Georgia,serif"}}>${(()=>{
+              const total = cuts.reduce((s,c)=>{
+                // saving field is like "$50/mo" or "$40–70/mo" — extract first number
+                const match = (c.saving||"").match(/\d+/);
+                return s + (match ? parseInt(match[0]) : 0);
+              },0);
+              return total > 0 ? total.toLocaleString() : "0";
+            })()}</div>
         <div style={{color:C.muted,fontSize:12}}>from {cuts.length} suggestions based on your real transactions</div>
       </Card>
       {cuts.length===0?<Card style={{textAlign:"center",padding:"30px 20px"}}><div style={{fontSize:40}}>🎉</div><div style={{color:C.greenBright,fontWeight:700,marginTop:10}}>All suggestions reviewed!</div></Card>
@@ -3840,7 +3859,8 @@ function Goals({data,initialTab="sim",onUpgrade}){
   const toYM=(m)=>{if(m>=600)return"Never";const y=Math.floor(m/12),mo=m%12;return y>0?`${y}y ${mo}m`:`${mo}mo`;};
   const payoffDate=()=>{const d=new Date();d.setMonth(d.getMonth()+curr.months);return d.toLocaleDateString("en",{month:"long",year:"numeric"});};
   const totalDebt=debts.reduce((a,d)=>a+parseFloat(d.balance||0),0);
-  const netWorth=parseFloat((data?.accounts?.[0]?.balance||1243.88).toString().replace(/,/g,""))+DEMO.netWorthAdd-totalDebt;
+  const _allBal=(data?.accounts||[]).filter(a=>a.type!=="credit").reduce((s,a)=>s+(a.balance||0),0);
+      const netWorth=_allBal-totalDebt;
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{fontSize:22,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Goals & Wealth</div><div style={{background:CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue+"22":C.green+"22",border:`1px solid ${CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}33`,borderRadius:99,padding:"4px 12px",color:CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blueBright:C.greenBright,fontSize:11,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{CC[data?.profile?.country||"CA"]?.flag} {CC[data?.profile?.country||"CA"]?.currency}</div></div>
@@ -3915,8 +3935,8 @@ function Goals({data,initialTab="sim",onUpgrade}){
       const investments=allAccts.filter(a=>a.type==="investment");
       const totalInvested=investments.reduce((s,a)=>s+(a.balance||0),0);
       const totalGain=investments.reduce((s,a)=>s+(a.gain||0),0);
-      const checking=allAccts.filter(a=>a.type==="checking").reduce((s,a)=>s+(a.balance||0),1243.88);
-      const savings=allAccts.filter(a=>a.type==="savings").reduce((s,a)=>s+(a.balance||0),1840);
+      const checking=allAccts.filter(a=>a.type==="checking").reduce((s,a)=>s+(a.balance||0),0);
+      const savings=allAccts.filter(a=>a.type==="savings").reduce((s,a)=>s+(a.balance||0),0);
       const totalAssets=checking+savings+totalInvested;
       const totalDebt2=(data.debts||[]).reduce((a,d)=>a+parseFloat(d.balance||0),0);
       const realNetWorth=totalAssets-totalDebt2;
@@ -4190,7 +4210,7 @@ function Family({data,household,setHousehold}){
      metricColor:soonBills.length>0?C.goldBright:C.greenBright,
      prompt:"Which of these did you discuss? Any you need to adjust for?"},
     {id:"spend",icon:"chartUp",title:"Check where you each spent",desc:"No blame — just awareness.",
-     metric:topCat?`Top category: ${topCat[0]} · $${topCat[1].toFixed(0)} this month`:"No transaction data yet",
+     metric:topCat?`Top category: ${topCat[0]} · $${(topCat[1]||0).toFixed(0)} this month`:"No transaction data yet",
      metricColor:C.tealBright,
      prompt:"Was any category a surprise? What would you do differently?"},
     {id:"debt",icon:"trendUp",title:"Celebrate debt progress",desc:"Even $1 less is a win.",
@@ -4198,7 +4218,7 @@ function Family({data,household,setHousehold}){
      metricColor:totalDebt>0?C.orangeBright:C.greenBright,
      prompt:"Did you make any extra payments? What felt hard this week?"},
     {id:"goal",icon:"🎯",title:"Check in on your shared goal",desc:"Emergency fund? Vacation? House?",
-     metric:`Cash flow: ${cashFlow>=0?"$"+cashFlow.toFixed(0)+" surplus":"$"+Math.abs(cashFlow).toFixed(0)+" deficit"} · Health score: ${healthScore}/100`,
+     metric:`Cash flow: ${cashFlow>=0?"$"+(cashFlow||0).toFixed(0)+" surplus":"$"+Math.abs(cashFlow).toFixed(0)+" deficit"} · Health score: ${healthScore}/100`,
      metricColor:cashFlow>=0?C.greenBright:C.redBright,
      prompt:"Does the goal still feel right? Are you on track?"},
     {id:"wins",icon:"star",title:"Name one win each",desc:"Rewires how you both feel about money.",
@@ -4215,7 +4235,7 @@ function Family({data,household,setHousehold}){
      metricColor:soonBills.length>0?C.goldBright:C.greenBright,
      prompt:"Anything you forgot to budget for?"},
     {id:"spend",icon:"chartUp",title:"How was your spending?",desc:"Honestly. No judgment.",
-     metric:topCat?`Biggest spend: ${topCat[0]} · $${topCat[1].toFixed(0)}`:`Income: $${monthlyIncome.toFixed(0)} · Bills: $${monthlyBills.toFixed(0)}`,
+     metric:topCat?`Biggest spend: ${topCat[0]} · $${(topCat[1]||0).toFixed(0)}`:`Income: $${(monthlyIncome||0).toFixed(0)} · Bills: $${monthlyBills.toFixed(0)}`,
      metricColor:C.tealBright,
      prompt:"Did anything feel out of control? What triggered it?"},
     {id:"mood",icon:"💭",title:"How do you feel about money right now?",desc:"Your emotional state affects every decision.",
@@ -4223,7 +4243,7 @@ function Family({data,household,setHousehold}){
      metricColor:C.purpleBright,
      prompt:"What's driving that feeling? Has anything changed?"},
     {id:"win",icon:"star",title:"Name one win",desc:"Cooked at home? Resisted a sale? Put $20 away?",
-     metric:cashFlow>=0?`You have a $${cashFlow.toFixed(0)}/mo surplus — that's real progress.`:"Tight this month — but showing up to check in IS the win.",
+     metric:cashFlow>=0?`You have a $${(cashFlow||0).toFixed(0)}/mo surplus — that's real progress.`:"Tight this month — but showing up to check in IS the win.",
      metricColor:cashFlow>=0?C.greenBright:C.goldBright,
      prompt:"Say it out loud. Write it down. Wins compound."},
     {id:"goal",icon:"🎯",title:"Check in on your goal",desc:"Even 1% closer is worth acknowledging.",
@@ -4280,8 +4300,8 @@ function Family({data,household,setHousehold}){
         {/* Live metrics snapshot */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
           {[
-            {label:"Balance",value:`$${_ss.balance.toFixed(0)}`,color:_ss.overdraft?C.redBright:C.greenBright},
-            {label:"Cash Flow",value:`${cashFlow>=0?"+":""}$${cashFlow.toFixed(0)}/mo`,color:cashFlow>=0?C.greenBright:C.redBright},
+            {label:"Balance",value:`$${(_ss.balance||0).toFixed(0)}`,color:_ss.overdraft?C.redBright:C.greenBright},
+            {label:"Cash Flow",value:`${cashFlow>=0?"+":""}$${(cashFlow||0).toFixed(0)}/mo`,color:cashFlow>=0?C.greenBright:C.redBright},
             {label:"Health",value:`${healthScore}/100`,color:healthScore>=70?C.greenBright:healthScore>=50?C.goldBright:C.redBright},
           ].map(m=>(
             <div key={m.label} style={{background:C.cardAlt,borderRadius:14,padding:"12px 10px",border:`1px solid ${C.border}`,textAlign:"center"}}>
@@ -4353,7 +4373,7 @@ function Family({data,household,setHousehold}){
                 {cats.map(([cat,amt],i)=><div key={i}>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
                     <span style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{cat}</span>
-                    <span style={{color:C.cream,fontSize:11,fontWeight:700}}>${amt.toFixed(0)}<span style={{color:C.muted,fontSize:10}}> ({((amt/totalSpend)*100).toFixed(0)}%)</span></span>
+                    <span style={{color:C.cream,fontSize:11,fontWeight:700}}>${(amt||0).toFixed(0)}<span style={{color:C.muted,fontSize:10}}> ({((amt/totalSpend)*100).toFixed(0)}%)</span></span>
                   </div>
                   <div style={{height:5,background:C.border,borderRadius:99,overflow:"hidden"}}>
                     <div style={{width:`${(amt/maxAmt)*100}%`,height:"100%",background:i===0?C.tealBright:i===1?C.purpleBright:i===2?C.goldBright:C.muted,borderRadius:99,transition:"width .4s"}}/>
@@ -4361,7 +4381,7 @@ function Family({data,household,setHousehold}){
                 </div>)}
                 <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderTop:`1px solid ${C.border}`,marginTop:2}}>
                   <span style={{color:C.muted,fontSize:11}}>Total tracked spend</span>
-                  <span style={{color:C.cream,fontSize:12,fontWeight:700}}>${totalSpend.toFixed(0)}/mo</span>
+                  <span style={{color:C.cream,fontSize:12,fontWeight:700}}>${(totalSpend||0).toFixed(0)}/mo</span>
                 </div>
               </div>;
             }
@@ -4405,7 +4425,7 @@ function Family({data,household,setHousehold}){
                   return<div key={i} style={{padding:"10px 12px",background:C.bg,borderRadius:12,border:`1px solid ${C.border}`}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
                       <span style={{color:C.cream,fontSize:12,fontWeight:700}}>{g.name||g.label||"Goal"}</span>
-                      <span style={{color:C.purpleBright,fontSize:11,fontWeight:700}}>{pct.toFixed(0)}%</span>
+                      <span style={{color:C.purpleBright,fontSize:11,fontWeight:700}}>{(pct||0).toFixed(0)}%</span>
                     </div>
                     <div style={{height:6,background:C.border,borderRadius:99,overflow:"hidden",marginBottom:4}}>
                       <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${C.purple},${C.purpleBright})`,borderRadius:99}}/>
@@ -4471,8 +4491,8 @@ function Family({data,household,setHousehold}){
           <div style={{color:C.purpleBright,fontWeight:700,fontSize:14,marginBottom:12}}>📋 Meeting Summary</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
             {[
-              {label:"Balance",value:`$${_ss.balance.toFixed(0)}`},
-              {label:"Monthly Cash Flow",value:`${cashFlow>=0?"+":""}$${cashFlow.toFixed(0)}`},
+              {label:"Balance",value:`$${(_ss.balance||0).toFixed(0)}`},
+              {label:"Monthly Cash Flow",value:`${cashFlow>=0?"+":""}$${(cashFlow||0).toFixed(0)}`},
               {label:"Health Score",value:`${healthScore}/100`},
               {label:"Total Debt",value:totalDebt>0?`$${totalDebt.toLocaleString()}`:"None 🎉"},
             ].map(m=>(
@@ -4531,7 +4551,7 @@ function Family({data,household,setHousehold}){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <div style={{color:C.greenBright,fontWeight:700}}>🏡 Chore Chart</div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <div style={{color:C.greenBright,fontWeight:800}}>${earned.toFixed(2)} earned</div>
+            <div style={{color:C.greenBright,fontWeight:800}}>${(earned||0).toFixed(2)} earned</div>
             <button onClick={()=>setShowChoreIntegrations(v=>!v)} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:8,padding:"4px 10px",color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer"}}>🔗 Connect app</button>
           </div>
         </div>
@@ -4543,7 +4563,7 @@ function Family({data,household,setHousehold}){
                 {ch.done&&<span style={{color:C.bg,fontSize:12,fontWeight:900}}>✓</span>}
               </div>
               <span style={{flex:1,color:C.cream,fontSize:14,textDecoration:ch.done?"line-through":"none"}}>{ch.task}</span>
-              <span style={{color:C.gold,fontWeight:700}}>+${ch.reward.toFixed(2)}</span>
+              <span style={{color:C.gold,fontWeight:700}}>+${(ch.reward||0).toFixed(2)}</span>
             </div>
           ))}
         </div>
@@ -4605,8 +4625,8 @@ function Family({data,household,setHousehold}){
             <div style={{color:C.cream,fontWeight:700,marginBottom:12}}>📊 Household Overview</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
               {[
-                {label:"Your Balance",value:`$${_ss.balance.toFixed(0)}`,color:C.greenBright},
-                {label:"Monthly Income",value:`$${monthlyIncome.toFixed(0)}`,color:C.tealBright},
+                {label:"Your Balance",value:`$${(_ss.balance||0).toFixed(0)}`,color:C.greenBright},
+                {label:"Monthly Income",value:`$${(monthlyIncome||0).toFixed(0)}`,color:C.tealBright},
                 {label:"Total Debt",value:totalDebt>0?`$${totalDebt.toLocaleString()}`:"None 🎉",color:totalDebt>0?C.orangeBright:C.greenBright},
                 {label:"Health Score",value:`${healthScore}/100`,color:healthScore>=70?C.greenBright:C.goldBright},
               ].map(m=>(
@@ -4730,7 +4750,7 @@ function WidgetScreen({data,onBack}){
 
   // Build list of active medium tiles (up to 3 slots, Safe always first)
   const medTiles=[
-    wContent.balance&&{label:"Balance",value:`$${bal.toFixed(0)}`,color:"rgba(237,233,226,0.85)"},
+    wContent.balance&&{label:"Balance",value:`$${(bal||0).toFixed(0)}`,color:"rgba(237,233,226,0.85)"},
     wContent.health&&{label:"Health",value:`${healthScore}/100`,color:"rgba(0,232,154,0.9)"},
     wContent.nextBill&&nextBill&&{label:"Next Bill",value:`${nextBill.name} $${parseFloat(nextBill.amount).toFixed(0)}`,color:"rgba(245,204,106,0.95)"},
     wContent.cashFlow&&{label:"Cash Flow",value:`${wCashFlow>=0?"+":""}$${Math.round(wCashFlow)}/mo`,color:wCashFlow>=0?"rgba(0,232,154,0.9)":"rgba(255,79,106,0.9)"},
@@ -4739,7 +4759,7 @@ function WidgetScreen({data,onBack}){
 
   // Build list of active large grid tiles
   const largeTiles=[
-    wContent.balance&&{label:"Balance",value:`$${bal.toFixed(0)}`,bg:"rgba(255,255,255,0.05)",color:"rgba(237,233,226,0.9)"},
+    wContent.balance&&{label:"Balance",value:`$${(bal||0).toFixed(0)}`,bg:"rgba(255,255,255,0.05)",color:"rgba(237,233,226,0.9)"},
     wContent.health&&{label:"Health Score",value:`${healthScore}`,bg:"rgba(0,204,133,0.08)",color:"rgba(0,232,154,0.95)"},
     wContent.nextBill&&{label:"Due Soon",value:`$${Math.round(_ss.upcomingBills)}`,bg:"rgba(232,184,75,0.08)",color:"rgba(245,204,106,0.95)"},
     wContent.cashFlow&&{label:"Cash Flow",value:`${wCashFlow>=0?"+":""}$${Math.round(wCashFlow)}`,bg:wCashFlow>=0?"rgba(0,204,133,0.08)":"rgba(255,79,106,0.08)",color:wCashFlow>=0?"rgba(0,232,154,0.95)":"rgba(255,79,106,0.95)"},
@@ -5094,7 +5114,7 @@ function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconn
 
 // ─── DESKTOP SIDEBAR PANEL ────────────────────────────────────────────────────
 function DesktopSidebar({data,setScreen}){
-  const txns=data.transactions||MOCK_TXN;
+  const txns=data.transactions||[];
   const today=new Date().getDate();
   const soonBills=(data.bills||[]).filter(b=>{const d=parseInt(b.date);return d>=today&&d<=today+10;});
   const investments=(data.accounts||[]).filter(a=>a.type==="investment");
@@ -5155,7 +5175,7 @@ function DesktopSidebar({data,setScreen}){
               <div style={{color:C.muted,fontSize:11}}>{t.date}</div>
             </div>
           </div>
-          <div style={{color:C.cream,fontWeight:700,fontSize:13}}>${t.amount.toFixed(2)}</div>
+          <div style={{color:C.cream,fontWeight:700,fontSize:13}}>${(t.amount||0).toFixed(2)}</div>
         </div>
       ))}
     </div>
@@ -5203,9 +5223,9 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
 
     return `You are a warm, expert personal finance coach for Flourish Money (${country==="CA"?"Canada":"USA"}).
 User financial snapshot:
-- Chequing balance: $${balance.toFixed(2)}
-- Biweekly income: $${income.toFixed(2)}
-- Recent spending total: $${spending.toFixed(2)}
+- Chequing balance: $${(balance||0).toFixed(2)}
+- Biweekly income: $${(income||0).toFixed(2)}
+- Recent spending total: $${(spending||0).toFixed(2)}
 - Top categories: ${topCats||"no data"}
 - Accounts: ${accounts.map(a=>`${a.name} (${a.type}) $${a.balance}`).join("; ")||"none linked"}
 - Country: ${country}
