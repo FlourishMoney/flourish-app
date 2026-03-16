@@ -4011,13 +4011,58 @@ function AddCustomCategory({onAdd}){
   );
 }
 
+function ExpandableCatCard({cat, amt, totalSpent, color, catTxns}){
+  const [open, setOpen] = React.useState(false);
+  const pct = totalSpent > 0 ? Math.round(amt/totalSpent*100) : 0;
+  return (
+    <Card style={{cursor:"pointer"}} onClick={()=>setOpen(o=>!o)}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <span style={{color:C.cream,fontSize:14,display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:20}}>{catTxns[0]?.icon||"💰"}</span>{cat}
+        </span>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{color,fontWeight:700}}>${(amt||0).toFixed(0)} <span style={{color:C.muted,fontSize:11}}>({catTxns.length}×)</span></span>
+          <span style={{color:C.muted,fontSize:14,transition:"transform .2s",transform:open?"rotate(90deg)":"none",display:"inline-block"}}>›</span>
+        </div>
+      </div>
+      <Bar v={amt} max={totalSpent} color={color}/>
+      <div style={{color:C.muted,fontSize:11,marginTop:4}}>{pct}% of spending this month</div>
+      {open&&(
+        <div style={{marginTop:12,borderTop:`1px solid ${C.border}`,paddingTop:10}}>
+          {catTxns.length===0
+            ? <div style={{color:C.muted,fontSize:12}}>No transactions in this category this month.</div>
+            : catTxns.sort((a,b)=>b.amount-a.amount).slice(0,10).map((t,j)=>(
+              <div key={j} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:j<Math.min(catTxns.length,10)-1?`1px solid ${C.border}`:"none"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{color:C.cream,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.name}</div>
+                  <div style={{color:C.muted,fontSize:10}}>{t.date}</div>
+                </div>
+                <span style={{color,fontWeight:700,fontSize:13,flexShrink:0,marginLeft:12}}>${(t.amount||0).toFixed(2)}</span>
+              </div>
+            ))
+          }
+          {catTxns.length>10&&<div style={{color:C.muted,fontSize:11,marginTop:6,textAlign:"center"}}>+{catTxns.length-10} more transactions</div>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function SpendScreen({data, setAppData}){
   const [tab,setTab]=useState("txn");
   const [catFilter,setCatFilter]=useState("All");
   const [dismissed,setDismissed]=useState([]);
   const isDemo=!data.bankConnected;
   const txns=data.transactions||[];
-  const stats=computeStats(txns);
+  // Filter to current month for "this month" stats
+  const now = new Date();
+  const thisMonthTxns = txns.filter(t => {
+    if(!t.date) return false;
+    const d = new Date(t.date + "T12:00:00");
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  });
+  const stats=computeStats(thisMonthTxns);
+  const monthLabel = now.toLocaleString("en-CA",{month:"long",year:"numeric"});
   // Declare getCat BEFORE cats — avoids Temporal Dead Zone error
   const [recatTxn,setRecatTxn]=useState(null);
   const [markBillTxn,setMarkBillTxn]=useState(null);
@@ -4033,8 +4078,8 @@ function SpendScreen({data, setAppData}){
   const filtered=catFilter==="All"?txns.filter(t=>getCat(t)!=="Transfer"):txns.filter(t=>getCat(t)===catFilter);
   // Exclude transfers (Interac e-transfers between accounts) from spending totals
   const EXCLUDE_CATS = new Set(["Transfer","Income"]);
-  const totalSpent=txns.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))).reduce((a,t)=>a+t.amount,0);
-  const totalIn=txns.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
+  const totalSpent=thisMonthTxns.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))).reduce((a,t)=>a+t.amount,0);
+  const totalIn=thisMonthTxns.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
 
   const cuts=[
     stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee is adding up",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month totalling $${stats.coffee.toFixed(2)}. That's $${(stats.coffee*12).toFixed(0)}/year. Making coffee at home 4 days a week cuts this by 60%.`,saving:`$${Math.round(stats.coffee*0.6)}/mo`,effort:"Low",color:C.orange},
@@ -4189,20 +4234,21 @@ function SpendScreen({data, setAppData}){
     </>}
     {tab==="breakdown"&&<>
       <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
-        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Spent This Month</div>
-        <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>{`$${(totalSpent||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <div>
+            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Spent · {monthLabel}</div>
+            <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>{`$${(totalSpent||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</div>
+          </div>
+          <div style={{textAlign:"right",flexShrink:0}}>
+            <div style={{color:C.muted,fontSize:10,marginBottom:2}}>{thisMonthTxns.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))).length} transactions</div>
+            <div style={{color:C.green,fontSize:11}}>+${(totalIn||0).toLocaleString("en-CA",{minimumFractionDigits:0})} in</div>
+          </div>
+        </div>
       </Card>
       {stats.topCats.map(([cat,amt],i)=>{
         const colors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
-        const catTxns=txns.filter(t=>t.cat===cat&&t.amount>0);
-        return <Card key={i}>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
-            <span style={{color:C.cream,fontSize:14,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:20}}>{catTxns[0]?.icon||"💰"}</span>{cat}</span>
-            <span style={{color:colors[i%6],fontWeight:700}}>${(amt||0).toFixed(0)} <span style={{color:C.muted,fontSize:11}}>({catTxns.length}×)</span></span>
-          </div>
-          <Bar v={amt} max={totalSpent} color={colors[i%6]}/>
-          <div style={{color:C.muted,fontSize:11,marginTop:4}}>{Math.round(amt/totalSpent*100)}% of spending</div>
-        </Card>;
+        const catTxns=thisMonthTxns.filter(t=>getCat(t)===cat&&t.amount>0);
+        return <ExpandableCatCard key={i} cat={cat} amt={amt} totalSpent={totalSpent} color={colors[i%6]} catTxns={catTxns}/>;
       })}
     </>}
     {tab==="cuts"&&<>
