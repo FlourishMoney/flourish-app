@@ -3196,7 +3196,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const monthlyIncome = FinancialCalcEngine.cashFlow(data).monthlyIncome;
   const totalDebt=(data.debts||[]).reduce((a,d)=>a+parseFloat(d.balance||0),0);
   const netWorth=bal+DEMO.netWorthAdd-totalDebt;
-  const unread=appData ? buildLiveNotifs(appData).filter(n=>!n.read).length + INIT_NOTIFS.filter(n=>!n.read).length : INIT_NOTIFS.filter(n=>!n.read).length;
+  const unread=INIT_NOTIFS.filter(n=>!n.read).length + (data ? buildLiveNotifs(data).filter(n=>!n.read).length : 0);
   const spark=[-4200,-3800,-3100,-2600,-1900,netWorth];
   const sMin=Math.min(...spark),sMax=Math.max(...spark);
   const sN=spark.map(v=>90-((v-sMin)/(sMax-sMin)||0)*70);
