@@ -4344,10 +4344,10 @@ function SpendScreen({data, setAppData}){
     setRecatTxn(null);
   };
   const cats=["All",...Array.from(new Set(txns.map(t=>getCat(t))))];
-  const filtered=catFilter==="All"?displayTxns.filter(t=>getCat(t)!=="Transfer"):displayTxns.filter(t=>getCat(t)===catFilter);
-  // Exclude transfers (Interac e-transfers between accounts) from spending totals
+  // displayTxns and EXCLUDE_CATS must be defined BEFORE filtered (TDZ prevention)
   const EXCLUDE_CATS = new Set(["Transfer","Income"]);
   const displayTxns = period==="month" ? thisMonthTxns : txns;
+  const filtered=catFilter==="All"?displayTxns.filter(t=>getCat(t)!=="Transfer"):displayTxns.filter(t=>getCat(t)===catFilter);
   const totalSpent=displayTxns.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))).reduce((a,t)=>a+t.amount,0);
   const totalIn=displayTxns.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
 
