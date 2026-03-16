@@ -4334,6 +4334,7 @@ function SpendScreen({data, setAppData}){
   const [catFilter,setCatFilter]=useState("All");
   const [dismissed,setDismissed]=useState([]);
   const [period,setPeriod]=useState("month");
+  const [accountFilter,setAccountFilter]=useState("All");
   const isDemo=!data.bankConnected;
   const txns=data.transactions||[];
   // Filter to current month for "this month" stats
@@ -4360,9 +4361,18 @@ function SpendScreen({data, setAppData}){
   // displayTxns and EXCLUDE_CATS must be defined BEFORE filtered (TDZ prevention)
   const EXCLUDE_CATS = new Set(["Transfer","Income"]);
   const displayTxns = period==="month" ? thisMonthTxns : txns;
-  const filtered=catFilter==="All"?displayTxns.filter(t=>getCat(t)!=="Transfer"):displayTxns.filter(t=>getCat(t)===catFilter);
-  const totalSpent=displayTxns.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))).reduce((a,t)=>a+t.amount,0);
-  const totalIn=displayTxns.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
+  // Account filter — map account_id to account name
+  const accountMap = (data.accounts||[]).reduce((m,a)=>({...m,[a.id]:a}),{});
+  const uniqueAccounts = [...new Set(txns.map(t=>t.account_id).filter(Boolean))];
+  const accountsWithNames = uniqueAccounts.map(id=>({
+    id,
+    name: accountMap[id]?.name || accountMap[id]?.institution || id,
+    type: accountMap[id]?.type || "account",
+  }));
+  const acctFiltered = accountFilter==="All" ? displayTxns : displayTxns.filter(t=>t.account_id===accountFilter);
+  const filtered=catFilter==="All"?acctFiltered.filter(t=>getCat(t)!=="Transfer"):acctFiltered.filter(t=>getCat(t)===catFilter);
+  const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))).reduce((a,t)=>a+t.amount,0);
+  const totalIn=acctFiltered.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
 
   const cuts=[
     stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee is adding up",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month totalling $${stats.coffee.toFixed(2)}. That's $${(stats.coffee*12).toFixed(0)}/year. Making coffee at home 4 days a week cuts this by 60%.`,saving:`$${Math.round(stats.coffee*0.6)}/mo`,effort:"Low",color:C.orange},
@@ -4521,6 +4531,22 @@ function SpendScreen({data, setAppData}){
           </button>
         ))}
       </div>
+      {/* Account filter */}
+      {accountsWithNames.length > 1 && (
+        <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2,scrollbarWidth:"none"}}>
+          {[{id:"All",name:"All Accounts",type:"all"},...accountsWithNames].map(acct=>{
+            const isActive = accountFilter===acct.id;
+            const typeIcon = acct.type==="credit"||acct.type==="credit card"?"💳":acct.type==="savings"?"🏦":acct.type==="investment"?"📈":"🏦";
+            return (
+              <button key={acct.id} onClick={()=>{setAccountFilter(acct.id);setCatFilter("All");}}
+                style={{background:isActive?C.blue+"28":"rgba(255,255,255,0.04)",border:`1px solid ${isActive?C.blue+"66":"rgba(255,255,255,0.08)"}`,color:isActive?C.blueBright:C.muted,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700,whiteSpace:"nowrap",fontFamily:"inherit",transition:"all .2s",flexShrink:0,display:"flex",alignItems:"center",gap:5}}>
+                {acct.id!=="All"&&<span>{typeIcon}</span>}
+                {acct.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none"}}>
         {cats.map(c=><button key={c} onClick={()=>setCatFilter(c)} style={{background:catFilter===c?C.orange+"28":"rgba(255,255,255,0.04)",border:`1px solid ${catFilter===c?C.orange+"66":"rgba(255,255,255,0.08)"}`,color:catFilter===c?C.orangeBright:C.muted,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700,whiteSpace:"nowrap",fontFamily:"inherit",transition:"all .2s",flexShrink:0}}>{c}</button>)}
       </div>
@@ -4536,6 +4562,11 @@ function SpendScreen({data, setAppData}){
                 {getCat(txn)} <span style={{opacity:0.6,fontSize:9}}>✎</span>
               </button>
               <span style={{color:C.muted,fontSize:10}}>{txn.date}</span>
+              {txn.account_id&&accountFilter==="All"&&accountMap[txn.account_id]&&(
+                <span style={{color:C.muted,fontSize:9,background:"rgba(255,255,255,0.04)",borderRadius:99,padding:"1px 7px",border:`1px solid ${C.border}`,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  {accountMap[txn.account_id]?.name||"Bank"}
+                </span>
+              )}
               {txn.pending&&<Chip label="Pending" color={C.gold} size={9}/>}
             </div>
           </div>
