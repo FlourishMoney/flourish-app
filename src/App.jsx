@@ -258,7 +258,7 @@ const CAT_META = {
   RENT_AND_UTILITIES:        { cat:"Utilities",       icon:"🏠", color:"#CFA03E" },
   HOME_IMPROVEMENT:          { cat:"Home",            icon:"🔨", color:"#CFA03E" },
   INCOME:                    { cat:"Income",          icon:"💰", color:"#6FE494" },
-  TRANSFER_IN:               { cat:"Income",          icon:"💰", color:"#6FE494" },
+  TRANSFER_IN:               { cat:"Transfer",        icon:"↔️", color:"#888"    },
   TRANSFER_OUT:              { cat:"Transfer",        icon:"↔️", color:"#888"    },
   BANK_FEES:                 { cat:"Fees",            icon:"🏦", color:"#888"    },
   GENERAL_SERVICES:          { cat:"Services",        icon:"⚙️", color:"#888"    },
@@ -1933,13 +1933,27 @@ const ForecastEngine = {
     const overdraftRisk = [];
     const lowBalanceWarnings = [];
 
+    // Compute pay schedule outside loop for performance
+    const primaryFreq = (data.incomes||[])[0]?.freq || "biweekly";
+    const paycheque = primaryFreq==="monthly" ? monthlyIncome :
+                      primaryFreq==="semimonthly" ? monthlyIncome/2 :
+                      primaryFreq==="biweekly" ? monthlyIncome/2.167 :
+                      primaryFreq==="weekly" ? monthlyIncome/4.333 : monthlyIncome/2;
+    const getIsPayday = (dayNum,i) => {
+      if(i===0) return false;
+      if(primaryFreq==="monthly")     return dayNum===1;
+      if(primaryFreq==="semimonthly") return dayNum===1||dayNum===15;
+      if(primaryFreq==="biweekly")    return i%14===0;
+      if(primaryFreq==="weekly")      return i%7===0;
+      return dayNum===1||dayNum===15;
+    };
+
     for (let i = 0; i <= days; i++) {
       const d = new Date(today); d.setDate(todayNum + i);
       const dayNum  = d.getDate();
-      // Payday: assume twice-monthly (1st and 15th)
-      const isPayday = (dayNum === 1 || dayNum === 15) && i > 0;
+      const isPayday = getIsPayday(dayNum, i);
       const dayBills = bills.filter(b => parseInt(b.date) === dayNum);
-      const inc  = isPayday ? monthlyIncome / 2 : 0;
+      const inc  = isPayday ? paycheque : 0;
       const out  = dayBills.reduce((s,b) => s + parseFloat(b.amount||0), 0) + (isPayday ? 0 : avgDaily * 0.8);
       running = running + inc - out;
 
@@ -2533,7 +2547,7 @@ function DashCustomize({ layout, onChange, onClose }) {
         <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:'0 auto 20px'}}/>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
           <div style={{color:C.cream,fontWeight:800,fontSize:18,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Customize Dashboard</div>
-          <span style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Drag to reorder</span>
+          <span style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Drag ☰ to reorder · tap 🔓 to lock</span>
         </div>
         </div>
         <div style={{overflowY:'auto',flex:1,paddingBottom:8}}>
@@ -3164,10 +3178,18 @@ function buildLiveNotifs(data) {
   return notifs;
 }
 
-function Notifications({onClose, data}){
+function Notifications({onClose, data, onMarkAllRead}){
+  const getReadIds = () => { try { return new Set(JSON.parse(localStorage.getItem("flourish_read_notifs")||"[]")); } catch { return new Set(); } };
   const liveNotifs = data ? [...buildLiveNotifs(data), ...INIT_NOTIFS] : INIT_NOTIFS;
-  const [notifs,setNotifs]=useState(liveNotifs);
-  const unread=notifs.filter(n=>!n.read).length;
+  const [readIds, setReadIds] = useState(getReadIds);
+  const notifs = liveNotifs.map(n=>({...n, read: readIds.has(n.id)}));
+  const unread = notifs.filter(n=>!n.read).length;
+  const markAll = () => {
+    const ids = new Set(liveNotifs.map(n=>n.id));
+    setReadIds(ids);
+    try { localStorage.setItem("flourish_read_notifs", JSON.stringify([...ids])); } catch {}
+    if(onMarkAllRead) onMarkAllRead();
+  };
   return <div style={{color:C.cream}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
       <div>
@@ -3175,7 +3197,7 @@ function Notifications({onClose, data}){
         {unread>0&&<div style={{color:C.red,fontSize:12,fontWeight:700}}>{unread} unread</div>}
       </div>
       <div style={{display:"flex",gap:8}}>
-        {unread>0&&<button onClick={()=>setNotifs(ns=>ns.map(n=>({...n,read:true})))} style={{background:"none",border:`1px solid ${C.border}`,color:C.muted,borderRadius:8,padding:"5px 12px",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Mark all read</button>}
+        {unread>0&&<button onClick={markAll} style={{background:"none",border:`1px solid ${C.border}`,color:C.muted,borderRadius:8,padding:"5px 12px",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Mark all read</button>}
         <button onClick={onClose} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,color:C.muted,borderRadius:8,padding:"5px 12px",cursor:"pointer",fontSize:13}}>← Back</button>
       </div>
     </div>
@@ -3208,6 +3230,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
 
   const isVisible = id => !dashLayout || (dashLayout.find(t=>t.id===id)?.visible !== false);
   const tileOrder = dashLayout ? dashLayout.map(t=>t.id) : DASH_TILES.map(t=>t.id);
+  const tileStyle = id => ({ order: tileOrder.indexOf(id) >= 0 ? tileOrder.indexOf(id) : 99 });
 
   // ── Engines ──────────────────────────────────────────────────────────────────
   const _ss         = SafeSpendEngine.calculate(data);
@@ -3220,7 +3243,15 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const monthlyIncome = FinancialCalcEngine.cashFlow(data).monthlyIncome;
   const totalDebt=(data.debts||[]).reduce((a,d)=>a+parseFloat(d.balance||0),0);
   const netWorth=bal+((data?.accounts||[]).filter(a=>a.type==="savings"||a.type==="investment").reduce((s,a)=>s+(a.balance||0),0))-totalDebt;
-  const unread=INIT_NOTIFS.filter(n=>!n.read).length + (data ? buildLiveNotifs(data).filter(n=>!n.read).length : 0);
+  // Badge reads live from localStorage so it updates after Notifications marks-read
+  const getUnreadCount = () => {
+    try {
+      const readIds = new Set(JSON.parse(localStorage.getItem("flourish_read_notifs")||"[]"));
+      return [...INIT_NOTIFS, ...(data ? buildLiveNotifs(data) : [])].filter(n=>!readIds.has(n.id)).length;
+    } catch { return 0; }
+  };
+  const [unreadTick, setUnreadTick] = useState(0); // force re-render after mark-read
+  const unread = getUnreadCount();
   const spark=[-4200,-3800,-3100,-2600,-1900,netWorth];
   const sMin=Math.min(...spark),sMax=Math.max(...spark);
   const sN=spark.map(v=>90-((v-sMin)/(sMax-sMin)||0)*70);
@@ -3273,7 +3304,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2}}>{new Date().toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}</span>
-          {setDashLayout&&<button onClick={()=>setShowCustomize(true)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"3px 10px",color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer",letterSpacing:0.3}}>✦ Customize</button>}
+          {setDashLayout&&<button onClick={()=>setShowCustomize(true)} style={{background:`linear-gradient(135deg,${C.green}22,${C.teal}11)`,border:`1px solid ${C.green}44`,borderRadius:99,padding:"5px 12px",color:C.greenBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer",letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}>⠿ Reorder</button>}
         </div>
       </div>
 
@@ -3462,7 +3493,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         )}
 
         {/* ── NET WORTH SPARKLINE — full width ──────────────────────────── */}
-        {isVisible('networth')&&<div style={{...anim(190),...glass(C.teal),borderRadius:22,padding:"18px 20px 16px"}}>
+        {isVisible('networth')&&<div style={{...anim(190),...tileStyle('networth'),...glass(C.teal),borderRadius:22,padding:"18px 20px 16px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
             <div>
               <div style={{...label11(C.muted),marginBottom:4}}>Net Worth Trend</div>
@@ -3489,27 +3520,27 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         </div>}
 
         {/* ── DECISION ENGINE ───────────────────────────────────────────── */}
-        {isVisible('decision')&&<div style={{...anim(210),...glass(C.purple),borderRadius:22,overflow:"hidden"}}>
+        {isVisible('decision')&&<div style={{...anim(210),...tileStyle('decision'),...glass(C.purple),borderRadius:22,overflow:"hidden"}}>
           <DecisionEngine data={data} safe={safe} bal={bal} monthlyIncome={monthlyIncome} soonBills={soonBills} todayDate={today} setScreen={setScreen}/>
         </div>}
 
         {/* ── AUTOPILOT ─────────────────────────────────────────────────── */}
-        {isVisible('autopilot')&&<div style={{...anim(225),...glass(C.blue),borderRadius:22,overflow:"hidden"}}>
+        {isVisible('autopilot')&&<div style={{...anim(225),...tileStyle('autopilot'),...glass(C.blue),borderRadius:22,overflow:"hidden"}}>
           <AutopilotCard data={data} setScreen={setScreen}/>
         </div>}
 
         {/* ── TIME MACHINE — forecast graph ─────────────────────────────── */}
-        {isVisible('forecast')&&<div style={{...anim(240),...glass(C.green),borderRadius:22,padding:"18px 18px 14px"}}>
+        {isVisible('forecast')&&<div style={{...anim(240),...tileStyle('forecast'),...glass(C.green),borderRadius:22,padding:"18px 18px 14px"}}>
           <TimeMachine data={data}/>
         </div>}
 
         {/* ── OPPORTUNITY DETECTOR ─────────────────────────────────────── */}
-        {isVisible('opportunity')&&<div style={{...anim(255),...glass(C.gold),borderRadius:22,overflow:"hidden"}}>
+        {isVisible('opportunity')&&<div style={{...anim(255),...tileStyle('opportunity'),...glass(C.gold),borderRadius:22,overflow:"hidden"}}>
           <OpportunityDetector data={data} setScreen={setScreen} setGoalsTab={setGoalsTab}/>
         </div>}
 
         {/* ── HEALTH SCORE PILLARS: progressive disclosure ───────────────── */}
-        {isVisible('health')&&<div style={{...anim(270),...glass(scoreBase),borderRadius:22,padding:"14px 18px",cursor:"pointer",transition:"border-color .2s"}}
+        {isVisible('health')&&<div style={{...anim(270),...tileStyle('health'),...glass(scoreBase),borderRadius:22,padding:"14px 18px",cursor:"pointer",transition:"border-color .2s"}}
           onClick={()=>setExpandedTile(expandedTile==="pillars"?null:"pillars")}
           onMouseEnter={e=>e.currentTarget.style.borderColor=scoreBase+"33"}
           onMouseLeave={e=>e.currentTarget.style.borderColor=C.glassEdge}>
@@ -3583,7 +3614,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         )}
 
         {/* ── QUICK NAV BENTO ───────────────────────────────────────────── */}
-        {isVisible('quicknav')&&<div style={{...anim(320),display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        {isVisible('quicknav')&&<div style={{...anim(320),...tileStyle('quicknav'),display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           {[
             {label:"2-Week Forecast",icon:"calendar",screen:"plan",color:C.teal,sub:"Cash flow ahead"},
             {label:"Debt Simulator",icon:"trendUp",screen:"goals",tab:"sim",color:C.purple,sub:"Drag to freedom date"},
@@ -5034,18 +5065,41 @@ function WidgetScreen({data,onBack}){
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
 // ─── SETTINGS SECTION INLINE CONTENT ─────────────────────────────────────────
-function SettingsSectionContent({sectionKey,data,color,onAddBank,onDisconnectBank,bankConnected,needsReconnect,reconnectLoading,onReconnect}){
+function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,onAddBank,onDisconnectBank,bankConnected,needsReconnect,reconnectLoading,onReconnect}){
   const s={background:C.card,border:`1px solid ${color}33`,borderRadius:"0 0 18px 18px",padding:"16px 18px",marginBottom:8,borderTop:`1px solid ${color}22`};
   const row={display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.border}`};
   const val={color:C.cream,fontSize:13,fontWeight:600};
   const lbl={color:C.muted,fontSize:12};
 
+  const updateProfile = (key, value) => {
+    if(setAppData) setAppData(prev=>({...prev, profile:{...prev.profile, [key]:value}}));
+  };
+
   if(sectionKey==="profile") return (
     <div style={s}>
-      {[["Name",data.profile?.name||"—"],["Country",data.profile?.country||"CA"],["Status",data.profile?.status||"—"],["Has Kids",data.profile?.hasKids?"Yes":"No"]].map(([k,v])=>(
-        <div key={k} style={row}><span style={lbl}>{k}</span><span style={val}>{v}</span></div>
-      ))}
-      <div style={{color:C.muted,fontSize:11,marginTop:10}}>Edit your profile during onboarding reset, or contact support.</div>
+      <div style={row}><span style={lbl}>Name</span>
+        <input defaultValue={data.profile?.name||""} onBlur={e=>updateProfile("name",e.target.value)}
+          style={{background:"none",border:"none",borderBottom:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,textAlign:"right",outline:"none",fontFamily:"inherit",padding:"2px 4px",width:140}}/>
+      </div>
+      <div style={row}><span style={lbl}>Country</span>
+        <select defaultValue={data.profile?.country||"CA"} onChange={e=>updateProfile("country",e.target.value)}
+          style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
+          <option value="CA">🇨🇦 Canada</option><option value="US">🇺🇸 United States</option>
+        </select>
+      </div>
+      <div style={row}><span style={lbl}>Status</span>
+        <select defaultValue={data.profile?.status||"single"} onChange={e=>updateProfile("status",e.target.value)}
+          style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
+          <option value="single">Single</option><option value="couple">Couple</option>
+        </select>
+      </div>
+      <div style={row}><span style={lbl}>Has Kids</span>
+        <select defaultValue={data.profile?.hasKids?"yes":"no"} onChange={e=>updateProfile("hasKids",e.target.value==="yes")}
+          style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
+          <option value="no">No</option><option value="yes">Yes</option>
+        </select>
+      </div>
+      <div style={{color:C.muted,fontSize:11,marginTop:10}}>Changes save automatically.</div>
     </div>
   );
 
@@ -5077,14 +5131,16 @@ function SettingsSectionContent({sectionKey,data,color,onAddBank,onDisconnectBan
           </div>
         ))
       }
-      <div style={{color:C.muted,fontSize:11,marginTop:10,lineHeight:1.5}}>Bills auto-detect when your bank is connected. To add bills manually, use the <strong>Plan</strong> screen.</div>
+      {navToScreen&&<button onClick={()=>navToScreen("plan")} style={{width:"100%",marginTop:12,background:color+"18",border:`1px solid ${color}44`,borderRadius:10,padding:"10px",color,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        Open Plan Screen →
+      </button>}
     </div>
   );
 
   if(sectionKey==="debts") return (
     <div style={s}>
       {(data.debts||[]).length===0
-        ? <div style={{color:C.muted,fontSize:13}}>No debts tracked yet. Go to <strong style={{color:C.orange}}>Goals → Debt Simulator</strong> to add debts and see your payoff date.</div>
+        ? <div style={{color:C.muted,fontSize:13,marginBottom:12}}>No debts tracked yet. Tap below to open the Debt Simulator and see your payoff date.</div>
         : (data.debts||[]).map((d,i)=>(
           <div key={i} style={{...row,borderBottom:i<(data.debts.length-1)?`1px solid ${C.border}`:"none"}}>
             <div><div style={{color:C.cream,fontSize:13,fontWeight:600}}>{d.name}</div><div style={{color:C.muted,fontSize:11}}>{d.rate}% interest</div></div>
@@ -5092,13 +5148,16 @@ function SettingsSectionContent({sectionKey,data,color,onAddBank,onDisconnectBan
           </div>
         ))
       }
+      {navToScreen&&<button onClick={()=>navToScreen("goals")} style={{width:"100%",marginTop:12,background:color+"18",border:`1px solid ${color}44`,borderRadius:10,padding:"10px",color,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        Open Debt Simulator →
+      </button>}
     </div>
   );
 
   if(sectionKey==="goals") return (
     <div style={s}>
       {(data.goals||[]).length===0
-        ? <div style={{color:C.muted,fontSize:13}}>No savings goals set yet. Go to <strong style={{color:C.gold}}>Goals</strong> to add your first goal.</div>
+        ? <div style={{color:C.muted,fontSize:13,marginBottom:12}}>No savings goals set yet. Tap below to add your first goal.</div>
         : (data.goals||[]).map((g,i)=>(
           <div key={i} style={{...row,borderBottom:i<(data.goals.length-1)?`1px solid ${C.border}`:"none"}}>
             <span style={lbl}>{g.name||g.label||"Goal"}</span>
@@ -5106,21 +5165,41 @@ function SettingsSectionContent({sectionKey,data,color,onAddBank,onDisconnectBan
           </div>
         ))
       }
+      {navToScreen&&<button onClick={()=>navToScreen("goals")} style={{width:"100%",marginTop:12,background:color+"18",border:`1px solid ${color}44`,borderRadius:10,padding:"10px",color,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        Manage Goals →
+      </button>}
     </div>
   );
 
   if(sectionKey==="family") return (
     <div style={s}>
-      {[["Status",data.profile?.status||"single"],["Partner",data.profile?.partnerName||"Not linked"],["Kids",data.profile?.hasKids?"Yes":"No"],["Country",data.profile?.country||"CA"]].map(([k,v])=>(
-        <div key={k} style={row}><span style={lbl}>{k}</span><span style={val}>{v}</span></div>
-      ))}
+      <div style={row}><span style={lbl}>Status</span>
+        <select defaultValue={data.profile?.status||"single"} onChange={e=>updateProfile("status",e.target.value)}
+          style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
+          <option value="single">Single</option><option value="couple">Couple</option>
+        </select>
+      </div>
+      <div style={row}><span style={lbl}>Partner's Name</span>
+        <input defaultValue={data.profile?.partnerName||""} placeholder="Partner's first name" onBlur={e=>updateProfile("partnerName",e.target.value)}
+          style={{background:"none",border:"none",borderBottom:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,textAlign:"right",outline:"none",fontFamily:"inherit",padding:"2px 4px",width:140}}/>
+      </div>
+      <div style={row}><span style={lbl}>Has Kids</span>
+        <select defaultValue={data.profile?.hasKids?"yes":"no"} onChange={e=>updateProfile("hasKids",e.target.value==="yes")}
+          style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
+          <option value="no">No</option><option value="yes">Yes</option>
+        </select>
+      </div>
+      <div style={{color:C.muted,fontSize:11,marginTop:10}}>Changes save automatically.</div>
+      {navToScreen&&<button onClick={()=>navToScreen("family")} style={{width:"100%",marginTop:12,background:color+"18",border:`1px solid ${color}44`,borderRadius:10,padding:"10px",color,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        Open Family Dashboard →
+      </button>}
     </div>
   );
 
   return null;
 }
 
-function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,bankConnected,needsReconnect,reconnectLoading,onReconnect}){
+function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,bankConnected,needsReconnect,reconnectLoading,onReconnect}){
   const [notifToggles,setNotifToggles]=useState({overdraft:true,bills:true,coach:true,meeting:false,patterns:true});
   const [activeSection,setActiveSection]=useState(null);
   const handleShare=()=>{
@@ -5194,7 +5273,7 @@ function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconn
             </div>
             <span style={{color:isActive?item.color:C.muted,fontSize:16,fontWeight:300,transition:"transform .2s",transform:isActive?"rotate(90deg)":"none",display:"inline-block"}}>›</span>
           </div>
-          {isActive&&<SettingsSectionContent sectionKey={item.key} data={data} color={item.color} onAddBank={onAddBank} onDisconnectBank={onDisconnectBank} bankConnected={bankConnected} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={onReconnect}/>}
+          {isActive&&<SettingsSectionContent sectionKey={item.key} data={data} setAppData={setAppData} navToScreen={navToScreen} color={item.color} onAddBank={onAddBank} onDisconnectBank={onDisconnectBank} bankConnected={bankConnected} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={onReconnect}/>}
         </div>
       );})}
     <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.8,fontWeight:700,marginTop:20,marginBottom:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Notifications</div>
@@ -6342,7 +6421,13 @@ export default function FlourishApp(){
   if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}} onViewLegal={s=>setScreen(s)}/>;
   if(showPaywall)return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;
 
-  const unread=INIT_NOTIFS.filter(n=>!n.read).length;
+  const unread = (() => {
+    try {
+      const readIds = new Set(JSON.parse(localStorage.getItem("flourish_read_notifs")||"[]"));
+      const all = [...INIT_NOTIFS, ...(appData ? buildLiveNotifs(appData) : [])];
+      return all.filter(n=>!readIds.has(n.id)).length;
+    } catch { return 0; }
+  })();
   const dataWithHousehold={...appData,household,isPremium};
 
   // ── Pass isOnline down to AICoach + reset helper ──────────────
@@ -6350,14 +6435,22 @@ export default function FlourishApp(){
 
   // ── Plaid Update Mode (re-auth expired bank sessions) ─────────
   const handleReconnectBank = ()=>{
+    // UPDATE MODE: reconnect existing expired item
     if(reconnectLoading) return;
     setReconnectLoading(true);
-    // If we have an access token, reconnect existing item; otherwise create new link
     const country = appData?.profile?.country || "CA";
-    const payload = plaidAccessToken
-      ? { access_token: plaidAccessToken }
-      : { country };
+    const payload = plaidAccessToken ? { access_token: plaidAccessToken } : { country };
     callPlaid("create_link_token", payload)
+      .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
+      .catch(()=>{ setReconnectLoading(false); alert("Could not reconnect — please try again."); });
+  };
+
+  const handleAddNewBank = ()=>{
+    // FRESH LINK: always creates new connection, never update mode
+    if(reconnectLoading) return;
+    setReconnectLoading(true);
+    const country = appData?.profile?.country || "CA";
+    callPlaid("create_link_token", { country })
       .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
       .catch(()=>{ setReconnectLoading(false); alert("Could not start bank connection — please try again."); });
   };
@@ -6385,8 +6478,8 @@ export default function FlourishApp(){
   };
 
   const content=()=>{
-    if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <Settings data={appData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={()=>handleReconnectBank()} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank}/>;
+    if(showNotifs)return <Notifications onClose={()=>{setShowNotifs(false);setUnreadTick(t=>t+1);}} data={appData}/>;
+    if(showSettings)return <Settings data={appData} setAppData={setAppData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}}/>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold}/>;
