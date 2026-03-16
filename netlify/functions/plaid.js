@@ -72,9 +72,6 @@ exports.handler = async (event) => {
   try { body = JSON.parse(event.body || "{}"); }
   catch { return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Invalid JSON" }) }; }
 
-  // DEBUG — remove after fixing
-  console.log("[Plaid debug] ENV:", process.env.PLAID_ENV, "| CLIENT_ID length:", (process.env.PLAID_CLIENT_ID||"").length, "| SECRET length:", (process.env.PLAID_SECRET||"").length);
-
   if (!process.env.PLAID_CLIENT_ID || !process.env.PLAID_SECRET) {
     return {
       statusCode: 500, headers: CORS,
@@ -105,7 +102,7 @@ exports.handler = async (event) => {
             language:      "en",
             transactions:  { days_requested: 90 },
             // Required for OAuth (Canadian banks like TD, RBC, Scotiabank in production)
-            redirect_uri:  "https://flourishmoney.app/",
+            redirect_uri:  "https://flourishmoney.app",
           };
       const data = await plaid("/link/token/create", linkBody);
       return ok({ link_token: data.link_token });

@@ -2512,7 +2512,7 @@ function Onboarding({onComplete,onViewLegal}){
     setBankError(null);
     callPlaid("create_link_token",{country:p.country})
       .then(d=>{ setLinkToken(d.link_token); setLinkTokenLoading(false); })
-      .catch((err)=>{ setBankError("Plaid error: " + (err?.message || "Could not reach Plaid — check your connection and try again.")); setLinkTokenLoading(false); });
+      .catch((err)=>{ setBankError("Could not connect to your bank — please check your connection and try again."); setLinkTokenLoading(false); });
   },[linkToken, p.country]); // eslint-disable-line
 
   useEffect(()=>{ if(step===3) fetchLinkToken(); },[step]); // eslint-disable-line
@@ -2686,12 +2686,12 @@ function Onboarding({onComplete,onViewLegal}){
     <div>
       <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:30,color:C.cream,marginBottom:6,letterSpacing:-0.5}}>About you</div>
       <div style={{color:C.muted,fontSize:14,marginBottom:20,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Just the basics. Everything stays on your device.</div>
-      <Inp label="First Name" value={p.name} onChange={v=>setP({...p,name:v})} placeholder="e.g. Amanda"/>
+      <Inp label="First Name" value={p.name} onChange={v=>setP({...p,name:v})} placeholder="First name"/>
       <Sel label="Country" value={p.country} onChange={v=>setP({...p,country:v,province:v==="CA"?"ON":"CA"})} options={[{value:"CA",label:"🇨🇦 Canada"},{value:"US",label:"🇺🇸 United States"}]}/>
       <Sel label={p.country==="CA"?"Province":"State"} value={p.province} onChange={v=>setP({...p,province:v})}
         options={p.country==="CA"?[{value:"ON",label:"Ontario"},{value:"BC",label:"British Columbia"},{value:"AB",label:"Alberta"},{value:"QC",label:"Quebec"},{value:"MB",label:"Manitoba"},{value:"OTHER",label:"Other"}]:[{value:"CA",label:"California"},{value:"TX",label:"Texas"},{value:"NY",label:"New York"},{value:"FL",label:"Florida"},{value:"OTHER",label:"Other"}]}/>
       <Sel label="Relationship Status" value={p.status} onChange={v=>setP({...p,status:v})} options={[{value:"single",label:"Single"},{value:"couple",label:"Married"},{value:"cohabit",label:"Common Law"}]}/>
-      {p.status!=="single"&&<Inp label="Partner's Name (optional)" value={p.partnerName} onChange={v=>setP({...p,partnerName:v})} placeholder="e.g. James"/>}
+      {p.status!=="single"&&<Inp label="Partner's Name (optional)" value={p.partnerName} onChange={v=>setP({...p,partnerName:v})} placeholder="Partner's first name"/>}
       <div style={{marginBottom:14}}>
         <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:8,fontWeight:700}}>Do you have kids?</div>
         <div style={{display:"flex",gap:10}}>
@@ -2714,7 +2714,7 @@ function Onboarding({onComplete,onViewLegal}){
           <div style={{marginBottom:10}}>
             <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Label</div>
             <input value={inc.label} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,label:e.target.value}:x))}
-              placeholder="e.g. Full-time job, Freelance, Child tax benefit"
+              placeholder="e.g. Full-time job, Freelance"
               style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}}/>
           </div>
           <div style={{display:"flex",gap:10,marginBottom:10}}>
@@ -3498,7 +3498,7 @@ function PlanAhead({data}){
           <div style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
             <input value={newProvider.icon} onChange={e=>setNewProvider(v=>({...v,icon:e.target.value}))} placeholder="🏦" maxLength={2}
               style={{width:44,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px",color:C.cream,fontSize:18,textAlign:"center",fontFamily:"inherit"}}/>
-            <input value={newProvider.name} onChange={e=>setNewProvider(v=>({...v,name:e.target.value}))} placeholder="Provider name (e.g. Gym, Internet)"
+            <input value={newProvider.name} onChange={e=>setNewProvider(v=>({...v,name:e.target.value}))} placeholder="e.g. Gym, Netflix, Internet"
               style={{flex:2,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
             <input value={newProvider.amount} onChange={e=>setNewProvider(v=>({...v,amount:e.target.value}))} placeholder="$/mo" type="number"
               style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
@@ -5672,15 +5672,6 @@ function AuthScreen({ onAuth }) {
               </button>
               {mode === "signup" && <div style={{ color: "#6B7A6E", fontSize: 11, textAlign: "center", marginTop: 14, lineHeight: 1.5 }}>By signing up you agree to our Terms of Service and Privacy Policy.</div>}
 
-              {/* Dev bypass — remove before public launch */}
-              <div style={{ marginTop: 24, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 16, textAlign: "center" }}>
-                <button
-                  onClick={() => onAuth({ id: "dev-user", email: "amanda@flourishmoney.app", app_metadata: {}, user_metadata: {} })}
-                  style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, padding: "9px 20px", color: "#6B7A6E", fontSize: 12, fontFamily: "Plus Jakarta Sans,sans-serif", cursor: "pointer", letterSpacing: 0.3 }}
-                >
-                  Skip login (dev only)
-                </button>
-              </div>
             </div>
           )}
         </div>
