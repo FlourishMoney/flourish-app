@@ -4522,33 +4522,36 @@ function SpendScreen({data, setAppData}){
       </button>)}
     </div>
     {tab==="txn"&&<>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-        <span style={{color:C.muted,fontSize:11}}>Period:</span>
-        {["month","all"].map(p=>(
-          <button key={p} onClick={()=>setPeriod(p)}
-            style={{background:period===p?C.orange+"28":"none",border:`1px solid ${period===p?C.orange+"66":C.border}`,color:period===p?C.orangeBright:C.muted,borderRadius:99,padding:"4px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
-            {p==="month"?monthLabel:"Last 90 days"}
-          </button>
-        ))}
-      </div>
-      {/* Account filter */}
-      {accountsWithNames.length > 1 && (
-        <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2,scrollbarWidth:"none"}}>
-          {[{id:"All",name:"All Accounts",type:"all"},...accountsWithNames].map(acct=>{
-            const isActive = accountFilter===acct.id;
-            const typeIcon = acct.type==="credit"||acct.type==="credit card"?"💳":acct.type==="savings"?"🏦":acct.type==="investment"?"📈":"🏦";
-            return (
-              <button key={acct.id} onClick={()=>{setAccountFilter(acct.id);setCatFilter("All");}}
-                style={{background:isActive?C.blue+"28":"rgba(255,255,255,0.04)",border:`1px solid ${isActive?C.blue+"66":"rgba(255,255,255,0.08)"}`,color:isActive?C.blueBright:C.muted,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700,whiteSpace:"nowrap",fontFamily:"inherit",transition:"all .2s",flexShrink:0,display:"flex",alignItems:"center",gap:5}}>
-                {acct.id!=="All"&&<span>{typeIcon}</span>}
-                {acct.name}
-              </button>
-            );
-          })}
+      {/* Filter row — dropdowns for account, category, period */}
+      <div style={{display:"grid",gridTemplateColumns:accountsWithNames.length>1?"1fr 1fr 1fr":"1fr 1fr",gap:8}}>
+        {accountsWithNames.length>1&&(
+          <div>
+            <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Account</div>
+            <select value={accountFilter} onChange={e=>{setAccountFilter(e.target.value);setCatFilter("All");}}
+              style={{width:"100%",background:C.card,border:`1px solid ${accountFilter!=="All"?C.blue:C.border}`,borderRadius:10,padding:"9px 10px",color:accountFilter!=="All"?C.blueBright:C.cream,fontSize:12,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
+              <option value="All">All Accounts</option>
+              {accountsWithNames.map(a=>{
+                const icon = a.type==="credit"||a.type==="credit card"?"💳":a.type==="savings"?"🏦":a.type==="investment"?"📈":"🏦";
+                return <option key={a.id} value={a.id}>{icon} {a.name}</option>;
+              })}
+            </select>
+          </div>
+        )}
+        <div>
+          <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Category</div>
+          <select value={catFilter} onChange={e=>setCatFilter(e.target.value)}
+            style={{width:"100%",background:C.card,border:`1px solid ${catFilter!=="All"?C.orange:C.border}`,borderRadius:10,padding:"9px 10px",color:catFilter!=="All"?C.orangeBright:C.cream,fontSize:12,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
+            {cats.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
-      )}
-      <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none"}}>
-        {cats.map(c=><button key={c} onClick={()=>setCatFilter(c)} style={{background:catFilter===c?C.orange+"28":"rgba(255,255,255,0.04)",border:`1px solid ${catFilter===c?C.orange+"66":"rgba(255,255,255,0.08)"}`,color:catFilter===c?C.orangeBright:C.muted,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700,whiteSpace:"nowrap",fontFamily:"inherit",transition:"all .2s",flexShrink:0}}>{c}</button>)}
+        <div>
+          <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Period</div>
+          <select value={period} onChange={e=>setPeriod(e.target.value)}
+            style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px",color:C.cream,fontSize:12,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
+            <option value="month">{monthLabel}</option>
+            <option value="all">Last 90 days</option>
+          </select>
+        </div>
       </div>
       {filtered.map(txn=>(
         <div key={txn.id} style={{background:C.card,borderRadius:18,padding:"14px 16px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:13,transition:"all .2s",cursor:"default"}}
