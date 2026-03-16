@@ -304,6 +304,54 @@ function normaliseTxns(plaidTxns) {
 // ─── Recurring Bill Detector ─────────────────────────────────────────────────
 // Scans Plaid transactions and finds recurring bills (same merchant, monthly cadence)
 // Returns array of { name, amount (avg), date (day of month), auto:true }
+// Detect income deposits from transactions — returns {monthlyAvg, low, high, typical, isVariable, label}
+function detectIncomeFromTxns(txns) {
+  if (!txns || txns.length === 0) return null;
+  // Income = negative amounts (money in) with income-like categories
+  const incomeTxns = txns.filter(t =>
+    t.amount < 0 && (
+      (t.cat||"").toUpperCase().includes("INCOME") ||
+      (t.cat||"").toUpperCase().includes("PAYROLL") ||
+      (t.cat||"").toUpperCase().includes("TRANSFER") ||
+      (t.name||"").toLowerCase().includes("payroll") ||
+      (t.name||"").toLowerCase().includes("direct deposit") ||
+      (t.name||"").toLowerCase().includes("salary") ||
+      (t.name||"").toLowerCase().includes("pay ") ||
+      Math.abs(t.amount) > 500 // large deposits likely income
+    )
+  );
+  if (incomeTxns.length === 0) return null;
+
+  // Group by month
+  const byMonth = {};
+  incomeTxns.forEach(t => {
+    const month = t.date.substring(0, 7); // "YYYY-MM"
+    byMonth[month] = (byMonth[month] || 0) + Math.abs(t.amount);
+  });
+  const monthlyTotals = Object.values(byMonth);
+  if (monthlyTotals.length === 0) return null;
+
+  const avg = monthlyTotals.reduce((a,b) => a+b, 0) / monthlyTotals.length;
+  const low = Math.min(...monthlyTotals);
+  const high = Math.max(...monthlyTotals);
+  // Variable if spread > 15% of average
+  const isVariable = monthlyTotals.length > 1 && (high - low) / avg > 0.15;
+
+  // Detect most common deposit name
+  const nameCount = {};
+  incomeTxns.forEach(t => { nameCount[t.name] = (nameCount[t.name]||0)+1; });
+  const topName = Object.entries(nameCount).sort((a,b)=>b[1]-a[1])[0]?.[0] || "Employment";
+
+  return {
+    monthlyAvg: Math.round(avg),
+    low: Math.round(low),
+    high: Math.round(high),
+    typical: Math.round(avg),
+    isVariable,
+    label: topName,
+  };
+}
+
 function detectRecurringBills(txns) {
   if (!txns || txns.length === 0) return [];
 
@@ -2533,11 +2581,10 @@ function Onboarding({onComplete,onViewLegal}){
       });
       // Persist access_token so we can re-launch update mode if session expires
       try{ localStorage.setItem("flourish_plaid_token", ex.access_token); }catch{}
-      // Step 1: Get accounts first (fast) — show connected immediately
+      // Fetch accounts only — fast (~1s). Transactions load silently on dashboard.
       const acctData = await callPlaid("get_accounts",{access_token:ex.access_token});
-      clearInterval(progTimer);setBankProg(80);
+      clearInterval(progTimer);setBankProg(100);
 
-      // Show accounts to user right away
       const mappedAccounts = acctData.accounts.map(a=>({
         id:a.id,
         name:`${ex.institution_name} ••${a.mask||"????"}`,
@@ -2545,37 +2592,12 @@ function Onboarding({onComplete,onViewLegal}){
         balance:a.type==="credit"?-(a.balance.current||0):(a.balance.available??a.balance.current??0),
         institution:ex.institution_name,
       }));
-      setConnAccts(mappedAccounts);
 
-      // Step 2: Fetch transactions separately with retry — slower, don't block UI
-      let txnData = {transactions:[]};
-      let txnAttempts = 0;
-      while(txnAttempts < 3) {
-        try {
-          txnData = await callPlaid("get_transactions",{access_token:ex.access_token,days:90});
-          break; // success
-        } catch(txnErr) {
-          txnAttempts++;
-          if(txnAttempts >= 3) {
-            // After 3 attempts give up gracefully — user can still proceed
-            console.warn("[Flourish] Transactions fetch failed after 3 attempts:", txnErr.message);
-            break;
-          }
-          await new Promise(r=>setTimeout(r, 1500)); // wait 1.5s before retry
-        }
-      }
-
-      setBankProg(100);
       setTimeout(()=>{
-        const normalised = normaliseTxns(txnData.transactions||[]);
-        setPlaidTxns(normalised);
-        // Auto-detect recurring bills from real transaction data
-        const detected = detectRecurringBills(normalised);
-        setDetectedBills(detected);
-        // Pre-fill the bills array — user can confirm/edit/remove on step 4
-        if (detected.length > 0) {
-          setBills(detected.map(b=>({name:b.name,amount:b.amount,date:b.date,auto:b.auto,avgNote:b.avgNote})));
-        }
+        setConnAccts(mappedAccounts);
+        // No transactions yet — fetched silently on first dashboard load
+        setPlaidTxns([]);
+        setDetectedBills([]);
         setBankStage("done");
       },400);
     }catch(err){
@@ -2726,11 +2748,18 @@ function Onboarding({onComplete,onViewLegal}){
     // 2: Income
     <div>
       <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:30,color:C.cream,marginBottom:6,letterSpacing:-0.5}}>Your income</div>
-      <div style={{color:C.muted,fontSize:14,marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Add every source of income — employment, freelance, benefits, rental, your partner's pay. We map it all.</div>
+      <div style={{color:C.muted,fontSize:14,marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+        {incomes[0]?.autoDetected
+          ? "We detected your income from your transactions. Confirm or adjust below."
+          : "Add every source of income — employment, freelance, benefits, rental, your partner's pay. We map it all."}
+      </div>
       {incomes.map((inc,i)=>(
         <div key={inc.id} style={{background:C.card,borderRadius:16,padding:"16px",border:`1px solid ${C.border}`,marginBottom:12}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{inc.label||`Income Source ${i+1}`}</div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{inc.label||`Income Source ${i+1}`}</div>
+              {inc.autoDetected&&<span style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px",color:C.greenBright,fontSize:10,fontWeight:700}}>Auto-detected ✓</span>}
+            </div>
             {incomes.length>1&&<button onClick={()=>setIncomes(incomes.filter(x=>x.id!==inc.id))} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0}}>×</button>}
           </div>
           <div style={{marginBottom:10}}>
@@ -2739,14 +2768,20 @@ function Onboarding({onComplete,onViewLegal}){
               placeholder="e.g. Full-time job, Freelance"
               style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}}/>
           </div>
-          {/* Variable income toggle */}
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+          {/* Variable income — auto flag or manual toggle */}
+          {inc.autoDetected && inc.isVariable && (
+            <div style={{background:C.goldDim,border:`1px solid ${C.gold}33`,borderRadius:10,padding:"8px 12px",marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:14}}>📊</span>
+              <div style={{color:C.goldBright,fontSize:12,lineHeight:1.5}}>We detected your income varies. We've set low/typical/high automatically — tap any value to adjust.</div>
+            </div>
+          )}
+          {!inc.autoDetected&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
             <div style={{color:C.muted,fontSize:11,fontWeight:600}}>My income varies month to month</div>
             <button onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,isVariable:!inc.isVariable,amount:inc.isVariable?inc.typicalAmount||"":inc.amount}:x))}
               style={{width:44,height:24,borderRadius:99,background:inc.isVariable?C.green:C.cardAlt,border:`1px solid ${inc.isVariable?C.green:C.border}`,cursor:"pointer",position:"relative",transition:"all .2s",flexShrink:0}}>
               <div style={{position:"absolute",top:2,left:inc.isVariable?22:2,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"all .2s"}}/>
             </button>
-          </div>
+          </div>}
           {!inc.isVariable&&<div style={{display:"flex",gap:10,marginBottom:10}}>
             <div style={{flex:1}}>
               <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Take-Home Amount</div>
@@ -5798,6 +5833,42 @@ export default function FlourishApp(){
   // ── Persist state changes to localStorage ──────────────────────
   useEffect(()=>{ saveState({onboarded,appData,household,isPremium,checkInBonus}); },
     [onboarded,appData,household,isPremium,checkInBonus]);
+
+  // ── Fetch transactions on first dashboard load after bank connect ──
+  // Onboarding only fetches accounts (fast). Transactions are fetched here silently.
+  useEffect(()=>{
+    if(!onboarded || !appData?.bankConnected) return;
+    if(appData?.transactions?.length > 0) return; // already have transactions
+    const token = localStorage.getItem("flourish_plaid_token");
+    if(!token) return;
+    // Small delay so dashboard renders first
+    const timer = setTimeout(async()=>{
+      try {
+        const txnData = await callPlaid("get_transactions",{access_token:token,days:90});
+        const normalised = normaliseTxns(txnData.transactions||[]);
+        if(normalised.length === 0) return;
+        // Auto-detect income and bills from real data
+        const detectedIncome = detectIncomeFromTxns(normalised);
+        const detectedBills = detectRecurringBills(normalised);
+        setAppData(prev=>({
+          ...prev,
+          transactions: normalised,
+          // Pre-fill incomes if not already set by user
+          incomes: detectedIncome && (!prev.incomes?.some(i=>i.amount))
+            ? [{id:1,label:detectedIncome.label,amount:String(detectedIncome.typical),freq:"monthly",type:"employment",isVariable:detectedIncome.isVariable,typicalAmount:String(detectedIncome.typical),lowAmount:String(detectedIncome.low),highAmount:String(detectedIncome.high),autoDetected:true}]
+            : prev.incomes,
+          // Pre-fill bills if not already set
+          bills: detectedBills?.length > 0 && (!prev.bills?.some(b=>b.name))
+            ? detectedBills.map(b=>({name:b.name,amount:b.amount,date:b.date}))
+            : prev.bills,
+        }));
+      } catch(e) {
+        // Silent failure — transactions will load next time
+        console.warn("[Flourish] Background transaction fetch failed:", e.message);
+      }
+    }, 1500);
+    return ()=>clearTimeout(timer);
+  },[onboarded, appData?.bankConnected, appData?.transactions?.length]);
 
   // ── Detect needs_reconnect from any Plaid API error in child components ──
   // Components can call window.__flourishReconnect() to trigger the banner
