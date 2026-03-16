@@ -1103,7 +1103,7 @@ Respond ONLY with valid JSON (no markdown) like:
 
 // ── MONEY PERSONALITY ──────────────────────────────────────────────────────────
 function calcPersonality(txns, data) {
-  const t = txns || MOCK_TXN;
+  const t = txns || [];
   const neg = t.filter(x => x.amount > 0);  // expenses are positive
   const total = neg.reduce((s,x) => s + Math.abs(x.amount), 0) || 1;
 
@@ -1156,7 +1156,7 @@ function calcPersonality(txns, data) {
 
 function MoneyPersonality({data}) {
   const [revealed, setRevealed] = useState(false);
-  const txns = data.transactions || MOCK_TXN;
+  const txns = data.transactions || [];
   const p = calcPersonality(txns, data);
   const bars = [
     {label:"Convenience", pct:Math.round(p.scores.convenience*100), color:C.orange},
@@ -1307,7 +1307,7 @@ function WealthForecast({data}) {
 
 // ── OPPORTUNITY DETECTION ──────────────────────────────────────────────────────
 function OpportunityDetector({data, setScreen, setGoalsTab}) {
-  const txns = data.transactions || MOCK_TXN;
+  const txns = data.transactions || [];
   const debts = data.debts || [];
   const cc = CC[data.profile?.country || "CA"];
   const opportunities = [];
@@ -1401,7 +1401,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
 // ── MONEY WRAPPED ──────────────────────────────────────────────────────────────
 function MoneyWrapped({data, onClose}) {
   const [slide, setSlide] = useState(0);
-  const txns = (data.transactions || MOCK_TXN).filter(t => t.amount > 0);  // expenses are positive
+  const txns = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
   const income = (data.incomes||[]).reduce((s,i)=>s+parseFloat(i.amount||0),0)*12 || 50400;
   const totalSpent = txns.reduce((s,t)=>s+Math.abs(t.amount),0);
   const totalDebt = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.balance||0),0);
@@ -1761,7 +1761,7 @@ const FinancialCalcEngine = {
   cashFlow(data) {
     const incomes = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
     const bills   = data.bills || [];
-    const txns    = (data.transactions || MOCK_TXN).filter(t => t.amount > 0);  // expenses are positive
+    const txns    = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
     const monthlyIncome   = incomes.reduce((s,i) => s + parseFloat(i.amount||0), 0) || 4200;
     const monthlyBills    = bills.reduce((s,b) => s + parseFloat(b.amount||0), 0);
     const monthlySpend    = txns.reduce((s,t) => s + Math.abs(t.amount), 0) || monthlyIncome * 0.68;
@@ -1795,7 +1795,7 @@ const FinancialCalcEngine = {
 
   /** Average daily spend from transaction history */
   avgDailySpend(data) {
-    const txns = (data.transactions || MOCK_TXN).filter(t => t.amount > 0);  // expenses are positive
+    const txns = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
     const total = txns.reduce((s,t) => s + Math.abs(t.amount), 0);
     return total / 30; // assume 30-day window
   },
@@ -1895,7 +1895,7 @@ const ForecastEngine = {
 
 const BehaviorEngine = {
   analyze(data) {
-    const txns   = (data.transactions || MOCK_TXN).filter(t => t.amount > 0);  // expenses are positive
+    const txns   = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
     const income = FinancialCalcEngine.cashFlow(data).monthlyIncome;
     const insights = [];
 
@@ -2227,7 +2227,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
 
   const fetchInsight = async () => {
     setLoading(true);
-    const txns = (data.transactions || MOCK_TXN).slice(0, 15).map(t=>`${t.name||t.merchant||"Purchase"} $${Math.abs(t.amount)}`).join(", ");
+    const txns = (data.transactions || []).slice(0, 15).map(t=>`${t.name||t.merchant||"Purchase"} $${Math.abs(t.amount)}`).join(", ");
     const {score} = calcHealthScore(data);
     const prompt = `You are a warm financial coach. The user just completed their weekly money check-in. Their current Financial Health Score is ${score}/100. Their money mood this week: ${moods.find(m=>m.val===mood)?.label||"Neutral"}. Biggest spending surprise: ${surprise||"none"}. Financial win: ${win||"none"}. Recent transactions: ${txns}. Give ONE specific, encouraging action they can take this week to improve their Financial Health Score by 2-5 points. Keep it to 2 sentences max. Be warm and concrete.`;
     try {
@@ -2613,7 +2613,7 @@ function Onboarding({onComplete,onViewLegal}){
   const addDebt=()=>setDebts([...debts,{name:"",balance:"",rate:"",min:""}]);
   const rmDebt=i=>setDebts(debts.filter((_,x)=>x!==i));
   const upDebt=(i,f,v)=>setDebts(debts.map((d,x)=>x===i?{...d,[f]:v}:d));
-  const finish=()=>onComplete({profile:p,incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),accounts:connAccts,transactions:plaidTxns.length?plaidTxns:MOCK_TXN,bankConnected:connAccts.some(a=>a.institution!=="Manual")});
+  const finish=()=>onComplete({profile:p,incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),accounts:connAccts,transactions:plaidTxns.length?plaidTxns:[],bankConnected:connAccts.some(a=>a.institution!=="Manual")});
 
   const banks=(CC[p.country]?.banks||CC.CA.banks);
 
@@ -2720,7 +2720,15 @@ function Onboarding({onComplete,onViewLegal}){
               placeholder="e.g. Full-time job, Freelance"
               style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}}/>
           </div>
-          <div style={{display:"flex",gap:10,marginBottom:10}}>
+          {/* Variable income toggle */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+            <div style={{color:C.muted,fontSize:11,fontWeight:600}}>My income varies month to month</div>
+            <button onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,isVariable:!inc.isVariable,amount:inc.isVariable?inc.typicalAmount||"":inc.amount}:x))}
+              style={{width:44,height:24,borderRadius:99,background:inc.isVariable?C.green:C.cardAlt,border:`1px solid ${inc.isVariable?C.green:C.border}`,cursor:"pointer",position:"relative",transition:"all .2s",flexShrink:0}}>
+              <div style={{position:"absolute",top:2,left:inc.isVariable?22:2,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"all .2s"}}/>
+            </button>
+          </div>
+          {!inc.isVariable&&<div style={{display:"flex",gap:10,marginBottom:10}}>
             <div style={{flex:1}}>
               <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Take-Home Amount</div>
               <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
@@ -2738,10 +2746,27 @@ function Onboarding({onComplete,onViewLegal}){
                 <option value="biweekly">Every 2 weeks</option>
                 <option value="semimonthly">Twice a month</option>
                 <option value="monthly">Monthly</option>
-                <option value="irregular">Variable</option>
               </select>
             </div>
-          </div>
+          </div>}
+          {inc.isVariable&&<div style={{marginBottom:10}}>
+            <div style={{background:C.goldDim,border:`1px solid ${C.gold}33`,borderRadius:12,padding:"10px 14px",marginBottom:10}}>
+              <div style={{color:C.goldBright,fontSize:12,lineHeight:1.6}}>💡 We'll use your <strong>typical</strong> month for planning, <strong>low</strong> month for safe-spend (conservative), and <strong>high</strong> month for goal projections.</div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              {[["lowAmount","Low Month","😬"],["typicalAmount","Typical Month","😊"],["highAmount","High Month","🚀"]].map(([field,label,emoji])=>(
+                <div key={field}>
+                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>{emoji} {label}</div>
+                  <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${field==="typicalAmount"?C.green:C.border}`,borderRadius:10,overflow:"hidden"}}>
+                    <span style={{color:C.muted,padding:"0 6px",fontSize:13}}>$</span>
+                    <input value={inc[field]||""} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,[field]:e.target.value,amount:field==="typicalAmount"?e.target.value:x.amount}:x))}
+                      type="number" placeholder="0"
+                      style={{flex:1,background:"none",border:"none",padding:"8px 8px 8px 0",color:field==="typicalAmount"?C.greenBright:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:field==="typicalAmount"?700:400}}/>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>}
           <div>
             <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Type</div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -2760,7 +2785,7 @@ function Onboarding({onComplete,onViewLegal}){
       <div style={{background:C.goldDim,border:`1px solid ${C.gold}44`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
         <div style={{color:C.goldBright,fontSize:13,lineHeight:1.6}}>💡 Include every source — even irregular ones. Flourish maps all income vs. bills to warn you <strong>before</strong> you hit zero.</div>
       </div>
-      <Btn label="Continue →" onClick={()=>setStep(3)} disabled={!incomes.some(i=>i.amount)}/>
+      <Btn label="Continue →" onClick={()=>setStep(3)} disabled={!incomes.some(i=>i.amount||(i.isVariable&&i.typicalAmount))}/>
     </div>,
 
     // 3: Bank Connection
@@ -3553,7 +3578,7 @@ function SpendScreen({data}){
   const [catFilter,setCatFilter]=useState("All");
   const [dismissed,setDismissed]=useState([]);
   const isDemo=!data.bankConnected;
-  const txns=isDemo?MOCK_TXN:data.transactions;
+  const txns=isDemo?(data.transactions||[]):(data.transactions||[]);
   const stats=computeStats(txns);
   const cats=["All",...Array.from(new Set(txns.map(t=>t.cat)))];
   const filtered=catFilter==="All"?txns:txns.filter(t=>t.cat===catFilter);
