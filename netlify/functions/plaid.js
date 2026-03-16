@@ -2,7 +2,8 @@
  * Flourish Money — Plaid API Proxy
  * netlify/functions/plaid.js
  *
- * Actions: create_link_token | exchange_token | get_accounts | get_transactions | remove_item
+ * Actions: create_link_token | exchange_token | get_accounts | get_transactions
+ *          get_investments | get_liabilities | remove_item
  *
  * Env vars (Netlify → Site Settings → Environment Variables):
  *   PLAID_CLIENT_ID  — your Plaid client ID
@@ -60,6 +61,23 @@ async function plaid(endpoint, body) {
   return data;
 }
 
+// Map Plaid account subtypes to display labels
+function accountSubtype(subtype) {
+  const map = {
+    rrsp:  "RRSP",
+    tfsa:  "TFSA",
+    fhsa:  "FHSA",
+    resp:  "RESP",
+    rrif:  "RRIF",
+    lira:  "LIRA",
+    "401k": "401(k)",
+    roth:  "Roth IRA",
+    hsa:   "HSA",
+    "529": "529 Plan",
+  };
+  return map[subtype?.toLowerCase()] || subtype || "Investment";
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 200, headers: CORS, body: "" };
@@ -80,12 +98,12 @@ exports.handler = async (event) => {
   }
 
   const { action } = body;
+  console.log("[Plaid debug] ENV:", process.env.PLAID_ENV, "| ACTION:", action, "| CLIENT_ID length:", (process.env.PLAID_CLIENT_ID||"").length, "| SECRET length:", (process.env.PLAID_SECRET||"").length);
 
   try {
     // 1. create_link_token
     if (action === "create_link_token") {
       const country = body.country === "US" ? "US" : "CA";
-      // Update mode: if access_token provided, re-auth an existing Item (ITEM_LOGIN_REQUIRED)
       const isUpdate = !!body.access_token;
       const linkBody = isUpdate
         ? {
@@ -97,11 +115,10 @@ exports.handler = async (event) => {
         : {
             user:          { client_user_id: body.user_id || "flourish-user" },
             client_name:   "Flourish Money",
-            products:      ["transactions", "auth"],
+            products:      ["transactions", "auth", "investments", "liabilities"],
             country_codes: [country],
             language:      "en",
             transactions:  { days_requested: 90 },
-            // Required for OAuth (Canadian banks like TD, RBC, Scotiabank in production)
             redirect_uri:  "https://flourishmoney.app",
           };
       const data = await plaid("/link/token/create", linkBody);
@@ -147,8 +164,6 @@ exports.handler = async (event) => {
       const endDate    = new Date().toISOString().split("T")[0];
       const startDate  = new Date(Date.now() - cappedDays * 86_400_000).toISOString().split("T")[0];
 
-      // Try /transactions/sync first. Fresh sandbox items sometimes return 0 —
-      // fall back to /transactions/get which is date-range based and more reliable.
       let transactions = await syncTransactions(access_token, startDate, endDate);
       if (transactions.length === 0) {
         transactions = await getTransactions(access_token, startDate, endDate);
@@ -157,7 +172,72 @@ exports.handler = async (event) => {
       return ok({ transactions, total: transactions.length });
     }
 
-    // 5. remove_item
+    // 5. get_investments
+    if (action === "get_investments") {
+      const { access_token } = body;
+      if (!access_token) return e400("access_token required");
+      try {
+        const data = await plaid("/investments/holdings/get", { access_token });
+        const securities = data.securities || [];
+        const secMap = {};
+        securities.forEach(s => { secMap[s.security_id] = s; });
+
+        const holdings = (data.holdings || []).map(h => {
+          const s = secMap[h.security_id] || {};
+          return {
+            id:       h.account_id + "_" + h.security_id,
+            name:     s.name || "Unknown",
+            ticker:   s.ticker_symbol || null,
+            type:     s.type || "other",
+            subtype:  accountSubtype(s.type),
+            quantity: h.quantity,
+            price:    s.close_price || 0,
+            value:    h.institution_value || 0,
+            currency: s.iso_currency_code || "CAD",
+            gain:     null,
+            gainPct:  null,
+          };
+        });
+
+        return ok({ holdings });
+      } catch {
+        return ok({ holdings: [] });
+      }
+    }
+
+    // 6. get_liabilities
+    if (action === "get_liabilities") {
+      const { access_token } = body;
+      if (!access_token) return e400("access_token required");
+      try {
+        const data = await plaid("/liabilities/get", { access_token });
+        const l = data.liabilities || {};
+        return ok({
+          credit: (l.credit || []).map(c => ({
+            name:       c.name,
+            balance:    c.last_statement_balance || 0,
+            limit:      c.credit_limit || null,
+            apr:        c.aprs?.[0]?.apr_percentage || null,
+            minPayment: c.minimum_payment_amount || 0,
+          })),
+          mortgage: (l.mortgage || []).map(m => ({
+            name:           m.name,
+            balance:        m.outstanding_principal_balance || 0,
+            interestRate:   m.interest_rate?.percentage || null,
+            monthlyPayment: m.next_monthly_payment || 0,
+          })),
+          student: (l.student || []).map(s => ({
+            name:         s.name,
+            balance:      (s.outstanding_interest_amount || 0) + (s.outstanding_principal_balance || 0),
+            interestRate: s.interest_rate_percentage || null,
+          })),
+        });
+      } catch {
+        return ok({ credit: [], mortgage: [], student: [] });
+      }
+    }
+
+    // 7. remove_item
     if (action === "remove_item") {
       const { access_token } = body;
       if (!access_token) return e400("access_token required");
@@ -195,7 +275,7 @@ function e400(msg) { return { statusCode: 400, headers: CORS, body: JSON.stringi
 // /transactions/sync — cursor-based, handles updates/removes
 async function syncTransactions(access_token, startDate, endDate) {
   let added   = [];
-  let cursor  = null;   // null (not undefined) for first call — Plaid is strict
+  let cursor  = null;
   let hasMore = true;
   let pages   = 0;
 
@@ -237,7 +317,7 @@ function normalizeTxns(txns, startDate, endDate) {
       account_id: t.account_id,
       date:       t.date,
       name:       t.merchant_name || t.original_description || t.name,
-      amount:     t.amount,      // positive = money out (Plaid convention, kept as-is)
+      amount:     t.amount,
       category:   t.personal_finance_category?.primary || t.category?.[0] || "OTHER",
       currency:   t.iso_currency_code || "CAD",
       pending:    t.pending,
