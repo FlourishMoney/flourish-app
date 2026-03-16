@@ -5197,7 +5197,6 @@ function Settings({data,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconn
           {isActive&&<SettingsSectionContent sectionKey={item.key} data={data} color={item.color} onAddBank={onAddBank} onDisconnectBank={onDisconnectBank} bankConnected={bankConnected} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={onReconnect}/>}
         </div>
       );})}
-    )}
     <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.8,fontWeight:700,marginTop:20,marginBottom:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Notifications</div>
     {[
       ["overdraft","zap",    C.red,   "Overdraft warnings"],
@@ -5566,6 +5565,13 @@ function CreditScreen({data}){
   // Score derived from behavioral signals (mock until Plaid/bureau integration)
   const txns = data.transactions||[];
   const accounts = data.accounts||[];
+
+  // Empty state — no bank and no credit score entered
+  if(!data.bankConnected && !profile.creditKnown) return (
+    <EmptyState icon="💳" title="Connect your bank for credit coaching"
+      body="Flourish analyses your spending patterns and debt utilization to build a personalized credit improvement plan. Connect your bank to unlock this."
+      action="Connect Bank" onAction={()=>window.dispatchEvent(new CustomEvent("flourish:settings"))} color={C.blue}/>
+  );
   const income = ((data.incomes||[]).reduce((s,i)=>s+parseFloat(i.amount||0),0) || DEMO.income)*2.2; // monthly
   const spending = txns.filter(t=>t.amount>0&&t.cat!=="Income").reduce((s,t)=>s+t.amount,0);
   const utilization = Math.min(1, spending / Math.max(income, 1));
@@ -6347,7 +6353,10 @@ export default function FlourishApp(){
     if(reconnectLoading) return;
     setReconnectLoading(true);
     // If we have an access token, reconnect existing item; otherwise create new link
-    const payload = plaidAccessToken ? { access_token: plaidAccessToken } : {};
+    const country = appData?.profile?.country || "CA";
+    const payload = plaidAccessToken
+      ? { access_token: plaidAccessToken }
+      : { country };
     callPlaid("create_link_token", payload)
       .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
       .catch(()=>{ setReconnectLoading(false); alert("Could not start bank connection — please try again."); });
