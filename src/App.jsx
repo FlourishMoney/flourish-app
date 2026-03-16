@@ -4275,6 +4275,13 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
       {!budget&&<div style={{color:C.muted,fontSize:11,marginTop:4}}>{pct}% of spending this month</div>}
       {open&&(
         <div style={{marginTop:12,borderTop:`1px solid ${C.border}`,paddingTop:10}} onClick={e=>e.stopPropagation()}>
+          {/* Bills explanation — only show for Bills category */}
+          {cat==="Bills"&&(
+            <div style={{background:C.teal+"10",border:`1px solid ${C.teal}22`,borderRadius:10,padding:"8px 12px",marginBottom:8}}>
+              <div style={{color:C.tealBright,fontSize:11,fontWeight:600}}>📋 These are payments made this month</div>
+              <div style={{color:C.muted,fontSize:10,marginTop:2,lineHeight:1.5}}>Transactions marked ✓ match your tracked bills. Your tracked bills power the forecast — this list shows what was actually paid.</div>
+            </div>
+          )}
           {/* Budget setter */}
           <div style={{marginBottom:10,padding:"8px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
             {editBudget ? (
@@ -4299,15 +4306,21 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
           {/* Transaction list */}
           {catTxns.length===0
             ? <div style={{color:C.muted,fontSize:12}}>No transactions in this category this month.</div>
-            : catTxns.sort((a,b)=>b.amount-a.amount).slice(0,10).map((t,j)=>(
+            : catTxns.sort((a,b)=>b.amount-a.amount).slice(0,10).map((t,j)=>{
+              const bills = window.__flourishBills||[];
+              const linkedBill = bills.find(b=>Math.abs(parseFloat(b.amount||0)-t.amount)<5);
+              return (
               <div key={j} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:j<Math.min(catTxns.length,10)-1?`1px solid ${C.border}`:"none"}}>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{color:C.cream,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.name}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                    <div style={{color:C.cream,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:180}}>{t.name}</div>
+                    {linkedBill&&<span style={{background:C.green+"22",color:C.greenBright,fontSize:9,fontWeight:700,borderRadius:99,padding:"1px 6px",flexShrink:0}}>✓ {linkedBill.name}</span>}
+                  </div>
                   <div style={{color:C.muted,fontSize:10}}>{t.date}</div>
                 </div>
-                <span style={{color,fontWeight:700,fontSize:13,flexShrink:0,marginLeft:12}}>${(t.amount||0).toFixed(2)}</span>
+                <span style={{color:linkedBill?C.greenBright:color,fontWeight:700,fontSize:13,flexShrink:0,marginLeft:8}}>${(t.amount||0).toFixed(2)}</span>
               </div>
-            ))
+              );})
           }
           {catTxns.length>10&&<div style={{color:C.muted,fontSize:11,marginTop:6,textAlign:"center"}}>+{catTxns.length-10} more transactions</div>}
         </div>
@@ -4370,6 +4383,16 @@ function SpendScreen({data, setAppData}){
         <div style={{background:C.bg,borderRadius:"24px 24px 0 0",width:"100%",maxWidth:520,border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",padding:"0 0 env(safe-area-inset-bottom,16px)"}} onClick={e=>e.stopPropagation()}>
           <div style={{padding:"16px 20px 14px",borderBottom:`1px solid ${C.border}`}}>
             <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
+            {(()=>{
+              // Check if an existing bill matches this transaction's amount closely
+              const txAmt = parseFloat(markBillTxn?.amount||0);
+              const matchedBill = (data.bills||[]).find(b => Math.abs(parseFloat(b.amount||0) - txAmt) < 5);
+              return matchedBill ? (
+                <div style={{color:C.goldBright,fontSize:12,fontWeight:700,marginBottom:6,display:"flex",alignItems:"center",gap:6}}>
+                  <span>⚠️</span> This looks like your tracked <strong>{matchedBill.name}</strong> (${parseFloat(matchedBill.amount).toFixed(2)}/mo)
+                </div>
+              ) : null;
+            })()}
             <div style={{color:C.cream,fontWeight:800,fontSize:16}}>Add to Monthly Bills</div>
             <div style={{color:C.muted,fontSize:12,marginTop:3}}>This will add it to your forecast and Plan screen.</div>
           </div>
@@ -4537,6 +4560,7 @@ function SpendScreen({data, setAppData}){
         const colors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
         const catTxns=thisMonthTxns.filter(t=>getCat(t)===cat&&t.amount>0);
         const budget = (data.budgets||{})[cat] || null;
+        window.__flourishBills = data.bills||[];
         return <ExpandableCatCard key={i} cat={cat} amt={amt} totalSpent={totalSpent} color={colors[i%6]} catTxns={catTxns}
           budget={budget} onSetBudget={(cat,val)=>{
             if(setAppData) setAppData(prev=>({...prev,budgets:{...(prev.budgets||{}),
