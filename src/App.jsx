@@ -2566,7 +2566,7 @@ function Onboarding({onComplete,onViewLegal}){
       .catch(()=>{ setBankError("Could not connect to your bank — please check your connection and try again."); setLinkTokenLoading(false); });
   },[linkToken, p.country]); // eslint-disable-line
 
-  useEffect(()=>{ if(step===3) fetchLinkToken(); },[step]); // eslint-disable-line
+  useEffect(()=>{ if(step===2) fetchLinkToken(); },[step]); // eslint-disable-line
 
   // Called by Plaid Link after user authenticates
   const onPlaidSuccess=useCallback(async(publicToken,metadata)=>{
@@ -2659,7 +2659,7 @@ function Onboarding({onComplete,onViewLegal}){
     }
   };
 
-  const skipBank=()=>{setConnAccts([{id:"m1",name:"Chequing",type:"checking",balance:DEMO.balance,institution:"Manual"}]);setBankStage("done");};
+  const skipBank=()=>{setConnAccts([]);setBankStage("skipped");};
   const addBill=()=>setBills([...bills,{name:"",amount:"",date:"1"}]);
   const rmBill=i=>setBills(bills.filter((_,x)=>x!==i));
   const upBill=(i,f,v)=>setBills(bills.map((b,x)=>x===i?{...b,[f]:v}:b));
@@ -2812,15 +2812,21 @@ function Onboarding({onComplete,onViewLegal}){
       {bankStage==="loading"&&<div style={{textAlign:"center",padding:"40px 0"}}>
         <div style={{marginBottom:14,display:"flex",justifyContent:"center",filter:"drop-shadow(0 0 20px #3CB54A55)"}}><FlourishMark size={54}/></div>
         <div style={{color:C.greenBright,fontWeight:700,fontSize:18,marginBottom:8}}>
-          {bankProg<35?"Exchanging credentials…":bankProg<70?"Fetching your accounts…":"Importing transactions…"}
+          {bankProg<50?"Connecting securely…":"Fetching your accounts…"}
         </div>
-        <div style={{color:C.muted,fontSize:13,marginBottom:22}}>Securely syncing 90 days of history</div>
+        <div style={{color:C.muted,fontSize:13,marginBottom:22}}>Securely connecting your accounts</div>
         <div style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.06)",borderRadius:99,height:6,overflow:"hidden",margin:"0 10px"}}>
           <div style={{width:`${bankProg}%`,height:"100%",background:`linear-gradient(90deg,${C.green},${C.teal})`,borderRadius:99,transition:"width .4s ease-out"}}/>
         </div>
         <div style={{color:C.muted,fontSize:12,marginTop:8}}>{Math.round(bankProg)}%</div>
       </div>}
 
+      {bankStage==="skipped"&&<div style={{textAlign:"center",padding:"20px 0"}}>
+        <div style={{fontSize:48,marginBottom:12}}>✏️</div>
+        <div style={{color:C.cream,fontWeight:800,fontSize:18,marginBottom:8}}>Entering manually</div>
+        <div style={{color:C.muted,fontSize:13,lineHeight:1.6,marginBottom:20}}>No problem — you can connect your bank any time from Settings to unlock live data.</div>
+        <Btn label="Continue →" onClick={()=>setStep(3)}/>
+      </div>}
       {bankStage==="done"&&<div>
         <div style={{textAlign:"center",marginBottom:16}}>
           <div style={{width:80,height:80,borderRadius:"50%",background:C.green+"22",border:`1px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px"}}><Icon id="check" size={40} color={C.greenBright} strokeWidth={1.9}/></div>
@@ -3041,7 +3047,7 @@ function Onboarding({onComplete,onViewLegal}){
         ["📅",`${bills.filter(b=>b.name&&b.amount).length} bills in your 2-week forecast`],
         ["📉",debts.filter(d=>d.name&&d.balance).length>0?"Debt payoff simulator built — drag to see your date":"No debt tracked — incredible!"],
         ["💳",p.creditKnown?`Credit score ${p.creditScore} tracked — coaching personalised`:"Credit score estimated from your data"],
-        ["🧠",`AI coach ready to analyze your ${plaidTxns.length||MOCK_TXN.length} transactions`],
+        ["🧠",connAccts.some(a=>a.institution!=="Manual")?"AI coach ready — transactions loading in background":"AI coach ready to analyze your data"],
         ["🔔","Overdraft alerts and coach notifications on"],
         [p.status==="single"?"🧘":"💑",p.status==="single"?"Weekly solo check-in ready":"Couples money meeting ready"],
         [p.hasKids?"👧":"🎓",p.hasKids?"Kids Zone unlocked":"Money School unlocked"],
