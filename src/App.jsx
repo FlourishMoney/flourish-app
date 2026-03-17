@@ -3757,7 +3757,58 @@ function buildLiveNotifs(data) {
     }
   });
 
-  return notifs;
+  // Large transaction alerts
+  // Fires when a single transaction is 3× the user's average OR > $200 AND no prior alert this month
+  const txns = data?.transactions || [];
+  const today_ym = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+  const monthTxns = txns.filter(t => {
+    if(!t.date || t.amount <= 0) return false;
+    const d = new Date(t.date + "T12:00:00");
+    return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth();
+  });
+  if(monthTxns.length >= 3) {
+    const avgSpend = monthTxns.reduce((s,t) => s + t.amount, 0) / monthTxns.length;
+    const LARGE_THRESHOLD = Math.max(200, avgSpend * 3);
+    // Find the single largest transaction this month that we haven't already alerted on
+    const alerted = (() => { try { return new Set(JSON.parse(localStorage.getItem("flourish_alerted_txns")||"[]")); } catch { return new Set(); } })();
+    const largeTxns = monthTxns
+      .filter(t => t.amount >= LARGE_THRESHOLD && !alerted.has(t.id))
+      .sort((a,b) => b.amount - a.amount)
+      .slice(0, 3); // max 3 large-spend alerts at once
+    largeTxns.forEach(t => {
+      const multiple = (t.amount / avgSpend).toFixed(1);
+      const catLabel = t.cat || "spend";
+      notifs.push({
+        id: `large_txn_${t.id}`,
+        icon: "alert-circle",
+        title: `Large ${catLabel} — $${t.amount.toFixed(0)}`,
+        body: `${t.name} was ${multiple}× your usual transaction size. Is this expected? If not, check your account.`,
+        read: false,
+        time: t.date || "Recently",
+        type: "behavior",
+        color: NOTIF_COLORS.behavior,
+      });
+    });
+  }
+
+  // Shortfall alert — safe-to-spend went negative this month
+  const { safeAmount, overdraft: isOverdraft } = SafeSpendEngine.calculate(data);
+  const shortfallKey = `flourish_shortfall_${today_ym}`;
+  const shortfallAlerted = (() => { try { return localStorage.getItem(shortfallKey) === "1"; } catch { return false; } })();
+  if(isOverdraft && !shortfallAlerted) {
+    notifs.push({
+      id: `shortfall_${today_ym}`,
+      icon: "trending-down",
+      title: "Upcoming bills exceed your balance",
+      body: `You have bills due soon that your balance can't cover. Tap to see exactly which ones and when.`,
+      read: false,
+      time: "Now",
+      type: "urgent",
+      color: NOTIF_COLORS.urgent,
+    });
+  }
+
+    return notifs;
 }
 
 function Notifications({onClose, data, onMarkAllRead}){
@@ -3784,7 +3835,21 @@ function Notifications({onClose, data, onMarkAllRead}){
       </div>
     </div>
     {notifs.map(n=>(
-      <div key={n.id} onClick={()=>setNotifs(ns=>ns.map(x=>x.id===n.id?{...x,read:true}:x))}
+      <div key={n.id} onClick={()=>{
+        setReadIds(ids=>{ const s=new Set(ids); s.add(n.id); try{localStorage.setItem("flourish_read_notifs",JSON.stringify([...s]));}catch{} return s; });
+        // Mark large-txn alerts as seen so they don't re-appear
+        if(n.id.startsWith("large_txn_")) {
+          try {
+            const txnId = n.id.replace("large_txn_","");
+            const prev = new Set(JSON.parse(localStorage.getItem("flourish_alerted_txns")||"[]"));
+            prev.add(txnId);
+            localStorage.setItem("flourish_alerted_txns", JSON.stringify([...prev]));
+          } catch {}
+        }
+        if(n.id.startsWith("shortfall_")) {
+          try { localStorage.setItem(n.id.replace("shortfall_","flourish_shortfall_"), "1"); } catch {}
+        }
+      }}
         style={{background:n.read?C.card:n.color+"12",borderRadius:20,padding:"15px 17px",border:`1px solid ${n.read?C.border:n.color+"44"}`,marginBottom:10,cursor:"pointer",position:"relative",transition:"all .2s"}}>
         <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
           <div style={{width:40,height:40,borderRadius:12,background:n.color+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon id={n.icon||"bell"} size={18} color={n.color} strokeWidth={1.5}/></div>
@@ -4770,6 +4835,34 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                   <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{overdueCount > 1 ? `${overdueCount} bills past due` : `$${overdueBill?.amount} past due`} · Mark as paid in Your Bills</div>
                 </div>
                 <span style={{color:C.red,fontSize:18}}>→</span>
+              </div>
+            );
+          }
+
+          // Priority 1.6 — unusual large transaction this month
+          const alertTxns = (() => {
+            const now2 = new Date();
+            const mt = (data.transactions||[]).filter(t => {
+              if(!t.date || t.amount <= 0) return false;
+              const d = new Date(t.date + "T12:00:00");
+              return d.getFullYear() === now2.getFullYear() && d.getMonth() === now2.getMonth();
+            });
+            if(mt.length < 3) return [];
+            const avg = mt.reduce((s,t)=>s+t.amount,0) / mt.length;
+            const threshold = Math.max(200, avg * 3);
+            const alerted = (() => { try { return new Set(JSON.parse(localStorage.getItem("flourish_alerted_txns")||"[]")); } catch { return new Set(); } })();
+            return mt.filter(t => t.amount >= threshold && !alerted.has(t.id)).sort((a,b)=>b.amount-a.amount);
+          })();
+          if(alertTxns.length > 0) {
+            const at = alertTxns[0];
+            return (
+              <div style={{...anim(170),background:"rgba(255,140,66,0.08)",border:`1px solid ${C.orange}44`,borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("activity")}>
+                <div style={{width:44,height:44,borderRadius:14,background:C.orange+"18",border:`1px solid ${C.orange}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>🔔</div>
+                <div style={{flex:1}}>
+                  <div style={{color:C.orange,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Unusual spend — ${at.amount.toFixed(0)}</div>
+                  <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{at.name} · {(at.amount / ((() => { const mt2=(data.transactions||[]).filter(t=>{if(!t.date||t.amount<=0)return false;const d=new Date(t.date+"T12:00:00");const n=new Date();return d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth();});return mt2.length>0?mt2.reduce((s,t)=>s+t.amount,0)/mt2.length:1;})())).toFixed(1)}× your average · Tap to review</div>
+                </div>
+                <span style={{color:C.orange,fontSize:18}}>→</span>
               </div>
             );
           }
