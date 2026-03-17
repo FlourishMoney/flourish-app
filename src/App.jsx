@@ -1755,6 +1755,16 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
 
   // Tax benefits (country-specific)
   if (cc.currency === "CAD") {
+    // RRSP room opportunity — highest value if they have unused room
+    const rrspRoomCalc = RRSPRoomEngine.calculate(data);
+    if(rrspRoomCalc?.remainingRoom > 500 && rrspRoomCalc?.maxRefund > 100) {
+      opportunities.push({
+        id:"rrsp_room", icon:"🏦", color:"#2E8B2E",
+        title:`$${rrspRoomCalc.remainingRoom.toLocaleString()} of RRSP room unused`,
+        detail:`Contributing your remaining room could get you ~$${rrspRoomCalc.maxRefund.toLocaleString()} back at tax time. At ${Math.round(rrspRoomCalc.marginalRate*100)}% marginal rate, every $1,000 contributed = $${rrspRoomCalc.refundPer1k} refund.`,
+        action:"RRSP Tracker", screen:"goals", tab:"retire", badge:"Claim it"
+      });
+    }
     opportunities.push({
       id:"tax", icon:"🍁", color:C.red,
       title:"Tax benefits you may qualify for",
@@ -2334,6 +2344,101 @@ const SafeSpendEngine = {
         return (thisMonth >= todayDate && thisMonth <= in10Days) ||
                (nextMonth >= todayDate && nextMonth <= in10Days);
       }),
+    };
+  }
+};
+
+// ─── RRSP ROOM ENGINE ────────────────────────────────────────────────────────
+// Calculates RRSP contribution room, remaining room, estimated refund,
+// and over-contribution risk. Canadian users only.
+
+const RRSP_ANNUAL_LIMIT = 32490; // 2025
+
+// Simplified Canadian marginal tax rates by province + income bracket
+// Returns combined federal + provincial marginal rate
+const getCanadianMarginalRate = (annualIncome, province = "ON") => {
+  const inc = parseFloat(annualIncome) || 0;
+  // Federal brackets 2025 (simplified)
+  let fed = 0.205; // default 20.5%
+  if(inc > 246752) fed = 0.33;
+  else if(inc > 173205) fed = 0.29;
+  else if(inc > 111733) fed = 0.26;
+  else if(inc > 57375)  fed = 0.205;
+  else fed = 0.15;
+
+  // Provincial surtax (simplified top brackets per province)
+  const provRates = {
+    ON: inc > 102894 ? 0.1316 : inc > 51446 ? 0.0915 : 0.0505,
+    BC: inc > 113158 ? 0.1670 : inc > 85650 ? 0.1490 : 0.0770,
+    AB: 0.10, // flat
+    QC: inc > 119910 ? 0.2575 : inc > 51780 ? 0.20 : 0.14,
+    MB: inc > 100000 ? 0.1750 : inc > 36842 ? 0.1275 : 0.1080,
+    SK: inc > 145955 ? 0.1450 : inc > 49720 ? 0.1275 : 0.105,
+    NS: inc > 150000 ? 0.21 : inc > 93000 ? 0.1900 : 0.0879,
+    NB: inc > 185064 ? 0.2030 : inc > 47715 ? 0.1482 : 0.0940,
+    PE: inc > 105000 ? 0.1800 : inc > 32656 ? 0.1580 : 0.0965,
+    NL: inc > 260000 ? 0.2100 : inc > 72000 ? 0.1580 : 0.0870,
+  };
+  const prov = provRates[province] || provRates.ON;
+  return Math.min(0.54, fed + prov); // cap at 54%
+};
+
+const RRSPRoomEngine = {
+  calculate(data) {
+    const ret         = data.profile?.retirement || {};
+    const profile     = data.profile || {};
+    const province    = profile.province || "ON";
+    const isCA        = (profile.country || "CA") === "CA";
+    if(!isCA) return null;
+
+    // ── Inputs ──────────────────────────────────────────────────────────────
+    // Room from CRA/NOA — the number on your notice of assessment
+    const roomFromCRA     = parseFloat(ret.rrspRoom || 0);
+    // What you've contributed so far this year
+    const contribThisYear = parseFloat(ret.rrspContribThisYear || 0);
+    // Last year's earned income — used to calculate new room earned this year
+    const prevIncome      = parseFloat(ret.rrspPrevIncome || 0);
+    // Current RRSP balance (already entered)
+    const balance         = parseFloat(ret.rrspBalance || 0);
+    // Monthly contribution (already entered)
+    const monthly         = parseFloat(ret.rrspMonthly || 0);
+
+    // ── New room earned this year (18% of last year's earned income) ────────
+    const newRoomThisYear = prevIncome > 0
+      ? Math.min(prevIncome * 0.18, RRSP_ANNUAL_LIMIT)
+      : 0;
+
+    // ── Total available room ─────────────────────────────────────────────────
+    // If user entered CRA room, use it (it already includes carry-forward + this year's new room)
+    // If not, estimate from prevIncome only
+    const totalRoom = roomFromCRA > 0 ? roomFromCRA : newRoomThisYear;
+    const remainingRoom = Math.max(0, totalRoom - contribThisYear);
+    const isOverContrib = contribThisYear > totalRoom + 2000; // $2k lifetime buffer
+
+    // ── Estimated tax refund ──────────────────────────────────────────────────
+    const annualIncome    = parseFloat(data.incomes?.[0] && data.incomes[0].amount
+      ? data.incomes[0].amount * 2.167 * 12 / 12
+      : 0) || 0;
+    const incomeForRate   = annualIncome || prevIncome || 0;
+    const marginalRate    = getCanadianMarginalRate(incomeForRate, province);
+    // Refund if they contribute the full remaining room
+    const maxRefund       = Math.round(remainingRoom * marginalRate);
+    // Refund per $1,000 contributed
+    const refundPer1k     = Math.round(1000 * marginalRate);
+
+    // ── How many years of monthly contribs to fill room ─────────────────────
+    const monthsToFill = monthly > 0 ? Math.ceil(remainingRoom / monthly) : null;
+
+    // ── Usage percentage ─────────────────────────────────────────────────────
+    const usagePct = totalRoom > 0 ? Math.min(100, Math.round(contribThisYear / totalRoom * 100)) : 0;
+
+    return {
+      roomFromCRA, contribThisYear, prevIncome,
+      newRoomThisYear, totalRoom, remainingRoom,
+      isOverContrib, marginalRate, maxRefund,
+      refundPer1k, monthsToFill, usagePct,
+      hasCRAData: roomFromCRA > 0,
+      hasEnoughData: roomFromCRA > 0 || prevIncome > 0,
     };
   }
 };
@@ -3778,6 +3883,26 @@ function buildLiveNotifs(data) {
       });
     }
   });
+
+  // RRSP room reminder — fire once in Q1 (Jan-Mar) if significant room unused
+  const rrspCalcNotif = RRSPRoomEngine.calculate(data);
+  if(rrspCalcNotif?.remainingRoom > 1000 && rrspCalcNotif?.maxRefund > 200) {
+    const isQ1 = today.getMonth() < 3; // Jan, Feb, Mar — RRSP deadline season
+    const rrspNotifKey = `flourish_rrsp_notif_${today.getFullYear()}`;
+    const rrspNotifShown = (() => { try { return localStorage.getItem(rrspNotifKey) === "1"; } catch { return false; } })();
+    if(isQ1 && !rrspNotifShown) {
+      notifs.push({
+        id: `rrsp_room_${today.getFullYear()}`,
+        icon: "trending-up",
+        title: `$${rrspCalcNotif.remainingRoom.toLocaleString()} RRSP room before March 1`,
+        body: `RRSP deadline is March 1. Contributing your remaining room could return ~$${rrspCalcNotif.maxRefund.toLocaleString()} at tax time.`,
+        read: false,
+        time: "RRSP Season",
+        type: "opportunity",
+        color: NOTIF_COLORS.opportunity,
+      });
+    }
+  }
 
   // Large transaction alerts
   // Fires when a single transaction is 3× the user's average OR > $200 AND no prior alert this month
@@ -6908,6 +7033,156 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
           })()}
         </div>
 
+        {/* ── RRSP Room Tracker (CA only) ───────────────────────────── */}
+        {isCA&&(()=>{
+          const room = RRSPRoomEngine.calculate(data);
+          return (
+            <div style={{background:C.card,borderRadius:18,padding:"16px 18px",border:`1px solid #2E8B2E44`}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                <div style={{width:36,height:36,borderRadius:11,background:"#2E8B2E18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🏦</div>
+                <div>
+                  <div style={{color:"#2E8B2E",fontWeight:900,fontSize:15,fontFamily:"'Playfair Display',serif"}}>RRSP Contribution Room</div>
+                  <div style={{color:C.muted,fontSize:11,marginTop:1}}>Track your room, estimate your refund</div>
+                </div>
+              </div>
+
+              {/* ── Input row ── */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+
+                <div>
+                  <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Available Room (from CRA)</div>
+                  <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                    <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
+                    <input value={ret.rrspRoom||""} onChange={e=>updateRet("rrspRoom",e.target.value)}
+                      type="number" inputMode="decimal" placeholder="e.g. 45000"
+                      style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:"#4CAF50",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700,width:0}}/>
+                  </div>
+                  <div style={{color:C.muted,fontSize:9,marginTop:2,lineHeight:1.4}}>Find on your CRA Notice of Assessment or CRA My Account</div>
+                </div>
+
+                <div>
+                  <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Contributed This Year</div>
+                  <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                    <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
+                    <input value={ret.rrspContribThisYear||""} onChange={e=>updateRet("rrspContribThisYear",e.target.value)}
+                      type="number" inputMode="decimal" placeholder="0"
+                      style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:"#4CAF50",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700,width:0}}/>
+                  </div>
+                  <div style={{color:C.muted,fontSize:9,marginTop:2,lineHeight:1.4}}>Total RRSP contributions Jan 1–now</div>
+                </div>
+
+                <div style={{gridColumn:"1/-1"}}>
+                  <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Last Year's Earned Income</div>
+                  <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                    <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
+                    <input value={ret.rrspPrevIncome||""} onChange={e=>updateRet("rrspPrevIncome",e.target.value)}
+                      type="number" inputMode="decimal" placeholder="e.g. 85000"
+                      style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700,width:0}}/>
+                  </div>
+                  <div style={{color:C.muted,fontSize:9,marginTop:2,lineHeight:1.4}}>Used to calculate this year's new room (18% of earned income, max $32,490)</div>
+                </div>
+              </div>
+
+              {/* ── Results ── */}
+              {room?.hasEnoughData&&<>
+
+                {/* Over-contribution warning */}
+                {room.isOverContrib&&(
+                  <div style={{background:"rgba(255,79,106,0.12)",border:"1px solid rgba(255,79,106,0.35)",borderRadius:12,padding:"10px 14px",marginBottom:12}}>
+                    <div style={{color:C.redBright||C.red,fontWeight:800,fontSize:12}}>⚠️ Over-contribution detected</div>
+                    <div style={{color:C.mutedHi,fontSize:11,marginTop:2,lineHeight:1.5}}>
+                      You've contributed ${(room.contribThisYear - room.totalRoom).toLocaleString()} over your limit.
+                      CRA charges 1%/month on excess over $2,000. File a T1-OVP immediately.
+                    </div>
+                  </div>
+                )}
+
+                {/* Progress bar */}
+                {!room.isOverContrib&&(
+                  <div style={{marginBottom:14}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6}}>
+                      <span style={{color:C.muted,fontSize:10,fontWeight:600}}>Room used</span>
+                      <span style={{color:"#4CAF50",fontSize:12,fontWeight:800}}>{room.usagePct}% of ${room.totalRoom.toLocaleString()}</span>
+                    </div>
+                    <div style={{height:8,background:C.cardAlt,borderRadius:99,overflow:"hidden"}}>
+                      <div style={{height:"100%",width:`${room.usagePct}%`,background:`linear-gradient(90deg,#2E8B2E,#4CAF50)`,borderRadius:99,transition:"width 0.6s ease"}}/>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",marginTop:5}}>
+                      <span style={{color:C.muted,fontSize:10}}>Used: ${room.contribThisYear.toLocaleString()}</span>
+                      <span style={{color:"#4CAF50",fontSize:10,fontWeight:700}}>Remaining: ${room.remainingRoom.toLocaleString()}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* New room this year */}
+                {room.newRoomThisYear>0&&(
+                  <div style={{background:"#2E8B2E12",border:"1px solid #2E8B2E33",borderRadius:10,padding:"8px 12px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{color:C.muted,fontSize:11}}>New room earned this year (18% of ${room.prevIncome.toLocaleString()})</span>
+                    <span style={{color:"#4CAF50",fontWeight:800,fontSize:12}}>+${room.newRoomThisYear.toLocaleString()}</span>
+                  </div>
+                )}
+
+                {/* Tax refund estimator */}
+                {room.remainingRoom>0&&room.maxRefund>0&&(
+                  <div style={{background:"rgba(77,168,255,0.08)",border:"1px solid rgba(77,168,255,0.25)",borderRadius:12,padding:"12px 14px",marginBottom:12}}>
+                    <div style={{color:C.blueBright,fontWeight:800,fontSize:13,marginBottom:8}}>💰 Tax Refund Estimator</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <span style={{color:C.mutedHi,fontSize:12}}>Contribute your full remaining room</span>
+                        <span style={{color:C.blueBright,fontWeight:800,fontSize:14}}>≈ ${room.maxRefund.toLocaleString()} back</span>
+                      </div>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <span style={{color:C.muted,fontSize:11}}>Your marginal rate (est.)</span>
+                        <span style={{color:C.muted,fontSize:11,fontWeight:700}}>{Math.round(room.marginalRate*100)}%</span>
+                      </div>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <span style={{color:C.muted,fontSize:11}}>Refund per $1,000 contributed</span>
+                        <span style={{color:C.muted,fontSize:11,fontWeight:700}}>${room.refundPer1k}</span>
+                      </div>
+                      {room.monthsToFill&&(
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                          <span style={{color:C.muted,fontSize:11}}>Months to fill room at current rate</span>
+                          <span style={{color:C.muted,fontSize:11,fontWeight:700}}>{room.monthsToFill} months</span>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{color:C.muted,fontSize:10,marginTop:8,lineHeight:1.4,borderTop:`1px solid rgba(255,255,255,0.06)`,paddingTop:8}}>
+                      Estimate only — based on simplified federal + provincial brackets for {data.profile?.province||"ON"}. Actual refund depends on all income sources. Consult a tax professional for exact amounts.
+                    </div>
+                  </div>
+                )}
+
+                {/* Room all used up */}
+                {room.remainingRoom===0&&!room.isOverContrib&&(
+                  <div style={{background:"rgba(0,204,133,0.10)",border:"1px solid rgba(0,204,133,0.25)",borderRadius:12,padding:"10px 14px"}}>
+                    <div style={{color:C.greenBright,fontWeight:800,fontSize:12}}>✓ Full room used — great work!</div>
+                    <div style={{color:C.mutedHi,fontSize:11,marginTop:2,lineHeight:1.5}}>
+                      You've maximized your RRSP contributions this year. New room resets in January.
+                    </div>
+                  </div>
+                )}
+
+                {/* No room data yet */}
+                {!room.hasCRAData&&(
+                  <div style={{color:C.muted,fontSize:11,lineHeight:1.6,marginTop:-4}}>
+                    💡 <strong style={{color:C.cream}}>Get your exact room:</strong> Log in to{" "}
+                    <span style={{color:C.teal,textDecoration:"underline"}}>CRA My Account</span>{" "}
+                    → RRSP and FHSA → Contribution room. It's the most accurate number.
+                  </div>
+                )}
+              </>}
+
+              {/* No data entered yet */}
+              {!room?.hasEnoughData&&(
+                <div style={{color:C.muted,fontSize:12,lineHeight:1.7,textAlign:"center",padding:"8px 0"}}>
+                  Enter your CRA room above to see your refund potential.<br/>
+                  Or enter last year's income and we'll estimate your room.
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {accts.map((a,i)=>(
           <div key={i} style={{background:C.card,borderRadius:18,padding:"18px",border:`1px solid ${a.color}33`,position:"relative",overflow:"hidden"}}>
             <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${a.color},${a.color}88)`}}/>
@@ -8431,6 +8706,17 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const debts = (data.debts||[]).map(d=>`${d.name} $${parseFloat(d.balance||0).toFixed(0)}${d.rate?` @ ${d.rate}%`:""}`).join("; ")||"none";
     const ret = data.profile?.retirement||{};
     const retInfo = Object.entries(ret).filter(([,v])=>parseFloat(v)>0).map(([k,v])=>`${k}: $${v}`).join(", ")||"none entered";
+    // RRSP room data
+    const rrspRoomData = (() => {
+      const r = RRSPRoomEngine.calculate(data);
+      if(!r || !r.hasEnoughData) return "not entered";
+      const parts = [];
+      if(r.totalRoom>0) parts.push(`total room $${r.totalRoom.toLocaleString()}`);
+      if(r.remainingRoom>0) parts.push(`$${r.remainingRoom.toLocaleString()} remaining`);
+      if(r.maxRefund>0) parts.push(`potential refund ~$${r.maxRefund.toLocaleString()}`);
+      if(r.isOverContrib) parts.push("WARNING: over-contributed");
+      return parts.join(", ") || "not entered";
+    })();
     return `You are a warm, expert personal finance coach for Flourish Money (${country==="CA"?"Canada":"USA"}).
 User financial snapshot:
 - Chequing balance: $${(balance||0).toFixed(2)}
@@ -8442,6 +8728,7 @@ User financial snapshot:
 - Debts: ${debts}
 - Savings goals: ${goals}
 - Retirement accounts: ${retInfo}
+- RRSP contribution room: ${rrspRoomData}
 - Country: ${country}
 
 When the user discusses or agrees to a goal, contribution amount, or financial plan, end your reply with a JSON block on its own line so the app can auto-update:
