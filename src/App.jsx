@@ -3685,8 +3685,8 @@ function buildLiveNotifs(data) {
 }
 
 function Notifications({onClose, data, onMarkAllRead}){
-  const getReadIds = () => { try { return new Set(JSON.parse(localStorage.getItem("flourish_read_notifs")||"[]")); } catch { return new Set(); } };
-  const [readIds, setReadIds] = useState(getReadIds);
+  // useState with inline lazy initialiser — avoids TDZ from named function before hook
+  const [readIds, setReadIds] = useState(()=>{ try { return new Set(JSON.parse(localStorage.getItem("flourish_read_notifs")||"[]")); } catch { return new Set(); } });
   const liveNotifs = data ? [...buildLiveNotifs(data), ...INIT_NOTIFS] : INIT_NOTIFS;
   const notifs = liveNotifs.map(n=>({...n, read: readIds.has(n.id)}));
   const unread = notifs.filter(n=>!n.read).length;
@@ -8074,26 +8074,25 @@ function DesktopSidebar({data,setScreen}){
 
 // ─── AI COACH ─────────────────────────────────────────────────────────────────
 function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}, setScreen}){
-  const FREE_LIMIT=5;
-  const STORAGE_KEY = "flourish_coach_history";
-  const WELCOME = {role:"assistant", content:"Hey! I'm your Flourish AI Coach 👋 I can see your spending patterns, balances, and financial data. What would you like to work on today?"};
-  const freeMsgsLeft=isPremium?Infinity:Math.max(0,FREE_LIMIT-coachMsgCount);
-
-  // Load persisted history from localStorage, keeping last 40 messages max
-  const loadHistory = () => {
+  // ── ALL HOOKS FIRST — constants moved below to prevent TDZ ───────────────
+  const [messages, setMessages] = useState(()=>{
     try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      const saved = JSON.parse(localStorage.getItem("flourish_coach_history") || "null");
       if (Array.isArray(saved) && saved.length > 0) return saved.slice(-40);
     } catch {}
-    return [WELCOME];
-  };
-
-  const [messages, setMessages] = useState(loadHistory);
+    return [{role:"assistant", content:"Hey! I'm your Flourish AI Coach 👋 I can see your spending patterns, balances, and financial data. What would you like to work on today?"}];
+  });
   const [sessionDate] = useState(()=>new Date().toLocaleDateString("en-CA",{month:"short",day:"numeric"}));
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const bottomRef = useRef(null);
+
+  // ── Constants and derived values (after all hooks) ────────────────────────
+  const FREE_LIMIT=5;
+  const STORAGE_KEY = "flourish_coach_history";
+  const WELCOME = {role:"assistant", content:"Hey! I'm your Flourish AI Coach 👋 I can see your spending patterns, balances, and financial data. What would you like to work on today?"};
+  const freeMsgsLeft=isPremium?Infinity:Math.max(0,FREE_LIMIT-coachMsgCount);
 
   // Persist messages to localStorage whenever they change
   // If the last saved message is from a different day, inject a date divider on load
