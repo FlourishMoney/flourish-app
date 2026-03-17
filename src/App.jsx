@@ -2051,17 +2051,20 @@ function useWindowSize(){
   return size;
 }
 
-function computeStats(txns) {
+function computeStats(txns, catOverrides={}) {
   const SKIP_CATS = new Set(["Transfer","Income","Fees"]);
-  const sp = txns.filter(t=>t.amount>0 && !SKIP_CATS.has(t.cat));
+  // Use catOverrides so user-reassigned categories appear in breakdown
+  const getC = (t) => catOverrides[t.id] || t.cat;
+  const sp = txns.filter(t=>t.amount>0 && !SKIP_CATS.has(getC(t)));
   const byCat={}, byDow={0:0,1:0,2:0,3:0,4:0,5:0,6:0};
   let coffee=0,coffeeCount=0,delivery=0,subs=0;
   sp.forEach(t=>{
-    byCat[t.cat]=(byCat[t.cat]||0)+t.amount;
+    const cat = getC(t);
+    byCat[cat]=(byCat[cat]||0)+t.amount;
     byDow[t.dow]=(byDow[t.dow]||0)+t.amount;
     if(t.icon==="☕"){coffee+=t.amount;coffeeCount++;}
     if(t.name.toLowerCase().includes("uber eats")||t.name.toLowerCase().includes("doordash"))delivery+=t.amount;
-    if(t.cat==="Subscriptions")subs+=t.amount;
+    if(cat==="Subscriptions")subs+=t.amount;
   });
   const totalSpent=sp.reduce((a,t)=>a+t.amount,0); // sp already excludes Transfer/Income via SKIP_CATS
   const topCats=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,6);
@@ -5270,11 +5273,14 @@ function PlanAhead({data, setAppData, setScreen}){
 function AddCustomCategory({onAdd}){
   const [show,setShow]=useState(false);
   const [val,setVal]=useState("");
-  const save=()=>{
-    if(!val.trim()) return;
+  // Quick preset categories people commonly need
+  const QUICK_CATS = ["Business","Reimbursement","GrowSmart","Family","Medical","Gym","Pet","Gifts"];
+  const save=(name)=>{
+    const n = (name||val).trim();
+    if(!n) return;
     const existing=JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]");
-    localStorage.setItem("flourish_custom_cats",JSON.stringify([...existing,val.trim()]));
-    onAdd(val.trim());
+    if(!existing.includes(n)) localStorage.setItem("flourish_custom_cats",JSON.stringify([...existing,n]));
+    onAdd(n);
     setVal(""); setShow(false);
   };
   if(!show) return (
@@ -5283,12 +5289,24 @@ function AddCustomCategory({onAdd}){
     </button>
   );
   return (
-    <div style={{display:"flex",gap:8,alignItems:"center"}}>
-      <input value={val} onChange={e=>setVal(e.target.value)} placeholder="Category name…"
-        onKeyDown={e=>{if(e.key==="Enter") save();}}
-        style={{flex:1,background:C.cardAlt,border:`1px solid ${C.green}`,borderRadius:10,padding:"8px 12px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}} autoFocus/>
-      <button onClick={save} style={{background:C.green,border:"none",borderRadius:10,padding:"8px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>Add</button>
-      <button onClick={()=>{setShow(false);setVal("");}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 12px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>Cancel</button>
+    <div style={{marginTop:8}}>
+      {/* Quick presets */}
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+        {QUICK_CATS.map(c=>(
+          <button key={c} onClick={()=>save(c)}
+            style={{background:C.green+"14",border:`1px solid ${C.green}33`,borderRadius:99,padding:"5px 12px",color:C.greenBright,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:30}}>
+            {c}
+          </button>
+        ))}
+      </div>
+      {/* Custom name input */}
+      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        <input value={val} onChange={e=>setVal(e.target.value)} placeholder="Or type a custom name…"
+          onKeyDown={e=>{if(e.key==="Enter") save();}}
+          style={{flex:1,background:C.cardAlt,border:`1px solid ${C.green}`,borderRadius:10,padding:"8px 12px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}} autoFocus/>
+        <button onClick={()=>save()} style={{background:C.green,border:"none",borderRadius:10,padding:"8px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>Add</button>
+        <button onClick={()=>{setShow(false);setVal("");}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 12px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>✕</button>
+      </div>
     </div>
   );
 }
@@ -5385,6 +5403,10 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
   const [open, setOpen] = useState(false);
   const [editBudget, setEditBudget] = useState(false);
   const [budgetVal, setBudgetVal] = useState(budget ? String(budget) : "");
+  const [showAllTxns, setShowAllTxns] = useState(false);
+  const TXN_LIMIT = 8;
+  // Reset expanded state when card closes
+  const handleToggle = () => { if(open) setShowAllTxns(false); setOpen(o=>!o); };
   const pct = totalSpent > 0 ? Math.round(amt/totalSpent*100) : 0;
   const budgetPct = budget > 0 ? Math.min(100, Math.round((amt/budget)*100)) : null;
   const overBudget = budget > 0 && amt > budget;
@@ -5396,7 +5418,7 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
   };
 
   return (
-    <Card style={{cursor:"pointer"}} onClick={()=>!editBudget&&setOpen(o=>!o)}>
+    <Card style={{cursor:"pointer"}} onClick={()=>!editBudget&&handleToggle()}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <span style={{color:C.cream,fontSize:14,display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:20}}>{catTxns[0]?.icon||"💰"}</span>{cat}
@@ -5454,23 +5476,42 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
           {/* Transaction list */}
           {catTxns.length===0
             ? <div style={{color:C.muted,fontSize:12}}>No transactions in this category this month.</div>
-            : catTxns.sort((a,b)=>b.amount-a.amount).slice(0,10).map((t,j)=>{
-              const bills = window.__flourishBills||[];
-              const linkedBill = bills.find(b=>Math.abs(parseFloat(b.amount||0)-t.amount)<5);
-              return (
-              <div key={j} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:j<Math.min(catTxns.length,10)-1?`1px solid ${C.border}`:"none"}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                    <div style={{color:C.cream,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:180}}>{t.name}</div>
-                    {linkedBill&&<span style={{background:C.green+"22",color:C.greenBright,fontSize:9,fontWeight:700,borderRadius:99,padding:"1px 6px",flexShrink:0}}>✓ {linkedBill.name}</span>}
-                  </div>
-                  <div style={{color:C.muted,fontSize:10}}>{t.date}</div>
-                </div>
-                <span style={{color:linkedBill?C.greenBright:color,fontWeight:700,fontSize:13,flexShrink:0,marginLeft:8}}>${(t.amount||0).toFixed(2)}</span>
-              </div>
-              );})
+            : (()=>{
+              const sorted = catTxns.sort((a,b)=>b.amount-a.amount);
+              const visible = showAllTxns ? sorted : sorted.slice(0, TXN_LIMIT);
+              const hiddenCount = sorted.length - TXN_LIMIT;
+              return (<>
+                {visible.map((t,j)=>{
+                  const bills = window.__flourishBills||[];
+                  const linkedBill = bills.find(b=>Math.abs(parseFloat(b.amount||0)-t.amount)<5);
+                  return (
+                    <div key={j} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:j<visible.length-1?`1px solid ${C.border}`:"none"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                          <div style={{color:C.cream,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:180}}>{t.name}</div>
+                          {linkedBill&&<span style={{background:C.green+"22",color:C.greenBright,fontSize:9,fontWeight:700,borderRadius:99,padding:"1px 6px",flexShrink:0}}>✓ {linkedBill.name}</span>}
+                        </div>
+                        <div style={{color:C.muted,fontSize:10}}>{t.date}</div>
+                      </div>
+                      <span style={{color:linkedBill?C.greenBright:color,fontWeight:700,fontSize:13,flexShrink:0,marginLeft:8}}>${(t.amount||0).toFixed(2)}</span>
+                    </div>
+                  );
+                })}
+                {!showAllTxns && hiddenCount > 0 && (
+                  <button onClick={e=>{e.stopPropagation();setShowAllTxns(true);}}
+                    style={{width:"100%",marginTop:8,background:color+"12",border:`1px solid ${color}33`,borderRadius:10,padding:"8px",color,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
+                    Show {hiddenCount} more transaction{hiddenCount===1?"":"s"} ↓
+                  </button>
+                )}
+                {showAllTxns && sorted.length > TXN_LIMIT && (
+                  <button onClick={e=>{e.stopPropagation();setShowAllTxns(false);}}
+                    style={{width:"100%",marginTop:8,background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px",color:C.muted,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
+                    Show less ↑
+                  </button>
+                )}
+              </>);
+            })()}
           }
-          {catTxns.length>10&&<div style={{color:C.muted,fontSize:11,marginTop:6,textAlign:"center"}}>+{catTxns.length-10} more transactions</div>}
         </div>
       )}
     </Card>
@@ -5482,6 +5523,20 @@ function SpendScreen({data, setAppData, setScreen}){
   const [catFilter,setCatFilter]=useState("All");
   const [dismissed,setDismissed]=useState([]);
   const [period,setPeriod]=useState("month");
+  // Period date helpers
+  const startOfPeriod = (() => {
+    const d = new Date();
+    if(period==="week")  { const s=new Date(d); s.setDate(d.getDate()-d.getDay()); s.setHours(0,0,0,0); return s; }
+    if(period==="month") { return new Date(d.getFullYear(),d.getMonth(),1); }
+    if(period==="last")  { return new Date(d.getFullYear(),d.getMonth()-1,1); }
+    if(period==="3mo")   { return new Date(d.getFullYear(),d.getMonth()-2,1); }
+    return null; // "all" = 90 days, handled below
+  })();
+  const endOfPeriod = (() => {
+    const d = new Date();
+    if(period==="last") { return new Date(d.getFullYear(),d.getMonth(),0,23,59,59); }
+    return null; // up to today
+  })();
   const [accountFilter,setAccountFilter]=useState("All");
   const isDemo=!data.bankConnected;
   const txns=data.transactions||[];
@@ -5492,24 +5547,71 @@ function SpendScreen({data, setAppData, setScreen}){
     const d = new Date(t.date + "T12:00:00");
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
   });
-  const stats=computeStats(thisMonthTxns);
   const monthLabel = now.toLocaleString("en-CA",{month:"long",year:"numeric"});
-  // Declare getCat BEFORE cats — avoids Temporal Dead Zone error
+  // Declare getCat BEFORE stats and cats — avoids Temporal Dead Zone error
   const [recatTxn,setRecatTxn]=useState(null);
   const [markBillTxn,setMarkBillTxn]=useState(null);
   const [billForm,setBillForm]=useState({name:"",amount:"",date:"1"});
-  const [arrearsPayTxn,setArrearsPayTxn]=useState(null); // transaction being applied to arrears
+  const [arrearsPayTxn,setArrearsPayTxn]=useState(null);
+  // catOverrides must be before computeStats so breakdown uses custom categories
   const catOverrides = JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
   const getCat = (t) => catOverrides[t.id] || t.cat;
-  const recat = (txn, newCat) => {
-    const updated = {...catOverrides, [txn.id]: newCat};
-    localStorage.setItem("flourish_cat_overrides", JSON.stringify(updated));
+  const stats=computeStats(thisMonthTxns, catOverrides);
+  const [applyAllPrompt, setApplyAllPrompt] = useState(null); // {txn, newCat}
+
+  const recat = (txn, newCat, applyToAll=false) => {
+    const overrides = JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
+    if(applyToAll) {
+      // Apply to every transaction from the same merchant
+      const merchantKey = (txn.name||"").toLowerCase().trim();
+      const updated = {...overrides};
+      txns.forEach(t => {
+        if((t.name||"").toLowerCase().trim() === merchantKey) updated[t.id] = newCat;
+      });
+      localStorage.setItem("flourish_cat_overrides", JSON.stringify(updated));
+    } else {
+      const updated = {...overrides, [txn.id]: newCat};
+      localStorage.setItem("flourish_cat_overrides", JSON.stringify(updated));
+    }
     setRecatTxn(null);
+    setApplyAllPrompt(null);
   };
-  const cats=["All",...Array.from(new Set(txns.map(t=>getCat(t))))];
+
+  // When user picks a category, check if there are other transactions from same merchant
+  const recatWithSmartPrompt = (txn, newCat) => {
+    const merchantKey = (txn.name||"").toLowerCase().trim();
+    // Guard: empty name would match ALL unnamed transactions — skip prompt
+    if(!merchantKey) { recat(txn, newCat, false); return; }
+    const otherSameMerchant = txns.filter(t =>
+      t.id !== txn.id &&
+      (t.name||"").toLowerCase().trim() === merchantKey &&
+      merchantKey.length >= 3 && // require at least 3 chars to avoid over-matching
+      (catOverrides[t.id] || t.cat) !== newCat
+    );
+    if(otherSameMerchant.length > 0) {
+      setApplyAllPrompt({txn, newCat, count: otherSameMerchant.length + 1});
+    } else {
+      recat(txn, newCat, false);
+    }
+  };
+  const cats=["All",...Array.from(new Set(txns.map(t=>{
+    // Incoming transfers show as "Received" in the filter
+    if(getCat(t)==="Transfer" && t.amount<0) return "Received";
+    return getCat(t);
+  }))).filter(c=>c!=="Transfer"||txns.some(t=>getCat(t)==="Transfer"&&t.amount>0))];
   // displayTxns and EXCLUDE_CATS must be defined BEFORE filtered (TDZ prevention)
   const EXCLUDE_CATS = new Set(["Transfer","Income"]);
-  const displayTxns = period==="month" ? thisMonthTxns : txns;
+  const displayTxns = (() => {
+    if(period==="week"||period==="last"||period==="3mo") {
+      return txns.filter(t => {
+        if(!t.date) return false;
+        const d = new Date(t.date+"T12:00:00");
+        return (!startOfPeriod || d >= startOfPeriod) && (!endOfPeriod || d <= endOfPeriod);
+      });
+    }
+    if(period==="month") return thisMonthTxns;
+    return txns; // "all" = last 90 days
+  })();
   // Account filter — map account_id to account name
   const accountMap = (data.accounts||[]).reduce((m,a)=>({...m,[a.id]:a}),{});
   const uniqueAccounts = [...new Set(txns.map(t=>t.account_id).filter(Boolean))];
@@ -5519,9 +5621,17 @@ function SpendScreen({data, setAppData, setScreen}){
     type: accountMap[id]?.type || "account",
   }));
   const acctFiltered = accountFilter==="All" ? displayTxns : displayTxns.filter(t=>t.account_id===accountFilter);
-  const filtered=catFilter==="All"?acctFiltered.filter(t=>getCat(t)!=="Transfer"):acctFiltered.filter(t=>getCat(t)===catFilter);
+  const filtered=catFilter==="All"
+    ? acctFiltered.filter(t=>{
+        const cat=getCat(t);
+        if(cat==="Transfer") return t.amount<0; // show incoming transfers (e-transfers in), hide outgoing
+        return true;
+      })
+    : catFilter==="Received"
+      ? acctFiltered.filter(t=>getCat(t)==="Transfer"&&t.amount<0)
+      : acctFiltered.filter(t=>getCat(t)===catFilter);
   const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))).reduce((a,t)=>a+t.amount,0);
-  const totalIn=acctFiltered.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
+  const totalIn=acctFiltered.filter(t=>t.amount<0).reduce((a,t)=>a+Math.abs(t.amount),0);
 
   const cuts=[
     stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee is adding up",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month totalling $${stats.coffee.toFixed(2)}. That's $${(stats.coffee*12).toFixed(0)}/year. Making coffee at home 4 days a week cuts this by 60%.`,saving:`$${Math.round(stats.coffee*0.6)}/mo`,effort:"Low",color:C.orange},
@@ -5686,6 +5796,35 @@ function SpendScreen({data, setAppData, setScreen}){
         </div>
       </div>
     )}
+    {/* ── Apply to all vendor modal ─────────────────────────────────── */}
+    {applyAllPrompt&&(
+      <div style={{position:"fixed",inset:0,zIndex:1001,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setApplyAllPrompt(null)}>
+        <div style={{width:"100%",maxWidth:520,background:C.bg,borderRadius:"24px 24px 0 0",border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",padding:"0 0 env(safe-area-inset-bottom,16px)"}} onClick={e=>e.stopPropagation()}>
+          <div style={{padding:"16px 20px 14px",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
+            <div style={{color:C.cream,fontWeight:800,fontSize:16}}>Apply to all?</div>
+            <div style={{color:C.muted,fontSize:13,marginTop:4,lineHeight:1.5}}>
+              Found <strong style={{color:C.mutedHi}}>{applyAllPrompt.count} transactions</strong> from <strong style={{color:C.mutedHi}}>{applyAllPrompt.txn.name}</strong>.
+            </div>
+          </div>
+          <div style={{padding:"14px 20px 20px",display:"flex",flexDirection:"column",gap:10}}>
+            <button onClick={()=>recat(applyAllPrompt.txn, applyAllPrompt.newCat, true)}
+              style={{background:`linear-gradient(135deg,${C.orange},${C.orangeBright})`,border:"none",borderRadius:14,padding:"14px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",textAlign:"center"}}>
+              Apply "{applyAllPrompt.newCat}" to all {applyAllPrompt.count} transactions ✓
+            </button>
+            <button onClick={()=>recat(applyAllPrompt.txn, applyAllPrompt.newCat, false)}
+              style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"12px",color:C.mutedHi,fontWeight:600,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              Just this one transaction
+            </button>
+            <button onClick={()=>setApplyAllPrompt(null)}
+              style={{background:"none",border:"none",padding:"8px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
     {/* Re-categorize bottom sheet */}
     {recatTxn&&(
       <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={()=>setRecatTxn(null)}>
@@ -5721,13 +5860,13 @@ function SpendScreen({data, setAppData, setScreen}){
           <div style={{overflowY:"auto",padding:"16px 20px",flex:1}}>
             <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
               {[...ALL_CATS, ...(JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]"))].map(cat=>(
-                <button key={cat} onClick={()=>recat(recatTxn,cat)} style={{background:getCat(recatTxn)===cat?C.orange+"33":C.cardAlt,border:`1px solid ${getCat(recatTxn)===cat?C.orange:C.border}`,color:getCat(recatTxn)===cat?C.orangeBright:C.muted,borderRadius:99,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",minHeight:36}}>
+                <button key={cat} onClick={()=>recatWithSmartPrompt(recatTxn,cat)} style={{background:getCat(recatTxn)===cat?C.orange+"33":C.cardAlt,border:`1px solid ${getCat(recatTxn)===cat?C.orange:C.border}`,color:getCat(recatTxn)===cat?C.orangeBright:C.muted,borderRadius:99,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",minHeight:36}}>
                   {cat}
                 </button>
               ))}
             </div>
             {/* Add custom category */}
-            <AddCustomCategory onAdd={(cat)=>recat(recatTxn,cat)}/>
+            <AddCustomCategory onAdd={(cat)=>recatWithSmartPrompt(recatTxn,cat)}/>
           </div>
           {/* Safe bottom padding for mobile */}
           <div style={{height:"env(safe-area-inset-bottom, 16px)",flexShrink:0}}/>
@@ -5742,7 +5881,9 @@ function SpendScreen({data, setAppData, setScreen}){
       <div style={{textAlign:"right"}}>
         <div style={{color:C.red,fontWeight:800,fontSize:15}}>–${(totalSpent||0).toFixed(0)}</div>
         <div style={{color:C.green,fontSize:11}}>+${(totalIn||0).toFixed(0)} in</div>
-        <div style={{color:C.muted,fontSize:10,marginTop:2}}>{period==="month"?monthLabel:"Last 90 days"}</div>
+        <div style={{color:C.muted,fontSize:10,marginTop:2}}>
+          {period==="week"?"This week":period==="month"?monthLabel:period==="last"?"Last month":period==="3mo"?"Last 3 months":"Last 90 days"}
+        </div>
       </div>
     </div>
 
@@ -5779,7 +5920,10 @@ function SpendScreen({data, setAppData, setScreen}){
           <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Period</div>
           <select value={period} onChange={e=>setPeriod(e.target.value)}
             style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px",color:C.cream,fontSize:12,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
+            <option value="week">This week</option>
             <option value="month">{monthLabel}</option>
+            <option value="last">Last month</option>
+            <option value="3mo">Last 3 months</option>
             <option value="all">Last 90 days</option>
           </select>
         </div>
@@ -5811,8 +5955,8 @@ function SpendScreen({data, setAppData, setScreen}){
           <div style={{flex:1,minWidth:0}}>
             <div style={{color:C.cream,fontWeight:600,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txn.name}</div>
             <div style={{display:"flex",gap:6,marginTop:3,alignItems:"center"}}>
-              <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.color+"18",border:`1px solid ${txn.color}33`,borderRadius:99,padding:"2px 8px",color:txn.color,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
-                {getCat(txn)} <span style={{opacity:0.6,fontSize:9}}>✎</span>
+              <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.amount<0?C.green+"18":txn.color+"18",border:`1px solid ${txn.amount<0?C.green+"33":txn.color+"33"}`,borderRadius:99,padding:"2px 8px",color:txn.amount<0?C.greenBright:txn.color,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
+                {txn.amount<0&&getCat(txn)==="Transfer"?"Received ↓ tap to label":getCat(txn)} <span style={{opacity:0.6,fontSize:9}}>✎</span>
               </button>
               <span style={{color:C.muted,fontSize:10}}>{txn.date}</span>
               {txn.account_id&&accountFilter==="All"&&accountMap[txn.account_id]&&(
@@ -5823,35 +5967,57 @@ function SpendScreen({data, setAppData, setScreen}){
               {txn.pending&&<Chip label="Pending" color={C.gold} size={9}/>}
             </div>
           </div>
-          <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif",flexShrink:0}}>{txn.amount<0?"+":"–"}${Math.abs(txn.amount).toFixed(2)}</div>
+          <div style={{textAlign:"right",flexShrink:0}}>
+            <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
+              {txn.amount<0?"+":"–"}${Math.abs(txn.amount).toFixed(2)}
+            </div>
+            {txn.amount<0&&<div style={{color:C.greenBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>received</div>}
+          </div>
         </div>
       ))}
     </>}
     {tab==="breakdown"&&<>
+      {(()=>{
+        // Breakdown uses the same period-filtered set as the Transactions tab
+        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t)));
+        const bdIn   = acctFiltered.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
+        const bdTotal= bdTxns.reduce((s,t)=>s+t.amount,0);
+        const bdByCat= {};
+        bdTxns.forEach(t=>{const c=getCat(t);bdByCat[c]=(bdByCat[c]||0)+t.amount;});
+        const bdTopCats=Object.entries(bdByCat).sort((a,b)=>b[1]-a[1]).slice(0,8);
+        const periodLabel = period==="week"?"This week":period==="month"?monthLabel:period==="last"?"Last month":period==="3mo"?"Last 3 months":"Last 90 days";
+        return (<>
       <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
           <div>
-            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Spent · {monthLabel}</div>
-            <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>{`$${(totalSpent||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</div>
+            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Spent · {periodLabel}</div>
+            <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>{`$${(bdTotal||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</div>
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
-            <div style={{color:C.muted,fontSize:10,marginBottom:2}}>{thisMonthTxns.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))).length} transactions</div>
-            <div style={{color:C.green,fontSize:11}}>+${(totalIn||0).toLocaleString("en-CA",{minimumFractionDigits:0})} in</div>
+            <div style={{color:C.muted,fontSize:10,marginBottom:2}}>{bdTxns.length} transactions</div>
+            <div style={{color:C.green,fontSize:11}}>+${(bdIn||0).toLocaleString("en-CA",{minimumFractionDigits:0})} in</div>
           </div>
         </div>
       </Card>
-      {stats.topCats.map(([cat,amt],i)=>{
+      {bdTopCats.length===0&&<div style={{background:C.card,borderRadius:16,padding:"24px 20px",textAlign:"center",border:`1px solid ${C.border}`}}>
+        <div style={{fontSize:32,marginBottom:8}}>📊</div>
+        <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:4}}>No spending data for this period</div>
+        <div style={{color:C.muted,fontSize:12}}>Try a broader time range above.</div>
+      </div>}
+      {bdTopCats.map(([cat,amt],i)=>{
         const colors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
-        const catTxns=thisMonthTxns.filter(t=>getCat(t)===cat&&t.amount>0);
+        const catTxns=acctFiltered.filter(t=>getCat(t)===cat&&t.amount>0);
         const budget = (data.budgets||{})[cat] || null;
         window.__flourishBills = data.bills||[];
-        return <ExpandableCatCard key={i} cat={cat} amt={amt} totalSpent={totalSpent} color={colors[i%6]} catTxns={catTxns}
+        return <ExpandableCatCard key={i} cat={cat} amt={amt} totalSpent={bdTotal} color={colors[i%6]} catTxns={catTxns}
           budget={budget} onSetBudget={(cat,val)=>{
             if(setAppData) setAppData(prev=>({...prev,budgets:{...(prev.budgets||{}),
               ...(val===null ? Object.fromEntries(Object.entries(prev.budgets||{}).filter(([k])=>k!==cat)) : {[cat]:val})
             }}));
           }}/>;
       })}
+        </>);
+      })()}
     </>}
     {tab==="cuts"&&<>
       <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
