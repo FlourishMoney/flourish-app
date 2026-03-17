@@ -2039,7 +2039,7 @@ const FinancialCalcEngine = {
       .reduce((s,a) => s + Math.max(0, parseFloat(a.balance||0)), 0);
     // Liabilities: credit card balances from accounts + any manually entered debts
     const creditFromAccounts = accounts
-      .filter(a => a.type === "credit" || a.type === "credit card")
+      .filter(a => a.type === "credit" || a.type === "credit card" || a.subtype === "credit card" || a.type === "line of credit")
       .reduce((s,a) => s + Math.abs(parseFloat(a.balance||0)), 0);
     const manualDebts = debts.reduce((s,d) => s + parseFloat(d.balance||0), 0);
     // Avoid double-counting: use max of manual debts vs credit accounts
@@ -3346,24 +3346,31 @@ function Onboarding({onComplete,onViewLegal,userId}){
     // 5: Debts
     <div>
       <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Your debts</div>
-      <div style={{color:C.muted,fontSize:14,marginBottom:20}}>
-        {connAccts.some(a=>a.type==="credit"||a.type==="credit card")
-          ? "We've pulled in your credit cards. Add the interest rate and minimum payment for each — or skip."
-          : "No judgment — we'll build a real payoff plan with a simulator."}
-      </div>
+      {connAccts.some(a=>a.type==="credit"||a.type==="credit card"||a.subtype==="credit card")?(
+        <div style={{background:C.green+"11",border:`1px solid ${C.green}33`,borderRadius:14,padding:"12px 14px",marginBottom:16,display:"flex",gap:10,alignItems:"flex-start"}}>
+          <span style={{fontSize:18,flexShrink:0}}>🏦</span>
+          <div>
+            <div style={{color:C.greenBright,fontWeight:700,fontSize:13,marginBottom:2}}>Credit cards imported from your bank</div>
+            <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.6}}>We found {connAccts.filter(a=>a.type==="credit"||a.type==="credit card"||a.subtype==="credit card").length} credit card{connAccts.filter(a=>a.type==="credit"||a.type==="credit card"||a.subtype==="credit card").length!==1?"s":""} — balances are live. Add the interest rate and minimum payment so we can build your payoff plan.</div>
+          </div>
+        </div>
+      ):(
+        <div style={{color:C.muted,fontSize:14,marginBottom:20}}>No judgment — we&#39;ll build a real payoff plan with a simulator.</div>
+      )}
       {debts.map((d,i)=>(
         <div key={i} style={{background:C.cardAlt,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}`,marginBottom:10}}>
           <div style={{display:"flex",gap:8}}>
             <div style={{flex:1}}>
               <div style={{position:"relative"}}>
                 <Inp label="Name" value={d.name} onChange={v=>upDebt(i,"name",v)} placeholder="Visa, Car Loan…" sm/>
-                {d.fromBank&&<span style={{position:"absolute",top:0,right:0,fontSize:9,fontWeight:700,color:C.greenBright,background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"1px 6px"}}>from bank</span>}
+                {d.fromBank&&<span style={{position:"absolute",top:0,right:0,fontSize:9,fontWeight:700,color:C.greenBright,background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px"}}>🏦 live balance</span>}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <Inp label="Balance $" value={d.balance} onChange={v=>upDebt(i,"balance",v)} type="number" sm/>
-                <Inp label="Rate %" value={d.rate} onChange={v=>upDebt(i,"rate",v)} type="number" sm/>
+                <Inp label="Rate %" value={d.rate} onChange={v=>upDebt(i,"rate",v)} type="number" sm placeholder="e.g. 19.99"/>
               </div>
               <Inp label="Min Payment $" value={d.min} onChange={v=>upDebt(i,"min",v)} type="number" sm/>
+              {d.fromBank&&!d.rate&&<div style={{color:C.gold,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2,marginBottom:4}}>⚡ Add interest rate to unlock payoff simulator</div>}
             </div>
             {debts.length>1&&<button onClick={()=>rmDebt(i)} style={{background:C.redDim,border:"none",color:C.red,borderRadius:8,padding:"6px 10px",cursor:"pointer",alignSelf:"flex-start",marginTop:18}}>✕</button>}
           </div>
@@ -3612,17 +3619,36 @@ async function backgroundRefresh(isPremium, setAppData) {
       callPlaid("get_transactions", { access_token: accessToken, days: 90 }),
     ]);
     const normalisedTxns = normaliseTxns(txnData.transactions||[]);
-    setAppData(prev => ({
-      ...prev,
-      accounts: acctData.accounts.map(a => ({
+    setAppData(prev => {
+      const freshAccounts = acctData.accounts.map(a => ({
         id: a.id,
         name: a.name,
         type: a.subtype||a.type,
         balance: a.type==="credit" ? -(a.balance.current||0) : (a.balance.current??a.balance.available??0),
         institution: prev.accounts?.find(p=>p.id===a.id)?.institution||"Bank",
-      })),
-      transactions: normalisedTxns.length > 0 ? normalisedTxns : prev.transactions,
-    }));
+      }));
+      // Sync new credit card accounts into debts on background refresh
+      const creditAccts = freshAccounts.filter(a =>
+        a.type === "credit" || a.type === "credit card" ||
+        a.subtype === "credit card" || a.type === "line of credit"
+      );
+      const existingDebtNames = new Set((prev.debts||[]).map(d => (d.name||"").toLowerCase()));
+      const newCCDebts = creditAccts
+        .filter(a => !existingDebtNames.has((a.name||"").toLowerCase()))
+        .map(a => ({
+          name: a.name || "Credit Card",
+          balance: Math.abs(a.balance || 0).toFixed(2),
+          rate: "", min: "", fromBank: true,
+        }));
+      return {
+        ...prev,
+        accounts: freshAccounts,
+        transactions: normalisedTxns.length > 0 ? normalisedTxns : prev.transactions,
+        debts: newCCDebts.length > 0
+          ? [...(prev.debts||[]).filter(d => d.name || d.balance), ...newCCDebts]
+          : prev.debts,
+      };
+    });
     localStorage.setItem("flourish_last_refresh", Date.now().toString());
   } catch { /* silent failure */ }
 }
@@ -3687,7 +3713,7 @@ function DataTransparencyPanel({data, onClose}) {
 
   // Balance audit
   const chequingAccts = accounts.filter(a => a.type !== "credit" && a.type !== "investment");
-  const creditAccts   = accounts.filter(a => a.type === "credit");
+  const creditAccts   = accounts.filter(a => a.type === "credit" || a.type === "credit card" || a.subtype === "credit card" || a.type === "line of credit");
   const totalBalance  = chequingAccts.reduce((s,a) => s + parseFloat(a.balance||0), 0);
 
   // Category breakdown
@@ -5178,6 +5204,15 @@ function Goals({data,initialTab="sim",onUpgrade}){
     </div>
     {tab==="sim"&&<>
       {noDebts&&<EmptyState icon="🎯" title="No debts tracked yet" body="Add debts during setup to simulate payoff strategies and see how much interest you can save." action="Add Debts in Settings" onAction={()=>window.dispatchEvent(new CustomEvent("flourish:settings"))} color={C.purple}/>}
+      {!noDebts&&debts.every(d=>!parseFloat(d.rate||0))&&(
+        <div style={{background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:14,padding:"12px 14px",marginBottom:12,display:"flex",gap:10,alignItems:"flex-start"}}>
+          <span style={{fontSize:16,flexShrink:0}}>⚡</span>
+          <div>
+            <div style={{color:C.goldBright,fontWeight:700,fontSize:13,marginBottom:2}}>Add interest rates to unlock the simulator</div>
+            <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.6}}>Your credit card rate is on your statement or card agreement — typically 19.99%–29.99%. Add it in Settings → Debts to see your exact debt-free date and total interest saved.</div>
+          </div>
+        </div>
+      )}
       {!noDebts&&debts.length>1&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{debts.map((d,i)=><button key={i} onClick={()=>setSelDebt(i)} style={{background:safeSelDebt===i?C.purple+"33":C.cardAlt,border:`1px solid ${selDebt===i?C.purple:C.border}`,color:safeSelDebt===i?C.purpleBright:C.muted,borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>{d.name}</button>)}</div>}
       {!noDebts&&<div style={{background:`linear-gradient(135deg,${C.purpleDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"20px 22px",border:`1px solid ${C.purple}44`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
@@ -6292,12 +6327,27 @@ function InlineDebtEditor({data, setAppData, color, navToScreen}){
 
   return (
     <div style={s}>
-      {(data.debts||[]).length===0&&!adding&&<div style={{color:C.muted,fontSize:13,marginBottom:12}}>No debts tracked yet.</div>}
+      {(data.debts||[]).length===0&&!adding&&(
+        <div style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"14px 16px",marginBottom:12,textAlign:"center"}}>
+          <div style={{fontSize:22,marginBottom:6}}>💳</div>
+          <div style={{color:C.mutedHi,fontWeight:600,fontSize:13,marginBottom:4}}>No debts tracked yet</div>
+          <div style={{color:C.muted,fontSize:11,lineHeight:1.65}}>Connect your bank to auto-import credit cards, or tap + Add Debt below.</div>
+        </div>
+      )}
+      {(data.debts||[]).some(d=>d.fromBank)&&(
+        <div style={{background:C.green+"0A",border:`1px solid ${C.green}22`,borderRadius:10,padding:"8px 12px",marginBottom:8,display:"flex",gap:6,alignItems:"center"}}>
+          <span style={{fontSize:12}}>🏦</span>
+          <span style={{color:C.green,fontSize:11,fontWeight:600}}>Balances imported live from your bank</span>
+        </div>
+      )}
       {(data.debts||[]).map((d,i)=>(
         <div key={i} style={{background:C.cardAlt,borderRadius:12,padding:"10px 14px",marginBottom:8,border:`1px solid ${C.border}`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-            <div style={{color:C.cream,fontWeight:600,fontSize:13}}>{d.name}</div>
-            <button onClick={()=>removeDebt(i)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"2px 6px"}}>✕</button>
+            <div style={{display:"flex",alignItems:"center",gap:7}}>
+              <div style={{color:C.cream,fontWeight:600,fontSize:13}}>{d.name}</div>
+              {d.fromBank&&<span style={{fontSize:9,fontWeight:700,color:C.greenBright,background:C.green+"22",border:`1px solid ${C.green}33`,borderRadius:99,padding:"2px 7px",flexShrink:0}}>live</span>}
+            </div>
+            <button onClick={()=>removeDebt(i)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"4px 8px",minWidth:32,minHeight:32}}>✕</button>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
             {[["Balance","balance","$"],["Rate %","rate","%"],["Min/mo","min","$"]].map(([lbl,field,pre])=>(
@@ -7730,7 +7780,27 @@ export default function FlourishApp(){
               institution:a.institution||"Bank",
             })));
           if(freshAccounts.length > 0) {
-            setAppData(prev=>({...prev, accounts:freshAccounts}));
+            setAppData(prev=>{
+              // Sync new credit card accounts into debts
+              const creditAccts = freshAccounts.filter(a =>
+                a.type === "credit" || a.type === "credit card" || a.subtype === "credit card" || a.type === "line of credit"
+              );
+              const existingDebtNames = new Set((prev.debts||[]).map(d => (d.name||"").toLowerCase()));
+              const newCCDebts = creditAccts
+                .filter(a => !existingDebtNames.has((a.name||"").toLowerCase()))
+                .map(a => ({
+                  name: a.name || "Credit Card",
+                  balance: Math.abs(a.balance||0).toFixed(2),
+                  rate: "", min: "", fromBank: true,
+                }));
+              return {
+                ...prev,
+                accounts: freshAccounts,
+                debts: newCCDebts.length > 0
+                  ? [...(prev.debts||[]).filter(d => d.name || d.balance), ...newCCDebts]
+                  : prev.debts,
+              };
+            });
           }
         } catch(e) { /* silent — cached balances still shown */ }
         // Auto-detect income and bills from combined data
@@ -7826,7 +7896,30 @@ export default function FlourishApp(){
           institution: instName,
         }));
         const transactions = normaliseTxns(txnData.transactions||[]);
-        setAppData(d=>({...d, accounts, transactions, bankConnected:true }));
+        setAppData(d=>{
+          // Auto-add credit card accounts to debts — don't overwrite existing debt entries
+          const creditAccts = accounts.filter(a =>
+            a.type === "credit" || a.type === "credit card" ||
+            a.subtype === "credit card" || a.type === "line of credit"
+          );
+          const existingDebtNames = new Set((d.debts||[]).map(debt => (debt.name||"").toLowerCase()));
+          const newCCDebts = creditAccts
+            .filter(a => !existingDebtNames.has((a.name||"").toLowerCase()))
+            .map(a => ({
+              name: a.name || "Credit Card",
+              balance: Math.abs(a.balance || 0).toFixed(2),
+              rate: "",
+              min: "",
+              fromBank: true,
+            }));
+          return {
+            ...d,
+            accounts,
+            transactions,
+            bankConnected: true,
+            debts: [...(d.debts||[]).filter(d => d.name || d.balance), ...newCCDebts],
+          };
+        });
         setNeedsReconnect(false);
         setReconnectToken(null);
       })
