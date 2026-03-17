@@ -6846,11 +6846,11 @@ function PrivacyPolicy({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
   const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
-  const last="March 13, 2026";
+  const last="March 16, 2026";
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
-        <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.cream,cursor:"pointer",...s,fontSize:13}}>← Back</button>
+        <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 18px",minHeight:44,color:C.cream,cursor:"pointer",...s,fontSize:13,fontWeight:600}}>← Back</button>
         <div>
           <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream}}>Privacy Policy</div>
           <div style={{...s,fontSize:11,color:C.muted}}>Last updated {last}</div>
@@ -6896,7 +6896,10 @@ function PrivacyPolicy({onBack}){
       <div style={p}>We may update this Privacy Policy periodically. We will notify you of material changes via the App or by email. Continued use of the App after changes constitutes your acceptance of the updated policy.</div>
 
       <div style={h2}>10. Contact Us</div>
-      <div style={p}>GrowSmart Inc. / Flourish Money<br/>Email: <span style={{color:C.green}}>privacy@flourishmoney.app</span><br/>Website: flourishmoney.app</div>
+      <div style={p}>GrowSmart Inc. / Flourish Money<br/>Website: flourishmoney.app</div>
+      <a href="mailto:privacy@flourishmoney.app" style={{display:"inline-flex",alignItems:"center",gap:8,marginTop:12,background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:99,padding:"10px 18px",color:C.greenBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,textDecoration:"none",minHeight:44}}>
+        ✉️ privacy@flourishmoney.app
+      </a>
     </div>
   );
 }
@@ -6906,11 +6909,11 @@ function TermsOfService({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
   const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
-  const last="March 13, 2026";
+  const last="March 16, 2026";
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
-        <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.cream,cursor:"pointer",...s,fontSize:13}}>← Back</button>
+        <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 18px",minHeight:44,color:C.cream,cursor:"pointer",...s,fontSize:13,fontWeight:600}}>← Back</button>
         <div>
           <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream}}>Terms of Service</div>
           <div style={{...s,fontSize:11,color:C.muted}}>Last updated {last}</div>
@@ -6958,7 +6961,10 @@ function TermsOfService({onBack}){
       <div style={p}>We reserve the right to modify these Terms at any time. We will notify you of material changes via the App or email. Continued use of the App after changes constitutes your acceptance of the updated Terms.</div>
 
       <div style={h2}>13. Contact</div>
-      <div style={p}>GrowSmart Inc. / Flourish Money<br/>Email: <span style={{color:C.green}}>hello@flourishmoney.app</span><br/>Website: flourishmoney.app</div>
+      <div style={p}>GrowSmart Inc. / Flourish Money<br/>Website: flourishmoney.app</div>
+      <a href="mailto:hello@flourishmoney.app" style={{display:"inline-flex",alignItems:"center",gap:8,marginTop:12,background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:99,padding:"10px 18px",color:C.greenBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,textDecoration:"none",minHeight:44}}>
+        ✉️ hello@flourishmoney.app
+      </a>
     </div>
   );
 }
@@ -7255,7 +7261,14 @@ export default function FlourishApp(){
   const saved = loadState();
   const [onboarded,setOnboarded]=useState(()=>saved?.onboarded||false);
   const [appData,setAppData]=useState(()=>saved?.appData||null);
-  const [screen,setScreen]=useState("home");
+  // Read URL path on load so /privacy and /terms work as direct links
+  const initialScreen = (() => {
+    const path = window.location.pathname.replace(/\/+$/,"").toLowerCase();
+    if (path === "/privacy") return "privacy";
+    if (path === "/terms")   return "terms";
+    return "home";
+  })();
+  const [screen,setScreen]=useState(initialScreen);
   const [user,setUser]=useState(null);
   const [authLoading,setAuthLoading]=useState(true);
   const [showNotifs,setShowNotifs]=useState(false);
@@ -7489,6 +7502,10 @@ export default function FlourishApp(){
     return ()=>clearTimeout(timer);
   },[appData?.bankConnected, isPremium]);
 
+  // ── Legal screens — always accessible, even before auth/onboarding ──
+  if(screen==="privacy")return <PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>;
+  if(screen==="terms")return <TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>;  
+
   // ── Auth gate ───────────────────────────────────────────────────
   if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
   if(!user)return <AuthScreen onAuth={u=>setUser(u)}/>;
@@ -7566,8 +7583,7 @@ export default function FlourishApp(){
     if(screen==="goals")return <Goals data={dataWithHousehold} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab}/>;
     if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
-    if(screen==="privacy")return <PrivacyPolicy onBack={()=>setScreen("home")}/>;
-    if(screen==="terms")return <TermsOfService onBack={()=>setScreen("home")}/>;
+    // privacy and terms handled before auth gate above
     return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/>;
   };
 
