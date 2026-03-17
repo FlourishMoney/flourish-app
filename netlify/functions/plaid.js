@@ -115,7 +115,7 @@ exports.handler = async (event) => {
         : {
             user:          { client_user_id: body.user_id || "flourish-user" },
             client_name:   "Flourish Money",
-            products:      ["transactions", "auth", "investments", "liabilities"],
+            products:      ["transactions", "investments", "liabilities"],
             country_codes: [country],
             language:      "en",
             transactions:  { days_requested: 90 },
