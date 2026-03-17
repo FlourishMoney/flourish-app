@@ -1036,6 +1036,7 @@ function TimeMachine({data}) {
   const [inputVal, setInputVal] = useState("");
   const [activePreset, setActivePreset] = useState(null);
   const [expanded, setExpanded] = useState(false);
+  const [expandedDay, setExpandedDay] = useState(null); // day index that is drilled into
 
   // Single source of truth: ForecastEngine (uses real income schedule, not mocked payday)
   const { forecast } = ForecastEngine.generate(data, 30);
@@ -1120,37 +1121,110 @@ function TimeMachine({data}) {
             const balColor = isLow ? C.redBright : ev.isPayday ? C.greenBright : C.mutedHi;
             const overlaydiff = overlayBal !== null ? overlayBal - baseBalance : 0;
 
+            const isDrilled = expandedDay === ev.day;
+            const avgDaily = FinancialCalcEngine.avgDailySpend(data);
             return (
-              <div key={idx} style={{display:"flex",gap:14,paddingBottom:14,position:"relative"}}>
-                <div style={{width:40,display:"flex",justifyContent:"center",flexShrink:0,paddingTop:3}}>
-                  <div style={{width:14,height:14,borderRadius:"50%",background:dotColor,border:`3px solid ${C.bg}`,zIndex:1,boxShadow:ev.day===0||ev.isPayday?`0 0 8px ${dotColor}88`:"none",flexShrink:0}}/>
-                </div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:ev.isPayday||ev.bills.length>0?3:0}}>
-                        {ev.day===0?"Today":ev.day===1?"Tomorrow":ev.date.toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}
-                      </div>
-                      {ev.isPayday && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(FinancialCalcEngine.cashFlow(data).monthlyIncome||0).toFixed(0)} paycheck`}</div>}
-                      {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${b.amount}</div>)}
-                      {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
-                    </div>
-                    <div style={{textAlign:"right",flexShrink:0,minWidth:80}}>
-                      {/* Base balance */}
-                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${(baseBalance||0).toFixed(0)}`}</div>
-                      {/* What-if overlay balance */}
-                      {overlayBal !== null && (
-                        <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:11,color:overlayLow?C.redBright:C.purpleBright,marginTop:2}}>
-                          → ${(overlayBal||0).toFixed(0)}
-                          <span style={{color:overlaydiff<0?C.redBright:C.greenBright,fontSize:9,marginLeft:3}}>
-                            ({overlaydiff>0?"+":""}{(overlaydiff||0).toFixed(0)})
-                          </span>
+              <div key={idx} style={{paddingBottom:6,position:"relative"}}>
+                {/* Row — tappable */}
+                <div
+                  onClick={()=>setExpandedDay(isDrilled ? null : ev.day)}
+                  style={{display:"flex",gap:14,paddingBottom:8,cursor:"pointer",borderRadius:12,padding:"8px 6px",background:isDrilled?"rgba(255,255,255,0.03)":"transparent",transition:"background .15s"}}
+                >
+                  <div style={{width:40,display:"flex",justifyContent:"center",flexShrink:0,paddingTop:3}}>
+                    <div style={{width:14,height:14,borderRadius:"50%",background:dotColor,border:`3px solid ${C.bg}`,zIndex:1,boxShadow:ev.day===0||ev.isPayday?`0 0 8px ${dotColor}88`:"none",flexShrink:0}}/>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:ev.isPayday||ev.bills.length>0?3:0}}>
+                          {ev.day===0?"Today":ev.day===1?"Tomorrow":ev.date.toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}
+                          <span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
                         </div>
-                      )}
-                      <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
+                        {ev.isPayday && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(FinancialCalcEngine.cashFlow(data).monthlyIncome||0).toFixed(0)} paycheck`}</div>}
+                        {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${parseFloat(b.amount||0).toFixed(0)}</div>)}
+                        {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
+                      </div>
+                      <div style={{textAlign:"right",flexShrink:0,minWidth:80}}>
+                        <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${(baseBalance||0).toFixed(0)}`}</div>
+                        {overlayBal !== null && (
+                          <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:11,color:overlayLow?C.redBright:C.purpleBright,marginTop:2}}>
+                            → ${(overlayBal||0).toFixed(0)}
+                            <span style={{color:overlaydiff<0?C.redBright:C.greenBright,fontSize:9,marginLeft:3}}>
+                              ({overlaydiff>0?"+":""}{(overlaydiff||0).toFixed(0)})
+                            </span>
+                          </div>
+                        )}
+                        <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
+                      </div>
                     </div>
                   </div>
                 </div>
+                {/* Drill-down panel */}
+                {isDrilled && (
+                  <div style={{marginLeft:54,marginBottom:8,background:"rgba(255,255,255,0.03)",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px"}}>
+                    <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>
+                      {ev.day===0?"Today's snapshot":"Cash flow breakdown"}
+                    </div>
+                    {/* Previous balance */}
+                    {ev.day>0&&(()=>{
+                      const prevEv = forecast[ev.day-1];
+                      return prevEv ? (
+                        <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}>
+                          <span style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Opening balance</span>
+                          <span style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${(prevEv.balance||0).toFixed(0)}</span>
+                        </div>
+                      ) : null;
+                    })()}
+                    {/* Income */}
+                    {ev.isPayday&&(
+                      <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}22`}}>
+                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
+                          <span style={{width:6,height:6,borderRadius:"50%",background:C.green,display:"inline-block"}}/>💰 Paycheck
+                        </span>
+                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>+${(FinancialCalcEngine.cashFlow(data).monthlyIncome/2.167||0).toFixed(0)}</span>
+                      </div>
+                    )}
+                    {/* Bills */}
+                    {ev.bills.length>0&&ev.bills.map((b,bi)=>(
+                      <div key={bi} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}22`}}>
+                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
+                          <span style={{width:6,height:6,borderRadius:"50%",background:C.gold,display:"inline-block"}}/>📅 {b.name}
+                        </span>
+                        <span style={{color:C.gold,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>−${parseFloat(b.amount||0).toFixed(0)}</span>
+                      </div>
+                    ))}
+                    {/* Daily spend estimate */}
+                    {ev.day>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}22`}}>
+                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
+                          <span style={{width:6,height:6,borderRadius:"50%",background:C.muted,display:"inline-block"}}/>🛒 Est. daily spend
+                          <span style={{color:C.muted,fontSize:9}}>(30d avg)</span>
+                        </span>
+                        <span style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>−${(avgDaily*0.8).toFixed(0)}</span>
+                      </div>
+                    )}
+                    {/* Divider + balance result */}
+                    <div style={{borderTop:`1px solid ${C.border}`,marginTop:4,paddingTop:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span style={{color:C.cream,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                        {ev.day===0?"Current balance":"Projected balance"}
+                      </span>
+                      <div style={{textAlign:"right"}}>
+                        <span style={{color:isLow?C.redBright:baseBalance<0?C.redBright:C.greenBright,fontWeight:900,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
+                          {baseBalance<0?"−":""}${Math.abs(baseBalance||0).toFixed(0)}
+                        </span>
+                        {isLow&&baseBalance>=0&&<div style={{color:C.goldBright,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>below safety floor</div>}
+                        {baseBalance<0&&<div style={{color:C.redBright,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>overdrawn</div>}
+                      </div>
+                    </div>
+                    {isLow&&(
+                      <div style={{marginTop:8,background:baseBalance<0?C.red+"18":C.gold+"11",borderRadius:8,padding:"7px 10px",color:baseBalance<0?C.redBright:C.goldBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
+                        {baseBalance<0
+                          ? "⚠ Projected overdraft — NSF fees $45–48 each. Transfer funds before this date."
+                          : "⚠ Balance near safety floor — hold non-essential spending until after this date."}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1179,10 +1253,12 @@ function TimeMachine({data}) {
 // which reads income frequency from onboarding. Single source of truth.
 function FinancialTimeline({data}) {
   const [expanded, setExpanded] = useState(false);
+  const [expandedDay, setExpandedDay] = useState(null);
   // ── Delegate to ForecastEngine — no duplicate forecasting logic ──
   const { forecast } = ForecastEngine.generate(data, 30);
   const safeFloor = SafeSpendEngine.calculate(data).balance * 0.12;
   const { monthlyIncome } = FinancialCalcEngine.cashFlow(data);
+  const avgDaily = FinancialCalcEngine.avgDailySpend(data);
 
   const events = forecast.filter(f => f.day === 0 || f.isPayday || f.bills.length > 0 || f.day === 30);
   const displayed = expanded ? events : events.slice(0, 4);
@@ -1206,25 +1282,59 @@ function FinancialTimeline({data}) {
             const dotColor = ev.day===0 ? C.green : ev.isPayday ? C.greenBright : ev.bills.length>0 ? C.gold : isLow ? C.red : C.border;
             const balColor = isLow ? C.redBright : ev.isPayday ? C.greenBright : C.mutedHi;
             const label = ev.day===0?"Today":ev.day===1?"Tomorrow":ev.date.toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"});
+            const isDrilled = expandedDay === ev.day;
             return (
-              <div key={idx} style={{display:"flex",gap:14,paddingBottom:14,position:"relative"}}>
-                <div style={{width:40,display:"flex",justifyContent:"center",flexShrink:0,paddingTop:2}}>
-                  <div style={{width:14,height:14,borderRadius:"50%",background:dotColor,border:`3px solid ${C.bg}`,zIndex:1,boxShadow:ev.day===0||ev.isPayday?`0 0 10px ${dotColor}88`:"none",flexShrink:0}}/>
-                </div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:2}}>{label}</div>
-                      {ev.isPayday && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(monthlyIncome||0).toFixed(0)} paycheck`}</div>}
-                      {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${b.amount}</div>)}
-                      {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
-                    </div>
-                    <div style={{textAlign:"right",flexShrink:0}}>
-                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${(ev.balance||0).toFixed(0)}`}</div>
-                      <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
+              <div key={idx} style={{paddingBottom:4,position:"relative"}}>
+                <div onClick={()=>setExpandedDay(isDrilled?null:ev.day)}
+                  style={{display:"flex",gap:14,padding:"8px 6px",cursor:"pointer",borderRadius:12,background:isDrilled?"rgba(255,255,255,0.03)":"transparent",transition:"background .15s"}}>
+                  <div style={{width:40,display:"flex",justifyContent:"center",flexShrink:0,paddingTop:2}}>
+                    <div style={{width:14,height:14,borderRadius:"50%",background:dotColor,border:`3px solid ${C.bg}`,zIndex:1,boxShadow:ev.day===0||ev.isPayday?`0 0 10px ${dotColor}88`:"none",flexShrink:0}}/>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:2}}>
+                          {label}<span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
+                        </div>
+                        {ev.isPayday && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(monthlyIncome||0).toFixed(0)} paycheck`}</div>}
+                        {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${parseFloat(b.amount||0).toFixed(0)}</div>)}
+                        {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
+                      </div>
+                      <div style={{textAlign:"right",flexShrink:0}}>
+                        <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${(ev.balance||0).toFixed(0)}`}</div>
+                        <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
+                      </div>
                     </div>
                   </div>
                 </div>
+                {isDrilled&&(
+                  <div style={{marginLeft:54,marginBottom:6,background:"rgba(255,255,255,0.03)",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px"}}>
+                    <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>Day breakdown</div>
+                    {ev.isPayday&&(
+                      <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
+                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💰 Paycheck</span>
+                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+${(monthlyIncome||0).toFixed(0)}</span>
+                      </div>
+                    )}
+                    {ev.bills.map((b,bi)=>(
+                      <div key={bi} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
+                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📅 {b.name}</span>
+                        <span style={{color:C.gold,fontWeight:700,fontSize:12}}>−${parseFloat(b.amount||0).toFixed(0)}</span>
+                      </div>
+                    ))}
+                    {ev.day>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
+                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🛒 Est. daily spend</span>
+                        <span style={{color:C.muted,fontSize:12}}>−${(avgDaily*0.8).toFixed(0)}</span>
+                      </div>
+                    )}
+                    <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0 0"}}>
+                      <span style={{color:C.cream,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Projected balance</span>
+                      <span style={{color:isLow?C.redBright:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Playfair Display',serif"}}>${(ev.balance||0).toFixed(0)}</span>
+                    </div>
+                    {isLow&&<div style={{marginTop:8,background:C.red+"11",borderRadius:8,padding:"6px 10px",color:C.redBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>⚠ Balance drops below safety floor here</div>}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -4051,6 +4161,34 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         </div>
       )}
 
+      {/* ── Income accuracy banner ────────────────────────────────────── */}
+      {(()=>{
+        const incomes = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0);
+        const toMo = (amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="monthly"?a:a*2.167;};
+        const totalMo = incomes.reduce((s,i)=>s+toMo(i.amount,i.freq),0);
+        // Show banner if: no income entered (using default), or income seems very high/low
+        const usingDefault = incomes.length === 0;
+        const suspiciouslyHigh = totalMo > 25000;
+        if (!usingDefault && !suspiciouslyHigh) return null;
+        return (
+          <div style={{...anim(45),background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:16,padding:"12px 16px",display:"flex",gap:12,alignItems:"flex-start",cursor:"pointer"}}
+            onClick={()=>setShowTransparency(true)}>
+            <span style={{fontSize:18,flexShrink:0}}>⚠️</span>
+            <div style={{flex:1}}>
+              <div style={{color:C.goldBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>
+                {usingDefault?"Income not set — using $4,200 estimate":`Income showing $${(totalMo||0).toLocaleString()}/mo — does this look right?`}
+              </div>
+              <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>
+                {usingDefault
+                  ? "Every calculation depends on your income. Tap to fix it — takes 30 seconds."
+                  : "Tap to see how this is calculated and correct it if needed."}
+              </div>
+            </div>
+            <span style={{color:C.gold,fontSize:12,flexShrink:0,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,alignSelf:"center"}}>Fix →</span>
+          </div>
+        );
+      })()}
+
       {/* ═══════════════════════════════════════════════════════════════════
           BENTO GRID — rendered in user's custom order from dashLayout
       ═══════════════════════════════════════════════════════════════════ */}
@@ -4075,6 +4213,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
               <div style={{width:6,height:6,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 10px ${heroColor}`}}/>
               <span style={{color:heroColorBright+"99",fontSize:9,textTransform:"uppercase",letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Today's Safe Limit</span>
+              <button onClick={e=>{e.stopPropagation();setShowTransparency(true);}} style={{background:"none",border:"none",color:heroColor,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer",padding:"0 0 0 6px",opacity:0.7,letterSpacing:0.3}}>How? →</button>
             </div>
             <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.88,marginBottom:18}}>
               <span style={{fontSize:24,color:heroColorBright+"77",verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
@@ -4648,26 +4787,55 @@ function PlanAhead({data, setAppData}){
       </div>}
     </Card>
     <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.8,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
-    {days.filter((d,i)=>i===0||d.income>0||d.bills.length>0).map((day,i)=>{
-      const isToday=day.idx===0,neg=day.balance<0,low=day.balance<150&&day.balance>=0;
-      return <div key={i} style={{background:isToday?C.greenDim:neg?C.redDim:C.card,borderRadius:20,padding:"16px 18px",border:`1px solid ${isToday?C.green+"55":neg?C.red+"55":low?C.gold+"44":C.border}`,boxShadow:isToday?`0 0 24px ${C.green}18`:neg?`0 0 24px ${C.red}18`:"none"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-          <div>
-            <div style={{color:isToday?C.greenBright:C.mutedHi,fontWeight:isToday?700:500,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{isToday?"Today ✦":day.d.toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}</div>
-            {day.income>0&&<div style={{color:C.green,fontWeight:700,fontSize:14,marginTop:3}}>{`+$${day.income.toLocaleString()} deposited`}</div>}
-            {day.bills.map((b,j)=><div key={j} style={{color:C.red,fontSize:13,marginTop:3}}>📤 {b.name}: –${parseFloat(b.amount).toFixed(2)}</div>)}
-            {isToday&&!day.income&&!day.bills.length&&<div style={{color:C.muted,fontSize:12,marginTop:2}}>No scheduled activity</div>}
+    {(()=>{
+      const [expandedPlanDay, setExpandedPlanDay] = React.useState(null);
+      const avgDailySpend = FinancialCalcEngine.avgDailySpend(data);
+      return days.filter((d,i)=>i===0||d.income>0||d.bills.length>0).map((day,i)=>{
+        const isToday=day.idx===0,neg=day.balance<0,low=day.balance<150&&day.balance>=0;
+        const isDrilled=expandedPlanDay===day.idx;
+        const prevBalance=day.idx>0?(_forecast[day.idx-1]?.balance||0):day.balance;
+        const billsTotal=day.bills.reduce((s,b)=>s+parseFloat(b.amount||0),0);
+        const borderColor=isToday?C.green+"55":neg?C.red+"55":low?C.gold+"44":isDrilled?C.teal+"33":C.border;
+        return (
+          <div key={i} style={{background:isToday?C.greenDim:neg?C.redDim:C.card,borderRadius:20,border:`1px solid ${borderColor}`,boxShadow:isToday?`0 0 24px ${C.green}18`:neg?`0 0 24px ${C.red}18`:"none",overflow:"hidden"}}>
+            <div onClick={()=>setExpandedPlanDay(isDrilled?null:day.idx)} style={{padding:"16px 18px",cursor:"pointer"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{color:isToday?C.greenBright:C.mutedHi,fontWeight:isToday?700:500,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{isToday?"Today ✦":day.d.toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}</div>
+                    <span style={{color:C.muted,fontSize:10}}>{isDrilled?"▲":"▼"}</span>
+                  </div>
+                  {day.income>0&&<div style={{color:C.green,fontWeight:700,fontSize:13,marginTop:3}}>💰 +${day.income.toLocaleString()} paycheck</div>}
+                  {day.bills.map((b,j)=><div key={j} style={{color:C.gold,fontSize:12,marginTop:2}}>📅 {b.name}: −${parseFloat(b.amount).toFixed(0)}</div>)}
+                  {isToday&&!day.income&&!day.bills.length&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>Tap to see balance breakdown</div>}
+                </div>
+                <div style={{textAlign:"right",flexShrink:0}}>
+                  <div style={{fontSize:17,fontWeight:800,fontFamily:"Georgia,serif",color:neg?C.redBright:low?C.goldBright:C.greenBright}}>{neg?"−":""}${Math.abs(day.balance||0).toFixed(0)}</div>
+                  <div style={{color:C.muted,fontSize:9}}>balance</div>
+                </div>
+              </div>
+              <Bar v={Math.max(0,day.balance)} max={bal+income} color={neg?C.red:low?C.gold:C.green} h={4}/>
+              {neg&&<div style={{marginTop:8,color:C.redBright,fontSize:12,fontWeight:600}}>⚠️ Projected overdraft — NSF fees $45–48. Move money now.</div>}
+              {low&&!neg&&<div style={{marginTop:6,color:C.goldBright,fontSize:11}}>⚠ Getting low — hold non-essential spending.</div>}
+            </div>
+            {isDrilled&&(
+              <div style={{borderTop:`1px solid ${C.border}`,padding:"12px 18px 14px",background:"rgba(0,0,0,0.2)"}}>
+                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,marginBottom:10}}>Cash flow breakdown</div>
+                {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.muted,fontSize:11}}>Opening balance</span><span style={{color:C.muted,fontSize:11}}>${(prevBalance||0).toFixed(0)}</span></div>}
+                {day.income>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>💰 Paycheck</span><span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+${(day.income||0).toFixed(0)}</span></div>}
+                {day.bills.map((b,j)=><div key={j} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>📅 {b.name}</span><span style={{color:C.gold,fontWeight:700,fontSize:12}}>−${parseFloat(b.amount||0).toFixed(0)}</span></div>)}
+                {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>🛒 Est. daily spend <span style={{color:C.muted,fontSize:9}}>(30d avg)</span></span><span style={{color:C.muted,fontSize:12}}>−${(avgDailySpend*0.8).toFixed(0)}</span></div>}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${C.border}`,paddingTop:8,marginTop:4}}>
+                  <span style={{color:C.cream,fontWeight:700,fontSize:13}}>{isToday?"Current balance":"Projected balance"}</span>
+                  <span style={{color:neg?C.redBright:low?C.goldBright:C.greenBright,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{neg?"−":""}${Math.abs(day.balance||0).toFixed(0)}</span>
+                </div>
+                {day.idx>0&&<div style={{marginTop:6,color:C.muted,fontSize:10,lineHeight:1.7}}>${(prevBalance||0).toFixed(0)}{day.income>0&&<span style={{color:C.green}}> +${(day.income||0).toFixed(0)}</span>}{billsTotal>0&&<span style={{color:C.gold}}> −${billsTotal.toFixed(0)} bills</span>}<span style={{color:C.muted}}> −${(avgDailySpend*0.8).toFixed(0)} spend</span><span style={{color:neg?C.redBright:C.greenBright}}> = ${(day.balance||0).toFixed(0)}</span></div>}
+              </div>
+            )}
           </div>
-          <div style={{textAlign:"right"}}>
-            <div style={{fontSize:18,fontWeight:800,fontFamily:"Georgia,serif",color:neg?C.redBright:low?C.goldBright:C.greenBright}}>{`$${(day.balance||0).toFixed(2)}`}</div>
-            <div style={{color:C.muted,fontSize:10}}>balance</div>
-          </div>
-        </div>
-        <Bar v={Math.max(0,day.balance)} max={bal+income} color={neg?C.red:low?C.gold:C.green} h={5}/>
-        {neg&&<div style={{marginTop:8,color:C.redBright,fontSize:12,fontWeight:600}}>⚠️ Projected overdraft — NSF fees cost $45–48. Move money now.</div>}
-        {low&&!neg&&<div style={{marginTop:8,color:C.goldBright,fontSize:12}}>Getting low — hold non-essential spending until next deposit.</div>}
-      </div>;
-    })}
+        );
+      });
+    })()}
   </div>;
 }
 
