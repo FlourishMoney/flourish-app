@@ -224,6 +224,7 @@ function getPersonalizedTaxCredits(profile) {
         {title:"Pension Income Splitting",body:"If you receive eligible pension income (RPP, RRIF, annuity), you can split up to 50% with your spouse. If your spouse is in a lower tax bracket, this can save your household thousands every year.",savings:"Potentially thousands",flag:"🇨🇦",priority:"high",action:"File Form T1032"},
         {title:"Pension Income Tax Credit",body:"The first $2,000 of eligible pension income qualifies for a 15% federal credit ($300 saved). Even if you're splitting pension income, your spouse can also claim this credit on the transferred amount.",savings:"Up to $300 federal",flag:"🇨🇦",priority:"high",action:"Claim on Line 31400"},
         {title:"OAS & GIS — Are You Getting Everything?",body:"Old Age Security ($727.67/mo at 65) is automatic, but the Guaranteed Income Supplement (GIS) is not — you must apply. Low-income seniors leave GIS unclaimed every year. If your income is under ~$21,624, apply immediately.",savings:"Up to $1,065/mo (GIS)",flag:"🇨🇦",priority:"high",action:"Apply at Service Canada"},
+      {title:"CPP Maximum — Know What You're Entitled To",body:"The maximum CPP retirement pension is $1,364.60/mo (2025) at age 65. Your actual amount depends on contributions history. You can check your CPP Statement of Contributions at My Service Canada Account.",savings:"Up to $1,364.60/mo",flag:"🇨🇦",priority:"medium",action:"Check My Service Canada"},
         {title:"Medical Expense Tax Credit",body:"Seniors often have significant medical costs — prescriptions, dental, vision, hearing aids, home care. Expenses exceeding 3% of your net income (or $2,635 — whichever is less) are claimable. Keep every receipt.",savings:"15% of qualifying expenses",flag:"🇨🇦",priority:"high",action:"Gather Medical Receipts"},
         {title:"Home Accessibility Tax Credit",body:"Making your home safer and more accessible? Renovations like grab bars, wheelchair ramps, or walk-in tubs qualify for a 15% federal credit on up to $20,000 of expenses per year.",savings:"Up to $3,000",flag:"🇨🇦",priority:"medium",action:"Keep Renovation Receipts"}
       );
@@ -378,6 +379,49 @@ async function callPlaid(action, params={}) {
 // Shared keyword list for detecting credit card payments in transactions.
 // Used by income detection, spending calc, and transparency panel — single source of truth.
 const CC_PAYMENT_KEYWORDS = ["payment","autopay","amex","visa","mastercard","credit card","card payment","minimum payment","balance payment"];
+
+// ─── CC PAYMENT DETECTOR ──────────────────────────────────────────────────────
+// Identifies transactions that are credit card payments (not spending).
+// Plaid shows CC payments as: Transfer category OR matching CC keywords in name.
+// Also detects by amount matching a known debt balance (±$5 tolerance).
+function isCCPayment(txn, debts=[]) {
+  if(!txn || txn.amount <= 0) return false;
+  const name = (txn.name || "").toLowerCase();
+  const cat  = (txn.cat  || "").toUpperCase();
+  // Direct keyword match
+  if(CC_PAYMENT_KEYWORDS.some(kw => name.includes(kw))) return true;
+  // Transfer to credit card (Plaid categorises as Transfer)
+  if(cat === "TRANSFER" || cat.includes("TRANSFER")) {
+    // Additional signal: amount matches a known debt minimum or round payment
+    if(debts.length > 0) {
+      const matchesDet = debts.some(d => {
+        const min = parseFloat(d.min||0);
+        const bal = parseFloat(d.balance||0);
+        return (min > 0 && Math.abs(txn.amount - min) < 5) ||
+               (bal > 0 && Math.abs(txn.amount - bal) < 5);
+      });
+      if(matchesDet) return true;
+    }
+    // If it's a large transfer-out with no matching income pattern → likely CC payment
+    if(txn.amount >= 20 && cat.includes("TRANSFER")) return true;
+  }
+  return false;
+}
+
+// Returns CC payment transactions from a list, with the likely debt they paid
+function detectCCPayments(txns, debts=[]) {
+  return txns
+    .filter(t => t.amount > 0 && isCCPayment(t, debts))
+    .map(t => {
+      const matchedDebt = debts.find(d => {
+        const min = parseFloat(d.min||0);
+        const bal = parseFloat(d.balance||0);
+        return (min > 0 && Math.abs(t.amount - min) < 5) ||
+               (bal > 0 && Math.abs(t.amount - bal) < 50);
+      });
+      return { ...t, likelyCCPayment: true, matchedDebt: matchedDebt?.name || null };
+    });
+}
 
 const CAT_META = {
   FOOD_AND_DRINK:            { cat:"Coffee & Dining", icon:"🍕", color:"#D97A3A" },
@@ -2320,11 +2364,14 @@ const ForecastEngine = {
       return amt;
     };
     // Primary income deposit amount
-    const paycheque = primaryIncome ? perPaycheque(primaryIncome) : monthlyIncome/2;
+    // If no income entered: paycheque=0, no simulated paydays (avoids phantom deposits)
+    const paycheque = primaryIncome ? perPaycheque(primaryIncome) : 0;
+    const hasRealIncome = incomes.length > 0;
     // Secondary incomes on monthly schedule (e.g. CCB, rental income)
     const secondaryMonthly = incomes.slice(1).filter(i=>i.freq==="monthly"||i.freq==="semimonthly");
     const getIsPayday = (dayNum,i) => {
       if(i===0) return false;
+      if(!hasRealIncome) return false; // no income entered → no simulated paydays
       if(primaryFreq==="monthly")     return dayNum===1;
       if(primaryFreq==="semimonthly") return dayNum===1||dayNum===15;
       if(primaryFreq==="biweekly")    return i%14===0;
@@ -3960,11 +4007,17 @@ function DataTransparencyPanel({data, onClose}) {
                 <Row key={i}
                   label={t.name}
                   sub={`${t.cat} · excluded: ${
-                    t.cat==="Transfer"?"account transfer":
-                    CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))?"credit card payment":
+                    CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))?"credit card payment" :
+                    t.cat==="Transfer"?(()=>{
+                      const matched = (data.debts||[]).find(d=>{
+                        const min=parseFloat(d.min||0), bal=parseFloat(d.balance||0);
+                        return (min>0&&Math.abs(t.amount-min)<5)||(bal>0&&Math.abs(t.amount-bal)<50);
+                      });
+                      return matched?`CC payment → ${matched.name}`:"account transfer";
+                    })():
                     t.cat==="Fees"?"bank fee":"income"
                   }`}
-                  value={`$${t.amount.toFixed(0)}`}
+                  value={`$${(t.amount||0).toFixed(0)}`}
                   color={C.muted}
                   indent
                 />
@@ -4074,7 +4127,11 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const _ss         = SafeSpendEngine.calculate(data);
   const bal         = _ss.balance;
   const safe        = _ss.safeAmount;
-  const overdraft   = _ss.overdraft;
+  // overdraft: either bills in next 10 days exceed balance (immediate)
+  // OR forecast shows negative balance within 7 days (imminent)
+  // sevenDayRisk is calculated below — use a temporary check here with SafeSpend only,
+  // then upgrade after sevenDayRisk is available
+  const overdraftImmediate = _ss.overdraft;
   const [affordInput, setAffordInput] = useState("");
   const [affordResult, setAffordResult] = useState(null); // null | {state, msg, sub}
   const [affordFocused, setAffordFocused] = useState(false);
@@ -4095,8 +4152,8 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const spark=[-4200,-3800,-3100,-2600,-1900,netWorth];
   const sMin=Math.min(...spark),sMax=Math.max(...spark);
   const sN=spark.map(v=>90-((v-sMin)/(sMax-sMin)||0)*70);
-  const heroColor=overdraft?C.red:C.green;
-  const heroColorBright=overdraft?C.redBright:C.greenBright;
+  const heroColor=overdraftImmediate?C.red:sevenDayOverdraft?C.gold:C.green;
+  const heroColorBright=overdraftImmediate?C.redBright:sevenDayOverdraft?C.goldBright:C.greenBright;
   const {score:healthScore,pillars}=calcHealthScore(data);
   const adjScore=Math.min(100,healthScore+(checkInBonus||0));
   const scoreColor=adjScore>=80?C.greenBright:adjScore>=65?C.tealBright:adjScore>=50?C.goldBright:adjScore>=35?C.orangeBright:C.redBright;
@@ -4110,6 +4167,8 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const isPayday   = today===15||today===1; // simple heuristic
   // 7-day forecast — calculated once here, shared with priority filter tile
   const { overdraftRisk: sevenDayRisk, willGoNegative: sevenDayOverdraft } = ForecastEngine.generate(data, 7);
+  // Combined overdraft signal: immediate (10-day window) OR imminent (7-day forecast)
+  const overdraft = overdraftImmediate || sevenDayOverdraft;
   // 14-day forecast — shared with "Can I afford this?" widget. No per-keystroke calls.
   const { forecast: afford14Forecast } = ForecastEngine.generate(data, 14);
   const nextPaydayDay = afford14Forecast.find(f => f.isPayday && f.day > 0)?.day || null;
@@ -4239,9 +4298,11 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
 
         {/* ── HERO: Safe to Spend ── full width ─────────────────────────── */}
         <div style={{...anim(60),cursor:"pointer",position:"relative",overflow:"hidden",borderRadius:28,
-          background:overdraft
+          background:overdraftImmediate
             ?(C.isDark?"linear-gradient(155deg,rgba(24,6,16,0.92) 0%,rgba(32,8,16,0.85) 45%,rgba(12,5,10,0.90) 100%)":"linear-gradient(155deg,rgba(255,240,244,0.96) 0%,rgba(255,232,238,0.94) 45%,rgba(244,241,235,0.96) 100%)")
-            :(C.isDark?"linear-gradient(155deg,rgba(5,21,9,0.92) 0%,rgba(8,30,13,0.85) 45%,rgba(6,10,14,0.90) 100%)":"linear-gradient(155deg,rgba(236,252,244,0.96) 0%,rgba(228,250,238,0.94) 45%,rgba(244,241,235,0.96) 100%)"),
+            :sevenDayOverdraft
+              ?(C.isDark?"linear-gradient(155deg,rgba(24,16,6,0.92) 0%,rgba(32,22,8,0.85) 45%,rgba(12,9,5,0.90) 100%)":"linear-gradient(155deg,rgba(255,248,236,0.96) 0%,rgba(255,244,220,0.94) 45%,rgba(244,241,235,0.96) 100%)")
+              :(C.isDark?"linear-gradient(155deg,rgba(5,21,9,0.92) 0%,rgba(8,30,13,0.85) 45%,rgba(6,10,14,0.90) 100%)":"linear-gradient(155deg,rgba(236,252,244,0.96) 0%,rgba(228,250,238,0.94) 45%,rgba(244,241,235,0.96) 100%)"),
           backdropFilter:"blur(24px)",
           WebkitBackdropFilter:"blur(24px)",
           border:`1px solid ${heroColor}28`,
@@ -4294,8 +4355,10 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
               // Overdraft: show a focused warning instead of the math
               if (overdraft) return (
                 <div style={{marginBottom:14}}>
-                  <div style={{color:C.redBright+"88",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
-                    Bills exceed your balance — tap to see the forecast and fix it
+                  <div style={{color:overdraftImmediate?C.redBright+"88":C.goldBright+"88",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
+                    {overdraftImmediate
+                      ? "Bills exceed your balance — tap to see forecast and fix it"
+                      : "You will overdraft within 7 days — tap to see what's coming"}
                   </div>
                 </div>
               );
@@ -4318,8 +4381,9 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                 Pure math. No AI call. Instant answer.
                 Subtracts from safe amount → one of three states.
             ─────────────────────────────────────────────────────────────── */}
-            {/* Widget hidden in overdraft — unhelpful to check affordability when already negative */}
-            {!overdraft&&<div style={{marginTop:16,borderTop:`1px solid ${heroColor}18`,paddingTop:14}}
+            {/* Afford widget: hidden if immediate overdraft (balance already negative-bound)
+                but shown with warning if only 7-day forecast overdraft */}
+            {!overdraftImmediate&&<div style={{marginTop:16,borderTop:`1px solid ${heroColor}18`,paddingTop:14}}
               onClick={e=>e.stopPropagation()}>
               {(()=>{
                 // R1: Uses pre-calculated nextPaydayDay — no ForecastEngine call per keystroke
@@ -5720,6 +5784,25 @@ function SpendScreen({data, setAppData, setScreen}){
           </select>
         </div>
       </div>
+      {filtered.length===0&&(
+        <div style={{background:C.card,borderRadius:18,padding:"28px 20px",textAlign:"center",border:`1px solid ${C.border}`}}>
+          {txns.length===0?(
+            <>
+              <div style={{fontSize:36,marginBottom:12}}>📂</div>
+              <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif",marginBottom:8}}>No transactions yet</div>
+              <div style={{color:C.muted,fontSize:13,lineHeight:1.6,maxWidth:260,margin:"0 auto"}}>
+                Connect your bank in Settings to import live transactions, or upload a bank statement.
+              </div>
+            </>
+          ):(
+            <>
+              <div style={{fontSize:32,marginBottom:10}}>🔍</div>
+              <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:6}}>No transactions match this filter</div>
+              <div style={{color:C.muted,fontSize:12}}>Try switching the category or time period above.</div>
+            </>
+          )}
+        </div>
+      )}
       {filtered.map(txn=>(
         <div key={txn.id} style={{background:C.card,borderRadius:18,padding:"14px 16px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:13,transition:"all .2s",cursor:"default"}}
           onMouseEnter={e=>{e.currentTarget.style.borderColor=C.borderHi;e.currentTarget.style.background=C.isDark?C.cardAlt:C.surface;}}
