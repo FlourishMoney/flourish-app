@@ -4273,7 +4273,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           {[
             {label:"Due Soon",value:`$${(soonTotal||0).toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
             {label:totalDebt>0?"Total Debt":"Debt Free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
-            {label:"Net Worth",value:`${netWorth>=0?"+":""}$${(Math.abs(netWorth)/1000).toFixed(1)}k`,sub:"total net worth",color:C.teal,icon:"chartUp",screen:"plan"},
+            {label:"Net Worth",value:`${netWorth>=0?"+":""}$${(Math.abs(netWorth)/1000).toFixed(1)}k`,sub:"total net worth",color:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
           ].map((s,i)=>(
             <div key={i} onClick={()=>{if(s.tab&&setGoalsTab)setGoalsTab(s.tab);setScreen(s.screen);}} style={{...glass(s.color),borderRadius:20,padding:"14px 12px 12px",textAlign:"center",position:"relative",overflow:"hidden",cursor:"pointer",transition:"transform .2s, box-shadow .2s"}}
               onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 12px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)`;}}
@@ -4689,7 +4689,40 @@ function BillManager({data, setAppData, onClose}){
   );
 }
 
-function PlanAhead({data, setAppData}){
+
+// ─── SHARED SCREEN HEADER ────────────────────────────────────────────────────
+// Consistent back button + title + optional CTA on every main screen
+function ScreenHeader({title, subtitle, onBack, cta, onCta, ctaColor}) {
+  const C_ = typeof C !== "undefined" ? C : {};
+  return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,gap:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,flex:1,minWidth:0}}>
+        {onBack&&(
+          <button onClick={onBack} style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,borderRadius:12,
+            width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,
+            color:C.cream,fontSize:18,transition:"all .15s"}}
+            onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.10)"}
+            onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.06)"}>
+            ←
+          </button>
+        )}
+        <div style={{minWidth:0}}>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream,letterSpacing:-0.5,lineHeight:1.15}}>{title}</div>
+          {subtitle&&<div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{subtitle}</div>}
+        </div>
+      </div>
+      {cta&&onCta&&(
+        <button onClick={onCta} style={{background:(ctaColor||C.green)+"22",border:`1px solid ${(ctaColor||C.green)}44`,
+          borderRadius:99,padding:"8px 14px",color:ctaColor||C.greenBright,fontSize:11,fontWeight:700,
+          cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",whiteSpace:"nowrap",flexShrink:0,minHeight:36}}>
+          {cta}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function PlanAhead({data, setAppData, setScreen}){
   const [range,setRange]=useState(14);
   const [showBillManager,setShowBillManager]=useState(false);
   const [connected,setConnected]=useState([]);  // Start empty — user connects their own
@@ -4723,8 +4756,8 @@ function PlanAhead({data, setAppData}){
     {showBillManager&&setAppData&&<BillManager data={data} setAppData={setAppData} onClose={()=>setShowBillManager(false)}/>}
     {!hasBills&&<EmptyState icon="📅" title="No bills tracked yet" body="Add your recurring bills to see a personalized cash-flow forecast." action="Add Bills →" onAction={()=>setShowBillManager(true)} color={C.teal}/>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <div><div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>2-Week Forecast</div><div style={{color:C.muted,fontSize:12,marginTop:3}}>Your financial crystal ball</div></div>
-      <div style={{display:"flex",gap:6,background:C.surface,borderRadius:12,padding:3}}>{[7,14].map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"6px 16px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .22s"}}>{r}d</button>)}</div>
+      <ScreenHeader title="Plan Ahead" subtitle="Your financial crystal ball" onBack={setScreen?()=>setScreen("home"):null}/>
+      <div style={{display:"flex",gap:6,background:C.surface,borderRadius:12,padding:3,flexShrink:0,marginBottom:16}}>{[7,14].map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"6px 16px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .22s"}}>{r}d</button>)}</div>
     </div>
     {(()=>{
       const _fbal = SafeSpendEngine.calculate(data).balance;
@@ -5069,7 +5102,7 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
   );
 }
 
-function SpendScreen({data, setAppData}){
+function SpendScreen({data, setAppData, setScreen}){
   const [tab,setTab]=useState("txn");
   const [catFilter,setCatFilter]=useState("All");
   const [dismissed,setDismissed]=useState([]);
@@ -5127,6 +5160,7 @@ function SpendScreen({data, setAppData}){
     if(!isDemo && txns.length === 0) return <EmptyState icon="💳" title="No transactions yet" body="Your transactions are loading from your bank. Check back in a moment — or pull to refresh." action="Refresh" onAction={()=>window.location.reload()} color={C.orange}/>;
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <ScreenHeader title="Transactions" subtitle={monthLabel} onBack={setScreen?()=>setScreen("home"):null} cta="Ask Coach" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
     {/* Mark as Bill modal */}
     {markBillTxn&&(
       <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setMarkBillTxn(null)}>
@@ -5371,7 +5405,7 @@ function SpendScreen({data, setAppData}){
 
 
 // ─── GOALS ────────────────────────────────────────────────────────────────────
-function Goals({data,initialTab="sim",onUpgrade}){
+function Goals({data,initialTab="sim",onUpgrade,setScreen}){
   const [tab,setTab]=useState(initialTab);
   useEffect(()=>{ setTab(initialTab); },[initialTab]);
   const [selDebt,setSelDebt]=useState(0);
@@ -5397,10 +5431,10 @@ function Goals({data,initialTab="sim",onUpgrade}){
       const netWorth=_allBal-totalDebt;
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{fontSize:22,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Goals & Wealth</div><div style={{background:CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue+"22":C.green+"22",border:`1px solid ${CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}33`,borderRadius:99,padding:"4px 12px",color:CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blueBright:C.greenBright,fontSize:11,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{CC[data?.profile?.country||"CA"]?.flag} {CC[data?.profile?.country||"CA"]?.currency}</div></div>
-    <div style={{display:"flex",gap:6}}>
+    <ScreenHeader title="Goals & Wealth" onBack={setScreen?()=>setScreen("home"):null} cta={CC[data?.profile?.country||"CA"]?.flag+" "+CC[data?.profile?.country||"CA"]?.currency} ctaColor={CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}/>
+    <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
       {[["sim","Simulator"],["worth","Net Worth"],["retire","Retirement"],["forecast","Wealth"],["personality","Personality"],["tax","Tax Tips"],["learn","Learn"]].map(([key,lbl])=>(
-        <button key={key} onClick={()=>setTab(key)} style={{flex:1,background:tab===key?C.purple+"22":C.cardAlt,border:`1px solid ${tab===key?C.purple:C.border}`,color:tab===key?C.purpleBright:C.muted,borderRadius:10,padding:"8px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>{lbl}</button>
+        <button key={key} onClick={()=>setTab(key)} style={{flexShrink:0,background:tab===key?C.purple+"22":C.cardAlt,border:`1px solid ${tab===key?C.purple:C.border}`,color:tab===key?C.purpleBright:C.muted,borderRadius:10,padding:"8px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>{lbl}</button>
       ))}
     </div>
     {tab==="sim"&&<>
@@ -5713,7 +5747,7 @@ function Goals({data,initialTab="sim",onUpgrade}){
 
 
 // ─── FAMILY ───────────────────────────────────────────────────────────────────
-function Family({data,household,setHousehold}){
+function Family({data,household,setHousehold,setScreen}){
   const [tab,setTab]=useState("meeting");
   const isCouple=data.profile.status!=="single";
   const [householdTab,setHouseholdTab]=useState("join");
@@ -5831,7 +5865,7 @@ function Family({data,household,setHousehold}){
   };
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <div><div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Family</div><div style={{color:C.muted,fontSize:12}}>Money is a team sport</div></div>
+    <ScreenHeader title="Family" subtitle="Money is a team sport" onBack={setScreen?()=>setScreen("home"):null}/>
     <div style={{display:"flex",gap:6}}>
       {[["meeting",isCouple?"Money Meeting":"Check-In"],["kids","Kids Zone"],["household","Household"]].map(([t,lbl])=>(
         <button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.purple+"22":C.cardAlt,border:`1px solid ${tab===t?C.purple:C.border}`,color:tab===t?C.purpleBright:C.muted,borderRadius:12,padding:"10px",cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit"}}>
@@ -7050,7 +7084,7 @@ function DesktopSidebar({data,setScreen}){
 
 
 // ─── AI COACH ─────────────────────────────────────────────────────────────────
-function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}}){
+function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}, setScreen}){
   const FREE_LIMIT=5;
   const STORAGE_KEY = "flourish_coach_history";
   const WELCOME = {role:"assistant", content:"Hey! I'm your Flourish AI Coach 👋 I can see your spending patterns, balances, and financial data. What would you like to work on today?"};
@@ -7184,6 +7218,7 @@ CRITICAL RULES:
       {/* Header */}
       <div style={{padding:"16px 20px 12px",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
+          {setScreen&&<button onClick={()=>setScreen("home")} style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,borderRadius:12,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,color:C.cream,fontSize:18}}>←</button>}
           <div style={{width:38,height:38,borderRadius:12,background:`linear-gradient(135deg,${C.purple}33,${C.purple}11)`,border:`1px solid ${C.purple}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
             <Icon id="sparkles" size={19} color={C.purpleBright} strokeWidth={1.5}/>
           </div>
@@ -7296,7 +7331,7 @@ CRITICAL RULES:
 }
 
 // ─── CREDIT SCREEN ────────────────────────────────────────────────────────────
-function CreditScreen({data}){
+function CreditScreen({data,setScreen}){
   const profile = data.profile||{};
   const country = profile.country||"CA";
   const isCA = country==="CA";
@@ -7357,6 +7392,7 @@ function CreditScreen({data}){
 
   return(
     <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"20px 20px 80px",maxWidth:430,margin:"0 auto"}}>
+      <ScreenHeader title="Credit Score" subtitle="Estimated from your financial behaviour" onBack={setScreen?()=>setScreen("home"):null} cta="Ask Coach" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
       {/* Score gauge */}
       <div style={{background:C.card,borderRadius:20,padding:"24px 20px 20px",border:`1px solid ${C.border}`,marginBottom:16,textAlign:"center"}}>
         <div style={{color:C.muted,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Credit Score Estimate</div>
@@ -8213,12 +8249,12 @@ export default function FlourishApp(){
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
     if(showSettings)return <Settings data={appData} setAppData={setAppData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}}/>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/>;
-    if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData}/>;
-    if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData}/>;
-    if(screen==="coach"){const freeCoachAllowed=!isPremium&&coachMsgCount<5&&!trialExpired;const showCoach=isPremium||freeCoachAllowed;if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)}/>; if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="AI Coach" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>; return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;}
-    if(screen==="family")return <Family data={dataWithHousehold} household={household} setHousehold={setHousehold}/>;
-    if(screen==="goals")return <Goals data={dataWithHousehold} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab}/>;
-    if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
+    if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
+    if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
+    if(screen==="coach"){const freeCoachAllowed=!isPremium&&coachMsgCount<5&&!trialExpired;const showCoach=isPremium||freeCoachAllowed;if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen}/>; if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="AI Coach" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>; return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;}
+    if(screen==="family")return <Family data={dataWithHousehold} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
+    if(screen==="goals")return <Goals data={dataWithHousehold} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen}/>;
+    if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     // privacy and terms handled before auth gate above
     return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/>;
