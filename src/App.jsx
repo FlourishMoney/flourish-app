@@ -4023,7 +4023,7 @@ function DataTransparencyPanel({data, onClose}) {
   );
 }
 
-function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab}){
+function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false}){
   const [mounted,setMounted]=useState(false);
   const [expandedTile,setExpandedTile]=useState(null);
   const [showCustomize,setShowCustomize]=useState(false);
@@ -4230,14 +4230,21 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
               <span style={{color:heroColorBright+"99",fontSize:9,textTransform:"uppercase",letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Today's Safe Limit</span>
               {data.bankConnected&&<span style={{color:heroColorBright+"55",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· live</span>}
             </div>
-            <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.88,marginBottom:18}}>
+            <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.88,marginBottom:18,position:"relative",display:"inline-block"}}>
               <span style={{fontSize:24,color:heroColorBright+"77",verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
-              <span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`}}>
-                <CountUp to={safe} decimals={2} dur={1200}/>
+              <span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`,
+                transition:"opacity .3s",opacity:isRefreshing?0.4:1}}>
+                <CountUp to={safe} decimals={0} dur={300}/>
               </span>
+              {/* Shimmer bar — signals live update in progress */}
+              {isRefreshing&&(
+                <div style={{position:"absolute",bottom:-6,left:0,right:0,height:2,borderRadius:99,
+                  background:`linear-gradient(90deg,transparent 0%,${heroColorBright} 50%,transparent 100%)`,
+                  backgroundSize:"200% 100%",animation:"shimmer 1.2s ease-in-out infinite"}}/>
+              )}
             </div>
-            {/* ── Timestamp — "as of Xm ago" builds absolute trust ── */}
-            {data.bankConnected&&(()=>{
+            {/* ── Timestamp — hidden during refresh to avoid contradiction ── */}
+            {data.bankConnected&&!isRefreshing&&(()=>{
               const lastRefresh = parseInt(localStorage.getItem("flourish_last_refresh")||"0");
               if (!lastRefresh) return null;
               const mins = Math.round((Date.now()-lastRefresh)/60000);
@@ -4421,14 +4428,19 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
                 {onWhatIf&&<button onClick={e=>{e.stopPropagation();onWhatIf();}} style={{background:"rgba(255,255,255,0.08)",border:`1px solid rgba(255,255,255,0.12)`,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:10,padding:"6px 12px",borderRadius:99,cursor:"pointer",minHeight:36}}>What if? →</button>}
               </div>
-              {/* Tap affordance — wired to the right action */}
+              {/* Tap affordance — prominent pill, clear action */}
               <div onClick={e=>{e.stopPropagation();overdraft?setScreen("plan"):setShowTransparency(true);}}
-                style={{display:"flex",alignItems:"center",gap:5,background:heroColor+"18",border:`1px solid ${heroColor}33`,borderRadius:99,padding:"6px 14px",cursor:"pointer",minHeight:32,transition:"background .15s"}}
-                onMouseEnter={e=>e.currentTarget.style.background=heroColor+"28"}
-                onMouseLeave={e=>e.currentTarget.style.background=heroColor+"18"}>
-                <span style={{color:heroColorBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>
-                  {overdraft?"See forecast →":"Why this number →"}
+                style={{display:"flex",alignItems:"center",gap:6,
+                  background:`linear-gradient(135deg,${heroColor}22,${heroColor}12)`,
+                  border:`1px solid ${heroColor}44`,
+                  borderRadius:99,padding:"10px 16px",cursor:"pointer",minHeight:44,
+                  transition:"all .15s",boxShadow:`0 2px 12px ${heroColor}20`}}
+                onMouseEnter={e=>{e.currentTarget.style.background=`linear-gradient(135deg,${heroColor}33,${heroColor}22)`;e.currentTarget.style.boxShadow=`0 4px 20px ${heroColor}35`;}}
+                onMouseLeave={e=>{e.currentTarget.style.background=`linear-gradient(135deg,${heroColor}22,${heroColor}12)`;e.currentTarget.style.boxShadow=`0 2px 12px ${heroColor}20`;}}>
+                <span style={{color:heroColorBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,letterSpacing:0.2}}>
+                  {overdraft?"Fix this":"Why this number?"}
                 </span>
+                <span style={{color:heroColorBright,fontSize:14,lineHeight:1}}>→</span>
               </div>
             </div>
             {overdraft&&<div style={{marginTop:12,padding:"10px 14px",background:C.red+"18",borderRadius:14,border:`1px solid ${C.red}33`,color:C.cream,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
@@ -8497,9 +8509,18 @@ export default function FlourishApp(){
   useEffect(()=>{ if(reconnectToken) openReconnectLink(); },[reconnectToken]); // eslint-disable-line
 
   // ── Background refresh — Plus only, fires 2s after bank data is ready ─────────
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
   useEffect(()=>{
     if(!appData?.bankConnected) return;
-    const timer = setTimeout(()=>{ backgroundRefresh(isPremium, setAppData); }, 2000);
+    const timer = setTimeout(async ()=>{
+      const lastFetch = parseInt(localStorage.getItem("flourish_last_refresh")||"0");
+      const THIRTY_MIN = 30 * 60 * 1000;
+      // Only show shimmer if we're actually going to refresh
+      const willRefresh = appData?.bankConnected && isPremium && (Date.now()-lastFetch >= THIRTY_MIN);
+      if(willRefresh) setIsRefreshing(true);
+      await backgroundRefresh(isPremium, setAppData);
+      setIsRefreshing(false);
+    }, 2000);
     return ()=>clearTimeout(timer);
   },[appData?.bankConnected, isPremium]);
 
@@ -8578,7 +8599,7 @@ export default function FlourishApp(){
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
     if(showSettings)return <Settings data={appData} setAppData={setAppData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}}/>;
-    if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/>;
+    if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="coach"){const freeCoachAllowed=!isPremium&&coachMsgCount<5&&!trialExpired;const showCoach=isPremium||freeCoachAllowed;if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen}/>; if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="AI Coach" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>; return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;}
@@ -8587,7 +8608,7 @@ export default function FlourishApp(){
     if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     // privacy and terms handled before auth gate above
-    return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/>;
+    return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/>;
   };
 
   const ALL_NAV=[
@@ -8709,7 +8730,7 @@ input,button,select,textarea { font-family:inherit; }
         {/* Two-column for home, single for others */}
         {screen==="home"&&!showNotifs&&!showSettings?(
           <div style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:28,padding:"28px 36px 40px",overflowY:"auto",flex:1}}>
-            <div><Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={true} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/></div>
+            <div><Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={true} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/></div>
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
               <DesktopSidebar data={dataWithHousehold} setScreen={setScreen}/>
             </div>
