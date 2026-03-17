@@ -1728,7 +1728,9 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
   const opportunities = [];
 
   // Subscription audit
-  const subTxns = txns.filter(t => t.cat === "Subscriptions" && t.amount > 0);  // expenses are positive
+  const _oppCatOv = (() => { try { return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}"); } catch { return {}; } })();
+  const _getOppCat = (t) => _oppCatOv[t.id] || t.cat;
+  const subTxns = txns.filter(t => _getOppCat(t) === "Subscriptions" && t.amount > 0);  // expenses are positive
   const subTotal = subTxns.reduce((s,t) => s + Math.abs(t.amount), 0);
   if (subTotal > 40) {
     const dupes = subTxns.length > 3 ? subTxns.slice(-2).map(t=>t.merchant||t.name).join(", ") : subTxns.map(t=>t.merchant||t.name).join(", ");
@@ -2627,7 +2629,9 @@ const BehaviorEngine = {
     }
 
     // ② Subscription creep: count + total subscription transactions
-    const subTxns  = txns.filter(t => t.cat === "Subscriptions");
+    const _behCatOv = (() => { try { return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}"); } catch { return {}; } })();
+    const _getBehCat = (t) => _behCatOv[t.id] || t.cat;
+    const subTxns  = txns.filter(t => _getBehCat(t) === "Subscriptions");
     const subTotal = subTxns.reduce((s,t) => s + Math.abs(t.amount), 0);
     if (subTxns.length >= 3 && subTotal > 35) {
       insights.push({
@@ -2639,7 +2643,7 @@ const BehaviorEngine = {
     }
 
     // ③ Dining / delivery inflation
-    const diningTxns  = txns.filter(t => ["Food","Coffee","Dining"].includes(t.cat));
+    const diningTxns  = txns.filter(t => ["Food","Coffee","Dining","Coffee & Dining"].includes(_getBehCat(t)));
     const diningTotal = diningTxns.reduce((s,t) => s + Math.abs(t.amount), 0);
     if (diningTotal > income * 0.18) {
       insights.push({
@@ -3851,8 +3855,8 @@ function buildLiveNotifs(data) {
     });
   });
 
-  // Bill due soon notifications (real bills only — skip already-paid bills)
-  bills.filter(b=>b.name&&b.amount&&getBillStatus(b)!=="paid").forEach((b,i) => {
+  // Bill due soon notifications — use auto-detected bill state (same as overdue check)
+  billsWithAutoDetect.filter(b=>b.name&&b.amount&&getBillStatus(b)!=="paid").forEach((b,i) => {
     const dueDay = parseInt(b.date||0);
     if(!dueDay) return;
     const daysUntil = dueDay >= todayDate ? dueDay - todayDate : (30 - todayDate + dueDay);
@@ -3919,7 +3923,8 @@ function buildLiveNotifs(data) {
     const alerted = (() => { try { return new Set(JSON.parse(localStorage.getItem("flourish_alerted_txns")||"[]")); } catch { return new Set(); } })();
     // CC payment keywords — these are not unusual spend, never alert on them
     const CC_ALERT_EXCLUDE = ["payment","autopay","amex","visa","mastercard","credit card",
-      "card payment","minimum payment","balance payment","loc pay","line of credit"];
+      "card payment","minimum payment","balance payment","loc pay","line of credit",
+      "customer transfer","mb-cr","mb-credit","bill payment"];
     // Bill amounts — transactions matching a known bill are bill payments, not unusual spend
     const billAmounts = bills.map(b => parseFloat(b.amount||0)).filter(a => a > 0);
     const isBillPayment = (txnAmt) => billAmounts.some(ba => Math.abs(txnAmt - ba) / ba < 0.10);
@@ -5932,6 +5937,7 @@ function SpendScreen({data, setAppData, setScreen}){
   const [accountFilter,setAccountFilter]=useState("All");
   const [recatTxn,setRecatTxn]=useState(null);
   const [markBillTxn,setMarkBillTxn]=useState(null);
+  const [linkBillTxn,setLinkBillTxn]=useState(null); // transaction to manually link to a bill
   const [billForm,setBillForm]=useState({name:"",amount:"",date:"1"});
   const [arrearsPayTxn,setArrearsPayTxn]=useState(null);
   const [applyAllPrompt, setApplyAllPrompt] = useState(null);
@@ -6127,6 +6133,47 @@ function SpendScreen({data, setAppData, setScreen}){
         </div>
       </div>
     )}
+      {/* Manual bill-transaction link sheet */}
+      {linkBillTxn&&(
+        <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setLinkBillTxn(null)}>
+          <div style={{width:"100%",maxWidth:520,background:C.bg,borderRadius:"24px 24px 0 0",maxHeight:"80vh",display:"flex",flexDirection:"column",overflow:"hidden"}} onClick={e=>e.stopPropagation()}>
+            <div style={{padding:"14px 20px 12px",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+              <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 12px"}}/>
+              <div style={{color:C.cream,fontWeight:800,fontSize:16}}>Which bill did this pay?</div>
+              <div style={{color:C.muted,fontSize:12,marginTop:3}}>
+                <span style={{color:C.cream,fontWeight:700}}>{linkBillTxn.name}</span> · ${Math.abs(linkBillTxn.amount).toFixed(2)} · {linkBillTxn.date}
+              </div>
+            </div>
+            <div style={{overflowY:"auto",padding:"12px 20px 32px",display:"flex",flexDirection:"column",gap:8}}>
+              {(data.bills||[]).map((b,i)=>{
+                const isPaid = getBillStatus(b) === "paid";
+                return (
+                  <button key={i} onClick={()=>{
+                    const month = currentBillingMonth();
+                    if(setAppData) setAppData(prev=>({
+                      ...prev,
+                      bills:(prev.bills||[]).map((bill,bi)=>bi===i?{...bill,paidMonth:month}:bill)
+                    }));
+                    setLinkBillTxn(null);
+                  }}
+                  style={{background:isPaid?"rgba(0,204,133,0.08)":C.card,border:`1px solid ${isPaid?"rgba(0,204,133,0.3)":C.border}`,borderRadius:14,padding:"12px 16px",cursor:"pointer",fontFamily:"inherit",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{b.name}</div>
+                      <div style={{color:C.muted,fontSize:11,marginTop:2}}>${parseFloat(b.amount||0).toFixed(2)}/mo · due {b.date}{["th","st","nd","rd"][parseInt(b.date)%10]||"th"}</div>
+                    </div>
+                    <div style={{color:isPaid?C.green:C.muted,fontSize:11,fontWeight:700,flexShrink:0,marginLeft:12}}>
+                      {isPaid?"✓ Already paid":"Tap to mark paid"}
+                    </div>
+                  </button>
+                );
+              })}
+              <div style={{color:C.muted,fontSize:11,textAlign:"center",marginTop:4,lineHeight:1.6}}>
+                Marking a bill paid removes it from your forecast and clears overdue alerts.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     {/* ── Arrears payment modal ─────────────────────────────────────
         User taps "Pay arrears →" on a transaction.
         They pick which bill this payment applies to.
@@ -6370,6 +6417,12 @@ function SpendScreen({data, setAppData, setScreen}){
                 </span>
               )}
               {txn.pending&&<Chip label="Pending" color={C.gold} size={9}/>}
+              {txn.amount>0&&(data.bills||[]).length>0&&(
+                <button onClick={e=>{e.stopPropagation();setLinkBillTxn(txn);}}
+                  style={{background:"rgba(0,204,133,0.12)",border:"1px solid rgba(0,204,133,0.25)",borderRadius:99,padding:"2px 8px",color:C.green,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                  ✓ Paid a bill
+                </button>
+              )}
             </div>
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
@@ -8685,9 +8738,11 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const income = FinancialCalcEngine.cashFlow(data).monthlyIncome || DEMO.income;
     const balance = parseFloat((accounts[0]?.balance||DEMO.balance).toString().replace(/,/g,""));
     const spending = txns.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
+    const coachCatOverrides = (() => { try { return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}"); } catch { return {}; } })();
+    const getCoachCat = (t) => coachCatOverrides[t.id] || t.cat;
     const topCats = Object.entries(
-      txns.filter(t=>t.amount>0 && t.cat!=="Income")
-        .reduce((acc,t)=>{acc[t.cat]=(acc[t.cat]||0)+t.amount;return acc;},{})
+      txns.filter(t=>t.amount>0 && getCoachCat(t)!=="Income")
+        .reduce((acc,t)=>{const c=getCoachCat(t);acc[c]=(acc[c]||0)+t.amount;return acc;},{})
     ).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`${k}: $${(v||0).toFixed(0)}`).join(", ");
 
     const goals = (data.goals||[]).map(g=>`${g.name}: $${parseFloat(g.saved||0).toFixed(0)} saved of $${parseFloat(g.target||0).toFixed(0)} target${g.monthly?`, $${g.monthly}/mo contribution`:""}`).join("; ")||"none set";
