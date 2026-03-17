@@ -5476,41 +5476,43 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
           {/* Transaction list */}
           {catTxns.length===0
             ? <div style={{color:C.muted,fontSize:12}}>No transactions in this category this month.</div>
-            : (()=>{
-              const sorted = catTxns.sort((a,b)=>b.amount-a.amount);
-              const visible = showAllTxns ? sorted : sorted.slice(0, TXN_LIMIT);
-              const hiddenCount = sorted.length - TXN_LIMIT;
-              return (<>
-                {visible.map((t,j)=>{
-                  const bills = window.__flourishBills||[];
-                  const linkedBill = bills.find(b=>Math.abs(parseFloat(b.amount||0)-t.amount)<5);
-                  return (
-                    <div key={j} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:j<visible.length-1?`1px solid ${C.border}`:"none"}}>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                          <div style={{color:C.cream,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:180}}>{t.name}</div>
-                          {linkedBill&&<span style={{background:C.green+"22",color:C.greenBright,fontSize:9,fontWeight:700,borderRadius:99,padding:"1px 6px",flexShrink:0}}>✓ {linkedBill.name}</span>}
+            : (() => {
+                const sorted = [...catTxns].sort((a,b)=>b.amount-a.amount);
+                const visible = showAllTxns ? sorted : sorted.slice(0, TXN_LIMIT);
+                const hiddenCount = sorted.length - TXN_LIMIT;
+                return (
+                  <div>
+                    {visible.map((t,j)=>{
+                      const bills = window.__flourishBills||[];
+                      const linkedBill = bills.find(b=>Math.abs(parseFloat(b.amount||0)-t.amount)<5);
+                      return (
+                        <div key={j} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:j<visible.length-1?`1px solid ${C.border}`:"none"}}>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                              <div style={{color:C.cream,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:180}}>{t.name}</div>
+                              {linkedBill&&<span style={{background:C.green+"22",color:C.greenBright,fontSize:9,fontWeight:700,borderRadius:99,padding:"1px 6px",flexShrink:0}}>✓ {linkedBill.name}</span>}
+                            </div>
+                            <div style={{color:C.muted,fontSize:10}}>{t.date}</div>
+                          </div>
+                          <span style={{color:linkedBill?C.greenBright:color,fontWeight:700,fontSize:13,flexShrink:0,marginLeft:8}}>${(t.amount||0).toFixed(2)}</span>
                         </div>
-                        <div style={{color:C.muted,fontSize:10}}>{t.date}</div>
-                      </div>
-                      <span style={{color:linkedBill?C.greenBright:color,fontWeight:700,fontSize:13,flexShrink:0,marginLeft:8}}>${(t.amount||0).toFixed(2)}</span>
-                    </div>
-                  );
-                })}
-                {!showAllTxns && hiddenCount > 0 && (
-                  <button onClick={e=>{e.stopPropagation();setShowAllTxns(true);}}
-                    style={{width:"100%",marginTop:8,background:color+"12",border:`1px solid ${color}33`,borderRadius:10,padding:"8px",color,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
-                    Show {hiddenCount} more transaction{hiddenCount===1?"":"s"} ↓
-                  </button>
-                )}
-                {showAllTxns && sorted.length > TXN_LIMIT && (
-                  <button onClick={e=>{e.stopPropagation();setShowAllTxns(false);}}
-                    style={{width:"100%",marginTop:8,background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px",color:C.muted,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
-                    Show less ↑
-                  </button>
-                )}
-              </>);
-            })()}
+                      );
+                    })}
+                    {!showAllTxns && hiddenCount > 0 && (
+                      <button onClick={e=>{e.stopPropagation();setShowAllTxns(true);}}
+                        style={{width:"100%",marginTop:8,background:color+"12",border:`1px solid ${color}33`,borderRadius:10,padding:"8px",color,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
+                        Show {hiddenCount} more transaction{hiddenCount===1?"":"s"} ↓
+                      </button>
+                    )}
+                    {showAllTxns && sorted.length > TXN_LIMIT && (
+                      <button onClick={e=>{e.stopPropagation();setShowAllTxns(false);}}
+                        style={{width:"100%",marginTop:8,background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px",color:C.muted,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
+                        Show less ↑
+                      </button>
+                    )}
+                  </div>
+                );
+              })()
           }
         </div>
       )}
