@@ -5519,28 +5519,21 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
 }
 
 function SpendScreen({data, setAppData, setScreen}){
+  // ── ALL HOOKS FIRST — no non-hook code before the last hook (TDZ prevention) ──
   const [tab,setTab]=useState("txn");
   const [catFilter,setCatFilter]=useState("All");
   const [dismissed,setDismissed]=useState([]);
   const [period,setPeriod]=useState("month");
-  // Period date helpers
-  const startOfPeriod = (() => {
-    const d = new Date();
-    if(period==="week")  { const s=new Date(d); s.setDate(d.getDate()-d.getDay()); s.setHours(0,0,0,0); return s; }
-    if(period==="month") { return new Date(d.getFullYear(),d.getMonth(),1); }
-    if(period==="last")  { return new Date(d.getFullYear(),d.getMonth()-1,1); }
-    if(period==="3mo")   { return new Date(d.getFullYear(),d.getMonth()-2,1); }
-    return null; // "all" = 90 days, handled below
-  })();
-  const endOfPeriod = (() => {
-    const d = new Date();
-    if(period==="last") { return new Date(d.getFullYear(),d.getMonth(),0,23,59,59); }
-    return null; // up to today
-  })();
   const [accountFilter,setAccountFilter]=useState("All");
+  const [recatTxn,setRecatTxn]=useState(null);
+  const [markBillTxn,setMarkBillTxn]=useState(null);
+  const [billForm,setBillForm]=useState({name:"",amount:"",date:"1"});
+  const [arrearsPayTxn,setArrearsPayTxn]=useState(null);
+  const [applyAllPrompt, setApplyAllPrompt] = useState(null);
+
+  // ── NON-HOOK DERIVED VALUES (after all hooks) ──────────────────────────────
   const isDemo=!data.bankConnected;
   const txns=data.transactions||[];
-  // Filter to current month for "this month" stats
   const now = new Date();
   const thisMonthTxns = txns.filter(t => {
     if(!t.date) return false;
@@ -5548,16 +5541,9 @@ function SpendScreen({data, setAppData, setScreen}){
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
   });
   const monthLabel = now.toLocaleString("en-CA",{month:"long",year:"numeric"});
-  // Declare getCat BEFORE stats and cats — avoids Temporal Dead Zone error
-  const [recatTxn,setRecatTxn]=useState(null);
-  const [markBillTxn,setMarkBillTxn]=useState(null);
-  const [billForm,setBillForm]=useState({name:"",amount:"",date:"1"});
-  const [arrearsPayTxn,setArrearsPayTxn]=useState(null);
-  // catOverrides must be before computeStats so breakdown uses custom categories
   const catOverrides = JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
   const getCat = (t) => catOverrides[t.id] || t.cat;
   const stats=computeStats(thisMonthTxns, catOverrides);
-  const [applyAllPrompt, setApplyAllPrompt] = useState(null); // {txn, newCat}
 
   const recat = (txn, newCat, applyToAll=false) => {
     const overrides = JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
@@ -5601,6 +5587,20 @@ function SpendScreen({data, setAppData, setScreen}){
   }))).filter(c=>c!=="Transfer"||txns.some(t=>getCat(t)==="Transfer"&&t.amount>0))];
   // displayTxns and EXCLUDE_CATS must be defined BEFORE filtered (TDZ prevention)
   const EXCLUDE_CATS = new Set(["Transfer","Income"]);
+  // Period date helpers — placed after all hooks to avoid TDZ
+  const startOfPeriod = (() => {
+    const d = new Date();
+    if(period==="week")  { const s=new Date(d); s.setDate(d.getDate()-d.getDay()); s.setHours(0,0,0,0); return s; }
+    if(period==="month") { return new Date(d.getFullYear(),d.getMonth(),1); }
+    if(period==="last")  { return new Date(d.getFullYear(),d.getMonth()-1,1); }
+    if(period==="3mo")   { return new Date(d.getFullYear(),d.getMonth()-2,1); }
+    return null;
+  })();
+  const endOfPeriod = (() => {
+    const d = new Date();
+    if(period==="last") { return new Date(d.getFullYear(),d.getMonth(),0,23,59,59); }
+    return null;
+  })();
   const displayTxns = (() => {
     if(period==="week"||period==="last"||period==="3mo") {
       return txns.filter(t => {
