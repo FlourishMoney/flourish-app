@@ -4169,16 +4169,57 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         </button>
       </div>
 
-      {/* ── Sample data banner — before bento so it reads as a context setter ── */}
-      {(!data.transactions||data.transactions.length===0)&&(
-        <div style={{...anim(50),...glass(C.gold,C.gold+"28"),borderRadius:16,padding:"11px 16px",display:"flex",gap:10,alignItems:"center"}}>
-          <span style={{fontSize:16,flexShrink:0}}>🔗</span>
-          <div style={{flex:1}}>
-            <span style={{color:C.goldBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Sample data shown</span>
-            <span style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginLeft:6}}>Connect your bank in Settings</span>
+      {/* ── Pre-bank estimated insight — replaces generic "sample data" banner ── */}
+      {(!data.transactions||data.transactions.length===0)&&(()=>{
+        // Calculate a real estimate from their onboarding data
+        const toMo = (amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="monthly"?a:a*2.167;};
+        const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
+        const monthlyBills = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
+        const safetyBuffer = monthlyIncome * 0.15;
+        const estimatedSpend = monthlyIncome * 0.68; // avg spend rate
+        const surplus = monthlyIncome - monthlyBills - safetyBuffer;
+        const overspend = estimatedSpend - (monthlyIncome - monthlyBills - safetyBuffer);
+        const hasData = monthlyIncome > 0;
+        return(
+          <div style={{...anim(50),background:hasData?(overspend>0?C.red+"12":C.green+"10"):C.gold+"10",
+            border:`1px solid ${hasData?(overspend>0?C.red+"33":C.green+"30"):C.gold+"33"}`,
+            borderRadius:16,padding:"14px 16px",cursor:"pointer"}}
+            onClick={()=>setScreen("coach")}>
+            <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+              <span style={{fontSize:20,flexShrink:0}}>{hasData?(overspend>0?"⚠️":"💡"):"🔗"}</span>
+              <div style={{flex:1}}>
+                {hasData?(
+                  <>
+                    <div style={{color:overspend>0?C.redBright:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:3}}>
+                      {overspend>0
+                        ? `Based on your setup, you may be overspending by $${Math.round(overspend).toLocaleString()}/mo`
+                        : `Based on your setup, you have ~$${Math.round(Math.max(0,surplus)).toLocaleString()}/mo to work with`}
+                    </div>
+                    <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>
+                      {overspend>0
+                        ? "Connect your bank to see exactly where it's going — and fix it."
+                        : "Connect your bank to track it live and make it work harder."}
+                    </div>
+                    <div style={{marginTop:8,display:"flex",gap:8}}>
+                      <button onClick={e=>{e.stopPropagation();setScreen("coach");}} style={{background:overspend>0?C.red+"22":C.green+"22",border:`1px solid ${overspend>0?C.red+"44":C.green+"44"}`,borderRadius:99,padding:"6px 14px",color:overspend>0?C.redBright:C.greenBright,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                        Ask Coach →
+                      </button>
+                      <button onClick={e=>{e.stopPropagation();window.dispatchEvent(new CustomEvent("flourish:settings"));}} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,borderRadius:99,padding:"6px 14px",color:C.mutedHi,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                        Connect Bank
+                      </button>
+                    </div>
+                  </>
+                ):(
+                  <>
+                    <span style={{color:C.goldBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Estimates based on your setup</span>
+                    <span style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginLeft:6}}>Connect your bank for live data</span>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Income accuracy banner ────────────────────────────────────── */}
       {(()=>{
@@ -7723,12 +7764,106 @@ function Paywall({onClose,onUpgrade,country}){
   );
 }
 
+
+// ─── FIRST VISIT FOCUSED SCREEN ──────────────────────────────────────────────
+// Shown once, immediately after onboarding completes.
+// One number. One sentence. One button.
+// Dismissed permanently after user taps through.
+function FirstVisitScreen({data, onDismiss}) {
+  const [showBreakdown, setShowBreakdown] = useState(false);
+
+  const { safeAmount } = SafeSpendEngine.calculate(data);
+  const { monthlyIncome, monthlyBills } = FinancialCalcEngine.cashFlow(data);
+  const toMo = (amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="monthly"?a:a*2.167;};
+  const incomeAmt = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
+  const billsAmt = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
+  const safeFloor = incomeAmt * 0.15;
+  const bufferAmt = Math.max(0, incomeAmt - billsAmt - safeFloor);
+  const name = data.profile?.name || "there";
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 28px",textAlign:"center"}}>
+      {/* Ambient glow */}
+      <div style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:400,height:400,borderRadius:"50%",background:`radial-gradient(circle,${C.green}14 0%,transparent 65%)`,pointerEvents:"none"}}/>
+
+      <div style={{position:"relative",width:"100%",maxWidth:360}}>
+        {/* Welcome */}
+        <div style={{color:C.muted,fontSize:12,fontWeight:700,letterSpacing:2,textTransform:"uppercase",marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+          Welcome, {name}
+        </div>
+
+        {/* The Number */}
+        <div style={{marginBottom:8}}>
+          {incomeAmt > 0 ? (<>
+            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>You can safely spend</div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,lineHeight:1}}>
+              <span style={{fontSize:22,color:C.greenBright+"88",verticalAlign:"top",marginTop:12,display:"inline-block"}}>$</span>
+              <span style={{fontSize:88,color:C.greenBright,letterSpacing:-4,textShadow:`0 0 80px ${C.green}40`}}>
+                {Math.max(0,safeAmount).toFixed(0)}
+              </span>
+            </div>
+            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>today</div>
+          </>) : (
+            <div style={{marginTop:8}}>
+              <div style={{fontSize:64,marginBottom:12}}>🌱</div>
+              <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:C.greenBright,marginBottom:8}}>Flourish is ready</div>
+            </div>
+          )}
+        </div>
+
+        {/* One-line explanation */}
+        <div style={{color:C.mutedHi,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,marginBottom:32,maxWidth:280,margin:"0 auto 32px"}}>
+          {incomeAmt > 0
+            ? "After bills, savings buffer, and upcoming expenses"
+            : "Add your income in Settings to see your personalised safe-to-spend number."}
+        </div>
+
+        {/* Breakdown — progressive disclosure */}
+        {showBreakdown&&(
+          <div style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:18,padding:"16px 20px",marginBottom:24,textAlign:"left"}}>
+            <div style={{color:C.muted,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How this is calculated</div>
+            {[
+              ["💰","Monthly income", incomeAmt>0?`$${incomeAmt.toFixed(0)}`:"Not entered yet", incomeAmt>0?C.greenBright:C.muted],
+              ["📅","Bills this period",billsAmt>0?`−$${billsAmt.toFixed(0)}`:"None tracked",billsAmt>0?C.gold:C.muted],
+              ["🛡️","Safety buffer (15%)",incomeAmt>0?`−$${safeFloor.toFixed(0)}`:"—",C.teal],
+              ["✅","Available to spend",`$${Math.max(0,safeAmount).toFixed(0)}`,C.greenBright],
+            ].map(([icon,label,val,col],i,arr)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:i<arr.length-1?`1px solid ${C.border}22`:"none"}}>
+                <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{icon} {label}</span>
+                <span style={{color:col,fontWeight:700,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{val}</span>
+              </div>
+            ))}
+            {!data.bankConnected&&<div style={{marginTop:12,color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>📌 Connect your bank to make this number live and precise.</div>}
+          </div>
+        )}
+
+        {/* Primary CTA */}
+        {!showBreakdown?(
+          <button onClick={()=>setShowBreakdown(true)}
+            style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
+            See how this works →
+          </button>
+        ):(
+          <button onClick={onDismiss}
+            style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
+            Go to my dashboard →
+          </button>
+        )}
+
+        <button onClick={onDismiss} style={{background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"8px"}}>
+          Skip for now
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 const NAV=[
-  {id:"home",  icon:"home",     label:"Home"},
-  {id:"plan",  icon:"calendar", label:"Plan"},
-  {id:"spend", icon:"card",     label:"Transactions"},
-  {id:"coach", icon:"sparkles", label:"Coach"},
+  {id:"home",  icon:"home",     label:"Today"},
+  {id:"plan",  icon:"calendar", label:"Future"},
+  {id:"spend", icon:"card",     label:"Activity"},
+  {id:"coach", icon:"sparkles", label:"Guidance"},
   {id:"family",icon:"users",    label:"Family"},
 ];
 
@@ -7887,6 +8022,13 @@ export default function FlourishApp(){
   // ── Hydrate from localStorage on first render ──────────────────
   const saved = loadState();
   const [onboarded,setOnboarded]=useState(()=>saved?.onboarded||false);
+  const [firstVisitDone,setFirstVisitDone]=useState(()=>{
+    try{return localStorage.getItem("flourish_first_visit_done")==="1";}catch{return false;}
+  });
+  const dismissFirstVisit=()=>{
+    try{localStorage.setItem("flourish_first_visit_done","1");}catch{}
+    setFirstVisitDone(true);
+  };
   const [appData,setAppData]=useState(()=>saved?.appData||null);
   // Read URL path on load so /privacy and /terms work as direct links
   const initialScreen = (() => {
@@ -8187,6 +8329,8 @@ export default function FlourishApp(){
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} onClose={()=>setShowWhatIf(false)}/>;
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
   if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
+  // First-visit focused screen — shown once after onboarding, dismissed permanently
+  if(!firstVisitDone&&appData)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}/>;
   if(showPaywall)return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;
 
   const unread = (() => {
@@ -8261,10 +8405,10 @@ export default function FlourishApp(){
   };
 
   const ALL_NAV=[
-    {id:"home",  icon:"home",    label:"Home"},
-    {id:"plan",  icon:"calendar",label:"Plan"},
-    {id:"spend", icon:"card",    label:"Transactions"},
-    {id:"coach", icon:"sparkles",label:"Coach"},
+    {id:"home",  icon:"home",    label:"Today"},
+    {id:"plan",  icon:"calendar",label:"Future"},
+    {id:"spend", icon:"card",    label:"Activity"},
+    {id:"coach", icon:"sparkles",label:"Guidance"},
     {id:"family",icon:"users",   label:"Family"},
     {id:"goals", icon:"chartUp", label:"Goals"},
   ];
@@ -8363,7 +8507,7 @@ input,button,select,textarea { font-family:inherit; }
         <div style={{padding:"20px 36px 16px",background:C.isDark?`${C.bg}F8`:`${C.bg}EE`,backdropFilter:"blur(12px)",position:"sticky",top:0,zIndex:20,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid ${C.border}`}}>
           <div>
             <div style={{color:C.cream,fontWeight:700,fontSize:18,fontFamily:"'Playfair Display',serif"}}>
-              {showNotifs?"Notifications":showSettings?"Settings":screen==="home"?"Dashboard":screen==="plan"?"Plan Ahead":screen==="spend"?"Spending":screen==="coach"?"AI Coach":screen==="family"?"Family":screen==="goals"||screen==="credit"?"Goals & Wealth":"Dashboard"}
+              {showNotifs?"Notifications":showSettings?"Settings":screen==="home"?"Today":screen==="plan"?"Future":screen==="spend"?"Activity":screen==="coach"?"Guidance":screen==="family"?"Family":screen==="goals"||screen==="credit"?"Goals & Wealth":"Today"}
             </div>
             <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{new Date().toLocaleDateString(CC[appData?.profile?.country||"CA"]?.locale||"en-CA",{weekday:"long",month:"long",day:"numeric"})}</div>
           </div>
