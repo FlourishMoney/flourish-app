@@ -5106,6 +5106,7 @@ function PlanAhead({data, setAppData, setScreen}){
   const [customProviders,setCustomProviders]=useState([]);
   const [showCustomForm,setShowCustomForm]=useState(false);
   const [newProvider,setNewProvider]=useState({name:"",amount:"",icon:"🏦"});
+  const [expandedPlanDay, setExpandedPlanDay] = useState(null);
   const PROVIDERS=[
     {name:"Netflix",icon:"🎬",color:"#E50914",amount:"18.99"},{name:"Spotify",icon:"🎵",color:C.green,amount:"11.99"},
     {name:"Amazon Prime",icon:"📦",color:"#FF9900",amount:"9.99"},{name:"Hydro One",icon:"⚡",color:C.gold,amount:"124.00"},
@@ -5218,7 +5219,6 @@ function PlanAhead({data, setAppData, setScreen}){
     </Card>
     <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.8,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
     {(()=>{
-      const [expandedPlanDay, setExpandedPlanDay] = useState(null);
       const avgDailySpend = FinancialCalcEngine.avgDailySpend(data);
       return days.filter((d,i)=>i===0||d.income>0||d.bills.length>0).map((day,i)=>{
         const isToday=day.idx===0,neg=day.balance<0,low=day.balance<150&&day.balance>=0;
@@ -6053,6 +6053,10 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
   const [selDebt,setSelDebt]=useState(0);
   const [extra,setExtra]=useState(50);
   const [method,setMethod]=useState("avalanche");
+  // My Goals tab state — must be at component level, not inside IIFE
+  const [showForm, setShowForm] = useState(false);
+  const [editIdx, setEditIdx] = useState(null);
+  const [goalForm, setGoalForm] = useState({name:"",target:"",saved:"",monthly:"",notes:""});
   const debts=data.debts||[];
   const safeSelDebt=Math.min(selDebt,Math.max(0,debts.length-1));
   const debt=debts.length>0?debts[safeSelDebt]:{name:"Credit Card",balance:"3420",rate:"19.99",min:"68"};
@@ -6094,12 +6098,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         {label:"Home Reno",      icon:"🔨", color:C.orange},
         {label:"Other",          icon:"🎯", color:C.muted},
       ];
-      const [showForm, setShowForm] = useState(false);
-      const [editIdx, setEditIdx] = useState(null);
-      const [form, setForm] = useState({name:"",target:"",saved:"",monthly:"",notes:""});
-
-      const openAdd = () => { setForm({name:"",target:"",saved:"",monthly:"",notes:""}); setEditIdx(null); setShowForm(true); };
-      const openEdit = (g,i) => { setForm({name:g.name||g.label||"",target:g.target||"",saved:g.saved||g.current||"",monthly:g.monthly||"",notes:g.notes||""}); setEditIdx(i); setShowForm(true); };
+      const form = goalForm; const setForm = setGoalForm;
+      const openAdd = () => { setGoalForm({name:"",target:"",saved:"",monthly:"",notes:""}); setEditIdx(null); setShowForm(true); };
+      const openEdit = (g,i) => { setGoalForm({name:g.name||g.label||"",target:g.target||"",saved:g.saved||g.current||"",monthly:g.monthly||"",notes:g.notes||""}); setEditIdx(i); setShowForm(true); };
       const saveGoal = () => {
         if(!form.name||!form.target) return;
         if(setAppData) setAppData(prev=>{
