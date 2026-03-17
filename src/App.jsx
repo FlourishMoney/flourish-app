@@ -2289,8 +2289,10 @@ const SafeSpendEngine = {
     // Bills due in the next 10 days — use real date arithmetic to handle month boundaries
     const todayDate = new Date();
     const in10Days  = new Date(todayDate); in10Days.setDate(todayDate.getDate() + 10);
+    const billingMonth = currentBillingMonth();
     const upcomingBills = bills
       .filter(b => {
+        if(b.paidMonth === billingMonth) return false; // paid this month — exclude
         const dueDay = parseInt(b.date);
         if(!dueDay) return false;
         // Build this month's due date
@@ -2324,6 +2326,7 @@ const SafeSpendEngine = {
       safeAmount, riskLevel,
       overdraft: upcomingBills > balance,
       soonBills: bills.filter(b => {
+        if(b.paidMonth === billingMonth) return false; // paid — don't show as upcoming
         const dueDay = parseInt(b.date);
         if(!dueDay) return false;
         const thisMonth = new Date(todayDate.getFullYear(), todayDate.getMonth(), dueDay);
@@ -2335,6 +2338,51 @@ const SafeSpendEngine = {
   }
 };
 
+// ─── BILL STATUS ENGINE ──────────────────────────────────────────────────────
+// paidMonth: "YYYY-MM" stored on a bill when user (or auto-detect) marks it paid.
+// Auto-resets every month — no cleanup logic needed.
+
+const currentBillingMonth = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+};
+
+// Returns "paid" | "overdue" | "upcoming"
+const getBillStatus = (bill) => {
+  const month = currentBillingMonth();
+  if(bill.paidMonth === month) return "paid";
+  const today = new Date().getDate();
+  const dueDay = parseInt(bill.date||0);
+  if(dueDay > 0 && dueDay < today) return "overdue";
+  return "upcoming";
+};
+
+// Auto-detect paid bills from transactions — fuzzy name match + amount within 15%
+const autoDetectPaidBills = (bills, transactions) => {
+  if(!bills?.length || !transactions?.length) return bills;
+  const month = currentBillingMonth();
+  const now = new Date();
+  const monthTxns = transactions.filter(t => {
+    if(!t.date) return false;
+    const d = new Date(t.date + "T12:00:00");
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && t.amount > 0;
+  });
+  return bills.map(bill => {
+    if(bill.paidMonth === month) return bill;
+    const billAmt  = parseFloat(bill.amount||0);
+    const billName = (bill.name||"").toLowerCase().trim();
+    const matched = monthTxns.find(t => {
+      const txnName = (t.name||"").toLowerCase();
+      const txnAmt  = parseFloat(t.amount||0);
+      const nameMatch = billName.length >= 3 && (txnName.includes(billName.slice(0,5)) || billName.includes(txnName.slice(0,5)));
+      const amtMatch  = billAmt > 0 && Math.abs(txnAmt - billAmt) / billAmt < 0.15;
+      return nameMatch && amtMatch;
+    });
+    if(matched) return {...bill, paidMonth: month};
+    return bill;
+  });
+};
+
 // ── ENGINE 3: 90-DAY CASH FLOW FORECAST ENGINE ────────────────────────────────
 // Projects daily balance for 90 days with overdraft risk detection.
 
@@ -2342,6 +2390,7 @@ const ForecastEngine = {
   generate(data, days = 90) {
     const { balance }       = SafeSpendEngine.calculate(data);
     const { monthlyIncome } = FinancialCalcEngine.cashFlow(data);
+    const billingMonth      = currentBillingMonth();
     const avgDaily          = FinancialCalcEngine.avgDailySpend(data);
     const bills             = data.bills || [];
     const today             = new Date();
@@ -2401,7 +2450,10 @@ const ForecastEngine = {
       const isPayday = getIsPayday(dayNum, i);
       const dayBills = bills.filter(b => {
         const bd = parseInt(b.date);
-        return bd === dayNum && bd > 0;
+        if(bd !== dayNum || bd <= 0) return false;
+        // Skip paid bills for the current month in today's forecast
+        if(i === 0 && b.paidMonth === billingMonth) return false;
+        return true;
       });
       const inc  = (isPayday ? paycheque : 0) + getSecondaryIncome(dayNum);
       // Day 0 = today: balance is already current, don't deduct spending again
@@ -3191,7 +3243,11 @@ function Onboarding({onComplete,onViewLegal,userId}){
   const addDebt=()=>setDebts([...debts,{name:"",balance:"",rate:"",min:""}]);
   const rmDebt=i=>setDebts(debts.filter((_,x)=>x!==i));
   const upDebt=(i,f,v)=>setDebts(debts.map((d,x)=>x===i?{...d,[f]:v}:d));
-  const finish=()=>onComplete({profile:p,incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),accounts:connAccts,transactions:plaidTxns.length?plaidTxns:[],bankConnected:connAccts.some(a=>a.institution!=="Manual")});
+  const finish=()=>{
+    const filteredBills = bills.filter(b=>b.name&&b.amount);
+    const filteredTxns  = plaidTxns.length ? plaidTxns : [];
+    onComplete({profile:p,incomes:incomes.filter(i=>i.amount),bills:autoDetectPaidBills(filteredBills, filteredTxns),debts:debts.filter(d=>d.name&&d.balance),accounts:connAccts,transactions:filteredTxns,bankConnected:connAccts.some(a=>a.institution!=="Manual")});
+  };
 
   const banks=(CC[p.country]?.banks||CC.CA.banks);
 
@@ -3653,8 +3709,23 @@ function buildLiveNotifs(data) {
   const debts = data?.debts || [];
   const balance = accounts.filter(a=>a.type==="checking"||a.type==="savings").reduce((s,a)=>s+(a.balance||0),0);
 
-  // Bill due soon notifications (real bills only)
-  bills.filter(b=>b.name&&b.amount).forEach((b,i) => {
+  // Overdue bills — past due date, not paid this month
+  const overdueBills = bills.filter(b => getBillStatus(b) === "overdue");
+  overdueBills.forEach((b, i) => {
+    notifs.push({
+      id: `overdue_${i}`,
+      icon: "calendar",
+      title: `${b.name} is overdue`,
+      body: `$${parseFloat(b.amount||0).toFixed(2)} was due on the ${b.date}${["th","st","nd","rd"][parseInt(b.date)%10]||"th"} — mark as paid once you've paid it.`,
+      read: false,
+      time: "Overdue",
+      type: "bill",
+      color: NOTIF_COLORS.urgent,
+    });
+  });
+
+  // Bill due soon notifications (real bills only — skip already-paid bills)
+  bills.filter(b=>b.name&&b.amount&&getBillStatus(b)!=="paid").forEach((b,i) => {
     const dueDay = parseInt(b.date||0);
     if(!dueDay) return;
     const daysUntil = dueDay >= todayDate ? dueDay - todayDate : (30 - todayDate + dueDay);
@@ -3825,10 +3896,13 @@ async function backgroundRefresh(isPremium, setAppData) {
           balance: Math.abs(a.balance || 0).toFixed(2),
           rate: "", min: "", fromBank: true,
         }));
+      const updatedTxns = normalisedTxns.length > 0 ? normalisedTxns : prev.transactions;
+      const updatedBills = autoDetectPaidBills(prev.bills||[], updatedTxns);
       return {
         ...prev,
         accounts: freshAccounts,
-        transactions: normalisedTxns.length > 0 ? normalisedTxns : prev.transactions,
+        transactions: updatedTxns,
+        bills: updatedBills,
         debts: newCCDebts.length > 0
           ? [...(prev.debts||[]).filter(d => d.name || d.balance), ...newCCDebts]
           : prev.debts,
@@ -4174,6 +4248,9 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
 
   // ── Generative priority logic ────────────────────────────────────────────────
   const urgentBill = soonBills.find(b=>parseInt(b.date)-today<=2);
+  const allBills = data.bills||[];
+  const paidCount = allBills.filter(b=>getBillStatus(b)==="paid").length;
+  const overdueCount = allBills.filter(b=>getBillStatus(b)==="overdue").length;
   const isPayday   = today===15||today===1; // simple heuristic
   // Combined overdraft signal (placeholder — sevenDayOverdraft declared above now)
   const overdraft = overdraftImmediate || sevenDayOverdraft;
@@ -4376,11 +4453,23 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                 ? (billsTotal > 0 ? `$${billsTotal.toFixed(0)} in bills` : null)
                 : (bufferAmt > 0 ? `$${bufferAmt.toFixed(0)} safety buffer` : null);
               const proofLine = bigDeduct ? `${balLabel} · minus ${bigDeduct}` : balLabel;
+              const billSummaryLine = (() => {
+                if(!allBills.length) return null;
+                if(overdueCount > 0) return { text: `${overdueCount} bill${overdueCount>1?"s":""} overdue`, color: C.red };
+                if(paidCount === allBills.length) return { text: `All ${allBills.length} bills paid ✓`, color: C.green };
+                if(paidCount > 0) return { text: `${paidCount} of ${allBills.length} bills paid`, color: C.muted };
+                return null;
+              })();
               return (
                 <div style={{marginBottom:14}}>
                   <div style={{color:heroColorBright+"66",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2,lineHeight:1.5}}>
                     {proofLine} → <strong style={{color:heroColorBright+"99"}}>${Math.max(0,safe).toFixed(0)} today</strong>
                   </div>
+                  {billSummaryLine&&(
+                    <div style={{color:billSummaryLine.color,fontSize:10,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4,letterSpacing:0.3}}>
+                      {billSummaryLine.text}
+                    </div>
+                  )}
                 </div>
               );
             })()}
@@ -4670,6 +4759,21 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             );
           }
 
+          // Priority 1.5 — overdue bill (past due, not paid)
+          if (overdueCount > 0) {
+            const overdueBill = allBills.find(b=>getBillStatus(b)==="overdue");
+            return (
+              <div style={{...anim(170),background:"rgba(255,79,106,0.08)",border:`1px solid ${C.red}44`,borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("plan")}>
+                <div style={{width:44,height:44,borderRadius:14,background:C.red+"18",border:`1px solid ${C.red}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>⚠️</div>
+                <div style={{flex:1}}>
+                  <div style={{color:C.redBright||C.red,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{overdueBill?.name || "A bill"} is overdue</div>
+                  <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{overdueCount > 1 ? `${overdueCount} bills past due` : `$${overdueBill?.amount} past due`} · Mark as paid in Your Bills</div>
+                </div>
+                <span style={{color:C.red,fontSize:18}}>→</span>
+              </div>
+            );
+          }
+
           // Priority 2 — urgent bill ≤2 days
           if (urgentBill) {
             return (
@@ -4950,8 +5054,26 @@ function BillManager({data, setAppData, onClose}){
               <div style={{color:C.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:10}}>Your Current Bills</div>
               {(data.bills||[]).map((b,i)=>{
                 const hasArrears = parseFloat(b.arrears||0) > 0;
+                const status = getBillStatus(b);
+                const isPaid = status === "paid";
+                const isOverdue = status === "overdue";
+                const statusColor = isPaid ? C.green : isOverdue ? C.red : C.gold;
+                const statusLabel = isPaid ? "✓ Paid" : isOverdue ? "Overdue" : "Upcoming";
+                const borderColor = isPaid ? C.green+"33" : isOverdue ? C.red+"44" : hasArrears ? C.gold+"44" : C.border;
+                const togglePaid = () => {
+                  const month = currentBillingMonth();
+                  updateBill(i, "paidMonth", isPaid ? null : month);
+                };
                 return (
-                <div key={i} style={{background:C.card,borderRadius:16,marginBottom:10,border:`1px solid ${hasArrears?C.gold+"44":C.border}`,overflow:"hidden"}}>
+                <div key={i} style={{background:C.card,borderRadius:16,marginBottom:10,border:`1px solid ${borderColor}`,overflow:"hidden",opacity:isPaid?0.75:1,transition:"all 0.2s"}}>
+                  {/* Status bar */}
+                  <div style={{background:isPaid?C.green+"14":isOverdue?C.red+"14":"transparent",padding:"6px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:`1px solid ${borderColor}`}}>
+                    <span style={{color:statusColor,fontSize:10,fontWeight:800,letterSpacing:0.5}}>{statusLabel}</span>
+                    <button onClick={togglePaid}
+                      style={{background:isPaid?"none":C.green+"22",border:`1px solid ${isPaid?C.border:C.green}`,borderRadius:99,padding:"3px 12px",color:isPaid?C.muted:C.greenBright,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:24,transition:"all 0.15s"}}>
+                      {isPaid ? "Mark unpaid" : "✓ Mark paid"}
+                    </button>
+                  </div>
                   {/* Main row */}
                   <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px"}}>
                     <div style={{flex:1,minWidth:0}}>
@@ -9309,6 +9431,7 @@ export default function FlourishApp(){
             ...d,
             accounts,
             transactions,
+            bills: autoDetectPaidBills(d.bills||[], transactions),
             bankConnected: true,
             debts: [...(d.debts||[]).filter(d => d.name || d.balance), ...newCCDebts],
           };
