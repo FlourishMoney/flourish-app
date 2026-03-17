@@ -168,7 +168,13 @@ const CC = {
 function getPersonalizedTaxCredits(profile) {
   const country   = profile?.country   || "CA";
   const province  = profile?.province  || "ON";
-  const lifeStage = profile?.lifeStage || "employed";
+  // lifeStages is now an array — support both old string format and new array format
+  const rawLifeStage = profile?.lifeStages || profile?.lifeStage || "employed";
+  const lifeStages = Array.isArray(rawLifeStage) ? rawLifeStage : [rawLifeStage];
+  // Helper: check if any life stage matches
+  const hasStage = (...stages) => stages.some(s => lifeStages.includes(s));
+  // For backwards compat, keep lifeStage as the primary one for block-level checks
+  const lifeStage = lifeStages[0] || "employed";
   const hasKids   = profile?.hasKids   || false;
   const status    = profile?.status    || "single";
   const incomeTypes = (profile?.incomeTypes || []).map(t => t.toLowerCase());
@@ -183,20 +189,20 @@ function getPersonalizedTaxCredits(profile) {
     // Kids-only tips
     if ((t.includes("child") || t.includes("ccb") || t.includes("resp") || t.includes("dependent care") || t.includes("childcare") || t.includes("child care")) && !hasKids) return false;
     // Homeowner tips — FHSA only for non-seniors/non-retired
-    if (t.includes("fhsa") && (lifeStage === "senior" || lifeStage === "retired")) return false;
+    if (t.includes("fhsa") && hasStage("senior", "retired")) return false;
     // RESP only for people with kids
     if (t.includes("resp") && !hasKids) return false;
     // Student loan deduction only for students or recent grads
-    if (t.includes("student loan interest") && lifeStage !== "student" && lifeStage !== "employed") return false;
+    if (t.includes("student loan interest") && !hasStage("student", "employed")) return false;
     // Home office — self-employed or employed (remote)
-    if (t.includes("home office") && lifeStage === "student") return false;
+    if (t.includes("home office") && hasStage("student") && !hasStage("employed", "selfemployed")) return false;
     // Working income / CWB — not for retired/senior on fixed income
-    if ((t.includes("working income") || t.includes("cwb")) && (lifeStage === "retired")) return false;
+    if ((t.includes("working income") || t.includes("cwb")) && hasStage("retired") && !hasStage("employed", "selfemployed")) return false;
     return true;
   });
 
   // ── ADD: Student-specific credits ────────────────────────────────────────
-  if (lifeStage === "student") {
+  if (hasStage("student")) {
     if (country === "CA") {
       tips.unshift(
         {title:"Tuition Tax Credit",body:"Your T2202 slip from your school lets you claim every dollar of tuition as a federal tax credit (15% federal rate). Unused amounts carry forward indefinitely — you can use them in future high-income years. Transfer up to $5,000 unused amount to a parent or spouse.",savings:"15% of tuition paid",flag:"🇨🇦",priority:"high",action:"Get Your T2202"},
@@ -238,7 +244,7 @@ function getPersonalizedTaxCredits(profile) {
   }
 
   // ── ADD: Senior / Retired credits ─────────────────────────────────────────
-  if (lifeStage === "senior" || lifeStage === "retired") {
+  if (hasStage("senior", "retired")) {
     if (country === "CA") {
       tips.unshift(
         {title:"Age Amount Credit",body:"If you're 65 or older, you can claim the Age Amount — a federal non-refundable tax credit worth up to $8,396 (2024). It reduces if your income exceeds $42,335 and disappears above ~$98k. Even partial claims are worth thousands.",savings:"Up to $1,259 in tax saved",flag:"🇨🇦",priority:"high",action:"Claim on Line 30100"},
@@ -261,7 +267,7 @@ function getPersonalizedTaxCredits(profile) {
   }
 
   // ── ADD: Self-employed additions ─────────────────────────────────────────
-  if (lifeStage === "selfemployed") {
+  if (hasStage("selfemployed")) {
     if (country === "CA") {
       tips.push(
         {title:"Business Expenses — What You Can Actually Claim",body:"Vehicle (business km %), phone (business %), internet, software, accounting fees, professional dues, advertising, and meals (50%). Every legitimate expense reduces your taxable income dollar for dollar.",savings:"Varies — often $3,000–$15,000",flag:"🇨🇦",priority:"high",action:"Track All Receipts"},
@@ -2985,7 +2991,7 @@ function DashCustomize({ layout, onChange, onClose }) {
 // ─── ONBOARDING ───────────────────────────────────────────────────────────────
 function Onboarding({onComplete,onViewLegal,userId}){
   const [step,setStep]=useState(0);
-  const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false,lifeStage:"employed"});
+  const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false,lifeStages:["employed"]});
   const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment",isVariable:false}]);
   const [bills,setBills]=useState([{name:"",amount:"",date:""}]);
   const [debts,setDebts]=useState([{name:"",balance:"",rate:"",min:""}]);
@@ -3177,7 +3183,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
 
       {/* Demo mode — required for App Store review */}
       <button onClick={()=>onComplete({
-        profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true,lifeStage:"employed"},
+        profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true,lifeStages:["employed"]},
         incomes:[{id:1,label:"Full-time Job",amount:"2840",freq:"biweekly",type:"employment"},{id:2,label:"Canada Child Benefit",amount:"560",freq:"monthly",type:"ccb"}],
         bills:[{name:"Rent",amount:"1650",date:"1"},{name:"Hydro",amount:"95",date:"11"},{name:"Phone",amount:"65",date:"15"},{name:"Netflix",amount:"18.99",date:"22"}],
         debts:[{name:"TD Visa",balance:"3420",rate:"19.99",min:"68"},{name:"Car Loan",balance:"8200",rate:"6.99",min:"280"}],
@@ -3218,11 +3224,24 @@ function Onboarding({onComplete,onViewLegal,userId}){
         </div>
       </div>
       <div style={{marginBottom:14}}>
-        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:8,fontWeight:700}}>Which best describes you?</div>
+        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:4,fontWeight:700}}>Which best describes you?</div>
+        <div style={{color:C.muted,fontSize:11,marginBottom:10}}>Select all that apply</div>
         <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-          {[["employed","💼 Employed"],["student","🎓 Student"],["selfemployed","🧾 Self-Employed"],["senior","🏛️ Senior (65+)"],["retired","🌅 Retired"],["other","➕ Other"]].map(([val,label])=>(
-            <button key={val} onClick={()=>setP({...p,lifeStage:val})} style={{background:p.lifeStage===val?C.green+"33":C.cardAlt,border:`1px solid ${p.lifeStage===val?C.green:C.border}`,color:p.lifeStage===val?C.greenBright:C.muted,borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>{label}</button>
-          ))}
+          {[["💼","employed","Employed"],["🎓","student","Student"],["🧾","selfemployed","Self-Employed"],["🏛️","senior","Senior (65+)"],["🌅","retired","Retired"],["➕","other","Other"]].map(([emoji,val,label])=>{
+            const selected=(p.lifeStages||[]).includes(val);
+            const toggle=()=>{
+              const cur=p.lifeStages||[];
+              const next=selected?cur.filter(v=>v!==val):[...cur,val];
+              setP({...p,lifeStages:next.length>0?next:["other"]});
+            };
+            return(
+              <button key={val} onClick={toggle} style={{background:selected?C.green+"33":C.cardAlt,border:`1px solid ${selected?C.green:C.border}`,color:selected?C.greenBright:C.muted,borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",display:"flex",alignItems:"center",gap:6,transition:"all .15s"}}>
+                <span style={{fontSize:15}}>{emoji}</span>
+                {label}
+                {selected&&<span style={{fontSize:10,opacity:0.8}}>✓</span>}
+              </button>
+            );
+          })}
         </div>
       </div>
       <Btn label="Continue →" onClick={()=>setStep(2)} disabled={!p.name}/>
@@ -4894,9 +4913,12 @@ function detectPayroll(transactions, existingIncomes) {
     .sort((a,b) => b.avgAmount - a.avgAmount)
     .slice(0,3);
 
-  // Filter out already-added income sources
-  const existingAmts = new Set((existingIncomes||[]).map(i=>Math.round(parseFloat(i.amount||0))));
-  return candidates.filter(c => !existingAmts.has(c.avgAmount));
+  // Filter out already-added income sources — fuzzy match within 15% so biweekly
+  // vs monthly rounding doesn't create duplicate suggestions
+  const existingAmounts = (existingIncomes||[]).map(i=>parseFloat(i.amount||0)).filter(a=>a>0);
+  return candidates.filter(c =>
+    !existingAmounts.some(ea => Math.abs(ea - c.avgAmount) / Math.max(ea, c.avgAmount) < 0.15)
+  );
 }
 
 function IncomeDetectionBanner({transactions, incomes, setAppData}){
@@ -4913,9 +4935,20 @@ function IncomeDetectionBanner({transactions, incomes, setAppData}){
     try { localStorage.setItem("flourish_dismissed_income", JSON.stringify(updated)); } catch {}
   };
   const addIncome = () => {
-    if(setAppData) setAppData(prev=>({...prev,
-      incomes:[...(prev.incomes||[]), {id:Date.now(),label:c0.name,amount:String(c0.avgAmount),freq:"biweekly",type:"employment",isVariable:false}]
-    }));
+    if(setAppData) setAppData(prev=>{
+      const existing = prev.incomes || [];
+      // Don't add if a similar amount already exists (within 15% — same paycheck)
+      const isDuplicate = existing.some(i => {
+        const existAmt = parseFloat(i.amount || 0);
+        const newAmt = c0.avgAmount;
+        return existAmt > 0 && Math.abs(existAmt - newAmt) / Math.max(existAmt, newAmt) < 0.15;
+      });
+      if (isDuplicate) return prev; // already tracked — don't add
+      return {
+        ...prev,
+        incomes: [...existing, {id:Date.now(),label:c0.name,amount:String(c0.avgAmount),freq:"biweekly",type:"employment",isVariable:false,autoDetected:true}]
+      };
+    });
     dismiss();
   };
 
@@ -7977,9 +8010,12 @@ export default function FlourishApp(){
         setAppData(prev=>({
           ...prev,
           transactions: allTxns,
-          incomes: detectedIncome && (!prev.incomes?.some(i=>i.amount))
-            ? [{id:1,label:detectedIncome.label,amount:String(detectedIncome.typical),freq:"monthly",type:"employment",isVariable:detectedIncome.isVariable,typicalAmount:String(detectedIncome.typical),lowAmount:String(detectedIncome.low),highAmount:String(detectedIncome.high),autoDetected:true}]
-            : prev.incomes,
+          incomes: (() => {
+            // Only auto-set income if user hasn't entered any real income yet
+            const hasRealIncome = (prev.incomes||[]).some(i => parseFloat(i.amount||0) > 0);
+            if (!detectedIncome || hasRealIncome) return prev.incomes;
+            return [{id:1,label:detectedIncome.label,amount:String(detectedIncome.typical),freq:"biweekly",type:"employment",isVariable:detectedIncome.isVariable,typicalAmount:String(detectedIncome.typical),lowAmount:String(detectedIncome.low),highAmount:String(detectedIncome.high),autoDetected:true}];
+          })(),
           bills: detectedBills?.length > 0 && (!prev.bills?.some(b=>b.name))
             ? detectedBills.map(b=>({name:b.name,amount:b.amount,date:b.date}))
             : prev.bills,
