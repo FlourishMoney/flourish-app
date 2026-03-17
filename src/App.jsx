@@ -58,8 +58,8 @@ const CC = {
       {emoji:"🆘",title:"The emergency fund rule",body:"One car repair without savings = credit card debt at 20%. A $1,000 cushion breaks that cycle. In Canada, keep it in a TFSA high-interest savings account.",key:"Build $1,000 in a TFSA HISA first."},
     ],
     retirementAccounts:[
-      {id:"rrsp",name:"RRSP",fullName:"Registered Retirement Savings Plan",icon:"🏦",color:"#2E8B2E",annualLimit:"18% of income (max $31,560)",taxNote:"Contributions deductible. Withdrawals taxed as income.",tip:"Contribute in high-income years. Use spousal RRSP for income splitting."},
-      {id:"tfsa",name:"TFSA",fullName:"Tax-Free Savings Account",icon:"🛡️",color:"#2FADA6",annualLimit:"$7,000 (2024). Unused room accumulates.",taxNote:"No deduction on contribution. All growth and withdrawals tax-free.",tip:"Invest in ETFs inside your TFSA — don't just park cash."},
+      {id:"rrsp",name:"RRSP",fullName:"Registered Retirement Savings Plan",icon:"🏦",color:"#2E8B2E",annualLimit:"18% of income (max $32,490)",taxNote:"Contributions deductible. Withdrawals taxed as income.",tip:"Contribute in high-income years. Use spousal RRSP for income splitting."},
+      {id:"tfsa",name:"TFSA",fullName:"Tax-Free Savings Account",icon:"🛡️",color:"#2FADA6",annualLimit:"$7,000 (2025). Unused room accumulates.",taxNote:"No deduction on contribution. All growth and withdrawals tax-free.",tip:"Invest in ETFs inside your TFSA — don't just park cash."},
       {id:"fhsa",name:"FHSA",fullName:"First Home Savings Account",icon:"🏠",color:"#CFA03E",annualLimit:"$8,000/yr (max $40,000 lifetime)",taxNote:"Deductible going in. Tax-free withdrawal for first home purchase.",tip:"Best account for first-time buyers. Open even if you're not buying immediately — room accumulates."},
       {id:"resp",name:"RESP",fullName:"Registered Education Savings Plan",icon:"👶",color:"#8A5FC8",annualLimit:"$2,500/yr to maximize CESG grant",taxNote:"No deduction. Government adds 20% (CESG) on first $2,500/yr.",tip:"Even $2,500/yr gets $500 free from government. Start at birth."},
     ],
@@ -97,7 +97,7 @@ const CC = {
       {title:"Earned Income Tax Credit (EITC)",body:"One of the most under-claimed credits in America. Under ~$63k with qualifying children? You could get up to $7,430 back — even if you owe nothing. Must file to claim.",savings:"Up to $7,430",flag:"🇺🇸",priority:"high",action:"Check EITC Eligibility"},
       {title:"Child Tax Credit",body:"Up to $2,000 per qualifying child under 17. Partially refundable — meaning you can get money back even if you owe nothing. File even if your income is low.",savings:"$2,000/child",flag:"🇺🇸",priority:"high",action:"Claim on Schedule 8812"},
       {title:"401(k) — Get the Full Match First",body:"If your employer matches 401(k) contributions, not contributing enough to get the full match is leaving free money on the table. A 4% match on $50k = $2,000/year you're giving up.",savings:"Up to $23,000/yr",flag:"🇺🇸",priority:"high",action:"Increase 401k Contributions"},
-      {title:"HSA: The Triple Tax Advantage",body:"If you have a high-deductible health plan, an HSA lets you contribute pre-tax, grow tax-free, and withdraw tax-free for medical expenses. It's legally the most tax-advantaged account available.",savings:"Up to $4,150/yr",flag:"🇺🇸",priority:"high",action:"Open an HSA"},
+      {title:"HSA: The Triple Tax Advantage",body:"If you have a high-deductible health plan, an HSA lets you contribute pre-tax, grow tax-free, and withdraw tax-free for medical expenses. It's legally the most tax-advantaged account available.",savings:"Up to $4,300/yr",flag:"🇺🇸",priority:"high",action:"Open an HSA"},
       {title:"Roth IRA: Tax-Free Retirement",body:"Under $146k single / $230k married? You can contribute $7,000/year to a Roth IRA. You pay tax now, but all growth and withdrawals are 100% tax-free in retirement.",savings:"$7,000/yr tax-free",flag:"🇺🇸",priority:"high",action:"Open a Roth IRA"},
       {title:"Student Loan Interest Deduction",body:"Paying student loans? You may be able to deduct up to $2,500 of interest per year, reducing taxable income directly — even without itemizing.",savings:"Up to $2,500",flag:"🇺🇸",priority:"medium",action:"Find 1098-E Form"},
       {title:"Child & Dependent Care Credit",body:"Paying for daycare, after-school, or a caregiver while you work? You can claim 20–35% of up to $3,000 in care expenses as a tax credit — not just a deduction.",savings:"$600–$1,050",flag:"🇺🇸",priority:"medium",action:"Track Care Receipts"},
@@ -117,7 +117,7 @@ const CC = {
     retirementAccounts:[
       {id:"401k",name:"401(k)",fullName:"Employer Retirement Plan",icon:"🏦",color:"#2E8B2E",annualLimit:"$23,000/yr ($30,500 if 50+)",taxNote:"Traditional: contributions pre-tax, withdrawals taxed. Roth 401k: after-tax contributions, tax-free withdrawals.",tip:"Always contribute enough to get the full employer match — it's free money."},
       {id:"roth",name:"Roth IRA",fullName:"Individual Retirement Account",icon:"🛡️",color:"#2FADA6",annualLimit:"$7,000/yr ($8,000 if 50+). Phaseout at $146k+",taxNote:"After-tax contributions. All growth and qualified withdrawals 100% tax-free.",tip:"Open early — the tax-free compounding over decades is massive. Use Fidelity or Vanguard."},
-      {id:"hsa",name:"HSA",fullName:"Health Savings Account",icon:"🏥",color:"#CFA03E",annualLimit:"$4,150 single / $8,300 family (2024)",taxNote:"Triple tax advantage: pre-tax in, tax-free growth, tax-free for medical expenses.",tip:"After 65, HSA funds can be used for anything (taxed like a 401k). Best account in the US tax code."},
+      {id:"hsa",name:"HSA",fullName:"Health Savings Account",icon:"🏥",color:"#CFA03E",annualLimit:"$4,300 single / $8,550 family (2025)",taxNote:"Triple tax advantage: pre-tax in, tax-free growth, tax-free for medical expenses.",tip:"After 65, HSA funds can be used for anything (taxed like a 401k). Best account in the US tax code."},
       {id:"529",name:"529 Plan",fullName:"Education Savings Account",icon:"🎓",color:"#8A5FC8",annualLimit:"No annual limit. $18k/yr gift tax exclusion.",taxNote:"State deduction varies. Federal tax-free growth and withdrawals for education.",tip:"Start when kids are young. Some states give immediate tax deductions."},
     ],
     benefitsChecker:[
@@ -223,7 +223,7 @@ function getPersonalizedTaxCredits(profile) {
         {title:"Age Amount Credit",body:"If you're 65 or older, you can claim the Age Amount — a federal non-refundable tax credit worth up to $8,396 (2024). It reduces if your income exceeds $42,335 and disappears above ~$98k. Even partial claims are worth thousands.",savings:"Up to $1,259 in tax saved",flag:"🇨🇦",priority:"high",action:"Claim on Line 30100"},
         {title:"Pension Income Splitting",body:"If you receive eligible pension income (RPP, RRIF, annuity), you can split up to 50% with your spouse. If your spouse is in a lower tax bracket, this can save your household thousands every year.",savings:"Potentially thousands",flag:"🇨🇦",priority:"high",action:"File Form T1032"},
         {title:"Pension Income Tax Credit",body:"The first $2,000 of eligible pension income qualifies for a 15% federal credit ($300 saved). Even if you're splitting pension income, your spouse can also claim this credit on the transferred amount.",savings:"Up to $300 federal",flag:"🇨🇦",priority:"high",action:"Claim on Line 31400"},
-        {title:"OAS & GIS — Are You Getting Everything?",body:"Old Age Security ($727.67/mo at 65) is automatic, but the Guaranteed Income Supplement (GIS) is not — you must apply. Low-income seniors leave GIS unclaimed every year. If your income is under ~$21,624, apply immediately.",savings:"Up to $1,065/mo (GIS)",flag:"🇨🇦",priority:"high",action:"Apply at Service Canada"},
+        {title:"OAS & GIS — Are You Getting Everything?",body:"Old Age Security ($742.31/mo at 65) is automatic, but the Guaranteed Income Supplement (GIS) is not — you must apply. Low-income seniors leave GIS unclaimed every year. If your income is under ~$21,624, apply immediately.",savings:"Up to $1,065/mo (GIS)",flag:"🇨🇦",priority:"high",action:"Apply at Service Canada"},
       {title:"CPP Maximum — Know What You're Entitled To",body:"The maximum CPP retirement pension is $1,364.60/mo (2025) at age 65. Your actual amount depends on contributions history. You can check your CPP Statement of Contributions at My Service Canada Account.",savings:"Up to $1,364.60/mo",flag:"🇨🇦",priority:"medium",action:"Check My Service Canada"},
         {title:"Medical Expense Tax Credit",body:"Seniors often have significant medical costs — prescriptions, dental, vision, hearing aids, home care. Expenses exceeding 3% of your net income (or $2,635 — whichever is less) are claimable. Keep every receipt.",savings:"15% of qualifying expenses",flag:"🇨🇦",priority:"high",action:"Gather Medical Receipts"},
         {title:"Home Accessibility Tax Credit",body:"Making your home safer and more accessible? Renovations like grab bars, wheelchair ramps, or walk-in tubs qualify for a 15% federal credit on up to $20,000 of expenses per year.",savings:"Up to $3,000",flag:"🇨🇦",priority:"medium",action:"Keep Renovation Receipts"}
@@ -357,22 +357,26 @@ const DEMO = {
 
 // ─── PLAID API HELPERS ────────────────────────────────────────────────────────
 async function callPlaid(action, params={}) {
-  const res = await fetch("/api/plaid", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, ...params }),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    const err = new Error(data.error || "Plaid error");
-    err.needs_reconnect = data.needs_reconnect || false;
-    // Signal the top-level app to show the reconnect banner
-    if(data.needs_reconnect && typeof window.__flourishReconnect === "function") {
-      window.__flourishReconnect();
+  try {
+    const res = await fetch("/api/plaid", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...params }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const err = new Error(data.error || "Plaid error");
+      err.needs_reconnect = data.needs_reconnect || false;
+      // Signal the top-level app to show the reconnect banner
+      if(data.needs_reconnect && typeof window.__flourishReconnect === "function") {
+        window.__flourishReconnect();
+      }
+      throw err;
     }
-    throw err;
+    return data;
+  } catch(err) {
+    throw err instanceof Error ? err : new Error("Plaid request failed");
   }
-  return data;
 }
 
 // Plaid Personal Finance Category (PFC) primary values → Flourish display meta
@@ -1336,7 +1340,7 @@ function FinancialTimeline({data}) {
                     {ev.isPayday&&(
                       <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
                         <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💰 Paycheck</span>
-                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+${(monthlyIncome||0).toFixed(0)}</span>
+                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+${(ev.income||0).toFixed(0)}</span>
                       </div>
                     )}
                     {ev.bills.map((b,bi)=>(
@@ -2467,7 +2471,7 @@ const BehaviorEngine = {
       insights.push({
         type:"pattern", icon:"🍔", priority:"medium", color: C.gold,
         title:"Food spending above benchmark",
-        body:`Food & dining is $${diningTotal.toFixed(0)}/mo — ${Math.round(diningTotal/income*100)}% of income. Benchmark is under 15%.`,
+        body:`Food & dining is $${diningTotal.toFixed(0)}/mo${income>0?` — ${Math.round(diningTotal/income*100)}% of income`:``}. Benchmark is under 15%.`,
         saving: `$${Math.round(diningTotal * 0.25)}/mo by cooking 3x more/week`
       });
     }
@@ -3659,7 +3663,7 @@ function buildLiveNotifs(data) {
         id: `bill_${i}`,
         icon:"calendar",
         title:`${b.name} due in ${daysUntil === 0 ? "today" : daysUntil + " day" + (daysUntil===1?"":"s")}`,
-        body:`$${parseFloat(b.amount).toFixed(2)}. ${covers ? "Your balance covers it — you're good." : "You may want to transfer funds before this hits."}`,
+        body:`$${parseFloat(b.amount||0).toFixed(2)}. ${covers ? "Your balance covers it — you're good." : "You may want to transfer funds before this hits."}`,
         read:false,
         time:`${dueDay}${[11,12,13].includes(dueDay)?"th":["st","nd","rd"][dueDay%10-1]||"th"}`,
         type:"bill",
@@ -4953,7 +4957,7 @@ function BillManager({data, setAppData, onClose}){
                       <div style={{color:C.cream,fontWeight:700,fontSize:13}}>{b.name}</div>
                       {hasArrears&&(
                         <div style={{color:C.goldBright,fontSize:10,fontWeight:700,marginTop:2}}>
-                          ⚠ ${parseFloat(b.arrears).toFixed(2)} in arrears
+                          ⚠ ${parseFloat(b.arrears||0).toFixed(2)} in arrears
                         </div>
                       )}
                     </div>
@@ -8129,7 +8133,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const accounts = data.accounts||[];
     const profile = data.profile||{};
     const country = profile.country||"CA";
-    const income = (data.incomes||[]).reduce((s,i)=>s+parseFloat(i.amount||0),0) || DEMO.income;
+    const income = FinancialCalcEngine.cashFlow(data).monthlyIncome || DEMO.income;
     const balance = parseFloat((accounts[0]?.balance||DEMO.balance).toString().replace(/,/g,""));
     const spending = txns.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
     const topCats = Object.entries(
