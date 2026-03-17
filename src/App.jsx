@@ -4236,6 +4236,18 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                 <CountUp to={safe} decimals={2} dur={1200}/>
               </span>
             </div>
+            {/* ── Timestamp — "as of Xm ago" builds absolute trust ── */}
+            {data.bankConnected&&(()=>{
+              const lastRefresh = parseInt(localStorage.getItem("flourish_last_refresh")||"0");
+              if (!lastRefresh) return null;
+              const mins = Math.round((Date.now()-lastRefresh)/60000);
+              const label = mins < 1 ? "just updated" : mins < 60 ? `updated ${mins}m ago` : mins < 1440 ? `updated ${Math.floor(mins/60)}h ago` : "updated today";
+              return (
+                <div style={{color:heroColorBright+"44",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:500,letterSpacing:0.3,marginBottom:4}}>
+                  {label}
+                </div>
+              );
+            })()}
             {/* ── Inline math proof — one line, no tap required ── */}
             {(()=>{
               const accts = data.accounts||[];
@@ -4266,25 +4278,6 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                 </div>
               );
             })()}
-
-            {/* ── Bottom row: actions + tap affordance ── */}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-              <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                {onWhatIf&&<button onClick={e=>{e.stopPropagation();onWhatIf();}} style={{background:"rgba(255,255,255,0.08)",border:`1px solid rgba(255,255,255,0.12)`,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:10,padding:"6px 12px",borderRadius:99,cursor:"pointer",minHeight:36}}>What if? →</button>}
-              </div>
-              {/* Tap affordance — wired to the right action */}
-              <div onClick={e=>{e.stopPropagation();overdraft?setScreen("plan"):setShowTransparency(true);}}
-                style={{display:"flex",alignItems:"center",gap:5,background:heroColor+"18",border:`1px solid ${heroColor}33`,borderRadius:99,padding:"6px 14px",cursor:"pointer",minHeight:32,transition:"background .15s"}}
-                onMouseEnter={e=>e.currentTarget.style.background=heroColor+"28"}
-                onMouseLeave={e=>e.currentTarget.style.background=heroColor+"18"}>
-                <span style={{color:heroColorBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>
-                  {overdraft?"See forecast →":"Why this number →"}
-                </span>
-              </div>
-            </div>
-            {overdraft&&<div style={{marginTop:12,padding:"10px 14px",background:C.red+"18",borderRadius:14,border:`1px solid ${C.red}33`,color:C.cream,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-              <strong style={{color:C.redBright}}>Overdraft risk</strong> — bills exceed your balance. Hold non-essential spending.
-            </div>}
 
             {/* ── Can I afford this? ──────────────────────────────────────
                 Pure math. No AI call. Instant answer.
@@ -4370,15 +4363,41 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                       )}
                     </div>
 
-                    {/* Result */}
+                    {/* Quick-tap presets — scaled to actual safe amount so every preset is meaningful */}
+                    {!affordResult&&!affordInput&&safe>0&&(()=>{
+                      // Generate 3 presets relative to safe: ~25%, ~50%, ~90%
+                      // Round to nearest $5 for clean numbers, min $1
+                      const p = (pct) => Math.max(1, Math.round((safe * pct) / 5) * 5);
+                      const presets = [p(0.25), p(0.50), p(0.90)]
+                        .filter((v,i,a) => a.indexOf(v) === i) // dedupe
+                        .slice(0, 3);
+                      return (
+                        <div style={{display:"flex",gap:6,marginTop:8}}>
+                          {presets.map(amt=>(
+                            <button key={amt} onClick={()=>{setAffordInput(String(amt));checkAfford(String(amt));}}
+                              style={{flex:1,background:heroColor+"0D",border:`1px solid ${heroColor}22`,borderRadius:10,
+                                padding:"7px 0",color:heroColorBright+"88",fontSize:12,fontWeight:700,cursor:"pointer",
+                                fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .15s",minHeight:34}}
+                              onMouseEnter={e=>{e.currentTarget.style.background=heroColor+"22";e.currentTarget.style.color=heroColorBright;}}
+                              onMouseLeave={e=>{e.currentTarget.style.background=heroColor+"0D";e.currentTarget.style.color=heroColorBright+"88";}}>
+                              ${amt}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Result — tappable to dismiss */}
                     {affordResult&&(
-                      <div style={{
-                        marginTop:10,padding:"10px 14px",borderRadius:12,
-                        background:affordResult.color+"14",
-                        border:`1px solid ${affordResult.color}33`,
-                        display:"flex",alignItems:"flex-start",gap:10,
-                        animation:"fadeIn 0.2s ease",
-                      }}>
+                      <div onClick={()=>{setAffordResult(null);setAffordInput("");}}
+                        style={{
+                          marginTop:10,padding:"10px 14px",borderRadius:12,
+                          background:affordResult.color+"14",
+                          border:`1px solid ${affordResult.color}33`,
+                          display:"flex",alignItems:"flex-start",gap:10,
+                          animation:"fadeIn 0.2s ease",
+                          cursor:"pointer",
+                        }}>
                         <span style={{fontSize:16,flexShrink:0,marginTop:1}}>
                           {affordResult.state==="yes"?"✅":affordResult.state==="tight"?"⚠️":"❌"}
                         </span>
@@ -4395,6 +4414,25 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                   </div>
                 );
               })()}
+            </div>}
+
+            {/* ── Bottom row: actions + tap affordance ── */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                {onWhatIf&&<button onClick={e=>{e.stopPropagation();onWhatIf();}} style={{background:"rgba(255,255,255,0.08)",border:`1px solid rgba(255,255,255,0.12)`,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:10,padding:"6px 12px",borderRadius:99,cursor:"pointer",minHeight:36}}>What if? →</button>}
+              </div>
+              {/* Tap affordance — wired to the right action */}
+              <div onClick={e=>{e.stopPropagation();overdraft?setScreen("plan"):setShowTransparency(true);}}
+                style={{display:"flex",alignItems:"center",gap:5,background:heroColor+"18",border:`1px solid ${heroColor}33`,borderRadius:99,padding:"6px 14px",cursor:"pointer",minHeight:32,transition:"background .15s"}}
+                onMouseEnter={e=>e.currentTarget.style.background=heroColor+"28"}
+                onMouseLeave={e=>e.currentTarget.style.background=heroColor+"18"}>
+                <span style={{color:heroColorBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>
+                  {overdraft?"See forecast →":"Why this number →"}
+                </span>
+              </div>
+            </div>
+            {overdraft&&<div style={{marginTop:12,padding:"10px 14px",background:C.red+"18",borderRadius:14,border:`1px solid ${C.red}33`,color:C.cream,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+              <strong style={{color:C.redBright}}>Overdraft risk</strong> — bills exceed your balance. Hold non-essential spending.
             </div>}
           </div>
         </div>
