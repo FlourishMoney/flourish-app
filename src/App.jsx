@@ -396,6 +396,10 @@ async function callPlaid(action, params={}) {
 }
 
 // Plaid Personal Finance Category (PFC) primary values → Flourish display meta
+// Shared keyword list for detecting credit card payments in transactions.
+// Used by income detection, spending calc, and transparency panel — single source of truth.
+const CC_PAYMENT_KEYWORDS = ["payment","autopay","amex","visa","mastercard","credit card","card payment","minimum payment","balance payment"];
+
 const CAT_META = {
   FOOD_AND_DRINK:            { cat:"Coffee & Dining", icon:"🍕", color:"#D97A3A" },
   GROCERIES:                 { cat:"Groceries",       icon:"🛒", color:"#2E8B2E" },
@@ -413,6 +417,7 @@ const CAT_META = {
   INCOME:                    { cat:"Income",          icon:"💰", color:"#6FE494" },
   TRANSFER_IN:               { cat:"Transfer",        icon:"↔️", color:"#888"    },
   TRANSFER_OUT:              { cat:"Transfer",        icon:"↔️", color:"#888"    },
+  CREDIT_CARD_PAYMENT:       { cat:"Transfer",        icon:"💳", color:"#888"    },
   BANK_FEES:                 { cat:"Fees",            icon:"🏦", color:"#888"    },
   GENERAL_SERVICES:          { cat:"Services",        icon:"⚙️", color:"#888"    },
   GOVERNMENT_AND_NON_PROFIT: { cat:"Services",        icon:"🏛️", color:"#888"    },
@@ -461,18 +466,27 @@ function normaliseTxns(plaidTxns) {
 function detectIncomeFromTxns(txns) {
   if (!txns || txns.length === 0) return null;
   // Income = negative amounts (money in) with income-like categories
-  const incomeTxns = txns.filter(t =>
-    t.amount < 0 && (
-      (t.cat||"").toUpperCase().includes("INCOME") ||
-      (t.cat||"").toUpperCase().includes("PAYROLL") ||
-      (t.cat||"").toUpperCase().includes("TRANSFER") ||
-      (t.name||"").toLowerCase().includes("payroll") ||
-      (t.name||"").toLowerCase().includes("direct deposit") ||
-      (t.name||"").toLowerCase().includes("salary") ||
-      (t.name||"").toLowerCase().includes("pay ") ||
-      Math.abs(t.amount) > 500 // large deposits likely income
-    )
-  );
+  // CRITICAL: TRANSFER is excluded — credit card payments show as TRANSFER_IN
+  // and must never be counted as income. Only true payroll/direct deposits qualify.
+  const incomeTxns = txns.filter(t => {
+    if (t.amount >= 0) return false; // must be money IN (negative in Plaid convention)
+    const name = (t.name || "").toLowerCase();
+    const cat  = (t.cat  || "").toUpperCase();
+    // Exclude anything that looks like a credit card payment
+    if (CC_PAYMENT_KEYWORDS.some(kw => name.includes(kw))) return false;
+    // Exclude pure transfers — these are account-to-account moves, not income
+    if (cat.includes("TRANSFER")) return false;
+    // Only count genuine income signals
+    return (
+      cat.includes("INCOME") ||
+      cat.includes("PAYROLL") ||
+      name.includes("payroll") ||
+      name.includes("direct deposit") ||
+      name.includes("salary") ||
+      name.includes("pay ") ||
+      name.includes("deposit")
+    );
+  });
   if (incomeTxns.length === 0) return null;
 
   // Group by month
@@ -2058,8 +2072,16 @@ const FinancialCalcEngine = {
     };
     const monthlyIncome = incomes.reduce((s,i) => s + toMonthly(i.amount, i.freq), 0) || 4200;
     const monthlyBills    = bills.reduce((s,b) => s + parseFloat(b.amount||0), 0);
-    // monthlySpend: this month's transactions excluding transfers
-    const monthlySpend    = txns.filter(t=>t.cat!=="Transfer"&&t.cat!=="Income"&&t.cat!=="Fees").reduce((s,t) => s + t.amount, 0) || monthlyIncome * 0.68;
+    // monthlySpend: this month's transactions excluding transfers, income, fees, and credit card payments
+    // Credit card payments must be excluded — they are not spending, they are liability settlement.
+    // If included, paying a $3,000 Amex bill would show as $3,000 of "spending" on top of the
+    // underlying purchases already counted.
+    const monthlySpend    = txns.filter(t =>
+      t.cat !== "Transfer" &&
+      t.cat !== "Income" &&
+      t.cat !== "Fees" &&
+      !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw))
+    ).reduce((s,t) => s + t.amount, 0) || monthlyIncome * 0.68;
     const totalExpenses   = Math.max(monthlyBills, monthlySpend);
     return { monthlyIncome, monthlyBills, monthlySpend, totalExpenses,
              cashFlow: monthlyIncome - totalExpenses };
@@ -3605,10 +3627,279 @@ async function backgroundRefresh(isPremium, setAppData) {
   } catch { /* silent failure */ }
 }
 
+
+// ─── DATA TRANSPARENCY PANEL ─────────────────────────────────────────────────
+// Shows exactly how every key number is calculated — income, spending, balance,
+// what was excluded and why (credit card payments, transfers, etc.)
+function DataTransparencyPanel({data, onClose}) {
+  const [tab, setTab] = useState("income");
+  const s = {fontFamily:"'Plus Jakarta Sans',sans-serif"};
+
+  // ── Rebuild calc data with full audit trail ──────────────────────────────
+  const profile   = data.profile || {};
+  const accounts  = data.accounts || [];
+  const incomes   = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
+  const bills     = data.bills || [];
+  const txns      = data.transactions || [];
+  const now       = new Date();
+
+  // Income inputs
+  const toMonthly = (amt, freq) => {
+    const a = parseFloat(amt||0);
+    switch(freq) {
+      case "weekly":      return a * 4.333;
+      case "biweekly":    return a * 2.167;
+      case "semimonthly": return a * 2;
+      case "monthly":     return a;
+      default:            return a * 2.167;
+    }
+  };
+  const incomeRows = incomes.map(i => ({
+    label: i.label || i.type || "Income",
+    entered: parseFloat(i.amount||0),
+    freq: i.freq || "biweekly",
+    monthly: toMonthly(i.amount, i.freq),
+  }));
+  const totalMonthlyIncome = incomeRows.reduce((s,r) => s+r.monthly, 0) || 4200;
+
+  // Spending audit — this month
+  const thisMonthTxns = txns.filter(t => {
+    if (!t.date) return false;
+    const d = new Date(t.date + "T12:00:00");
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  });
+  const included = thisMonthTxns.filter(t =>
+    t.amount > 0 &&
+    t.cat !== "Transfer" &&
+    t.cat !== "Income" &&
+    t.cat !== "Fees" &&
+    !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw))
+  );
+  const excluded = thisMonthTxns.filter(t =>
+    t.amount > 0 && (
+      t.cat === "Transfer" ||
+      t.cat === "Income" ||
+      t.cat === "Fees" ||
+      CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw))
+    )
+  );
+  const totalSpend = included.reduce((s,t) => s+t.amount, 0);
+
+  // Balance audit
+  const chequingAccts = accounts.filter(a => a.type !== "credit" && a.type !== "investment");
+  const creditAccts   = accounts.filter(a => a.type === "credit");
+  const totalBalance  = chequingAccts.reduce((s,a) => s + parseFloat(a.balance||0), 0);
+
+  // Category breakdown
+  const catBreakdown = {};
+  included.forEach(t => { catBreakdown[t.cat] = (catBreakdown[t.cat]||0) + t.amount; });
+  const catRows = Object.entries(catBreakdown).sort((a,b) => b[1]-a[1]);
+
+  const TabBtn = ({id, label}) => (
+    <button onClick={()=>setTab(id)} style={{
+      ...s, flex:1, padding:"9px 6px", fontSize:11, fontWeight:700,
+      background: tab===id ? C.green+"22" : "transparent",
+      border: tab===id ? `1px solid ${C.green}44` : `1px solid transparent`,
+      borderRadius:10, color: tab===id ? C.greenBright : C.muted, cursor:"pointer"
+    }}>{label}</button>
+  );
+
+  const Row = ({label, value, sub, color, indent=false}) => (
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",
+      padding:"9px 0",borderBottom:`1px solid ${C.border}`,paddingLeft:indent?14:0}}>
+      <div>
+        <div style={{...s,fontSize:12,color:C.cream,fontWeight:indent?400:600}}>{label}</div>
+        {sub&&<div style={{...s,fontSize:10,color:C.muted,marginTop:1}}>{sub}</div>}
+      </div>
+      <div style={{...s,fontSize:13,fontWeight:800,color:color||C.cream,flexShrink:0,marginLeft:12}}>{value}</div>
+    </div>
+  );
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:999,display:"flex",alignItems:"flex-end",backdropFilter:"blur(4px)"}}
+      onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{width:"100%",maxWidth:480,margin:"0 auto",background:C.bg,borderRadius:"22px 22px 0 0",
+        border:`1px solid ${C.border}`,maxHeight:"85vh",display:"flex",flexDirection:"column"}}>
+
+        {/* Header */}
+        <div style={{padding:"18px 20px 12px",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <div>
+              <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.cream}}>How it's calculated</div>
+              <div style={{...s,fontSize:11,color:C.muted,marginTop:2}}>Full audit trail of every number in Flourish</div>
+            </div>
+            <button onClick={onClose} style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,
+              borderRadius:10,padding:"8px 12px",color:C.muted,cursor:"pointer",...s,fontSize:13,minHeight:36}}>✕</button>
+          </div>
+          {/* Tabs */}
+          <div style={{display:"flex",gap:6}}>
+            <TabBtn id="income"  label="💰 Income"/>
+            <TabBtn id="spending" label="💸 Spending"/>
+            <TabBtn id="balance" label="🏦 Balance"/>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div style={{flex:1,overflowY:"auto",padding:"16px 20px 32px"}}>
+
+          {/* ── INCOME TAB ── */}
+          {tab==="income"&&<>
+            <div style={{...s,fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,marginBottom:12}}>
+              Income from your profile (what you told us)
+            </div>
+            {incomeRows.length===0&&(
+              <div style={{background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:14,padding:"14px 16px",marginBottom:8}}>
+                <div style={{...s,fontSize:12,color:C.goldBright,fontWeight:700,marginBottom:4}}>⚠️ No income entered</div>
+                <div style={{...s,fontSize:12,color:C.mutedHi,lineHeight:1.7}}>Flourish is using a default estimate of $4,200/month. Go to <strong style={{color:C.cream}}>Settings → Edit Profile</strong> to enter your real income — this affects every calculation in the app.</div>
+              </div>
+            )}
+            {incomeRows.map((r,i)=>(
+              <Row key={i}
+                label={r.label}
+                sub={`$${r.entered.toFixed(2)} × ${r.freq} = $${r.monthly.toFixed(0)}/mo`}
+                value={`$${r.monthly.toFixed(0)}/mo`}
+                color={C.greenBright}
+              />
+            ))}
+            {incomeRows.length>0&&(
+              <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",marginTop:4}}>
+                <div style={{...s,fontSize:13,fontWeight:800,color:C.cream}}>Total monthly income</div>
+                <div style={{...s,fontSize:16,fontWeight:900,color:C.greenBright,fontFamily:"'Playfair Display',serif"}}>${totalMonthlyIncome.toFixed(0)}</div>
+              </div>
+            )}
+            <div style={{marginTop:16,background:C.blue+"11",border:`1px solid ${C.blue}33`,borderRadius:14,padding:"12px 14px"}}>
+              <div style={{...s,fontSize:11,color:C.blueBright,fontWeight:700,marginBottom:4}}>ℹ️ Why transactions aren't used for income</div>
+              <div style={{...s,fontSize:11,color:C.mutedHi,lineHeight:1.7}}>
+                Credit card payments (Amex, Visa, Mastercard) appear as money coming IN on your chequing account — but they are debt repayment, not income. Using transactions for income detection caused inflated figures. Your income is based only on what you entered during setup.
+              </div>
+            </div>
+          </>}
+
+          {/* ── SPENDING TAB ── */}
+          {tab==="spending"&&<>
+            <div style={{...s,fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,marginBottom:12}}>
+              This month's spending — {now.toLocaleDateString("en-CA",{month:"long",year:"numeric"})}
+            </div>
+
+            {/* Category breakdown */}
+            {catRows.length>0&&<div style={{...s,fontSize:11,color:C.muted,marginBottom:10}}>
+              {included.length} transaction{included.length!==1?"s":""} · {excluded.length} excluded
+            </div>}
+            {catRows.length>0&&<>
+              {catRows.map(([cat,amt],i)=>(
+                <Row key={i} label={cat} value={`$${amt.toFixed(0)}`} indent/>
+              ))}
+              <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",marginTop:4}}>
+                <div style={{...s,fontSize:13,fontWeight:800,color:C.cream}}>Total included spending</div>
+                <div style={{...s,fontSize:16,fontWeight:900,color:C.redBright,fontFamily:"'Playfair Display',serif"}}>${totalSpend.toFixed(0)}</div>
+              </div>
+            </>}
+
+            {/* Excluded transactions */}
+            {excluded.length>0&&<>
+              <div style={{...s,fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,margin:"16px 0 8px"}}>
+                ✅ Excluded from spending (correctly)
+              </div>
+              {excluded.slice(0,8).map((t,i)=>(
+                <Row key={i}
+                  label={t.name}
+                  sub={`${t.cat} · excluded: ${
+                    t.cat==="Transfer"?"account transfer":
+                    CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))?"credit card payment":
+                    t.cat==="Fees"?"bank fee":"income"
+                  }`}
+                  value={`$${t.amount.toFixed(0)}`}
+                  color={C.muted}
+                  indent
+                />
+              ))}
+              {excluded.length>8&&<div style={{...s,fontSize:11,color:C.muted,textAlign:"center",padding:"8px 0"}}>+{excluded.length-8} more excluded</div>}
+            </>}
+
+            {included.length===0&&excluded.length===0&&(
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"14px 16px",textAlign:"center"}}>
+                <div style={{fontSize:24,marginBottom:8}}>💳</div>
+                <div style={{...s,fontSize:13,color:C.mutedHi,fontWeight:600,marginBottom:4}}>No transactions this month yet</div>
+                <div style={{...s,fontSize:12,color:C.muted,lineHeight:1.65}}>Connect your bank in Settings to see live spending data, or upload a bank statement from the Transactions screen.</div>
+              </div>
+            )}
+          </>}
+
+          {/* ── BALANCE TAB ── */}
+          {tab==="balance"&&<>
+            <div style={{...s,fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,marginBottom:12}}>
+              Accounts used for your balance
+            </div>
+
+            {chequingAccts.length>0&&<>
+              <div style={{...s,fontSize:11,color:C.greenBright,fontWeight:700,marginBottom:6}}>✅ Included in balance</div>
+              {chequingAccts.map((a,i)=>(
+                <Row key={i}
+                  label={a.name}
+                  sub={`${a.institution||"Bank"} · ${a.type}`}
+                  value={`$${parseFloat(a.balance||0).toFixed(0)}`}
+                  color={C.greenBright}
+                  indent
+                />
+              ))}
+              <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",marginTop:4}}>
+                <div style={{...s,fontSize:13,fontWeight:800,color:C.cream}}>Available balance</div>
+                <div style={{...s,fontSize:16,fontWeight:900,color:C.greenBright,fontFamily:"'Playfair Display',serif"}}>${totalBalance.toFixed(0)}</div>
+              </div>
+            </>}
+
+            {creditAccts.length>0&&<>
+              <div style={{...s,fontSize:11,color:C.redBright,fontWeight:700,margin:"16px 0 6px"}}>⚠️ Credit cards — liabilities, not balance</div>
+              {creditAccts.map((a,i)=>(
+                <Row key={i}
+                  label={a.name}
+                  sub={`${a.institution||"Bank"} · credit — excluded from balance, shown as debt`}
+                  value={`−$${Math.abs(parseFloat(a.balance||0)).toFixed(0)}`}
+                  color={C.redBright}
+                  indent
+                />
+              ))}
+              <div style={{marginTop:8,background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:12,padding:"10px 12px"}}>
+                <div style={{...s,fontSize:11,color:C.goldBright,lineHeight:1.65}}>
+                  💡 Credit card balances are liabilities — they reduce your net worth but are NOT deducted from your chequing balance. Your "balance" in Flourish always means available cash, not net position.
+                </div>
+              </div>
+            </>}
+
+            {accounts.length===0&&(
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"14px 16px",textAlign:"center"}}>
+                <div style={{fontSize:24,marginBottom:8}}>🏦</div>
+                <div style={{...s,fontSize:13,color:C.mutedHi,fontWeight:600,marginBottom:4}}>No accounts connected</div>
+                <div style={{...s,fontSize:12,color:C.muted}}>Connect your bank in Settings to see live balance data.</div>
+              </div>
+            )}
+            {chequingAccts.length>0&&creditAccts.length>0&&(
+              <div style={{marginTop:12,background:C.teal+"11",border:`1px solid ${C.teal}33`,borderRadius:14,padding:"12px 14px"}}>
+                <div style={{...s,fontSize:11,color:C.tealBright,fontWeight:700,marginBottom:4}}>📊 Net cash position</div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div style={{...s,fontSize:12,color:C.mutedHi}}>
+                    Cash (${totalBalance.toFixed(0)}) − Credit owed (${creditAccts.reduce((s,a)=>s+Math.abs(parseFloat(a.balance||0)),0).toFixed(0)})
+                  </div>
+                  <div style={{...s,fontSize:14,fontWeight:900,fontFamily:"'Playfair Display',serif",
+                    color:(totalBalance - creditAccts.reduce((s,a)=>s+Math.abs(parseFloat(a.balance||0)),0))>=0?C.greenBright:C.redBright}}>
+                    ${(totalBalance - creditAccts.reduce((s,a)=>s+Math.abs(parseFloat(a.balance||0)),0)).toFixed(0)}
+                  </div>
+                </div>
+              </div>
+            )}
+          </>}
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab}){
   const [mounted,setMounted]=useState(false);
   const [expandedTile,setExpandedTile]=useState(null);
   const [showCustomize,setShowCustomize]=useState(false);
+  const [showTransparency,setShowTransparency]=useState(false);
   const [nwHistory,setNwHistory]=useState(()=>getNetWorthHistory());
   useEffect(()=>{const t=setTimeout(()=>setMounted(true),60);return()=>clearTimeout(t);},[]);
   useEffect(()=>{
@@ -3684,10 +3975,11 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   return (
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       {showCustomize&&dashLayout&&<DashCustomize layout={dashLayout} onChange={setDashLayout} onClose={()=>setShowCustomize(false)}/>}
+      {showTransparency&&<DataTransparencyPanel data={data} onClose={()=>setShowTransparency(false)}/>}
 
       {/* ── Top status bar ───────────────────────────────────────────────── */}
       <div style={{...anim(0),display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:2}}>
-        <div style={{display:"flex",alignItems:"center",gap:7,background:"rgba(0,204,133,0.06)",border:"1px solid rgba(0,204,133,0.12)",borderRadius:99,padding:"4px 10px"}}>
+        <div onClick={()=>setShowTransparency(true)} style={{display:"flex",alignItems:"center",gap:7,background:"rgba(0,204,133,0.06)",border:"1px solid rgba(0,204,133,0.12)",borderRadius:99,padding:"4px 10px",cursor:"pointer"}} title="How is this calculated?">
           <div style={{width:6,height:6,borderRadius:"50%",background:C.green,boxShadow:`0 0 8px ${C.green}`,animation:"pulse 2.8s ease-in-out infinite",flexShrink:0}}/>
           <span style={{color:C.green,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>Live</span>
           <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{
@@ -6509,14 +6801,47 @@ function DesktopSidebar({data,setScreen}){
 // ─── AI COACH ─────────────────────────────────────────────────────────────────
 function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}}){
   const FREE_LIMIT=5;
+  const STORAGE_KEY = "flourish_coach_history";
+  const WELCOME = {role:"assistant", content:"Hey! I'm your Flourish AI Coach 👋 I can see your spending patterns, balances, and financial data. What would you like to work on today?"};
   const freeMsgsLeft=isPremium?Infinity:Math.max(0,FREE_LIMIT-coachMsgCount);
-  const [messages, setMessages] = useState([
-    {role:"assistant", content:"Hey! I'm your Flourish AI Coach 👋 I can see your spending patterns, balances, and financial data. What would you like to work on today?"}
-  ]);
+
+  // Load persisted history from localStorage, keeping last 40 messages max
+  const loadHistory = () => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      if (Array.isArray(saved) && saved.length > 0) return saved.slice(-40);
+    } catch {}
+    return [WELCOME];
+  };
+
+  const [messages, setMessages] = useState(loadHistory);
+  const [sessionDate] = useState(()=>new Date().toLocaleDateString("en-CA",{month:"short",day:"numeric"}));
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const bottomRef = useRef(null);
+
+  // Persist messages to localStorage whenever they change
+  // If the last saved message is from a different day, inject a date divider on load
+  useEffect(()=>{
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)||"null");
+      if (Array.isArray(saved) && saved.length > 0) {
+        const lastMsg = saved[saved.length-1];
+        if (lastMsg._date && lastMsg._date !== sessionDate) {
+          setMessages(prev => [
+            ...prev,
+            {role:"system", content:`— ${sessionDate} —`, _date:sessionDate}
+          ]);
+        }
+      }
+    } catch {}
+  // eslint-disable-next-line
+  },[]);
+
+  useEffect(()=>{
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-40))); } catch {}
+  },[messages]);
 
   useEffect(()=>{
     bottomRef.current?.scrollIntoView({behavior:"smooth"});
@@ -6618,6 +6943,14 @@ CRITICAL RULES:
               {isOnline?"Live · Your real data":"Offline"}
             </div>
           </div>
+          <button onClick={()=>{
+            if(window.confirm("Clear chat history? This cannot be undone.")){
+              try{localStorage.removeItem(STORAGE_KEY);}catch{}
+              setMessages([WELCOME]);
+            }
+          }} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"6px 10px",color:C.muted,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:36,flexShrink:0}} title="Clear history">
+            🗑️
+          </button>
           {!isPremium&&<div onClick={onUpgrade} style={{background:freeMsgsLeft>0?C.purple+"22":C.red+"22",border:`1px solid ${freeMsgsLeft>0?C.purple+"44":C.red+"44"}`,borderRadius:10,padding:"5px 10px",cursor:"pointer",textAlign:"center"}}>
             <div style={{color:freeMsgsLeft>0?C.purpleBright:C.redBright,fontSize:12,fontWeight:800}}>{freeMsgsLeft}/{FREE_LIMIT}</div>
             <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>free left</div>
@@ -6629,20 +6962,27 @@ CRITICAL RULES:
       <div style={{flex:1,overflowY:"auto",padding:"16px 20px",display:"flex",flexDirection:"column",gap:12}}>
         {messages.map((m,i)=>(
           <div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start"}}>
-            <div style={{
-              maxWidth:"82%",
-              background:m.role==="user"
-                ?`linear-gradient(135deg,${C.purple},${C.purpleBright})`
-                :C.card,
-              color:m.role==="user"?"#fff":C.cream,
-              border:m.role==="user"?"none":`1px solid ${C.border}`,
-              borderRadius:m.role==="user"?"18px 18px 4px 18px":"18px 18px 18px 4px",
-              padding:"11px 15px",
-              fontSize:13,
-              lineHeight:1.65,
-              fontFamily:"inherit",
-              whiteSpace:"pre-wrap",
-            }}>{m.content}</div>
+            {m.role==="system"
+              ? <div style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"4px 0"}}>
+                  <div style={{flex:1,height:1,background:C.border}}/>
+                  <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,flexShrink:0}}>{m.content}</span>
+                  <div style={{flex:1,height:1,background:C.border}}/>
+                </div>
+              : <div style={{
+                  maxWidth:"82%",
+                  background:m.role==="user"
+                    ?`linear-gradient(135deg,${C.purple},${C.purpleBright})`
+                    :C.card,
+                  color:m.role==="user"?"#fff":C.cream,
+                  border:m.role==="user"?"none":`1px solid ${C.border}`,
+                  borderRadius:m.role==="user"?"18px 18px 4px 18px":"18px 18px 18px 4px",
+                  padding:"11px 15px",
+                  fontSize:13,
+                  lineHeight:1.65,
+                  fontFamily:"inherit",
+                  whiteSpace:"pre-wrap",
+                }}>{m.content}</div>
+            }
           </div>
         ))}
         {loading&&(
