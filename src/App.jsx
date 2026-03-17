@@ -1119,7 +1119,7 @@ function TimeMachine({data}) {
                           {ev.day===0?"Today":ev.day===1?"Tomorrow":ev.date.toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}
                           <span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
                         </div>
-                        {ev.isPayday && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(FinancialCalcEngine.cashFlow(data).monthlyIncome||0).toFixed(0)} paycheck`}</div>}
+                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(ev.income||0).toFixed(0)} paycheck`}</div>}
                         {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${parseFloat(b.amount||0).toFixed(0)}</div>)}
                         {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                       </div>
@@ -1160,7 +1160,7 @@ function TimeMachine({data}) {
                         <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
                           <span style={{width:6,height:6,borderRadius:"50%",background:C.green,display:"inline-block"}}/>💰 Paycheck
                         </span>
-                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>+${(FinancialCalcEngine.cashFlow(data).monthlyIncome/2.167||0).toFixed(0)}</span>
+                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>+${(ev.income||0).toFixed(0)}</span>
                       </div>
                     )}
                     {/* Bills */}
@@ -1275,7 +1275,7 @@ function FinancialTimeline({data}) {
                         <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:2}}>
                           {label}<span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
                         </div>
-                        {ev.isPayday && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(monthlyIncome||0).toFixed(0)} paycheck`}</div>}
+                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(ev.income||0).toFixed(0)} paycheck`}</div>}
                         {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${parseFloat(b.amount||0).toFixed(0)}</div>)}
                         {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                       </div>
@@ -2300,12 +2300,29 @@ const ForecastEngine = {
     const overdraftRisk = [];
     const lowBalanceWarnings = [];
 
-    // Compute pay schedule outside loop for performance
-    const primaryFreq = (data.incomes||[])[0]?.freq || "biweekly";
-    const paycheque = primaryFreq==="monthly" ? monthlyIncome :
-                      primaryFreq==="semimonthly" ? monthlyIncome/2 :
-                      primaryFreq==="biweekly" ? monthlyIncome/2.167 :
-                      primaryFreq==="weekly" ? monthlyIncome/4.333 : monthlyIncome/2;
+    // Compute pay schedule — use primary income source for frequency,
+    // but calculate actual deposit amounts per income source correctly.
+    // This fixes the bug where monthlyIncome (full month) was shown instead
+    // of the actual deposit amount per paycheck.
+    const incomes = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0);
+    const primaryIncome = incomes[0];
+    const primaryFreq = primaryIncome?.freq || "biweekly";
+    // Per-paycheque amount for each income source
+    const perPaycheque = (inc) => {
+      const amt = parseFloat(inc.amount||0);
+      const f = inc.freq||"biweekly";
+      // amt is already the per-paycheque amount for most freq types
+      // EXCEPT monthly — convert to per-deposit
+      if(f==="monthly")     return amt;      // paid once per month
+      if(f==="semimonthly") return amt;      // paid twice per month
+      if(f==="biweekly")    return amt;      // already per paycheck
+      if(f==="weekly")      return amt;      // already per week
+      return amt;
+    };
+    // Primary income deposit amount
+    const paycheque = primaryIncome ? perPaycheque(primaryIncome) : monthlyIncome/2;
+    // Secondary incomes on monthly schedule (e.g. CCB, rental income)
+    const secondaryMonthly = incomes.slice(1).filter(i=>i.freq==="monthly"||i.freq==="semimonthly");
     const getIsPayday = (dayNum,i) => {
       if(i===0) return false;
       if(primaryFreq==="monthly")     return dayNum===1;
@@ -2313,6 +2330,14 @@ const ForecastEngine = {
       if(primaryFreq==="biweekly")    return i%14===0;
       if(primaryFreq==="weekly")      return i%7===0;
       return dayNum===1||dayNum===15;
+    };
+    const getSecondaryIncome = (dayNum) => {
+      // Monthly secondary incomes hit on the 1st
+      return secondaryMonthly.filter(i=>{
+        if(i.freq==="monthly") return dayNum===1;
+        if(i.freq==="semimonthly") return dayNum===1||dayNum===15;
+        return false;
+      }).reduce((s,i)=>s+perPaycheque(i),0);
     };
 
     for (let i = 0; i <= days; i++) {
@@ -2323,7 +2348,7 @@ const ForecastEngine = {
         const bd = parseInt(b.date);
         return bd === dayNum && bd > 0;
       });
-      const inc  = isPayday ? paycheque : 0;
+      const inc  = (isPayday ? paycheque : 0) + getSecondaryIncome(dayNum);
       // Day 0 = today: balance is already current, don't deduct spending again
       // All other days: deduct daily spend regardless of payday (you still spend on paydays)
       const dailySpend = i === 0 ? 0 : avgDaily * 0.8;
@@ -5031,7 +5056,10 @@ function PlanAhead({data, setAppData, setScreen}){
     income: f.income, balance: f.balance, idx: f.day
   }));
   const { balance: bal } = SafeSpendEngine.calculate(data);
-  const income = FinancialCalcEngine.cashFlow(data).monthlyIncome / 2; // bi-monthly
+  // Use actual per-paycheque amount based on income frequency
+  const _retFreq = (data.incomes||[])[0]?.freq||"biweekly";
+  const _retMoInc = FinancialCalcEngine.cashFlow(data).monthlyIncome;
+  const income = _retFreq==="monthly"?_retMoInc:_retFreq==="semimonthly"?_retMoInc/2:_retFreq==="weekly"?_retMoInc/4.333:_retMoInc/2.167;
   const minBalance = Math.min(...days.map(d => d.balance));
 
   const hasBills = (data.bills||[]).length > 0;
