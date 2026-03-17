@@ -383,7 +383,7 @@ async function callPlaid(action, params={}) {
 // Plaid Personal Finance Category (PFC) primary values → Flourish display meta
 // Shared keyword list for detecting credit card payments in transactions.
 // Used by income detection, spending calc, and transparency panel — single source of truth.
-const CC_PAYMENT_KEYWORDS = ["payment","autopay","amex","visa","mastercard","credit card","card payment","minimum payment","balance payment"];
+const CC_PAYMENT_KEYWORDS = ["payment","autopay","amex","visa","mastercard","credit card","card payment","minimum payment","balance payment","customer transfer","mb-cr","mb-credit","loc pay","line of credit","credit/loc","bill payment mb","bill payment rbc","bill payment td","bill payment bmo","bill payment cibc","bill payment scotia","balance transfer","cc payment","crd pmt"];
 
 // ─── CC PAYMENT DETECTOR ──────────────────────────────────────────────────────
 // Identifies transactions that are credit card payments (not spending).
@@ -395,8 +395,8 @@ function isCCPayment(txn, debts=[]) {
   const cat  = (txn.cat  || "").toUpperCase();
   // Direct keyword match
   if(CC_PAYMENT_KEYWORDS.some(kw => name.includes(kw))) return true;
-  // Transfer to credit card (Plaid categorises as Transfer)
-  if(cat === "TRANSFER" || cat.includes("TRANSFER")) {
+  // Also check the transaction category — LOAN_PAYMENTS from Plaid = CC payment
+  if(cat === "BILLS" || cat === "TRANSFER" || cat.includes("TRANSFER") || cat.includes("LOAN")) {
     // Additional signal: amount matches a known debt minimum or round payment
     if(debts.length > 0) {
       const matchesDet = debts.some(d => {
@@ -407,8 +407,8 @@ function isCCPayment(txn, debts=[]) {
       });
       if(matchesDet) return true;
     }
-    // If it's a large transfer-out with no matching income pattern → likely CC payment
-    if(txn.amount >= 20 && cat.includes("TRANSFER")) return true;
+    // Large transfer/payment-category transaction → likely CC or loan payment
+    if(txn.amount >= 20 && (cat.includes("TRANSFER") || cat.includes("LOAN") || cat === "BILLS")) return true;
   }
   return false;
 }
@@ -439,7 +439,7 @@ const CAT_META = {
   PERSONAL_CARE:             { cat:"Health",          icon:"💊", color:"#4A8FCC" },
   MEDICAL:                   { cat:"Health",          icon:"💊", color:"#4A8FCC" },
   UTILITIES:                 { cat:"Utilities",       icon:"⚡", color:"#CFA03E" },
-  LOAN_PAYMENTS:             { cat:"Bills",           icon:"📱", color:"#CFA03E" },
+  LOAN_PAYMENTS:             { cat:"Transfer",        icon:"💳", color:"#888"    }, // CC/loan payments — excluded from spending
   RENT_AND_UTILITIES:        { cat:"Utilities",       icon:"🏠", color:"#CFA03E" },
   HOME_IMPROVEMENT:          { cat:"Home",            icon:"🔨", color:"#CFA03E" },
   INCOME:                    { cat:"Income",          icon:"💰", color:"#6FE494" },
@@ -455,7 +455,7 @@ const CAT_META = {
   "Shops":                   { cat:"Shopping",        icon:"🛍️", color:"#C45898" },
   "Travel":                  { cat:"Gas & Transport", icon:"⛽", color:"#CFA03E" },
   "Transfer":                { cat:"Transfer",        icon:"↔️", color:"#888"    },
-  "Payment":                 { cat:"Bills",           icon:"📱", color:"#CFA03E" },
+  "Payment":                 { cat:"Transfer",        icon:"💳", color:"#888"    }, // CC/loan payments — excluded from spending
   "Recreation":              { cat:"Entertainment",   icon:"🎬", color:"#8A5FC8" },
   "Healthcare":              { cat:"Health",          icon:"💊", color:"#4A8FCC" },
 };
@@ -6035,7 +6035,7 @@ function SpendScreen({data, setAppData, setScreen}){
     : catFilter==="Received"
       ? acctFiltered.filter(t=>getCat(t)==="Transfer"&&t.amount<0)
       : acctFiltered.filter(t=>getCat(t)===catFilter);
-  const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))).reduce((a,t)=>a+t.amount,0);
+  const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCCPayment(t,data.debts||[])).reduce((a,t)=>a+t.amount,0);
   const totalIn=acctFiltered.filter(t=>t.amount<0).reduce((a,t)=>a+Math.abs(t.amount),0);
 
   const cuts=[
@@ -6384,7 +6384,7 @@ function SpendScreen({data, setAppData, setScreen}){
     {tab==="breakdown"&&<>
       {(()=>{
         // Breakdown uses the same period-filtered set as the Transactions tab
-        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t)));
+        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCCPayment(t,data.debts||[]));
         const bdIn   = acctFiltered.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
         const bdTotal= bdTxns.reduce((s,t)=>s+t.amount,0);
         const bdByCat= {};
