@@ -5770,7 +5770,7 @@ function SpendScreen({data, setAppData, setScreen}){
 
 
 // ─── GOALS ────────────────────────────────────────────────────────────────────
-function Goals({data,initialTab="sim",onUpgrade,setScreen}){
+function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
   const [tab,setTab]=useState(initialTab);
   useEffect(()=>{ setTab(initialTab); },[initialTab]);
   const [selDebt,setSelDebt]=useState(0);
@@ -5798,10 +5798,240 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen}){
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <ScreenHeader title="Goals & Wealth" onBack={setScreen?()=>setScreen("home"):null} cta={CC[data?.profile?.country||"CA"]?.flag+" "+CC[data?.profile?.country||"CA"]?.currency} ctaColor={CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}/>
     <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
-      {[["sim","Simulator"],["worth","Net Worth"],["retire","Retirement"],["forecast","Wealth"],["personality","Personality"],["tax","Tax Tips"],["learn","Learn"]].map(([key,lbl])=>(
+      {[["goals","My Goals"],["sim","Debt Sim"],["worth","Net Worth"],["retire","Retirement"],["forecast","Wealth"],["personality","Personality"],["tax","Tax Tips"],["learn","Learn"]].map(([key,lbl])=>(
         <button key={key} onClick={()=>setTab(key)} style={{flexShrink:0,background:tab===key?C.purple+"22":C.cardAlt,border:`1px solid ${tab===key?C.purple:C.border}`,color:tab===key?C.purpleBright:C.muted,borderRadius:10,padding:"8px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>{lbl}</button>
       ))}
     </div>
+    {/* ── MY GOALS TAB ─────────────────────────────────────── */}
+    {tab==="goals"&&(()=>{
+      const goals = data.goals||[];
+      const GOAL_TYPES = [
+        {label:"Emergency Fund", icon:"🆘", color:C.orange},
+        {label:"RRSP",           icon:"🏦", color:C.teal},
+        {label:"TFSA",           icon:"💎", color:C.green},
+        {label:"Vacation",       icon:"✈️",  color:C.blue},
+        {label:"Down Payment",   icon:"🏠", color:C.purple},
+        {label:"Car",            icon:"🚗", color:C.gold},
+        {label:"Education",      icon:"🎓", color:C.teal},
+        {label:"Wedding",        icon:"💍", color:C.pink},
+        {label:"Home Reno",      icon:"🔨", color:C.orange},
+        {label:"Other",          icon:"🎯", color:C.muted},
+      ];
+      const [showForm, setShowForm] = useState(false);
+      const [editIdx, setEditIdx] = useState(null);
+      const [form, setForm] = useState({name:"",target:"",saved:"",monthly:"",notes:""});
+
+      const openAdd = () => { setForm({name:"",target:"",saved:"",monthly:"",notes:""}); setEditIdx(null); setShowForm(true); };
+      const openEdit = (g,i) => { setForm({name:g.name||g.label||"",target:g.target||"",saved:g.saved||g.current||"",monthly:g.monthly||"",notes:g.notes||""}); setEditIdx(i); setShowForm(true); };
+      const saveGoal = () => {
+        if(!form.name||!form.target) return;
+        if(setAppData) setAppData(prev=>{
+          const goals = prev.goals||[];
+          if(editIdx!=null) {
+            return {...prev, goals: goals.map((g,i)=>i===editIdx?{...g,...form}:g)};
+          }
+          return {...prev, goals:[...goals,{...form,id:Date.now()}]};
+        });
+        setShowForm(false); setEditIdx(null);
+      };
+      const removeGoal = i => { if(setAppData) setAppData(prev=>({...prev,goals:(prev.goals||[]).filter((_,x)=>x!==i)})); };
+      const updateField = (i,field,val) => { if(setAppData) setAppData(prev=>({...prev,goals:(prev.goals||[]).map((g,x)=>x===i?{...g,[field]:val}:g)})); };
+
+      const toMonthlyIncome = (() => {
+        const toMo = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="monthly"?a:a*2.167; };
+        return (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
+      })();
+
+      return (
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          {/* Header row */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
+                {goals.length===0?"Set goals and track progress toward them."
+                  :`${goals.length} goal${goals.length===1?"":"s"} · $${goals.reduce((s,g)=>s+parseFloat(g.saved||g.current||0),0).toLocaleString()} saved so far`}
+              </div>
+            </div>
+            <button onClick={openAdd}
+              style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"8px 16px",color:"#fff",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:36}}>
+              + Add Goal
+            </button>
+          </div>
+
+          {/* Goal list */}
+          {goals.length===0&&!showForm&&(
+            <div style={{background:C.card,borderRadius:18,padding:"28px 20px",textAlign:"center",border:`1px solid ${C.border}`}}>
+              <div style={{fontSize:40,marginBottom:12}}>🎯</div>
+              <div style={{color:C.cream,fontWeight:800,fontSize:16,fontFamily:"'Playfair Display',serif",marginBottom:8}}>No goals set yet</div>
+              <div style={{color:C.muted,fontSize:13,marginBottom:16,lineHeight:1.6}}>Add your RRSP, emergency fund, vacation — anything you're saving toward. The app will track progress and show you how long it'll take.</div>
+              <button onClick={openAdd}
+                style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:12,padding:"10px 24px",color:C.purpleBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                Add your first goal →
+              </button>
+            </div>
+          )}
+
+          {goals.map((g,i)=>{
+            const target  = parseFloat(g.target||1);
+            const saved   = parseFloat(g.saved||g.current||0);
+            const monthly = parseFloat(g.monthly||0);
+            const pct     = Math.min(100, Math.round((saved/target)*100));
+            const remaining = Math.max(0, target-saved);
+            const moToGo  = monthly>0 ? Math.ceil(remaining/monthly) : null;
+            const goalType = GOAL_TYPES.find(t=>t.label.toLowerCase()===((g.name||"").toLowerCase())) || GOAL_TYPES[GOAL_TYPES.length-1];
+            const col = goalType.color;
+            return (
+              <div key={g.id||i} style={{background:C.card,borderRadius:18,border:`1px solid ${col}33`,overflow:"hidden",position:"relative"}}>
+                <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${col},${col}88)`}}/>
+                <div style={{padding:"14px 16px 12px"}}>
+                  {/* Top row */}
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                    <span style={{fontSize:22,flexShrink:0}}>{goalType.icon}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{color:C.cream,fontWeight:800,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.name||g.label||"Goal"}</div>
+                      {g.notes&&<div style={{color:C.muted,fontSize:11,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.notes}</div>}
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{color:col,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{pct}%</div>
+                      <div style={{color:C.muted,fontSize:9}}>complete</div>
+                    </div>
+                  </div>
+                  {/* Progress bar */}
+                  <div style={{background:C.border,borderRadius:99,height:8,overflow:"hidden",marginBottom:10}}>
+                    <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${col},${col}cc)`,borderRadius:99,transition:"width .5s ease"}}/>
+                  </div>
+                  {/* Stats row */}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
+                    {[
+                      ["Saved","saved", saved>0?`$${saved.toLocaleString()}`:"$0", C.greenBright],
+                      ["Target","target", `$${target.toLocaleString()}`, C.cream],
+                      ["Monthly","monthly", monthly>0?`$${monthly}/mo`:"Not set", monthly>0?col:C.muted],
+                    ].map(([lbl,field,display,color])=>(
+                      <div key={field} style={{background:C.cardAlt,borderRadius:10,padding:"8px 10px"}}>
+                        <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{lbl}</div>
+                        <div style={{display:"flex",alignItems:"center",background:C.bg,border:`1px solid ${C.border}`,borderRadius:7,overflow:"hidden"}}>
+                          {field!=="monthly"&&<span style={{color:C.muted,fontSize:10,padding:"0 3px 0 5px"}}>$</span>}
+                          <input value={g[field]||""} onChange={e=>updateField(i,field,e.target.value)}
+                            type="number" inputMode="decimal" placeholder="0"
+                            style={{flex:1,background:"none",border:"none",padding:"5px 4px 5px 0",color,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",width:0,fontWeight:700}}/>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Time estimate */}
+                  {remaining>0&&(
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                        {moToGo
+                          ? `$${remaining.toLocaleString()} to go · ~${moToGo} month${moToGo===1?"":"s"}`
+                          : `$${remaining.toLocaleString()} remaining · add monthly contribution to see timeline`}
+                      </div>
+                      <div style={{display:"flex",gap:6}}>
+                        <button onClick={()=>openEdit(g,i)}
+                          style={{background:col+"18",border:`1px solid ${col}33`,borderRadius:8,padding:"5px 10px",color:col,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:28}}>
+                          Edit
+                        </button>
+                        <button onClick={()=>removeGoal(i)}
+                          style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"5px 8px",minHeight:28,minWidth:28}}>✕</button>
+                      </div>
+                    </div>
+                  )}
+                  {remaining<=0&&(
+                    <div style={{background:C.green+"14",border:`1px solid ${C.green}33`,borderRadius:10,padding:"8px 12px",color:C.greenBright,fontWeight:700,fontSize:12,textAlign:"center"}}>
+                      🎉 Goal reached! Congratulations!
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Add / Edit form */}
+          {showForm&&(
+            <div style={{background:C.cardAlt,borderRadius:18,padding:"16px",border:`1px solid ${C.purple}44`}}>
+              <div style={{color:C.cream,fontWeight:800,fontSize:15,marginBottom:14}}>
+                {editIdx!=null?"Edit Goal":"New Goal"}
+              </div>
+              {/* Goal name — type selector */}
+              <div style={{marginBottom:10}}>
+                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Goal Type</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {GOAL_TYPES.map(t=>(
+                    <button key={t.label} onClick={()=>setForm(v=>({...v,name:t.label}))}
+                      style={{background:form.name===t.label?t.color+"33":"rgba(255,255,255,0.04)",border:`1px solid ${form.name===t.label?t.color+"66":C.border}`,borderRadius:10,padding:"7px 12px",color:form.name===t.label?t.color:C.muted,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:34}}>
+                      {t.icon} {t.label}
+                    </button>
+                  ))}
+                </div>
+                {/* Custom name override */}
+                <input value={GOAL_TYPES.find(t=>t.label===form.name)?"":(form.name||"")}
+                  onChange={e=>setForm(v=>({...v,name:e.target.value}))}
+                  placeholder="Or type a custom name…"
+                  style={{marginTop:8,width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
+              </div>
+              {/* Amounts */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}>
+                {[["Target $","target"],["Saved so far $","saved"],["Monthly $ contribution","monthly"]].map(([lbl,field])=>(
+                  <div key={field}>
+                    <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{lbl}</div>
+                    <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                      <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
+                      <input value={form[field]||""} onChange={e=>setForm(v=>({...v,[field]:e.target.value}))}
+                        type="number" inputMode="decimal" placeholder="0"
+                        style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:600}}/>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Notes */}
+              <div style={{marginBottom:14}}>
+                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Notes (optional)</div>
+                <input value={form.notes||""} onChange={e=>setForm(v=>({...v,notes:e.target.value}))}
+                  placeholder="e.g. RRSP at TD Bank, contributing $200/paycheque"
+                  style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
+              </div>
+              {/* Timeline preview */}
+              {form.target&&form.monthly&&parseFloat(form.monthly)>0&&(()=>{
+                const remaining = Math.max(0,parseFloat(form.target||0)-parseFloat(form.saved||0));
+                const months = Math.ceil(remaining/parseFloat(form.monthly));
+                const d = new Date(); d.setMonth(d.getMonth()+months);
+                return remaining>0?(
+                  <div style={{background:C.purple+"12",border:`1px solid ${C.purple}33`,borderRadius:10,padding:"8px 12px",marginBottom:14,color:C.purpleBright,fontSize:12,fontWeight:700,textAlign:"center"}}>
+                    📅 At ${parseFloat(form.monthly).toLocaleString()}/mo → reached {d.toLocaleDateString("en-CA",{month:"long",year:"numeric"})} (~{months} month{months===1?"":"s"})
+                  </div>
+                ):null;
+              })()}
+              {/* Buttons */}
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={saveGoal}
+                  disabled={!form.name||!form.target}
+                  style={{flex:1,background:form.name&&form.target?`linear-gradient(135deg,${C.purple},${C.purpleBright})`:"rgba(255,255,255,0.08)",border:"none",borderRadius:10,padding:"11px",color:form.name&&form.target?"#fff":C.muted,fontWeight:800,fontSize:13,cursor:form.name&&form.target?"pointer":"default",fontFamily:"'Plus Jakarta Sans',sans-serif",opacity:form.name&&form.target?1:0.5}}>
+                  {editIdx!=null?"Save Changes ✓":"Add Goal ✓"}
+                </button>
+                <button onClick={()=>{setShowForm(false);setEditIdx(null);}}
+                  style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 18px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Coach integration hint */}
+          {goals.length>0&&setScreen&&(
+            <div style={{background:C.purple+"08",border:`1px solid ${C.purple}22`,borderRadius:14,padding:"12px 16px",display:"flex",gap:10,alignItems:"center",cursor:"pointer"}}
+              onClick={()=>setScreen("coach")}>
+              <span style={{fontSize:18}}>🤖</span>
+              <div style={{flex:1}}>
+                <div style={{color:C.purpleBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Ask Coach about your goals</div>
+                <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>Your goals are shared with the AI Coach — ask it to suggest contributions or adjust timelines.</div>
+              </div>
+              <span style={{color:C.purpleBright,fontSize:16}}>→</span>
+            </div>
+          )}
+        </div>
+      );
+    })()}
+
     {tab==="sim"&&<>
       {noDebts&&<EmptyState icon="🎯" title="No debts tracked yet" body="Add debts during setup to simulate payoff strategies and see how much interest you can save." action="Add Debts in Settings" onAction={()=>window.dispatchEvent(new CustomEvent("flourish:settings"))} color={C.purple}/>}
       {!noDebts&&debts.every(d=>!parseFloat(d.rate||0))&&(
@@ -6043,11 +6273,72 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen}){
     {tab==="retire"&&(()=>{
       const cfg=CC[data.profile?.country||"CA"];
       const accts=cfg.retirementAccounts;
+      const isCA = (data.profile?.country||"CA")==="CA";
+      // Retirement account balances — stored in profile.retirement
+      const ret = data.profile?.retirement||{};
+      const updateRet = (field,val) => {
+        if(setAppData) setAppData(prev=>({...prev,profile:{...(prev.profile||{}),retirement:{...(prev.profile?.retirement||{}),[field]:val}}}));
+      };
       return <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={{background:C.blueDim,border:`1px solid ${C.blue}33`,borderRadius:16,padding:"14px 16px"}}>
           <div style={{color:C.blueBright,fontWeight:700,fontSize:13,marginBottom:4}}>{cfg.flag} Registered & Tax-Advantaged Accounts</div>
           <div style={{color:C.muted,fontSize:12,lineHeight:1.6}}>These accounts are legal ways to keep more of your money. Most people don't maximize them.</div>
         </div>
+
+        {/* ── My Balances & Contributions ─────────────────────── */}
+        <div style={{background:C.card,borderRadius:18,padding:"16px 18px",border:`1px solid ${C.teal}33`}}>
+          <div style={{color:C.tealBright,fontWeight:800,fontSize:14,fontFamily:"'Playfair Display',serif",marginBottom:14}}>
+            💼 My Current Balances & Contributions
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            {(isCA?[
+              ["rrspBalance","RRSP Balance","Current RRSP value"],
+              ["rrspMonthly","RRSP Monthly Contribution","How much you add each month/paycheque"],
+              ["tfsaBalance","TFSA Balance","Current TFSA value"],
+              ["tfsaMonthly","TFSA Monthly Contribution","How much you add each month"],
+              ["pensionMonthly","Pension / Other Monthly","Other retirement contributions"],
+            ]:[
+              ["401kBalance","401(k) Balance","Current 401(k) value"],
+              ["401kMonthly","401(k) Monthly Contribution","How much you add per month"],
+              ["iraBalance","IRA/Roth IRA Balance","Current IRA value"],
+              ["iraMonthly","IRA Monthly Contribution","How much you add per month"],
+              ["otherRetire","Other Retirement Monthly","HSA, pension, etc."],
+            ]).map(([field,label,hint])=>(
+              <div key={field}>
+                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>
+                <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                  <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
+                  <input value={ret[field]||""} onChange={e=>updateRet(field,e.target.value)}
+                    type="number" inputMode="decimal" placeholder="0"
+                    title={hint}
+                    style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:C.tealBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700,width:0}}/>
+                </div>
+                <div style={{color:C.muted,fontSize:9,marginTop:2,lineHeight:1.4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{hint}</div>
+              </div>
+            ))}
+          </div>
+          {/* Projection summary */}
+          {(()=>{
+            const bal = parseFloat(ret[isCA?"rrspBalance":"401kBalance"]||0) + parseFloat(ret[isCA?"tfsaBalance":"iraBalance"]||0);
+            const monthly = parseFloat(ret[isCA?"rrspMonthly":"401kMonthly"]||0) + parseFloat(ret[isCA?"tfsaMonthly":"iraMonthly"]||0) + parseFloat(ret[isCA?"pensionMonthly":"otherRetire"]||0);
+            if(bal<=0&&monthly<=0) return null;
+            // Simple 30-year projection at 6% annual return
+            const r = 0.06/12;
+            const n = 30*12;
+            const fv = bal*Math.pow(1+r,n) + (monthly>0?monthly*((Math.pow(1+r,n)-1)/r):0);
+            return (
+              <div style={{marginTop:12,background:C.teal+"10",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px"}}>
+                <div style={{color:C.tealBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                  📈 At this rate, in 30 years: ~${(fv/1000).toFixed(0)}k
+                </div>
+                <div style={{color:C.muted,fontSize:10,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                  Assumes 6% avg annual return · {isCA?"RRSP + TFSA":"401(k) + IRA"} combined · ${bal.toLocaleString()} current + ${monthly}/mo
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+
         {accts.map((a,i)=>(
           <div key={i} style={{background:C.card,borderRadius:18,padding:"18px",border:`1px solid ${a.color}33`,position:"relative",overflow:"hidden"}}>
             <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${a.color},${a.color}88)`}}/>
@@ -7564,14 +7855,30 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
         .reduce((acc,t)=>{acc[t.cat]=(acc[t.cat]||0)+t.amount;return acc;},{})
     ).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`${k}: $${(v||0).toFixed(0)}`).join(", ");
 
+    const goals = (data.goals||[]).map(g=>`${g.name}: $${parseFloat(g.saved||0).toFixed(0)} saved of $${parseFloat(g.target||0).toFixed(0)} target${g.monthly?`, $${g.monthly}/mo contribution`:""}`).join("; ")||"none set";
+    const bills = (data.bills||[]).map(b=>`${b.name} $${b.amount}/mo${b.arrears?` (arrears: $${b.arrears})`:""}` ).join("; ")||"none tracked";
+    const debts = (data.debts||[]).map(d=>`${d.name} $${parseFloat(d.balance||0).toFixed(0)}${d.rate?` @ ${d.rate}%`:""}`).join("; ")||"none";
+    const ret = data.profile?.retirement||{};
+    const retInfo = Object.entries(ret).filter(([,v])=>parseFloat(v)>0).map(([k,v])=>`${k}: $${v}`).join(", ")||"none entered";
     return `You are a warm, expert personal finance coach for Flourish Money (${country==="CA"?"Canada":"USA"}).
 User financial snapshot:
 - Chequing balance: $${(balance||0).toFixed(2)}
 - Biweekly income: $${(income||0).toFixed(2)}
 - Recent spending total: $${(spending||0).toFixed(2)}
-- Top categories: ${topCats||"no data"}
+- Top spending categories: ${topCats||"no data"}
 - Accounts: ${accounts.map(a=>`${a.name} (${a.type}) $${a.balance}`).join("; ")||"none linked"}
+- Bills: ${bills}
+- Debts: ${debts}
+- Savings goals: ${goals}
+- Retirement accounts: ${retInfo}
 - Country: ${country}
+
+When the user discusses or agrees to a goal, contribution amount, or financial plan, end your reply with a JSON block on its own line so the app can auto-update:
+FLOURISH_UPDATE:{"action":"update_goal","name":"<goal name>","target":<number>,"saved":<number>,"monthly":<number>}
+Or to add a new goal:
+FLOURISH_UPDATE:{"action":"add_goal","name":"<name>","target":<number>,"saved":<number>,"monthly":<number>}
+Only include this block when the user has explicitly agreed to a specific number or plan.
+
 Keep responses concise (3-5 sentences max), practical, and friendly. Use $ amounts when relevant. Never be preachy.
 CRITICAL RULES:
 - The balances and transactions shown are live from the user's bank via Plaid. NEVER suggest the data might be wrong, outdated, or inaccurate. NEVER recommend the user check their bank app instead — Flourish IS their financial view.
@@ -7607,10 +7914,36 @@ CRITICAL RULES:
       });
       if(!res.ok) throw new Error(`Server error ${res.status}`);
       const json = await res.json();
-      const reply = json.content?.[0]?.text || json.reply || "Sorry, I couldn't get a response. Try again.";
+      const rawReply = json.content?.[0]?.text || json.reply || "Sorry, I couldn't get a response. Try again.";
       onSend(); // only count on successful response
+
+      // Parse FLOURISH_UPDATE action from coach reply and apply to app data
+      let displayReply = rawReply;
+      const updateMatch = rawReply.match(/FLOURISH_UPDATE:(\{[^\n]+\})/);
+      if(updateMatch && setAppData) {
+        try {
+          const update = JSON.parse(updateMatch[1]);
+          displayReply = rawReply.replace(/\nFLOURISH_UPDATE:[^\n]+/, "").trim();
+          if(update.action==="add_goal") {
+            setAppData(prev=>({...prev, goals:[...(prev.goals||[]), {
+              id:Date.now(), name:update.name||"Goal",
+              target:String(update.target||0), saved:String(update.saved||0),
+              monthly:String(update.monthly||0),
+            }]}));
+          } else if(update.action==="update_goal") {
+            setAppData(prev=>({...prev, goals:(prev.goals||[]).map(g=>
+              (g.name||"").toLowerCase()===(update.name||"").toLowerCase()
+                ? {...g, ...(update.target?{target:String(update.target)}:{}),
+                        ...(update.saved!=null?{saved:String(update.saved)}:{}),
+                        ...(update.monthly?{monthly:String(update.monthly)}:{})}
+                : g
+            )}));
+          }
+        } catch(e) { /* malformed update — ignore */ }
+      }
+
       setMessages(prev=>{
-        const msgs = [...prev, {role:"assistant", content:reply}];
+        const msgs = [...prev, {role:"assistant", content:displayReply}];
         if(isBalanceQuestion) msgs.push({role:"assistant",content:"💡 If your balance doesn't match your bank app, I can help reconcile it. Upload your latest bank statement PDF or CSV in the **Transactions** screen — I'll compare the numbers and flag any discrepancies.",isSystem:true});
         return msgs;
       });
@@ -8790,7 +9123,7 @@ export default function FlourishApp(){
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="coach"){const freeCoachAllowed=!isPremium&&coachMsgCount<5&&!trialExpired;const showCoach=isPremium||freeCoachAllowed;if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen}/>; if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="AI Coach" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>; return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;}
     if(screen==="family")return <Family data={dataWithHousehold} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
-    if(screen==="goals")return <Goals data={dataWithHousehold} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen}/>;
+    if(screen==="goals")return <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen}/>;
     if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     // privacy and terms handled before auth gate above
