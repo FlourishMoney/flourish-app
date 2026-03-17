@@ -3686,8 +3686,8 @@ function buildLiveNotifs(data) {
 
 function Notifications({onClose, data, onMarkAllRead}){
   const getReadIds = () => { try { return new Set(JSON.parse(localStorage.getItem("flourish_read_notifs")||"[]")); } catch { return new Set(); } };
-  const liveNotifs = data ? [...buildLiveNotifs(data), ...INIT_NOTIFS] : INIT_NOTIFS;
   const [readIds, setReadIds] = useState(getReadIds);
+  const liveNotifs = data ? [...buildLiveNotifs(data), ...INIT_NOTIFS] : INIT_NOTIFS;
   const notifs = liveNotifs.map(n=>({...n, read: readIds.has(n.id)}));
   const unread = notifs.filter(n=>!n.read).length;
   const markAll = () => {
@@ -4113,6 +4113,9 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const [showCustomize,setShowCustomize]=useState(false);
   const [showTransparency,setShowTransparency]=useState(false);
   const [nwHistory,setNwHistory]=useState(()=>getNetWorthHistory());
+  const [affordInput, setAffordInput] = useState("");
+  const [affordResult, setAffordResult] = useState(null);
+  const [affordFocused, setAffordFocused] = useState(false);
   useEffect(()=>{const t=setTimeout(()=>setMounted(true),60);return()=>clearTimeout(t);},[]);
   useEffect(()=>{
     if(data.bankConnected) {
@@ -4135,9 +4138,6 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   // sevenDayRisk is calculated below — use a temporary check here with SafeSpend only,
   // then upgrade after sevenDayRisk is available
   const overdraftImmediate = _ss.overdraft;
-  const [affordInput, setAffordInput] = useState("");
-  const [affordResult, setAffordResult] = useState(null); // null | {state, msg, sub}
-  const [affordFocused, setAffordFocused] = useState(false);
   const soonBills   = _ss.soonBills;
   const soonTotal   = _ss.upcomingBills;
   const today       = new Date().getDate();
@@ -4907,14 +4907,14 @@ const BILL_TEMPLATES = {
 const BILL_CAT_COLORS={housing:"#00CC85",utilities:"#E8B84B",telecom:"#4DA8FF",transport:"#FF8C42",insurance:"#9B7DFF",debt:"#FF4F6A",lifestyle:"#00C8E0"};
 
 function BillManager({data, setAppData, onClose}){
-  const country = data.profile?.country||"CA";
-  const templates = BILL_TEMPLATES[country]||BILL_TEMPLATES.CA;
-  const existingNames = new Set((data.bills||[]).map(b=>b.name.toLowerCase()));
   const [adding, setAdding] = useState(null);
   const [amount, setAmount] = useState("");
   const [dueDate, setDueDate] = useState("1");
   const [customName, setCustomName] = useState("");
   const [saved, setSaved] = useState("");
+  const country = data.profile?.country||"CA";
+  const templates = BILL_TEMPLATES[country]||BILL_TEMPLATES.CA;
+  const existingNames = new Set((data.bills||[]).map(b=>b.name.toLowerCase()));
 
   const saveBill = name => {
     if(!amount||!name) return;
@@ -6682,7 +6682,6 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
 // ─── FAMILY ───────────────────────────────────────────────────────────────────
 function Family({data,household,setHousehold,setScreen}){
   const [tab,setTab]=useState("meeting");
-  const isCouple=data.profile.status!=="single";
   const [householdTab,setHouseholdTab]=useState("join");
   const [householdCode,setHouseholdCode]=useState("");
   const [started,setStarted]=useState(false);
@@ -6699,6 +6698,8 @@ function Family({data,household,setHousehold,setScreen}){
     {id:5,task:"Wash dishes",reward:1.50,done:false},{id:6,task:"Tidy bedroom",reward:1.00,done:false},
   ]);
   const [customChore,setCustomChore]=useState({task:"",reward:""});
+  // Derived — after all hooks
+  const isCouple=data.profile?.status!=="single";
 
   // Pull real metrics for meeting
   const _ss=SafeSpendEngine.calculate(data);
@@ -7479,9 +7480,9 @@ function WidgetScreen({data,onBack}){
 // ─── SETTINGS SECTION INLINE CONTENT ─────────────────────────────────────────
 // ─── INLINE SETTINGS EDITORS ─────────────────────────────────────────────────
 function InlineDebtEditor({data, setAppData, color, navToScreen}){
-  const s = {background:C.card,borderRadius:"0 0 18px 18px",border:`1px solid ${color}33`,padding:"16px 18px",marginBottom:8,borderTop:`1px solid ${color}22`};
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({name:"",balance:"",rate:"",min:""});
+  const s = {background:C.card,borderRadius:"0 0 18px 18px",border:`1px solid ${color}33`,padding:"16px 18px",marginBottom:8,borderTop:`1px solid ${color}22`};
   const DEBT_TYPES = ["Credit Card","Line of Credit","Car Loan","Student Loan","OSAP","HELOC","Mortgage","Personal Loan","Buy Now Pay Later","Other"];
 
   const saveDebt = () => {
@@ -7578,9 +7579,9 @@ function InlineDebtEditor({data, setAppData, color, navToScreen}){
 }
 
 function InlineGoalEditor({data, setAppData, color}){
-  const s = {background:C.card,borderRadius:"0 0 18px 18px",border:`1px solid ${color}33`,padding:"16px 18px",marginBottom:8,borderTop:`1px solid ${color}22`};
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({name:"",target:"",saved:""});
+  const s = {background:C.card,borderRadius:"0 0 18px 18px",border:`1px solid ${color}33`,padding:"16px 18px",marginBottom:8,borderTop:`1px solid ${color}22`};
   const GOAL_PRESETS = ["Emergency Fund","Vacation","Down Payment","Car","Wedding","Education","Home Renovation","New Baby","Other"];
 
   const saveGoal = () => {
