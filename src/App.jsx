@@ -4047,9 +4047,9 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const bal         = _ss.balance;
   const safe        = _ss.safeAmount;
   const overdraft   = _ss.overdraft;
-  const [affordInput, setAffordInput] = React.useState("");
-  const [affordResult, setAffordResult] = React.useState(null); // null | {state, msg, sub}
-  const [affordFocused, setAffordFocused] = React.useState(false);
+  const [affordInput, setAffordInput] = useState("");
+  const [affordResult, setAffordResult] = useState(null); // null | {state, msg, sub}
+  const [affordFocused, setAffordFocused] = useState(false);
   const soonBills   = _ss.soonBills;
   const soonTotal   = _ss.upcomingBills;
   const today       = new Date().getDate();
@@ -5079,7 +5079,7 @@ function PlanAhead({data, setAppData, setScreen}){
     </Card>
     <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.8,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
     {(()=>{
-      const [expandedPlanDay, setExpandedPlanDay] = React.useState(null);
+      const [expandedPlanDay, setExpandedPlanDay] = useState(null);
       const avgDailySpend = FinancialCalcEngine.avgDailySpend(data);
       return days.filter((d,i)=>i===0||d.income>0||d.bills.length>0).map((day,i)=>{
         const isToday=day.idx===0,neg=day.balance<0,low=day.balance<150&&day.balance>=0;
@@ -8509,7 +8509,7 @@ export default function FlourishApp(){
   useEffect(()=>{ if(reconnectToken) openReconnectLink(); },[reconnectToken]); // eslint-disable-line
 
   // ── Background refresh — Plus only, fires 2s after bank data is ready ─────────
-  const [isRefreshing, setIsRefreshing] = React.useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   useEffect(()=>{
     if(!appData?.bankConnected) return;
     const timer = setTimeout(async ()=>{
