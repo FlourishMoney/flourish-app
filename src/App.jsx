@@ -7427,16 +7427,18 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
       if(!setAppData) return;
       setAppData(prev => {
         const filtered = (prev.accounts||[]).filter(a => a.id !== accountId);
-        // Also remove associated debts that came from this account
+        // Remove associated debts
         const removedAcct = (prev.accounts||[]).find(a => a.id === accountId);
         const debtsFiltered = removedAcct
           ? (prev.debts||[]).filter(d => (d.name||"").toLowerCase() !== (removedAcct.name||"").toLowerCase())
           : prev.debts;
+        // Remove transactions belonging to this account
+        const txnsFiltered = (prev.transactions||[]).filter(t => t.account_id !== accountId);
         return {
           ...prev,
           accounts: filtered,
           debts: debtsFiltered,
-          // If no accounts remain, mark as disconnected
+          transactions: txnsFiltered,
           bankConnected: filtered.some(a => a.institution !== "Manual"),
         };
       });
