@@ -31,7 +31,7 @@ const CC = {
     ],
     incomeTypes:[
       ["employment","💼 Employment / T4"],["selfemployed","🧾 Self-Employed / T4A"],
-      ["cpp","🏛️ CPP / Pension"],["ei","📋 EI Benefits"],
+      ["cpp","🏛️ CPP / QPP / Pension"],["ei","📋 EI Benefits"],
       ["odsp","♿ ODSP / Ontario Works"],["ccb","👶 Canada Child Benefit"],
       ["rental","🏠 Rental Income"],["gig","🚗 Gig / Freelance"],["other","➕ Other"],
     ],
@@ -42,7 +42,7 @@ const CC = {
       {title:"FHSA (First Home Savings Account)",body:"If you've never owned a home, you can contribute up to $8,000/year and get a tax deduction — like an RRSP. Unused room carries forward. Withdraw tax-free to buy your first home.",savings:"Up to $8,000/yr",flag:"🇨🇦",priority:"high",action:"Open an FHSA"},
       {title:"GST/HST Credit",body:"Filing your taxes means CRA automatically checks if you qualify for quarterly GST/HST credits. Under ~$50k income? You likely qualify and may not know it. File every year even if you owe nothing.",savings:"Up to $519/yr",flag:"🇨🇦",priority:"medium",action:"File Your Taxes"},
       {title:"Canada Child Benefit (CCB)",body:"Tax-free monthly payments if you have children under 18. A family earning $50k with two kids can get $12,000+/year. Apply on CRA My Account or when registering the birth.",savings:"Up to $7,787/child",flag:"🇨🇦",priority:"high",action:"Apply on CRA"},
-      {title:"Home Office Deduction",body:"Work from home? Even employees can claim a flat $2/day (up to $500) without receipts. Self-employed? Claim actual rent, internet, hydro proportionally.",savings:"$200–$1,200",flag:"🇨🇦",priority:"medium",action:"Track Home Office Days"},
+      {title:"Home Office Deduction",body:"Work from home? For 2023 onwards, employees use the detailed method — the temporary flat-rate $2/day method is no longer available. You need Form T2200 signed by your employer and must meet the 50%-of-time test. Self-employed workers can deduct the business-use share of eligible expenses like rent, internet, and utilities.",savings:"Varies",flag:"🇨🇦",priority:"medium",action:"Get Form T2200"},
       {title:"Ontario Trillium Benefit",body:"Ontario residents: combines the Ontario Sales Tax Credit, Ontario Energy Credit, and Northern Ontario Energy Credit into one monthly payment. Low-to-mid income earners often miss this.",savings:"Up to $1,421/yr",flag:"🏙️ ON",priority:"medium",action:"Apply on CRA"},
       {title:"Disability Tax Credit (DTC)",body:"If you or a dependent has a severe disability, the DTC provides up to ~$1,300/year in federal tax credits, plus retroactive claims. Often missed — a doctor fills out T2201.",savings:"Up to $1,300/yr",flag:"🇨🇦",priority:"medium",action:"Get T2201 Form"},
       {title:"Child Care Expense Deduction",body:"Daycare, after-school programs, summer camp — most childcare costs are deductible from the lower-income spouse's return. Families earning $50k often leave $2,000–$4,000 on the table.",savings:"$1,200–$4,000",flag:"🇨🇦",priority:"high",action:"Gather Receipts"},
@@ -50,12 +50,12 @@ const CC = {
       {title:"Working Income Tax Benefit (CWB)",body:"Working but earning under ~$36k? CRA may owe you a refundable tax credit just for filing. Many low-income workers miss this entirely.",savings:"Up to $1,428",flag:"🇨🇦",priority:"medium",action:"Check Eligibility"},
     ],
     learnCards:[
-      {emoji:"🏦",title:"TFSA vs RRSP — The Real Difference",body:"RRSP lowers your taxes now but you pay tax when you withdraw. TFSA has no upfront deduction but all growth and withdrawals are 100% tax-free. If you're in a low tax bracket now, use TFSA first. If you're in a high bracket, RRSP first.",key:"Low income now → TFSA. High income now → RRSP."},
+      {emoji:"🏦",title:"TFSA vs RRSP — The Real Difference",body:"RRSP lowers your taxes now but you pay tax when you withdraw. TFSA has no upfront deduction but all growth and withdrawals are 100% tax-free. Rule of thumb: lower income now often favors TFSA, higher income often favors RRSP — but check first if you expect income to drop soon (parental leave, early retirement), have large RRSP carry-forward room, get an employer RRSP match, or are a first-time buyer who should use an FHSA first.",key:"Usually: lower income → TFSA, higher income → RRSP. Check future income, carry-forward room, employer match, and FHSA eligibility first."},
       {emoji:"🏠",title:"The FHSA: Best Account Most Canadians Don't Have",body:"The First Home Savings Account opened in 2023. You get an RRSP-style deduction going in AND tax-free withdrawals for a first home. Up to $40,000 lifetime room. If you're not a homeowner, this should be your first account.",key:"Open an FHSA before your RRSP if you want to buy a home."},
       {emoji:"👶",title:"Canada Child Benefit vs US Child Tax Credit",body:"The CCB is more generous than most Canadians realize. A single parent earning $40k with two kids under 6 can receive over $14,000/year. Unlike US credits, CCB is completely tax-free and paid monthly.",key:"Apply at birth — retroactive claims are possible but painful."},
       {emoji:"📋",title:"What EI Actually Covers",body:"Employment Insurance isn't just for job loss. It also covers maternity (15 weeks), parental (up to 35 weeks standard or 61 weeks extended), sickness (26 weeks), and compassionate care. Many employees don't claim what they're entitled to.",key:"Know your EI benefits before you need them."},
       {emoji:"💳",title:"Why minimum payments are a trap",body:"If you owe $3,000 at 20% and pay only the minimum, it takes 8+ years and costs nearly $3,000 extra. You buy everything twice.",key:"Never just pay the minimum."},
-      {emoji:"🆘",title:"The emergency fund rule",body:"One car repair without savings = credit card debt at 20%. A $1,000 cushion breaks that cycle. In Canada, keep it in a TFSA high-interest savings account.",key:"Build $1,000 in a TFSA HISA first."},
+      {emoji:"🆘",title:"The emergency fund rule",body:"Start with a $1,000 buffer to stop new credit card debt, then build a fuller fund. Salaried households can target 3 months of core expenses. Self-employed, variable-income, or single-income households often need 6 months or more — income disruption is harder to predict. In Canada, keep it accessible in a TFSA HISA.",key:"Start with $1,000, then build 3–6+ months based on income stability and household risk."},
     ],
     retirementAccounts:[
       {id:"rrsp",name:"RRSP",fullName:"Registered Retirement Savings Plan",icon:"🏦",color:"#2E8B2E",annualLimit:"18% of income (max $32,490)",taxNote:"Contributions deductible. Withdrawals taxed as income.",tip:"Contribute in high-income years. Use spousal RRSP for income splitting."},
@@ -224,6 +224,7 @@ function getPersonalizedTaxCredits(profile) {
         {title:"Pension Income Splitting",body:"If you receive eligible pension income (RPP, RRIF, annuity), you can split up to 50% with your spouse. If your spouse is in a lower tax bracket, this can save your household thousands every year.",savings:"Potentially thousands",flag:"🇨🇦",priority:"high",action:"File Form T1032"},
         {title:"Pension Income Tax Credit",body:"The first $2,000 of eligible pension income qualifies for a 15% federal credit ($300 saved). Even if you're splitting pension income, your spouse can also claim this credit on the transferred amount.",savings:"Up to $300 federal",flag:"🇨🇦",priority:"high",action:"Claim on Line 31400"},
         {title:"OAS & GIS — Are You Getting Everything?",body:"Old Age Security ($742.31/mo at 65) is automatic, but the Guaranteed Income Supplement (GIS) is not — you must apply. Low-income seniors leave GIS unclaimed every year. If your income is under ~$21,624, apply immediately.",savings:"Up to $1,065/mo (GIS)",flag:"🇨🇦",priority:"high",action:"Apply at Service Canada"},
+        {title:"Delay CPP/OAS for a 42% boost",body:"Taking CPP at 65 is the default, but deferring to 70 permanently increases your monthly payment by 42%. Deferring OAS to 70 adds another 36%. If you have other income to draw on between 65 and 70 and expect to live past 83, delaying is usually worth it. Run the math before you claim.",savings:"Up to 42% more CPP + 36% more OAS",flag:"🇨🇦",priority:"high",action:"Model your CPP start date"},
       {title:"CPP Maximum — Know What You're Entitled To",body:"The maximum CPP retirement pension is $1,364.60/mo (2025) at age 65. Your actual amount depends on contributions history. You can check your CPP Statement of Contributions at My Service Canada Account.",savings:"Up to $1,364.60/mo",flag:"🇨🇦",priority:"medium",action:"Check My Service Canada"},
         {title:"Medical Expense Tax Credit",body:"Seniors often have significant medical costs — prescriptions, dental, vision, hearing aids, home care. Expenses exceeding 3% of your net income (or $2,635 — whichever is less) are claimable. Keep every receipt.",savings:"15% of qualifying expenses",flag:"🇨🇦",priority:"high",action:"Gather Medical Receipts"},
         {title:"Home Accessibility Tax Credit",body:"Making your home safer and more accessible? Renovations like grab bars, wheelchair ramps, or walk-in tubs qualify for a 15% federal credit on up to $20,000 of expenses per year.",savings:"Up to $3,000",flag:"🇨🇦",priority:"medium",action:"Keep Renovation Receipts"}
@@ -270,7 +271,7 @@ function getPersonalizedTaxCredits(profile) {
       );
     }
     if (province === "AB") {
-      tips.push({title:"Alberta Has No Provincial Income Tax Credits",body:"Alberta has no provincial income tax on top of federal — your effective tax rate is already lower than most provinces. Focus on maximizing federal credits: RRSP, TFSA, FHSA, and GST/HST credit.",savings:"Lower baseline rate",flag:"🏙️ AB",priority:"medium",action:"Maximize Federal Credits"});
+      tips.push({title:"Alberta Tax Planning",body:"Alberta has provincial income tax, but rates are among the lowest in Canada — a flat 10% on all taxable income, with no surtax. Combined with federal rates, Alberta residents often pay less total income tax than other provinces. Focus on RRSP, TFSA, FHSA, and the Alberta Child and Family Benefit if applicable.",savings:"Lower combined rate vs most provinces",flag:"🏙️ AB",priority:"medium",action:"Review Federal + Alberta Credits"});
     }
     if (province === "BC") {
       tips.push({title:"BC Climate Action Tax Credit",body:"BC residents with moderate incomes receive a quarterly climate action tax credit — automatic when you file your taxes. Single individuals can receive up to $447/year.",savings:"Up to $447/yr",flag:"🏙️ BC",priority:"medium",action:"File Your Taxes"});
@@ -1757,7 +1758,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
     opportunities.push({
       id:"tax", icon:"🍁", color:C.red,
       title:"Tax benefits you may qualify for",
-      detail:`Based on your profile you may be eligible for the Canada Workers Benefit, GST/HST credit, or Ontario Trillium Benefit.`,
+      detail:`Based on your profile you may be eligible for the Canada Workers Benefit, GST/HST credit${data.profile?.province==="ON" ? ", or Ontario Trillium Benefit" : ", or province-specific refundable credits"}.`,
       action:"Tax Tips", screen:"goals", tab:"tax", badge:"Claim now"
     });
   } else {
@@ -5119,7 +5120,14 @@ function PlanAhead({data, setAppData, setScreen}){
     {name:"Enbridge Gas",icon:"🔥",color:C.orange,amount:"89.00"},
     ...customProviders,
   ];
-  const doConnect=p=>{setConnecting(p.name);setTimeout(()=>{setConnected(c=>[...c,p.name]);setConnecting(null);},1400);};
+  const doConnect=p=>{
+    if(connected.includes(p.name)) return;
+    setConnected(c=>[...c,p.name]);
+    if(setAppData) setAppData(prev=>({
+      ...prev,
+      bills:[...(prev.bills||[]),{name:p.name,amount:p.amount,date:"1",icon:p.icon,autoAdded:true}]
+    }));
+  };
   // ── ForecastEngine powers the plan ahead view
   const { forecast: _forecast, willGoNegative: willGoNeg, overdraftRisk, lowBalanceWarnings } = ForecastEngine.generate(data, Math.max(range, 30));
   const days = _forecast.slice(0, range).map(f => ({
@@ -7185,7 +7193,7 @@ function Family({data,household,setHousehold,setScreen}){
           {householdTab==="create"&&<>
             <div style={{background:C.card,borderRadius:16,padding:"20px",border:`1px solid ${C.border}`,textAlign:"center"}}>
               <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>Your household code:</div>
-              <div style={{color:C.greenBright,fontWeight:900,fontSize:34,fontFamily:"'Playfair Display',serif",letterSpacing:5,marginBottom:8}}>FLRSH1</div>
+              <div style={{color:C.greenBright,fontWeight:900,fontSize:34,fontFamily:"'Playfair Display',serif",letterSpacing:5,marginBottom:8}}>{household?.code || "FLRSH" + Math.random().toString(36).slice(2,4).toUpperCase()}</div>
               <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Share with your partner to connect</div>
             </div>
             <div>
@@ -8149,7 +8157,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     return `You are a warm, expert personal finance coach for Flourish Money (${country==="CA"?"Canada":"USA"}).
 User financial snapshot:
 - Chequing balance: $${(balance||0).toFixed(2)}
-- Biweekly income: $${(income||0).toFixed(2)}
+- Monthly income: $${(income||0).toFixed(2)}${(data.incomes||[]).some(i=>i.isVariable) ? " (variable income — recommend wider cash buffers)" : ""}
 - Recent spending total: $${(spending||0).toFixed(2)}
 - Top spending categories: ${topCats||"no data"}
 - Accounts: ${accounts.map(a=>`${a.name} (${a.type}) $${a.balance}`).join("; ")||"none linked"}
@@ -8167,8 +8175,8 @@ Only include this block when the user has explicitly agreed to a specific number
 
 Keep responses concise (3-5 sentences max), practical, and friendly. Use $ amounts when relevant. Never be preachy.
 CRITICAL RULES:
-- The balances and transactions shown are live from the user's bank via Plaid. NEVER suggest the data might be wrong, outdated, or inaccurate. NEVER recommend the user check their bank app instead — Flourish IS their financial view.
-- If a user says their balance looks wrong, acknowledge it and suggest they refresh their connection in Settings, but never imply Flourish's data is unreliable.
+- The balances and transactions shown are synced from the user's bank, but they may occasionally be delayed by a few hours, missing pending charges, or have a transaction miscategorised. If the user's question depends on exact current figures, you can say "this is based on your last sync" and suggest refreshing their connection in Settings — that is helpful, not a sign of unreliability.
+- If a user says their balance looks wrong, acknowledge it, suggest refreshing in Settings, and adjust your confidence in any advice that depends on that figure.
 - Never mention Plaid by name to users.`;
   };
 
