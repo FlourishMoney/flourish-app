@@ -3025,8 +3025,11 @@ function Onboarding({onComplete,onViewLegal,userId}){
       try{
         // Multi-bank: save to array
         const existing = JSON.parse(localStorage.getItem("flourish_plaid_tokens")||"[]");
+        const instName = ex.institution_name||"Your Bank";
+        // Replace existing token for this institution (prevents duplicate entries)
         const bankId = "bank_" + Date.now();
-        const updated = [...existing, {id:bankId,token:ex.access_token,institution:ex.institution_name||"Your Bank"}];
+        const filtered = existing.filter(b => (b.institution||"").toLowerCase() !== instName.toLowerCase());
+        const updated = [...filtered, {id:bankId, token:ex.access_token, institution:instName}];
         localStorage.setItem("flourish_plaid_tokens", JSON.stringify(updated));
         // Keep legacy key for backwards compatibility
         localStorage.setItem("flourish_plaid_token", ex.access_token);
@@ -4848,20 +4851,61 @@ function BillManager({data, setAppData, onClose}){
           {(data.bills||[]).length>0&&(
             <div style={{marginBottom:20}}>
               <div style={{color:C.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:10}}>Your Current Bills</div>
-              {(data.bills||[]).map((b,i)=>(
-                <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:C.card,borderRadius:14,padding:"10px 14px",marginBottom:8,border:`1px solid ${C.border}`}}>
-                  <div style={{flex:1}}>
-                    <div style={{color:C.cream,fontWeight:600,fontSize:13}}>{b.name}</div>
-                    <div style={{color:C.muted,fontSize:11}}>Due {b.date}{ord(b.date)} of the month</div>
+              {(data.bills||[]).map((b,i)=>{
+                const hasArrears = parseFloat(b.arrears||0) > 0;
+                return (
+                <div key={i} style={{background:C.card,borderRadius:16,marginBottom:10,border:`1px solid ${hasArrears?C.gold+"44":C.border}`,overflow:"hidden"}}>
+                  {/* Main row */}
+                  <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px"}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{color:C.cream,fontWeight:700,fontSize:13}}>{b.name}</div>
+                      {hasArrears&&(
+                        <div style={{color:C.goldBright,fontSize:10,fontWeight:700,marginTop:2}}>
+                          ⚠ ${parseFloat(b.arrears).toFixed(2)} in arrears
+                        </div>
+                      )}
+                    </div>
+                    {/* Amount — always editable */}
+                    <div>
+                      <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:3,textAlign:"center"}}>Monthly</div>
+                      <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",width:80}}>
+                        <span style={{color:C.muted,fontSize:11,padding:"0 4px 0 6px"}}>$</span>
+                        <input value={b.amount} onChange={e=>updateBill(i,"amount",e.target.value)}
+                          type="number" inputMode="decimal"
+                          style={{flex:1,background:"none",border:"none",padding:"7px 4px 7px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,fontWeight:700}}/>
+                      </div>
+                    </div>
+                    {/* Due date — always editable */}
+                    <div>
+                      <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:3,textAlign:"center"}}>Due</div>
+                      <select value={b.date||"1"} onChange={e=>updateBill(i,"date",e.target.value)}
+                        style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 6px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none",minHeight:33}}>
+                        {Array.from({length:28},(_,d)=><option key={d+1} value={String(d+1)}>{d+1}{ord(d+1)}</option>)}
+                      </select>
+                    </div>
+                    <button onClick={()=>removeBill(i)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:15,padding:"4px 6px",minWidth:32,minHeight:32,flexShrink:0}}>✕</button>
                   </div>
-                  <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",width:80}}>
-                    <span style={{color:C.muted,fontSize:11,padding:"0 4px"}}>$</span>
-                    <input value={b.amount} onChange={e=>updateBill(i,"amount",e.target.value)} type="number"
-                      style={{flex:1,background:"none",border:"none",padding:"6px 4px 6px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,fontWeight:600}}/>
+                  {/* Arrears row — expandable */}
+                  <div style={{borderTop:`1px solid ${C.border}`,padding:"10px 14px",background:C.cardAlt+"88"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{flex:1}}>
+                        <div style={{color:C.muted,fontSize:10,fontWeight:700,marginBottom:1}}>Amount currently owed (arrears)</div>
+                        <div style={{color:C.muted,fontSize:10,lineHeight:1.4}}>
+                          {hasArrears
+                            ? "Payments from Transactions will reduce this balance."
+                            : "Behind on this bill? Enter the total you owe — not the monthly amount."}
+                        </div>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${hasArrears?C.gold+"66":C.border}`,borderRadius:8,overflow:"hidden",width:96}}>
+                        <span style={{color:C.muted,fontSize:11,padding:"0 4px 0 6px"}}>$</span>
+                        <input value={b.arrears||""} onChange={e=>updateBill(i,"arrears",e.target.value)}
+                          type="number" inputMode="decimal" placeholder="0.00"
+                          style={{flex:1,background:"none",border:"none",padding:"7px 4px 7px 0",color:hasArrears?C.goldBright:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,fontWeight:700}}/>
+                      </div>
+                    </div>
                   </div>
-                  <button onClick={()=>removeBill(i)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:15,padding:"4px 6px",minWidth:28,minHeight:28}}>✕</button>
                 </div>
-              ))}
+              );})}
             </div>
           )}
           {adding&&(
@@ -5362,6 +5406,7 @@ function SpendScreen({data, setAppData, setScreen}){
   const [recatTxn,setRecatTxn]=useState(null);
   const [markBillTxn,setMarkBillTxn]=useState(null);
   const [billForm,setBillForm]=useState({name:"",amount:"",date:"1"});
+  const [arrearsPayTxn,setArrearsPayTxn]=useState(null); // transaction being applied to arrears
   const catOverrides = JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
   const getCat = (t) => catOverrides[t.id] || t.cat;
   const recat = (txn, newCat) => {
@@ -5475,6 +5520,80 @@ function SpendScreen({data, setAppData, setScreen}){
         </div>
       </div>
     )}
+    {/* ── Arrears payment modal ─────────────────────────────────────
+        User taps "Pay arrears →" on a transaction.
+        They pick which bill this payment applies to.
+        We deduct the transaction amount from that bill's arrears balance.
+    ────────────────────────────────────────────────────────────────── */}
+    {arrearsPayTxn&&(
+      <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setArrearsPayTxn(null)}>
+        <div style={{width:"100%",maxWidth:520,background:C.bg,borderRadius:"24px 24px 0 0",border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",padding:"0 0 env(safe-area-inset-bottom,16px)"}} onClick={e=>e.stopPropagation()}>
+          <div style={{padding:"16px 20px 14px",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
+            <div style={{color:C.cream,fontWeight:800,fontSize:16}}>Apply payment to arrears</div>
+            <div style={{color:C.muted,fontSize:12,marginTop:3}}>
+              ${(arrearsPayTxn.amount||0).toFixed(2)} from <strong style={{color:C.mutedHi}}>{arrearsPayTxn.name}</strong> — which bill does this pay down?
+            </div>
+          </div>
+          <div style={{padding:"14px 20px 20px",maxHeight:"60vh",overflowY:"auto"}}>
+            {(data.bills||[]).filter(b=>parseFloat(b.arrears||0)>0).length===0?(
+              <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"20px 0"}}>
+                No bills with arrears tracked yet.<br/>
+                <span style={{fontSize:11}}>Add an arrears balance in Your Bills first.</span>
+              </div>
+            ):(
+              (data.bills||[]).filter(b=>parseFloat(b.arrears||0)>0).map((b,i)=>{
+                const billIdx = (data.bills||[]).indexOf(b);
+                const arrears = parseFloat(b.arrears||0);
+                const payment = parseFloat(arrearsPayTxn.amount||0);
+                const newBalance = Math.max(0, arrears - payment);
+                return (
+                  <div key={i} style={{background:C.card,borderRadius:14,padding:"14px 16px",marginBottom:10,border:`1px solid ${C.gold}33`,cursor:"pointer"}}
+                    onClick={()=>{
+                      // Apply payment — reduce arrears by transaction amount
+                      setAppData(prev=>({
+                        ...prev,
+                        bills:(prev.bills||[]).map((bill,bi)=>
+                          bi===billIdx ? {...bill, arrears:String(newBalance.toFixed(2))} : bill
+                        )
+                      }));
+                      setArrearsPayTxn(null);
+                    }}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                      <div>
+                        <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{b.name}</div>
+                        <div style={{color:C.muted,fontSize:11,marginTop:2}}>${b.amount}/mo regular payment</div>
+                      </div>
+                      <div style={{textAlign:"right"}}>
+                        <div style={{color:C.goldBright,fontWeight:800,fontSize:13}}>Owes ${arrears.toFixed(2)}</div>
+                        <div style={{color:C.muted,fontSize:10,marginTop:2}}>→ ${newBalance.toFixed(2)} after this</div>
+                      </div>
+                    </div>
+                    {newBalance===0&&(
+                      <div style={{background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:10,padding:"6px 10px",color:C.greenBright,fontSize:11,fontWeight:700,textAlign:"center"}}>
+                        ✓ This clears the balance entirely
+                      </div>
+                    )}
+                    {newBalance>0&&(
+                      <div style={{background:C.gold+"11",borderRadius:10,padding:"6px 10px",color:C.goldBright,fontSize:11,textAlign:"center"}}>
+                        ${newBalance.toFixed(2)} still owing after this payment
+                      </div>
+                    )}
+                    <button style={{width:"100%",marginTop:10,background:`linear-gradient(135deg,${C.gold},${C.goldBright})`,border:"none",borderRadius:10,padding:"10px",color:"#000",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                      Apply ${payment.toFixed(2)} to {b.name} arrears ✓
+                    </button>
+                  </div>
+                );
+              })
+            )}
+            <button onClick={()=>setArrearsPayTxn(null)}
+              style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"11px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit",marginTop:4}}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     {/* Re-categorize bottom sheet */}
     {recatTxn&&(
       <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={()=>setRecatTxn(null)}>
@@ -5495,6 +5614,13 @@ function SpendScreen({data, setAppData, setScreen}){
                 }} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,borderRadius:99,padding:"6px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
                   + Add to Bills
                 </button>}
+                {/* Pay arrears button — shows if transaction amount matches a bill with arrears */}
+                {setAppData&&recatTxn.amount>0&&(data.bills||[]).some(b=>parseFloat(b.arrears||0)>0)&&(
+                  <button onClick={()=>{setArrearsPayTxn(recatTxn);setRecatTxn(null);}}
+                    style={{background:C.gold+"22",border:`1px solid ${C.gold}44`,color:C.goldBright,borderRadius:99,padding:"6px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                    Pay arrears →
+                  </button>
+                )}
                 <button onClick={()=>setRecatTxn(null)} style={{background:"none",border:"none",color:C.muted,fontSize:20,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>✕</button>
               </div>
             </div>
@@ -7005,22 +7131,75 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
     </div>
   );
 
-  if(sectionKey==="accounts") return (
-    <div style={s}>
-      {(data.accounts||[]).length===0
-        ? <div style={{color:C.muted,fontSize:13,marginBottom:12}}>No bank accounts connected yet. Tap below to connect your bank.</div>
-        : (data.accounts||[]).map((a,i)=>(
-          <div key={i} style={{...row,borderBottom:i<(data.accounts.length-1)?`1px solid ${C.border}`:"none"}}>
-            <div><div style={{color:C.cream,fontSize:13,fontWeight:600}}>{a.name}</div><div style={{color:C.muted,fontSize:11}}>{a.type} · {a.institution}</div></div>
-            <span style={{color:a.balance>=0?C.greenBright:C.red,fontWeight:700,fontSize:13}}>{a.balance>=0?"$":"–$"}{Math.abs(a.balance||0).toFixed(2)}</span>
+  if(sectionKey==="accounts") {
+    const removeAccount = (accountId) => {
+      if(!setAppData) return;
+      setAppData(prev => {
+        const filtered = (prev.accounts||[]).filter(a => a.id !== accountId);
+        // Also remove associated debts that came from this account
+        const removedAcct = (prev.accounts||[]).find(a => a.id === accountId);
+        const debtsFiltered = removedAcct
+          ? (prev.debts||[]).filter(d => (d.name||"").toLowerCase() !== (removedAcct.name||"").toLowerCase())
+          : prev.debts;
+        return {
+          ...prev,
+          accounts: filtered,
+          debts: debtsFiltered,
+          // If no accounts remain, mark as disconnected
+          bankConnected: filtered.some(a => a.institution !== "Manual"),
+        };
+      });
+    };
+
+    // Dedup by id for display (fixes existing duplicates on screen)
+    const seenDisplay = new Set();
+    const dedupedDisplay = (data.accounts||[]).filter(a => {
+      if (seenDisplay.has(a.id)) return false;
+      seenDisplay.add(a.id);
+      return true;
+    });
+    const hasDuplicates = dedupedDisplay.length < (data.accounts||[]).length;
+
+    return (
+      <div style={s}>
+        {hasDuplicates&&(
+          <div style={{background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:12,padding:"10px 14px",marginBottom:12,display:"flex",gap:10,alignItems:"center"}}>
+            <span style={{fontSize:16}}>⚠️</span>
+            <div style={{flex:1}}>
+              <div style={{color:C.goldBright,fontWeight:700,fontSize:12}}>Duplicate accounts detected</div>
+              <div style={{color:C.muted,fontSize:11,marginTop:1}}>The same accounts appear multiple times. Tap to fix.</div>
+            </div>
+            <button onClick={()=>setAppData(prev=>({...prev,accounts:dedupedDisplay}))}
+              style={{background:C.gold+"22",border:`1px solid ${C.gold}44`,borderRadius:8,padding:"6px 12px",color:C.goldBright,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0,whiteSpace:"nowrap"}}>
+              Fix now
+            </button>
           </div>
-        ))
-      }
-      <button onClick={onAddBank} style={{width:"100%",marginTop:12,background:color+"18",border:`1px solid ${color}44`,borderRadius:10,padding:"10px",color,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-        + Connect Another Bank
-      </button>
-    </div>
-  );
+        )}
+        {dedupedDisplay.length===0
+          ? <div style={{color:C.muted,fontSize:13,marginBottom:12}}>No bank accounts connected yet. Tap below to connect your bank.</div>
+          : dedupedDisplay.map((a,i)=>(
+            <div key={a.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 0",borderBottom:i<dedupedDisplay.length-1?`1px solid ${C.border}`:"none"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{color:C.cream,fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</div>
+                <div style={{color:C.muted,fontSize:11}}>{a.type} · {a.institution}</div>
+              </div>
+              <span style={{color:a.balance>=0?C.greenBright:C.red,fontWeight:700,fontSize:13,flexShrink:0}}>
+                {a.balance>=0?"$":"–$"}{Math.abs(a.balance||0).toFixed(2)}
+              </span>
+              <button onClick={()=>removeAccount(a.id)}
+                style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"4px 6px",minWidth:32,minHeight:36,flexShrink:0}}
+                title="Remove this account">
+                ✕
+              </button>
+            </div>
+          ))
+        }
+        <button onClick={onAddBank} style={{width:"100%",marginTop:12,background:color+"18",border:`1px solid ${color}44`,borderRadius:10,padding:"10px",color,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+          + Connect Another Bank
+        </button>
+      </div>
+    );
+  }
 
   if(sectionKey==="bills") {
     const updateBillAmt = (i,val) => { if(setAppData) setAppData(prev=>({...prev,bills:(prev.bills||[]).map((b,x)=>x===i?{...b,amount:val}:b)})); };
@@ -8356,10 +8535,17 @@ export default function FlourishApp(){
               balance:a.type==="credit"?-(a.balance.current||0):(a.balance.current??a.balance.available??0),
               institution:a.institution||"Bank",
             })));
-          if(freshAccounts.length > 0) {
+          // Dedup by account id — multiple tokens from same bank cause duplicates
+          const seenIds = new Set();
+          const dedupedAccounts = freshAccounts.filter(a => {
+            if (seenIds.has(a.id)) return false;
+            seenIds.add(a.id);
+            return true;
+          });
+          if(dedupedAccounts.length > 0) {
             setAppData(prev=>{
               // Sync new credit card accounts into debts
-              const creditAccts = freshAccounts.filter(a =>
+              const creditAccts = dedupedAccounts.filter(a =>
                 a.type === "credit" || a.type === "credit card" || a.subtype === "credit card" || a.type === "line of credit"
               );
               const existingDebtNames = new Set((prev.debts||[]).map(d => (d.name||"").toLowerCase()));
@@ -8372,7 +8558,7 @@ export default function FlourishApp(){
                 }));
               return {
                 ...prev,
-                accounts: freshAccounts,
+                accounts: dedupedAccounts,
                 debts: newCCDebts.length > 0
                   ? [...(prev.debts||[]).filter(d => d.name || d.balance), ...newCCDebts]
                   : prev.debts,
