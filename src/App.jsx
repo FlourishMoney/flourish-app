@@ -4104,6 +4104,8 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   // ── Generative priority logic ────────────────────────────────────────────────
   const urgentBill = soonBills.find(b=>parseInt(b.date)-today<=2);
   const isPayday   = today===15||today===1; // simple heuristic
+  // 7-day forecast — calculated once here, shared with priority filter tile
+  const { overdraftRisk: sevenDayRisk, willGoNegative: sevenDayOverdraft } = ForecastEngine.generate(data, 7);
 
   // ── Style helpers ────────────────────────────────────────────────────────────
   const anim=(delay=0,extra={})=>mounted?{animation:`fadeUp 0.55s cubic-bezier(.16,1,.3,1) ${delay}ms both`,...extra}:{opacity:0,...extra};
@@ -4221,33 +4223,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         );
       })()}
 
-      {/* ── Income accuracy banner ────────────────────────────────────── */}
-      {(()=>{
-        const incomes = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0);
-        const toMo = (amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="monthly"?a:a*2.167;};
-        const totalMo = incomes.reduce((s,i)=>s+toMo(i.amount,i.freq),0);
-        // Show banner if: no income entered (using default), or income seems very high/low
-        const usingDefault = incomes.length === 0;
-        const suspiciouslyHigh = totalMo > 25000;
-        if (!usingDefault && !suspiciouslyHigh) return null;
-        return (
-          <div style={{...anim(45),background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:16,padding:"12px 16px",display:"flex",gap:12,alignItems:"flex-start",cursor:"pointer"}}
-            onClick={()=>setShowTransparency(true)}>
-            <span style={{fontSize:18,flexShrink:0}}>⚠️</span>
-            <div style={{flex:1}}>
-              <div style={{color:C.goldBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>
-                {usingDefault?"Income not set — using $4,200 estimate":`Income showing $${(totalMo||0).toLocaleString()}/mo — does this look right?`}
-              </div>
-              <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>
-                {usingDefault
-                  ? "Every calculation depends on your income. Tap to fix it — takes 30 seconds."
-                  : "Tap to see how this is calculated and correct it if needed."}
-              </div>
-            </div>
-            <span style={{color:C.gold,fontSize:12,flexShrink:0,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,alignSelf:"center"}}>Fix →</span>
-          </div>
-        );
-      })()}
+      {/* Income accuracy: folded into priority tile below */}
 
       {/* ═══════════════════════════════════════════════════════════════════
           BENTO GRID — rendered in user's custom order from dashLayout
@@ -4271,9 +4247,9 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           <div style={{position:"absolute",inset:0,backgroundImage:`radial-gradient(circle,${heroColor}18 1px,transparent 1px)`,backgroundSize:"24px 24px",pointerEvents:"none",opacity:0.45,maskImage:"radial-gradient(ellipse 100% 80% at 50% 50%,black 40%,transparent 100%)"}}/>
           <div style={{position:"relative",padding:"24px 24px 20px"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-              <div style={{width:6,height:6,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 10px ${heroColor}`}}/>
+              <div style={{width:6,height:6,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 10px ${heroColor}`,animation:"pulse 2.5s ease-in-out infinite"}}/>
               <span style={{color:heroColorBright+"99",fontSize:9,textTransform:"uppercase",letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Today's Safe Limit</span>
-              <button onClick={e=>{e.stopPropagation();setShowTransparency(true);}} style={{background:"none",border:"none",color:heroColor,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer",padding:"0 0 0 6px",opacity:0.7,letterSpacing:0.3}}>How? →</button>
+              {data.bankConnected&&<span style={{color:heroColorBright+"55",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· live</span>}
             </div>
             <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.88,marginBottom:18}}>
               <span style={{fontSize:24,color:heroColorBright+"77",verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
@@ -4281,26 +4257,50 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                 <CountUp to={safe} decimals={2} dur={1200}/>
               </span>
             </div>
-            {/* Balance + accounts breakdown */}
+            {/* ── Inline math proof — one line, no tap required ── */}
+            {(()=>{
+              const accts = data.accounts||[];
+              const chequing = accts.filter(a=>a.type==="checking"||a.type==="depository").reduce((s,a)=>s+(a.balance||0),0);
+              const savings  = accts.filter(a=>a.type==="savings").reduce((s,a)=>s+(a.balance||0),0);
+              const totalBalance = data.bankConnected ? (chequing||savings||bal)||0 : null;
+              const billsTotal  = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
+              const bufferAmt   = monthlyIncome * 0.15;
+              // Overdraft: show a focused warning instead of the math
+              if (overdraft) return (
+                <div style={{marginBottom:14}}>
+                  <div style={{color:C.redBright+"88",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
+                    Bills exceed your balance — tap to see the forecast and fix it
+                  </div>
+                </div>
+              );
+              // Proof: max 2 parts — balance + biggest deduction. Scannable, not a math lesson.
+              const balLabel = totalBalance!=null ? `$${totalBalance.toFixed(0)} balance` : `~$${(bal||0).toFixed(0)}`;
+              const bigDeduct = billsTotal > bufferAmt
+                ? (billsTotal > 0 ? `$${billsTotal.toFixed(0)} in bills` : null)
+                : (bufferAmt > 0 ? `$${bufferAmt.toFixed(0)} safety buffer` : null);
+              const proofLine = bigDeduct ? `${balLabel} · minus ${bigDeduct}` : balLabel;
+              return (
+                <div style={{marginBottom:14}}>
+                  <div style={{color:heroColorBright+"66",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2,lineHeight:1.5}}>
+                    {proofLine} → <strong style={{color:heroColorBright+"99"}}>${Math.max(0,safe).toFixed(0)} today</strong>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── Bottom row: actions + tap affordance ── */}
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-              <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
-                {(()=>{
-                  const accts = data.accounts||[];
-                  const chequing = accts.filter(a=>a.type==="checking"||a.type==="depository").reduce((s,a)=>s+(a.balance||0),0);
-                  const savings = accts.filter(a=>a.type==="savings").reduce((s,a)=>s+(a.balance||0),0);
-                  const creditOwed = accts.filter(a=>a.type==="credit").reduce((s,a)=>s+Math.abs(a.balance||0),0);
-                  return <>
-                    {chequing > 0 && <div><span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:0.8}}>Chequing</span><div style={{color:C.greenBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${(chequing||0).toFixed(2)}</div></div>}
-                    {savings > 0 && <div><span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:0.8}}>Savings</span><div style={{color:C.tealBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${(savings||0).toFixed(2)}</div></div>}
-                    {creditOwed > 0 && <div><span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:0.8}}>Credit Owing</span><div style={{color:C.red,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>–${(creditOwed||0).toFixed(2)}</div></div>}
-                    {chequing === 0 && savings === 0 && creditOwed === 0 && <div><span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Balance </span><span style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>${(bal||0).toFixed(2)}</span></div>}
-                  </>;
-                })()}
-                <span style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>· bills out</span>
-              </div>
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                {onWhatIf&&<button onClick={e=>{e.stopPropagation();onWhatIf();}} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:10,padding:"5px 11px",borderRadius:99,cursor:"pointer"}}>What if? →</button>}
-                <span style={{color:heroColor,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Forecast →</span>
+                {onWhatIf&&<button onClick={e=>{e.stopPropagation();onWhatIf();}} style={{background:"rgba(255,255,255,0.08)",border:`1px solid rgba(255,255,255,0.12)`,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:10,padding:"6px 12px",borderRadius:99,cursor:"pointer",minHeight:36}}>What if? →</button>}
+              </div>
+              {/* Tap affordance — wired to the right action */}
+              <div onClick={e=>{e.stopPropagation();overdraft?setScreen("plan"):setShowTransparency(true);}}
+                style={{display:"flex",alignItems:"center",gap:5,background:heroColor+"18",border:`1px solid ${heroColor}33`,borderRadius:99,padding:"6px 14px",cursor:"pointer",minHeight:32,transition:"background .15s"}}
+                onMouseEnter={e=>e.currentTarget.style.background=heroColor+"28"}
+                onMouseLeave={e=>e.currentTarget.style.background=heroColor+"18"}>
+                <span style={{color:heroColorBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>
+                  {overdraft?"See forecast →":"Why this number →"}
+                </span>
               </div>
             </div>
             {overdraft&&<div style={{marginTop:12,padding:"10px 14px",background:C.red+"18",borderRadius:14,border:`1px solid ${C.red}33`,color:C.cream,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
@@ -4380,29 +4380,87 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         </div>
 
         </div>{/* end health+streak 2-col */}
-        {/* ── GENERATIVE TILE: urgent bill warning if needed ─────────────── */}
-        {urgentBill&&(
-          <div style={{...anim(170),...glass(C.red,C.red+"33"),borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("plan")}>
-            <div style={{width:44,height:44,borderRadius:14,background:C.red+"20",border:`1px solid ${C.red}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>⚠️</div>
-            <div style={{flex:1}}>
-              <div style={{color:C.redBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{urgentBill.name} due in {parseInt(urgentBill.date)-today} day{parseInt(urgentBill.date)-today===1?"":"s"}</div>
-              <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>${urgentBill.amount} will be deducted · Tap to see full forecast</div>
-            </div>
-            <span style={{color:C.red,fontSize:18}}>→</span>
-          </div>
-        )}
+        {/* ── SINGLE VOICE: priority-filtered action tile ──────────────────
+            Only ONE system speaks at a time. Priority order:
+            0. Income not set / suspiciously high → data quality, affects everything
+            1. Overdraft risk (from forecast)     → urgent, act now
+            2. Urgent bill ≤2 days               → time-sensitive
+            3. Payday                            → money decision moment
+            Nothing else competes here.
+        ─────────────────────────────────────────────────────────────────── */}
+        {(()=>{
+          // Uses sevenDayRisk pre-calculated above — no duplicate ForecastEngine call
+          const isForecastOverdraft = sevenDayOverdraft && sevenDayRisk.length > 0;
 
-        {/* ── PAYDAY SAVINGS NUDGE: generative, only on payday ─────────── */}
-        {isPayday&&!urgentBill&&(
-          <div style={{...anim(170),...glass(C.green,C.green+"33"),borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("goals")}>
-            <div style={{width:44,height:44,borderRadius:14,background:C.green+"20",border:`1px solid ${C.green}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>💸</div>
-            <div style={{flex:1}}>
-              <div style={{color:C.greenBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Payday! Save before you spend</div>
-              <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>Transfer ${((safe||0)*0.2).toFixed(0)} to savings first · See your goals</div>
-            </div>
-            <span style={{color:C.green,fontSize:18}}>→</span>
-          </div>
-        )}
+          // Priority 0 — income data quality (affects every calculation)
+          const incomeCheck = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0);
+          const toMoCheck = (amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="monthly"?a:a*2.167;};
+          const totalMoCheck = incomeCheck.reduce((s,i)=>s+toMoCheck(i.amount,i.freq),0);
+          const incomeUsingDefault = incomeCheck.length === 0;
+          const incomeSuspicious = totalMoCheck > 25000;
+          if (incomeUsingDefault || incomeSuspicious) {
+            return (
+              <div style={{...anim(170),background:C.gold+"0D",border:`1px solid ${C.gold}33`,borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setShowTransparency(true)}>
+                <div style={{width:44,height:44,borderRadius:14,background:C.gold+"18",border:`1px solid ${C.gold}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>💰</div>
+                <div style={{flex:1}}>
+                  <div style={{color:C.goldBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                    {incomeUsingDefault?"Income not set — every number is an estimate":`Income showing $${totalMoCheck.toLocaleString()}/mo — does this look right?`}
+                  </div>
+                  <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>
+                    {incomeUsingDefault?"Tap to set your income — takes 30 seconds":"Tap to see how this is calculated"}
+                  </div>
+                </div>
+                <span style={{color:C.goldBright,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0}}>Fix →</span>
+              </div>
+            );
+          }
+
+          // Priority 1 — forecast overdraft within 7 days
+          if (isForecastOverdraft) {
+            const firstNeg = sevenDayRisk[0];
+            return (
+              <div style={{...anim(170),background:"rgba(255,60,80,0.10)",border:`1px solid ${C.red}44`,borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("plan")}>
+                <div style={{width:44,height:44,borderRadius:14,background:C.red+"20",border:`1px solid ${C.red}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>⚠️</div>
+                <div style={{flex:1}}>
+                  <div style={{color:C.redBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Projected overdraft in {firstNeg.day} day{firstNeg.day===1?"":"s"}</div>
+                  <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>Your balance will go negative — tap to see which bills cause this and fix it now.</div>
+                </div>
+                <span style={{color:C.redBright,fontSize:18,fontWeight:700}}>Fix →</span>
+              </div>
+            );
+          }
+
+          // Priority 2 — urgent bill ≤2 days
+          if (urgentBill) {
+            return (
+              <div style={{...anim(170),background:"rgba(232,184,75,0.08)",border:`1px solid ${C.gold}44`,borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("plan")}>
+                <div style={{width:44,height:44,borderRadius:14,background:C.gold+"18",border:`1px solid ${C.gold}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>📅</div>
+                <div style={{flex:1}}>
+                  <div style={{color:C.goldBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{urgentBill.name} due in {parseInt(urgentBill.date)-today} day{parseInt(urgentBill.date)-today===1?"":"s"}</div>
+                  <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>${urgentBill.amount} coming out · Tap to see full forecast</div>
+                </div>
+                <span style={{color:C.goldBright,fontSize:18}}>→</span>
+              </div>
+            );
+          }
+
+          // Priority 3 — payday
+          if (isPayday) {
+            return (
+              <div style={{...anim(170),background:"rgba(0,204,133,0.07)",border:`1px solid ${C.green}33`,borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("goals")}>
+                <div style={{width:44,height:44,borderRadius:14,background:C.green+"18",border:`1px solid ${C.green}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>💸</div>
+                <div style={{flex:1}}>
+                  <div style={{color:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Payday — save before you spend</div>
+                  <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>Transfer ${((safe||0)*0.2).toFixed(0)} now and you'll barely notice it · See your goals</div>
+                </div>
+                <span style={{color:C.greenBright,fontSize:18}}>→</span>
+              </div>
+            );
+          }
+
+          // Nothing urgent — tile stays silent
+          return null;
+        })()}
 
         {/* ── NET WORTH SPARKLINE — full width ──────────────────────────── */}
         {isVisible('networth')&&<div style={{...anim(190),...tileStyle('networth'),...glass(C.teal),borderRadius:22,padding:"18px 20px 16px"}}>
@@ -4442,12 +4500,12 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         </div>}
 
         {/* ── DECISION ENGINE ───────────────────────────────────────────── */}
-        {isVisible('decision')&&<div style={{...anim(210),...tileStyle('decision'),...glass(C.purple),borderRadius:22,overflow:"hidden"}}>
+        {isVisible('decision')&&<div style={{...anim(210),...tileStyle('decision'),background:C.isDark?"rgba(155,125,255,0.04)":"rgba(155,125,255,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.purple}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden"}}>
           <DecisionEngine data={data} safe={safe} bal={bal} monthlyIncome={monthlyIncome} soonBills={soonBills} todayDate={today} setScreen={setScreen}/>
         </div>}
 
         {/* ── AUTOPILOT ─────────────────────────────────────────────────── */}
-        {isVisible('autopilot')&&<div style={{...anim(225),...tileStyle('autopilot'),...glass(C.blue),borderRadius:22,overflow:"hidden"}}>
+        {isVisible('autopilot')&&<div style={{...anim(225),...tileStyle('autopilot'),background:C.isDark?"rgba(77,168,255,0.04)":"rgba(77,168,255,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.blue}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden"}}>
           <AutopilotCard data={data} setScreen={setScreen}/>
         </div>}
 
@@ -4457,7 +4515,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         </div>}
 
         {/* ── OPPORTUNITY DETECTOR ─────────────────────────────────────── */}
-        {isVisible('opportunity')&&<div style={{...anim(255),...tileStyle('opportunity'),...glass(C.gold),borderRadius:22,overflow:"hidden"}}>
+        {isVisible('opportunity')&&<div style={{...anim(255),...tileStyle('opportunity'),background:C.isDark?"rgba(232,184,75,0.04)":"rgba(232,184,75,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.gold}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden"}}>
           <OpportunityDetector data={data} setScreen={setScreen} setGoalsTab={setGoalsTab}/>
         </div>}
 
