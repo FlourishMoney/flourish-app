@@ -2579,7 +2579,7 @@ const ForecastEngine = {
       const inc  = (isPayday ? paycheque : 0) + getSecondaryIncome(dayNum);
       // Day 0 = today: balance is already current, don't deduct spending again
       // All other days: deduct daily spend regardless of payday (you still spend on paydays)
-      const dailySpend = i === 0 ? 0 : avgDaily * 0.8;
+      const dailySpend = i === 0 ? 0 : avgDaily; // full spend — 0.8 discount was masking real overdraft risk
       const out  = dayBills.reduce((s,b) => s + parseFloat(b.amount||0), 0) + dailySpend;
       running = running + inc - out;
 
@@ -2633,7 +2633,7 @@ const BehaviorEngine = {
       insights.push({
         type:"warning", icon:"📱", priority:"medium", color: C.teal,
         title:"Subscription creep detected",
-        body:`${subTxns.length} recurring subscriptions totalling $${(subTotal||0).toFixed(0)}/mo. That's ${Math.round(subTotal/income*100)}% of your income.`,
+        body:`${subTxns.length} recurring subscriptions totalling $${(subTotal||0).toFixed(0)}/mo${income>0?`. That's ${Math.round(subTotal/income*100)}% of your income`:""}.`,
         saving: `$${Math.round(subTotal * 0.35)}/mo potential saving`
       });
     }
@@ -5575,7 +5575,7 @@ function PlanAhead({data, setAppData, setScreen}){
     </div>}
     <Card style={{border:`1px solid ${C.teal}33`,background:`linear-gradient(135deg,rgba(0,200,224,0.05) 0%,${C.card} 100%)`}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:connected.length>0?10:0}}>
-        <div><div style={{color:C.tealBright,fontWeight:700,fontSize:14}}>📅 Bill Autopilot</div><div style={{color:C.muted,fontSize:11,marginTop:2}}>{(data.bills||[]).length} bills tracked</div></div>
+        <div><div style={{color:C.tealBright,fontWeight:700,fontSize:14}}>📅 Bill Tracking</div><div style={{color:C.muted,fontSize:11,marginTop:2}}>{(data.bills||[]).length} bills tracked</div></div>
           {setAppData&&<button onClick={()=>setShowBillManager(true)} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>+ Add Bill</button>}
         <button onClick={()=>setShowConnect(s=>!s)} style={{background:C.teal+"28",border:`1px solid ${C.teal}55`,color:C.tealBright,borderRadius:99,padding:"6px 15px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .2s"}}>{showConnect?"Done":"+ Connect"}</button>
       </div>
@@ -8438,18 +8438,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <span style={{color:C.muted,fontSize:18}}>›</span>
       </button>
     </div>
-    <button onClick={handleShare} style={{background:"linear-gradient(135deg,#0D3320 0%,#0A2518 100%)",borderRadius:18,padding:"20px 22px",border:"1px solid rgba(0,204,133,0.25)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"inherit",width:"100%",marginBottom:10,boxShadow:"0 4px 24px rgba(0,204,133,0.12)"}}>
-      <div style={{display:"flex",alignItems:"center",gap:14}}>
-        <div style={{width:44,height:44,borderRadius:14,background:"rgba(0,204,133,0.15)",border:"1px solid rgba(0,204,133,0.3)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-          <FlourishMark size={28}/>
-        </div>
-        <div style={{textAlign:"left"}}>
-          <div style={{color:"#fff",fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15,letterSpacing:-0.3}}>Share Flourish</div>
-          <div style={{color:"rgba(255,255,255,0.45)",fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3}}>Invite a friend · help them thrive</div>
-        </div>
-      </div>
-      <div style={{background:"rgba(0,204,133,0.2)",border:"1px solid rgba(0,204,133,0.35)",borderRadius:99,padding:"7px 16px",color:"#00CC85",fontSize:12,fontWeight:700,letterSpacing:0.2,flexShrink:0}}>Share ↗</div>
-    </button>
+    
     {[
         {icon:"user",  color:C.purple, label:"Profile & Income",    sub:`${data.profile?.name||"You"} · ${data.profile?.country||"CA"}`,   key:"profile"},
         {icon:"bank",  color:C.blue,   label:"Connected Accounts",  sub:`${data.accounts?.length||0} accounts`,              key:"accounts"},
