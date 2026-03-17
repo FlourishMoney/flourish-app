@@ -15,33 +15,6 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 );
 
-const STYLES = `
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
-@keyframes fadeUp    { from{opacity:0;transform:translateY(24px) scale(0.98)} to{opacity:1;transform:translateY(0) scale(1)} }
-@keyframes fadeIn    { from{opacity:0} to{opacity:1} }
-@keyframes slideUp   { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-@keyframes slideIn   { from{opacity:0;transform:translateX(-16px)} to{opacity:1;transform:translateX(0)} }
-@keyframes pulse     { 0%,100%{opacity:1} 50%{opacity:0.4} }
-@keyframes shimmer   { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
-@keyframes mintGlow  { 0%,100%{box-shadow:0 0 0 0 rgba(0,214,143,0)} 50%{box-shadow:0 0 70px 10px rgba(0,214,143,0.14)} }
-@keyframes goldGlow  { 0%,100%{box-shadow:0 0 0 0 rgba(240,196,66,0)} 50%{box-shadow:0 0 60px 8px rgba(240,196,66,0.12)} }
-@keyframes ringPulse { 0%{transform:scale(1);opacity:0.7} 100%{transform:scale(2.6);opacity:0} }
-@keyframes spin      { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
-@keyframes floatUp   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
-@keyframes numberIn  { from{opacity:0;transform:translateY(10px) scale(0.96)} to{opacity:1;transform:translateY(0) scale(1)} }
-@keyframes gradShift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
-@keyframes breathe   { 0%,100%{opacity:0.5;transform:scale(1)} 50%{opacity:0.9;transform:scale(1.04)} }
-@keyframes orbit     { from{transform:translate(-50%,-50%) rotate(0deg) translateX(110px)} to{transform:translate(-50%,-50%) rotate(360deg) translateX(110px)} }
-@keyframes logoFloat { 0%,100%{transform:translateY(0) rotate(-1deg)} 50%{transform:translateY(-6px) rotate(1deg)} }
-@keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
-* { -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; box-sizing:border-box; }
-*:focus-visible { outline:2px solid rgba(0,214,143,0.55); outline-offset:2px; border-radius:4px; }
-::selection { background:rgba(0,214,143,0.25); color:#fff; }
-::-webkit-scrollbar { width:0; background:transparent; }
-input,button,select,textarea { font-family:inherit; }
-button { cursor:pointer; }
-`;
-
 
 // ─── COUNTRY CONFIG ────────────────────────────────────────────────────────────
 const CC = {
@@ -4074,6 +4047,9 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const bal         = _ss.balance;
   const safe        = _ss.safeAmount;
   const overdraft   = _ss.overdraft;
+  const [affordInput, setAffordInput] = React.useState("");
+  const [affordResult, setAffordResult] = React.useState(null); // null | {state, msg, sub}
+  const [affordFocused, setAffordFocused] = React.useState(false);
   const soonBills   = _ss.soonBills;
   const soonTotal   = _ss.upcomingBills;
   const today       = new Date().getDate();
@@ -4106,6 +4082,9 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const isPayday   = today===15||today===1; // simple heuristic
   // 7-day forecast — calculated once here, shared with priority filter tile
   const { overdraftRisk: sevenDayRisk, willGoNegative: sevenDayOverdraft } = ForecastEngine.generate(data, 7);
+  // 14-day forecast — shared with "Can I afford this?" widget. No per-keystroke calls.
+  const { forecast: afford14Forecast } = ForecastEngine.generate(data, 14);
+  const nextPaydayDay = afford14Forecast.find(f => f.isPayday && f.day > 0)?.day || null;
 
   // ── Style helpers ────────────────────────────────────────────────────────────
   const anim=(delay=0,extra={})=>mounted?{animation:`fadeUp 0.55s cubic-bezier(.16,1,.3,1) ${delay}ms both`,...extra}:{opacity:0,...extra};
@@ -4305,6 +4284,117 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             </div>
             {overdraft&&<div style={{marginTop:12,padding:"10px 14px",background:C.red+"18",borderRadius:14,border:`1px solid ${C.red}33`,color:C.cream,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
               <strong style={{color:C.redBright}}>Overdraft risk</strong> — bills exceed your balance. Hold non-essential spending.
+            </div>}
+
+            {/* ── Can I afford this? ──────────────────────────────────────
+                Pure math. No AI call. Instant answer.
+                Subtracts from safe amount → one of three states.
+            ─────────────────────────────────────────────────────────────── */}
+            {/* Widget hidden in overdraft — unhelpful to check affordability when already negative */}
+            {!overdraft&&<div style={{marginTop:16,borderTop:`1px solid ${heroColor}18`,paddingTop:14}}
+              onClick={e=>e.stopPropagation()}>
+              {(()=>{
+                // R1: Uses pre-calculated nextPaydayDay — no ForecastEngine call per keystroke
+                const checkAfford = (raw) => {
+                  const amt = parseFloat(raw.replace(/[^0-9.]/g,""));
+                  // R10: cap at $99,999 — avoids absurd results
+                  if (!amt || amt <= 0 || amt > 99999) { setAffordResult(null); return; }
+                  const remaining = safe - amt;
+                  // R2: Threshold is 10% of safe — scales with the user's actual situation
+                  const tightThreshold = Math.max(10, safe * 0.10);
+                  const waitMsg = nextPaydayDay === 1
+                    ? "tomorrow"
+                    : nextPaydayDay
+                      ? `in ${nextPaydayDay} day${nextPaydayDay===1?"":"s"}`
+                      : "after your next paycheck";
+                  if (remaining >= tightThreshold) {
+                    setAffordResult({
+                      state: "yes",
+                      msg: "Yes — you can afford this",
+                      sub: `$${remaining.toFixed(0)} left in your safe limit today`,
+                      color: C.green,
+                    });
+                  } else if (remaining >= 0) {
+                    // R6: $0 remaining says "Nothing left" not "Only $0 left"
+                    const leftMsg = remaining < 1 ? "Nothing left after this" : `Only $${remaining.toFixed(0)} left`;
+                    setAffordResult({
+                      state: "tight",
+                      msg: "You can — but it's tight",
+                      sub: `${leftMsg}. Hold everything else today.`,
+                      color: C.gold,
+                    });
+                  } else {
+                    setAffordResult({
+                      state: "no",
+                      msg: "Not right now",
+                      sub: `This puts you $${Math.abs(remaining).toFixed(0)} over your limit. Wait ${waitMsg}.`,
+                      color: C.red,
+                    });
+                  }
+                };
+
+                return (
+                  <div>
+                    <div style={{color:heroColorBright+"66",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>
+                      Can I afford this?
+                    </div>
+                    <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                      <div style={{position:"relative",flex:1}}>
+                        <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:affordFocused||affordInput?heroColorBright:C.muted,fontSize:14,fontWeight:700,pointerEvents:"none",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$</span>
+                        {/* R7: type=text+inputMode=decimal — shows numeric keyboard, respects placeholder */}
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          value={affordInput}
+                          onFocus={()=>setAffordFocused(true)}
+                          onBlur={()=>setAffordFocused(false)}
+                          onChange={e=>{setAffordInput(e.target.value);checkAfford(e.target.value);}}
+                          style={{
+                            width:"100%",background:"rgba(255,255,255,0.06)",
+                            border:`1px solid ${affordFocused?heroColor+"66":heroColor+"22"}`,
+                            borderRadius:12,padding:"10px 12px 10px 26px",
+                            color:C.cream,fontSize:15,fontWeight:700,
+                            fontFamily:"'Plus Jakarta Sans',sans-serif",
+                            outline:"none",transition:"border-color .15s",
+                            /* R4: hide number spinners */
+                            WebkitAppearance:"none",MozAppearance:"textfield",
+                          }}
+                        />
+                      </div>
+                      {affordInput&&(
+                        <button onClick={()=>{setAffordInput("");setAffordResult(null);}}
+                          style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${heroColor}22`,borderRadius:10,padding:"10px 12px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0,minHeight:40,minWidth:40,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                          ✕
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Result */}
+                    {affordResult&&(
+                      <div style={{
+                        marginTop:10,padding:"10px 14px",borderRadius:12,
+                        background:affordResult.color+"14",
+                        border:`1px solid ${affordResult.color}33`,
+                        display:"flex",alignItems:"flex-start",gap:10,
+                        animation:"fadeIn 0.2s ease",
+                      }}>
+                        <span style={{fontSize:16,flexShrink:0,marginTop:1}}>
+                          {affordResult.state==="yes"?"✅":affordResult.state==="tight"?"⚠️":"❌"}
+                        </span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{color:affordResult.state==="yes"?C.greenBright:affordResult.state==="tight"?C.goldBright:C.redBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.3}}>
+                            {affordResult.msg}
+                          </div>
+                          <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3,lineHeight:1.5}}>
+                            {affordResult.sub}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>}
           </div>
         </div>
