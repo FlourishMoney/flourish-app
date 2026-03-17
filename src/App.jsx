@@ -9381,32 +9381,77 @@ function Paywall({onClose,onUpgrade,country}){
 // Shown once, immediately after onboarding completes.
 // One number. One sentence. One button.
 // Dismissed permanently after user taps through.
-function FirstVisitScreen({data, onDismiss}) {
+function FirstVisitScreen({data, onDismiss, setScreen}) {
   const [showBreakdown, setShowBreakdown] = useState(false);
 
   const { safeAmount } = SafeSpendEngine.calculate(data);
-  const { monthlyIncome, monthlyBills } = FinancialCalcEngine.cashFlow(data);
   const toMo = (amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="monthly"?a:a*2.167;};
   const incomeAmt = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
   const billsAmt = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
   const safeFloor = incomeAmt * 0.15;
-  const bufferAmt = Math.max(0, incomeAmt - billsAmt - safeFloor);
   const name = data.profile?.name || "there";
+
+  // ── State-based CTA logic ─────────────────────────────────────────────────
+  // Determine exactly where the user is and what one action they need next
+  const hasBankConnected = data.bankConnected;
+  const hasIncome        = incomeAmt > 0;
+  const hasEnoughData    = hasBankConnected && hasIncome;
+
+  const ctaState = !hasBankConnected ? "connect_bank"
+                 : !hasIncome        ? "add_income"
+                 :                     "see_number";
+
+  const ctaConfig = {
+    connect_bank: {
+      icon:    "🏦",
+      title:   "Connect your bank",
+      body:    "Flourish needs your live balance and transactions to calculate your safe-to-spend number accurately.",
+      cta:     "Connect your bank →",
+      color:   C.teal,
+      action:  () => { onDismiss(); if(setScreen) setScreen("settings"); },
+    },
+    add_income: {
+      icon:    "💰",
+      title:   "Add your income",
+      body:    "Your bank is connected. Enter how much you earn to unlock your personalised safe-to-spend number.",
+      cta:     "Add your income →",
+      color:   C.gold,
+      action:  () => { onDismiss(); if(setScreen) setScreen("settings"); },
+    },
+    see_number: {
+      icon:    null,
+      title:   null,
+      body:    "After bills, savings buffer, and upcoming expenses",
+      cta:     "Go to my dashboard →",
+      color:   C.green,
+      action:  onDismiss,
+    },
+  };
+
+  const cta = ctaConfig[ctaState];
+
+  // Progress indicator — shows user how close they are to the full picture
+  const steps = [
+    { label: "Bank connected",  done: hasBankConnected },
+    { label: "Income entered",  done: hasIncome },
+    { label: "Ready",           done: hasEnoughData },
+  ];
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:9999,background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 28px",textAlign:"center"}}>
       {/* Ambient glow */}
-      <div style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:400,height:400,borderRadius:"50%",background:`radial-gradient(circle,${C.green}14 0%,transparent 65%)`,pointerEvents:"none"}}/>
+      <div style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:400,height:400,borderRadius:"50%",background:`radial-gradient(circle,${cta.color}14 0%,transparent 65%)`,pointerEvents:"none"}}/>
 
       <div style={{position:"relative",width:"100%",maxWidth:360}}>
+
         {/* Welcome */}
         <div style={{color:C.muted,fontSize:12,fontWeight:700,letterSpacing:2,textTransform:"uppercase",marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
           Welcome, {name}
         </div>
 
-        {/* The Number */}
-        <div style={{marginBottom:8}}>
-          {incomeAmt > 0 ? (<>
+        {/* The Number — only shown when data is ready */}
+        {ctaState === "see_number" ? (
+          <div style={{marginBottom:8}}>
             <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>You can safely spend</div>
             <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,lineHeight:1}}>
               <span style={{fontSize:22,color:C.greenBright+"88",verticalAlign:"top",marginTop:12,display:"inline-block"}}>$</span>
@@ -9415,29 +9460,51 @@ function FirstVisitScreen({data, onDismiss}) {
               </span>
             </div>
             <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>today</div>
-          </>) : (
-            <div style={{marginTop:8}}>
-              <div style={{fontSize:64,marginBottom:12}}>🌱</div>
-              <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:C.greenBright,marginBottom:8}}>Flourish is ready</div>
+          </div>
+        ) : (
+          <div style={{marginBottom:8}}>
+            <div style={{fontSize:64,marginBottom:12}}>{cta.icon}</div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:cta.color,marginBottom:8,lineHeight:1.2}}>
+              {cta.title}
             </div>
-          )}
+          </div>
+        )}
+
+        {/* Body text */}
+        <div style={{color:C.mutedHi,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,maxWidth:280,margin:"0 auto 24px"}}>
+          {cta.body}
         </div>
 
-        {/* One-line explanation */}
-        <div style={{color:C.mutedHi,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,marginBottom:32,maxWidth:280,margin:"0 auto 32px"}}>
-          {incomeAmt > 0
-            ? "After bills, savings buffer, and upcoming expenses"
-            : "Add your income in Settings to see your personalised safe-to-spend number."}
-        </div>
+        {/* Setup progress — shown when not fully set up */}
+        {ctaState !== "see_number" && (
+          <div style={{display:"flex",justifyContent:"center",gap:12,marginBottom:24,alignItems:"center"}}>
+            {steps.map((s,i) => (
+              <div key={i} style={{display:"flex",alignItems:"center",gap:4}}>
+                <div style={{
+                  width:20,height:20,borderRadius:"50%",
+                  background:s.done?C.green:"rgba(255,255,255,0.08)",
+                  border:`1.5px solid ${s.done?C.green:C.border}`,
+                  display:"flex",alignItems:"center",justifyContent:"center",
+                  fontSize:10,fontWeight:800,color:s.done?"#000":"transparent",
+                  transition:"all 0.3s",flexShrink:0
+                }}>{s.done?"✓":""}</div>
+                <span style={{color:s.done?C.cream:C.muted,fontSize:10,fontWeight:s.done?700:400,fontFamily:"'Plus Jakarta Sans',sans-serif",whiteSpace:"nowrap"}}>
+                  {s.label}
+                </span>
+                {i < steps.length-1 && <div style={{width:16,height:1,background:C.border,marginLeft:2}}/>}
+              </div>
+            ))}
+          </div>
+        )}
 
-        {/* Breakdown — progressive disclosure */}
-        {showBreakdown&&(
+        {/* Breakdown — progressive disclosure (only when data is ready) */}
+        {ctaState === "see_number" && showBreakdown && (
           <div style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:18,padding:"16px 20px",marginBottom:24,textAlign:"left"}}>
             <div style={{color:C.muted,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How this is calculated</div>
             {[
-              ["💰","Monthly income", incomeAmt>0?`$${incomeAmt.toFixed(0)}`:"Not entered yet", incomeAmt>0?C.greenBright:C.muted],
+              ["💰","Monthly income",`$${incomeAmt.toFixed(0)}`,C.greenBright],
               ["📅","Bills this period",billsAmt>0?`−$${billsAmt.toFixed(0)}`:"None tracked",billsAmt>0?C.gold:C.muted],
-              ["🛡️","Safety buffer (15%)",incomeAmt>0?`−$${safeFloor.toFixed(0)}`:"—",C.teal],
+              ["🛡️","Safety buffer (15%)",`−$${safeFloor.toFixed(0)}`,C.teal],
               ["✅","Available to spend",`$${Math.max(0,safeAmount).toFixed(0)}`,C.greenBright],
             ].map(([icon,label,val,col],i,arr)=>(
               <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:i<arr.length-1?`1px solid ${C.border}22`:"none"}}>
@@ -9445,20 +9512,19 @@ function FirstVisitScreen({data, onDismiss}) {
                 <span style={{color:col,fontWeight:700,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{val}</span>
               </div>
             ))}
-            {!data.bankConnected&&<div style={{marginTop:12,color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>📌 Connect your bank to make this number live and precise.</div>}
           </div>
         )}
 
-        {/* Primary CTA */}
-        {!showBreakdown?(
+        {/* Primary CTA — state-driven */}
+        {ctaState === "see_number" && !showBreakdown ? (
           <button onClick={()=>setShowBreakdown(true)}
             style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
             See how this works →
           </button>
-        ):(
-          <button onClick={onDismiss}
-            style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
-            Go to my dashboard →
+        ) : (
+          <button onClick={cta.action}
+            style={{width:"100%",background:`linear-gradient(135deg,${cta.color},${cta.color}cc)`,border:"none",borderRadius:16,padding:"18px",color:ctaState==="see_number"?"#fff":"#000",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${cta.color}40`,marginBottom:12}}>
+            {cta.cta}
           </button>
         )}
 
@@ -9959,7 +10025,7 @@ export default function FlourishApp(){
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
   if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
-  if(!firstVisitDone&&appData)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}/>;
+  if(!firstVisitDone&&appData)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit} setScreen={setScreen}/>;
   if(showPaywall)return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;
 
   const unread = (() => {
