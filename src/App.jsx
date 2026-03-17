@@ -2367,16 +2367,32 @@ const autoDetectPaidBills = (bills, transactions) => {
     const d = new Date(t.date + "T12:00:00");
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && t.amount > 0;
   });
+  // Generic payment keywords — e-transfers, withdrawals, and auto-debits
+  // often have names that don't match the bill name at all
+  const GENERIC_PAYMENT_WORDS = ["e-transfer","interac","withdrawal","autopay","auto pay",
+    "preauthorized","pre-auth","direct debit","automatic payment","auto-debit","bill payment"];
   return bills.map(bill => {
     if(bill.paidMonth === month) return bill;
     const billAmt  = parseFloat(bill.amount||0);
     const billName = (bill.name||"").toLowerCase().trim();
+    // Already matched an earlier bill with this exact txn? Track used txn IDs to avoid double-match
     const matched = monthTxns.find(t => {
       const txnName = (t.name||"").toLowerCase();
       const txnAmt  = parseFloat(t.amount||0);
-      const nameMatch = billName.length >= 3 && (txnName.includes(billName.slice(0,5)) || billName.includes(txnName.slice(0,5)));
-      const amtMatch  = billAmt > 0 && Math.abs(txnAmt - billAmt) / billAmt < 0.15;
-      return nameMatch && amtMatch;
+      if(billAmt <= 0 || txnAmt <= 0) return false;
+      // Tight amount match: within 5% — amount is the most reliable signal
+      const tightAmt = Math.abs(txnAmt - billAmt) / billAmt < 0.05;
+      // Loose amount match: within 15%
+      const looseAmt = Math.abs(txnAmt - billAmt) / billAmt < 0.15;
+      // Name match: bill name appears in transaction or vice versa (first 4 chars min)
+      const nameMatch = billName.length >= 3 && (
+        txnName.includes(billName.slice(0,4)) ||
+        billName.includes(txnName.slice(0,4))
+      );
+      // Generic payment: e-transfer or auto-debit keywords — amount alone is enough
+      const isGenericPayment = GENERIC_PAYMENT_WORDS.some(kw => txnName.includes(kw));
+      // Match if: tight amount alone, OR loose amount + name, OR tight amount + generic payment
+      return tightAmt || (looseAmt && nameMatch) || (tightAmt && isGenericPayment) || (looseAmt && isGenericPayment && tightAmt);
     });
     if(matched) return {...bill, paidMonth: month};
     return bill;
@@ -3708,9 +3724,15 @@ function buildLiveNotifs(data) {
   const accounts = data?.accounts || [];
   const debts = data?.debts || [];
   const balance = accounts.filter(a=>a.type==="checking"||a.type==="savings").reduce((s,a)=>s+(a.balance||0),0);
+  // Load custom category overrides so notifications reflect user's own category names
+  const notifCatOverrides = (() => { try { return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}"); } catch { return {}; } })();
+  const getNotifCat = (t) => notifCatOverrides[t.id] || t.cat || "Spend";
 
   // Overdue bills — past due date, not paid this month
-  const overdueBills = bills.filter(b => getBillStatus(b) === "overdue");
+  // Re-run auto-detect inline using current transactions in case background refresh hasn't run
+  const txnsForDetect = data?.transactions || [];
+  const billsWithAutoDetect = autoDetectPaidBills(bills, txnsForDetect);
+  const overdueBills = billsWithAutoDetect.filter(b => getBillStatus(b) === "overdue");
   overdueBills.forEach((b, i) => {
     notifs.push({
       id: `overdue_${i}`,
@@ -3769,15 +3791,32 @@ function buildLiveNotifs(data) {
   if(monthTxns.length >= 3) {
     const avgSpend = monthTxns.reduce((s,t) => s + t.amount, 0) / monthTxns.length;
     const LARGE_THRESHOLD = Math.max(200, avgSpend * 3);
-    // Find the single largest transaction this month that we haven't already alerted on
     const alerted = (() => { try { return new Set(JSON.parse(localStorage.getItem("flourish_alerted_txns")||"[]")); } catch { return new Set(); } })();
+    // CC payment keywords — these are not unusual spend, never alert on them
+    const CC_ALERT_EXCLUDE = ["payment","autopay","amex","visa","mastercard","credit card",
+      "card payment","minimum payment","balance payment","loc pay","line of credit"];
+    // Bill amounts — transactions matching a known bill are bill payments, not unusual spend
+    const billAmounts = bills.map(b => parseFloat(b.amount||0)).filter(a => a > 0);
+    const isBillPayment = (txnAmt) => billAmounts.some(ba => Math.abs(txnAmt - ba) / ba < 0.10);
     const largeTxns = monthTxns
-      .filter(t => t.amount >= LARGE_THRESHOLD && !alerted.has(t.id))
+      .filter(t => {
+        if(t.amount < LARGE_THRESHOLD) return false;
+        if(alerted.has(t.id)) return false;
+        // Exclude CC payments
+        const name = (t.name||"").toLowerCase();
+        if(CC_ALERT_EXCLUDE.some(kw => name.includes(kw))) return false;
+        // Exclude transactions the user categorized as Bills or Transfer
+        const cat = getNotifCat(t);
+        if(cat === "Bills" || cat === "Transfer") return false;
+        // Exclude transactions matching a known bill amount
+        if(isBillPayment(t.amount)) return false;
+        return true;
+      })
       .sort((a,b) => b.amount - a.amount)
-      .slice(0, 3); // max 3 large-spend alerts at once
+      .slice(0, 3);
     largeTxns.forEach(t => {
       const multiple = (t.amount / avgSpend).toFixed(1);
-      const catLabel = t.cat || "spend";
+      const catLabel = getNotifCat(t); // uses custom categories
       notifs.push({
         id: `large_txn_${t.id}`,
         icon: "alert-circle",
@@ -4851,7 +4890,19 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             const avg = mt.reduce((s,t)=>s+t.amount,0) / mt.length;
             const threshold = Math.max(200, avg * 3);
             const alerted = (() => { try { return new Set(JSON.parse(localStorage.getItem("flourish_alerted_txns")||"[]")); } catch { return new Set(); } })();
-            return mt.filter(t => t.amount >= threshold && !alerted.has(t.id)).sort((a,b)=>b.amount-a.amount);
+            const dashCatOverrides = (() => { try { return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}"); } catch { return {}; } })();
+            const dashGetCat = (t) => dashCatOverrides[t.id] || t.cat || "";
+            const CC_DASH_EXCLUDE = ["payment","autopay","amex","visa","mastercard","credit card","loc pay","line of credit","e-transfer","interac"];
+            const dashBillAmts = (data.bills||[]).map(b=>parseFloat(b.amount||0)).filter(a=>a>0);
+            return mt.filter(t => {
+              if(t.amount < threshold || alerted.has(t.id)) return false;
+              const name = (t.name||"").toLowerCase();
+              if(CC_DASH_EXCLUDE.some(kw=>name.includes(kw))) return false;
+              const cat = dashGetCat(t);
+              if(cat==="Bills"||cat==="Transfer") return false;
+              if(dashBillAmts.some(ba=>Math.abs(t.amount-ba)/ba<0.10)) return false;
+              return true;
+            }).sort((a,b)=>b.amount-a.amount);
           })();
           if(alertTxns.length > 0) {
             const at = alertTxns[0];
@@ -6287,9 +6338,17 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
   const [editIdx, setEditIdx] = useState(null);
   const [goalForm, setGoalForm] = useState({name:"",target:"",saved:"",monthly:"",notes:""});
   const debts=data.debts||[];
-  const safeSelDebt=Math.min(selDebt,Math.max(0,debts.length-1));
-  const debt=debts.length>0?debts[safeSelDebt]:{name:"Credit Card",balance:"3420",rate:"19.99",min:"68"};
   const noDebts = debts.length === 0;
+  // Sort debts by selected method — this IS the payoff method logic
+  const sortedDebts = [...debts].sort((a,b) =>
+    method === "avalanche"
+      ? parseFloat(b.rate||0) - parseFloat(a.rate||0)   // highest rate first
+      : parseFloat(a.balance||0) - parseFloat(b.balance||0) // lowest balance first
+  );
+  const safeSelDebt=Math.min(selDebt,Math.max(0,sortedDebts.length-1));
+  // Priority debt is always the first in the sorted order (the one to attack now)
+  const priorityDebt = sortedDebts[0] || {name:"Credit Card",balance:"3420",rate:"19.99",min:"68"};
+  const debt = sortedDebts.length>0 ? sortedDebts[safeSelDebt] : priorityDebt;
   const bal=parseFloat(debt.balance||0),rate=parseFloat(debt.rate||0),minPay=parseFloat(debt.min||68);
   const mRate=rate/100/12;
   const calc=(xtra)=>{
@@ -6587,10 +6646,13 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         </div>}
       </div>}
       <Card>
-        <div style={{color:C.cream,fontWeight:700,marginBottom:12}}>Payoff Method</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div style={{color:C.cream,fontWeight:700}}>Payoff Method</div>
+          {sortedDebts.length>0&&<div style={{color:C.muted,fontSize:11}}>Attack: <span style={{color:C.purpleBright,fontWeight:700}}>{priorityDebt.name}</span></div>}
+        </div>
         <div style={{display:"flex",gap:8}}>
           {[["avalanche","Avalanche","Highest rate first · saves the most"],["snowball","Snowball","Smallest balance first · fastest wins"]].map(([key,lbl,desc])=>(
-            <button key={key} onClick={()=>setMethod(key)} style={{flex:1,background:method===key?C.purple+"22":C.cardAlt,border:`1px solid ${method===key?C.purple:C.border}`,borderRadius:12,padding:"12px 10px",cursor:"pointer",fontFamily:"inherit",textAlign:"center"}}>
+            <button key={key} onClick={()=>{setMethod(key);setSelDebt(0);}} style={{flex:1,background:method===key?C.purple+"22":C.cardAlt,border:`1px solid ${method===key?C.purple:C.border}`,borderRadius:12,padding:"12px 10px",cursor:"pointer",fontFamily:"inherit",textAlign:"center"}}>
               <div style={{color:method===key?C.purpleBright:C.cream,fontWeight:700,fontSize:13}}>{lbl}</div>
               <div style={{color:C.muted,fontSize:11,marginTop:4,lineHeight:1.4}}>{desc}</div>
             </button>
@@ -6599,7 +6661,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       </Card>
       {debts.length>0&&<Card>
         <div style={{color:C.cream,fontWeight:700,marginBottom:12}}>All Debts ({debts.length})</div>
-        {[...debts].sort((a,b)=>parseFloat(b.rate||0)-parseFloat(a.rate||0)).map((d,i)=>{
+        {sortedDebts.map((d,i)=>{
           const colors=[C.red,C.gold,C.blue,C.purple];
           return <div key={i} style={{marginBottom:12}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{color:C.cream,fontSize:13}}>{d.name}</span><span style={{color:colors[i%4],fontWeight:700}}>${parseFloat(d.balance).toLocaleString()} · {d.rate}%</span></div>
