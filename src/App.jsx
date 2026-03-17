@@ -161,6 +161,159 @@ const CC = {
   },
 };
 
+// ─── PERSONALIZED TAX CREDIT ENGINE ─────────────────────────────────────────
+// Returns a filtered + enriched tax tip array based on profile.
+// Surfaces only credits that apply to the user's life stage, province/state,
+// income types, and family situation.
+function getPersonalizedTaxCredits(profile) {
+  const country   = profile?.country   || "CA";
+  const province  = profile?.province  || "ON";
+  const lifeStage = profile?.lifeStage || "employed";
+  const hasKids   = profile?.hasKids   || false;
+  const status    = profile?.status    || "single";
+  const incomeTypes = (profile?.incomeTypes || []).map(t => t.toLowerCase());
+  const cfg = CC[country] || CC.CA;
+
+  // Start with base country tips, then add life-stage + province specific ones
+  let tips = [...(cfg.taxTips || [])];
+
+  // ── FILTER: remove tips that clearly don't apply ──────────────────────────
+  tips = tips.filter(tip => {
+    const t = tip.title.toLowerCase();
+    // Kids-only tips
+    if ((t.includes("child") || t.includes("ccb") || t.includes("resp") || t.includes("dependent care") || t.includes("childcare") || t.includes("child care")) && !hasKids) return false;
+    // Homeowner tips — FHSA only for non-seniors/non-retired
+    if (t.includes("fhsa") && (lifeStage === "senior" || lifeStage === "retired")) return false;
+    // RESP only for people with kids
+    if (t.includes("resp") && !hasKids) return false;
+    // Student loan deduction only for students or recent grads
+    if (t.includes("student loan interest") && lifeStage !== "student" && lifeStage !== "employed") return false;
+    // Home office — self-employed or employed (remote)
+    if (t.includes("home office") && lifeStage === "student") return false;
+    // Working income / CWB — not for retired/senior on fixed income
+    if ((t.includes("working income") || t.includes("cwb")) && (lifeStage === "retired")) return false;
+    return true;
+  });
+
+  // ── ADD: Student-specific credits ────────────────────────────────────────
+  if (lifeStage === "student") {
+    if (country === "CA") {
+      tips.unshift(
+        {title:"Tuition Tax Credit",body:"Your T2202 slip from your school lets you claim every dollar of tuition as a federal tax credit (15% federal rate). Unused amounts carry forward indefinitely — you can use them in future high-income years. Transfer up to $5,000 unused amount to a parent or spouse.",savings:"15% of tuition paid",flag:"🇨🇦",priority:"high",action:"Get Your T2202"},
+        {title:"Canada Training Credit",body:"You accumulate $250/year in Canada Training Credit room (up to $5,000 lifetime). This is a refundable credit — you get money back even if you owe nothing. Claim on line 45350 of your return.",savings:"Up to $250/yr",flag:"🇨🇦",priority:"high",action:"Check CTC Room on CRA"},
+        {title:"GST/HST Credit — Students Almost Always Qualify",body:"If your income is low (most students qualify), file your taxes and CRA automatically pays you quarterly GST/HST credits. No application needed — just file. Many students skip filing because they 'don't earn much' and miss hundreds.",savings:"Up to $519/yr",flag:"🇨🇦",priority:"high",action:"File Your Taxes"},
+        {title:"Student Loan Interest Credit",body:"Paying interest on government student loans (OSAP, NSLSC)? That interest is 100% claimable as a non-refundable federal tax credit. Private loans don't qualify — only government loans. Keep your annual interest statement.",savings:"15% of interest paid",flag:"🇨🇦",priority:"medium",action:"Get NSLSC Statement"},
+        {title:"Moving Expenses Deduction",body:"If you moved more than 40km to attend school full-time, you can deduct eligible moving expenses from your scholarship or research income. Keep your receipts — this is often missed.",savings:"Varies",flag:"🇨🇦",priority:"medium",action:"Track Moving Receipts"}
+      );
+      // Province-specific student credits
+      if (province === "MB") {
+        tips.push({title:"Manitoba Tuition Fee Income Tax Rebate",body:"Stay and work in Manitoba after graduating and you can recover up to 60% of your Manitoba tuition paid over your working years. Claim up to $2,500/year as a Manitoba resident.",savings:"Up to 60% of MB tuition",flag:"🏙️ MB",priority:"high",action:"Apply After Graduation"});
+      }
+      if (province === "SK") {
+        tips.push({title:"Saskatchewan Graduate Retention Program",body:"Graduate and work in Saskatchewan to receive up to $20,000 in provincial tax credits over 7 years. One of the most generous graduate incentives in Canada.",savings:"Up to $20,000",flag:"🏙️ SK",priority:"high",action:"Apply After Graduation"});
+      }
+      if (province === "NB" || province === "NS" || province === "PEI" || province === "NL") {
+        tips.push({title:"Atlantic Graduate Tax Credit",body:"Atlantic provinces offer graduate tax credits to encourage graduates to stay and work in the region. Specific amounts vary by province — check your provincial tax return.",savings:"Varies by province",flag:"🏙️ Atlantic",priority:"medium",action:"Check Provincial Return"});
+      }
+    }
+    if (country === "US") {
+      tips.unshift(
+        {title:"American Opportunity Tax Credit (AOTC)",body:"In your first 4 years of college? Claim up to $2,500/year per eligible student. 40% is fully refundable — meaning you get up to $1,000 back even if you owe nothing. This is the most valuable education credit available.",savings:"Up to $2,500/yr",flag:"🇺🇸",priority:"high",action:"Claim on Form 8863"},
+        {title:"Lifetime Learning Credit",body:"Beyond the first 4 years, or taking part-time courses? The Lifetime Learning Credit gives you 20% of up to $10,000 in tuition = $2,000/year. No limit on the number of years you can claim it.",savings:"Up to $2,000/yr",flag:"🇺🇸",priority:"high",action:"Claim on Form 8863"},
+        {title:"Student Loan Interest Deduction",body:"Paying interest on student loans? Deduct up to $2,500 of interest per year — even without itemizing. Income phase-out starts at $75k single / $155k married. Check your 1098-E form from your loan servicer.",savings:"Up to $2,500",flag:"🇺🇸",priority:"high",action:"Find Your 1098-E"},
+        {title:"Scholarship & Fellowship Exclusion",body:"Scholarships used for tuition, fees, and required course materials are tax-free. Amounts used for room, board, or stipends are taxable. Keep records of how scholarship funds are spent.",savings:"Potentially thousands",flag:"🇺🇸",priority:"medium",action:"Track Scholarship Use"},
+        {title:"529 Plan Tax-Free Withdrawals",body:"If a parent or grandparent has a 529 plan for you, qualified withdrawals for tuition, fees, books, and room & board are 100% tax-free. Some states also let you deduct contributions.",savings:"Tax-free growth",flag:"🇺🇸",priority:"medium",action:"Confirm Qualified Expenses"}
+      );
+      // State-specific student credits
+      if (province === "NY") {
+        tips.push({title:"New York College Tuition Tax Credit",body:"New York residents can claim a tuition credit of up to $400 per student, or a tuition itemized deduction on your NY state return. Both can be worth claiming — compare which is larger for your situation.",savings:"Up to $400 credit",flag:"🗽 NY",priority:"medium",action:"Check IT-272 Form"});
+      }
+      if (province === "IL") {
+        tips.push({title:"Illinois Education Expense Credit",body:"Illinois residents can claim a 25% credit on qualified K-12 education expenses up to $500 — and college expenses for dependent students may also qualify under certain conditions.",savings:"Up to $500",flag:"🏙️ IL",priority:"medium",action:"Check Schedule ICR"});
+      }
+      if (province === "MN") {
+        tips.push({title:"Minnesota K-12 Education Credit",body:"Minnesota offers education credits and deductions that can apply to post-secondary expenses for dependents. Check Form M1ED for your specific eligibility.",savings:"Varies",flag:"🏙️ MN",priority:"medium",action:"Check Form M1ED"});
+      }
+    }
+  }
+
+  // ── ADD: Senior / Retired credits ─────────────────────────────────────────
+  if (lifeStage === "senior" || lifeStage === "retired") {
+    if (country === "CA") {
+      tips.unshift(
+        {title:"Age Amount Credit",body:"If you're 65 or older, you can claim the Age Amount — a federal non-refundable tax credit worth up to $8,396 (2024). It reduces if your income exceeds $42,335 and disappears above ~$98k. Even partial claims are worth thousands.",savings:"Up to $1,259 in tax saved",flag:"🇨🇦",priority:"high",action:"Claim on Line 30100"},
+        {title:"Pension Income Splitting",body:"If you receive eligible pension income (RPP, RRIF, annuity), you can split up to 50% with your spouse. If your spouse is in a lower tax bracket, this can save your household thousands every year.",savings:"Potentially thousands",flag:"🇨🇦",priority:"high",action:"File Form T1032"},
+        {title:"Pension Income Tax Credit",body:"The first $2,000 of eligible pension income qualifies for a 15% federal credit ($300 saved). Even if you're splitting pension income, your spouse can also claim this credit on the transferred amount.",savings:"Up to $300 federal",flag:"🇨🇦",priority:"high",action:"Claim on Line 31400"},
+        {title:"OAS & GIS — Are You Getting Everything?",body:"Old Age Security ($727.67/mo at 65) is automatic, but the Guaranteed Income Supplement (GIS) is not — you must apply. Low-income seniors leave GIS unclaimed every year. If your income is under ~$21,624, apply immediately.",savings:"Up to $1,065/mo (GIS)",flag:"🇨🇦",priority:"high",action:"Apply at Service Canada"},
+        {title:"Medical Expense Tax Credit",body:"Seniors often have significant medical costs — prescriptions, dental, vision, hearing aids, home care. Expenses exceeding 3% of your net income (or $2,635 — whichever is less) are claimable. Keep every receipt.",savings:"15% of qualifying expenses",flag:"🇨🇦",priority:"high",action:"Gather Medical Receipts"},
+        {title:"Home Accessibility Tax Credit",body:"Making your home safer and more accessible? Renovations like grab bars, wheelchair ramps, or walk-in tubs qualify for a 15% federal credit on up to $20,000 of expenses per year.",savings:"Up to $3,000",flag:"🇨🇦",priority:"medium",action:"Keep Renovation Receipts"}
+      );
+    }
+    if (country === "US") {
+      tips.unshift(
+        {title:"Social Security Taxation — Know Your Threshold",body:"Up to 85% of Social Security benefits may be taxable depending on your 'combined income'. If you're near the threshold, strategic Roth conversions or timing of other income can reduce how much gets taxed.",savings:"Potentially thousands",flag:"🇺🇸",priority:"high",action:"Calculate Combined Income"},
+        {title:"Higher Standard Deduction at 65+",body:"Americans 65 and older get an additional standard deduction ($1,950 single / $1,550 married per qualifying spouse in 2024) on top of the regular deduction. No action needed — it applies automatically when you file.",savings:"$1,550–$3,900 extra deduction",flag:"🇺🇸",priority:"high",action:"File Taxes — Applied Automatically"},
+        {title:"Credit for the Elderly or Disabled",body:"Low-income seniors (under $17,500 single) may qualify for a tax credit of $3,750–$7,500. Often overlooked because Social Security recipients don't expect to owe tax, but this is a direct credit against taxes owed.",savings:"Up to $7,500",flag:"🇺🇸",priority:"high",action:"Check Schedule R"},
+        {title:"Required Minimum Distributions (RMDs)",body:"At age 73, you must begin taking RMDs from traditional IRAs and 401(k)s. Missing an RMD triggers a 25% penalty on the missed amount. Plan withdrawals carefully — Roth IRAs have no RMD requirement.",savings:"Avoid 25% penalty",flag:"🇺🇸",priority:"high",action:"Calculate Your RMD"},
+        {title:"Qualified Charitable Distribution (QCD)",body:"If you're 70½ or older, you can transfer up to $105,000/year directly from your IRA to charity. This counts toward your RMD and is excluded from taxable income — better than donating cash.",savings:"Up to $105,000 excluded",flag:"🇺🇸",priority:"medium",action:"Contact Your IRA Custodian"}
+      );
+    }
+  }
+
+  // ── ADD: Self-employed additions ─────────────────────────────────────────
+  if (lifeStage === "selfemployed") {
+    if (country === "CA") {
+      tips.push(
+        {title:"Business Expenses — What You Can Actually Claim",body:"Vehicle (business km %), phone (business %), internet, software, accounting fees, professional dues, advertising, and meals (50%). Every legitimate expense reduces your taxable income dollar for dollar.",savings:"Varies — often $3,000–$15,000",flag:"🇨🇦",priority:"high",action:"Track All Receipts"},
+        {title:"HST Registration Threshold",body:"Once your revenue exceeds $30,000 in a calendar quarter or over 4 quarters, you must register for HST. Register voluntarily earlier to claim Input Tax Credits on business purchases.",savings:"Claim back HST paid",flag:"🇨🇦",priority:"high",action:"Register on CRA Business"},
+        {title:"CPP Contributions — Both Sides",body:"As self-employed, you pay both the employee (5.95%) and employer (5.95%) portions of CPP on net self-employment income. The employer portion is deductible. CPP2 contributions also apply above the second ceiling.",savings:"Employer portion is deductible",flag:"🇨🇦",priority:"high",action:"See Schedule 8"}
+      );
+    }
+    if (country === "US") {
+      tips.push(
+        {title:"Self-Employment Tax Deduction",body:"You pay 15.3% self-employment tax on net earnings, but you can deduct half of it from your gross income. This reduces your taxable income before the standard deduction — often worth $1,000–$4,000.",savings:"Half of SE tax deducted",flag:"🇺🇸",priority:"high",action:"See Schedule SE"},
+        {title:"Qualified Business Income (QBI) Deduction",body:"If you're a sole proprietor, partnership, or S-corp, you may deduct up to 20% of qualified business income from your taxable income. One of the largest deductions available to self-employed people.",savings:"Up to 20% of net income",flag:"🇺🇸",priority:"high",action:"Check Form 8995"},
+        {title:"SEP-IRA or Solo 401(k)",body:"Self-employed? You can contribute up to 25% of net self-employment income to a SEP-IRA (max $69,000 in 2024) — fully deductible. Solo 401(k) allows even higher contributions plus a Roth option.",savings:"Up to $69,000/yr",flag:"🇺🇸",priority:"high",action:"Open SEP-IRA or Solo 401k"}
+      );
+    }
+  }
+
+  // ── ADD: Province-specific credits for all users ───────────────────────────
+  if (country === "CA") {
+    if (province === "ON" && !tips.find(t => t.title.includes("Trillium"))) {
+      tips.push({title:"Ontario Trillium Benefit",body:"Ontario residents: combines the Ontario Sales Tax Credit, Ontario Energy Credit, and Northern Ontario Energy Credit into one monthly payment. Low-to-mid income earners often miss this.",savings:"Up to $1,421/yr",flag:"🏙️ ON",priority:"medium",action:"Apply on CRA"});
+    }
+    if (province === "QC") {
+      tips.push(
+        {title:"Quebec Solidarity Tax Credit",body:"Quebec's refundable solidarity tax credit combines housing, QST, and northern village components. Apply on your Quebec TP-1 return. Many Quebecers eligible for $300–$2,000+ per year.",savings:"$300–$2,000+",flag:"🏙️ QC",priority:"high",action:"Claim on TP-1 Return"},
+        {title:"Quebec Child Assistance Payment",body:"Quebec provides a refundable tax credit for families with children — separate from the federal CCB. Amounts depend on income and number of children, paid quarterly.",savings:"Varies by family",flag:"🏙️ QC",priority:"high",action:"Apply via Revenu Québec"}
+      );
+    }
+    if (province === "AB") {
+      tips.push({title:"Alberta Has No Provincial Income Tax Credits",body:"Alberta has no provincial income tax on top of federal — your effective tax rate is already lower than most provinces. Focus on maximizing federal credits: RRSP, TFSA, FHSA, and GST/HST credit.",savings:"Lower baseline rate",flag:"🏙️ AB",priority:"medium",action:"Maximize Federal Credits"});
+    }
+    if (province === "BC") {
+      tips.push({title:"BC Climate Action Tax Credit",body:"BC residents with moderate incomes receive a quarterly climate action tax credit — automatic when you file your taxes. Single individuals can receive up to $447/year.",savings:"Up to $447/yr",flag:"🏙️ BC",priority:"medium",action:"File Your Taxes"});
+    }
+  }
+
+  // ── Deduplicate by title ──────────────────────────────────────────────────
+  const seen = new Set();
+  tips = tips.filter(t => {
+    if (seen.has(t.title)) return false;
+    seen.add(t.title);
+    return true;
+  });
+
+  // ── Re-sort: high priority first ─────────────────────────────────────────
+  tips.sort((a,b) => {
+    const order = {high:0, medium:1, low:2};
+    return (order[a.priority]??1) - (order[b.priority]??1);
+  });
+
+  return tips;
+}
+
 // ─── THEME PALETTES ──────────────────────────────────────────────────────────
 const DARK_C = {
   bg:"#050810",surface:"#0A1018",card:"#0D1520",cardAlt:"#121D2A",
@@ -694,9 +847,36 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
 // ── AUTOPILOT CARD (Dashboard component) ──────────────────────────────────────
 function AutopilotCard({data, setScreen}) {
   const [revealed, setRevealed] = useState(false);
+  const [showDrillDown, setShowDrillDown] = useState(false);
   const plan = AutopilotEngine.generate(data);
   const today = new Date().toLocaleDateString("en-CA", {weekday:"long", month:"long", day:"numeric"});
   const hasActions = plan.savingsTransfer > 0 || plan.debtPayment > 0 || plan.goalContribution > 0;
+
+  // Build overdraft drill-down: which specific bills cause the shortfall
+  const { forecast, overdraftRisk } = ForecastEngine.generate(data, 14);
+  const overdraftCulprits = (() => {
+    if (!overdraftRisk.length) return [];
+    const items = [];
+    const balance = SafeSpendEngine.calculate(data).balance;
+    let running = balance;
+    for (const ev of forecast) {
+      if (ev.day === 0) continue;
+      if (ev.bills.length > 0) {
+        for (const b of ev.bills) {
+          running -= parseFloat(b.amount || 0);
+          items.push({
+            name: b.name || "Bill",
+            amount: parseFloat(b.amount || 0),
+            date: ev.date.toLocaleDateString("en-CA", {month:"short", day:"numeric"}),
+            runningBalance: running,
+            danger: running < 0,
+          });
+        }
+      }
+      if (ev.day > 0) running -= (ev.expenses - ev.bills.reduce((s,b)=>s+parseFloat(b.amount||0),0));
+    }
+    return items.slice(0, 6);
+  })();
 
   const lineItems = [
     plan.dailySpendLimit > 0 && {
@@ -756,11 +936,44 @@ function AutopilotCard({data, setScreen}) {
         </div>
       </div>
 
-      {/* Alert banner */}
+      {/* Alert banner — clickable to show drill-down */}
       {plan.alerts.length > 0 && (
-        <div style={{margin:"12px 20px 0",background:autoAlertBg,border:`1px solid ${autoAlertBdr}`,borderRadius:12,padding:"10px 14px",display:"flex",gap:8,alignItems:"flex-start"}}>
+        <div
+          onClick={()=>setShowDrillDown(d=>!d)}
+          style={{margin:"12px 20px 0",background:autoAlertBg,border:`1px solid ${autoAlertBdr}`,borderRadius:12,padding:"10px 14px",display:"flex",gap:8,alignItems:"flex-start",cursor:"pointer",userSelect:"none"}}
+        >
           <span style={{fontSize:14,flexShrink:0}}>⚠️</span>
-          <span style={{color:autoAlertText,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{plan.alerts[0].msg}</span>
+          <span style={{color:autoAlertText,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,flex:1}}>{plan.alerts[0].msg}</span>
+          <span style={{color:autoAlertText,fontSize:11,fontWeight:700,flexShrink:0}}>{showDrillDown?"▲":"▼"}</span>
+        </div>
+      )}
+
+      {/* Overdraft drill-down panel */}
+      {showDrillDown && overdraftCulprits.length > 0 && (
+        <div style={{margin:"8px 20px 0",background:"rgba(255,79,106,0.06)",border:`1px solid ${C.red}33`,borderRadius:14,padding:"14px 16px"}}>
+          <div style={{color:C.redBright,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>📋 Upcoming charges causing this</div>
+          <div style={{display:"flex",flexDirection:"column",gap:7}}>
+            {overdraftCulprits.map((item,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:7,borderBottom:i<overdraftCulprits.length-1?`1px solid ${C.red}18`:"none"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:14}}>{item.danger?"🔴":"🟡"}</span>
+                  <div>
+                    <div style={{color:C.cream,fontSize:12,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.name}</div>
+                    <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.date}</div>
+                  </div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{color:C.redBright,fontWeight:800,fontSize:13,fontFamily:"'Playfair Display',serif"}}>−${item.amount.toFixed(0)}</div>
+                  <div style={{color:item.runningBalance<0?C.redBright:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:item.runningBalance<0?700:400}}>
+                    {item.runningBalance<0?`$${Math.abs(item.runningBalance).toFixed(0)} overdrawn`:`$${item.runningBalance.toFixed(0)} left`}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{marginTop:10,padding:"8px 10px",background:"rgba(255,79,106,0.08)",borderRadius:10,color:C.redBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,textAlign:"center"}}>
+            💡 Move money before these hit to avoid NSF fees ($45–$48 each)
+          </div>
         </div>
       )}
 
@@ -2638,9 +2851,9 @@ function DashCustomize({ layout, onChange, onClose }) {
 }
 
 // ─── ONBOARDING ───────────────────────────────────────────────────────────────
-function Onboarding({onComplete,onViewLegal}){
+function Onboarding({onComplete,onViewLegal,userId}){
   const [step,setStep]=useState(0);
-  const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false});
+  const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false,lifeStage:"employed"});
   const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment",isVariable:false}]);
   const [bills,setBills]=useState([{name:"",amount:"",date:""}]);
   const [debts,setDebts]=useState([{name:"",balance:"",rate:"",min:""}]);
@@ -2679,7 +2892,7 @@ function Onboarding({onComplete,onViewLegal}){
     if(linkToken) return; // already have one
     setLinkTokenLoading(true);
     setBankError(null);
-    callPlaid("create_link_token",{country:p.country})
+    callPlaid("create_link_token",{country:p.country, user_id: userId || ("guest-" + Math.random().toString(36).slice(2))})
       .then(d=>{ setLinkToken(d.link_token); setLinkTokenLoading(false); })
       .catch(()=>{ setBankError("Could not connect to your bank — please check your connection and try again."); setLinkTokenLoading(false); });
   },[linkToken, p.country]); // eslint-disable-line
@@ -2832,7 +3045,7 @@ function Onboarding({onComplete,onViewLegal}){
 
       {/* Demo mode — required for App Store review */}
       <button onClick={()=>onComplete({
-        profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true},
+        profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true,lifeStage:"employed"},
         incomes:[{id:1,label:"Full-time Job",amount:"2840",freq:"biweekly",type:"employment"},{id:2,label:"Canada Child Benefit",amount:"560",freq:"monthly",type:"ccb"}],
         bills:[{name:"Rent",amount:"1650",date:"1"},{name:"Hydro",amount:"95",date:"11"},{name:"Phone",amount:"65",date:"15"},{name:"Netflix",amount:"18.99",date:"22"}],
         debts:[{name:"TD Visa",balance:"3420",rate:"19.99",min:"68"},{name:"Car Loan",balance:"8200",rate:"6.99",min:"280"}],
@@ -2870,6 +3083,14 @@ function Onboarding({onComplete,onViewLegal}){
         <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:8,fontWeight:700}}>Do you have kids?</div>
         <div style={{display:"flex",gap:10}}>
           {["Yes","No"].map(opt=><button key={opt} onClick={()=>setP({...p,hasKids:opt==="Yes"})} style={{flex:1,background:(opt==="Yes"?p.hasKids:!p.hasKids)?C.green+"33":C.cardAlt,border:`1px solid ${(opt==="Yes"?p.hasKids:!p.hasKids)?C.green:C.border}`,color:(opt==="Yes"?p.hasKids:!p.hasKids)?C.greenBright:C.muted,borderRadius:12,padding:"12px",cursor:"pointer",fontSize:14,fontWeight:700,fontFamily:"inherit"}}>{opt}</button>)}
+        </div>
+      </div>
+      <div style={{marginBottom:14}}>
+        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:8,fontWeight:700}}>Which best describes you?</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+          {[["employed","💼 Employed"],["student","🎓 Student"],["selfemployed","🧾 Self-Employed"],["senior","🏛️ Senior (65+)"],["retired","🌅 Retired"],["other","➕ Other"]].map(([val,label])=>(
+            <button key={val} onClick={()=>setP({...p,lifeStage:val})} style={{background:p.lifeStage===val?C.green+"33":C.cardAlt,border:`1px solid ${p.lifeStage===val?C.green:C.border}`,color:p.lifeStage===val?C.greenBright:C.muted,borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>{label}</button>
+          ))}
         </div>
       </div>
       <Btn label="Continue →" onClick={()=>setStep(2)} disabled={!p.name}/>
@@ -4776,7 +4997,7 @@ function Goals({data,initialTab="sim",onUpgrade}){
 
     {tab==="tax"&&(()=>{
       const cfg=CC[data.profile?.country||"CA"];
-      const tips=cfg.taxTips;
+      const tips=getPersonalizedTaxCredits(data.profile);
       const highPriority=tips.filter(t=>t.priority==="high");
       const medPriority=tips.filter(t=>t.priority!=="high");
       const totalSavings=highPriority.length+" high-priority credits identified";
@@ -7275,7 +7496,7 @@ export default function FlourishApp(){
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} onClose={()=>setShowWhatIf(false)}/>;
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
-  if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}} onViewLegal={s=>setScreen(s)}/>;
+  if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
   if(showPaywall)return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;
 
   const unread = (() => {
@@ -7307,7 +7528,7 @@ export default function FlourishApp(){
     if(reconnectLoading) return;
     setReconnectLoading(true);
     const country = appData?.profile?.country || "CA";
-    callPlaid("create_link_token", { country })
+    callPlaid("create_link_token", { country, user_id: user?.id })
       .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
       .catch(()=>{ setReconnectLoading(false); alert("Could not start bank connection — please try again."); });
   };
