@@ -6067,6 +6067,7 @@ function SpendScreen({data, setAppData, setScreen}){
   const [recatTxn,setRecatTxn]=useState(null);
   const [markBillTxn,setMarkBillTxn]=useState(null);
   const [linkBillTxn,setLinkBillTxn]=useState(null); // transaction to manually link to a bill
+  const [expandedTxn,setExpandedTxn]=useState(null); // tapped transaction for inline detail
   const [billForm,setBillForm]=useState({name:"",amount:"",date:"1"});
   const [arrearsPayTxn,setArrearsPayTxn]=useState(null);
   const [applyAllPrompt, setApplyAllPrompt] = useState(null);
@@ -6582,40 +6583,72 @@ function SpendScreen({data, setAppData, setScreen}){
           )}
         </div>
       )}
-      {filtered.map(txn=>(
-        <div key={txn.id} style={{background:C.card,borderRadius:18,padding:"14px 16px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:13,transition:"all .2s",cursor:"default"}}
-          onMouseEnter={e=>{e.currentTarget.style.borderColor=C.borderHi;e.currentTarget.style.background=C.isDark?C.cardAlt:C.surface;}}
-          onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.card;}}>
-          <div style={{width:42,height:42,borderRadius:14,background:txn.color+"18",border:`1px solid ${txn.color}28`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon id={txnIcon(txn)} size={19} color={txn.color} strokeWidth={1.5}/></div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{color:C.cream,fontWeight:600,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txn.name}</div>
-            <div style={{display:"flex",gap:6,marginTop:3,alignItems:"center"}}>
-              <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.amount<0?C.green+"18":txn.color+"18",border:`1px solid ${txn.amount<0?C.green+"33":txn.color+"33"}`,borderRadius:99,padding:"2px 8px",color:txn.amount<0?C.greenBright:txn.color,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
-                {txn.amount<0&&getCat(txn)==="Transfer"?"Received ↓ tap to label":getCat(txn)} <span style={{opacity:0.6,fontSize:9}}>✎</span>
-              </button>
-              <span style={{color:C.muted,fontSize:10}}>{txn.date}</span>
-              {txn.account_id&&accountFilter==="All"&&accountMap[txn.account_id]&&(
-                <span style={{color:C.muted,fontSize:9,background:"rgba(255,255,255,0.04)",borderRadius:99,padding:"1px 7px",border:`1px solid ${C.border}`,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                  {accountMap[txn.account_id]?.name||"Bank"}
+      {filtered.map(txn=>{
+        const isExpanded = expandedTxn?.id === txn.id;
+        // Check if this transaction is already linked to a bill
+        const linkedBillName = (() => {
+          const billingMonth = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
+          return (data.bills||[]).find(b => b.paidMonth === billingMonth &&
+            Math.abs(parseFloat(b.amount||0) - txn.amount) < 5)?.name || null;
+        })();
+        return (
+        <div key={txn.id}
+          style={{background:isExpanded?C.cardAlt:C.card,borderRadius:18,border:`1px solid ${isExpanded?C.borderHi:C.border}`,transition:"all .2s",cursor:"pointer",overflow:"hidden"}}
+          onClick={()=>setExpandedTxn(isExpanded?null:txn)}>
+          {/* ── Main row ── */}
+          <div style={{padding:"14px 16px",display:"flex",alignItems:"center",gap:13}}>
+            <div style={{width:42,height:42,borderRadius:14,background:txn.color+"18",border:`1px solid ${txn.color}28`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon id={txnIcon(txn)} size={19} color={txn.color} strokeWidth={1.5}/></div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{color:C.cream,fontWeight:600,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txn.name}</div>
+              <div style={{display:"flex",gap:6,marginTop:3,alignItems:"center",flexWrap:"wrap"}}>
+                <span style={{background:txn.amount<0?C.green+"18":txn.color+"18",border:`1px solid ${txn.amount<0?C.green+"33":txn.color+"33"}`,borderRadius:99,padding:"2px 8px",color:txn.amount<0?C.greenBright:txn.color,fontSize:10,fontWeight:700}}>
+                  {txn.amount<0&&getCat(txn)==="Transfer"?"Received":getCat(txn)}
                 </span>
-              )}
-              {txn.pending&&<Chip label="Pending" color={C.gold} size={9}/>}
+                <span style={{color:C.muted,fontSize:10}}>{txn.date}</span>
+                {txn.account_id&&accountFilter==="All"&&accountMap[txn.account_id]&&(
+                  <span style={{color:C.muted,fontSize:9,background:"rgba(255,255,255,0.04)",borderRadius:99,padding:"1px 7px",border:`1px solid ${C.border}`,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    {accountMap[txn.account_id]?.name||"Bank"}
+                  </span>
+                )}
+                {txn.pending&&<Chip label="Pending" color={C.gold} size={9}/>}
+                {linkedBillName&&<span style={{background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:99,padding:"2px 8px",color:C.greenBright,fontSize:10,fontWeight:700}}>✓ {linkedBillName}</span>}
+              </div>
+            </div>
+            <div style={{textAlign:"right",flexShrink:0}}>
+              <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
+                {txn.amount<0?"+":"–"}${Math.abs(txn.amount).toFixed(2)}
+              </div>
+              <div style={{color:C.muted,fontSize:11,marginTop:2}}>{isExpanded?"▲":"▼"}</div>
+            </div>
+          </div>
+
+          {/* ── Expanded detail ── */}
+          {isExpanded&&(
+            <div style={{borderTop:`1px solid ${C.border}`,padding:"12px 16px",display:"flex",gap:8,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+              {/* Recategorise */}
+              <button onClick={()=>setRecatTxn(txn)}
+                style={{background:txn.color+"18",border:`1px solid ${txn.color}33`,borderRadius:10,padding:"8px 14px",color:txn.color,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
+                <span style={{fontSize:14}}>✎</span> Change category
+              </button>
+              {/* Link to bill — only for expenses, only if bills exist */}
               {txn.amount>0&&(data.bills||[]).length>0&&(
-                <button onClick={e=>{e.stopPropagation();setLinkBillTxn(txn);}}
-                  style={{background:"rgba(0,204,133,0.12)",border:"1px solid rgba(0,204,133,0.25)",borderRadius:99,padding:"2px 8px",color:C.green,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                  ✓ Paid a bill
+                <button onClick={()=>{setLinkBillTxn(txn);setExpandedTxn(null);}}
+                  style={{background:"rgba(0,204,133,0.12)",border:"1px solid rgba(0,204,133,0.25)",borderRadius:10,padding:"8px 14px",color:C.greenBright,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
+                  <span style={{fontSize:14}}>📅</span> Link to a bill
+                </button>
+              )}
+              {/* Add as tracked bill — only for expenses */}
+              {txn.amount>0&&(
+                <button onClick={()=>{setBillForm({name:txn.name,amount:String(txn.amount),date:"1"});setMarkBillTxn(txn);setExpandedTxn(null);}}
+                  style={{background:C.teal+"14",border:`1px solid ${C.teal}33`,borderRadius:10,padding:"8px 14px",color:C.tealBright,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
+                  <span style={{fontSize:14}}>+</span> Track as bill
                 </button>
               )}
             </div>
-          </div>
-          <div style={{textAlign:"right",flexShrink:0}}>
-            <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
-              {txn.amount<0?"+":"–"}${Math.abs(txn.amount).toFixed(2)}
-            </div>
-            {txn.amount<0&&<div style={{color:C.greenBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>received</div>}
-          </div>
+          )}
         </div>
-      ))}
+        );
+      })}
     </>}
     {tab==="breakdown"&&<>
       {(()=>{
