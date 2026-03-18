@@ -6011,7 +6011,8 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
           {catTxns.length===0
             ? <div style={{color:C.muted,fontSize:12}}>No transactions in this category this month.</div>
             : (() => {
-                const sorted = [...catTxns].sort((a,b)=>b.amount-a.amount);
+                // Expenses first (descending), refunds at bottom (ascending by abs)  
+                const sorted = [...catTxns].sort((a,b)=>{if(a.amount>0&&b.amount<0)return -1;if(a.amount<0&&b.amount>0)return 1;return Math.abs(b.amount)-Math.abs(a.amount);});
                 const visible = showAllTxns ? sorted : sorted.slice(0, TXN_LIMIT);
                 const hiddenCount = sorted.length - TXN_LIMIT;
                 return (
@@ -6028,7 +6029,10 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
                             </div>
                             <div style={{color:C.muted,fontSize:10}}>{t.date}</div>
                           </div>
-                          <span style={{color:linkedBill?C.greenBright:color,fontWeight:700,fontSize:13,flexShrink:0,marginLeft:8}}>${(t.amount||0).toFixed(2)}</span>
+                          <span style={{color:t.amount<0?C.greenBright:linkedBill?C.greenBright:color,fontWeight:700,fontSize:13,flexShrink:0,marginLeft:8}}>
+                            {t.amount<0?"+":""}{t.amount<0?`$${Math.abs(t.amount).toFixed(2)}`:`$${(t.amount||0).toFixed(2)}`}
+                            {t.amount<0&&<span style={{color:C.greenBright,fontSize:9,fontWeight:700,marginLeft:4,textTransform:"uppercase",letterSpacing:0.5}}>refund</span>}
+                          </span>
                         </div>
                       );
                     })}
@@ -6617,11 +6621,26 @@ function SpendScreen({data, setAppData, setScreen}){
     {tab==="breakdown"&&<>
       {(()=>{
         // Breakdown uses the same period-filtered set as the Transactions tab
-        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCCPayment(t,data.debts||[]));
+        // Include recategorised credits: refunds/deposits the user moved to a spending category
+        // These reduce category spend (e.g. Amazon refund → Shopping reduces Shopping total)
+        const bdTxns = acctFiltered.filter(t=>{
+          const cat = getCat(t);
+          const isCredit = t.amount < 0;
+          if(!isCredit) return t.amount>0&&!EXCLUDE_CATS.has(cat)&&!isCCPayment(t,data.debts||[]);
+          // Credit: only include if user explicitly recategorised it away from Transfer/Income
+          const originalCat = t.cat || "";
+          const wasTransfer = originalCat==="Transfer"||originalCat==="Income";
+          const nowSpendCat = !EXCLUDE_CATS.has(cat)&&cat!=="Transfer";
+          return wasTransfer && nowSpendCat; // user moved it → track it
+        });
         const bdIn   = acctFiltered.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
         const bdTotal= bdTxns.reduce((s,t)=>s+t.amount,0);
         const bdByCat= {};
-        bdTxns.forEach(t=>{const c=getCat(t);bdByCat[c]=(bdByCat[c]||0)+t.amount;});
+        bdTxns.forEach(t=>{
+          const c=getCat(t);
+          // Positive = expense (add), Negative = refund/credit (subtract from category spend)
+          bdByCat[c]=(bdByCat[c]||0)+t.amount;
+        });
         // Show ALL spending categories — custom cats must never be hidden by a slice limit
         const bdTopCats=Object.entries(bdByCat).sort((a,b)=>b[1]-a[1]);
         const periodLabel = period==="week"?"This week":period==="month"?monthLabel:period==="last"?"Last month":period==="3mo"?"Last 3 months":"Last 90 days";
@@ -6688,7 +6707,12 @@ function SpendScreen({data, setAppData, setScreen}){
       </div>}
       {bdTopCats.map(([cat,amt],i)=>{
         const colors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
-        const catTxns=acctFiltered.filter(t=>getCat(t)===cat&&t.amount>0);
+        const catTxns=acctFiltered.filter(t=>{
+          if(getCat(t)!==cat) return false;
+          if(t.amount>0) return true;
+          // Credit: include if user moved it to this spending category
+          return t.amount<0 && !EXCLUDE_CATS.has(cat) && cat!=="Transfer" && (t.cat==="Transfer"||t.cat==="Income");
+        });
         const budget = (data.budgets||{})[cat] || null;
         window.__flourishBills = data.bills||[];
         // YoY delta for this category
