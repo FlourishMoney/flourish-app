@@ -7177,22 +7177,66 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               </div>
             ))}
           </div>
-          {/* Projection summary */}
+          {/* Projection summary with assumption toggle */}
           {(()=>{
             const bal = parseFloat(ret[isCA?"rrspBalance":"401kBalance"]||0) + parseFloat(ret[isCA?"tfsaBalance":"iraBalance"]||0);
             const monthly = parseFloat(ret[isCA?"rrspMonthly":"401kMonthly"]||0) + parseFloat(ret[isCA?"tfsaMonthly":"iraMonthly"]||0) + parseFloat(ret[isCA?"pensionMonthly":"otherRetire"]||0);
             if(bal<=0&&monthly<=0) return null;
-            // Simple 30-year projection at 6% annual return
-            const r = 0.06/12;
-            const n = 30*12;
-            const fv = bal*Math.pow(1+r,n) + (monthly>0?monthly*((Math.pow(1+r,n)-1)/r):0);
+
+            // Assumption modes — stored in ret.projectionMode
+            const mode = ret.projectionMode || "moderate";
+            const MODES = [
+              { key:"conservative", label:"Conservative", rate:0.03, color:C.teal,   desc:"3% / yr — near retirement or low risk tolerance" },
+              { key:"moderate",     label:"Moderate",     rate:0.05, color:C.green,  desc:"5% / yr — balanced long-term portfolio" },
+              { key:"aggressive",   label:"Aggressive",   rate:0.07, color:C.purple, desc:"7% / yr — equity-heavy, long time horizon" },
+            ];
+            const selected = MODES.find(m=>m.key===mode) || MODES[1];
+            const r = selected.rate / 12;
+            const n = 30 * 12;
+            const fv = bal*Math.pow(1+r,n) + (monthly>0 ? monthly*((Math.pow(1+r,n)-1)/r) : 0);
+            const realFv = fv / Math.pow(1.02, 30); // inflation-adjusted at 2%
+
             return (
-              <div style={{marginTop:12,background:C.teal+"10",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px"}}>
-                <div style={{color:C.tealBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                  📈 At this rate, in 30 years: ~${(fv/1000).toFixed(0)}k
+              <div style={{marginTop:12}}>
+                {/* Mode selector */}
+                <div style={{display:"flex",gap:6,marginBottom:10}}>
+                  {MODES.map(m=>(
+                    <button key={m.key} onClick={()=>updateRet("projectionMode", m.key)}
+                      style={{flex:1,background:mode===m.key?m.color+"22":C.cardAlt,border:`1px solid ${mode===m.key?m.color:C.border}`,borderRadius:10,padding:"7px 4px",cursor:"pointer",fontFamily:"inherit",textAlign:"center",transition:"all 0.15s"}}>
+                      <div style={{color:mode===m.key?m.color:C.muted,fontWeight:700,fontSize:10}}>{m.label}</div>
+                      <div style={{color:mode===m.key?m.color+"bb":C.muted,fontSize:9,marginTop:1}}>{(m.rate*100).toFixed(0)}%/yr</div>
+                    </button>
+                  ))}
                 </div>
-                <div style={{color:C.muted,fontSize:10,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                  Assumes 6% avg annual return · {isCA?"RRSP + TFSA":"401(k) + IRA"} combined · ${bal.toLocaleString()} current + ${monthly}/mo
+
+                {/* Projection result */}
+                <div style={{background:selected.color+"10",border:`1px solid ${selected.color}33`,borderRadius:12,padding:"12px 14px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                    <div>
+                      <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>30-year projection</div>
+                      <div style={{color:selected.color,fontWeight:900,fontSize:22,fontFamily:"'Playfair Display',serif"}}>~${(fv/1000).toFixed(0)}k</div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>inflation-adjusted</div>
+                      <div style={{color:C.mutedHi,fontWeight:700,fontSize:16,fontFamily:"'Playfair Display',serif"}}>~${(realFv/1000).toFixed(0)}k</div>
+                    </div>
+                  </div>
+                  <div style={{color:C.muted,fontSize:10,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                    {selected.desc} · {isCA?"RRSP + TFSA":"401(k) + IRA"} · ${bal.toLocaleString()} current + ${monthly}/mo
+                  </div>
+                  {mode==="aggressive"&&(
+                    <div style={{color:C.gold,fontSize:10,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.4}}>
+                      ⚠️ 7% is optimistic — markets vary significantly year to year. Consider moderate for planning.
+                    </div>
+                  )}
+                  {mode==="conservative"&&(
+                    <div style={{color:C.teal,fontSize:10,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.4}}>
+                      💡 Good choice if you're within 10 years of retirement or prefer lower-risk investments.
+                    </div>
+                  )}
+                </div>
+                <div style={{color:C.muted,fontSize:9,marginTop:6,textAlign:"center",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                  Estimates only · not financial advice · actual returns vary
                 </div>
               </div>
             );
