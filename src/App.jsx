@@ -1758,7 +1758,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
       id:"refi", icon:"💳", color:C.orange,
       title:`Refinance ${highRateDebt.name}`,
       detail:`At ${highRateDebt.rate}% this debt is expensive. If you qualify for a lower-rate consolidation loan, compare the APR, fees, and total repayment carefully — a lower rate doesn't always mean lower total cost.`,
-      action:"Debt Plan", screen:"goals", tab:"sim", badge:"Save $"+saving+"/yr"
+      action:"Debt Plan", screen:"goals", tab:"plan", badge:"Save $"+saving+"/yr"
     });
   }
 
@@ -1797,7 +1797,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
       id:"hisa", icon:"🏦", color:C.gold,
       title:`Earn more on your savings`,
       detail:`$${(bal||0).toFixed(0)} in savings at typical 0.3% earns $${(bal*0.003).toFixed(0)}/yr. A HISA at 4%+ earns $${(bal*0.04).toFixed(0)}/yr.`,
-      action:"Learn More", screen:"goals", tab:"learn", badge:"+$"+(Math.round((bal*0.04)-(bal*0.003)))+"/yr"
+      action:"Learn More", screen:"goals", tab:"tax", badge:"+$"+(Math.round((bal*0.04)-(bal*0.003)))+"/yr"
     });
   }
 
@@ -4884,8 +4884,8 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         <div style={{...anim(110),display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
           {[
             {label:"Due Soon",value:`$${(soonTotal||0).toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
-            {label:totalDebt>0?"Total Debt":"Debt Free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
-            {label:"Net Worth",value:`${netWorth>=0?"+":""}$${(Math.abs(netWorth)/1000).toFixed(1)}k`,sub:"total net worth",color:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
+            {label:totalDebt>0?"Total Debt":"Debt Free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"plan"},
+            {label:"Net Worth",value:`${netWorth>=0?"+":""}$${(Math.abs(netWorth)/1000).toFixed(1)}k`,sub:"total net worth",color:C.teal,icon:"chartUp",screen:"goals",tab:"plan"},
           ].map((s,i)=>(
             <div key={i} onClick={()=>{if(s.tab&&setGoalsTab)setGoalsTab(s.tab);setScreen(s.screen);}} style={{...glass(s.color),borderRadius:20,padding:"14px 12px 12px",textAlign:"center",position:"relative",overflow:"hidden",cursor:"pointer",transition:"transform .2s, box-shadow .2s"}}
               onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 12px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)`;}}
@@ -5335,7 +5335,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         {isVisible('quicknav')&&<div style={{...anim(320),...tileStyle('quicknav'),display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           {[
             {label:"2-Week Forecast",icon:"calendar",screen:"plan",color:C.teal,sub:"Cash flow ahead"},
-            {label:"Debt Simulator",icon:"trendUp",screen:"goals",tab:"sim",color:C.purple,sub:"Drag to freedom date"},
+            {label:"Debt Simulator",icon:"trendUp",screen:"goals",tab:"plan",color:C.purple,sub:"Drag to freedom date"},
             {label:"Flora",icon:"sparkles",screen:"coach",color:C.green,sub:"Ask Flora anything · powered by Claude",hero:true},
             {label:data.profile.status==="single"?"Solo Check-In":"Money Meeting",icon:data.profile.status==="single"?"🧘":"💑",screen:"family",color:C.pink,sub:"Weekly ritual"},
           ].concat(onWhatIf?[{label:"What If?",icon:"sparkles",screen:null,color:C.teal,sub:"Simulate any decision",whatIf:true}]:[]).map((a,i)=>(
@@ -6832,7 +6832,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <ScreenHeader title="Goals & Wealth" onBack={setScreen?()=>setScreen("home"):null} cta={CC[data?.profile?.country||"CA"]?.flag+" "+CC[data?.profile?.country||"CA"]?.currency} ctaColor={CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}/>
     <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
-      {[["goals","My Goals"],["sim","Debt Sim"],["worth","Net Worth"],["retire","Retirement"],["forecast","Wealth"],["personality","Personality"],["tax","Tax Tips"],["learn","Learn"]].map(([key,lbl])=>(
+      {[["goals","My Goals"],["plan","Plan & Track"],["retire","Retirement"],["tax","Tax & Tips"]].map(([key,lbl])=>(
         <button key={key} onClick={()=>setTab(key)} style={{flexShrink:0,background:tab===key?C.purple+"22":C.cardAlt,border:`1px solid ${tab===key?C.purple:C.border}`,color:tab===key?C.purpleBright:C.muted,borderRadius:10,padding:"8px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>{lbl}</button>
       ))}
     </div>
@@ -7063,7 +7063,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       );
     })()}
 
-    {tab==="sim"&&<>
+    {tab==="plan"&&<>
       {noDebts&&<EmptyState icon="🎯" title="No debts tracked yet" body="Add debts during setup to simulate payoff strategies and see how much interest you can save." action="Add Debts in Settings" onAction={()=>window.dispatchEvent(new CustomEvent("flourish:settings"))} color={C.purple}/>}
       {!noDebts&&debts.every(d=>!parseFloat(d.rate||0))&&(
         <div style={{background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:14,padding:"12px 14px",marginBottom:12,display:"flex",gap:10,alignItems:"flex-start"}}>
@@ -7135,7 +7135,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         })}
       </Card>}
     </>}
-    {tab==="worth"&&(()=>{
+    {tab==="plan"&&(()=>{
       const country=data.profile?.country||"CA";
       const allAccts=data.accounts||[];
       const investments=allAccts.filter(a=>a.type==="investment");
@@ -7604,9 +7604,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         </div>
       </div>;
     })()}
-    {tab==="forecast"&&<WealthForecast data={data}/>}
-    {tab==="personality"&&<MoneyPersonality data={data}/>}
-        {tab==="learn"&&(()=>{
+    {tab==="plan"&&<WealthForecast data={data}/>}
+    {tab==="goals"&&<MoneyPersonality data={data}/>}
+        {tab==="tax"&&(()=>{
       const cfg=CC[data.profile?.country||"CA"];
       return <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div style={{background:C.greenDim,border:`1px solid ${C.green}33`,borderRadius:16,padding:"12px 16px",marginBottom:4}}>
@@ -8819,9 +8819,9 @@ function FeedbackCard({onSend}){
   );
 }
 
-function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,bankConnected,needsReconnect,reconnectLoading,onReconnect,onSendFeedback}){
+function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,bankConnected,needsReconnect,reconnectLoading,onReconnect,onSendFeedback,deepLinkSection=null}){
   const [notifToggles,setNotifToggles]=useState({overdraft:true,bills:true,coach:true,meeting:false,patterns:true});
-  const [activeSection,setActiveSection]=useState(null);
+  const [activeSection,setActiveSection]=useState(deepLinkSection);
   const handleShare=()=>{
     const url="https://flourishmoney.app";
     const text="I've been using Flourish to track my spending and it actually tells me exactly how much I can spend today. Worth checking out.";
@@ -9778,7 +9778,7 @@ function FirstVisitScreen({data, onDismiss, setScreen}) {
       body:    "Flourish needs your live balance and transactions to calculate your safe-to-spend number accurately.",
       cta:     "Connect your bank →",
       color:   C.teal,
-      action:  () => { onDismiss(); if(setScreen) setScreen("settings"); },
+      action:  () => { onDismiss(); if(setScreen) setScreen("settings:accounts"); },
     },
     add_income: {
       icon:    "💰",
@@ -9786,7 +9786,7 @@ function FirstVisitScreen({data, onDismiss, setScreen}) {
       body:    "Your bank is connected. Enter how much you earn to unlock your personalised safe-to-spend number.",
       cta:     "Add your income →",
       color:   C.gold,
-      action:  () => { onDismiss(); if(setScreen) setScreen("settings"); },
+      action:  () => { onDismiss(); if(setScreen) setScreen("settings:profile"); },
     },
     see_number: {
       icon:    null,
@@ -9950,6 +9950,15 @@ function AuthScreen({ onAuth }) {
     setLoading(true); setError("");
     const { error } = await supabase.auth.signUp({ email, password });
     if (error) { setError(error.message); setLoading(false); return; }
+    // Capture email for newsletter/beta list
+    try {
+      await supabase.from("email_signups").insert({
+        email: email.trim().toLowerCase(),
+        name: null,
+        country: null,
+        created_at: new Date().toISOString(),
+      });
+    } catch(e) { /* non-fatal — don't block signup */ }
     setSuccess("Check your email to confirm your account, then log in.");
     setMode("login"); setLoading(false);
   };
@@ -10512,7 +10521,9 @@ export default function FlourishApp(){
         window.open(`mailto:hello@flourishmoney.app?subject=Flourish Feedback&body=${encodeURIComponent(msg)}`);
       }
     };
-    if(showSettings)return <Settings data={appData} setAppData={setAppData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} onSendFeedback={handleFeedback}/>;
+    // Deep-link support: "settings:accounts" or "settings:profile" opens Settings to a specific section
+    const settingsDeepLink = screen.startsWith("settings:") ? screen.split(":")[1] : null;
+    if(showSettings||screen.startsWith("settings"))return <Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setScreen("home");}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} onSendFeedback={handleFeedback} deepLinkSection={settingsDeepLink}/>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
