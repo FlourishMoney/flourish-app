@@ -3058,6 +3058,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
 
 // ─── DASHBOARD TILE REGISTRY ──────────────────────────────────────────────────
 const DASH_TILES = [
+  {id:"today_move", label:"Today's Move"},
   { id: 'networth',    label: 'Net Worth Trend',    icon: '📈' },
   { id: 'decision',   label: 'Decision Engine',     icon: '🧠' },
   { id: 'autopilot',  label: 'Autopilot',           icon: '✈️' },
@@ -5080,7 +5081,119 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           return null;
         })()}
 
-        {/* ── NET WORTH SPARKLINE — full width ──────────────────────────── */}
+        {/* ── TODAY'S 1 MOVE ─────────────────────────────────────────────────
+             One decisive, tappable action per session.
+             Backed by SafeSpendEngine + OpportunityDetector + RRSP engine.
+             Only shown when user is fully set up (bank + income).
+        ─────────────────────────────────────────────────────────────────── */}
+        {isVisible('today_move')&&monthlyIncome>0&&bal>0&&!overdraft&&(()=>{
+          // Pick the single best action right now — highest value, lowest friction
+          const rrspR = RRSPRoomEngine.calculate(data);
+          const hasRRSPRoom = rrspR?.remainingRoom > 500 && rrspR?.maxRefund > 100;
+          const topDebt = (data.debts||[]).filter(d=>parseFloat(d.balance||0)>0)
+            .sort((a,b)=>parseFloat(b.rate||0)-parseFloat(a.rate||0))[0];
+          const hasHighDebt = topDebt && parseFloat(topDebt.rate||0) >= 15;
+          const savingsGoal = (data.goals||[]).find(g=>g.name&&parseFloat(g.target||0)>0&&parseFloat(g.saved||0)<parseFloat(g.target||0));
+          const extraSafe = Math.max(0, safe - 50); // keep $50 buffer
+
+          // Decision tree — pick one move in priority order
+          const move = (() => {
+            // 1. High-interest debt — mathematically best ROI
+            if(hasHighDebt && extraSafe >= 50) {
+              const extra = Math.min(extraSafe, 150);
+              const savedInterest = Math.round(extra * parseFloat(topDebt.rate||0) / 100 / 12 * 12);
+              return {
+                icon: "💳",
+                color: C.red,
+                title: `Pay extra on ${topDebt.name}`,
+                detail: `Add $${extra} to your ${topDebt.rate}% debt → save ~$${savedInterest} in interest this year`,
+                cta: "See debt payoff",
+                screen: "goals",
+                tab: "debt",
+                amount: extra,
+              };
+            }
+            // 2. RRSP room — tax refund is guaranteed return
+            if(hasRRSPRoom && extraSafe >= 100) {
+              const contrib = Math.min(extraSafe, 500);
+              const refund = Math.round(contrib * rrspR.marginalRate);
+              return {
+                icon: "🏦",
+                color: "#2E8B2E",
+                title: "Contribute to your RRSP",
+                detail: `Put $${contrib} in your RRSP today → get ~$${refund} back at tax time`,
+                cta: "See RRSP room",
+                screen: "goals",
+                tab: "retire",
+                amount: contrib,
+              };
+            }
+            // 3. Active savings goal
+            if(savingsGoal && extraSafe >= 25) {
+              const contrib = Math.min(extraSafe, parseFloat(savingsGoal.monthly||50)||50);
+              const remaining = parseFloat(savingsGoal.target||0) - parseFloat(savingsGoal.saved||0);
+              const months = contrib > 0 ? Math.ceil(remaining / contrib) : null;
+              return {
+                icon: "🎯",
+                color: C.purple,
+                title: `Add to ${savingsGoal.name}`,
+                detail: `Contribute $${contrib.toFixed(0)} now${months?` → reach your goal in ~${months} month${months===1?"":"s"}`:""}.`,
+                cta: "See goals",
+                screen: "goals",
+                tab: "goals",
+                amount: contrib,
+              };
+            }
+            // 4. Build emergency buffer — always valuable
+            if(extraSafe >= 25 && monthlyIncome > 0) {
+              const target = monthlyIncome * 0.5; // half a month as starter
+              return {
+                icon: "🛡️",
+                color: C.teal,
+                title: "Add to your emergency fund",
+                detail: `Move $${Math.min(extraSafe, 100).toFixed(0)} to savings today. A buffer stops small surprises from becoming debt.`,
+                cta: "See goals",
+                screen: "goals",
+                tab: "goals",
+                amount: Math.min(extraSafe, 100),
+              };
+            }
+            return null;
+          })();
+
+          if(!move) return null;
+
+          return (
+            <div style={{...anim(185),...tileStyle('today_move')}}>
+              <div style={{background:`linear-gradient(135deg,${move.color}12 0%,${C.card} 100%)`,border:`1px solid ${move.color}33`,borderRadius:22,padding:"16px 18px",position:"relative",overflow:"hidden"}}>
+                {/* Accent line */}
+                <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${move.color},${move.color}44)`}}/>
+                <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+                  <div style={{width:44,height:44,borderRadius:14,background:move.color+"18",border:`1px solid ${move.color}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>
+                    {move.icon}
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{color:C.muted,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1.4,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                      Today's move
+                    </div>
+                    <div style={{color:C.cream,fontWeight:800,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,lineHeight:1.3}}>
+                      {move.title}
+                    </div>
+                    <div style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.55,marginBottom:12}}>
+                      {move.detail}
+                    </div>
+                    <button onClick={()=>{setScreen(move.screen);}}
+                      style={{background:move.color,border:"none",borderRadius:10,padding:"9px 18px",color:move.color==="#2E8B2E"||move.color===C.teal||move.color===C.green?"#fff":"#fff",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",display:"inline-flex",alignItems:"center",gap:6}}>
+                      {move.cta} →
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+                {/* ── NET WORTH SPARKLINE — full width ──────────────────────────── */}
         {isVisible('networth')&&<div style={{...anim(190),...tileStyle('networth'),...glass(C.teal),borderRadius:22,padding:"18px 20px 16px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
             <div>
