@@ -10145,15 +10145,26 @@ function SharedChoreBoard({token}) {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState("chores");
+  // Wallet: {balance, transactions:[{id,desc,amount,date,type}]}
+  const [wallet, setWallet] = useState({balance:0, transactions:[]});
+  const [kids, setKids] = useState([]); // [{name, color}]
+  const [txnDesc, setTxnDesc] = useState("");
+  const [txnAmt, setTxnAmt] = useState("");
+  const [txnType, setTxnType] = useState("earn"); // earn | spend
+  const [savingGoal, setSavingGoal] = useState({name:"", target:0});
+  const [goalInput, setGoalInput] = useState({name:"", target:""});
 
   useEffect(()=>{
     (async()=>{
       try {
         const { data, error } = await supabase
-          .from("shared_chores").select("chores,family_name").eq("token",token).single();
+          .from("shared_chores").select("chores,family_name,wallet,kids").eq("token",token).single();
         if(error||!data){setNotFound(true);setLoading(false);return;}
         setChores(typeof data.chores==="string"?JSON.parse(data.chores):data.chores||[]);
         setFamilyName(data.family_name||"Family");
+        if(data.wallet) setWallet(typeof data.wallet==="string"?JSON.parse(data.wallet):data.wallet);
+        if(data.kids) setKids(typeof data.kids==="string"?JSON.parse(data.kids):data.kids);
       } catch(e){setNotFound(true);}
       setLoading(false);
     })();
@@ -10169,6 +10180,28 @@ function SharedChoreBoard({token}) {
       });
     } catch(e){}
     setSaving(false);
+  };
+
+  const saveWallet = async (newWallet) => {
+    setWallet(newWallet);
+    try {
+      await supabase.from("shared_chores").upsert({
+        token, chores:JSON.stringify(chores), family_name:familyName,
+        wallet:JSON.stringify(newWallet), kids:JSON.stringify(kids),
+        created_at: new Date().toISOString()
+      });
+    } catch(e){}
+  };
+
+  const addTransaction = async (type) => {
+    const amt = parseFloat(txnAmt);
+    if(!txnDesc.trim() || !amt || amt <= 0) return;
+    if(type==="spend" && amt > wallet.balance) { alert("Not enough money!"); return; }
+    const newTxn = {id:Date.now(), desc:txnDesc.trim(), amount:amt, type, date:new Date().toLocaleDateString("en-CA")};
+    const newBalance = type==="earn" ? wallet.balance + amt : wallet.balance - amt;
+    const newWallet = {balance:Math.max(0,newBalance), transactions:[newTxn,...(wallet.transactions||[])].slice(0,50)};
+    await saveWallet(newWallet);
+    setTxnDesc(""); setTxnAmt("");
   };
 
   const earned = chores.filter(c=>c.done).reduce((a,c)=>a+c.reward,0);
@@ -10188,49 +10221,196 @@ function SharedChoreBoard({token}) {
     </div>
   );
 
+  const GRN = "#00CC85"; const GLD = "#E8B84B"; const BG = "#050D09";
+  const F = "'Plus Jakarta Sans',sans-serif"; const PF = "'Playfair Display',serif";
+
   return (
-    <div style={{minHeight:"100dvh",background:"#050D09",padding:"32px 20px 48px",maxWidth:480,margin:"0 auto"}}>
+    <div style={{minHeight:"100dvh",background:BG,maxWidth:480,margin:"0 auto",display:"flex",flexDirection:"column"}}>
+
       {/* Header */}
-      <div style={{textAlign:"center",marginBottom:28}}>
-        <FlourishMark size={40}/>
-        <div style={{color:"rgba(237,233,226,0.5)",fontSize:11,marginTop:8,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:2}}>Chore Chart</div>
-        <div style={{color:"#EDE9E2",fontSize:26,fontWeight:900,fontFamily:"'Playfair Display',serif",marginTop:4}}>{familyName}</div>
-        {saving&&<div style={{color:"rgba(0,204,133,0.7)",fontSize:11,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Saving…</div>}
+      <div style={{padding:"28px 20px 16px",textAlign:"center",flexShrink:0}}>
+        <FlourishMark size={32}/>
+        <div style={{color:"rgba(237,233,226,0.5)",fontSize:10,marginTop:6,fontFamily:F,textTransform:"uppercase",letterSpacing:2}}>Flourish Kids</div>
+        <div style={{color:"#EDE9E2",fontSize:22,fontWeight:900,fontFamily:PF,marginTop:2}}>{familyName}</div>
+        {saving&&<div style={{color:"rgba(0,204,133,0.6)",fontSize:10,marginTop:2,fontFamily:F}}>Saving…</div>}
       </div>
 
-      {/* Progress */}
-      <div style={{background:"rgba(255,255,255,0.06)",borderRadius:99,height:10,overflow:"hidden",marginBottom:8}}>
-        <div style={{width:`${total>0?(earned/total)*100:0}%`,height:"100%",background:"linear-gradient(90deg,#00CC85,#6FE494)",borderRadius:99,transition:"width 0.5s ease"}}/>
-      </div>
-      <div style={{display:"flex",justifyContent:"space-between",marginBottom:28}}>
-        <span style={{color:"rgba(237,233,226,0.5)",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{done} of {chores.length} done</span>
-        <span style={{color:"#6FE494",fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${earned.toFixed(2)} earned 🌟</span>
-      </div>
-
-      {/* Chores — tap to toggle */}
-      <div style={{display:"flex",flexDirection:"column",gap:10}}>
-        {chores.map((ch,i)=>(
-          <div key={i} onClick={()=>toggleChore(ch.id)}
-            style={{background:ch.done?"rgba(0,204,133,0.10)":"rgba(255,255,255,0.05)",borderRadius:16,padding:"16px 18px",border:`1.5px solid ${ch.done?"rgba(0,204,133,0.35)":"rgba(255,255,255,0.08)"}`,display:"flex",alignItems:"center",gap:14,cursor:"pointer",transition:"all .2s",userSelect:"none"}}>
-            <div style={{width:28,height:28,borderRadius:8,border:`2.5px solid ${ch.done?"#00CC85":"rgba(255,255,255,0.25)"}`,background:ch.done?"#00CC85":"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s"}}>
-              {ch.done&&<span style={{color:"#050D09",fontSize:15,fontWeight:900}}>✓</span>}
-            </div>
-            <span style={{flex:1,color:ch.done?"rgba(237,233,226,0.45)":"#EDE9E2",fontSize:16,fontWeight:600,textDecoration:ch.done?"line-through":"none",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .2s"}}>{ch.task}</span>
-            <span style={{color:"#E8B84B",fontWeight:800,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0}}>+${(ch.reward||0).toFixed(2)}</span>
-          </div>
+      {/* Tab bar */}
+      <div style={{display:"flex",gap:0,margin:"0 20px 16px",background:"rgba(255,255,255,0.04)",borderRadius:14,padding:3,flexShrink:0}}>
+        {[["chores","✅ Chores"],["wallet","💰 My Money"],["goals","🎯 Goals"]].map(([t,lbl])=>(
+          <button key={t} onClick={()=>setActiveTab(t)}
+            style={{flex:1,background:activeTab===t?"rgba(0,204,133,0.18)":"none",border:`1px solid ${activeTab===t?"rgba(0,204,133,0.35)":"transparent"}`,borderRadius:11,padding:"9px 4px",cursor:"pointer",color:activeTab===t?GRN:"rgba(237,233,226,0.45)",fontSize:11,fontWeight:700,fontFamily:F,transition:"all .2s"}}>
+            {lbl}
+          </button>
         ))}
       </div>
 
-      {done===chores.length&&chores.length>0&&(
-        <div style={{textAlign:"center",marginTop:32,padding:"24px 20px",background:"rgba(0,204,133,0.08)",borderRadius:20,border:"1px solid rgba(0,204,133,0.25)"}}>
-          <div style={{fontSize:48,marginBottom:8}}>🎉</div>
-          <div style={{color:"#6FE494",fontSize:20,fontWeight:900,fontFamily:"'Playfair Display',serif"}}>All done!</div>
-          <div style={{color:"rgba(237,233,226,0.6)",fontSize:14,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${earned.toFixed(2)} earned today</div>
-        </div>
-      )}
+      {/* Scrollable content */}
+      <div style={{flex:1,overflowY:"auto",padding:"0 20px 80px"}}>
 
-      <div style={{textAlign:"center",marginTop:32,color:"rgba(237,233,226,0.25)",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-        Powered by Flourish Money · flourishmoney.app
+        {/* ── CHORES TAB ── */}
+        {activeTab==="chores"&&<>
+          <div style={{background:"rgba(255,255,255,0.04)",borderRadius:14,height:8,overflow:"hidden",marginBottom:6}}>
+            <div style={{width:`${total>0?(earned/total)*100:0}%`,height:"100%",background:`linear-gradient(90deg,${GRN},#6FE494)`,borderRadius:14,transition:"width 0.5s ease"}}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}>
+            <span style={{color:"rgba(237,233,226,0.5)",fontSize:12,fontFamily:F}}>{done} of {chores.length} done</span>
+            <span style={{color:GRN,fontWeight:800,fontSize:12,fontFamily:F}}>${earned.toFixed(2)} earned 🌟</span>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {chores.map((ch,i)=>(
+              <div key={i} onClick={()=>toggleChore(ch.id)}
+                style={{background:ch.done?"rgba(0,204,133,0.10)":"rgba(255,255,255,0.05)",borderRadius:16,padding:"16px 18px",border:`1.5px solid ${ch.done?"rgba(0,204,133,0.35)":"rgba(255,255,255,0.08)"}`,display:"flex",alignItems:"center",gap:14,cursor:"pointer",transition:"all .2s",userSelect:"none"}}>
+                <div style={{width:28,height:28,borderRadius:8,border:`2.5px solid ${ch.done?GRN:"rgba(255,255,255,0.25)"}`,background:ch.done?GRN:"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s"}}>
+                  {ch.done&&<span style={{color:BG,fontSize:15,fontWeight:900}}>✓</span>}
+                </div>
+                <span style={{flex:1,color:ch.done?"rgba(237,233,226,0.4)":"#EDE9E2",fontSize:16,fontWeight:600,textDecoration:ch.done?"line-through":"none",fontFamily:F,transition:"all .2s"}}>{ch.task}</span>
+                <span style={{color:GLD,fontWeight:800,fontSize:14,fontFamily:F,flexShrink:0}}>+${(ch.reward||0).toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+          {done===chores.length&&chores.length>0&&(
+            <div style={{textAlign:"center",marginTop:24,padding:"20px",background:"rgba(0,204,133,0.08)",borderRadius:20,border:"1px solid rgba(0,204,133,0.25)"}}>
+              <div style={{fontSize:44,marginBottom:6}}>🎉</div>
+              <div style={{color:GRN,fontSize:20,fontWeight:900,fontFamily:PF}}>All done!</div>
+              <div style={{color:"rgba(237,233,226,0.6)",fontSize:13,marginTop:3,fontFamily:F}}>${earned.toFixed(2)} earned today</div>
+            </div>
+          )}
+        </>}
+
+        {/* ── WALLET TAB ── */}
+        {activeTab==="wallet"&&<>
+          {/* Balance */}
+          <div style={{background:"rgba(232,184,75,0.08)",borderRadius:20,padding:"24px 20px",border:"1px solid rgba(232,184,75,0.25)",textAlign:"center",marginBottom:16}}>
+            <div style={{color:"rgba(237,233,226,0.5)",fontSize:11,textTransform:"uppercase",letterSpacing:1.5,fontFamily:F,marginBottom:4}}>My Balance</div>
+            <div style={{color:GLD,fontSize:48,fontWeight:900,fontFamily:PF,letterSpacing:-1}}>${(wallet.balance||0).toFixed(2)}</div>
+          </div>
+
+          {/* Add / Spend */}
+          <div style={{background:"rgba(255,255,255,0.04)",borderRadius:16,padding:"16px",marginBottom:16}}>
+            <div style={{display:"flex",gap:6,marginBottom:12}}>
+              {[["earn","💰 Add money"],["spend","🛍️ Spend money"]].map(([t,lbl])=>(
+                <button key={t} onClick={()=>setTxnType(t)}
+                  style={{flex:1,background:txnType===t?(t==="earn"?"rgba(0,204,133,0.18)":"rgba(255,79,106,0.15)"):"none",border:`1px solid ${txnType===t?(t==="earn"?"rgba(0,204,133,0.4)":"rgba(255,79,106,0.3)"):"rgba(255,255,255,0.1)"}`,borderRadius:10,padding:"9px 4px",cursor:"pointer",color:txnType===t?(t==="earn"?GRN:"#FF4F6A"):"rgba(237,233,226,0.45)",fontSize:12,fontWeight:700,fontFamily:F,transition:"all .2s"}}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+            <input value={txnDesc} onChange={e=>setTxnDesc(e.target.value)}
+              placeholder={txnType==="earn"?"Where did you get it? (birthday, chores…)":"What did you buy?"}
+              style={{width:"100%",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"10px 12px",color:"#EDE9E2",fontSize:13,fontFamily:F,outline:"none",marginBottom:8,boxSizing:"border-box"}}/>
+            <div style={{display:"flex",gap:8}}>
+              <div style={{display:"flex",alignItems:"center",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"0 12px",flex:1}}>
+                <span style={{color:"rgba(237,233,226,0.4)",fontSize:16}}>$</span>
+                <input value={txnAmt} onChange={e=>setTxnAmt(e.target.value)} type="number" min="0" step="0.01" placeholder="0.00"
+                  style={{background:"none",border:"none",color:"#EDE9E2",fontSize:16,fontFamily:F,fontWeight:700,outline:"none",width:"100%",padding:"10px 8px"}}/>
+              </div>
+              <button onClick={()=>addTransaction(txnType)}
+                style={{background:txnType==="earn"?GRN:"#FF4F6A",border:"none",borderRadius:10,padding:"10px 20px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:F,flexShrink:0}}>
+                {txnType==="earn"?"+ Add":"- Spend"}
+              </button>
+            </div>
+          </div>
+
+          {/* Transaction history */}
+          {(wallet.transactions||[]).length > 0 && <>
+            <div style={{color:"rgba(237,233,226,0.4)",fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:F,marginBottom:8}}>Recent</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {(wallet.transactions||[]).slice(0,15).map((t,i)=>(
+                <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(255,255,255,0.04)",borderRadius:12,padding:"12px 14px"}}>
+                  <div>
+                    <div style={{color:"#EDE9E2",fontSize:13,fontWeight:600,fontFamily:F}}>{t.desc}</div>
+                    <div style={{color:"rgba(237,233,226,0.4)",fontSize:10,marginTop:2,fontFamily:F}}>{t.date}</div>
+                  </div>
+                  <span style={{color:t.type==="earn"?GRN:"#FF4F6A",fontWeight:800,fontSize:14,fontFamily:F,flexShrink:0,marginLeft:12}}>
+                    {t.type==="earn"?"+":"-"}${(t.amount||0).toFixed(2)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>}
+          {(wallet.transactions||[]).length===0&&(
+            <div style={{textAlign:"center",padding:"32px 20px",color:"rgba(237,233,226,0.3)",fontSize:13,fontFamily:F}}>
+              No transactions yet. Add your first one above!
+            </div>
+          )}
+        </>}
+
+        {/* ── GOALS TAB ── */}
+        {activeTab==="goals"&&<>
+          {/* Chores summary as savings */}
+          <div style={{background:"rgba(0,204,133,0.08)",borderRadius:16,padding:"16px 18px",border:"1px solid rgba(0,204,133,0.2)",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{color:"rgba(237,233,226,0.5)",fontSize:11,fontFamily:F,marginBottom:2}}>Total earned from chores</div>
+              <div style={{color:GRN,fontWeight:900,fontSize:22,fontFamily:PF}}>${earned.toFixed(2)}</div>
+            </div>
+            <div style={{fontSize:32}}>🌟</div>
+          </div>
+
+          {/* Savings goal */}
+          {savingGoal.target > 0 ? (
+            <div style={{background:"rgba(255,255,255,0.04)",borderRadius:16,padding:"16px 18px",marginBottom:16,border:"1px solid rgba(255,255,255,0.08)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                <div>
+                  <div style={{color:"rgba(237,233,226,0.5)",fontSize:10,textTransform:"uppercase",letterSpacing:1,fontFamily:F,marginBottom:2}}>Saving for</div>
+                  <div style={{color:"#EDE9E2",fontWeight:700,fontSize:16,fontFamily:PF}}>{savingGoal.name}</div>
+                </div>
+                <button onClick={()=>setSavingGoal({name:"",target:0})}
+                  style={{background:"none",border:"none",color:"rgba(237,233,226,0.3)",fontSize:16,cursor:"pointer",padding:4}}>✕</button>
+              </div>
+              <div style={{background:"rgba(255,255,255,0.06)",borderRadius:99,height:10,overflow:"hidden",marginBottom:6}}>
+                <div style={{width:`${Math.min(100,((wallet.balance||0)/savingGoal.target)*100)}%`,height:"100%",background:`linear-gradient(90deg,${GLD},#F5D06A)`,borderRadius:99,transition:"width 0.5s ease"}}/>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between"}}>
+                <span style={{color:"rgba(237,233,226,0.5)",fontSize:12,fontFamily:F}}>${(wallet.balance||0).toFixed(2)} saved</span>
+                <span style={{color:GLD,fontWeight:700,fontSize:12,fontFamily:F}}>${savingGoal.target.toFixed(2)} goal</span>
+              </div>
+              {wallet.balance >= savingGoal.target&&(
+                <div style={{textAlign:"center",marginTop:12,color:GLD,fontWeight:700,fontSize:14,fontFamily:F}}>🎉 Goal reached! Time to celebrate!</div>
+              )}
+            </div>
+          ) : (
+            <div style={{background:"rgba(255,255,255,0.04)",borderRadius:16,padding:"16px 18px",marginBottom:16,border:"1px solid rgba(255,255,255,0.08)"}}>
+              <div style={{color:"rgba(237,233,226,0.6)",fontSize:13,fontFamily:F,marginBottom:12}}>Set a savings goal — something to work towards!</div>
+              <input value={goalInput.name} onChange={e=>setGoalInput(v=>({...v,name:e.target.value}))}
+                placeholder="What are you saving for? (e.g. new game, toy)"
+                style={{width:"100%",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"10px 12px",color:"#EDE9E2",fontSize:13,fontFamily:F,outline:"none",marginBottom:8,boxSizing:"border-box"}}/>
+              <div style={{display:"flex",gap:8}}>
+                <div style={{display:"flex",alignItems:"center",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"0 12px",flex:1}}>
+                  <span style={{color:"rgba(237,233,226,0.4)",fontSize:16}}>$</span>
+                  <input value={goalInput.target} onChange={e=>setGoalInput(v=>({...v,target:e.target.value}))} type="number" placeholder="Amount"
+                    style={{background:"none",border:"none",color:"#EDE9E2",fontSize:15,fontFamily:F,fontWeight:700,outline:"none",width:"100%",padding:"10px 8px"}}/>
+                </div>
+                <button onClick={()=>{
+                  if(!goalInput.name||!goalInput.target) return;
+                  setSavingGoal({name:goalInput.name,target:parseFloat(goalInput.target)});
+                  setGoalInput({name:"",target:""});
+                }} style={{background:GLD,border:"none",borderRadius:10,padding:"10px 16px",color:"#050D09",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:F,flexShrink:0}}>
+                  Set goal
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 3 Jar Method visual */}
+          <div style={{background:"rgba(255,255,255,0.03)",borderRadius:16,padding:"16px 18px",border:"1px solid rgba(255,255,255,0.06)"}}>
+            <div style={{color:"rgba(237,233,226,0.6)",fontWeight:700,fontSize:13,fontFamily:F,marginBottom:10}}>🫙 The 3 Jar Rule</div>
+            <div style={{display:"flex",gap:8}}>
+              {[{emoji:"🎮",label:"Spend",color:"#D97A3A",pct:"50%"},{emoji:"🏦",label:"Save",color:"#4A8FCC",pct:"40%"},{emoji:"❤️",label:"Give",color:"#C45898",pct:"10%"}].map((j,i)=>(
+                <div key={i} style={{flex:1,background:j.color+"14",border:`1px solid ${j.color}33`,borderRadius:12,padding:"10px 6px",textAlign:"center"}}>
+                  <div style={{fontSize:20}}>{j.emoji}</div>
+                  <div style={{color:j.color,fontWeight:700,fontSize:12,marginTop:4,fontFamily:F}}>{j.label}</div>
+                  <div style={{color:"rgba(237,233,226,0.4)",fontSize:10,marginTop:2,fontFamily:F}}>{j.pct}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>}
+
+      </div>
+
+      <div style={{textAlign:"center",paddingBottom:16,color:"rgba(237,233,226,0.2)",fontSize:10,fontFamily:F,flexShrink:0}}>
+        Flourish Kids · flourishmoney.app
       </div>
     </div>
   );
