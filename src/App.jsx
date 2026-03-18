@@ -8017,7 +8017,29 @@ function Family({data,household,setHousehold,setScreen}){
           <div style={{color:C.greenBright,fontWeight:700}}>🏡 Chore Chart</div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <div style={{color:C.greenBright,fontWeight:800}}>${(earned||0).toFixed(2)} earned</div>
-            <button onClick={()=>setShowChoreIntegrations(v=>!v)} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:8,padding:"4px 10px",color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer"}}>🔗 Connect app</button>
+            <button onClick={async()=>{
+              const token = Math.random().toString(36).substring(2,10)+Math.random().toString(36).substring(2,10);
+              const familyName = data.profile?.name||"Our Family";
+              try {
+                await supabase.from("shared_chores").upsert({
+                  token,
+                  chores: JSON.stringify(chores),
+                  family_name: familyName,
+                  created_at: new Date().toISOString(),
+                });
+                const url = `${window.location.origin}/chores/${token}`;
+                if(navigator.share) {
+                  navigator.share({title:`${familyName} Chore Chart`,url});
+                } else {
+                  await navigator.clipboard.writeText(url);
+                  alert("Link copied! Share it with your family — works on any device or screen.");
+                }
+              } catch(e) {
+                alert("Couldn't create share link. Check your connection.");
+              }
+            }} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:8,padding:"4px 10px",color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer"}}>
+              📤 Share link
+            </button>
           </div>
         </div>
         <Bar v={earned} max={Math.max(chores.reduce((a,c)=>a+c.reward,0),0.01)} color={C.green} h={6}/>
@@ -8043,25 +8065,10 @@ function Family({data,household,setHousehold,setScreen}){
         </div>
       </Card>
 
-      {/* Chore Integrations panel */}
-      {showChoreIntegrations&&<Card style={{border:`1px solid ${C.teal}44`,background:C.tealDim}}>
-        <div style={{color:C.tealBright,fontWeight:700,fontSize:14,marginBottom:4}}>🔗 Connect to Chore Apps</div>
-        <div style={{color:C.muted,fontSize:12,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish can't push directly to these apps yet — but here's exactly how to sync your chore list to each platform.</div>
-        {choreIntegrations.map((ci,i)=>(
-          <div key={i} style={{background:C.card,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${ci.color}22`}}>
-            <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:6}}>
-              <span style={{fontSize:20}}>{ci.icon}</span>
-              <div style={{flex:1}}>
-                <div style={{color:C.cream,fontWeight:700,fontSize:13}}>{ci.name}</div>
-                <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{ci.desc}</div>
-              </div>
-            </div>
-            <div style={{background:ci.color+"14",borderRadius:8,padding:"7px 10px",color:ci.color,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:8}}>📱 {ci.note}</div>
-            <a href={ci.url} target="_blank" rel="noopener noreferrer" style={{color:ci.color,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textDecoration:"none"}}>Open {ci.name} →</a>
-          </div>
-        ))}
-        <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4,fontStyle:"italic"}}>Native 2-way sync is on the roadmap — vote for it in the app store review!</div>
-      </Card>}
+      {/* Share link info */}
+      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4,lineHeight:1.6}}>
+        📱 Tap "Share link" to get a URL your family can open on any device — Skylight, phone, tablet, or smart display browser.
+      </div>
     </>}
 
     {/* ── HOUSEHOLD TAB ── */}
@@ -10081,6 +10088,78 @@ function AuthScreen({ onAuth }) {
   );
 }
 
+// ── SHARED CHORE BOARD (public read-only) ────────────────────────────────────
+function SharedChoreBoard({token}) {
+  const [chores, setChores] = useState([]);
+  const [familyName, setFamilyName] = useState("Family");
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+
+  useEffect(()=>{
+    (async()=>{
+      try {
+        const { data, error } = await supabase
+          .from("shared_chores")
+          .select("chores,family_name")
+          .eq("token", token)
+          .single();
+        if(error || !data) { setNotFound(true); setLoading(false); return; }
+        setChores(typeof data.chores === "string" ? JSON.parse(data.chores) : data.chores || []);
+        setFamilyName(data.family_name || "Family");
+      } catch(e) { setNotFound(true); }
+      setLoading(false);
+    })();
+  }, [token]);
+
+  const earned = chores.filter(c=>c.done).reduce((a,c)=>a+c.reward,0);
+  const total  = chores.reduce((a,c)=>a+c.reward,0);
+
+  if(loading) return (
+    <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={56}/></div>
+    </div>
+  );
+
+  if(notFound) return (
+    <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:32,textAlign:"center"}}>
+      <div style={{fontSize:48,marginBottom:16}}>🔍</div>
+      <div style={{color:"#EDE9E2",fontSize:20,fontWeight:800,fontFamily:"'Playfair Display',serif",marginBottom:8}}>Chore chart not found</div>
+      <div style={{color:"rgba(237,233,226,0.5)",fontSize:14}}>This link may have expired or been removed.</div>
+    </div>
+  );
+
+  return (
+    <div style={{minHeight:"100dvh",background:"#050D09",padding:"32px 20px",maxWidth:480,margin:"0 auto"}}>
+      <div style={{textAlign:"center",marginBottom:28}}>
+        <FlourishMark size={40}/>
+        <div style={{color:"rgba(237,233,226,0.5)",fontSize:12,marginTop:8,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:2}}>Chore Chart</div>
+        <div style={{color:"#EDE9E2",fontSize:26,fontWeight:900,fontFamily:"'Playfair Display',serif",marginTop:4}}>{familyName}</div>
+      </div>
+      <div style={{background:"rgba(255,255,255,0.06)",borderRadius:99,height:8,overflow:"hidden",marginBottom:8}}>
+        <div style={{width:`${total>0?(earned/total)*100:0}%`,height:"100%",background:"linear-gradient(90deg,#00CC85,#6FE494)",borderRadius:99,transition:"width 0.8s ease"}}/>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:24}}>
+        <span style={{color:"rgba(237,233,226,0.5)",fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{chores.filter(c=>c.done).length} of {chores.length} done</span>
+        <span style={{color:"#6FE494",fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${earned.toFixed(2)} earned</span>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {chores.map((ch,i)=>(
+          <div key={i} style={{background:ch.done?"rgba(0,204,133,0.08)":"rgba(255,255,255,0.04)",borderRadius:14,padding:"14px 16px",border:`1px solid ${ch.done?"rgba(0,204,133,0.3)":"rgba(255,255,255,0.08)"}`,display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:24,height:24,borderRadius:7,border:`2px solid ${ch.done?"#00CC85":"rgba(255,255,255,0.2)"}`,background:ch.done?"#00CC85":"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              {ch.done&&<span style={{color:"#050D09",fontSize:13,fontWeight:900}}>✓</span>}
+            </div>
+            <span style={{flex:1,color:ch.done?"rgba(237,233,226,0.5)":"#EDE9E2",fontSize:15,textDecoration:ch.done?"line-through":"none",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{ch.task}</span>
+            <span style={{color:"#E8B84B",fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0}}>+${(ch.reward||0).toFixed(2)}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{textAlign:"center",marginTop:32,color:"rgba(237,233,226,0.3)",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+        Powered by Flourish Money · flourishmoney.app
+      </div>
+    </div>
+  );
+}
+
 export default function FlourishApp(){
   // ── Hydrate from localStorage on first render ──────────────────
   const saved = loadState();
@@ -10098,7 +10177,14 @@ export default function FlourishApp(){
     const path = window.location.pathname.replace(/\/+$/,"").toLowerCase();
     if (path === "/privacy") return "privacy";
     if (path === "/terms")   return "terms";
+    if (path.startsWith("/chores/")) return "shared_chores";
     return "home";
+  })();
+  // Extract share token from URL if on shared chores page
+  const sharedChoreToken = (() => {
+    const path = window.location.pathname.replace(/\/+$/,"");
+    const match = path.match(/\/chores\/([a-z0-9]+)/i);
+    return match ? match[1] : null;
   })();
   const [screen,setScreen]=useState(initialScreen);
   const [user,setUser]=useState(null);
@@ -10440,6 +10526,9 @@ export default function FlourishApp(){
   },[appData?.bankConnected, isPremium]);
 
   // ── Legal screens — always accessible, even before auth/onboarding ──
+  // Public shared chore board — no auth required
+  if(screen==="shared_chores"&&sharedChoreToken) return <SharedChoreBoard token={sharedChoreToken}/>;
+
   if(screen==="privacy")return <PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>;
   if(screen==="terms")return <TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>;  
 
