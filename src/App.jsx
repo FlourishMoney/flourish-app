@@ -2392,6 +2392,72 @@ const getCanadianMarginalRate = (annualIncome, province = "ON") => {
   return Math.min(0.54, fed + prov); // cap at 54%
 };
 
+const getUSMarginalRate = (annualIncome, state = "CA") => {
+  const inc = parseFloat(annualIncome) || 0;
+  // Federal brackets 2025 (single filer)
+  let fed = 0.22;
+  if(inc > 626350)      fed = 0.37;
+  else if(inc > 250525) fed = 0.35;
+  else if(inc > 197300) fed = 0.32;
+  else if(inc > 100525) fed = 0.24;
+  else if(inc > 47150)  fed = 0.22;
+  else if(inc > 11600)  fed = 0.12;
+  else                  fed = 0.10;
+
+  // Top marginal state income tax rates 2025
+  const stateRates = {
+    AL:0.05, AK:0, AZ:0.025, AR:0.044, CA:0.133, CO:0.044, CT:0.069,
+    DE:0.066, FL:0, GA:0.055, HI:0.11, ID:0.058, IL:0.0495, IN:0.031,
+    IA:0.057, KS:0.057, KY:0.04, LA:0.06, ME:0.0715, MD:0.0575,
+    MA:0.09, MI:0.0425, MN:0.0985, MS:0.05, MO:0.0495, MT:0.059,
+    NE:0.0664, NV:0, NH:0, NJ:0.1075, NM:0.059, NY:0.109, NC:0.045,
+    ND:0.029, OH:0.0399, OK:0.0475, OR:0.099, PA:0.0307, RI:0.0599,
+    SC:0.065, SD:0, TN:0, TX:0, UT:0.0465, VT:0.0875, VA:0.0575,
+    WA:0, WV:0.065, WI:0.0765, WY:0, DC:0.1075, OTHER:0.05,
+  };
+  const stateRate = stateRates[state] ?? stateRates.OTHER;
+  return Math.min(0.60, fed + stateRate);
+};
+
+const US401kEngine = {
+  calculate(data) {
+    const profile = data.profile || {};
+    const isUS = (profile.country || "CA") === "US";
+    if(!isUS) return null;
+
+    const state = profile.province || "CA"; // reuse province field for state
+    const ret = data.profile?.retirement || {};
+    const contrib401k = parseFloat(ret.k401Balance || 0);
+    const monthly401k = parseFloat(ret.k401Monthly || 0);
+    const LIMIT_2025 = 23500; // 401k employee contribution limit 2025
+    const CATCHUP = profile.age >= 50 ? 7500 : 0; // catch-up if 50+
+    const totalLimit = LIMIT_2025 + CATCHUP;
+    const contribThisYear = parseFloat(ret.k401ContribThisYear || 0);
+    const remainingRoom = Math.max(0, totalLimit - contribThisYear);
+
+    const annualIncome = (() => {
+      const inc = data.incomes?.[0];
+      if(!inc) return 0;
+      const amt = parseFloat(inc.amount||0);
+      const freq = inc.freq||"biweekly";
+      if(freq==="biweekly") return amt * 26;
+      if(freq==="weekly") return amt * 52;
+      if(freq==="monthly") return amt * 12;
+      return amt * 12;
+    })();
+
+    const marginalRate = getUSMarginalRate(annualIncome, state);
+    const refundPer1k = Math.round(1000 * marginalRate);
+    const maxSavings = Math.round(remainingRoom * marginalRate);
+
+    return {
+      remainingRoom, totalLimit, contribThisYear, marginalRate,
+      refundPer1k, maxSavings, state,
+      hasData: annualIncome > 0,
+    };
+  }
+};
+
 const RRSPRoomEngine = {
   calculate(data) {
     const ret         = data.profile?.retirement || {};
@@ -2948,7 +3014,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
     setLoading(true);
     const txns = (data.transactions || []).slice(0, 15).map(t=>`${t.name||t.merchant||"Purchase"} $${Math.abs(t.amount)}`).join(", ");
     const {score} = calcHealthScore(data);
-    const prompt = `You are Flora, a warm and knowledgeable financial coach for Flourish Money. The user just completed their weekly money check-in. Their current Financial Health Score is ${score}/100. Their money mood this week: ${moods.find(m=>m.val===mood)?.label||"Neutral"}. Biggest spending surprise: ${surprise||"none"}. Financial win: ${win||"none"}. Recent transactions: ${txns}. Give ONE specific, encouraging action they can take this week to improve their Financial Health Score by 2-5 points. Keep it to 2 sentences max. Be warm and concrete.`;
+    const prompt = `You are Flora, a warm and knowledgeable financial coach for Flourish Money. You support both Canadian and American users. For Canadian users you reference RRSP, TFSA, FHSA, CPP, OAS, CRA, and provincial tax rules. For American users you reference 401(k), IRA, Roth IRA, HSA, Social Security, federal and state tax rules. Always check the user's country and province/state before giving tax or retirement advice. The user just completed their weekly money check-in. Their current Financial Health Score is ${score}/100. Their money mood this week: ${moods.find(m=>m.val===mood)?.label||"Neutral"}. Biggest spending surprise: ${surprise||"none"}. Financial win: ${win||"none"}. Recent transactions: ${txns}. Give ONE specific, encouraging action they can take this week to improve their Financial Health Score by 2-5 points. Keep it to 2 sentences max. Be warm and concrete.`;
     try {
       const r = await fetch("/api/coach", {
         method:"POST",
@@ -7218,7 +7284,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       return <div style={{display:"flex",flexDirection:"column",gap:14}}>
 
         {/* ── RRSP TAX RETURN ESTIMATOR ── */}
-        {rrspR&&annualIncome>0&&(()=>{
+        {rrspR&&annualIncome>0&&(data.profile?.country||"CA")==="CA"&&(()=>{
           const marginalRate = rrspR.marginalRate || 0.30;
           const remainingRoom = rrspR.remainingRoom || 0;
           const refundPer1k = rrspR.refundPer1k || Math.round(1000 * marginalRate);
@@ -7284,6 +7350,76 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               </div>}
               {!rrspR.hasEnoughData&&<div style={{color:C.muted,fontSize:11,marginTop:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                 ℹ️ Add your RRSP room from your CRA Notice of Assessment in Settings → Profile for a more accurate estimate.
+              </div>}
+            </div>
+          );
+        })()}
+
+        {/* ── 401k TAX SAVINGS ESTIMATOR (US only) ── */}
+        {(()=>{
+          const isUS = (data.profile?.country||"CA") === "US";
+          if(!isUS) return null;
+          const us401k = US401kEngine.calculate(data);
+          if(!us401k) return null;
+          const { remainingRoom, totalLimit, marginalRate, refundPer1k, maxSavings, state } = us401k;
+          const sliderKey = "us_401k_slider_contrib";
+          const savedContrib = (() => { try { return parseFloat(localStorage.getItem(sliderKey)||"0")||Math.min(5000, remainingRoom); } catch { return Math.min(5000, remainingRoom); } })();
+          return (
+            <div style={{background:`linear-gradient(135deg,${C.blue}12 0%,${C.card} 100%)`,border:`1px solid ${C.blue}44`,borderRadius:20,padding:"18px 20px",position:"relative",overflow:"hidden"}}>
+              <div style={{position:"absolute",top:-20,right:-20,fontSize:80,opacity:0.05}}>🏛️</div>
+              <div style={{color:C.blueBright,fontWeight:800,fontSize:13,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                🧮 401(k) Tax Savings Estimator
+              </div>
+              <div style={{color:C.muted,fontSize:11,marginBottom:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                Based on your income · {Math.round(marginalRate*100)}% combined rate · {state} state tax included
+              </div>
+
+              <div style={{marginBottom:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>401(k) contribution</span>
+                  <span style={{color:C.cream,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${savedContrib.toLocaleString()}</span>
+                </div>
+                <input type="range" min={0} max={Math.max(remainingRoom,23500)} step={100}
+                  defaultValue={savedContrib}
+                  onChange={e=>{
+                    const v=parseFloat(e.target.value)||0;
+                    try{localStorage.setItem(sliderKey,String(v));}catch{}
+                    const card=e.target.closest("[data-401k-card]");
+                    if(card){
+                      const savings=Math.round(v*marginalRate);
+                      card.querySelector("[data-contrib-401k]").textContent="$"+v.toLocaleString();
+                      card.querySelector("[data-savings-401k]").textContent="~$"+savings.toLocaleString();
+                      card.querySelector("[data-perk-401k]").textContent="$"+Math.round(v>0?(savings/v*1000):refundPer1k)+" saved per $1,000";
+                    }
+                  }}
+                  style={{width:"100%",accentColor:C.blue,cursor:"pointer"}}
+                />
+                <div style={{display:"flex",justifyContent:"space-between",marginTop:2}}>
+                  <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$0</span>
+                  <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${Math.max(remainingRoom,23500).toLocaleString()} limit</span>
+                </div>
+              </div>
+
+              <div style={{background:"rgba(74,143,204,0.08)",borderRadius:14,padding:"14px 16px",display:"flex",gap:12,alignItems:"center"}} data-401k-card>
+                <div style={{fontSize:32}}>💼</div>
+                <div style={{flex:1}}>
+                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>Tax savings this year</div>
+                  <div style={{color:C.blueBright,fontWeight:900,fontSize:28,fontFamily:"'Playfair Display',serif",letterSpacing:-0.5}} data-savings-401k>~${Math.round(savedContrib*marginalRate).toLocaleString()}</div>
+                  <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}} data-perk-401k>${refundPer1k} saved per $1,000 contributed</div>
+                </div>
+                <div>
+                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>Contributing</div>
+                  <div style={{color:C.cream,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',serif"}} data-contrib-401k>${savedContrib.toLocaleString()}</div>
+                </div>
+              </div>
+
+              <div style={{color:C.muted,fontSize:11,marginTop:10,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
+                💡 The 2025 401(k) limit is <strong style={{color:C.cream}}>${totalLimit.toLocaleString()}</strong>
+                {us401k.contribThisYear > 0 && ` · You've contributed $${us401k.contribThisYear.toLocaleString()} so far`}.
+                {maxSavings > 0 && ` Max tax savings: `}<strong style={{color:C.blueBright}}>{maxSavings > 0 ? `~$${maxSavings.toLocaleString()}` : ""}</strong>
+              </div>
+              {!us401k.hasData&&<div style={{color:C.muted,fontSize:11,marginTop:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                ℹ️ Add your income in Settings → Profile for a more accurate estimate.
               </div>}
             </div>
           );
@@ -8894,6 +9030,32 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
           style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
           <option value="CA">🇨🇦 Canada</option><option value="US">🇺🇸 United States</option>
         </select>
+      </div>
+      <div style={row}><span style={lbl}>{data.profile?.country==="US"?"State":"Province"}</span>
+        {data.profile?.country==="US" ? (
+          <select defaultValue={data.profile?.province||"CA"} onChange={e=>updateProfile("province",e.target.value)}
+            style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
+            {[["AL","Alabama"],["AK","Alaska"],["AZ","Arizona"],["AR","Arkansas"],["CA","California"],
+              ["CO","Colorado"],["CT","Connecticut"],["DE","Delaware"],["FL","Florida"],["GA","Georgia"],
+              ["HI","Hawaii"],["ID","Idaho"],["IL","Illinois"],["IN","Indiana"],["IA","Iowa"],
+              ["KS","Kansas"],["KY","Kentucky"],["LA","Louisiana"],["ME","Maine"],["MD","Maryland"],
+              ["MA","Massachusetts"],["MI","Michigan"],["MN","Minnesota"],["MS","Mississippi"],["MO","Missouri"],
+              ["MT","Montana"],["NE","Nebraska"],["NV","Nevada"],["NH","New Hampshire"],["NJ","New Jersey"],
+              ["NM","New Mexico"],["NY","New York"],["NC","North Carolina"],["ND","North Dakota"],["OH","Ohio"],
+              ["OK","Oklahoma"],["OR","Oregon"],["PA","Pennsylvania"],["RI","Rhode Island"],["SC","South Carolina"],
+              ["SD","South Dakota"],["TN","Tennessee"],["TX","Texas"],["UT","Utah"],["VT","Vermont"],
+              ["VA","Virginia"],["WA","Washington"],["WV","West Virginia"],["WI","Wisconsin"],["WY","Wyoming"],
+              ["DC","Washington D.C."]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
+          </select>
+        ) : (
+          <select defaultValue={data.profile?.province||"ON"} onChange={e=>updateProfile("province",e.target.value)}
+            style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
+            {[["ON","Ontario"],["BC","British Columbia"],["AB","Alberta"],["QC","Quebec"],
+              ["MB","Manitoba"],["SK","Saskatchewan"],["NS","Nova Scotia"],["NB","New Brunswick"],
+              ["NL","Newfoundland"],["PE","PEI"],["YT","Yukon"],["NT","NWT"],["NU","Nunavut"]
+            ].map(([v,l])=><option key={v} value={v}>{l}</option>)}
+          </select>
+        )}
       </div>
       <div style={row}><span style={lbl}>Status</span>
         <select defaultValue={data.profile?.status||"single"} onChange={e=>updateProfile("status",e.target.value)}
