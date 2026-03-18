@@ -6461,10 +6461,10 @@ function SpendScreen({data, setAppData, setScreen}){
       </div>
     )}
 
-    {/* Re-categorize bottom sheet */}
+    {/* Re-categorize modal — centered bubble */}
     {recatTxn&&(
-      <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={()=>setRecatTxn(null)}>
-        <div style={{background:C.card,borderRadius:"24px 24px 0 0",width:"100%",maxWidth:520,border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",display:"flex",flexDirection:"column",maxHeight:"80vh"}} onClick={e=>e.stopPropagation()}>
+      <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:"20px 16px"}} onClick={()=>setRecatTxn(null)}>
+        <div style={{background:C.card,borderRadius:24,width:"100%",maxWidth:520,border:`1px solid ${C.border}`,boxShadow:"0 24px 64px rgba(0,0,0,0.6)",display:"flex",flexDirection:"column",maxHeight:"85vh"}} onClick={e=>e.stopPropagation()}>
           {/* Fixed header */}
           <div style={{padding:"16px 20px 12px",flexShrink:0,borderBottom:`1px solid ${C.border}`}}>
             <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
@@ -6504,8 +6504,7 @@ function SpendScreen({data, setAppData, setScreen}){
             {/* Add custom category */}
             <AddCustomCategory onAdd={(cat)=>recatWithSmartPrompt(recatTxn,cat)}/>
           </div>
-          {/* Safe bottom padding for mobile */}
-          <div style={{height:"env(safe-area-inset-bottom, 16px)",flexShrink:0}}/>
+          <div style={{height:8,flexShrink:0}}/>
         </div>
       </div>
     )}
