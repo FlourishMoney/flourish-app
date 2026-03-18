@@ -7652,8 +7652,18 @@ function Family({data,household,setHousehold,setScreen}){
   const [kids,setKids]=useState(()=>{
     try { const s=localStorage.getItem("flourish_kids"); return s?JSON.parse(s):[]; } catch { return []; }
   });
+  // familyToken links all kids together so parent can view all from one place
+  const [familyToken]=useState(()=>{
+    try {
+      let t=localStorage.getItem("flourish_family_token");
+      if(!t){t=Math.random().toString(36).substring(2,10)+Math.random().toString(36).substring(2,6);localStorage.setItem("flourish_family_token",t);}
+      return t;
+    } catch { return "family"; }
+  });
   const [newKidName,setNewKidName]=useState("");
   const [showAddKid,setShowAddKid]=useState(false);
+  const [kidProgress,setKidProgress]=useState({}); // {kidToken: {earned, done, total, balance}}
+  const [selectedKid,setSelectedKid]=useState(null); // kid being viewed in parent dashboard
   const [chores,setChores]=useState(()=>{
     try { const s=localStorage.getItem("flourish_chores"); return s?JSON.parse(s):DEFAULT_CHORES; } catch { return DEFAULT_CHORES; }
   });
@@ -7668,6 +7678,28 @@ function Family({data,household,setHousehold,setScreen}){
   // Persist chores + kids to localStorage whenever they change
   useEffect(()=>{
     try { localStorage.setItem("flourish_kids", JSON.stringify(kids)); } catch {}
+    // Fetch live progress for each kid from Supabase
+    if(kids.length > 0) {
+      (async()=>{
+        const tokens = kids.map(k=>k.token).filter(Boolean);
+        if(!tokens.length) return;
+        try {
+          const { data: rows } = await supabase.from("shared_chores")
+            .select("token,chores,wallet").in("token", tokens);
+          if(!rows) return;
+          const prog = {};
+          rows.forEach(row => {
+            const ch = typeof row.chores==="string" ? JSON.parse(row.chores||"[]") : (row.chores||[]);
+            const w  = typeof row.wallet==="string"  ? JSON.parse(row.wallet||"{}") : (row.wallet||{});
+            const done  = ch.filter(c=>c.done).length;
+            const total = ch.length;
+            const earned = ch.filter(c=>c.done).reduce((a,c)=>a+(c.reward||0),0);
+            prog[row.token] = { done, total, earned, balance: w.balance||0 };
+          });
+          setKidProgress(prog);
+        } catch(e) {}
+      })();
+    }
   },[kids]);
 
   useEffect(()=>{
@@ -8049,45 +8081,154 @@ function Family({data,household,setHousehold,setScreen}){
         </div>
       </Card>
 
-      {/* Kids — add and manage children */}
+      {/* ── KIDS DASHBOARD ── */}
       <Card>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:kids.length>0?12:0}}>
-          <div style={{color:C.pinkBright,fontWeight:700,fontSize:14}}>👧 Your Kids</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div style={{color:C.pinkBright,fontWeight:700,fontSize:14}}>👧 Flourish Kids</div>
           <button onClick={()=>setShowAddKid(v=>!v)}
-            style={{background:C.pink+"18",border:`1px solid ${C.pink}33`,borderRadius:8,padding:"4px 10px",color:C.pinkBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer"}}>
-            {showAddKid?"Cancel":"+ Add kid"}
+            style={{background:C.pink+"18",border:`1px solid ${C.pink}33`,borderRadius:8,padding:"5px 10px",color:C.pinkBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer"}}>
+            {showAddKid?"Cancel":"+ Add child"}
           </button>
         </div>
+
         {showAddKid&&(
-          <div style={{display:"flex",gap:8,marginBottom:10}}>
+          <div style={{display:"flex",gap:8,marginBottom:12}}>
             <input value={newKidName} onChange={e=>setNewKidName(e.target.value)}
-              onKeyDown={e=>{if(e.key==="Enter"&&newKidName.trim()){setKids(k=>[...k,{id:Date.now(),name:newKidName.trim(),color:KID_COLORS[k.length%KID_COLORS.length]}]);setNewKidName("");setShowAddKid(false);}}}
+              onKeyDown={e=>{
+                if(e.key==="Enter"&&newKidName.trim()){
+                  const kidToken=Math.random().toString(36).substring(2,10)+Math.random().toString(36).substring(2,8);
+                  setKids(k=>[...k,{id:Date.now(),name:newKidName.trim(),color:KID_COLORS[k.length%KID_COLORS.length],token:kidToken,chores:DEFAULT_CHORES.map(c=>({...c,id:Date.now()+Math.random()}))}]);
+                  setNewKidName("");setShowAddKid(false);
+                }
+              }}
               placeholder="Child's name…" autoFocus
-              style={{flex:1,background:C.cardAlt,border:`1px solid ${C.pink}44`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
+              style={{flex:1,background:C.cardAlt,border:`1px solid ${C.pink}44`,borderRadius:8,padding:"9px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
             <button onClick={()=>{
               if(!newKidName.trim()) return;
-              setKids(k=>[...k,{id:Date.now(),name:newKidName.trim(),color:KID_COLORS[k.length%KID_COLORS.length]}]);
-              setNewKidName(""); setShowAddKid(false);
-            }} style={{background:C.pink,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Add</button>
+              const kidToken=Math.random().toString(36).substring(2,10)+Math.random().toString(36).substring(2,8);
+              setKids(k=>[...k,{id:Date.now(),name:newKidName.trim(),color:KID_COLORS[k.length%KID_COLORS.length],token:kidToken,chores:DEFAULT_CHORES.map(c=>({...c,id:Date.now()+Math.random()}))}]);
+              setNewKidName("");setShowAddKid(false);
+            }} style={{background:C.pink,border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Add</button>
           </div>
         )}
-        {kids.length>0&&(
-          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-            {kids.map((kid,i)=>(
-              <div key={kid.id} style={{display:"flex",alignItems:"center",gap:6,background:kid.color+"18",border:`1px solid ${kid.color}33`,borderRadius:99,padding:"5px 12px 5px 8px"}}>
-                <div style={{width:22,height:22,borderRadius:"50%",background:kid.color+"33",border:`1.5px solid ${kid.color}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:kid.color,flexShrink:0}}>
-                  {kid.name[0].toUpperCase()}
-                </div>
-                <span style={{color:kid.color,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{kid.name}</span>
-                <button onClick={()=>setKids(k=>k.filter(x=>x.id!==kid.id))}
-                  style={{background:"none",border:"none",color:kid.color,fontSize:14,cursor:"pointer",padding:"0 0 0 4px",lineHeight:1,opacity:0.6}}>✕</button>
-              </div>
-            ))}
-          </div>
-        )}
+
         {kids.length===0&&!showAddKid&&(
-          <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Add your kids to personalise the chore chart</div>
+          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"center",padding:"12px 0"}}>
+            Add your children to give each one their own chore chart, wallet, and share link.
+          </div>
         )}
+
+        {/* Per-child progress cards */}
+        {kids.map((kid)=>{
+          const prog = kidProgress[kid.token]||{};
+          const kidChores = kid.chores||DEFAULT_CHORES;
+          const localDone = kidChores.filter(c=>c.done).length;
+          const localTotal = kidChores.length;
+          const localEarned = kidChores.filter(c=>c.done).reduce((a,c)=>a+(c.reward||0),0);
+          const done = prog.done ?? localDone;
+          const total = prog.total ?? localTotal;
+          const earned = prog.earned ?? localEarned;
+          const balance = prog.balance ?? 0;
+          const isSelected = selectedKid===kid.id;
+          return (
+            <div key={kid.id} style={{marginBottom:10}}>
+              {/* Kid header row */}
+              <div style={{background:kid.color+"10",borderRadius:isSelected?"14px 14px 0 0":14,border:`1px solid ${kid.color}${isSelected?"55":"28"}`,padding:"12px 14px",borderBottom:isSelected?"none":"",cursor:"pointer"}}
+                onClick={()=>setSelectedKid(isSelected?null:kid.id)}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:34,height:34,borderRadius:"50%",background:kid.color+"22",border:`2px solid ${kid.color}`,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:15,color:kid.color,flexShrink:0}}>
+                    {kid.name[0].toUpperCase()}
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{kid.name}</div>
+                    <div style={{display:"flex",gap:10,marginTop:2}}>
+                      <span style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{done}/{total} chores</span>
+                      <span style={{color:kid.color,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>${earned.toFixed(2)} earned</span>
+                      {balance>0&&<span style={{color:"#E8B84B",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>${balance.toFixed(2)} saved</span>}
+                    </div>
+                  </div>
+                  {/* Share link button */}
+                  {kid.token&&(
+                    <button onClick={async(e)=>{
+                      e.stopPropagation();
+                      const url=`${window.location.origin}/chores/${kid.token}`;
+                      // Save to Supabase first
+                      try {
+                        await supabase.from("shared_chores").upsert({
+                          token:kid.token,
+                          chores:JSON.stringify(kid.chores||DEFAULT_CHORES),
+                          family_name:`${data.profile?.name||"Our Family"} — ${kid.name}`,
+                          family_token:familyToken,
+                          child_name:kid.name,
+                          created_at:new Date().toISOString(),
+                        });
+                      } catch(e){}
+                      if(navigator.share){navigator.share({title:`${kid.name}'s Chore Chart`,url}).catch(()=>{});}
+                      else{
+                        try{await navigator.clipboard.writeText(url);}catch{}
+                        setChoreToast(`✓ ${kid.name}'s link copied!`);
+                        setTimeout(()=>setChoreToast(""),4000);
+                      }
+                    }} style={{background:C.teal+"18",border:`1px solid ${C.teal}33`,borderRadius:8,padding:"5px 10px",color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer",flexShrink:0}}>
+                      📤 Share
+                    </button>
+                  )}
+                  <span style={{color:C.muted,fontSize:14,transition:"transform .2s",display:"inline-block",transform:isSelected?"rotate(90deg)":"none"}}>›</span>
+                </div>
+                {/* Mini progress bar */}
+                {total>0&&(
+                  <div style={{marginTop:8,background:"rgba(255,255,255,0.06)",borderRadius:99,height:4,overflow:"hidden"}}>
+                    <div style={{width:`${total>0?(done/total)*100:0}%`,height:"100%",background:kid.color,borderRadius:99,transition:"width 0.5s ease"}}/>
+                  </div>
+                )}
+              </div>
+
+              {/* Expanded chore editor for this kid */}
+              {isSelected&&(
+                <div style={{background:C.cardAlt,borderRadius:"0 0 14px 14px",border:`1px solid ${kid.color}33`,borderTop:"none",padding:"12px 14px"}}>
+                  <div style={{color:C.muted,fontSize:11,marginBottom:10,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:1}}>Chores for {kid.name}</div>
+                  {(kid.chores||DEFAULT_CHORES).map((ch,ci)=>(
+                    <div key={ch.id} style={{display:"flex",gap:8,alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${C.border}22`}}>
+                      <div onClick={()=>{
+                        setKids(ks=>ks.map(k=>k.id===kid.id?{...k,chores:(k.chores||DEFAULT_CHORES).map(c=>c.id===ch.id?{...c,done:!c.done}:c)}:k));
+                      }} style={{width:20,height:20,borderRadius:5,border:`2px solid ${ch.done?kid.color:C.border}`,background:ch.done?kid.color:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0}}>
+                        {ch.done&&<span style={{color:"#050D09",fontSize:11,fontWeight:900}}>✓</span>}
+                      </div>
+                      <span style={{flex:1,color:ch.done?"rgba(237,233,226,0.4)":C.cream,fontSize:13,textDecoration:ch.done?"line-through":"none"}}>{ch.task}</span>
+                      <span style={{color:"#E8B84B",fontSize:12,fontWeight:700}}>${(ch.reward||0).toFixed(2)}</span>
+                      <button onClick={()=>setKids(ks=>ks.map(k=>k.id===kid.id?{...k,chores:(k.chores||[]).filter(c=>c.id!==ch.id)}:k))}
+                        style={{background:"none",border:"none",color:C.muted,fontSize:14,cursor:"pointer",padding:"0 4px",lineHeight:1}}>✕</button>
+                    </div>
+                  ))}
+                  {/* Add chore for this kid */}
+                  <div style={{marginTop:10,display:"flex",gap:6}}>
+                    <input placeholder="Add chore…" id={`chore-input-${kid.id}`}
+                      style={{flex:2,background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px",color:C.cream,fontSize:12,fontFamily:"inherit"}}/>
+                    <input placeholder="$" type="number" id={`reward-input-${kid.id}`}
+                      style={{width:50,background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px",color:C.cream,fontSize:12,fontFamily:"inherit"}}/>
+                    <button onClick={()=>{
+                      const taskEl=document.getElementById(`chore-input-${kid.id}`);
+                      const rewardEl=document.getElementById(`reward-input-${kid.id}`);
+                      if(!taskEl?.value.trim()) return;
+                      setKids(ks=>ks.map(k=>k.id===kid.id?{...k,chores:[...(k.chores||DEFAULT_CHORES),{id:Date.now(),task:taskEl.value.trim(),reward:parseFloat(rewardEl?.value)||0.50,done:false}]}:k));
+                      taskEl.value=""; if(rewardEl) rewardEl.value="";
+                    }} style={{background:kid.color,border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>+</button>
+                  </div>
+                  {/* Reset chores for this kid */}
+                  <button onClick={()=>setKids(ks=>ks.map(k=>k.id===kid.id?{...k,chores:(k.chores||DEFAULT_CHORES).map(c=>({...c,done:false}))}:k))}
+                    style={{marginTop:8,width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px",color:C.muted,fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
+                    🔄 Reset {kid.name}'s chores
+                  </button>
+                  {/* Remove kid */}
+                  <button onClick={()=>{setKids(k=>k.filter(x=>x.id!==kid.id));setSelectedKid(null);}}
+                    style={{marginTop:4,width:"100%",background:"none",border:`1px solid rgba(255,79,106,0.2)`,borderRadius:8,padding:"6px",color:"rgba(255,79,106,0.6)",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
+                    Remove {kid.name}
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </Card>
 
       {/* Chore Chart — editable, persistent, Supabase-synced */}
@@ -10230,10 +10371,11 @@ function SharedChoreBoard({token}) {
     (async()=>{
       try {
         const { data, error } = await supabase
-          .from("shared_chores").select("chores,family_name,wallet,kids").eq("token",token).single();
+          .from("shared_chores").select("chores,family_name,wallet,kids,child_name").eq("token",token).single();
         if(error||!data){setNotFound(true);setLoading(false);return;}
         setChores(typeof data.chores==="string"?JSON.parse(data.chores):data.chores||[]);
-        setFamilyName(data.family_name||"Family");
+        // Use child_name if available (per-child link), otherwise family_name
+        setFamilyName(data.child_name||data.family_name||"Family");
         if(data.wallet) setWallet(typeof data.wallet==="string"?JSON.parse(data.wallet):data.wallet);
         if(data.kids) setKids(typeof data.kids==="string"?JSON.parse(data.kids):data.kids);
       } catch(e){setNotFound(true);}
@@ -10247,7 +10389,8 @@ function SharedChoreBoard({token}) {
     setSaving(true);
     try {
       await supabase.from("shared_chores").upsert({
-        token, chores:JSON.stringify(updated), family_name:familyName, created_at:new Date().toISOString()
+        token, chores:JSON.stringify(updated), family_name:familyName,
+        child_name:familyName, created_at:new Date().toISOString()
       });
     } catch(e){}
     setSaving(false);
@@ -10258,6 +10401,7 @@ function SharedChoreBoard({token}) {
     try {
       await supabase.from("shared_chores").upsert({
         token, chores:JSON.stringify(chores), family_name:familyName,
+        child_name:familyName, // preserve child_name on wallet updates
         wallet:JSON.stringify(newWallet), kids:JSON.stringify(kids),
         created_at: new Date().toISOString()
       });
@@ -10301,7 +10445,7 @@ function SharedChoreBoard({token}) {
       {/* Header */}
       <div style={{padding:"28px 20px 16px",textAlign:"center",flexShrink:0}}>
         <FlourishMark size={32}/>
-        <div style={{color:"rgba(237,233,226,0.5)",fontSize:10,marginTop:6,fontFamily:F,textTransform:"uppercase",letterSpacing:2}}>Flourish Kids</div>
+        <div style={{color:"rgba(237,233,226,0.5)",fontSize:10,marginTop:6,fontFamily:F,textTransform:"uppercase",letterSpacing:2}}>Flourish Kids ✨</div>
         <div style={{color:"#EDE9E2",fontSize:22,fontWeight:900,fontFamily:PF,marginTop:2}}>{familyName}</div>
         {saving&&<div style={{color:"rgba(0,204,133,0.6)",fontSize:10,marginTop:2,fontFamily:F}}>Saving…</div>}
       </div>
