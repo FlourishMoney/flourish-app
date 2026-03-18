@@ -37,7 +37,7 @@ const CC = {
     ],
     debtTypes:["Credit Card","Line of Credit","HELOC","Car Loan","OSAP / Student Loan","Personal Loan","Mortgage","Buy Now Pay Later","Other"],
     taxTips:[
-      {title:"RRSP Contribution",body:"Every RRSP dollar reduces your taxable income. At a 30% marginal rate, putting in $5,000 gets you ~$1,500 back at tax time. Deadline is March 1.",savings:"Up to 33%",flag:"🇨🇦",priority:"high",action:"Check My RRSP Room"},
+      {title:"RRSP Contribution",body:"Every RRSP dollar reduces your taxable income. At a 30% marginal rate, putting in $5,000 gets you ~$1,500 back at tax time. Contributions made in the first 60 days of the calendar year count toward the prior tax year — check CRA My Account for the exact deadline each year.",savings:"Up to 33%",flag:"🇨🇦",priority:"high",action:"Check My RRSP Room"},
       {title:"TFSA — You're Probably Under-Using It",body:"Your TFSA isn't just for savings — it's for investing. Any growth inside is 100% tax-free forever. If you opened one at 18, you may have $75,000+ of contribution room sitting unused.",savings:"Tax-free growth",flag:"🇨🇦",priority:"high",action:"Calculate My Room"},
       {title:"FHSA (First Home Savings Account)",body:"If you've never owned a home, you can contribute up to $8,000/year and get a tax deduction — like an RRSP. Unused room carries forward. Withdraw tax-free to buy your first home.",savings:"Up to $8,000/yr",flag:"🇨🇦",priority:"high",action:"Open an FHSA"},
       {title:"GST/HST Credit",body:"Filing your taxes means CRA automatically checks if you qualify for quarterly GST/HST credits. Under ~$50k income? You likely qualify and may not know it. File every year even if you owe nothing.",savings:"Up to $519/yr",flag:"🇨🇦",priority:"medium",action:"File Your Taxes"},
@@ -224,7 +224,7 @@ function getPersonalizedTaxCredits(profile) {
         {title:"Pension Income Splitting",body:"If you receive eligible pension income (RPP, RRIF, annuity), you can split up to 50% with your spouse. If your spouse is in a lower tax bracket, this can save your household thousands every year.",savings:"Potentially thousands",flag:"🇨🇦",priority:"high",action:"File Form T1032"},
         {title:"Pension Income Tax Credit",body:"The first $2,000 of eligible pension income qualifies for a 15% federal credit ($300 saved). Even if you're splitting pension income, your spouse can also claim this credit on the transferred amount.",savings:"Up to $300 federal",flag:"🇨🇦",priority:"high",action:"Claim on Line 31400"},
         {title:"OAS & GIS — Are You Getting Everything?",body:"Old Age Security ($742.31/mo at 65) is automatic, but the Guaranteed Income Supplement (GIS) is not — you must apply. Low-income seniors leave GIS unclaimed every year. If your income is under ~$21,624, apply immediately.",savings:"Up to $1,065/mo (GIS)",flag:"🇨🇦",priority:"high",action:"Apply at Service Canada"},
-        {title:"Delay CPP/OAS for a 42% boost",body:"Taking CPP at 65 is the default, but deferring to 70 permanently increases your monthly payment by 42%. Deferring OAS to 70 adds another 36%. If you have other income to draw on between 65 and 70 and expect to live past 83, delaying is usually worth it. Run the math before you claim.",savings:"Up to 42% more CPP + 36% more OAS",flag:"🇨🇦",priority:"high",action:"Model your CPP start date"},
+        {title:"Delay CPP/QPP and OAS for a 42% boost",body:"Taking CPP (or QPP in Quebec) at 65 is the default, but deferring to 70 permanently increases your monthly payment by 42%. Deferring OAS to 70 adds another 36%. If you have other income to draw on between 65 and 70 and expect to live past 83, delaying is usually worth it. Run the math before you claim.",savings:"Up to 42% more CPP/QPP + 36% more OAS",flag:"🇨🇦",priority:"high",action:"Model your CPP/QPP start date"},
       {title:"CPP Maximum — Know What You're Entitled To",body:"The maximum CPP retirement pension is $1,364.60/mo (2025) at age 65. Your actual amount depends on contributions history. You can check your CPP Statement of Contributions at My Service Canada Account.",savings:"Up to $1,364.60/mo",flag:"🇨🇦",priority:"medium",action:"Check My Service Canada"},
         {title:"Medical Expense Tax Credit",body:"Seniors often have significant medical costs — prescriptions, dental, vision, hearing aids, home care. Expenses exceeding 3% of your net income (or $2,635 — whichever is less) are claimable. Keep every receipt.",savings:"15% of qualifying expenses",flag:"🇨🇦",priority:"high",action:"Gather Medical Receipts"},
         {title:"Home Accessibility Tax Credit",body:"Making your home safer and more accessible? Renovations like grab bars, wheelchair ramps, or walk-in tubs qualify for a 15% federal credit on up to $20,000 of expenses per year.",savings:"Up to $3,000",flag:"🇨🇦",priority:"medium",action:"Keep Renovation Receipts"}
@@ -1641,7 +1641,10 @@ function WealthForecast({data}) {
   const invBal = (data.accounts||[]).filter(a=>a.type==="investment").reduce((s,a)=>s+parseFloat(a.balance||0),0);
   const savingsRate = 0.10; // assume 10% baseline savings
   const monthlyInvest = monthlyIncome * savingsRate + extra;
-  const annualReturn = 0.07;
+  const annualReturn = 0.07; // long-term equity assumption — disclosed in UI below
+  // Note: 7% is a historical long-term equity average. Conservative investors
+  // and those within 10 years of retirement should use the retirement tab
+  // projection tool which has Conservative (3%) / Moderate (5%) / Aggressive (7%) modes.
 
   const project = (monthly, years) => {
     let val = invBal + bal * 0.5;
@@ -1716,6 +1719,10 @@ function WealthForecast({data}) {
           </span>
         </div>
       )}
+      <div style={{marginTop:10,color:C.muted,fontSize:10,textAlign:"center",fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
+        Assumes 7% avg annual return · estimates only · not financial advice · actual returns vary.
+        For conservative or near-retirement projections, use the <span style={{color:C.teal,fontWeight:700}}>Retirement tab</span> with adjustable assumption modes.
+      </div>
     </div>
   );
 }
@@ -1750,7 +1757,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
     if (saving > 0) opportunities.push({
       id:"refi", icon:"💳", color:C.orange,
       title:`Refinance ${highRateDebt.name}`,
-      detail:`At ${highRateDebt.rate}% you're overpaying. A 6.5% personal loan could save ~$${saving}/yr in interest.`,
+      detail:`At ${highRateDebt.rate}% this debt is expensive. If you qualify for a lower-rate consolidation loan, compare the APR, fees, and total repayment carefully — a lower rate doesn't always mean lower total cost.`,
       action:"Debt Plan", screen:"goals", tab:"sim", badge:"Save $"+saving+"/yr"
     });
   }
@@ -6163,12 +6170,66 @@ function SpendScreen({data, setAppData, setScreen}){
   const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCCPayment(t,data.debts||[])).reduce((a,t)=>a+t.amount,0);
   const totalIn=acctFiltered.filter(t=>t.amount<0).reduce((a,t)=>a+Math.abs(t.amount),0);
 
+  // Smart Cuts — data-driven, income-aware, ruthless
+  // Only show cuts where the user is actually overspending
+  const monthlyIncomeSC = FinancialCalcEngine.cashFlow(data).monthlyIncome || 0;
+  const byCat = stats.byCat || {};
+
+  // Benchmark thresholds as % of income (or absolute floor)
+  const dining    = (byCat["Coffee & Dining"] || 0) + (byCat["Coffee"] || 0) + (byCat["Dining"] || 0);
+  const groceries = byCat["Groceries"] || 0;
+  const shopping  = (byCat["Shopping"] || 0);
+  const subs      = stats.subs || 0;
+  const transport = byCat["Gas & Transport"] || 0;
+  const entertain = byCat["Entertainment"] || 0;
+
+  const diningBenchmark    = monthlyIncomeSC > 0 ? monthlyIncomeSC * 0.10 : 200;
+  const groceryBenchmark   = monthlyIncomeSC > 0 ? monthlyIncomeSC * 0.08 : 400;
+  const shoppingBenchmark  = monthlyIncomeSC > 0 ? monthlyIncomeSC * 0.05 : 150;
+  const subsBenchmark      = monthlyIncomeSC > 0 ? monthlyIncomeSC * 0.03 : 75;
+  const entertainBenchmark = monthlyIncomeSC > 0 ? monthlyIncomeSC * 0.04 : 100;
+
   const cuts=[
-    stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee is adding up",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month totalling $${stats.coffee.toFixed(2)}. That's $${(stats.coffee*12).toFixed(0)}/year. Making coffee at home 4 days a week cuts this by 60%.`,saving:`$${Math.round(stats.coffee*0.6)}/mo`,effort:"Low",color:C.orange},
-    stats.delivery>0&&{id:2,icon:"package",title:"Food delivery every week",body:`$${(stats.delivery||0).toFixed(2)} on delivery this month. One fewer order per week saves $40–60/month reliably. Your wallet will notice in 30 days.`,saving:"$50/mo",effort:"Low",color:C.orange},
-    {id:3,icon:"bag",title:"Amazon impulse purchases",body:"Try the 48-hour rule: add to cart, wait 2 days. Most impulse buys get removed without regret. Studies show this cuts impulse spend by 30–40%.",saving:"$40–70/mo",effort:"Low",color:C.pink},
-    stats.subs>0&&{id:4,icon:"zap",title:"Subscriptions creeping up",body:`$${(stats.subs||0).toFixed(2)}/mo in subscriptions. Go through each one — did you use it last month? Most households find 1–2 to cancel painlessly.`,saving:"$15–35/mo",effort:"Low",color:C.purple},
-    {id:5,icon:"chartUp",title:`${stats.busiest} is your expensive day`,body:`You spend significantly more on ${stats.busiest}s than any other day. Knowing this is half the battle — awareness alone cuts it 20–30%.`,saving:"$30–60/mo",effort:"Very Low",color:C.blue},
+    // Coffee — only if actual spend detected
+    stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee shops: real cost",
+      body:`${stats.coffeeCount} visit${stats.coffeeCount===1?"":"s"} this month · $${stats.coffee.toFixed(0)} total · $${(stats.coffee*12).toFixed(0)}/year. At-home coffee costs ~$0.30/cup vs $5–7 out. Cutting 3 days a week saves $${Math.round(stats.coffee*0.5)}/month reliably.`,
+      saving:`$${Math.round(stats.coffee*0.5)}/mo`,effort:"Low",color:C.orange},
+
+    // Dining/food delivery — only if over benchmark
+    dining>diningBenchmark&&{id:2,icon:"food",title:`Dining is ${monthlyIncomeSC>0?Math.round(dining/monthlyIncomeSC*100)+"% of income — over the 10% benchmark":"above a healthy level"}`,
+      body:`$${dining.toFixed(0)} on dining and delivery this month. Benchmark is ~10% of income ($${diningBenchmark.toFixed(0)}). You're $${(dining-diningBenchmark).toFixed(0)} over. One fewer restaurant meal and one fewer delivery per week typically closes this gap.`,
+      saving:`$${Math.round(dining-diningBenchmark)}/mo`,effort:"Low",color:C.orange},
+
+    // Delivery specifically — only if detected
+    stats.delivery>0&&dining<=diningBenchmark&&{id:3,icon:"package",title:"Food delivery fees add up fast",
+      body:`$${stats.delivery.toFixed(0)} on delivery this month. After fees, tips, and markups, delivery typically costs 40–60% more than pickup or cooking the same meal. One fewer order per week saves $${Math.round(stats.delivery*0.4)}/month.`,
+      saving:`$${Math.round(stats.delivery*0.4)}/mo`,effort:"Low",color:C.orange},
+
+    // Subscriptions — only if over benchmark with specific amount
+    subs>subsBenchmark&&{id:4,icon:"zap",title:`$${subs.toFixed(0)}/mo in subscriptions — audit time`,
+      body:`You're spending $${subs.toFixed(0)}/month on subscriptions vs a $${subsBenchmark.toFixed(0)} benchmark (3% of income). That's $${(subs*12).toFixed(0)}/year. Go through each one: used it last month? If not, cancel today — not "soon."`,
+      saving:`$${Math.round(subs-subsBenchmark)}/mo`,effort:"Low",color:C.purple},
+
+    // Shopping overspend — only if measurably over benchmark
+    shopping>shoppingBenchmark&&{id:5,icon:"bag",title:`Shopping is $${shopping.toFixed(0)} — ${Math.round(shopping/Math.max(shoppingBenchmark,1)*100-100)}% over benchmark`,
+      body:`$${shopping.toFixed(0)} on shopping this month vs a $${shoppingBenchmark.toFixed(0)} benchmark. The 48-hour rule: add to cart, wait 2 days. Most impulse purchases get abandoned without regret. Apply it for 30 days.`,
+      saving:`$${Math.round(shopping-shoppingBenchmark)}/mo`,effort:"Low",color:C.pink},
+
+    // Entertainment overspend
+    entertain>entertainBenchmark&&{id:6,icon:"film",title:`Entertainment: $${entertain.toFixed(0)}/mo`,
+      body:`$${entertain.toFixed(0)} on entertainment — $${(entertain-entertainBenchmark).toFixed(0)} over the 4% benchmark. Identify one recurring entertainment expense that could be rotated, paused, or shared.`,
+      saving:`$${Math.round(entertain-entertainBenchmark)}/mo`,effort:"Low",color:C.blue},
+
+    // Groceries — only if significantly over
+    groceries>groceryBenchmark*1.4&&{id:7,icon:"cart",title:`Grocery bill is high: $${groceries.toFixed(0)}/mo`,
+      body:`$${groceries.toFixed(0)} on groceries this month — about $${(groceries-groceryBenchmark).toFixed(0)} above benchmark. Meal planning and a fixed weekly list typically cut grocery spend by 20–25% with minimal effort.`,
+      saving:`$${Math.round((groceries-groceryBenchmark)*0.5)}/mo`,effort:"Low",color:C.green},
+
+    // Busiest day — only if strongly meaningful
+    monthlyIncomeSC>0&&{id:8,icon:"chartUp",title:`${stats.busiest}s cost you the most`,
+      body:`You spend more on ${stats.busiest}s than any other day. Checking your balance before you go out on ${stats.busiest}s takes 10 seconds and typically reduces spending that day by 20–30%.`,
+      saving:"$30–60/mo",effort:"Very Low",color:C.blue},
+
   ].filter(Boolean).filter(s=>!dismissed.includes(s.id));
 
   const ALL_CATS = ["Food & Drink","Groceries","Transport","Shopping","Entertainment","Bills & Utilities","Health","Income","Subscriptions","Travel","Other"];
@@ -6561,7 +6622,8 @@ function SpendScreen({data, setAppData, setScreen}){
         const bdTotal= bdTxns.reduce((s,t)=>s+t.amount,0);
         const bdByCat= {};
         bdTxns.forEach(t=>{const c=getCat(t);bdByCat[c]=(bdByCat[c]||0)+t.amount;});
-        const bdTopCats=Object.entries(bdByCat).sort((a,b)=>b[1]-a[1]).slice(0,8);
+        // Show ALL spending categories — custom cats must never be hidden by a slice limit
+        const bdTopCats=Object.entries(bdByCat).sort((a,b)=>b[1]-a[1]);
         const periodLabel = period==="week"?"This week":period==="month"?monthLabel:period==="last"?"Last month":period==="3mo"?"Last 3 months":"Last 90 days";
 
         // ── Year-over-year comparison ─────────────────────────────────────
@@ -7525,13 +7587,7 @@ function Family({data,household,setHousehold,setScreen}){
   const [done2,setDone2]=useState(false);
   const [expandedItem,setExpandedItem]=useState(null);
   const [kidAge,setKidAge]=useState("8-12");
-  const [showChoreIntegrations,setShowChoreIntegrations]=useState(false);
-  const [chores,setChores]=useState([
-    {id:1,task:"Make bed",reward:.50,done:true},{id:2,task:"Set the table",reward:.50,done:false},
-    {id:3,task:"Take out garbage",reward:1.00,done:true},{id:4,task:"Vacuum living room",reward:2.00,done:false},
-    {id:5,task:"Wash dishes",reward:1.50,done:false},{id:6,task:"Tidy bedroom",reward:1.00,done:false},
-  ]);
-  const [customChore,setCustomChore]=useState({task:"",reward:""});
+  // Chore tracking removed — keep Family focused on household finances
   // Derived — after all hooks
   const isCouple=data.profile?.status!=="single";
 
@@ -8299,14 +8355,7 @@ function WidgetScreen({data,onBack}){
       ))}
     </div>
 
-    {/* Native widget roadmap note */}
-    <div style={{background:C.surface,borderRadius:16,padding:"14px 18px",border:`1px solid ${C.border}`,display:"flex",gap:12,alignItems:"flex-start"}}>
-      <span style={{fontSize:16,flexShrink:0}}>⚡</span>
-      <div>
-        <div style={{color:C.cream,fontWeight:600,fontSize:13,marginBottom:3}}>True native widgets coming soon</div>
-        <div style={{color:C.muted,fontSize:12,lineHeight:1.6}}>Full iOS WidgetKit and Android Glance widgets are on our roadmap — showing live balance and safe-spend right on your lock screen without opening the app.</div>
-      </div>
-    </div>
+    {/* Native widget roadmap note removed — show only shipping features */}
   </div>;
 }
 
