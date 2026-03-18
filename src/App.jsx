@@ -8052,10 +8052,18 @@ function Family({data,household,setHousehold,setScreen}){
                 await supabase.from("shared_chores").upsert({token,chores:JSON.stringify(chores),family_name:familyName,created_at:new Date().toISOString()});
                 if(!choreToken){setChoreToken(token);try{localStorage.setItem("flourish_chore_token",token);}catch{}}
                 const url=`${window.location.origin}/chores/${token}`;
-                if(navigator.share){navigator.share({title:`${familyName} Chore Chart`,url});}
-                else{await navigator.clipboard.writeText(url);alert("Link copied!\n\nOpen it on any device — tablet, Skylight, phone. Kids can check off chores directly from the link.");}
-              } catch(e){alert("Couldn't create share link.");}
-              setChoreSaving(false);
+                setChoreSaving(false); // reset BEFORE share sheet opens so UI never freezes
+                if(navigator.share){
+                  navigator.share({title:`${familyName} Chore Chart`,url}).catch(()=>{}); // catch dismiss
+                } else {
+                  try { await navigator.clipboard.writeText(url); }
+                  catch { /* clipboard blocked — fall back to prompt */ }
+                  alert("Link copied!\n\nOpen it on any device — tablet, Skylight, phone. Kids can check off chores directly from the link.");
+                }
+              } catch(e){
+                setChoreSaving(false);
+                alert("Couldn't create share link. Check your connection.");
+              }
             }} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:8,padding:"5px 10px",color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer"}}>
               {choreSaving?"Saving…":"📤 Share"}
             </button>
