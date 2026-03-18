@@ -7642,7 +7642,13 @@ function Family({data,household,setHousehold,setScreen}){
   const [done2,setDone2]=useState(false);
   const [expandedItem,setExpandedItem]=useState(null);
   const [kidAge,setKidAge]=useState("8-12");
-  // Chore tracking removed — keep Family focused on household finances
+  const [showChoreIntegrations,setShowChoreIntegrations]=useState(false);
+  const [chores,setChores]=useState([
+    {id:1,task:"Make bed",reward:.50,done:true},{id:2,task:"Set the table",reward:.50,done:false},
+    {id:3,task:"Take out garbage",reward:1.00,done:true},{id:4,task:"Vacuum living room",reward:2.00,done:false},
+    {id:5,task:"Wash dishes",reward:1.50,done:false},{id:6,task:"Tidy bedroom",reward:1.00,done:false},
+  ]);
+  const [customChore,setCustomChore]=useState({task:"",reward:""});
   // Derived — after all hooks
   const isCouple=data.profile?.status!=="single";
 
