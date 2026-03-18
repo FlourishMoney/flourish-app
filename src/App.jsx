@@ -9612,7 +9612,7 @@ function Paywall({onClose,onUpgrade,country}){
   const [selected,setSelected]=useState("annual");
   const [promo,setPromo]=useState("");
   const [promoError,setPromoError]=useState("");
-  const PROMO_CODES=["FLOURISH2026","AMANDA","FOUNDER","FLOURISH","BETA100"];
+  const PROMO_CODES=["FOUNDER","BETA100"];
   const isCA=country==="CA";
   const plans={
     annual:{label:"Annual",price:isCA?"$79.99/yr":"$59.99/yr",monthly:isCA?"$6.67/mo":"$5.00/mo",save:"Save 33%",badge:"Best Value"},
