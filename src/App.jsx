@@ -8740,7 +8740,51 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
   return null;
 }
 
-function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,bankConnected,needsReconnect,reconnectLoading,onReconnect}){
+// ── FEEDBACK CARD ─────────────────────────────────────────────────────────────
+function FeedbackCard({onSend}){
+  const [text, setText] = useState("");
+  const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  if(sent) return (
+    <div style={{background:C.teal+"12",border:`1px solid ${C.teal}33`,borderRadius:18,padding:"16px 18px",textAlign:"center",marginBottom:8}}>
+      <div style={{fontSize:28,marginBottom:8}}>🙏</div>
+      <div style={{color:C.tealBright,fontWeight:700,fontSize:14}}>Feedback received!</div>
+      <div style={{color:C.muted,fontSize:12,marginTop:4}}>We read everything. Thank you.</div>
+    </div>
+  );
+  return (
+    <div style={{background:C.card,borderRadius:18,padding:"16px 18px",border:`1px solid ${C.border}`,marginBottom:8}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+        <div style={{width:36,height:36,borderRadius:11,background:C.teal+"18",border:`1px solid ${C.teal}28`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:18}}>💬</div>
+        <div>
+          <div style={{color:C.cream,fontWeight:700,fontSize:14}}>Send feedback</div>
+          <div style={{color:C.muted,fontSize:11,marginTop:1}}>Bug, idea, or anything — we read every message</div>
+        </div>
+      </div>
+      <textarea
+        value={text}
+        onChange={e=>setText(e.target.value)}
+        placeholder="What's on your mind?"
+        rows={3}
+        style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",resize:"vertical",boxSizing:"border-box",lineHeight:1.5,marginBottom:10}}
+      />
+      <button
+        disabled={!text.trim()||sending}
+        onClick={async()=>{
+          if(!text.trim()) return;
+          setSending(true);
+          await onSend(text.trim());
+          setSent(true);
+          setSending(false);
+        }}
+        style={{width:"100%",background:text.trim()?C.teal:"rgba(255,255,255,0.06)",border:"none",borderRadius:10,padding:"11px",color:"#fff",fontWeight:700,fontSize:13,cursor:text.trim()?"pointer":"default",fontFamily:"'Plus Jakarta Sans',sans-serif",opacity:text.trim()?1:0.4,transition:"all 0.2s"}}>
+        {sending?"Sending…":"Send feedback →"}
+      </button>
+    </div>
+  );
+}
+
+function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,bankConnected,needsReconnect,reconnectLoading,onReconnect,onSendFeedback}){
   const [notifToggles,setNotifToggles]=useState({overdraft:true,bills:true,coach:true,meeting:false,patterns:true});
   const [activeSection,setActiveSection]=useState(null);
   const handleShare=()=>{
@@ -8837,6 +8881,9 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         </button>
       </div>
     )}
+    {/* ── Feedback ────────────────────────────────────────────── */}
+    {onSendFeedback&&<FeedbackCard onSend={onSendFeedback}/>}
+
     {/* ── Bank connection ──────────────────────────────────────── */}
     {(bankConnected || true)&&(
       <div style={{marginTop:10,padding:"14px 16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
@@ -9565,7 +9612,7 @@ function Paywall({onClose,onUpgrade,country}){
   const [selected,setSelected]=useState("annual");
   const [promo,setPromo]=useState("");
   const [promoError,setPromoError]=useState("");
-  const PROMO_CODES=["FLOURISH2026","AMANDA","FOUNDER","GROWSMART","BETA100"];
+  const PROMO_CODES=["FLOURISH2026","AMANDA","FOUNDER","FLOURISH","BETA100"];
   const isCA=country==="CA";
   const plans={
     annual:{label:"Annual",price:isCA?"$79.99/yr":"$59.99/yr",monthly:isCA?"$6.67/mo":"$5.00/mo",save:"Save 33%",badge:"Best Value"},
@@ -10083,6 +10130,48 @@ export default function FlourishApp(){
   useEffect(()=>{ saveState({onboarded,appData,household,isPremium,checkInBonus}); },
     [onboarded,appData,household,isPremium,checkInBonus]);
 
+  // ── Cross-device sync via Supabase ───────────────────────────
+  // On login: pull saved state from Supabase and hydrate localStorage
+  useEffect(()=>{
+    if(!user) return;
+    (async()=>{
+      try {
+        const { data, error } = await supabase
+          .from("user_data")
+          .select("state")
+          .eq("user_id", user.id)
+          .single();
+        if(error || !data?.state) return; // no saved state yet
+        const remote = typeof data.state === "string" ? JSON.parse(data.state) : data.state;
+        if(!remote || typeof remote !== "object") return;
+        // Only hydrate if remote is more complete than local
+        if(remote.onboarded) {
+          setOnboarded(true);
+          if(remote.appData) setAppData(remote.appData);
+          if(remote.household) setHousehold(remote.household);
+          if(remote.isPremium) setIsPremium(true);
+          if(remote.checkInBonus) setCheckInBonus(remote.checkInBonus);
+          saveState(remote); // write to localStorage for offline use
+        }
+      } catch(e) { /* sync failure is non-fatal */ }
+    })();
+  }, [user?.id]); // eslint-disable-line
+
+  // On state change: push to Supabase (debounced — only when settled)
+  useEffect(()=>{
+    if(!user || !onboarded) return;
+    const timer = setTimeout(async()=>{
+      try {
+        const state = JSON.stringify({onboarded,appData,household,isPremium,checkInBonus});
+        await supabase.from("user_data").upsert(
+          { user_id: user.id, state, updated_at: new Date().toISOString() },
+          { onConflict: "user_id" }
+        );
+      } catch(e) { /* sync failure is non-fatal — localStorage is the source of truth */ }
+    }, 3000); // 3s debounce — don't hammer on every keystroke
+    return () => clearTimeout(timer);
+  }, [onboarded, appData, household, isPremium, checkInBonus]); // eslint-disable-line
+
   // ── Fetch transactions on first dashboard load after bank connect ──
   // Onboarding only fetches accounts (fast). Transactions are fetched here silently.
   useEffect(()=>{
@@ -10372,7 +10461,21 @@ export default function FlourishApp(){
 
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <Settings data={appData} setAppData={setAppData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}}/>;
+    const handleFeedback = async (msg) => {
+      try {
+        await supabase.from("feedback").insert({
+          user_id: user?.id||null,
+          email: user?.email||null,
+          message: msg,
+          created_at: new Date().toISOString(),
+          app_version: "v1-beta",
+        });
+      } catch(e) {
+        // Fallback — open email client
+        window.open(`mailto:hello@flourishmoney.app?subject=Flourish Feedback&body=${encodeURIComponent(msg)}`);
+      }
+    };
+    if(showSettings)return <Settings data={appData} setAppData={setAppData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} onSendFeedback={handleFeedback}/>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
