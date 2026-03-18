@@ -5920,7 +5920,7 @@ function IncomeDetectionBanner({transactions, incomes, setAppData}){
   );
 }
 
-function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetBudget}){
+function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetBudget, yoyLabel=null, yoyColor=null}){
   const [open, setOpen] = useState(false);
   const [editBudget, setEditBudget] = useState(false);
   const [budgetVal, setBudgetVal] = useState(budget ? String(budget) : "");
@@ -5940,7 +5940,7 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
 
   return (
     <Card style={{cursor:"pointer"}} onClick={()=>!editBudget&&handleToggle()}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:yoyLabel?4:8}}>
         <span style={{color:C.cream,fontSize:14,display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:20}}>{catTxns[0]?.icon||"💰"}</span>{cat}
         </span>
@@ -5954,6 +5954,12 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
       </div>
       {/* Spending bar */}
       <Bar v={amt} max={budget>0?budget:totalSpent} color={overBudget?C.red:color}/>
+      {/* Year-over-year label */}
+      {yoyLabel&&(
+        <div style={{color:yoyColor||C.muted,fontSize:10,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>
+          {yoyLabel}
+        </div>
+      )}
       {/* Budget progress */}
       {budget>0&&(
         <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
@@ -6557,12 +6563,55 @@ function SpendScreen({data, setAppData, setScreen}){
         bdTxns.forEach(t=>{const c=getCat(t);bdByCat[c]=(bdByCat[c]||0)+t.amount;});
         const bdTopCats=Object.entries(bdByCat).sort((a,b)=>b[1]-a[1]).slice(0,8);
         const periodLabel = period==="week"?"This week":period==="month"?monthLabel:period==="last"?"Last month":period==="3mo"?"Last 3 months":"Last 90 days";
+
+        // ── Year-over-year comparison ─────────────────────────────────────
+        // Compute the same date range but 1 year ago from all available transactions
+        const allTxns = data.transactions || [];
+        const yoyData = (() => {
+          if(period==="week") return null; // weekly YoY not meaningful
+          const now = new Date();
+          let yStart, yEnd;
+          if(period==="month") {
+            yStart = new Date(now.getFullYear()-1, now.getMonth(), 1);
+            yEnd   = new Date(now.getFullYear()-1, now.getMonth()+1, 0, 23, 59, 59);
+          } else if(period==="last") {
+            yStart = new Date(now.getFullYear()-1, now.getMonth()-1, 1);
+            yEnd   = new Date(now.getFullYear()-1, now.getMonth(), 0, 23, 59, 59);
+          } else if(period==="3mo") {
+            yStart = new Date(now.getFullYear()-1, now.getMonth()-2, 1);
+            yEnd   = new Date(now.getFullYear()-1, now.getMonth()+1, 0, 23, 59, 59);
+          } else return null;
+          const yTxns = allTxns.filter(t => {
+            if(!t.date || t.amount <= 0) return false;
+            if(EXCLUDE_CATS.has(getCat(t)) || isCCPayment(t, data.debts||[])) return false;
+            const d = new Date(t.date + "T12:00:00");
+            return d >= yStart && d <= yEnd;
+          });
+          if(yTxns.length === 0) return null; // no last-year data available
+          const yTotal = yTxns.reduce((s,t)=>s+t.amount, 0);
+          const yByCat = {};
+          yTxns.forEach(t=>{const c=getCat(t);yByCat[c]=(yByCat[c]||0)+t.amount;});
+          return { total: yTotal, byCat: yByCat, txnCount: yTxns.length };
+        })();
+
+        const yoyDelta = yoyData ? bdTotal - yoyData.total : null;
+        const yoyPct   = yoyData && yoyData.total > 0 ? ((yoyDelta / yoyData.total) * 100) : null;
+        const yoyColor = yoyDelta === null ? C.muted : yoyDelta <= 0 ? C.green : C.red;
+        const yoyLabel = yoyDelta === null ? null
+          : yoyDelta <= 0 ? `$${Math.abs(yoyDelta).toFixed(0)} less than last year ↓`
+          : `$${Math.abs(yoyDelta).toFixed(0)} more than last year ↑`;
+
         return (<>
       <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
           <div>
             <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Spent · {periodLabel}</div>
             <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>{`$${(bdTotal||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</div>
+            {yoyLabel&&(
+              <div style={{color:yoyColor,fontSize:11,fontWeight:700,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                {yoyLabel}{yoyPct!==null?` (${Math.abs(yoyPct).toFixed(0)}% ${yoyDelta<=0?"less":"more"})`:""}
+              </div>
+            )}
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
             <div style={{color:C.muted,fontSize:10,marginBottom:2}}>{bdTxns.length} transactions</div>
@@ -6580,12 +6629,20 @@ function SpendScreen({data, setAppData, setScreen}){
         const catTxns=acctFiltered.filter(t=>getCat(t)===cat&&t.amount>0);
         const budget = (data.budgets||{})[cat] || null;
         window.__flourishBills = data.bills||[];
+        // YoY delta for this category
+        const yoyCatAmt = yoyData?.byCat?.[cat] || 0;
+        const catDelta  = yoyData ? amt - yoyCatAmt : null;
+        const catDeltaLabel = catDelta===null ? null
+          : catDelta <= 0 ? `↓ $${Math.abs(catDelta).toFixed(0)} less than last yr`
+          : `↑ $${Math.abs(catDelta).toFixed(0)} more than last yr`;
+        const catDeltaColor = catDelta===null ? null : catDelta<=0 ? C.green : C.red;
         return <ExpandableCatCard key={i} cat={cat} amt={amt} totalSpent={bdTotal} color={colors[i%6]} catTxns={catTxns}
           budget={budget} onSetBudget={(cat,val)=>{
             if(setAppData) setAppData(prev=>({...prev,budgets:{...(prev.budgets||{}),
               ...(val===null ? Object.fromEntries(Object.entries(prev.budgets||{}).filter(([k])=>k!==cat)) : {[cat]:val})
             }}));
-          }}/>;
+          }}
+          yoyLabel={catDeltaLabel} yoyColor={catDeltaColor}/>;
       })}
         </>);
       })()}
