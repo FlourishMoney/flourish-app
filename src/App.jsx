@@ -6030,8 +6030,7 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
                             <div style={{color:C.muted,fontSize:10}}>{t.date}</div>
                           </div>
                           <span style={{color:t.amount<0?C.greenBright:linkedBill?C.greenBright:color,fontWeight:700,fontSize:13,flexShrink:0,marginLeft:8}}>
-                            {t.amount<0?"+":""}{t.amount<0?`$${Math.abs(t.amount).toFixed(2)}`:`$${(t.amount||0).toFixed(2)}`}
-                            {t.amount<0&&<span style={{color:C.greenBright,fontSize:9,fontWeight:700,marginLeft:4,textTransform:"uppercase",letterSpacing:0.5}}>refund</span>}
+                            {t.amount<0?`+$${Math.abs(t.amount).toFixed(2)}`:`$${(t.amount||0).toFixed(2)}`}
                           </span>
                         </div>
                       );
