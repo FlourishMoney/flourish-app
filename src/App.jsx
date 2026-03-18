@@ -5189,10 +5189,21 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                     <div style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.55,marginBottom:12}}>
                       {move.detail}
                     </div>
-                    <button onClick={()=>{setScreen(move.screen);}}
-                      style={{background:move.color,border:"none",borderRadius:10,padding:"9px 18px",color:move.color==="#2E8B2E"||move.color===C.teal||move.color===C.green?"#fff":"#fff",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",display:"inline-flex",alignItems:"center",gap:6}}>
-                      {move.cta} →
-                    </button>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                      <button onClick={()=>{setScreen(move.screen);}}
+                        style={{background:move.color,border:"none",borderRadius:10,padding:"9px 18px",color:"#fff",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",display:"inline-flex",alignItems:"center",gap:6}}>
+                        {move.cta} →
+                      </button>
+                      {move.amount>0&&(
+                        <button onClick={()=>{
+                          const rule={id:Date.now(),title:move.title,amount:move.amount,frequency:"monthly",createdAt:new Date().toISOString(),active:true};
+                          try{const ex=JSON.parse(localStorage.getItem("flourish_automations")||"[]");ex.push(rule);localStorage.setItem("flourish_automations",JSON.stringify(ex));}catch{}
+                          (()=>{ const d=document.createElement("div"); d.textContent="✓ Saved! Remind me monthly: "+move.title; d.style.cssText="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#00CC85;color:#050D09;padding:12px 20px;borderRadius:12px;fontWeight:700;fontSize:13px;zIndex:99999;fontFamily:'Plus Jakarta Sans',sans-serif;boxShadow:0 8px 24px rgba(0,0,0,0.4);whiteSpace:nowrap;"; document.body.appendChild(d); setTimeout(()=>d.remove(),3500); })();
+                        }} style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${move.color}44`,borderRadius:10,padding:"9px 14px",color:move.color,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                          🔄 Automate this
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -7192,7 +7203,91 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       const highPriority=tips.filter(t=>t.priority==="high");
       const medPriority=tips.filter(t=>t.priority!=="high");
       const totalSavings=highPriority.length+" high-priority credits identified";
+      const rrspR = RRSPRoomEngine.calculate(data);
+      const annualIncome = (()=>{
+        const inc = data.incomes?.[0];
+        if(!inc) return 0;
+        const amt = parseFloat(inc.amount||0);
+        const freq = inc.freq||"biweekly";
+        if(freq==="biweekly") return amt * 26;
+        if(freq==="weekly") return amt * 52;
+        if(freq==="monthly") return amt * 12;
+        if(freq==="semimonthly") return amt * 24;
+        return amt * 12;
+      })();
       return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+
+        {/* ── RRSP TAX RETURN ESTIMATOR ── */}
+        {rrspR&&annualIncome>0&&(()=>{
+          const marginalRate = rrspR.marginalRate || 0.30;
+          const remainingRoom = rrspR.remainingRoom || 0;
+          const refundPer1k = rrspR.refundPer1k || Math.round(1000 * marginalRate);
+          // Slider state — we use a ref trick since this is inside an IIFE
+          const sliderKey = "rrsp_slider_contrib";
+          const savedContrib = (() => { try { return parseFloat(localStorage.getItem(sliderKey)||"0")||Math.min(2000, remainingRoom); } catch { return Math.min(2000,remainingRoom); } })();
+          return (
+            <div style={{background:`linear-gradient(135deg,${C.green}12 0%,${C.card} 100%)`,border:`1px solid ${C.green}44`,borderRadius:20,padding:"18px 20px",position:"relative",overflow:"hidden"}}>
+              <div style={{position:"absolute",top:-20,right:-20,fontSize:80,opacity:0.05}}>🏦</div>
+              <div style={{color:C.greenBright,fontWeight:800,fontSize:13,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                🧮 RRSP Tax Return Estimator
+              </div>
+              <div style={{color:C.muted,fontSize:11,marginBottom:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                Based on your income · {Math.round(marginalRate*100)}% marginal rate · {data.profile?.province||"ON"}
+              </div>
+
+              {/* Contribution input */}
+              <div style={{marginBottom:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>RRSP contribution</span>
+                  <span style={{color:C.cream,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${savedContrib.toLocaleString()}</span>
+                </div>
+                <input type="range" min={0} max={Math.max(remainingRoom,5000)} step={100}
+                  defaultValue={savedContrib}
+                  onChange={e=>{
+                    const v=parseFloat(e.target.value)||0;
+                    try{localStorage.setItem(sliderKey,String(v));}catch{}
+                    // Update the display spans
+                    const card=e.target.closest("[data-rrsp-card]");
+                    if(card){
+                      const refund=Math.round(v*marginalRate);
+                      const perK=Math.round(v>0?(refund/v*1000):refundPer1k);
+                      card.querySelector("[data-contrib]").textContent="$"+v.toLocaleString();
+                      card.querySelector("[data-refund]").textContent="~$"+refund.toLocaleString();
+                      card.querySelector("[data-perk]").textContent="$"+Math.round(v>0?(refund/v*1000):refundPer1k)+" back per $1,000";
+                    }
+                  }}
+                  style={{width:"100%",accentColor:C.green,cursor:"pointer"}}
+                  data-slider="rrsp"
+                />
+                <div style={{display:"flex",justifyContent:"space-between",marginTop:2}}>
+                  <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$0</span>
+                  <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${Math.max(remainingRoom,5000).toLocaleString()} room available</span>
+                </div>
+              </div>
+
+              {/* Result card */}
+              <div style={{background:"rgba(0,204,133,0.08)",borderRadius:14,padding:"14px 16px",display:"flex",gap:12,alignItems:"center"}} data-rrsp-card>
+                <div style={{fontSize:32}}>💰</div>
+                <div style={{flex:1}}>
+                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>Estimated tax refund</div>
+                  <div style={{color:C.greenBright,fontWeight:900,fontSize:28,fontFamily:"'Playfair Display',serif",letterSpacing:-0.5}} data-refund>~${Math.round(savedContrib*marginalRate).toLocaleString()}</div>
+                  <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}} data-perk>${refundPer1k} back per $1,000 contributed</div>
+                </div>
+                <div>
+                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>Contributing</div>
+                  <div style={{color:C.cream,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',serif"}} data-contrib>${savedContrib.toLocaleString()}</div>
+                </div>
+              </div>
+
+              {remainingRoom>0&&<div style={{color:C.muted,fontSize:11,marginTop:10,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
+                💡 You have <strong style={{color:C.cream}}>${remainingRoom.toLocaleString()}</strong> of RRSP room available. Contributing the full amount could get you <strong style={{color:C.greenBright}}>~${rrspR.maxRefund.toLocaleString()}</strong> back.
+              </div>}
+              {!rrspR.hasEnoughData&&<div style={{color:C.muted,fontSize:11,marginTop:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                ℹ️ Add your RRSP room from your CRA Notice of Assessment in Settings → Profile for a more accurate estimate.
+              </div>}
+            </div>
+          );
+        })()}
 
         {/* Hero banner */}
         <div style={{background:`linear-gradient(135deg,${C.gold}18 0%,${C.gold}08 100%)`,border:`1px solid ${C.gold}40`,borderRadius:20,padding:"18px 20px",position:"relative",overflow:"hidden"}}>
@@ -8231,106 +8326,6 @@ function Family({data,household,setHousehold,setScreen}){
         })}
       </Card>
 
-      {/* Chore Chart — editable, persistent, Supabase-synced */}
-      <Card>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <div style={{color:C.greenBright,fontWeight:700,fontSize:14}}>🏡 Chore Chart</div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <div style={{color:C.greenBright,fontWeight:800,fontSize:13}}>${(earned||0).toFixed(2)} earned</div>
-            <button onClick={async()=>{
-              setChoreSaving(true);
-              try {
-                const token = choreToken || (Math.random().toString(36).substring(2,10)+Math.random().toString(36).substring(2,10));
-                const familyName = data.profile?.name||"Our Family";
-                await supabase.from("shared_chores").upsert({token,chores:JSON.stringify(chores),family_name:familyName,kids:JSON.stringify(kids),created_at:new Date().toISOString()});
-                if(!choreToken){setChoreToken(token);try{localStorage.setItem("flourish_chore_token",token);}catch{}}
-                const url=`${window.location.origin}/chores/${token}`;
-                setChoreSaving(false); // reset BEFORE share sheet opens so UI never freezes
-                if(navigator.share){
-                  navigator.share({title:`${familyName} Chore Chart`,url}).catch(()=>{});
-                } else {
-                  try {
-                    await navigator.clipboard.writeText(url);
-                    setChoreToast("✓ Link copied — open it on any device!");
-                    setTimeout(()=>setChoreToast(""),4000);
-                  } catch {
-                    setChoreToast(url); // show URL directly if clipboard blocked
-                    setTimeout(()=>setChoreToast(""),12000);
-                  }
-                }
-              } catch(e){
-                setChoreSaving(false);
-                setChoreToast("Couldn't create share link. Check your connection.");
-                setTimeout(()=>setChoreToast(""),4000);
-              }
-            }} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:8,padding:"5px 10px",color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer"}}>
-              {choreSaving?"Saving…":"📤 Share"}
-            </button>
-          </div>
-        </div>
-        {choreToast&&(
-          <div style={{background:C.teal+"18",border:`1px solid ${C.teal}44`,borderRadius:10,padding:"8px 12px",marginBottom:8,color:C.tealBright,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,wordBreak:"break-all"}}>
-            {choreToast}
-          </div>
-        )}
-        <Bar v={earned} max={Math.max(chores.reduce((a,c)=>a+c.reward,0),0.01)} color={C.green} h={5}/>
-        <div style={{marginTop:12,display:"flex",flexDirection:"column",gap:2}}>
-          {chores.map(ch=>(
-            <div key={ch.id}>
-              {editingChore?.id===ch.id ? (
-                <div style={{display:"flex",gap:6,alignItems:"center",padding:"6px 0"}}>
-                  <input value={editingChore.task} onChange={e=>setEditingChore(v=>({...v,task:e.target.value}))}
-                    style={{flex:2,background:C.cardAlt,border:`1px solid ${C.green}`,borderRadius:8,padding:"6px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}} autoFocus/>
-                  <input value={editingChore.reward} onChange={e=>setEditingChore(v=>({...v,reward:e.target.value}))} type="number"
-                    style={{width:60,background:C.cardAlt,border:`1px solid ${C.green}`,borderRadius:8,padding:"6px 8px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
-                  <button onClick={()=>{setChores(c=>c.map(x=>x.id===ch.id?{...x,task:editingChore.task,reward:parseFloat(editingChore.reward)||0.50}:x));setEditingChore(null);}}
-                    style={{background:C.green,border:"none",borderRadius:8,padding:"6px 10px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Save</button>
-                  <button onClick={()=>setEditingChore(null)}
-                    style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
-                </div>
-              ) : (
-                <div style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.border}22`}}>
-                  <div onClick={()=>setChores(c=>c.map(x=>x.id===ch.id?{...x,done:!x.done}:x))}
-                    style={{width:22,height:22,borderRadius:6,border:`2px solid ${ch.done?C.green:C.border}`,background:ch.done?C.green:"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer",transition:"all .2s"}}>
-                    {ch.done&&<span style={{color:C.bg,fontSize:12,fontWeight:900}}>✓</span>}
-                  </div>
-                  <span onClick={()=>setChores(c=>c.map(x=>x.id===ch.id?{...x,done:!x.done}:x))}
-                    style={{flex:1,color:ch.done?"rgba(237,233,226,0.4)":C.cream,fontSize:14,textDecoration:ch.done?"line-through":"none",cursor:"pointer"}}>{ch.task}</span>
-                  <span style={{color:C.gold,fontWeight:700,fontSize:13}}>${(ch.reward||0).toFixed(2)}</span>
-                  <button onClick={()=>setEditingChore({id:ch.id,task:ch.task,reward:String(ch.reward)})}
-                    style={{background:"none",border:"none",color:C.muted,fontSize:16,cursor:"pointer",padding:"2px 6px",lineHeight:1}}>✎</button>
-                  <button onClick={()=>setChores(c=>c.filter(x=>x.id!==ch.id))}
-                    style={{background:"none",border:"none",color:C.muted,fontSize:16,cursor:"pointer",padding:"2px 6px",lineHeight:1}}>✕</button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-        <div style={{marginTop:12,display:"flex",gap:6,alignItems:"center"}}>
-          <input value={customChore.task} onChange={e=>setCustomChore(v=>({...v,task:e.target.value}))}
-            onKeyDown={e=>{if(e.key==="Enter"&&customChore.task){setChores(c=>[...c,{id:Date.now(),task:customChore.task,reward:parseFloat(customChore.reward)||0.50,done:false}]);setCustomChore({task:"",reward:""});}}}
-            placeholder="Add a chore…"
-            style={{flex:2,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
-          <input value={customChore.reward} onChange={e=>setCustomChore(v=>({...v,reward:e.target.value}))} placeholder="$" type="number"
-            style={{width:56,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 8px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
-          <button onClick={()=>{if(!customChore.task)return;setChores(c=>[...c,{id:Date.now(),task:customChore.task,reward:parseFloat(customChore.reward)||0.50,done:false}]);setCustomChore({task:"",reward:""}); }}
-            style={{background:C.green,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontWeight:700,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>+</button>
-        </div>
-        {chores.some(c=>c.done)&&(
-          <button onClick={()=>setChores(c=>c.map(x=>({...x,done:false})))}
-            style={{marginTop:10,width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"7px",color:C.muted,fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
-            🔄 Reset all chores
-          </button>
-        )}
-      </Card>
-
-      <Card style={{background:`linear-gradient(135deg,${C.tealDim} 0%,${C.card} 100%)`,border:`1px solid ${C.teal}33`}}>
-        <div style={{color:C.tealBright,fontWeight:700,fontSize:13,marginBottom:6}}>📱 How to share with your family</div>
-        <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7}}>
-          Tap <strong style={{color:C.cream}}>Share</strong> to get a link. Open it on any device — your kids' tablets, a Skylight frame, an old iPad, any phone, or any screen with a browser. Kids can check off their own chores directly. Changes sync back here automatically.
-          {choreToken&&<div style={{marginTop:6,color:C.muted,fontSize:11}}>✓ Your chore chart has a permanent link — tapping Share always gives the same URL.</div>}
-        </div>
-      </Card>
     </>}
 
     {/* ── HOUSEHOLD TAB ── */}
@@ -9101,7 +9096,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     const url="https://flourishmoney.app";
     const text="I've been using Flourish to track my spending and it actually tells me exactly how much I can spend today. Worth checking out.";
     if(navigator.share){navigator.share({title:"Flourish Money",text,url}).catch(()=>{});}
-    else{navigator.clipboard?.writeText(url).then(()=>alert("Link copied! Share it with a friend 🌱")).catch(()=>window.open(url,"_blank"));}
+    else{navigator.clipboard?.writeText(url).then(()=>{ const d=document.createElement("div"); d.textContent="✓ Link copied — share it with a friend 🌱"; d.style.cssText="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#00CC85;color:#050D09;padding:12px 20px;borderRadius:12px;fontWeight:700;fontSize:13px;zIndex:99999;fontFamily:'Plus Jakarta Sans',sans-serif;boxShadow:0 8px 24px rgba(0,0,0,0.4);whiteSpace:nowrap;"; document.body.appendChild(d); setTimeout(()=>d.remove(),3500); }).catch(()=>window.open(url,"_blank"));}
   };
   return <div style={{color:C.cream}}>
     <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:20}}>
@@ -10408,10 +10403,16 @@ function SharedChoreBoard({token}) {
     } catch(e){}
   };
 
+  const [txnError, setTxnError] = useState("");
+
   const addTransaction = async (type) => {
     const amt = parseFloat(txnAmt);
     if(!txnDesc.trim() || !amt || amt <= 0) return;
-    if(type==="spend" && amt > wallet.balance) { alert("Not enough money!"); return; }
+    if(type==="spend" && amt > wallet.balance) {
+      setTxnError("Not enough money! Balance: $"+(wallet.balance||0).toFixed(2));
+      setTimeout(()=>setTxnError(""),3000); return;
+    }
+    setTxnError("");
     const newTxn = {id:Date.now(), desc:txnDesc.trim(), amount:amt, type, date:new Date().toLocaleDateString("en-CA")};
     const newBalance = type==="earn" ? wallet.balance + amt : wallet.balance - amt;
     const newWallet = {balance:Math.max(0,newBalance), transactions:[newTxn,...(wallet.transactions||[])].slice(0,50)};
@@ -10525,6 +10526,7 @@ function SharedChoreBoard({token}) {
                 {txnType==="earn"?"+ Add":"- Spend"}
               </button>
             </div>
+            {txnError&&<div style={{color:"#FF4F6A",fontSize:12,fontFamily:F,fontWeight:600,marginTop:6}}>{txnError}</div>}
           </div>
 
           {/* Transaction history */}
@@ -11037,7 +11039,7 @@ export default function FlourishApp(){
     const payload = plaidAccessToken ? { access_token: plaidAccessToken } : { country };
     callPlaid("create_link_token", payload)
       .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
-      .catch(()=>{ setReconnectLoading(false); alert("Could not reconnect — please try again."); });
+      .catch(()=>{ setReconnectLoading(false); });
   };
 
   const handleAddNewBank = ()=>{
@@ -11047,7 +11049,7 @@ export default function FlourishApp(){
     const country = appData?.profile?.country || "CA";
     callPlaid("create_link_token", { country, user_id: user?.id })
       .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
-      .catch(()=>{ setReconnectLoading(false); alert("Could not start bank connection — please try again."); });
+      .catch(()=>{ setReconnectLoading(false); });
   };
 
 
