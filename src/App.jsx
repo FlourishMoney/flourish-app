@@ -6726,7 +6726,15 @@ function Family({data,household,setHousehold,setScreen}){
 
   const saveKids=(updated)=>{
     setKids(updated);
-    try{localStorage.setItem("flourish_kids",JSON.stringify(updated));}catch{}
+    try{
+      localStorage.setItem("flourish_kids",JSON.stringify(updated));
+      // Clean up orphaned keys for removed kids
+      const codes=new Set(updated.map(k=>k.code));
+      Object.keys(localStorage).forEach(key=>{
+        const m=key.match(/^flourish_kid_(chores|data|theme)_(.+)$/);
+        if(m&&!codes.has(m[2]))localStorage.removeItem(key);
+      });
+    }catch{}
   };
   const syncKidToStorage=(kid)=>{
     if(kid)try{
@@ -6756,7 +6764,17 @@ function Family({data,household,setHousehold,setScreen}){
     setActiveKidId(kid.id);
     setNewKidName("");setNewKidAge("8-12");setNewKidEmoji("🧒");setShowAddKid(false);
   };
-  const removeKid=(id)=>saveKids(kids.filter(k=>String(k.id)!==String(id)));
+  const removeKid=(id)=>{
+    const kid=kids.find(k=>String(k.id)===String(id));
+    if(kid){
+      try{
+        localStorage.removeItem("flourish_kid_chores_"+kid.code);
+        localStorage.removeItem("flourish_kid_data_"+kid.code);
+        localStorage.removeItem("flourish_kid_theme_"+kid.code);
+      }catch{}
+    }
+    saveKids(kids.filter(k=>String(k.id)!==String(id)));
+  };
   const addChoreToKid=(kidId)=>{
     if(!newChoreTask.trim())return;
     const chore={id:Date.now(),task:newChoreTask.trim(),reward:parseFloat(newChoreReward)||0.50,
@@ -7186,7 +7204,7 @@ function Family({data,household,setHousehold,setScreen}){
       {/* Active kid full view */}
       {activeKid&&(()=>{
         const kidTheme=KID_THEMES[activeKid.theme||"pink"];
-        const kidUrl=`${window.location.origin}/kids?code=${activeKid.code}`;
+        const kidUrl=`${window.location.origin}/kids?code=${activeKid.code}&n=${encodeURIComponent(activeKid.name)}&e=${encodeURIComponent(activeKid.emoji||"🌱")}&a=${encodeURIComponent(activeKid.age||"8-12")}&t=${encodeURIComponent(activeKid.theme||"pink")}`;
         const kidChores=activeKid.chores||[];
         const jars=activeKid.jars||{spend:0,save:0,give:0};
         const goal=activeKid.goal||{name:"",amount:"",emoji:"🎯"};
@@ -9220,13 +9238,23 @@ function KidsMiniSite(){
 
   const kidData=(()=>{
     try{
-      // First try the full kids array
+      // Try localStorage first (same device as parent)
       const all=JSON.parse(localStorage.getItem("flourish_kids")||"[]");
       const k=all.find(k=>k.code===code);
       if(k)return k;
-      // Then try the dedicated data key (synced on every save)
       const d=JSON.parse(localStorage.getItem("flourish_kid_data_"+code)||"null");
       if(d)return d;
+      // Fall back to URL params (any device — data encoded in the share link)
+      const n=params.get("n");
+      if(n)return{
+        name:n,
+        emoji:params.get("e")||"🌱",
+        age:params.get("a")||"8-12",
+        theme:params.get("t")||"pink",
+        jars:{spend:0,save:0,give:0},
+        goal:{name:"",amount:"",emoji:"🎯"},
+        streak:0,
+      };
       return null;
     }catch{return null;}
   })();
