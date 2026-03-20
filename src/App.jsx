@@ -9220,12 +9220,14 @@ function KidsMiniSite(){
 
   const kidData=(()=>{
     try{
+      // First try the full kids array
       const all=JSON.parse(localStorage.getItem("flourish_kids")||"[]");
       const k=all.find(k=>k.code===code);
       if(k)return k;
-      // fallback to per-code storage
+      // Then try the dedicated data key (synced on every save)
       const d=JSON.parse(localStorage.getItem("flourish_kid_data_"+code)||"null");
-      return d;
+      if(d)return d;
+      return null;
     }catch{return null;}
   })();
 
@@ -9272,7 +9274,7 @@ function KidsMiniSite(){
     try{localStorage.setItem("flourish_kid_chores_"+code,JSON.stringify(updated));}catch{}
   };
 
-  const kidName=kidData?.name||"My";
+  const kidName=kidData?.name||"Your";
   const kidEmoji=kidData?.emoji||"🌱";
 
   const lessons={
@@ -9300,7 +9302,7 @@ function KidsMiniSite(){
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:streak>0?10:0}}>
           <span style={{fontSize:42}}>{kidEmoji}</span>
           <div style={{flex:1}}>
-            <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:"#EDE9E2",lineHeight:1}}>{kidName}'s Flourish</div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:"#EDE9E2",lineHeight:1}}>{kidData?.name ? `${kidName}'s Flourish` : "Flourish Kids"}</div>
             <div style={{color:"#6B7A6E",fontSize:12,marginTop:2}}>Your money zone</div>
           </div>
           <div style={{textAlign:"right"}}>
@@ -9314,14 +9316,16 @@ function KidsMiniSite(){
             <span style={{color:"#FF8C42",fontWeight:700,fontSize:13}}>{streak} week streak! Keep it going!</span>
           </div>
         )}
-        {/* Theme picker */}
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <span style={{color:"#6B7A6E",fontSize:11,fontWeight:600,flexShrink:0}}>🎨 My colour:</span>
-          {Object.entries(THEMES).map(([key,t])=>(
-            <button key={key} onClick={()=>saveTheme(key)}
-              style={{width:28,height:28,borderRadius:99,border:`2.5px solid ${activeTheme===key?"#fff":"transparent"}`,background:t.primary,cursor:"pointer",transition:"all .2s",flexShrink:0,outline:"none"}}>
-            </button>
-          ))}
+        {/* Theme picker — always visible, prominent */}
+        <div style={{marginTop:12,background:"rgba(255,255,255,0.05)",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:10}}>
+          <span style={{color:"#EDE9E2",fontSize:13,fontWeight:700,flexShrink:0}}>🎨 My colour</span>
+          <div style={{display:"flex",gap:10,flex:1,justifyContent:"flex-end"}}>
+            {Object.entries(THEMES).map(([key,t])=>(
+              <button key={key} onClick={()=>saveTheme(key)}
+                style={{width:34,height:34,borderRadius:99,border:`3px solid ${activeTheme===key?"#fff":"transparent"}`,background:t.primary,cursor:"pointer",transition:"all .2s",flexShrink:0,boxShadow:activeTheme===key?`0 0 10px ${t.primary}88`:"none"}}>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -9443,7 +9447,7 @@ function KidsMiniSite(){
     try{localStorage.setItem("flourish_kid_chores_"+code,JSON.stringify(updated));}catch{}
   };
 
-  const kidName=kidData?.name||"My";
+  const kidName=kidData?.name||"Your";
   const kidEmoji=kidData?.emoji||"🌱";
 
   const lessons={
@@ -9471,7 +9475,7 @@ function KidsMiniSite(){
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <span style={{fontSize:40}}>{kidEmoji}</span>
           <div>
-            <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:"#EDE9E2",lineHeight:1}}>{kidName}'s Flourish</div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:"#EDE9E2",lineHeight:1}}>{kidData?.name ? `${kidName}'s Flourish` : "Flourish Kids"}</div>
             <div style={{color:"#6B7A6E",fontSize:12,marginTop:2}}>Your money zone 💚</div>
           </div>
         </div>
