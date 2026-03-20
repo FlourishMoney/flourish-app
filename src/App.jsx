@@ -6690,14 +6690,54 @@ function Family({data,household,setHousehold,setScreen}){
   const [mood,setMood]=useState(null);
   const [done2,setDone2]=useState(false);
   const [expandedItem,setExpandedItem]=useState(null);
-  const [kidAge,setKidAge]=useState("8-12");
-  const [showChoreIntegrations,setShowChoreIntegrations]=useState(false);
-  const [chores,setChores]=useState([
-    {id:1,task:"Make bed",reward:.50,done:true},{id:2,task:"Set the table",reward:.50,done:false},
-    {id:3,task:"Take out garbage",reward:1.00,done:true},{id:4,task:"Vacuum living room",reward:2.00,done:false},
-    {id:5,task:"Wash dishes",reward:1.50,done:false},{id:6,task:"Tidy bedroom",reward:1.00,done:false},
-  ]);
-  const [customChore,setCustomChore]=useState({task:"",reward:""});
+  const [kids,setKids]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem("flourish_kids")||"null")||[];}catch{return[];}
+  });
+  const [activeKidId,setActiveKidId]=useState(null);
+  const [showAddKid,setShowAddKid]=useState(false);
+  const [newKidName,setNewKidName]=useState("");
+  const [newKidAge,setNewKidAge]=useState("8-12");
+  const [newKidEmoji,setNewKidEmoji]=useState("🧒");
+  const [newChoreTask,setNewChoreTask]=useState("");
+  const [newChoreReward,setNewChoreReward]=useState("");
+  const [editingChore,setEditingChore]=useState(null); // reserved for future inline edit
+  const [copiedKidId,setCopiedKidId]=useState(null);
+
+  const saveKids=(updated)=>{
+    setKids(updated);
+    try{localStorage.setItem("flourish_kids",JSON.stringify(updated));}catch{}
+  };
+  const addKid=()=>{
+    if(!newKidName.trim())return;
+    const code="KID"+Math.random().toString(36).substring(2,7).toUpperCase();
+    const kid={id:Date.now(),name:newKidName.trim(),age:newKidAge,emoji:newKidEmoji,code,chores:[]};
+    const updated=[...kids,kid];
+    saveKids(updated);
+    setActiveKidId(kid.id);
+    setNewKidName("");setNewKidAge("8-12");setNewKidEmoji("🧒");setShowAddKid(false);
+  };
+  const removeKid=(id)=>saveKids(kids.filter(k=>k.id!==id));
+  const addChoreToKid=(kidId)=>{
+    if(!newChoreTask.trim())return;
+    const updated=kids.map(k=>k.id===kidId?{...k,chores:[...k.chores,{id:Date.now(),task:newChoreTask.trim(),reward:parseFloat(newChoreReward)||0.50,done:false}]}:k);
+    saveKids(updated);
+    setNewChoreTask("");setNewChoreReward("");
+    // sync to localStorage for kids page
+    const kid=updated.find(k=>k.id===kidId);
+    if(kid)try{localStorage.setItem("flourish_kid_chores_"+kid.code,JSON.stringify(kid.chores));}catch{}
+  };
+  const toggleKidChore=(kidId,choreId)=>{
+    const updated=kids.map(k=>k.id===kidId?{...k,chores:k.chores.map(c=>c.id===choreId?{...c,done:!c.done}:c)}:k);
+    saveKids(updated);
+    const kid=updated.find(k=>k.id===kidId);
+    if(kid)try{localStorage.setItem("flourish_kid_chores_"+kid.code,JSON.stringify(kid.chores));}catch{}
+  };
+  const removeKidChore=(kidId,choreId)=>{
+    const updated=kids.map(k=>k.id===kidId?{...k,chores:k.chores.filter(c=>c.id!==choreId)}:k);
+    saveKids(updated);
+  };
+  const activeKid=kids.find(k=>k.id===activeKidId)||null;
+
   // Derived — after all hooks
   const isCouple=data.profile?.status!=="single";
 
@@ -6772,31 +6812,6 @@ function Family({data,household,setHousehold,setScreen}){
 
   const doneCount=Object.values(checks).filter(Boolean).length;
   const earned=chores.filter(c=>c.done).reduce((a,c)=>a+c.reward,0);
-
-  const choreIntegrations=[
-    {name:"Skylight Calendar",icon:"🗓️",color:"#4A8FCC",desc:"Add chores as recurring tasks on your family's Skylight display.",url:"https://www.skylightframe.com",note:"Open Skylight app → Family Tasks → Add Task"},
-    {name:"Alexa Routines",icon:"🔵",color:"#00CAFF",desc:"Trigger chore reminders through Amazon Echo devices.",url:"https://alexa.amazon.com",note:"Alexa app → More → Routines → Create Routine"},
-    {name:"Cozi Family Organizer",icon:"📋",color:"#E85D26",desc:"Share chore lists across the whole family with Cozi.",url:"https://www.cozi.com",note:"Cozi app → To-Do Lists → Add family chore list"},
-    {name:"OurHome App",icon:"🏠",color:"#6B4FA0",desc:"Dedicated chore and reward tracking for families.",url:"https://ourhomeapp.com",note:"OurHome → Chores → Import or create tasks"},
-    {name:"Google Home",icon:"🏡",color:"#4285F4",desc:"Broadcast chore reminders on Google Nest speakers.",url:"https://home.google.com",note:"Google Home app → Routines → Add announcement"},
-  ];
-
-  const kidLessons={
-    "4-7":[
-      {emoji:"🪙",title:"Money is for trading",body:"When you want something at the store, you give money and get the thing. Money is just a trade ticket!",key:"Money is how we trade for things we want."},
-      {emoji:"🐷",title:"Saving means waiting",body:"If a toy costs $10 and you have $3, you need to save $7 more. Saving means keeping money safe until you have enough.",key:"Waiting for something makes it even better."},
-    ],
-    "8-12":[
-      {emoji:"🏦",title:"What banks do",body:"A bank keeps your money safe and pays you interest to use it. Like a super-safe piggy bank that rewards patience.",key:"Banks keep money safe AND pay you to use them."},
-      {emoji:"💳",title:"Credit cards are loans",body:"A credit card lets you buy now, pay later. If you don't pay it ALL back quickly, they charge you extra — that's how people get into trouble.",key:"Pay your credit card in full every month, always."},
-      {emoji:"📈",title:"Money can grow",body:"$100 at 7% becomes $386 in 20 years without doing anything. This is compound interest — money making more money.",key:"Start saving young. Time is the secret ingredient."},
-    ],
-    "13+":[
-      {emoji:"💰",title:"Budget like a boss",body:"50% needs, 30% wants, 20% savings. Without a budget, money just disappears. A budget is a plan for the life you actually want.",key:"A budget gives your money direction."},
-      {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet — and paying extra for the privilege.",key:"Debt is expensive. Use it wisely or not at all."},
-      {emoji:"📊",title:"Start investing at your first job",body:"$50/month at 7% starting at 16 = $245,000 at retirement. Starting at 30 = $68,000. Starting early nearly triples your outcome.",key:"Invest with your very first paycheck."},
-    ],
-  };
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <ScreenHeader title="Family" subtitle="Money is a team sport" onBack={setScreen?()=>setScreen("home"):null}/>
@@ -7033,84 +7048,132 @@ function Family({data,household,setHousehold,setScreen}){
 
     {/* ── KIDS TAB ── */}
     {tab==="kids"&&<>
-      <div style={{display:"flex",gap:6}}>
-        {["4-7","8-12","13+"].map(age=><button key={age} onClick={()=>setKidAge(age)} style={{flex:1,background:kidAge===age?C.pink+"22":C.cardAlt,border:`1px solid ${kidAge===age?C.pink:C.border}`,color:kidAge===age?C.pinkBright:C.muted,borderRadius:10,padding:"9px 0",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
-          {age==="4-7"?"🐣 4–7":age==="8-12"?"🌱 8–12":"🌳 13+"}
-        </button>)}
-      </div>
-      {kidLessons[kidAge].map((l,i)=>(
-        <Card key={i} style={{border:`1px solid ${C.pink}22`}}>
-          <div style={{fontSize:30,marginBottom:8}}>{l.emoji}</div>
-          <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"Georgia,serif",marginBottom:8}}>{l.title}</div>
-          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65,marginBottom:10}}>{l.body}</div>
-          <Chip label={l.key} color={C.pink} size={12}/>
+      {/* ── Kids list ── */}
+      {kids.length===0&&!showAddKid&&(
+        <Card style={{textAlign:"center",padding:"32px 20px"}}>
+          <div style={{fontSize:48,marginBottom:12}}>👧</div>
+          <div style={{color:C.cream,fontWeight:800,fontSize:16,fontFamily:"'Playfair Display',Georgia,serif",marginBottom:8}}>Add your first child</div>
+          <div style={{color:C.muted,fontSize:13,lineHeight:1.6,marginBottom:20}}>Each child gets their own chore list and a shareable link to their mini Flourish app — no access to your financial data.</div>
+          <button onClick={()=>setShowAddKid(true)} style={{background:`linear-gradient(135deg,${C.pink},#ff8cb8)`,border:"none",borderRadius:12,padding:"13px 28px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>+ Add Child</button>
         </Card>
-      ))}
-      <Card style={{background:`linear-gradient(135deg,${C.goldDim} 0%,${C.card} 100%)`,border:`1px solid ${C.gold}33`}}>
-        <div style={{color:C.gold,fontWeight:800,marginBottom:8}}>🫙 The 3 Jar Method</div>
-        <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>Split every dollar your child earns into 3 jars.</div>
-        <div style={{display:"flex",gap:8}}>
-          {[{name:"Spend",emoji:"🎮",color:C.orange,desc:"Fun now"},{name:"Save",emoji:"🏦",color:C.blue,desc:"Big goals"},{name:"Give",emoji:"❤️",color:C.pink,desc:"Others"}].map((j,i)=>(
-            <div key={i} style={{flex:1,background:j.color+"18",border:`1px solid ${j.color}33`,borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
-              <div style={{fontSize:22}}>{j.emoji}</div>
-              <div style={{color:j.color,fontWeight:700,fontSize:13,marginTop:4}}>{j.name}</div>
-              <div style={{color:C.muted,fontSize:10,marginTop:2}}>{j.desc}</div>
-            </div>
-          ))}
-        </div>
-      </Card>
+      )}
 
-      {/* Chore Chart */}
-      <Card>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <div style={{color:C.greenBright,fontWeight:700}}>🏡 Chore Chart</div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <div style={{color:C.greenBright,fontWeight:800}}>${(earned||0).toFixed(2)} earned</div>
-            <button onClick={()=>setShowChoreIntegrations(v=>!v)} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:8,padding:"4px 10px",color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer"}}>🔗 Connect app</button>
+      {/* Kids tab row */}
+      {kids.length>0&&(
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          {kids.map(k=>(
+            <button key={k.id} onClick={()=>setActiveKidId(activeKidId===k.id?null:k.id)}
+              style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",borderRadius:99,border:`1.5px solid ${activeKidId===k.id?C.pink:C.border}`,background:activeKidId===k.id?C.pink+"22":C.cardAlt,color:activeKidId===k.id?C.pinkBright:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              <span>{k.emoji}</span><span>{k.name}</span>
+            </button>
+          ))}
+          <button onClick={()=>setShowAddKid(true)} style={{padding:"8px 14px",borderRadius:99,border:`1.5px dashed ${C.border}`,background:"none",color:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>+ Add</button>
+        </div>
+      )}
+
+      {/* Add child form */}
+      {showAddKid&&(
+        <Card style={{border:`1px solid ${C.pink}44`}}>
+          <div style={{color:C.pinkBright,fontWeight:800,fontSize:14,marginBottom:14}}>👧 Add a child</div>
+          <div style={{marginBottom:10}}>
+            <div style={{color:C.muted,fontSize:11,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Choose emoji</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {["🧒","👧","👦","🧒‍♀️","🧒‍♂️","👶","🧑","🌟","🦁","🐼","🦊","🐸"].map(e=>(
+                <button key={e} onClick={()=>setNewKidEmoji(e)} style={{fontSize:22,padding:"6px",borderRadius:8,border:`2px solid ${newKidEmoji===e?C.pink:"transparent"}`,background:newKidEmoji===e?C.pink+"22":"transparent",cursor:"pointer"}}>{e}</button>
+              ))}
+            </div>
           </div>
-        </div>
-        <Bar v={earned} max={Math.max(chores.reduce((a,c)=>a+c.reward,0),0.01)} color={C.green} h={6}/>
-        <div style={{marginTop:12}}>
-          {chores.map(ch=>(
-            <div key={ch.id} onClick={()=>setChores(c=>c.map(x=>x.id===ch.id?{...x,done:!x.done}:x))} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
-              <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${ch.done?C.green:C.border}`,background:ch.done?C.green:"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s"}}>
-                {ch.done&&<span style={{color:C.bg,fontSize:12,fontWeight:900}}>✓</span>}
-              </div>
-              <span style={{flex:1,color:C.cream,fontSize:14,textDecoration:ch.done?"line-through":"none"}}>{ch.task}</span>
-              <span style={{color:C.gold,fontWeight:700}}>+${(ch.reward||0).toFixed(2)}</span>
+          <input value={newKidName} onChange={e=>setNewKidName(e.target.value)} placeholder="Child's name"
+            style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 14px",color:C.cream,fontSize:14,fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"}}/>
+          <div style={{marginBottom:14}}>
+            <div style={{color:C.muted,fontSize:11,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Age group</div>
+            <div style={{display:"flex",gap:8}}>
+              {["4-7","8-12","13+"].map(a=>(
+                <button key={a} onClick={()=>setNewKidAge(a)} style={{flex:1,padding:"9px",borderRadius:10,border:`1.5px solid ${newKidAge===a?C.pink:C.border}`,background:newKidAge===a?C.pink+"22":C.cardAlt,color:newKidAge===a?C.pinkBright:C.muted,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                  {a==="4-7"?"🐣 4–7":a==="8-12"?"🌱 8–12":"🌳 13+"}
+                </button>
+              ))}
             </div>
-          ))}
-        </div>
-        {/* Add custom chore */}
-        <div style={{marginTop:12,display:"flex",gap:8,alignItems:"center"}}>
-          <input value={customChore.task} onChange={e=>setCustomChore(v=>({...v,task:e.target.value}))} placeholder="New chore…"
-            style={{flex:2,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
-          <input value={customChore.reward} onChange={e=>setCustomChore(v=>({...v,reward:e.target.value}))} placeholder="$" type="number"
-            style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
-          <button onClick={()=>{if(!customChore.task)return;setChores(c=>[...c,{id:Date.now(),task:customChore.task,reward:parseFloat(customChore.reward)||0.50,done:false}]);setCustomChore({task:"",reward:""}); }}
-            style={{background:C.green,border:"none",borderRadius:8,padding:"8px 12px",color:"#fff",fontWeight:700,cursor:"pointer",fontSize:13}}>+</button>
-        </div>
-      </Card>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={addKid} style={{flex:1,background:newKidName.trim()?`linear-gradient(135deg,${C.pink},#ff8cb8)`:"rgba(255,107,157,0.3)",border:"none",borderRadius:10,padding:"12px",color:"#fff",fontWeight:800,fontSize:13,cursor:newKidName.trim()?"pointer":"default",fontFamily:"inherit"}}>
+              Add {newKidEmoji} {newKidName||"Child"}
+            </button>
+            <button onClick={()=>{setShowAddKid(false);setNewKidName("");}} style={{padding:"12px 16px",borderRadius:10,border:`1px solid ${C.border}`,background:"none",color:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+          </div>
+        </Card>
+      )}
 
-      {/* Chore Integrations panel */}
-      {showChoreIntegrations&&<Card style={{border:`1px solid ${C.teal}44`,background:C.tealDim}}>
-        <div style={{color:C.tealBright,fontWeight:700,fontSize:14,marginBottom:4}}>🔗 Connect to Chore Apps</div>
-        <div style={{color:C.muted,fontSize:12,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish can't push directly to these apps yet — but here's exactly how to sync your chore list to each platform.</div>
-        {choreIntegrations.map((ci,i)=>(
-          <div key={i} style={{background:C.card,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${ci.color}22`}}>
-            <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:6}}>
-              <span style={{fontSize:20}}>{ci.icon}</span>
+      {/* Active kid detail */}
+      {activeKid&&(()=>{
+        const kidUrl=`${window.location.origin}/kids?code=${activeKid.code}`;
+        const earned=activeKid.chores.filter(c=>c.done).reduce((a,c)=>a+(c.reward||0),0);
+        const total=activeKid.chores.reduce((a,c)=>a+(c.reward||0),0);
+        return(<>
+          {/* Kid header */}
+          <Card style={{background:`linear-gradient(135deg,${C.pink}18,${C.card})`,border:`1px solid ${C.pink}33`}}>
+            <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16}}>
+              <div style={{fontSize:40}}>{activeKid.emoji}</div>
               <div style={{flex:1}}>
-                <div style={{color:C.cream,fontWeight:700,fontSize:13}}>{ci.name}</div>
-                <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{ci.desc}</div>
+                <div style={{color:C.cream,fontWeight:900,fontSize:20,fontFamily:"'Playfair Display',Georgia,serif"}}>{activeKid.name}</div>
+                <div style={{color:C.muted,fontSize:12}}>Ages {activeKid.age} · {activeKid.chores.length} chores</div>
               </div>
+              <button onClick={()=>{if(window.confirm(`Remove ${activeKid.name}?`)){removeKid(activeKid.id);setActiveKidId(null);}}}
+                style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",color:C.muted,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Remove</button>
             </div>
-            <div style={{background:ci.color+"14",borderRadius:8,padding:"7px 10px",color:ci.color,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:8}}>📱 {ci.note}</div>
-            <a href={ci.url} target="_blank" rel="noopener noreferrer" style={{color:ci.color,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textDecoration:"none"}}>Open {ci.name} →</a>
-          </div>
-        ))}
-        <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4,fontStyle:"italic"}}>Native 2-way sync is on the roadmap — vote for it in the app store review!</div>
-      </Card>}
+
+            {/* Share link */}
+            <div style={{color:C.pinkBright,fontWeight:700,fontSize:13,marginBottom:8}}>📱 {activeKid.name}'s Flourish Link</div>
+            <div style={{background:C.bg,borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12,color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",wordBreak:"break-all"}}>{kidUrl}</div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{navigator.clipboard.writeText(kidUrl).then(()=>{setCopiedKidId(activeKid.id);setTimeout(()=>setCopiedKidId(null),2500);});}}
+                style={{flex:1,background:copiedKidId===activeKid.id?C.green:C.pink,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all .2s"}}>
+                {copiedKidId===activeKid.id?"✓ Copied!":"📋 Copy Link"}
+              </button>
+              <button onClick={()=>{if(navigator.share)navigator.share({title:`${activeKid.name}'s Flourish`,text:`Open ${activeKid.name}'s chore list!`,url:kidUrl}).catch(()=>{});}}
+                style={{flex:1,background:C.cardAlt,border:`1px solid ${C.pink}44`,borderRadius:10,padding:"11px",color:C.pink,fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                🔗 Share
+              </button>
+            </div>
+            <div style={{color:C.muted,fontSize:11,marginTop:8,fontFamily:"'Plus Jakarta Sans',sans-serif",fontStyle:"italic"}}>Opens a kids-only view — no access to your financial data.</div>
+          </Card>
+
+          {/* Chore list */}
+          <Card>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{color:C.greenBright,fontWeight:700,fontSize:14}}>🏡 {activeKid.name}'s Chores</div>
+              {total>0&&<div style={{color:C.gold,fontWeight:800}}>${earned.toFixed(2)} / ${total.toFixed(2)}</div>}
+            </div>
+
+            {activeKid.chores.length===0&&(
+              <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"16px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>No chores yet — add some below!</div>
+            )}
+
+            {activeKid.chores.map(ch=>(
+              <div key={ch.id} style={{display:"flex",gap:10,alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.border}`}}>
+                <div onClick={()=>toggleKidChore(activeKid.id,ch.id)} style={{width:24,height:24,borderRadius:7,border:`2px solid ${ch.done?C.green:C.border}`,background:ch.done?C.green:"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer",transition:"all .2s"}}>
+                  {ch.done&&<span style={{color:C.bg,fontSize:13,fontWeight:900}}>✓</span>}
+                </div>
+                <span style={{flex:1,color:ch.done?C.muted:C.cream,fontSize:14,textDecoration:ch.done?"line-through":"none"}}>{ch.task}</span>
+                <span style={{color:C.gold,fontWeight:700,fontSize:13}}>+${(ch.reward||0).toFixed(2)}</span>
+                <button onClick={()=>removeKidChore(activeKid.id,ch.id)} style={{background:"none",border:"none",color:C.muted,fontSize:16,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>
+              </div>
+            ))}
+
+            {/* Add chore */}
+            <div style={{display:"flex",gap:8,alignItems:"center",marginTop:14}}>
+              <input value={newChoreTask} onChange={e=>setNewChoreTask(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&addChoreToKid(activeKid.id)}
+                placeholder="Add a chore…"
+                style={{flex:3,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
+              <input value={newChoreReward} onChange={e=>setNewChoreReward(e.target.value)} placeholder="$" type="number"
+                style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
+              <button onClick={()=>addChoreToKid(activeKid.id)}
+                style={{background:C.green,border:"none",borderRadius:8,padding:"9px 14px",color:"#fff",fontWeight:800,cursor:"pointer",fontSize:14}}>+</button>
+            </div>
+          </Card>
+        </>);
+      })()}
     </>}
 
     {/* ── HOUSEHOLD TAB ── */}
@@ -8876,6 +8939,148 @@ function clearState() {
 
 
 // ── AUTH SCREEN ───────────────────────────────────────────────────────────────
+// ─── KIDS MINI SITE ──────────────────────────────────────────────────────────
+function KidsMiniSite(){
+  const params=new URLSearchParams(window.location.search);
+  const code=params.get("code")||"";
+
+  // Try to find the kid's details from parent's localStorage
+  const kidData=(()=>{
+    try{
+      const all=JSON.parse(localStorage.getItem("flourish_kids")||"[]");
+      return all.find(k=>k.code===code)||null;
+    }catch{return null;}
+  })();
+
+  const [kidAge,setKidAge]=useState(kidData?.age||"8-12");
+  const [chores,setChores]=useState(()=>{
+    try{
+      // Try to get chores from the synced key
+      const saved=JSON.parse(localStorage.getItem("flourish_kid_chores_"+code)||"null");
+      if(saved)return saved;
+      return kidData?.chores||[];
+    }catch{return[];}
+  });
+
+  const earned=chores.filter(c=>c.done).reduce((a,c)=>a+(c.reward||0),0);
+  const total=chores.reduce((a,c)=>a+(c.reward||0),0);
+
+  const toggle=(id)=>{
+    const updated=chores.map(c=>c.id===id?{...c,done:!c.done}:c);
+    setChores(updated);
+    try{localStorage.setItem("flourish_kid_chores_"+code,JSON.stringify(updated));}catch{}
+  };
+
+  const kidName=kidData?.name||"My";
+  const kidEmoji=kidData?.emoji||"🌱";
+
+  const lessons={
+    "4-7":[
+      {emoji:"🪙",title:"Money is for trading",body:"When you want something at the store, you give money and get the thing. Money is like a trade ticket!",key:"Money is how we trade for things we want."},
+      {emoji:"🐷",title:"Saving means waiting",body:"If a toy costs $10 and you have $3, you need to save $7 more. Saving means keeping money safe until you have enough.",key:"Waiting for something makes it even better."},
+    ],
+    "8-12":[
+      {emoji:"🏦",title:"What banks do",body:"A bank keeps your money safe and pays you a little extra called interest. Like a super-safe piggy bank that rewards you for saving.",key:"Banks keep money safe AND pay you to use them."},
+      {emoji:"💳",title:"Credit cards are loans",body:"A credit card lets you buy now and pay later. But if you don't pay it all back quickly, they charge you extra. That's how people get into trouble.",key:"Pay your credit card in full every month."},
+      {emoji:"📈",title:"Money can grow",body:"$100 at 7% interest becomes $386 in 20 years — without doing anything extra! This is compound interest — money making more money.",key:"Start saving young. Time is the secret ingredient."},
+    ],
+    "13+":[
+      {emoji:"💰",title:"Budget like a boss",body:"50% needs, 30% wants, 20% savings. Without a budget, money just disappears. A budget is a plan for the life you actually want.",key:"A budget gives your money direction."},
+      {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet — and paying extra for the privilege.",key:"Debt is expensive. Use it wisely or not at all."},
+      {emoji:"📊",title:"Start investing at your first job",body:"$50/month at 7% starting at 16 = $245,000 at retirement. Starting at 30 = only $68,000. Starting early nearly triples your outcome.",key:"Invest with your very first paycheck."},
+    ],
+  };
+
+  return(
+    <div style={{minHeight:"100dvh",background:"#050D09",fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"0 0 60px"}}>
+
+      {/* Header */}
+      <div style={{background:"linear-gradient(135deg,#0D1F12,#0A1A0E)",padding:"28px 24px 20px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <span style={{fontSize:40}}>{kidEmoji}</span>
+          <div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:"#EDE9E2",lineHeight:1}}>{kidName}'s Flourish</div>
+            <div style={{color:"#6B7A6E",fontSize:12,marginTop:2}}>Your money zone 💚</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{padding:"20px 20px 0",display:"flex",flexDirection:"column",gap:14}}>
+
+        {/* Chore Chart */}
+        <div style={{background:"#0D1F12",borderRadius:18,padding:"20px",border:"1px solid rgba(0,214,143,0.2)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <div style={{color:"#00D68F",fontWeight:800,fontSize:16}}>🏡 My Chores</div>
+            <div style={{textAlign:"right"}}>
+              <div style={{color:"#00D68F",fontWeight:900,fontSize:20,fontFamily:"'Playfair Display',serif"}}>${earned.toFixed(2)}</div>
+              <div style={{color:"#6B7A6E",fontSize:11}}>{total>0?`of $${total.toFixed(2)} earned`:""}</div>
+            </div>
+          </div>
+          {total>0&&(
+            <div style={{height:8,background:"rgba(255,255,255,0.06)",borderRadius:4,overflow:"hidden",marginBottom:16}}>
+              <div style={{height:"100%",width:`${(earned/total)*100}%`,background:"linear-gradient(90deg,#00D68F,#00EFA0)",borderRadius:4,transition:"width .4s"}}/>
+            </div>
+          )}
+          {chores.length===0&&(
+            <div style={{color:"#6B7A6E",fontSize:13,textAlign:"center",padding:"16px 0"}}>No chores yet — ask a parent to add some!</div>
+          )}
+          {chores.map(ch=>(
+            <div key={ch.id} onClick={()=>toggle(ch.id)} style={{display:"flex",gap:12,alignItems:"center",padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.05)",cursor:"pointer"}}>
+              <div style={{width:28,height:28,borderRadius:8,border:`2px solid ${ch.done?"#00D68F":"rgba(255,255,255,0.15)"}`,background:ch.done?"#00D68F":"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s"}}>
+                {ch.done&&<span style={{color:"#050D09",fontSize:14,fontWeight:900}}>✓</span>}
+              </div>
+              <span style={{flex:1,color:ch.done?"#6B7A6E":"#EDE9E2",fontSize:15,fontWeight:600,textDecoration:ch.done?"line-through":"none",transition:"all .2s"}}>{ch.task}</span>
+              <span style={{color:"#E8B84B",fontWeight:800,fontSize:14}}>+${(ch.reward||0).toFixed(2)}</span>
+            </div>
+          ))}
+          {chores.some(c=>c.done)&&earned===total&&total>0&&(
+            <div style={{marginTop:14,background:"rgba(0,214,143,0.08)",borderRadius:12,padding:"14px",textAlign:"center"}}>
+              <div style={{fontSize:28,marginBottom:4}}>🎉</div>
+              <div style={{color:"#00D68F",fontWeight:800,fontSize:14}}>All done! You earned ${earned.toFixed(2)} today!</div>
+            </div>
+          )}
+        </div>
+
+        {/* 3 Jar Method */}
+        <div style={{background:"#0D1F12",borderRadius:18,padding:"20px",border:"1px solid rgba(232,184,75,0.2)"}}>
+          <div style={{color:"#E8B84B",fontWeight:800,fontSize:16,marginBottom:8}}>🫙 My 3 Jars</div>
+          <div style={{color:"#6B7A6E",fontSize:12,marginBottom:14}}>Split every dollar you earn into 3 jars:</div>
+          <div style={{display:"flex",gap:10}}>
+            {[{name:"Spend",emoji:"🎮",color:"#FF8C42",pct:"50%",desc:"Fun now"},{name:"Save",emoji:"🏦",color:"#4DA8FF",pct:"30%",desc:"Big goals"},{name:"Give",emoji:"❤️",color:"#FF6B9D",pct:"20%",desc:"Others"}].map((j,i)=>(
+              <div key={i} style={{flex:1,background:j.color+"18",border:`1px solid ${j.color}33`,borderRadius:14,padding:"14px 8px",textAlign:"center"}}>
+                <div style={{fontSize:26,marginBottom:6}}>{j.emoji}</div>
+                <div style={{color:j.color,fontWeight:800,fontSize:18}}>{j.pct}</div>
+                <div style={{color:"#EDE9E2",fontWeight:700,fontSize:13,marginTop:2}}>{j.name}</div>
+                <div style={{color:"#6B7A6E",fontSize:10,marginTop:2}}>{j.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Lessons */}
+        <div style={{background:"#0D1F12",borderRadius:18,padding:"20px",border:"1px solid rgba(255,107,157,0.2)"}}>
+          <div style={{color:"#FF6B9D",fontWeight:800,fontSize:16,marginBottom:14}}>📚 Money Lessons</div>
+          <div style={{display:"flex",gap:8,marginBottom:14}}>
+            {["4-7","8-12","13+"].map(age=>(
+              <button key={age} onClick={()=>setKidAge(age)} style={{flex:1,background:kidAge===age?"rgba(255,107,157,0.2)":"rgba(255,255,255,0.04)",border:`1px solid ${kidAge===age?"#FF6B9D":"rgba(255,255,255,0.1)"}`,color:kidAge===age?"#FF6B9D":"#6B7A6E",borderRadius:10,padding:"9px 0",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
+                {age==="4-7"?"🐣 4–7":age==="8-12"?"🌱 8–12":"🌳 13+"}
+              </button>
+            ))}
+          </div>
+          {(lessons[kidAge]||[]).map((l,i)=>(
+            <div key={i} style={{background:"rgba(255,255,255,0.03)",borderRadius:14,padding:"16px",marginBottom:10,border:"1px solid rgba(255,107,157,0.1)"}}>
+              <div style={{fontSize:28,marginBottom:8}}>{l.emoji}</div>
+              <div style={{color:"#EDE9E2",fontWeight:800,fontSize:15,marginBottom:8}}>{l.title}</div>
+              <div style={{color:"#9A9A8A",fontSize:13,lineHeight:1.65,marginBottom:10}}>{l.body}</div>
+              <div style={{background:"rgba(255,107,157,0.1)",border:"1px solid rgba(255,107,157,0.2)",borderRadius:10,padding:"8px 12px",color:"#FF6B9D",fontSize:12,fontWeight:600}}>💡 {l.key}</div>
+            </div>
+          ))}
+        </div>
+
+      </div>
+    </div>
+  );
+}
 function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
@@ -9222,6 +9427,7 @@ export default function FlourishApp(){
     const path = window.location.pathname.replace(/\/+$/,"").toLowerCase();
     if (path === "/privacy") return "privacy";
     if (path === "/terms")   return "terms";
+    if (path === "/kids")    return "kids";
     return "home";
   })();
   const [screen,setScreen]=useState(initialScreen);
@@ -9522,7 +9728,8 @@ export default function FlourishApp(){
 
   // ── Legal screens — always accessible, even before auth/onboarding ──
   if(screen==="privacy")return <PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>;
-  if(screen==="terms")return <TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>;  
+  if(screen==="terms")return <TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>;
+  if(screen==="kids")return <KidsMiniSite/>;
 
   // ── Auth gate ───────────────────────────────────────────────────
   if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
