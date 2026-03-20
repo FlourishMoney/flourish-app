@@ -7172,6 +7172,65 @@ function Family({data,household,setHousehold,setScreen}){
                 style={{background:C.green,border:"none",borderRadius:8,padding:"9px 14px",color:"#fff",fontWeight:800,cursor:"pointer",fontSize:14}}>+</button>
             </div>
           </Card>
+
+          {/* 3 Jar Method */}
+          <Card style={{background:`linear-gradient(135deg,${C.goldDim} 0%,${C.card} 100%)`,border:`1px solid ${C.gold}33`}}>
+            <div style={{color:C.gold,fontWeight:800,marginBottom:8}}>🫙 The 3 Jar Method</div>
+            <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>Split every dollar {activeKid.name} earns into 3 jars.</div>
+            <div style={{display:"flex",gap:8}}>
+              {[{name:"Spend",emoji:"🎮",color:C.orange,desc:"Fun now"},{name:"Save",emoji:"🏦",color:C.blue,desc:"Big goals"},{name:"Give",emoji:"❤️",color:C.pink,desc:"Others"}].map((j,i)=>(
+                <div key={i} style={{flex:1,background:j.color+"18",border:`1px solid ${j.color}33`,borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
+                  <div style={{fontSize:22}}>{j.emoji}</div>
+                  <div style={{color:j.color,fontWeight:700,fontSize:13,marginTop:4}}>{j.name}</div>
+                  <div style={{color:C.muted,fontSize:10,marginTop:2}}>{j.desc}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* Age-appropriate lessons */}
+          {(()=>{
+            const kidLessons={
+              "4-7":[
+                {emoji:"🪙",title:"Money is for trading",body:"When you want something at the store, you give money and get the thing. Money is like a trade ticket!",activity:"Play store at home. Use toy coins to 'buy' snacks from a parent.",key:"Money is how we trade for things we want."},
+                {emoji:"🐷",title:"Saving means waiting",body:"If a toy costs $10 and you have $3, you need to save $7 more. Saving means keeping money safe until you have enough.",activity:"Put $1 in a piggy bank each day and count it every 3 days.",key:"Waiting for something makes it even better."},
+              ],
+              "8-12":[
+                {emoji:"🏦",title:"What banks do",body:"A bank keeps your money safe and pays you a little extra (interest) to use it while it's there. Like a super-safe piggy bank that rewards patience.",activity:"Ask a parent to open a youth savings account. Watch the interest appear.",key:"Banks keep money safe AND pay you to use them."},
+                {emoji:"💳",title:"Credit cards are loans",body:"A credit card lets you buy now, pay later. If you don't pay it ALL back quickly, they charge you extra. That's how people get into trouble.",activity:"If you borrowed $10 and had to pay back $11, would you? That's what a credit card charges.",key:"Pay your credit card in full every month, always."},
+                {emoji:"📈",title:"Money can grow",body:"$100 saved today at 7% becomes $386 in 20 years without doing anything extra. This is compound interest — money making more money.",activity:"Use an online compound interest calculator with a parent. Put in small numbers and watch.",key:"Start saving young. Time is the secret ingredient."},
+              ],
+              "13+":[
+                {emoji:"💰",title:"Budget like a boss",body:"50% needs, 30% wants, 20% savings. Without a budget, money just disappears. A budget isn't restriction — it's a plan for the life you actually want.",key:"A budget gives your money direction."},
+                {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet — and paying extra for the privilege. Use debt only for things that gain value.",key:"Debt is expensive. Use it wisely or not at all."},
+                {emoji:"📊",title:"Start investing at your first job",body:"$50/month invested at 7% starting at age 16 = $245,000 at retirement. The same $50 starting at 30 = $68,000. Starting early nearly triples your outcome.",key:"Invest with your very first paycheck."},
+              ],
+            };
+            const lessons=kidLessons[activeKid.age]||kidLessons["8-12"];
+            return(<>
+              <div style={{color:C.pinkBright,fontWeight:800,fontSize:14,marginTop:4}}>📚 Money Lessons for {activeKid.name}</div>
+              <div style={{display:"flex",gap:6,marginBottom:4}}>
+                {["4-7","8-12","13+"].map(age=>(
+                  <button key={age} onClick={()=>saveKids(kids.map(k=>k.id===activeKid.id?{...k,age}:k))}
+                    style={{flex:1,background:activeKid.age===age?C.pink+"22":C.cardAlt,border:`1px solid ${activeKid.age===age?C.pink:C.border}`,color:activeKid.age===age?C.pinkBright:C.muted,borderRadius:10,padding:"9px 0",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
+                    {age==="4-7"?"🐣 4–7":age==="8-12"?"🌱 8–12":"🌳 13+"}
+                  </button>
+                ))}
+              </div>
+              {lessons.map((l,i)=>(
+                <Card key={i} style={{border:`1px solid ${C.pink}22`}}>
+                  <div style={{fontSize:30,marginBottom:8}}>{l.emoji}</div>
+                  <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',Georgia,serif",marginBottom:8}}>{l.title}</div>
+                  <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65,marginBottom:l.activity?10:0}}>{l.body}</div>
+                  {l.activity&&<div style={{background:C.teal+"18",border:`1px solid ${C.teal}44`,borderRadius:12,padding:"10px 14px",marginBottom:10}}>
+                    <div style={{color:C.tealBright,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Try this activity</div>
+                    <div style={{color:C.cream,fontSize:13}}>{l.activity}</div>
+                  </div>}
+                  <Chip label={l.key} color={C.pink} size={12}/>
+                </Card>
+              ))}
+            </>);
+          })()}
         </>);
       })()}
     </>}
