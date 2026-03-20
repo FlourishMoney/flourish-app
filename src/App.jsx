@@ -6717,11 +6717,14 @@ function Family({data,household,setHousehold,setScreen}){
   const [showPayday,setShowPayday]=useState(false);
 
   const KID_THEMES={
-    pink:{name:"Pink",primary:"#FF6B9D",bg:"#ff6b9d22",border:"#ff6b9d44"},
-    purple:{name:"Purple",primary:"#9B7DFF",bg:"#9b7dff22",border:"#9b7dff44"},
-    green:{name:"Green",primary:"#00D68F",bg:"#00d68f22",border:"#00d68f44"},
-    blue:{name:"Blue",primary:"#4DA8FF",bg:"#4da8ff22",border:"#4da8ff44"},
-    orange:{name:"Orange",primary:"#FF8C42",bg:"#ff8c4222",border:"#ff8c4244"},
+    pink:{name:"Pink",emoji:"🌸",primary:"#FF6B9D",bg:"#ff6b9d22",border:"#ff6b9d44"},
+    purple:{name:"Purple",emoji:"💜",primary:"#A855F7",bg:"#a855f722",border:"#a855f744"},
+    green:{name:"Green",emoji:"🌿",primary:"#22C55E",bg:"#22c55e22",border:"#22c55e44"},
+    blue:{name:"Blue",emoji:"🌊",primary:"#38BDF8",bg:"#38bdf822",border:"#38bdf844"},
+    orange:{name:"Orange",emoji:"🔥",primary:"#FB923C",bg:"#fb923c22",border:"#fb923c44"},
+    yellow:{name:"Yellow",emoji:"⭐",primary:"#EAB308",bg:"#eab30822",border:"#eab30844"},
+    teal:{name:"Teal",emoji:"🦋",primary:"#2DD4BF",bg:"#2dd4bf22",border:"#2dd4bf44"},
+    night:{name:"Night",emoji:"🌙",primary:"#818CF8",bg:"#818cf822",border:"#818cf844"},
   };
 
   const saveKids=(updated)=>{
@@ -7236,11 +7239,11 @@ function Family({data,household,setHousehold,setScreen}){
             {/* Theme picker */}
             <div style={{marginBottom:14}}>
               <div style={{color:C.muted,fontSize:11,textTransform:"uppercase",letterSpacing:1.2,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>🎨 Colour Theme</div>
-              <div style={{display:"flex",gap:8}}>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                 {Object.entries(KID_THEMES).map(([key,t])=>(
                   <button key={key} onClick={()=>updateKid(activeKid.id,{theme:key})}
-                    style={{flex:1,padding:"8px 4px",borderRadius:10,border:`2px solid ${(activeKid.theme||"pink")===key?t.primary:C.border}`,background:(activeKid.theme||"pink")===key?t.bg:C.cardAlt,color:(activeKid.theme||"pink")===key?t.primary:C.muted,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
-                    {t.name}
+                    style={{padding:"8px 10px",borderRadius:10,border:`2px solid ${(activeKid.theme||"pink")===key?t.primary:C.border}`,background:(activeKid.theme||"pink")===key?t.bg:C.cardAlt,color:(activeKid.theme||"pink")===key?t.primary:C.muted,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",minHeight:36,display:"flex",alignItems:"center",gap:4}}>
+                    <span>{t.emoji}</span><span>{t.name}</span>
                   </button>
                 ))}
               </div>
@@ -9260,11 +9263,86 @@ function KidsMiniSite(){
   })();
 
   const THEMES={
-    pink:{primary:"#FF6B9D",bg:"#050D09",card:"#0D1510",accent:"#ff6b9d22",border:"rgba(255,107,157,0.25)"},
-    purple:{primary:"#9B7DFF",bg:"#06050D",card:"#0D0B18",accent:"#9b7dff22",border:"rgba(155,125,255,0.25)"},
-    green:{primary:"#00D68F",bg:"#050D09",card:"#0A1A0E",accent:"#00d68f22",border:"rgba(0,214,143,0.25)"},
-    blue:{primary:"#4DA8FF",bg:"#05090D",card:"#0A1018",accent:"#4da8ff22",border:"rgba(77,168,255,0.25)"},
-    orange:{primary:"#FF8C42",bg:"#0D0805",card:"#180E0A",accent:"#ff8c4222",border:"rgba(255,140,66,0.25)"},
+    // 🌸 Pink — warm bubblegum on deep rose-black
+    pink:{
+      name:"Pink",emoji:"🌸",
+      primary:"#FF6B9D",primaryDim:"#FF6B9D22",primaryBorder:"rgba(255,107,157,0.3)",
+      bg:"#0D0508",card:"#1A0A10",cardAlt:"#220D14",
+      text:"#FFE8F0",textMuted:"#C4848A",
+      header:"linear-gradient(135deg,#220D14,#0D0508)",
+      chore:"rgba(255,107,157,0.08)",choreBorder:"rgba(255,107,157,0.15)",
+      jar1:"#FF6B9D",jar2:"#FF94B8",jar3:"#FFB3C9",
+    },
+    // 💜 Purple — cosmic violet on deep indigo-black
+    purple:{
+      name:"Purple",emoji:"💜",
+      primary:"#A855F7",primaryDim:"#A855F722",primaryBorder:"rgba(168,85,247,0.3)",
+      bg:"#07040D",card:"#110A1A",cardAlt:"#180F22",
+      text:"#EDE0FF",textMuted:"#9B7AB5",
+      header:"linear-gradient(135deg,#180F22,#07040D)",
+      chore:"rgba(168,85,247,0.08)",choreBorder:"rgba(168,85,247,0.15)",
+      jar1:"#A855F7",jar2:"#C084FC",jar3:"#D8A4FF",
+    },
+    // 🌿 Green — forest on deep emerald-black
+    green:{
+      name:"Green",emoji:"🌿",
+      primary:"#22C55E",primaryDim:"#22C55E22",primaryBorder:"rgba(34,197,94,0.3)",
+      bg:"#030D06",card:"#081A0E",cardAlt:"#0D2214",
+      text:"#DCFCE7",textMuted:"#6DAF7E",
+      header:"linear-gradient(135deg,#0D2214,#030D06)",
+      chore:"rgba(34,197,94,0.08)",choreBorder:"rgba(34,197,94,0.15)",
+      jar1:"#22C55E",jar2:"#4ADE80",jar3:"#86EFAC",
+    },
+    // 🌊 Blue — ocean on deep navy-black
+    blue:{
+      name:"Blue",emoji:"🌊",
+      primary:"#38BDF8",primaryDim:"#38BDF822",primaryBorder:"rgba(56,189,248,0.3)",
+      bg:"#030810",card:"#071018",cardAlt:"#0A1620",
+      text:"#E0F4FF",textMuted:"#6B9EB5",
+      header:"linear-gradient(135deg,#0A1620,#030810)",
+      chore:"rgba(56,189,248,0.08)",choreBorder:"rgba(56,189,248,0.15)",
+      jar1:"#38BDF8",jar2:"#7DD3FC",jar3:"#BAE6FD",
+    },
+    // 🔥 Orange — sunset on deep amber-black
+    orange:{
+      name:"Orange",emoji:"🔥",
+      primary:"#FB923C",primaryDim:"#FB923C22",primaryBorder:"rgba(251,146,60,0.3)",
+      bg:"#0D0600",card:"#1A0E00",cardAlt:"#221400",
+      text:"#FFF0E0",textMuted:"#C4956A",
+      header:"linear-gradient(135deg,#221400,#0D0600)",
+      chore:"rgba(251,146,60,0.08)",choreBorder:"rgba(251,146,60,0.15)",
+      jar1:"#FB923C",jar2:"#FDBA74",jar3:"#FED7AA",
+    },
+    // ⭐ Yellow — sunshine on deep golden-black
+    yellow:{
+      name:"Yellow",emoji:"⭐",
+      primary:"#EAB308",primaryDim:"#EAB30822",primaryBorder:"rgba(234,179,8,0.3)",
+      bg:"#0A0800",card:"#181200",cardAlt:"#201800",
+      text:"#FFFCE0",textMuted:"#B5A34A",
+      header:"linear-gradient(135deg,#201800,#0A0800)",
+      chore:"rgba(234,179,8,0.08)",choreBorder:"rgba(234,179,8,0.15)",
+      jar1:"#EAB308",jar2:"#FACC15",jar3:"#FDE047",
+    },
+    // 🦋 Teal — deep sea on dark teal-black
+    teal:{
+      name:"Teal",emoji:"🦋",
+      primary:"#2DD4BF",primaryDim:"#2DD4BF22",primaryBorder:"rgba(45,212,191,0.3)",
+      bg:"#030D0C",card:"#071A18",cardAlt:"#0A2220",
+      text:"#CCFBF1",textMuted:"#5FA89E",
+      header:"linear-gradient(135deg,#0A2220,#030D0C)",
+      chore:"rgba(45,212,191,0.08)",choreBorder:"rgba(45,212,191,0.15)",
+      jar1:"#2DD4BF",jar2:"#5EEAD4",jar3:"#99F6E4",
+    },
+    // 🌙 Night — sleek dark on pure black
+    night:{
+      name:"Night",emoji:"🌙",
+      primary:"#818CF8",primaryDim:"#818CF822",primaryBorder:"rgba(129,140,248,0.3)",
+      bg:"#020204",card:"#0C0C14",cardAlt:"#12121C",
+      text:"#E8E8FF",textMuted:"#7070A0",
+      header:"linear-gradient(135deg,#12121C,#020204)",
+      chore:"rgba(129,140,248,0.08)",choreBorder:"rgba(129,140,248,0.15)",
+      jar1:"#818CF8",jar2:"#A5B4FC",jar3:"#C7D2FE",
+    },
   };
 
   const [activeTheme,setActiveTheme]=useState(()=>{
@@ -9323,7 +9401,141 @@ function KidsMiniSite(){
   };
 
   return(
-    <div style={{minHeight:"100dvh",background:theme.bg,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"0 0 80px"}}>
+    <div style={{minHeight:"100dvh",background:theme.bg,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"0 0 80px",transition:"background .4s"}}>
+
+      {/* Header */}
+      <div style={{background:theme.header,padding:"28px 20px 16px",borderBottom:`1px solid ${theme.primaryBorder}`}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+          <div style={{width:48,height:48,borderRadius:14,background:theme.primaryDim,border:`1.5px solid ${theme.primaryBorder}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            <FlourishMark size={32}/>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:theme.text,lineHeight:1}}>{kidData?.name?`${kidName}'s Flourish`:"Flourish Kids"}</div>
+            <div style={{color:theme.textMuted,fontSize:12,marginTop:2}}>Your money zone <span style={{color:primary}}>♥</span></div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{color:primary,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>${totalJars.toFixed(2)}</div>
+            <div style={{color:theme.textMuted,fontSize:10}}>total saved</div>
+          </div>
+        </div>
+        {streak>0&&(
+          <div style={{background:"rgba(255,140,66,0.15)",border:"1px solid rgba(255,140,66,0.3)",borderRadius:10,padding:"8px 14px",display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <span style={{fontSize:18}}>🔥</span>
+            <span style={{color:"#FF8C42",fontWeight:700,fontSize:13}}>{streak} week streak! Keep it going!</span>
+          </div>
+        )}
+        {/* Theme picker */}
+        <div style={{background:"rgba(255,255,255,0.06)",borderRadius:14,padding:"10px 14px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <span style={{color:theme.text,fontSize:12,fontWeight:700,flexShrink:0}}>🎨 My theme</span>
+          <div style={{display:"flex",gap:8,flex:1,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            {Object.entries(THEMES).map(([key,t])=>(
+              <button key={key} onClick={()=>saveTheme(key)} title={t.name}
+                style={{width:32,height:32,borderRadius:99,border:`3px solid ${activeTheme===key?"#fff":"transparent"}`,background:t.primary,cursor:"pointer",transition:"all .2s",flexShrink:0,boxShadow:activeTheme===key?`0 0 12px ${t.primary}99`:"none",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12}}>
+                {activeTheme===key?"✓":""}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{padding:"16px 16px 0",display:"flex",flexDirection:"column",gap:14}}>
+
+        {/* Goal progress */}
+        {goal.name&&goalAmt>0&&(
+          <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid ${theme.primaryBorder}`}}>
+            <div style={{color:primary,fontWeight:800,fontSize:14,marginBottom:10}}>🎯 My Goal</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <span style={{color:theme.text,fontSize:15,fontWeight:700}}>{goal.emoji} {goal.name}</span>
+              <span style={{color:primary,fontWeight:800,fontSize:16}}>{goalPct}%</span>
+            </div>
+            <div style={{height:12,background:"rgba(255,255,255,0.06)",borderRadius:6,overflow:"hidden",marginBottom:8}}>
+              <div style={{height:"100%",width:`${goalPct}%`,background:`linear-gradient(90deg,${theme.jar1},${theme.jar2})`,borderRadius:6,transition:"width .5s"}}/>
+            </div>
+            <div style={{color:theme.textMuted,fontSize:12}}>
+              ${(jars.save||0).toFixed(2)} saved · ${Math.max(0,goalAmt-(jars.save||0)).toFixed(2)} to go
+              {goalPct>=100&&<span style={{color:theme.jar1,fontWeight:700}}> 🎉 You did it!</span>}
+            </div>
+          </div>
+        )}
+
+        {/* Jar balances */}
+        <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid rgba(255,255,255,0.08)`}}>
+          <div style={{color:primary,fontWeight:800,fontSize:14,marginBottom:12}}>🫙 My Jars</div>
+          <div style={{display:"flex",gap:10}}>
+            {[{key:"spend",name:"Spend",emoji:"🎮",color:theme.jar1,pct:"50%"},{key:"save",name:"Save",emoji:"🏦",color:theme.jar2,pct:"30%"},{key:"give",name:"Give",emoji:"❤️",color:theme.jar3,pct:"20%"}].map(j=>(
+              <div key={j.key} style={{flex:1,background:j.color+"22",border:`1px solid ${j.color}44`,borderRadius:14,padding:"14px 8px",textAlign:"center"}}>
+                <div style={{fontSize:24,marginBottom:4}}>{j.emoji}</div>
+                <div style={{color:j.color,fontWeight:900,fontSize:17,fontFamily:"'Playfair Display',serif"}}>${(jars[j.key]||0).toFixed(2)}</div>
+                <div style={{color:theme.text,fontWeight:700,fontSize:11,marginTop:2}}>{j.name}</div>
+                <div style={{color:theme.textMuted,fontSize:9,marginTop:1}}>{j.pct}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Chore Chart */}
+        <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid ${theme.primaryBorder}`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <div style={{color:primary,fontWeight:800,fontSize:14}}>🏡 My Chores</div>
+            {total>0&&<div style={{color:theme.jar2,fontWeight:800,fontSize:14}}>${earned.toFixed(2)} earned</div>}
+          </div>
+          {total>0&&(
+            <div style={{height:8,background:"rgba(255,255,255,0.06)",borderRadius:4,overflow:"hidden",marginBottom:14}}>
+              <div style={{height:"100%",width:`${total>0?(earned/total)*100:0}%`,background:`linear-gradient(90deg,${theme.jar1},${theme.jar2})`,borderRadius:4,transition:"width .4s"}}/>
+            </div>
+          )}
+          {chores.length===0&&(
+            <div style={{color:theme.textMuted,fontSize:13,textAlign:"center",padding:"12px 0"}}>No chores yet — ask a parent to add some!</div>
+          )}
+          {chores.map(ch=>(
+            <div key={ch.id} onClick={()=>toggle(ch.id)} style={{display:"flex",gap:12,alignItems:"center",padding:"12px 0",borderBottom:`1px solid ${theme.chore}`,cursor:"pointer"}}>
+              <div style={{width:28,height:28,borderRadius:8,border:`2px solid ${ch.done?primary:"rgba(255,255,255,0.15)"}`,background:ch.done?primary:"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s"}}>
+                {ch.done&&<span style={{color:theme.bg,fontSize:14,fontWeight:900}}>✓</span>}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{color:ch.done?theme.textMuted:theme.text,fontSize:14,fontWeight:600,textDecoration:ch.done?"line-through":"none"}}>{ch.task}</div>
+                {ch.freq&&ch.freq!=="weekly"&&<div style={{color:theme.textMuted,fontSize:10}}>{FREQ[ch.freq]||ch.freq}</div>}
+              </div>
+              <span style={{color:theme.jar1,fontWeight:800,fontSize:13}}>+${(ch.reward||0).toFixed(2)}</span>
+            </div>
+          ))}
+          {chores.some(c=>c.done)&&earned===total&&total>0&&(
+            <div style={{marginTop:14,background:theme.primaryDim,borderRadius:12,padding:"14px",textAlign:"center",border:`1px solid ${theme.primaryBorder}`}}>
+              <div style={{fontSize:28,marginBottom:4}}>🎉</div>
+              <div style={{color:primary,fontWeight:800,fontSize:14}}>All done! Ask a parent for payday!</div>
+            </div>
+          )}
+        </div>
+
+        {/* Money Lessons */}
+        <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid ${theme.primaryBorder}`}}>
+          <div style={{color:primary,fontWeight:800,fontSize:14,marginBottom:12}}>📚 Money Lessons</div>
+          <div style={{display:"flex",gap:8,marginBottom:14}}>
+            {["4-7","8-12","13+"].map(age=>(
+              <button key={age} onClick={()=>setKidAge(age)}
+                style={{flex:1,background:kidAge===age?theme.primaryDim:theme.cardAlt,border:`1px solid ${kidAge===age?primary:theme.choreBorder}`,color:kidAge===age?primary:theme.textMuted,borderRadius:10,padding:"9px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",transition:"all .2s"}}>
+                {age==="4-7"?"🐣 4–7":age==="8-12"?"🌱 8–12":"🌳 13+"}
+              </button>
+            ))}
+          </div>
+          {(lessons[kidAge]||[]).map((l,i)=>(
+            <div key={i} style={{background:theme.cardAlt,borderRadius:14,padding:"16px",marginBottom:10,border:`1px solid ${theme.choreBorder}`}}>
+              <div style={{fontSize:26,marginBottom:8}}>{l.emoji}</div>
+              <div style={{color:theme.text,fontWeight:800,fontSize:14,marginBottom:8}}>{l.title}</div>
+              <div style={{color:theme.textMuted,fontSize:12,lineHeight:1.65,marginBottom:l.activity?10:0}}>{l.body}</div>
+              {l.activity&&<div style={{background:theme.primaryDim,border:`1px solid ${theme.primaryBorder}`,borderRadius:10,padding:"8px 12px",marginBottom:8}}>
+                <div style={{color:primary,fontSize:10,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Try this</div>
+                <div style={{color:theme.text,fontSize:12}}>{l.activity}</div>
+              </div>}
+              <div style={{background:theme.primaryDim,border:`1px solid ${theme.primaryBorder}`,borderRadius:8,padding:"6px 10px",color:primary,fontSize:11,fontWeight:600}}>💡 {l.key}</div>
+            </div>
+          ))}
+        </div>
+
+      </div>
+    </div>
+  );
+}
 
       {/* Header */}
       <div style={{background:`linear-gradient(135deg,${theme.card},${theme.bg})`,padding:"28px 20px 20px",borderBottom:`1px solid ${theme.border}`}}>
