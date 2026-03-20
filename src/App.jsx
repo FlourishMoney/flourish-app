@@ -31,18 +31,18 @@ const CC = {
     ],
     incomeTypes:[
       ["employment","💼 Employment / T4"],["selfemployed","🧾 Self-Employed / T4A"],
-      ["cpp","🏛️ CPP / QPP / Pension"],["ei","📋 EI Benefits"],
+      ["cpp","🏛️ CPP / Pension"],["ei","📋 EI Benefits"],
       ["odsp","♿ ODSP / Ontario Works"],["ccb","👶 Canada Child Benefit"],
       ["rental","🏠 Rental Income"],["gig","🚗 Gig / Freelance"],["other","➕ Other"],
     ],
     debtTypes:["Credit Card","Line of Credit","HELOC","Car Loan","OSAP / Student Loan","Personal Loan","Mortgage","Buy Now Pay Later","Other"],
     taxTips:[
-      {title:"RRSP Contribution",body:"Every RRSP dollar reduces your taxable income. At a 30% marginal rate, putting in $5,000 gets you ~$1,500 back at tax time. Contributions made in the first 60 days of the calendar year count toward the prior tax year — check CRA My Account for the exact deadline each year.",savings:"Up to 33%",flag:"🇨🇦",priority:"high",action:"Check My RRSP Room"},
+      {title:"RRSP Contribution",body:"Every RRSP dollar reduces your taxable income. At a 30% marginal rate, putting in $5,000 gets you ~$1,500 back at tax time. Deadline is March 1.",savings:"Up to 33%",flag:"🇨🇦",priority:"high",action:"Check My RRSP Room"},
       {title:"TFSA — You're Probably Under-Using It",body:"Your TFSA isn't just for savings — it's for investing. Any growth inside is 100% tax-free forever. If you opened one at 18, you may have $75,000+ of contribution room sitting unused.",savings:"Tax-free growth",flag:"🇨🇦",priority:"high",action:"Calculate My Room"},
       {title:"FHSA (First Home Savings Account)",body:"If you've never owned a home, you can contribute up to $8,000/year and get a tax deduction — like an RRSP. Unused room carries forward. Withdraw tax-free to buy your first home.",savings:"Up to $8,000/yr",flag:"🇨🇦",priority:"high",action:"Open an FHSA"},
       {title:"GST/HST Credit",body:"Filing your taxes means CRA automatically checks if you qualify for quarterly GST/HST credits. Under ~$50k income? You likely qualify and may not know it. File every year even if you owe nothing.",savings:"Up to $519/yr",flag:"🇨🇦",priority:"medium",action:"File Your Taxes"},
       {title:"Canada Child Benefit (CCB)",body:"Tax-free monthly payments if you have children under 18. A family earning $50k with two kids can get $12,000+/year. Apply on CRA My Account or when registering the birth.",savings:"Up to $7,787/child",flag:"🇨🇦",priority:"high",action:"Apply on CRA"},
-      {title:"Home Office Deduction",body:"Work from home? For 2023 onwards, employees use the detailed method — the temporary flat-rate $2/day method is no longer available. You need Form T2200 signed by your employer and must meet the 50%-of-time test. Self-employed workers can deduct the business-use share of eligible expenses like rent, internet, and utilities.",savings:"Varies",flag:"🇨🇦",priority:"medium",action:"Get Form T2200"},
+      {title:"Home Office Deduction",body:"Work from home? Even employees can claim a flat $2/day (up to $500) without receipts. Self-employed? Claim actual rent, internet, hydro proportionally.",savings:"$200–$1,200",flag:"🇨🇦",priority:"medium",action:"Track Home Office Days"},
       {title:"Ontario Trillium Benefit",body:"Ontario residents: combines the Ontario Sales Tax Credit, Ontario Energy Credit, and Northern Ontario Energy Credit into one monthly payment. Low-to-mid income earners often miss this.",savings:"Up to $1,421/yr",flag:"🏙️ ON",priority:"medium",action:"Apply on CRA"},
       {title:"Disability Tax Credit (DTC)",body:"If you or a dependent has a severe disability, the DTC provides up to ~$1,300/year in federal tax credits, plus retroactive claims. Often missed — a doctor fills out T2201.",savings:"Up to $1,300/yr",flag:"🇨🇦",priority:"medium",action:"Get T2201 Form"},
       {title:"Child Care Expense Deduction",body:"Daycare, after-school programs, summer camp — most childcare costs are deductible from the lower-income spouse's return. Families earning $50k often leave $2,000–$4,000 on the table.",savings:"$1,200–$4,000",flag:"🇨🇦",priority:"high",action:"Gather Receipts"},
@@ -50,16 +50,16 @@ const CC = {
       {title:"Working Income Tax Benefit (CWB)",body:"Working but earning under ~$36k? CRA may owe you a refundable tax credit just for filing. Many low-income workers miss this entirely.",savings:"Up to $1,428",flag:"🇨🇦",priority:"medium",action:"Check Eligibility"},
     ],
     learnCards:[
-      {emoji:"🏦",title:"TFSA vs RRSP — The Real Difference",body:"RRSP lowers your taxes now but you pay tax when you withdraw. TFSA has no upfront deduction but all growth and withdrawals are 100% tax-free. Rule of thumb: lower income now often favors TFSA, higher income often favors RRSP — but check first if you expect income to drop soon (parental leave, early retirement), have large RRSP carry-forward room, get an employer RRSP match, or are a first-time buyer who should use an FHSA first.",key:"Usually: lower income → TFSA, higher income → RRSP. Check future income, carry-forward room, employer match, and FHSA eligibility first."},
+      {emoji:"🏦",title:"TFSA vs RRSP — The Real Difference",body:"RRSP lowers your taxes now but you pay tax when you withdraw. TFSA has no upfront deduction but all growth and withdrawals are 100% tax-free. If you're in a low tax bracket now, use TFSA first. If you're in a high bracket, RRSP first.",key:"Low income now → TFSA. High income now → RRSP."},
       {emoji:"🏠",title:"The FHSA: Best Account Most Canadians Don't Have",body:"The First Home Savings Account opened in 2023. You get an RRSP-style deduction going in AND tax-free withdrawals for a first home. Up to $40,000 lifetime room. If you're not a homeowner, this should be your first account.",key:"Open an FHSA before your RRSP if you want to buy a home."},
       {emoji:"👶",title:"Canada Child Benefit vs US Child Tax Credit",body:"The CCB is more generous than most Canadians realize. A single parent earning $40k with two kids under 6 can receive over $14,000/year. Unlike US credits, CCB is completely tax-free and paid monthly.",key:"Apply at birth — retroactive claims are possible but painful."},
       {emoji:"📋",title:"What EI Actually Covers",body:"Employment Insurance isn't just for job loss. It also covers maternity (15 weeks), parental (up to 35 weeks standard or 61 weeks extended), sickness (26 weeks), and compassionate care. Many employees don't claim what they're entitled to.",key:"Know your EI benefits before you need them."},
       {emoji:"💳",title:"Why minimum payments are a trap",body:"If you owe $3,000 at 20% and pay only the minimum, it takes 8+ years and costs nearly $3,000 extra. You buy everything twice.",key:"Never just pay the minimum."},
-      {emoji:"🆘",title:"The emergency fund rule",body:"Start with a $1,000 buffer to stop new credit card debt, then build a fuller fund. Salaried households can target 3 months of core expenses. Self-employed, variable-income, or single-income households often need 6 months or more — income disruption is harder to predict. In Canada, keep it accessible in a TFSA HISA.",key:"Start with $1,000, then build 3–6+ months based on income stability and household risk."},
+      {emoji:"🆘",title:"The emergency fund rule",body:"One car repair without savings = credit card debt at 20%. A $1,000 cushion breaks that cycle. In Canada, keep it in a TFSA high-interest savings account.",key:"Build $1,000 in a TFSA HISA first."},
     ],
     retirementAccounts:[
-      {id:"rrsp",name:"RRSP",fullName:"Registered Retirement Savings Plan",icon:"🏦",color:"#2E8B2E",annualLimit:"18% of income (max $32,490)",taxNote:"Contributions deductible. Withdrawals taxed as income.",tip:"Contribute in high-income years. Use spousal RRSP for income splitting."},
-      {id:"tfsa",name:"TFSA",fullName:"Tax-Free Savings Account",icon:"🛡️",color:"#2FADA6",annualLimit:"$7,000 (2025). Unused room accumulates.",taxNote:"No deduction on contribution. All growth and withdrawals tax-free.",tip:"Invest in ETFs inside your TFSA — don't just park cash."},
+      {id:"rrsp",name:"RRSP",fullName:"Registered Retirement Savings Plan",icon:"🏦",color:"#2E8B2E",annualLimit:"18% of income (max $31,560)",taxNote:"Contributions deductible. Withdrawals taxed as income.",tip:"Contribute in high-income years. Use spousal RRSP for income splitting."},
+      {id:"tfsa",name:"TFSA",fullName:"Tax-Free Savings Account",icon:"🛡️",color:"#2FADA6",annualLimit:"$7,000 (2024). Unused room accumulates.",taxNote:"No deduction on contribution. All growth and withdrawals tax-free.",tip:"Invest in ETFs inside your TFSA — don't just park cash."},
       {id:"fhsa",name:"FHSA",fullName:"First Home Savings Account",icon:"🏠",color:"#CFA03E",annualLimit:"$8,000/yr (max $40,000 lifetime)",taxNote:"Deductible going in. Tax-free withdrawal for first home purchase.",tip:"Best account for first-time buyers. Open even if you're not buying immediately — room accumulates."},
       {id:"resp",name:"RESP",fullName:"Registered Education Savings Plan",icon:"👶",color:"#8A5FC8",annualLimit:"$2,500/yr to maximize CESG grant",taxNote:"No deduction. Government adds 20% (CESG) on first $2,500/yr.",tip:"Even $2,500/yr gets $500 free from government. Start at birth."},
     ],
@@ -97,7 +97,7 @@ const CC = {
       {title:"Earned Income Tax Credit (EITC)",body:"One of the most under-claimed credits in America. Under ~$63k with qualifying children? You could get up to $7,430 back — even if you owe nothing. Must file to claim.",savings:"Up to $7,430",flag:"🇺🇸",priority:"high",action:"Check EITC Eligibility"},
       {title:"Child Tax Credit",body:"Up to $2,000 per qualifying child under 17. Partially refundable — meaning you can get money back even if you owe nothing. File even if your income is low.",savings:"$2,000/child",flag:"🇺🇸",priority:"high",action:"Claim on Schedule 8812"},
       {title:"401(k) — Get the Full Match First",body:"If your employer matches 401(k) contributions, not contributing enough to get the full match is leaving free money on the table. A 4% match on $50k = $2,000/year you're giving up.",savings:"Up to $23,000/yr",flag:"🇺🇸",priority:"high",action:"Increase 401k Contributions"},
-      {title:"HSA: The Triple Tax Advantage",body:"If you have a high-deductible health plan, an HSA lets you contribute pre-tax, grow tax-free, and withdraw tax-free for medical expenses. It's legally the most tax-advantaged account available.",savings:"Up to $4,300/yr",flag:"🇺🇸",priority:"high",action:"Open an HSA"},
+      {title:"HSA: The Triple Tax Advantage",body:"If you have a high-deductible health plan, an HSA lets you contribute pre-tax, grow tax-free, and withdraw tax-free for medical expenses. It's legally the most tax-advantaged account available.",savings:"Up to $4,150/yr",flag:"🇺🇸",priority:"high",action:"Open an HSA"},
       {title:"Roth IRA: Tax-Free Retirement",body:"Under $146k single / $230k married? You can contribute $7,000/year to a Roth IRA. You pay tax now, but all growth and withdrawals are 100% tax-free in retirement.",savings:"$7,000/yr tax-free",flag:"🇺🇸",priority:"high",action:"Open a Roth IRA"},
       {title:"Student Loan Interest Deduction",body:"Paying student loans? You may be able to deduct up to $2,500 of interest per year, reducing taxable income directly — even without itemizing.",savings:"Up to $2,500",flag:"🇺🇸",priority:"medium",action:"Find 1098-E Form"},
       {title:"Child & Dependent Care Credit",body:"Paying for daycare, after-school, or a caregiver while you work? You can claim 20–35% of up to $3,000 in care expenses as a tax credit — not just a deduction.",savings:"$600–$1,050",flag:"🇺🇸",priority:"medium",action:"Track Care Receipts"},
@@ -117,7 +117,7 @@ const CC = {
     retirementAccounts:[
       {id:"401k",name:"401(k)",fullName:"Employer Retirement Plan",icon:"🏦",color:"#2E8B2E",annualLimit:"$23,000/yr ($30,500 if 50+)",taxNote:"Traditional: contributions pre-tax, withdrawals taxed. Roth 401k: after-tax contributions, tax-free withdrawals.",tip:"Always contribute enough to get the full employer match — it's free money."},
       {id:"roth",name:"Roth IRA",fullName:"Individual Retirement Account",icon:"🛡️",color:"#2FADA6",annualLimit:"$7,000/yr ($8,000 if 50+). Phaseout at $146k+",taxNote:"After-tax contributions. All growth and qualified withdrawals 100% tax-free.",tip:"Open early — the tax-free compounding over decades is massive. Use Fidelity or Vanguard."},
-      {id:"hsa",name:"HSA",fullName:"Health Savings Account",icon:"🏥",color:"#CFA03E",annualLimit:"$4,300 single / $8,550 family (2025)",taxNote:"Triple tax advantage: pre-tax in, tax-free growth, tax-free for medical expenses.",tip:"After 65, HSA funds can be used for anything (taxed like a 401k). Best account in the US tax code."},
+      {id:"hsa",name:"HSA",fullName:"Health Savings Account",icon:"🏥",color:"#CFA03E",annualLimit:"$4,150 single / $8,300 family (2024)",taxNote:"Triple tax advantage: pre-tax in, tax-free growth, tax-free for medical expenses.",tip:"After 65, HSA funds can be used for anything (taxed like a 401k). Best account in the US tax code."},
       {id:"529",name:"529 Plan",fullName:"Education Savings Account",icon:"🎓",color:"#8A5FC8",annualLimit:"No annual limit. $18k/yr gift tax exclusion.",taxNote:"State deduction varies. Federal tax-free growth and withdrawals for education.",tip:"Start when kids are young. Some states give immediate tax deductions."},
     ],
     benefitsChecker:[
@@ -223,8 +223,7 @@ function getPersonalizedTaxCredits(profile) {
         {title:"Age Amount Credit",body:"If you're 65 or older, you can claim the Age Amount — a federal non-refundable tax credit worth up to $8,396 (2024). It reduces if your income exceeds $42,335 and disappears above ~$98k. Even partial claims are worth thousands.",savings:"Up to $1,259 in tax saved",flag:"🇨🇦",priority:"high",action:"Claim on Line 30100"},
         {title:"Pension Income Splitting",body:"If you receive eligible pension income (RPP, RRIF, annuity), you can split up to 50% with your spouse. If your spouse is in a lower tax bracket, this can save your household thousands every year.",savings:"Potentially thousands",flag:"🇨🇦",priority:"high",action:"File Form T1032"},
         {title:"Pension Income Tax Credit",body:"The first $2,000 of eligible pension income qualifies for a 15% federal credit ($300 saved). Even if you're splitting pension income, your spouse can also claim this credit on the transferred amount.",savings:"Up to $300 federal",flag:"🇨🇦",priority:"high",action:"Claim on Line 31400"},
-        {title:"OAS & GIS — Are You Getting Everything?",body:"Old Age Security ($742.31/mo at 65) is automatic, but the Guaranteed Income Supplement (GIS) is not — you must apply. Low-income seniors leave GIS unclaimed every year. If your income is under ~$21,624, apply immediately.",savings:"Up to $1,065/mo (GIS)",flag:"🇨🇦",priority:"high",action:"Apply at Service Canada"},
-        {title:"Delay CPP/QPP and OAS for a 42% boost",body:"Taking CPP (or QPP in Quebec) at 65 is the default, but deferring to 70 permanently increases your monthly payment by 42%. Deferring OAS to 70 adds another 36%. If you have other income to draw on between 65 and 70 and expect to live past 83, delaying is usually worth it. Run the math before you claim.",savings:"Up to 42% more CPP/QPP + 36% more OAS",flag:"🇨🇦",priority:"high",action:"Model your CPP/QPP start date"},
+        {title:"OAS & GIS — Are You Getting Everything?",body:"Old Age Security ($727.67/mo at 65) is automatic, but the Guaranteed Income Supplement (GIS) is not — you must apply. Low-income seniors leave GIS unclaimed every year. If your income is under ~$21,624, apply immediately.",savings:"Up to $1,065/mo (GIS)",flag:"🇨🇦",priority:"high",action:"Apply at Service Canada"},
       {title:"CPP Maximum — Know What You're Entitled To",body:"The maximum CPP retirement pension is $1,364.60/mo (2025) at age 65. Your actual amount depends on contributions history. You can check your CPP Statement of Contributions at My Service Canada Account.",savings:"Up to $1,364.60/mo",flag:"🇨🇦",priority:"medium",action:"Check My Service Canada"},
         {title:"Medical Expense Tax Credit",body:"Seniors often have significant medical costs — prescriptions, dental, vision, hearing aids, home care. Expenses exceeding 3% of your net income (or $2,635 — whichever is less) are claimable. Keep every receipt.",savings:"15% of qualifying expenses",flag:"🇨🇦",priority:"high",action:"Gather Medical Receipts"},
         {title:"Home Accessibility Tax Credit",body:"Making your home safer and more accessible? Renovations like grab bars, wheelchair ramps, or walk-in tubs qualify for a 15% federal credit on up to $20,000 of expenses per year.",savings:"Up to $3,000",flag:"🇨🇦",priority:"medium",action:"Keep Renovation Receipts"}
@@ -271,7 +270,7 @@ function getPersonalizedTaxCredits(profile) {
       );
     }
     if (province === "AB") {
-      tips.push({title:"Alberta Tax Planning",body:"Alberta has provincial income tax, but rates are among the lowest in Canada — a flat 10% on all taxable income, with no surtax. Combined with federal rates, Alberta residents often pay less total income tax than other provinces. Focus on RRSP, TFSA, FHSA, and the Alberta Child and Family Benefit if applicable.",savings:"Lower combined rate vs most provinces",flag:"🏙️ AB",priority:"medium",action:"Review Federal + Alberta Credits"});
+      tips.push({title:"Alberta Has No Provincial Income Tax Credits",body:"Alberta has no provincial income tax on top of federal — your effective tax rate is already lower than most provinces. Focus on maximizing federal credits: RRSP, TFSA, FHSA, and GST/HST credit.",savings:"Lower baseline rate",flag:"🏙️ AB",priority:"medium",action:"Maximize Federal Credits"});
     }
     if (province === "BC") {
       tips.push({title:"BC Climate Action Tax Credit",body:"BC residents with moderate incomes receive a quarterly climate action tax credit — automatic when you file your taxes. Single individuals can receive up to $447/year.",savings:"Up to $447/yr",flag:"🏙️ BC",priority:"medium",action:"File Your Taxes"});
@@ -358,32 +357,28 @@ const DEMO = {
 
 // ─── PLAID API HELPERS ────────────────────────────────────────────────────────
 async function callPlaid(action, params={}) {
-  try {
-    const res = await fetch("/api/plaid", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, ...params }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      const err = new Error(data.error || "Plaid error");
-      err.needs_reconnect = data.needs_reconnect || false;
-      // Signal the top-level app to show the reconnect banner
-      if(data.needs_reconnect && typeof window.__flourishReconnect === "function") {
-        window.__flourishReconnect();
-      }
-      throw err;
+  const res = await fetch("/api/plaid", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, ...params }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const err = new Error(data.error || "Plaid error");
+    err.needs_reconnect = data.needs_reconnect || false;
+    // Signal the top-level app to show the reconnect banner
+    if(data.needs_reconnect && typeof window.__flourishReconnect === "function") {
+      window.__flourishReconnect();
     }
-    return data;
-  } catch(err) {
-    throw err instanceof Error ? err : new Error("Plaid request failed");
+    throw err;
   }
+  return data;
 }
 
 // Plaid Personal Finance Category (PFC) primary values → Flourish display meta
 // Shared keyword list for detecting credit card payments in transactions.
 // Used by income detection, spending calc, and transparency panel — single source of truth.
-const CC_PAYMENT_KEYWORDS = ["payment","autopay","amex","visa","mastercard","credit card","card payment","minimum payment","balance payment","customer transfer","mb-cr","mb-credit","loc pay","line of credit","credit/loc","bill payment mb","bill payment rbc","bill payment td","bill payment bmo","bill payment cibc","bill payment scotia","balance transfer","cc payment","crd pmt"];
+const CC_PAYMENT_KEYWORDS = ["payment","autopay","amex","visa","mastercard","credit card","card payment","minimum payment","balance payment"];
 
 // ─── CC PAYMENT DETECTOR ──────────────────────────────────────────────────────
 // Identifies transactions that are credit card payments (not spending).
@@ -395,8 +390,8 @@ function isCCPayment(txn, debts=[]) {
   const cat  = (txn.cat  || "").toUpperCase();
   // Direct keyword match
   if(CC_PAYMENT_KEYWORDS.some(kw => name.includes(kw))) return true;
-  // Also check the transaction category — LOAN_PAYMENTS from Plaid = CC payment
-  if(cat === "BILLS" || cat === "TRANSFER" || cat.includes("TRANSFER") || cat.includes("LOAN")) {
+  // Transfer to credit card (Plaid categorises as Transfer)
+  if(cat === "TRANSFER" || cat.includes("TRANSFER")) {
     // Additional signal: amount matches a known debt minimum or round payment
     if(debts.length > 0) {
       const matchesDet = debts.some(d => {
@@ -407,8 +402,8 @@ function isCCPayment(txn, debts=[]) {
       });
       if(matchesDet) return true;
     }
-    // Large transfer/payment-category transaction → likely CC or loan payment
-    if(txn.amount >= 20 && (cat.includes("TRANSFER") || cat.includes("LOAN") || cat === "BILLS")) return true;
+    // If it's a large transfer-out with no matching income pattern → likely CC payment
+    if(txn.amount >= 20 && cat.includes("TRANSFER")) return true;
   }
   return false;
 }
@@ -439,7 +434,7 @@ const CAT_META = {
   PERSONAL_CARE:             { cat:"Health",          icon:"💊", color:"#4A8FCC" },
   MEDICAL:                   { cat:"Health",          icon:"💊", color:"#4A8FCC" },
   UTILITIES:                 { cat:"Utilities",       icon:"⚡", color:"#CFA03E" },
-  LOAN_PAYMENTS:             { cat:"Transfer",        icon:"💳", color:"#888"    }, // CC/loan payments — excluded from spending
+  LOAN_PAYMENTS:             { cat:"Bills",           icon:"📱", color:"#CFA03E" },
   RENT_AND_UTILITIES:        { cat:"Utilities",       icon:"🏠", color:"#CFA03E" },
   HOME_IMPROVEMENT:          { cat:"Home",            icon:"🔨", color:"#CFA03E" },
   INCOME:                    { cat:"Income",          icon:"💰", color:"#6FE494" },
@@ -455,7 +450,7 @@ const CAT_META = {
   "Shops":                   { cat:"Shopping",        icon:"🛍️", color:"#C45898" },
   "Travel":                  { cat:"Gas & Transport", icon:"⛽", color:"#CFA03E" },
   "Transfer":                { cat:"Transfer",        icon:"↔️", color:"#888"    },
-  "Payment":                 { cat:"Transfer",        icon:"💳", color:"#888"    }, // CC/loan payments — excluded from spending
+  "Payment":                 { cat:"Bills",           icon:"📱", color:"#CFA03E" },
   "Recreation":              { cat:"Entertainment",   icon:"🎬", color:"#8A5FC8" },
   "Healthcare":              { cat:"Health",          icon:"💊", color:"#4A8FCC" },
 };
@@ -1341,7 +1336,7 @@ function FinancialTimeline({data}) {
                     {ev.isPayday&&(
                       <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
                         <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💰 Paycheck</span>
-                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+${(ev.income||0).toFixed(0)}</span>
+                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+${(monthlyIncome||0).toFixed(0)}</span>
                       </div>
                     )}
                     {ev.bills.map((b,bi)=>(
@@ -1641,10 +1636,7 @@ function WealthForecast({data}) {
   const invBal = (data.accounts||[]).filter(a=>a.type==="investment").reduce((s,a)=>s+parseFloat(a.balance||0),0);
   const savingsRate = 0.10; // assume 10% baseline savings
   const monthlyInvest = monthlyIncome * savingsRate + extra;
-  const annualReturn = 0.07; // long-term equity assumption — disclosed in UI below
-  // Note: 7% is a historical long-term equity average. Conservative investors
-  // and those within 10 years of retirement should use the retirement tab
-  // projection tool which has Conservative (3%) / Moderate (5%) / Aggressive (7%) modes.
+  const annualReturn = 0.07;
 
   const project = (monthly, years) => {
     let val = invBal + bal * 0.5;
@@ -1719,10 +1711,6 @@ function WealthForecast({data}) {
           </span>
         </div>
       )}
-      <div style={{marginTop:10,color:C.muted,fontSize:10,textAlign:"center",fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
-        Assumes 7% avg annual return · estimates only · not financial advice · actual returns vary.
-        For conservative or near-retirement projections, use the <span style={{color:C.teal,fontWeight:700}}>Retirement tab</span> with adjustable assumption modes.
-      </div>
     </div>
   );
 }
@@ -1735,9 +1723,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
   const opportunities = [];
 
   // Subscription audit
-  const _oppCatOv = (() => { try { return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}"); } catch { return {}; } })();
-  const _getOppCat = (t) => _oppCatOv[t.id] || t.cat;
-  const subTxns = txns.filter(t => _getOppCat(t) === "Subscriptions" && t.amount > 0);  // expenses are positive
+  const subTxns = txns.filter(t => t.cat === "Subscriptions" && t.amount > 0);  // expenses are positive
   const subTotal = subTxns.reduce((s,t) => s + Math.abs(t.amount), 0);
   if (subTotal > 40) {
     const dupes = subTxns.length > 3 ? subTxns.slice(-2).map(t=>t.merchant||t.name).join(", ") : subTxns.map(t=>t.merchant||t.name).join(", ");
@@ -1757,27 +1743,17 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
     if (saving > 0) opportunities.push({
       id:"refi", icon:"💳", color:C.orange,
       title:`Refinance ${highRateDebt.name}`,
-      detail:`At ${highRateDebt.rate}% this debt is expensive. If you qualify for a lower-rate consolidation loan, compare the APR, fees, and total repayment carefully — a lower rate doesn't always mean lower total cost.`,
-      action:"Debt Plan", screen:"goals", tab:"plan", badge:"Save $"+saving+"/yr"
+      detail:`At ${highRateDebt.rate}% you're overpaying. A 6.5% personal loan could save ~$${saving}/yr in interest.`,
+      action:"Debt Plan", screen:"goals", tab:"sim", badge:"Save $"+saving+"/yr"
     });
   }
 
   // Tax benefits (country-specific)
   if (cc.currency === "CAD") {
-    // RRSP room opportunity — highest value if they have unused room
-    const rrspRoomCalc = RRSPRoomEngine.calculate(data);
-    if(rrspRoomCalc?.remainingRoom > 500 && rrspRoomCalc?.maxRefund > 100) {
-      opportunities.push({
-        id:"rrsp_room", icon:"🏦", color:"#2E8B2E",
-        title:`$${rrspRoomCalc.remainingRoom.toLocaleString()} of RRSP room unused`,
-        detail:`Contributing your remaining room could get you ~$${rrspRoomCalc.maxRefund.toLocaleString()} back at tax time. At ${Math.round(rrspRoomCalc.marginalRate*100)}% marginal rate, every $1,000 contributed = $${rrspRoomCalc.refundPer1k} refund.`,
-        action:"RRSP Tracker", screen:"goals", tab:"retire", badge:"Claim it"
-      });
-    }
     opportunities.push({
       id:"tax", icon:"🍁", color:C.red,
       title:"Tax benefits you may qualify for",
-      detail:`Based on your profile you may be eligible for the Canada Workers Benefit, GST/HST credit${data.profile?.province==="ON" ? ", or Ontario Trillium Benefit" : ", or province-specific refundable credits"}.`,
+      detail:`Based on your profile you may be eligible for the Canada Workers Benefit, GST/HST credit, or Ontario Trillium Benefit.`,
       action:"Tax Tips", screen:"goals", tab:"tax", badge:"Claim now"
     });
   } else {
@@ -1797,7 +1773,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
       id:"hisa", icon:"🏦", color:C.gold,
       title:`Earn more on your savings`,
       detail:`$${(bal||0).toFixed(0)} in savings at typical 0.3% earns $${(bal*0.003).toFixed(0)}/yr. A HISA at 4%+ earns $${(bal*0.04).toFixed(0)}/yr.`,
-      action:"Learn More", screen:"goals", tab:"tax", badge:"+$"+(Math.round((bal*0.04)-(bal*0.003)))+"/yr"
+      action:"Learn More", screen:"goals", tab:"learn", badge:"+$"+(Math.round((bal*0.04)-(bal*0.003)))+"/yr"
     });
   }
 
@@ -2308,10 +2284,8 @@ const SafeSpendEngine = {
     // Bills due in the next 10 days — use real date arithmetic to handle month boundaries
     const todayDate = new Date();
     const in10Days  = new Date(todayDate); in10Days.setDate(todayDate.getDate() + 10);
-    const billingMonth = currentBillingMonth();
     const upcomingBills = bills
       .filter(b => {
-        if(b.paidMonth === billingMonth) return false; // paid this month — exclude
         const dueDay = parseInt(b.date);
         if(!dueDay) return false;
         // Build this month's due date
@@ -2345,7 +2319,6 @@ const SafeSpendEngine = {
       safeAmount, riskLevel,
       overdraft: upcomingBills > balance,
       soonBills: bills.filter(b => {
-        if(b.paidMonth === billingMonth) return false; // paid — don't show as upcoming
         const dueDay = parseInt(b.date);
         if(!dueDay) return false;
         const thisMonth = new Date(todayDate.getFullYear(), todayDate.getMonth(), dueDay);
@@ -2357,228 +2330,6 @@ const SafeSpendEngine = {
   }
 };
 
-// ─── RRSP ROOM ENGINE ────────────────────────────────────────────────────────
-// Calculates RRSP contribution room, remaining room, estimated refund,
-// and over-contribution risk. Canadian users only.
-
-const RRSP_ANNUAL_LIMIT = 32490; // 2025
-
-// Simplified Canadian marginal tax rates by province + income bracket
-// Returns combined federal + provincial marginal rate
-const getCanadianMarginalRate = (annualIncome, province = "ON") => {
-  const inc = parseFloat(annualIncome) || 0;
-  // Federal brackets 2025 (simplified)
-  let fed = 0.205; // default 20.5%
-  if(inc > 246752) fed = 0.33;
-  else if(inc > 173205) fed = 0.29;
-  else if(inc > 111733) fed = 0.26;
-  else if(inc > 57375)  fed = 0.205;
-  else fed = 0.15;
-
-  // Provincial surtax (simplified top brackets per province)
-  const provRates = {
-    ON: inc > 102894 ? 0.1316 : inc > 51446 ? 0.0915 : 0.0505,
-    BC: inc > 113158 ? 0.1670 : inc > 85650 ? 0.1490 : 0.0770,
-    AB: 0.10, // flat
-    QC: inc > 119910 ? 0.2575 : inc > 51780 ? 0.20 : 0.14,
-    MB: inc > 100000 ? 0.1750 : inc > 36842 ? 0.1275 : 0.1080,
-    SK: inc > 145955 ? 0.1450 : inc > 49720 ? 0.1275 : 0.105,
-    NS: inc > 150000 ? 0.21 : inc > 93000 ? 0.1900 : 0.0879,
-    NB: inc > 185064 ? 0.2030 : inc > 47715 ? 0.1482 : 0.0940,
-    PE: inc > 105000 ? 0.1800 : inc > 32656 ? 0.1580 : 0.0965,
-    NL: inc > 260000 ? 0.2100 : inc > 72000 ? 0.1580 : 0.0870,
-  };
-  const prov = provRates[province] || provRates.ON;
-  return Math.min(0.54, fed + prov); // cap at 54%
-};
-
-const getUSMarginalRate = (annualIncome, state = "CA") => {
-  const inc = parseFloat(annualIncome) || 0;
-  // Federal brackets 2025 (single filer)
-  let fed = 0.22;
-  if(inc > 626350)      fed = 0.37;
-  else if(inc > 250525) fed = 0.35;
-  else if(inc > 197300) fed = 0.32;
-  else if(inc > 100525) fed = 0.24;
-  else if(inc > 47150)  fed = 0.22;
-  else if(inc > 11600)  fed = 0.12;
-  else                  fed = 0.10;
-
-  // Top marginal state income tax rates 2025
-  const stateRates = {
-    AL:0.05, AK:0, AZ:0.025, AR:0.044, CA:0.133, CO:0.044, CT:0.069,
-    DE:0.066, FL:0, GA:0.055, HI:0.11, ID:0.058, IL:0.0495, IN:0.031,
-    IA:0.057, KS:0.057, KY:0.04, LA:0.06, ME:0.0715, MD:0.0575,
-    MA:0.09, MI:0.0425, MN:0.0985, MS:0.05, MO:0.0495, MT:0.059,
-    NE:0.0664, NV:0, NH:0, NJ:0.1075, NM:0.059, NY:0.109, NC:0.045,
-    ND:0.029, OH:0.0399, OK:0.0475, OR:0.099, PA:0.0307, RI:0.0599,
-    SC:0.065, SD:0, TN:0, TX:0, UT:0.0465, VT:0.0875, VA:0.0575,
-    WA:0, WV:0.065, WI:0.0765, WY:0, DC:0.1075, OTHER:0.05,
-  };
-  const stateRate = stateRates[state] ?? stateRates.OTHER;
-  return Math.min(0.60, fed + stateRate);
-};
-
-const US401kEngine = {
-  calculate(data) {
-    const profile = data.profile || {};
-    const isUS = (profile.country || "CA") === "US";
-    if(!isUS) return null;
-
-    const state = profile.province || "CA"; // reuse province field for state
-    const ret = data.profile?.retirement || {};
-    const contrib401k = parseFloat(ret.k401Balance || 0);
-    const monthly401k = parseFloat(ret.k401Monthly || 0);
-    const LIMIT_2025 = 23500; // 401k employee contribution limit 2025
-    const CATCHUP = profile.age >= 50 ? 7500 : 0; // catch-up if 50+
-    const totalLimit = LIMIT_2025 + CATCHUP;
-    const contribThisYear = parseFloat(ret.k401ContribThisYear || 0);
-    const remainingRoom = Math.max(0, totalLimit - contribThisYear);
-
-    const annualIncome = (() => {
-      const inc = data.incomes?.[0];
-      if(!inc) return 0;
-      const amt = parseFloat(inc.amount||0);
-      const freq = inc.freq||"biweekly";
-      if(freq==="biweekly") return amt * 26;
-      if(freq==="weekly") return amt * 52;
-      if(freq==="monthly") return amt * 12;
-      return amt * 12;
-    })();
-
-    const marginalRate = getUSMarginalRate(annualIncome, state);
-    const refundPer1k = Math.round(1000 * marginalRate);
-    const maxSavings = Math.round(remainingRoom * marginalRate);
-
-    return {
-      remainingRoom, totalLimit, contribThisYear, marginalRate,
-      refundPer1k, maxSavings, state,
-      hasData: annualIncome > 0,
-    };
-  }
-};
-
-const RRSPRoomEngine = {
-  calculate(data) {
-    const ret         = data.profile?.retirement || {};
-    const profile     = data.profile || {};
-    const province    = profile.province || "ON";
-    const isCA        = (profile.country || "CA") === "CA";
-    if(!isCA) return null;
-
-    // ── Inputs ──────────────────────────────────────────────────────────────
-    // Room from CRA/NOA — the number on your notice of assessment
-    const roomFromCRA     = parseFloat(ret.rrspRoom || 0);
-    // What you've contributed so far this year
-    const contribThisYear = parseFloat(ret.rrspContribThisYear || 0);
-    // Last year's earned income — used to calculate new room earned this year
-    const prevIncome      = parseFloat(ret.rrspPrevIncome || 0);
-    // Current RRSP balance (already entered)
-    const balance         = parseFloat(ret.rrspBalance || 0);
-    // Monthly contribution (already entered)
-    const monthly         = parseFloat(ret.rrspMonthly || 0);
-
-    // ── New room earned this year (18% of last year's earned income) ────────
-    const newRoomThisYear = prevIncome > 0
-      ? Math.min(prevIncome * 0.18, RRSP_ANNUAL_LIMIT)
-      : 0;
-
-    // ── Total available room ─────────────────────────────────────────────────
-    // If user entered CRA room, use it (it already includes carry-forward + this year's new room)
-    // If not, estimate from prevIncome only
-    const totalRoom = roomFromCRA > 0 ? roomFromCRA : newRoomThisYear;
-    const remainingRoom = Math.max(0, totalRoom - contribThisYear);
-    const isOverContrib = contribThisYear > totalRoom + 2000; // $2k lifetime buffer
-
-    // ── Estimated tax refund ──────────────────────────────────────────────────
-    const annualIncome    = parseFloat(data.incomes?.[0] && data.incomes[0].amount
-      ? data.incomes[0].amount * 2.167 * 12 / 12
-      : 0) || 0;
-    const incomeForRate   = annualIncome || prevIncome || 0;
-    const marginalRate    = getCanadianMarginalRate(incomeForRate, province);
-    // Refund if they contribute the full remaining room
-    const maxRefund       = Math.round(remainingRoom * marginalRate);
-    // Refund per $1,000 contributed
-    const refundPer1k     = Math.round(1000 * marginalRate);
-
-    // ── How many years of monthly contribs to fill room ─────────────────────
-    const monthsToFill = monthly > 0 ? Math.ceil(remainingRoom / monthly) : null;
-
-    // ── Usage percentage ─────────────────────────────────────────────────────
-    const usagePct = totalRoom > 0 ? Math.min(100, Math.round(contribThisYear / totalRoom * 100)) : 0;
-
-    return {
-      roomFromCRA, contribThisYear, prevIncome,
-      newRoomThisYear, totalRoom, remainingRoom,
-      isOverContrib, marginalRate, maxRefund,
-      refundPer1k, monthsToFill, usagePct,
-      hasCRAData: roomFromCRA > 0,
-      hasEnoughData: roomFromCRA > 0 || prevIncome > 0,
-    };
-  }
-};
-
-// ─── BILL STATUS ENGINE ──────────────────────────────────────────────────────
-// paidMonth: "YYYY-MM" stored on a bill when user (or auto-detect) marks it paid.
-// Auto-resets every month — no cleanup logic needed.
-
-const currentBillingMonth = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-};
-
-// Returns "paid" | "overdue" | "upcoming"
-const getBillStatus = (bill) => {
-  const month = currentBillingMonth();
-  if(bill.paidMonth === month) return "paid";
-  const today = new Date().getDate();
-  const dueDay = parseInt(bill.date||0);
-  if(dueDay > 0 && dueDay < today) return "overdue";
-  return "upcoming";
-};
-
-// Auto-detect paid bills from transactions — fuzzy name match + amount within 15%
-const autoDetectPaidBills = (bills, transactions) => {
-  if(!bills?.length || !transactions?.length) return bills;
-  const month = currentBillingMonth();
-  const now = new Date();
-  const monthTxns = transactions.filter(t => {
-    if(!t.date) return false;
-    const d = new Date(t.date + "T12:00:00");
-    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && t.amount > 0;
-  });
-  // Generic payment keywords — e-transfers, withdrawals, and auto-debits
-  // often have names that don't match the bill name at all
-  const GENERIC_PAYMENT_WORDS = ["e-transfer","interac","withdrawal","autopay","auto pay",
-    "preauthorized","pre-auth","direct debit","automatic payment","auto-debit","bill payment"];
-  return bills.map(bill => {
-    if(bill.paidMonth === month) return bill;
-    const billAmt  = parseFloat(bill.amount||0);
-    const billName = (bill.name||"").toLowerCase().trim();
-    // Already matched an earlier bill with this exact txn? Track used txn IDs to avoid double-match
-    const matched = monthTxns.find(t => {
-      const txnName = (t.name||"").toLowerCase();
-      const txnAmt  = parseFloat(t.amount||0);
-      if(billAmt <= 0 || txnAmt <= 0) return false;
-      // Tight amount match: within 5% — amount is the most reliable signal
-      const tightAmt = Math.abs(txnAmt - billAmt) / billAmt < 0.05;
-      // Loose amount match: within 15%
-      const looseAmt = Math.abs(txnAmt - billAmt) / billAmt < 0.15;
-      // Name match: bill name appears in transaction or vice versa (first 4 chars min)
-      const nameMatch = billName.length >= 3 && (
-        txnName.includes(billName.slice(0,4)) ||
-        billName.includes(txnName.slice(0,4))
-      );
-      // Generic payment: e-transfer or auto-debit keywords — amount alone is enough
-      const isGenericPayment = GENERIC_PAYMENT_WORDS.some(kw => txnName.includes(kw));
-      // Match if: tight amount alone, OR loose amount + name, OR tight amount + generic payment
-      return tightAmt || (looseAmt && nameMatch) || (tightAmt && isGenericPayment) || (looseAmt && isGenericPayment && tightAmt);
-    });
-    if(matched) return {...bill, paidMonth: month};
-    return bill;
-  });
-};
-
 // ── ENGINE 3: 90-DAY CASH FLOW FORECAST ENGINE ────────────────────────────────
 // Projects daily balance for 90 days with overdraft risk detection.
 
@@ -2586,7 +2337,6 @@ const ForecastEngine = {
   generate(data, days = 90) {
     const { balance }       = SafeSpendEngine.calculate(data);
     const { monthlyIncome } = FinancialCalcEngine.cashFlow(data);
-    const billingMonth      = currentBillingMonth();
     const avgDaily          = FinancialCalcEngine.avgDailySpend(data);
     const bills             = data.bills || [];
     const today             = new Date();
@@ -2646,15 +2396,12 @@ const ForecastEngine = {
       const isPayday = getIsPayday(dayNum, i);
       const dayBills = bills.filter(b => {
         const bd = parseInt(b.date);
-        if(bd !== dayNum || bd <= 0) return false;
-        // Skip paid bills for the current month in today's forecast
-        if(i === 0 && b.paidMonth === billingMonth) return false;
-        return true;
+        return bd === dayNum && bd > 0;
       });
       const inc  = (isPayday ? paycheque : 0) + getSecondaryIncome(dayNum);
       // Day 0 = today: balance is already current, don't deduct spending again
       // All other days: deduct daily spend regardless of payday (you still spend on paydays)
-      const dailySpend = i === 0 ? 0 : avgDaily; // full spend — 0.8 discount was masking real overdraft risk
+      const dailySpend = i === 0 ? 0 : avgDaily * 0.8;
       const out  = dayBills.reduce((s,b) => s + parseFloat(b.amount||0), 0) + dailySpend;
       running = running + inc - out;
 
@@ -2702,27 +2449,25 @@ const BehaviorEngine = {
     }
 
     // ② Subscription creep: count + total subscription transactions
-    const _behCatOv = (() => { try { return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}"); } catch { return {}; } })();
-    const _getBehCat = (t) => _behCatOv[t.id] || t.cat;
-    const subTxns  = txns.filter(t => _getBehCat(t) === "Subscriptions");
+    const subTxns  = txns.filter(t => t.cat === "Subscriptions");
     const subTotal = subTxns.reduce((s,t) => s + Math.abs(t.amount), 0);
     if (subTxns.length >= 3 && subTotal > 35) {
       insights.push({
         type:"warning", icon:"📱", priority:"medium", color: C.teal,
         title:"Subscription creep detected",
-        body:`${subTxns.length} recurring subscriptions totalling $${(subTotal||0).toFixed(0)}/mo${income>0?`. That's ${Math.round(subTotal/income*100)}% of your income`:""}.`,
+        body:`${subTxns.length} recurring subscriptions totalling $${(subTotal||0).toFixed(0)}/mo. That's ${Math.round(subTotal/income*100)}% of your income.`,
         saving: `$${Math.round(subTotal * 0.35)}/mo potential saving`
       });
     }
 
     // ③ Dining / delivery inflation
-    const diningTxns  = txns.filter(t => ["Food","Coffee","Dining","Coffee & Dining"].includes(_getBehCat(t)));
+    const diningTxns  = txns.filter(t => ["Food","Coffee","Dining"].includes(t.cat));
     const diningTotal = diningTxns.reduce((s,t) => s + Math.abs(t.amount), 0);
     if (diningTotal > income * 0.18) {
       insights.push({
         type:"pattern", icon:"🍔", priority:"medium", color: C.gold,
         title:"Food spending above benchmark",
-        body:`Food & dining is $${diningTotal.toFixed(0)}/mo${income>0?` — ${Math.round(diningTotal/income*100)}% of income`:``}. Benchmark is under 15%.`,
+        body:`Food & dining is $${diningTotal.toFixed(0)}/mo — ${Math.round(diningTotal/income*100)}% of income. Benchmark is under 15%.`,
         saving: `$${Math.round(diningTotal * 0.25)}/mo by cooking 3x more/week`
       });
     }
@@ -3014,7 +2759,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
     setLoading(true);
     const txns = (data.transactions || []).slice(0, 15).map(t=>`${t.name||t.merchant||"Purchase"} $${Math.abs(t.amount)}`).join(", ");
     const {score} = calcHealthScore(data);
-    const prompt = `You are Flora, a warm and knowledgeable financial coach for Flourish Money. You support both Canadian and American users. For Canadian users you reference RRSP, TFSA, FHSA, CPP, OAS, CRA, and provincial tax rules. For American users you reference 401(k), IRA, Roth IRA, HSA, Social Security, federal and state tax rules. Always check the user's country and province/state before giving tax or retirement advice. The user just completed their weekly money check-in. Their current Financial Health Score is ${score}/100. Their money mood this week: ${moods.find(m=>m.val===mood)?.label||"Neutral"}. Biggest spending surprise: ${surprise||"none"}. Financial win: ${win||"none"}. Recent transactions: ${txns}. Give ONE specific, encouraging action they can take this week to improve their Financial Health Score by 2-5 points. Keep it to 2 sentences max. Be warm and concrete.`;
+    const prompt = `You are a warm financial coach. The user just completed their weekly money check-in. Their current Financial Health Score is ${score}/100. Their money mood this week: ${moods.find(m=>m.val===mood)?.label||"Neutral"}. Biggest spending surprise: ${surprise||"none"}. Financial win: ${win||"none"}. Recent transactions: ${txns}. Give ONE specific, encouraging action they can take this week to improve their Financial Health Score by 2-5 points. Keep it to 2 sentences max. Be warm and concrete.`;
     try {
       const r = await fetch("/api/coach", {
         method:"POST",
@@ -3079,7 +2824,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
       </div>
       <div style={{display:"flex",gap:10}}>
         <button onClick={()=>setStep(1)} style={{flex:1,padding:"13px",borderRadius:99,border:`1px solid ${C.border}`,background:"none",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer"}}>← Back</button>
-        <button onClick={fetchInsight} style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"13px",borderRadius:99,border:"none",cursor:"pointer"}}>{loading?"Asking Flora...":"Get My Insight →"}</button>
+        <button onClick={fetchInsight} style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"13px",borderRadius:99,border:"none",cursor:"pointer"}}>{loading?"Getting your coaching...":"Get My Insight →"}</button>
       </div>
     </div>,
 
@@ -3088,7 +2833,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
       <div style={{fontSize:48,animation:"fadeUp 0.4s ease both"}}>✦</div>
       <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.green,lineHeight:1.2}}>Check-In Complete!</div>
       <div style={{background:C.greenDim,border:`1.5px solid ${C.green}33`,borderRadius:20,padding:"18px 20px",textAlign:"left"}}>
-        <div style={{color:C.green,fontSize:10,textTransform:"uppercase",letterSpacing:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>Flora Says</div>
+        <div style={{color:C.green,fontSize:10,textTransform:"uppercase",letterSpacing:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>Your AI Coach Says</div>
         <div style={{color:C.cream,fontSize:14,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{insight}</div>
       </div>
       <div style={{background:`linear-gradient(135deg,${C.green}18,${C.greenDim})`,border:`1px solid ${C.green}33`,borderRadius:18,padding:"16px"}}>
@@ -3131,7 +2876,6 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
 
 // ─── DASHBOARD TILE REGISTRY ──────────────────────────────────────────────────
 const DASH_TILES = [
-  {id:"today_move", label:"Today's Move"},
   { id: 'networth',    label: 'Net Worth Trend',    icon: '📈' },
   { id: 'decision',   label: 'Decision Engine',     icon: '🧠' },
   { id: 'autopilot',  label: 'Autopilot',           icon: '✈️' },
@@ -3442,11 +3186,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
   const addDebt=()=>setDebts([...debts,{name:"",balance:"",rate:"",min:""}]);
   const rmDebt=i=>setDebts(debts.filter((_,x)=>x!==i));
   const upDebt=(i,f,v)=>setDebts(debts.map((d,x)=>x===i?{...d,[f]:v}:d));
-  const finish=()=>{
-    const filteredBills = bills.filter(b=>b.name&&b.amount);
-    const filteredTxns  = plaidTxns.length ? plaidTxns : [];
-    onComplete({profile:p,incomes:incomes.filter(i=>i.amount),bills:autoDetectPaidBills(filteredBills, filteredTxns),debts:debts.filter(d=>d.name&&d.balance),accounts:connAccts,transactions:filteredTxns,bankConnected:connAccts.some(a=>a.institution!=="Manual")});
-  };
+  const finish=()=>onComplete({profile:p,incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),accounts:connAccts,transactions:plaidTxns.length?plaidTxns:[],bankConnected:connAccts.some(a=>a.institution!=="Manual")});
 
   const banks=(CC[p.country]?.banks||CC.CA.banks);
 
@@ -3478,7 +3218,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
 
       {/* Feature pills */}
       <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center",marginBottom:36,maxWidth:340}}>
-        {[["","Overdraft warnings"],["","Cash flow forecast"],["","Flora coaching"],["","Credit score"],["","Tax credits"],["","Family tools"]].map(([icon,text],i)=>(
+        {[["","Overdraft warnings"],["","Cash flow forecast"],["","AI coaching"],["","Credit score"],["","Tax credits"],["","Family tools"]].map(([icon,text],i)=>(
           <div key={i} style={{background:C.isDark?"rgba(255,255,255,0.05)":C.surface,border:`1px solid ${C.border}`,borderRadius:99,padding:"7px 15px",color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:6,animation:`fadeUp 0.4s ease ${100+i*60}ms both`,backdropFilter:"blur(8px)"}}>
             <span style={{fontSize:14}}>{icon}</span>{text}
           </div>
@@ -3861,7 +3601,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
         ["📅",`${bills.filter(b=>b.name&&b.amount).length} bills in your 2-week forecast`],
         ["📉",debts.filter(d=>d.name&&d.balance).length>0?"Debt payoff simulator built — drag to see your date":"No debt tracked — incredible!"],
         ["💳",p.creditKnown?`Credit score ${p.creditScore} tracked — coaching personalised`:"Credit score estimated from your data"],
-        ["🧠",connAccts.some(a=>a.institution!=="Manual")?"Flora is ready — transactions loading in background":"Flora is ready to analyze your data"],
+        ["🧠",connAccts.some(a=>a.institution!=="Manual")?"AI coach ready — transactions loading in background":"AI coach ready to analyze your data"],
         ["🔔","Overdraft alerts and coach notifications on"],
         [p.status==="single"?"🧘":"💑",p.status==="single"?"Weekly solo check-in ready":"Couples money meeting ready"],
         [p.hasKids?"👧":"🎓",p.hasKids?"Kids Zone unlocked":"Money School unlocked"],
@@ -3907,30 +3647,9 @@ function buildLiveNotifs(data) {
   const accounts = data?.accounts || [];
   const debts = data?.debts || [];
   const balance = accounts.filter(a=>a.type==="checking"||a.type==="savings").reduce((s,a)=>s+(a.balance||0),0);
-  // Load custom category overrides so notifications reflect user's own category names
-  const notifCatOverrides = (() => { try { return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}"); } catch { return {}; } })();
-  const getNotifCat = (t) => notifCatOverrides[t.id] || t.cat || "Spend";
 
-  // Overdue bills — past due date, not paid this month
-  // Re-run auto-detect inline using current transactions in case background refresh hasn't run
-  const txnsForDetect = data?.transactions || [];
-  const billsWithAutoDetect = autoDetectPaidBills(bills, txnsForDetect);
-  const overdueBills = billsWithAutoDetect.filter(b => getBillStatus(b) === "overdue");
-  overdueBills.forEach((b, i) => {
-    notifs.push({
-      id: `overdue_${i}`,
-      icon: "calendar",
-      title: `${b.name} is overdue`,
-      body: `$${parseFloat(b.amount||0).toFixed(2)} was due on the ${b.date}${["th","st","nd","rd"][parseInt(b.date)%10]||"th"} — mark as paid once you've paid it.`,
-      read: false,
-      time: "Overdue",
-      type: "bill",
-      color: NOTIF_COLORS.urgent,
-    });
-  });
-
-  // Bill due soon notifications — use auto-detected bill state (same as overdue check)
-  billsWithAutoDetect.filter(b=>b.name&&b.amount&&getBillStatus(b)!=="paid").forEach((b,i) => {
+  // Bill due soon notifications (real bills only)
+  bills.filter(b=>b.name&&b.amount).forEach((b,i) => {
     const dueDay = parseInt(b.date||0);
     if(!dueDay) return;
     const daysUntil = dueDay >= todayDate ? dueDay - todayDate : (30 - todayDate + dueDay);
@@ -3940,7 +3659,7 @@ function buildLiveNotifs(data) {
         id: `bill_${i}`,
         icon:"calendar",
         title:`${b.name} due in ${daysUntil === 0 ? "today" : daysUntil + " day" + (daysUntil===1?"":"s")}`,
-        body:`$${parseFloat(b.amount||0).toFixed(2)}. ${covers ? "Your balance covers it — you're good." : "You may want to transfer funds before this hits."}`,
+        body:`$${parseFloat(b.amount).toFixed(2)}. ${covers ? "Your balance covers it — you're good." : "You may want to transfer funds before this hits."}`,
         read:false,
         time:`${dueDay}${[11,12,13].includes(dueDay)?"th":["st","nd","rd"][dueDay%10-1]||"th"}`,
         type:"bill",
@@ -3962,96 +3681,7 @@ function buildLiveNotifs(data) {
     }
   });
 
-  // RRSP room reminder — fire once in Q1 (Jan-Mar) if significant room unused
-  const rrspCalcNotif = RRSPRoomEngine.calculate(data);
-  if(rrspCalcNotif?.remainingRoom > 1000 && rrspCalcNotif?.maxRefund > 200) {
-    const isQ1 = today.getMonth() < 3; // Jan, Feb, Mar — RRSP deadline season
-    const rrspNotifKey = `flourish_rrsp_notif_${today.getFullYear()}`;
-    const rrspNotifShown = (() => { try { return localStorage.getItem(rrspNotifKey) === "1"; } catch { return false; } })();
-    if(isQ1 && !rrspNotifShown) {
-      notifs.push({
-        id: `rrsp_room_${today.getFullYear()}`,
-        icon: "trending-up",
-        title: `$${rrspCalcNotif.remainingRoom.toLocaleString()} RRSP room before March 1`,
-        body: `RRSP deadline is March 1. Contributing your remaining room could return ~$${rrspCalcNotif.maxRefund.toLocaleString()} at tax time.`,
-        read: false,
-        time: "RRSP Season",
-        type: "opportunity",
-        color: NOTIF_COLORS.opportunity,
-      });
-    }
-  }
-
-  // Large transaction alerts
-  // Fires when a single transaction is 3× the user's average OR > $200 AND no prior alert this month
-  const txns = data?.transactions || [];
-  const today_ym = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
-  const monthTxns = txns.filter(t => {
-    if(!t.date || t.amount <= 0) return false;
-    const d = new Date(t.date + "T12:00:00");
-    return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth();
-  });
-  if(monthTxns.length >= 3) {
-    const avgSpend = monthTxns.reduce((s,t) => s + t.amount, 0) / monthTxns.length;
-    const LARGE_THRESHOLD = Math.max(200, avgSpend * 3);
-    const alerted = (() => { try { return new Set(JSON.parse(localStorage.getItem("flourish_alerted_txns")||"[]")); } catch { return new Set(); } })();
-    // CC payment keywords — these are not unusual spend, never alert on them
-    const CC_ALERT_EXCLUDE = ["payment","autopay","amex","visa","mastercard","credit card",
-      "card payment","minimum payment","balance payment","loc pay","line of credit",
-      "customer transfer","mb-cr","mb-credit","bill payment"];
-    // Bill amounts — transactions matching a known bill are bill payments, not unusual spend
-    const billAmounts = bills.map(b => parseFloat(b.amount||0)).filter(a => a > 0);
-    const isBillPayment = (txnAmt) => billAmounts.some(ba => Math.abs(txnAmt - ba) / ba < 0.10);
-    const largeTxns = monthTxns
-      .filter(t => {
-        if(t.amount < LARGE_THRESHOLD) return false;
-        if(alerted.has(t.id)) return false;
-        // Exclude CC payments
-        const name = (t.name||"").toLowerCase();
-        if(CC_ALERT_EXCLUDE.some(kw => name.includes(kw))) return false;
-        // Exclude transactions the user categorized as Bills or Transfer
-        const cat = getNotifCat(t);
-        if(cat === "Bills" || cat === "Transfer") return false;
-        // Exclude transactions matching a known bill amount
-        if(isBillPayment(t.amount)) return false;
-        return true;
-      })
-      .sort((a,b) => b.amount - a.amount)
-      .slice(0, 3);
-    largeTxns.forEach(t => {
-      const multiple = (t.amount / avgSpend).toFixed(1);
-      const catLabel = getNotifCat(t); // uses custom categories
-      notifs.push({
-        id: `large_txn_${t.id}`,
-        icon: "alert-circle",
-        title: `Large ${catLabel} — $${t.amount.toFixed(0)}`,
-        body: `${t.name} was ${multiple}× your usual transaction size. Is this expected? If not, check your account.`,
-        read: false,
-        time: t.date || "Recently",
-        type: "behavior",
-        color: NOTIF_COLORS.behavior,
-      });
-    });
-  }
-
-  // Shortfall alert — safe-to-spend went negative this month
-  const { safeAmount, overdraft: isOverdraft } = SafeSpendEngine.calculate(data);
-  const shortfallKey = `flourish_shortfall_${today_ym}`;
-  const shortfallAlerted = (() => { try { return localStorage.getItem(shortfallKey) === "1"; } catch { return false; } })();
-  if(isOverdraft && !shortfallAlerted) {
-    notifs.push({
-      id: `shortfall_${today_ym}`,
-      icon: "trending-down",
-      title: "Upcoming bills exceed your balance",
-      body: `You have bills due soon that your balance can't cover. Tap to see exactly which ones and when.`,
-      read: false,
-      time: "Now",
-      type: "urgent",
-      color: NOTIF_COLORS.urgent,
-    });
-  }
-
-    return notifs;
+  return notifs;
 }
 
 function Notifications({onClose, data, onMarkAllRead}){
@@ -4078,21 +3708,7 @@ function Notifications({onClose, data, onMarkAllRead}){
       </div>
     </div>
     {notifs.map(n=>(
-      <div key={n.id} onClick={()=>{
-        setReadIds(ids=>{ const s=new Set(ids); s.add(n.id); try{localStorage.setItem("flourish_read_notifs",JSON.stringify([...s]));}catch{} return s; });
-        // Mark large-txn alerts as seen so they don't re-appear
-        if(n.id.startsWith("large_txn_")) {
-          try {
-            const txnId = n.id.replace("large_txn_","");
-            const prev = new Set(JSON.parse(localStorage.getItem("flourish_alerted_txns")||"[]"));
-            prev.add(txnId);
-            localStorage.setItem("flourish_alerted_txns", JSON.stringify([...prev]));
-          } catch {}
-        }
-        if(n.id.startsWith("shortfall_")) {
-          try { localStorage.setItem(n.id.replace("shortfall_","flourish_shortfall_"), "1"); } catch {}
-        }
-      }}
+      <div key={n.id} onClick={()=>setNotifs(ns=>ns.map(x=>x.id===n.id?{...x,read:true}:x))}
         style={{background:n.read?C.card:n.color+"12",borderRadius:20,padding:"15px 17px",border:`1px solid ${n.read?C.border:n.color+"44"}`,marginBottom:10,cursor:"pointer",position:"relative",transition:"all .2s"}}>
         <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
           <div style={{width:40,height:40,borderRadius:12,background:n.color+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon id={n.icon||"bell"} size={18} color={n.color} strokeWidth={1.5}/></div>
@@ -4204,13 +3820,10 @@ async function backgroundRefresh(isPremium, setAppData) {
           balance: Math.abs(a.balance || 0).toFixed(2),
           rate: "", min: "", fromBank: true,
         }));
-      const updatedTxns = normalisedTxns.length > 0 ? normalisedTxns : prev.transactions;
-      const updatedBills = autoDetectPaidBills(prev.bills||[], updatedTxns);
       return {
         ...prev,
         accounts: freshAccounts,
-        transactions: updatedTxns,
-        bills: updatedBills,
+        transactions: normalisedTxns.length > 0 ? normalisedTxns : prev.transactions,
         debts: newCCDebts.length > 0
           ? [...(prev.debts||[]).filter(d => d.name || d.balance), ...newCCDebts]
           : prev.debts,
@@ -4542,8 +4155,6 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const spark=[-4200,-3800,-3100,-2600,-1900,netWorth];
   const sMin=Math.min(...spark),sMax=Math.max(...spark);
   const sN=spark.map(v=>90-((v-sMin)/(sMax-sMin)||0)*70);
-  // 7-day forecast — must be declared BEFORE heroColor uses sevenDayOverdraft
-  const { overdraftRisk: sevenDayRisk, willGoNegative: sevenDayOverdraft } = ForecastEngine.generate(data, 7);
   const heroColor=overdraftImmediate?C.red:sevenDayOverdraft?C.gold:C.green;
   const heroColorBright=overdraftImmediate?C.redBright:sevenDayOverdraft?C.goldBright:C.greenBright;
   const {score:healthScore,pillars}=calcHealthScore(data);
@@ -4556,11 +4167,10 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
 
   // ── Generative priority logic ────────────────────────────────────────────────
   const urgentBill = soonBills.find(b=>parseInt(b.date)-today<=2);
-  const allBills = data.bills||[];
-  const paidCount = allBills.filter(b=>getBillStatus(b)==="paid").length;
-  const overdueCount = allBills.filter(b=>getBillStatus(b)==="overdue").length;
   const isPayday   = today===15||today===1; // simple heuristic
-  // Combined overdraft signal (placeholder — sevenDayOverdraft declared above now)
+  // 7-day forecast — calculated once here, shared with priority filter tile
+  const { overdraftRisk: sevenDayRisk, willGoNegative: sevenDayOverdraft } = ForecastEngine.generate(data, 7);
+  // Combined overdraft signal: immediate (10-day window) OR imminent (7-day forecast)
   const overdraft = overdraftImmediate || sevenDayOverdraft;
   // 14-day forecast — shared with "Can I afford this?" widget. No per-keystroke calls.
   const { forecast: afford14Forecast } = ForecastEngine.generate(data, 14);
@@ -4663,7 +4273,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                     </div>
                     <div style={{marginTop:8,display:"flex",gap:8}}>
                       <button onClick={e=>{e.stopPropagation();setScreen("coach");}} style={{background:overspend>0?C.red+"22":C.green+"22",border:`1px solid ${overspend>0?C.red+"44":C.green+"44"}`,borderRadius:99,padding:"6px 14px",color:overspend>0?C.redBright:C.greenBright,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                        Ask Flora →
+                        Ask Coach →
                       </button>
                       <button onClick={e=>{e.stopPropagation();window.dispatchEvent(new CustomEvent("flourish:settings"));}} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,borderRadius:99,padding:"6px 14px",color:C.mutedHi,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                         Connect Bank
@@ -4761,23 +4371,11 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                 ? (billsTotal > 0 ? `$${billsTotal.toFixed(0)} in bills` : null)
                 : (bufferAmt > 0 ? `$${bufferAmt.toFixed(0)} safety buffer` : null);
               const proofLine = bigDeduct ? `${balLabel} · minus ${bigDeduct}` : balLabel;
-              const billSummaryLine = (() => {
-                if(!allBills.length) return null;
-                if(overdueCount > 0) return { text: `${overdueCount} bill${overdueCount>1?"s":""} overdue`, color: C.red };
-                if(paidCount === allBills.length) return { text: `All ${allBills.length} bills paid ✓`, color: C.green };
-                if(paidCount > 0) return { text: `${paidCount} of ${allBills.length} bills paid`, color: C.muted };
-                return null;
-              })();
               return (
                 <div style={{marginBottom:14}}>
                   <div style={{color:heroColorBright+"66",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2,lineHeight:1.5}}>
                     {proofLine} → <strong style={{color:heroColorBright+"99"}}>${Math.max(0,safe).toFixed(0)} today</strong>
                   </div>
-                  {billSummaryLine&&(
-                    <div style={{color:billSummaryLine.color,fontSize:10,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4,letterSpacing:0.3}}>
-                      {billSummaryLine.text}
-                    </div>
-                  )}
                 </div>
               );
             })()}
@@ -4950,8 +4548,8 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         <div style={{...anim(110),display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
           {[
             {label:"Due Soon",value:`$${(soonTotal||0).toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
-            {label:totalDebt>0?"Total Debt":"Debt Free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"plan"},
-            {label:"Net Worth",value:`${netWorth>=0?"+":""}$${(Math.abs(netWorth)/1000).toFixed(1)}k`,sub:"total net worth",color:C.teal,icon:"chartUp",screen:"goals",tab:"plan"},
+            {label:totalDebt>0?"Total Debt":"Debt Free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
+            {label:"Net Worth",value:`${netWorth>=0?"+":""}$${(Math.abs(netWorth)/1000).toFixed(1)}k`,sub:"total net worth",color:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
           ].map((s,i)=>(
             <div key={i} onClick={()=>{if(s.tab&&setGoalsTab)setGoalsTab(s.tab);setScreen(s.screen);}} style={{...glass(s.color),borderRadius:20,padding:"14px 12px 12px",textAlign:"center",position:"relative",overflow:"hidden",cursor:"pointer",transition:"transform .2s, box-shadow .2s"}}
               onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 12px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)`;}}
@@ -5067,61 +4665,6 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             );
           }
 
-          // Priority 1.5 — overdue bill (past due, not paid)
-          if (overdueCount > 0) {
-            const overdueBill = allBills.find(b=>getBillStatus(b)==="overdue");
-            return (
-              <div style={{...anim(170),background:"rgba(255,79,106,0.08)",border:`1px solid ${C.red}44`,borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("plan")}>
-                <div style={{width:44,height:44,borderRadius:14,background:C.red+"18",border:`1px solid ${C.red}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>⚠️</div>
-                <div style={{flex:1}}>
-                  <div style={{color:C.redBright||C.red,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{overdueBill?.name || "A bill"} is overdue</div>
-                  <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{overdueCount > 1 ? `${overdueCount} bills past due` : `$${overdueBill?.amount} past due`} · Mark as paid in Your Bills</div>
-                </div>
-                <span style={{color:C.red,fontSize:18}}>→</span>
-              </div>
-            );
-          }
-
-          // Priority 1.6 — unusual large transaction this month
-          const alertTxns = (() => {
-            const now2 = new Date();
-            const mt = (data.transactions||[]).filter(t => {
-              if(!t.date || t.amount <= 0) return false;
-              const d = new Date(t.date + "T12:00:00");
-              return d.getFullYear() === now2.getFullYear() && d.getMonth() === now2.getMonth();
-            });
-            if(mt.length < 3) return [];
-            const avg = mt.reduce((s,t)=>s+t.amount,0) / mt.length;
-            const threshold = Math.max(200, avg * 3);
-            const alerted = (() => { try { return new Set(JSON.parse(localStorage.getItem("flourish_alerted_txns")||"[]")); } catch { return new Set(); } })();
-            const dashCatOverrides = (() => { try { return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}"); } catch { return {}; } })();
-            const dashGetCat = (t) => dashCatOverrides[t.id] || t.cat || "";
-            const CC_DASH_EXCLUDE = ["payment","autopay","amex","visa","mastercard","credit card","loc pay","line of credit","e-transfer","interac"];
-            const dashBillAmts = (data.bills||[]).map(b=>parseFloat(b.amount||0)).filter(a=>a>0);
-            return mt.filter(t => {
-              if(t.amount < threshold || alerted.has(t.id)) return false;
-              const name = (t.name||"").toLowerCase();
-              if(CC_DASH_EXCLUDE.some(kw=>name.includes(kw))) return false;
-              const cat = dashGetCat(t);
-              if(cat==="Bills"||cat==="Transfer") return false;
-              if(dashBillAmts.some(ba=>Math.abs(t.amount-ba)/ba<0.10)) return false;
-              return true;
-            }).sort((a,b)=>b.amount-a.amount);
-          })();
-          if(alertTxns.length > 0) {
-            const at = alertTxns[0];
-            return (
-              <div style={{...anim(170),background:"rgba(255,140,66,0.08)",border:`1px solid ${C.orange}44`,borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("activity")}>
-                <div style={{width:44,height:44,borderRadius:14,background:C.orange+"18",border:`1px solid ${C.orange}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>🔔</div>
-                <div style={{flex:1}}>
-                  <div style={{color:C.orange,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Unusual spend — ${at.amount.toFixed(0)}</div>
-                  <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{at.name} · {(at.amount / ((() => { const mt2=(data.transactions||[]).filter(t=>{if(!t.date||t.amount<=0)return false;const d=new Date(t.date+"T12:00:00");const n=new Date();return d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth();});return mt2.length>0?mt2.reduce((s,t)=>s+t.amount,0)/mt2.length:1;})())).toFixed(1)}× your average · Tap to review</div>
-                </div>
-                <span style={{color:C.orange,fontSize:18}}>→</span>
-              </div>
-            );
-          }
-
           // Priority 2 — urgent bill ≤2 days
           if (urgentBill) {
             return (
@@ -5154,130 +4697,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           return null;
         })()}
 
-        {/* ── TODAY'S 1 MOVE ─────────────────────────────────────────────────
-             One decisive, tappable action per session.
-             Backed by SafeSpendEngine + OpportunityDetector + RRSP engine.
-             Only shown when user is fully set up (bank + income).
-        ─────────────────────────────────────────────────────────────────── */}
-        {isVisible('today_move')&&monthlyIncome>0&&bal>0&&!overdraft&&(()=>{
-          // Pick the single best action right now — highest value, lowest friction
-          const rrspR = RRSPRoomEngine.calculate(data);
-          const hasRRSPRoom = rrspR?.remainingRoom > 500 && rrspR?.maxRefund > 100;
-          const topDebt = (data.debts||[]).filter(d=>parseFloat(d.balance||0)>0)
-            .sort((a,b)=>parseFloat(b.rate||0)-parseFloat(a.rate||0))[0];
-          const hasHighDebt = topDebt && parseFloat(topDebt.rate||0) >= 15;
-          const savingsGoal = (data.goals||[]).find(g=>g.name&&parseFloat(g.target||0)>0&&parseFloat(g.saved||0)<parseFloat(g.target||0));
-          const extraSafe = Math.max(0, safe - 50); // keep $50 buffer
-
-          // Decision tree — pick one move in priority order
-          const move = (() => {
-            // 1. High-interest debt — mathematically best ROI
-            if(hasHighDebt && extraSafe >= 50) {
-              const extra = Math.min(extraSafe, 150);
-              const savedInterest = Math.round(extra * parseFloat(topDebt.rate||0) / 100 / 12 * 12);
-              return {
-                icon: "💳",
-                color: C.red,
-                title: `Pay extra on ${topDebt.name}`,
-                detail: `Add $${extra} to your ${topDebt.rate}% debt → save ~$${savedInterest} in interest this year`,
-                cta: "See debt payoff",
-                screen: "goals",
-                tab: "debt",
-                amount: extra,
-              };
-            }
-            // 2. RRSP room — tax refund is guaranteed return
-            if(hasRRSPRoom && extraSafe >= 100) {
-              const contrib = Math.min(extraSafe, 500);
-              const refund = Math.round(contrib * rrspR.marginalRate);
-              return {
-                icon: "🏦",
-                color: "#2E8B2E",
-                title: "Contribute to your RRSP",
-                detail: `Put $${contrib} in your RRSP today → get ~$${refund} back at tax time`,
-                cta: "See RRSP room",
-                screen: "goals",
-                tab: "retire",
-                amount: contrib,
-              };
-            }
-            // 3. Active savings goal
-            if(savingsGoal && extraSafe >= 25) {
-              const contrib = Math.min(extraSafe, parseFloat(savingsGoal.monthly||50)||50);
-              const remaining = parseFloat(savingsGoal.target||0) - parseFloat(savingsGoal.saved||0);
-              const months = contrib > 0 ? Math.ceil(remaining / contrib) : null;
-              return {
-                icon: "🎯",
-                color: C.purple,
-                title: `Add to ${savingsGoal.name}`,
-                detail: `Contribute $${contrib.toFixed(0)} now${months?` → reach your goal in ~${months} month${months===1?"":"s"}`:""}.`,
-                cta: "See goals",
-                screen: "goals",
-                tab: "goals",
-                amount: contrib,
-              };
-            }
-            // 4. Build emergency buffer — always valuable
-            if(extraSafe >= 25 && monthlyIncome > 0) {
-              const target = monthlyIncome * 0.5; // half a month as starter
-              return {
-                icon: "🛡️",
-                color: C.teal,
-                title: "Add to your emergency fund",
-                detail: `Move $${Math.min(extraSafe, 100).toFixed(0)} to savings today. A buffer stops small surprises from becoming debt.`,
-                cta: "See goals",
-                screen: "goals",
-                tab: "goals",
-                amount: Math.min(extraSafe, 100),
-              };
-            }
-            return null;
-          })();
-
-          if(!move) return null;
-
-          return (
-            <div style={{...anim(185),...tileStyle('today_move')}}>
-              <div style={{background:`linear-gradient(135deg,${move.color}12 0%,${C.card} 100%)`,border:`1px solid ${move.color}33`,borderRadius:22,padding:"16px 18px",position:"relative",overflow:"hidden"}}>
-                {/* Accent line */}
-                <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${move.color},${move.color}44)`}}/>
-                <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
-                  <div style={{width:44,height:44,borderRadius:14,background:move.color+"18",border:`1px solid ${move.color}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>
-                    {move.icon}
-                  </div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{color:C.muted,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1.4,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                      Today's move
-                    </div>
-                    <div style={{color:C.cream,fontWeight:800,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,lineHeight:1.3}}>
-                      {move.title}
-                    </div>
-                    <div style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.55,marginBottom:12}}>
-                      {move.detail}
-                    </div>
-                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                      <button onClick={()=>{setScreen(move.screen);}}
-                        style={{background:move.color,border:"none",borderRadius:10,padding:"9px 18px",color:"#fff",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",display:"inline-flex",alignItems:"center",gap:6}}>
-                        {move.cta} →
-                      </button>
-                      {move.amount>0&&(
-                        <button onClick={()=>{
-                          const rule={id:Date.now(),title:move.title,amount:move.amount,frequency:"monthly",createdAt:new Date().toISOString(),active:true};
-                          try{const ex=JSON.parse(localStorage.getItem("flourish_automations")||"[]");ex.push(rule);localStorage.setItem("flourish_automations",JSON.stringify(ex));}catch{}
-                          (()=>{ const d=document.createElement("div"); d.textContent="✓ Saved! Remind me monthly: "+move.title; d.style.cssText="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#00CC85;color:#050D09;padding:12px 20px;borderRadius:12px;fontWeight:700;fontSize:13px;zIndex:99999;fontFamily:'Plus Jakarta Sans',sans-serif;boxShadow:0 8px 24px rgba(0,0,0,0.4);whiteSpace:nowrap;"; document.body.appendChild(d); setTimeout(()=>d.remove(),3500); })();
-                        }} style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${move.color}44`,borderRadius:10,padding:"9px 14px",color:move.color,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                          🔄 Automate this
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-
-                {/* ── NET WORTH SPARKLINE — full width ──────────────────────────── */}
+        {/* ── NET WORTH SPARKLINE — full width ──────────────────────────── */}
         {isVisible('networth')&&<div style={{...anim(190),...tileStyle('networth'),...glass(C.teal),borderRadius:22,padding:"18px 20px 16px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
             <div>
@@ -5401,7 +4821,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
               <div style={{fontSize:24}}>✨</div>
               <div>
                 <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Unlock Flourish Plus</div>
-                <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flora · Tax Tips · Credit Coaching</div>
+                <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>AI Coach · Tax Tips · Credit Coaching</div>
               </div>
             </div>
             <div style={{color:C.purple,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Try Free →</div>
@@ -5412,8 +4832,8 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         {isVisible('quicknav')&&<div style={{...anim(320),...tileStyle('quicknav'),display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           {[
             {label:"2-Week Forecast",icon:"calendar",screen:"plan",color:C.teal,sub:"Cash flow ahead"},
-            {label:"Debt Simulator",icon:"trendUp",screen:"goals",tab:"plan",color:C.purple,sub:"Drag to freedom date"},
-            {label:"Flora",icon:"sparkles",screen:"coach",color:C.green,sub:"Ask Flora anything · powered by Claude",hero:true},
+            {label:"Debt Simulator",icon:"trendUp",screen:"goals",tab:"sim",color:C.purple,sub:"Drag to freedom date"},
+            {label:"AI Coach",icon:"sparkles",screen:"coach",color:C.green,sub:"Ask anything · powered by Claude",hero:true},
             {label:data.profile.status==="single"?"Solo Check-In":"Money Meeting",icon:data.profile.status==="single"?"🧘":"💑",screen:"family",color:C.pink,sub:"Weekly ritual"},
           ].concat(onWhatIf?[{label:"What If?",icon:"sparkles",screen:null,color:C.teal,sub:"Simulate any decision",whatIf:true}]:[]).map((a,i)=>(
             <button key={a.label} onClick={()=>a.whatIf?onWhatIf():(a.tab&&setGoalsTab&&setGoalsTab(a.tab),setScreen(a.screen))}
@@ -5525,33 +4945,15 @@ function BillManager({data, setAppData, onClose}){
               <div style={{color:C.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:10}}>Your Current Bills</div>
               {(data.bills||[]).map((b,i)=>{
                 const hasArrears = parseFloat(b.arrears||0) > 0;
-                const status = getBillStatus(b);
-                const isPaid = status === "paid";
-                const isOverdue = status === "overdue";
-                const statusColor = isPaid ? C.green : isOverdue ? C.red : C.gold;
-                const statusLabel = isPaid ? "✓ Paid" : isOverdue ? "Overdue" : "Upcoming";
-                const borderColor = isPaid ? C.green+"33" : isOverdue ? C.red+"44" : hasArrears ? C.gold+"44" : C.border;
-                const togglePaid = () => {
-                  const month = currentBillingMonth();
-                  updateBill(i, "paidMonth", isPaid ? null : month);
-                };
                 return (
-                <div key={i} style={{background:C.card,borderRadius:16,marginBottom:10,border:`1px solid ${borderColor}`,overflow:"hidden",opacity:isPaid?0.75:1,transition:"all 0.2s"}}>
-                  {/* Status bar */}
-                  <div style={{background:isPaid?C.green+"14":isOverdue?C.red+"14":"transparent",padding:"6px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:`1px solid ${borderColor}`}}>
-                    <span style={{color:statusColor,fontSize:10,fontWeight:800,letterSpacing:0.5}}>{statusLabel}</span>
-                    <button onClick={togglePaid}
-                      style={{background:isPaid?"none":C.green+"22",border:`1px solid ${isPaid?C.border:C.green}`,borderRadius:99,padding:"3px 12px",color:isPaid?C.muted:C.greenBright,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:24,transition:"all 0.15s"}}>
-                      {isPaid ? "Mark unpaid" : "✓ Mark paid"}
-                    </button>
-                  </div>
+                <div key={i} style={{background:C.card,borderRadius:16,marginBottom:10,border:`1px solid ${hasArrears?C.gold+"44":C.border}`,overflow:"hidden"}}>
                   {/* Main row */}
                   <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px"}}>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{color:C.cream,fontWeight:700,fontSize:13}}>{b.name}</div>
                       {hasArrears&&(
                         <div style={{color:C.goldBright,fontSize:10,fontWeight:700,marginTop:2}}>
-                          ⚠ ${parseFloat(b.arrears||0).toFixed(2)} in arrears
+                          ⚠ ${parseFloat(b.arrears).toFixed(2)} in arrears
                         </div>
                       )}
                     </div>
@@ -5704,7 +5106,6 @@ function PlanAhead({data, setAppData, setScreen}){
   const [customProviders,setCustomProviders]=useState([]);
   const [showCustomForm,setShowCustomForm]=useState(false);
   const [newProvider,setNewProvider]=useState({name:"",amount:"",icon:"🏦"});
-  const [expandedPlanDay, setExpandedPlanDay] = useState(null);
   const PROVIDERS=[
     {name:"Netflix",icon:"🎬",color:"#E50914",amount:"18.99"},{name:"Spotify",icon:"🎵",color:C.green,amount:"11.99"},
     {name:"Amazon Prime",icon:"📦",color:"#FF9900",amount:"9.99"},{name:"Hydro One",icon:"⚡",color:C.gold,amount:"124.00"},
@@ -5713,14 +5114,7 @@ function PlanAhead({data, setAppData, setScreen}){
     {name:"Enbridge Gas",icon:"🔥",color:C.orange,amount:"89.00"},
     ...customProviders,
   ];
-  const doConnect=p=>{
-    if(connected.includes(p.name)) return;
-    setConnected(c=>[...c,p.name]);
-    if(setAppData) setAppData(prev=>({
-      ...prev,
-      bills:[...(prev.bills||[]),{name:p.name,amount:p.amount,date:"1",icon:p.icon,autoAdded:true}]
-    }));
-  };
+  const doConnect=p=>{setConnecting(p.name);setTimeout(()=>{setConnected(c=>[...c,p.name]);setConnecting(null);},1400);};
   // ── ForecastEngine powers the plan ahead view
   const { forecast: _forecast, willGoNegative: willGoNeg, overdraftRisk, lowBalanceWarnings } = ForecastEngine.generate(data, Math.max(range, 30));
   const days = _forecast.slice(0, range).map(f => ({
@@ -5777,7 +5171,7 @@ function PlanAhead({data, setAppData, setScreen}){
     </div>}
     <Card style={{border:`1px solid ${C.teal}33`,background:`linear-gradient(135deg,rgba(0,200,224,0.05) 0%,${C.card} 100%)`}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:connected.length>0?10:0}}>
-        <div><div style={{color:C.tealBright,fontWeight:700,fontSize:14}}>📅 Bill Tracking</div><div style={{color:C.muted,fontSize:11,marginTop:2}}>{(data.bills||[]).length} bills tracked</div></div>
+        <div><div style={{color:C.tealBright,fontWeight:700,fontSize:14}}>📅 Bill Autopilot</div><div style={{color:C.muted,fontSize:11,marginTop:2}}>{(data.bills||[]).length} bills tracked</div></div>
           {setAppData&&<button onClick={()=>setShowBillManager(true)} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>+ Add Bill</button>}
         <button onClick={()=>setShowConnect(s=>!s)} style={{background:C.teal+"28",border:`1px solid ${C.teal}55`,color:C.tealBright,borderRadius:99,padding:"6px 15px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .2s"}}>{showConnect?"Done":"+ Connect"}</button>
       </div>
@@ -5824,6 +5218,7 @@ function PlanAhead({data, setAppData, setScreen}){
     </Card>
     <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.8,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
     {(()=>{
+      const [expandedPlanDay, setExpandedPlanDay] = useState(null);
       const avgDailySpend = FinancialCalcEngine.avgDailySpend(data);
       return days.filter((d,i)=>i===0||d.income>0||d.bills.length>0).map((day,i)=>{
         const isToday=day.idx===0,neg=day.balance<0,low=day.balance<150&&day.balance>=0;
@@ -6004,7 +5399,7 @@ function IncomeDetectionBanner({transactions, incomes, setAppData}){
   );
 }
 
-function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetBudget, yoyLabel=null, yoyColor=null}){
+function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetBudget}){
   const [open, setOpen] = useState(false);
   const [editBudget, setEditBudget] = useState(false);
   const [budgetVal, setBudgetVal] = useState(budget ? String(budget) : "");
@@ -6024,7 +5419,7 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
 
   return (
     <Card style={{cursor:"pointer"}} onClick={()=>!editBudget&&handleToggle()}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:yoyLabel?4:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <span style={{color:C.cream,fontSize:14,display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:20}}>{catTxns[0]?.icon||"💰"}</span>{cat}
         </span>
@@ -6038,12 +5433,6 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
       </div>
       {/* Spending bar */}
       <Bar v={amt} max={budget>0?budget:totalSpent} color={overBudget?C.red:color}/>
-      {/* Year-over-year label */}
-      {yoyLabel&&(
-        <div style={{color:yoyColor||C.muted,fontSize:10,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>
-          {yoyLabel}
-        </div>
-      )}
       {/* Budget progress */}
       {budget>0&&(
         <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
@@ -6087,46 +5476,41 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
           {/* Transaction list */}
           {catTxns.length===0
             ? <div style={{color:C.muted,fontSize:12}}>No transactions in this category this month.</div>
-            : (() => {
-                // Expenses first (descending), refunds at bottom (ascending by abs)  
-                const sorted = [...catTxns].sort((a,b)=>{if(a.amount>0&&b.amount<0)return -1;if(a.amount<0&&b.amount>0)return 1;return Math.abs(b.amount)-Math.abs(a.amount);});
-                const visible = showAllTxns ? sorted : sorted.slice(0, TXN_LIMIT);
-                const hiddenCount = sorted.length - TXN_LIMIT;
-                return (
-                  <div>
-                    {visible.map((t,j)=>{
-                      const bills = window.__flourishBills||[];
-                      const linkedBill = bills.find(b=>Math.abs(parseFloat(b.amount||0)-t.amount)<5);
-                      return (
-                        <div key={j} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:j<visible.length-1?`1px solid ${C.border}`:"none"}}>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                              <div style={{color:C.cream,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:180}}>{t.name}</div>
-                              {linkedBill&&<span style={{background:C.green+"22",color:C.greenBright,fontSize:9,fontWeight:700,borderRadius:99,padding:"1px 6px",flexShrink:0}}>✓ {linkedBill.name}</span>}
-                            </div>
-                            <div style={{color:C.muted,fontSize:10}}>{t.date}</div>
-                          </div>
-                          <span style={{color:t.amount<0?C.greenBright:linkedBill?C.greenBright:color,fontWeight:700,fontSize:13,flexShrink:0,marginLeft:8}}>
-                            {t.amount<0?`+$${Math.abs(t.amount).toFixed(2)}`:`$${(t.amount||0).toFixed(2)}`}
-                          </span>
+            : (()=>{
+              const sorted = catTxns.sort((a,b)=>b.amount-a.amount);
+              const visible = showAllTxns ? sorted : sorted.slice(0, TXN_LIMIT);
+              const hiddenCount = sorted.length - TXN_LIMIT;
+              return (<>
+                {visible.map((t,j)=>{
+                  const bills = window.__flourishBills||[];
+                  const linkedBill = bills.find(b=>Math.abs(parseFloat(b.amount||0)-t.amount)<5);
+                  return (
+                    <div key={j} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:j<visible.length-1?`1px solid ${C.border}`:"none"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                          <div style={{color:C.cream,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:180}}>{t.name}</div>
+                          {linkedBill&&<span style={{background:C.green+"22",color:C.greenBright,fontSize:9,fontWeight:700,borderRadius:99,padding:"1px 6px",flexShrink:0}}>✓ {linkedBill.name}</span>}
                         </div>
-                      );
-                    })}
-                    {!showAllTxns && hiddenCount > 0 && (
-                      <button onClick={e=>{e.stopPropagation();setShowAllTxns(true);}}
-                        style={{width:"100%",marginTop:8,background:color+"12",border:`1px solid ${color}33`,borderRadius:10,padding:"8px",color,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
-                        Show {hiddenCount} more transaction{hiddenCount===1?"":"s"} ↓
-                      </button>
-                    )}
-                    {showAllTxns && sorted.length > TXN_LIMIT && (
-                      <button onClick={e=>{e.stopPropagation();setShowAllTxns(false);}}
-                        style={{width:"100%",marginTop:8,background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px",color:C.muted,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
-                        Show less ↑
-                      </button>
-                    )}
-                  </div>
-                );
-              })()
+                        <div style={{color:C.muted,fontSize:10}}>{t.date}</div>
+                      </div>
+                      <span style={{color:linkedBill?C.greenBright:color,fontWeight:700,fontSize:13,flexShrink:0,marginLeft:8}}>${(t.amount||0).toFixed(2)}</span>
+                    </div>
+                  );
+                })}
+                {!showAllTxns && hiddenCount > 0 && (
+                  <button onClick={e=>{e.stopPropagation();setShowAllTxns(true);}}
+                    style={{width:"100%",marginTop:8,background:color+"12",border:`1px solid ${color}33`,borderRadius:10,padding:"8px",color,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
+                    Show {hiddenCount} more transaction{hiddenCount===1?"":"s"} ↓
+                  </button>
+                )}
+                {showAllTxns && sorted.length > TXN_LIMIT && (
+                  <button onClick={e=>{e.stopPropagation();setShowAllTxns(false);}}
+                    style={{width:"100%",marginTop:8,background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px",color:C.muted,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
+                    Show less ↑
+                  </button>
+                )}
+              </>);
+            })()}
           }
         </div>
       )}
@@ -6143,8 +5527,6 @@ function SpendScreen({data, setAppData, setScreen}){
   const [accountFilter,setAccountFilter]=useState("All");
   const [recatTxn,setRecatTxn]=useState(null);
   const [markBillTxn,setMarkBillTxn]=useState(null);
-  const [linkBillTxn,setLinkBillTxn]=useState(null); // transaction to manually link to a bill
-  const [expandedTxn,setExpandedTxn]=useState(null); // tapped transaction for inline detail
   const [billForm,setBillForm]=useState({name:"",amount:"",date:"1"});
   const [arrearsPayTxn,setArrearsPayTxn]=useState(null);
   const [applyAllPrompt, setApplyAllPrompt] = useState(null);
@@ -6248,69 +5630,15 @@ function SpendScreen({data, setAppData, setScreen}){
     : catFilter==="Received"
       ? acctFiltered.filter(t=>getCat(t)==="Transfer"&&t.amount<0)
       : acctFiltered.filter(t=>getCat(t)===catFilter);
-  const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCCPayment(t,data.debts||[])).reduce((a,t)=>a+t.amount,0);
+  const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))).reduce((a,t)=>a+t.amount,0);
   const totalIn=acctFiltered.filter(t=>t.amount<0).reduce((a,t)=>a+Math.abs(t.amount),0);
 
-  // Smart Cuts — data-driven, income-aware, ruthless
-  // Only show cuts where the user is actually overspending
-  const monthlyIncomeSC = FinancialCalcEngine.cashFlow(data).monthlyIncome || 0;
-  const byCat = stats.byCat || {};
-
-  // Benchmark thresholds as % of income (or absolute floor)
-  const dining    = (byCat["Coffee & Dining"] || 0) + (byCat["Coffee"] || 0) + (byCat["Dining"] || 0);
-  const groceries = byCat["Groceries"] || 0;
-  const shopping  = (byCat["Shopping"] || 0);
-  const subs      = stats.subs || 0;
-  const transport = byCat["Gas & Transport"] || 0;
-  const entertain = byCat["Entertainment"] || 0;
-
-  const diningBenchmark    = monthlyIncomeSC > 0 ? monthlyIncomeSC * 0.10 : 200;
-  const groceryBenchmark   = monthlyIncomeSC > 0 ? monthlyIncomeSC * 0.08 : 400;
-  const shoppingBenchmark  = monthlyIncomeSC > 0 ? monthlyIncomeSC * 0.05 : 150;
-  const subsBenchmark      = monthlyIncomeSC > 0 ? monthlyIncomeSC * 0.03 : 75;
-  const entertainBenchmark = monthlyIncomeSC > 0 ? monthlyIncomeSC * 0.04 : 100;
-
   const cuts=[
-    // Coffee — only if actual spend detected
-    stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee shops: real cost",
-      body:`${stats.coffeeCount} visit${stats.coffeeCount===1?"":"s"} this month · $${stats.coffee.toFixed(0)} total · $${(stats.coffee*12).toFixed(0)}/year. At-home coffee costs ~$0.30/cup vs $5–7 out. Cutting 3 days a week saves $${Math.round(stats.coffee*0.5)}/month reliably.`,
-      saving:`$${Math.round(stats.coffee*0.5)}/mo`,effort:"Low",color:C.orange},
-
-    // Dining/food delivery — only if over benchmark
-    dining>diningBenchmark&&{id:2,icon:"food",title:`Dining is ${monthlyIncomeSC>0?Math.round(dining/monthlyIncomeSC*100)+"% of income — over the 10% benchmark":"above a healthy level"}`,
-      body:`$${dining.toFixed(0)} on dining and delivery this month. Benchmark is ~10% of income ($${diningBenchmark.toFixed(0)}). You're $${(dining-diningBenchmark).toFixed(0)} over. One fewer restaurant meal and one fewer delivery per week typically closes this gap.`,
-      saving:`$${Math.round(dining-diningBenchmark)}/mo`,effort:"Low",color:C.orange},
-
-    // Delivery specifically — only if detected
-    stats.delivery>0&&dining<=diningBenchmark&&{id:3,icon:"package",title:"Food delivery fees add up fast",
-      body:`$${stats.delivery.toFixed(0)} on delivery this month. After fees, tips, and markups, delivery typically costs 40–60% more than pickup or cooking the same meal. One fewer order per week saves $${Math.round(stats.delivery*0.4)}/month.`,
-      saving:`$${Math.round(stats.delivery*0.4)}/mo`,effort:"Low",color:C.orange},
-
-    // Subscriptions — only if over benchmark with specific amount
-    subs>subsBenchmark&&{id:4,icon:"zap",title:`$${subs.toFixed(0)}/mo in subscriptions — audit time`,
-      body:`You're spending $${subs.toFixed(0)}/month on subscriptions vs a $${subsBenchmark.toFixed(0)} benchmark (3% of income). That's $${(subs*12).toFixed(0)}/year. Go through each one: used it last month? If not, cancel today — not "soon."`,
-      saving:`$${Math.round(subs-subsBenchmark)}/mo`,effort:"Low",color:C.purple},
-
-    // Shopping overspend — only if measurably over benchmark
-    shopping>shoppingBenchmark&&{id:5,icon:"bag",title:`Shopping is $${shopping.toFixed(0)} — ${Math.round(shopping/Math.max(shoppingBenchmark,1)*100-100)}% over benchmark`,
-      body:`$${shopping.toFixed(0)} on shopping this month vs a $${shoppingBenchmark.toFixed(0)} benchmark. The 48-hour rule: add to cart, wait 2 days. Most impulse purchases get abandoned without regret. Apply it for 30 days.`,
-      saving:`$${Math.round(shopping-shoppingBenchmark)}/mo`,effort:"Low",color:C.pink},
-
-    // Entertainment overspend
-    entertain>entertainBenchmark&&{id:6,icon:"film",title:`Entertainment: $${entertain.toFixed(0)}/mo`,
-      body:`$${entertain.toFixed(0)} on entertainment — $${(entertain-entertainBenchmark).toFixed(0)} over the 4% benchmark. Identify one recurring entertainment expense that could be rotated, paused, or shared.`,
-      saving:`$${Math.round(entertain-entertainBenchmark)}/mo`,effort:"Low",color:C.blue},
-
-    // Groceries — only if significantly over
-    groceries>groceryBenchmark*1.4&&{id:7,icon:"cart",title:`Grocery bill is high: $${groceries.toFixed(0)}/mo`,
-      body:`$${groceries.toFixed(0)} on groceries this month — about $${(groceries-groceryBenchmark).toFixed(0)} above benchmark. Meal planning and a fixed weekly list typically cut grocery spend by 20–25% with minimal effort.`,
-      saving:`$${Math.round((groceries-groceryBenchmark)*0.5)}/mo`,effort:"Low",color:C.green},
-
-    // Busiest day — only if strongly meaningful
-    monthlyIncomeSC>0&&{id:8,icon:"chartUp",title:`${stats.busiest}s cost you the most`,
-      body:`You spend more on ${stats.busiest}s than any other day. Checking your balance before you go out on ${stats.busiest}s takes 10 seconds and typically reduces spending that day by 20–30%.`,
-      saving:"$30–60/mo",effort:"Very Low",color:C.blue},
-
+    stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee is adding up",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month totalling $${stats.coffee.toFixed(2)}. That's $${(stats.coffee*12).toFixed(0)}/year. Making coffee at home 4 days a week cuts this by 60%.`,saving:`$${Math.round(stats.coffee*0.6)}/mo`,effort:"Low",color:C.orange},
+    stats.delivery>0&&{id:2,icon:"package",title:"Food delivery every week",body:`$${(stats.delivery||0).toFixed(2)} on delivery this month. One fewer order per week saves $40–60/month reliably. Your wallet will notice in 30 days.`,saving:"$50/mo",effort:"Low",color:C.orange},
+    {id:3,icon:"bag",title:"Amazon impulse purchases",body:"Try the 48-hour rule: add to cart, wait 2 days. Most impulse buys get removed without regret. Studies show this cuts impulse spend by 30–40%.",saving:"$40–70/mo",effort:"Low",color:C.pink},
+    stats.subs>0&&{id:4,icon:"zap",title:"Subscriptions creeping up",body:`$${(stats.subs||0).toFixed(2)}/mo in subscriptions. Go through each one — did you use it last month? Most households find 1–2 to cancel painlessly.`,saving:"$15–35/mo",effort:"Low",color:C.purple},
+    {id:5,icon:"chartUp",title:`${stats.busiest} is your expensive day`,body:`You spend significantly more on ${stats.busiest}s than any other day. Knowing this is half the battle — awareness alone cuts it 20–30%.`,saving:"$30–60/mo",effort:"Very Low",color:C.blue},
   ].filter(Boolean).filter(s=>!dismissed.includes(s.id));
 
   const ALL_CATS = ["Food & Drink","Groceries","Transport","Shopping","Entertainment","Bills & Utilities","Health","Income","Subscriptions","Travel","Other"];
@@ -6318,7 +5646,7 @@ function SpendScreen({data, setAppData, setScreen}){
     if(!isDemo && txns.length === 0) return <EmptyState icon="💳" title="No transactions yet" body="Your transactions are loading from your bank. Check back in a moment — or pull to refresh." action="Refresh" onAction={()=>window.location.reload()} color={C.orange}/>;
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <ScreenHeader title="Transactions" subtitle={monthLabel} onBack={setScreen?()=>setScreen("home"):null} cta="Ask Flora" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
+    <ScreenHeader title="Transactions" subtitle={monthLabel} onBack={setScreen?()=>setScreen("home"):null} cta="Ask Coach" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
     {/* Mark as Bill modal */}
     {markBillTxn&&(
       <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setMarkBillTxn(null)}>
@@ -6394,47 +5722,6 @@ function SpendScreen({data, setAppData, setScreen}){
         </div>
       </div>
     )}
-      {/* Manual bill-transaction link sheet */}
-      {linkBillTxn&&(
-        <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setLinkBillTxn(null)}>
-          <div style={{width:"100%",maxWidth:520,background:C.bg,borderRadius:"24px 24px 0 0",maxHeight:"80vh",display:"flex",flexDirection:"column",overflow:"hidden"}} onClick={e=>e.stopPropagation()}>
-            <div style={{padding:"14px 20px 12px",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
-              <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 12px"}}/>
-              <div style={{color:C.cream,fontWeight:800,fontSize:16}}>Which bill did this pay?</div>
-              <div style={{color:C.muted,fontSize:12,marginTop:3}}>
-                <span style={{color:C.cream,fontWeight:700}}>{linkBillTxn.name}</span> · ${Math.abs(linkBillTxn.amount).toFixed(2)} · {linkBillTxn.date}
-              </div>
-            </div>
-            <div style={{overflowY:"auto",padding:"12px 20px 32px",display:"flex",flexDirection:"column",gap:8}}>
-              {(data.bills||[]).map((b,i)=>{
-                const isPaid = getBillStatus(b) === "paid";
-                return (
-                  <button key={i} onClick={()=>{
-                    const month = currentBillingMonth();
-                    if(setAppData) setAppData(prev=>({
-                      ...prev,
-                      bills:(prev.bills||[]).map((bill,bi)=>bi===i?{...bill,paidMonth:month}:bill)
-                    }));
-                    setLinkBillTxn(null);
-                  }}
-                  style={{background:isPaid?"rgba(0,204,133,0.08)":C.card,border:`1px solid ${isPaid?"rgba(0,204,133,0.3)":C.border}`,borderRadius:14,padding:"12px 16px",cursor:"pointer",fontFamily:"inherit",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <div>
-                      <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{b.name}</div>
-                      <div style={{color:C.muted,fontSize:11,marginTop:2}}>${parseFloat(b.amount||0).toFixed(2)}/mo · due {b.date}{["th","st","nd","rd"][parseInt(b.date)%10]||"th"}</div>
-                    </div>
-                    <div style={{color:isPaid?C.green:C.muted,fontSize:11,fontWeight:700,flexShrink:0,marginLeft:12}}>
-                      {isPaid?"✓ Already paid":"Tap to mark paid"}
-                    </div>
-                  </button>
-                );
-              })}
-              <div style={{color:C.muted,fontSize:11,textAlign:"center",marginTop:4,lineHeight:1.6}}>
-                Marking a bill paid removes it from your forecast and clears overdue alerts.
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     {/* ── Arrears payment modal ─────────────────────────────────────
         User taps "Pay arrears →" on a transaction.
         They pick which bill this payment applies to.
@@ -6538,10 +5825,10 @@ function SpendScreen({data, setAppData, setScreen}){
       </div>
     )}
 
-    {/* Re-categorize modal — centered bubble */}
+    {/* Re-categorize bottom sheet */}
     {recatTxn&&(
-      <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:"20px 16px"}} onClick={()=>setRecatTxn(null)}>
-        <div style={{background:C.card,borderRadius:24,width:"100%",maxWidth:520,border:`1px solid ${C.border}`,boxShadow:"0 24px 64px rgba(0,0,0,0.6)",display:"flex",flexDirection:"column",maxHeight:"85vh"}} onClick={e=>e.stopPropagation()}>
+      <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={()=>setRecatTxn(null)}>
+        <div style={{background:C.card,borderRadius:"24px 24px 0 0",width:"100%",maxWidth:520,border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",display:"flex",flexDirection:"column",maxHeight:"80vh"}} onClick={e=>e.stopPropagation()}>
           {/* Fixed header */}
           <div style={{padding:"16px 20px 12px",flexShrink:0,borderBottom:`1px solid ${C.border}`}}>
             <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
@@ -6581,7 +5868,8 @@ function SpendScreen({data, setAppData, setScreen}){
             {/* Add custom category */}
             <AddCustomCategory onAdd={(cat)=>recatWithSmartPrompt(recatTxn,cat)}/>
           </div>
-          <div style={{height:8,flexShrink:0}}/>
+          {/* Safe bottom padding for mobile */}
+          <div style={{height:"env(safe-area-inset-bottom, 16px)",flexShrink:0}}/>
         </div>
       </div>
     )}
@@ -6659,148 +5947,51 @@ function SpendScreen({data, setAppData, setScreen}){
           )}
         </div>
       )}
-      {filtered.map(txn=>{
-        const isExpanded = expandedTxn?.id === txn.id;
-        // Check if this transaction is already linked to a bill
-        const linkedBillName = (() => {
-          const billingMonth = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
-          return (data.bills||[]).find(b => b.paidMonth === billingMonth &&
-            Math.abs(parseFloat(b.amount||0) - txn.amount) < 5)?.name || null;
-        })();
-        return (
-        <div key={txn.id}
-          style={{background:isExpanded?C.cardAlt:C.card,borderRadius:18,border:`1px solid ${isExpanded?C.borderHi:C.border}`,transition:"all .2s",cursor:"pointer",overflow:"hidden"}}
-          onClick={()=>setExpandedTxn(isExpanded?null:txn)}>
-          {/* ── Main row ── */}
-          <div style={{padding:"14px 16px",display:"flex",alignItems:"center",gap:13}}>
-            <div style={{width:42,height:42,borderRadius:14,background:txn.color+"18",border:`1px solid ${txn.color}28`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon id={txnIcon(txn)} size={19} color={txn.color} strokeWidth={1.5}/></div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{color:C.cream,fontWeight:600,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txn.name}</div>
-              <div style={{display:"flex",gap:6,marginTop:3,alignItems:"center",flexWrap:"wrap"}}>
-                <span style={{background:txn.amount<0?C.green+"18":txn.color+"18",border:`1px solid ${txn.amount<0?C.green+"33":txn.color+"33"}`,borderRadius:99,padding:"2px 8px",color:txn.amount<0?C.greenBright:txn.color,fontSize:10,fontWeight:700}}>
-                  {txn.amount<0&&getCat(txn)==="Transfer"?"Received":getCat(txn)}
+      {filtered.map(txn=>(
+        <div key={txn.id} style={{background:C.card,borderRadius:18,padding:"14px 16px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:13,transition:"all .2s",cursor:"default"}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor=C.borderHi;e.currentTarget.style.background=C.isDark?C.cardAlt:C.surface;}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.card;}}>
+          <div style={{width:42,height:42,borderRadius:14,background:txn.color+"18",border:`1px solid ${txn.color}28`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon id={txnIcon(txn)} size={19} color={txn.color} strokeWidth={1.5}/></div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{color:C.cream,fontWeight:600,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txn.name}</div>
+            <div style={{display:"flex",gap:6,marginTop:3,alignItems:"center"}}>
+              <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.amount<0?C.green+"18":txn.color+"18",border:`1px solid ${txn.amount<0?C.green+"33":txn.color+"33"}`,borderRadius:99,padding:"2px 8px",color:txn.amount<0?C.greenBright:txn.color,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
+                {txn.amount<0&&getCat(txn)==="Transfer"?"Received ↓ tap to label":getCat(txn)} <span style={{opacity:0.6,fontSize:9}}>✎</span>
+              </button>
+              <span style={{color:C.muted,fontSize:10}}>{txn.date}</span>
+              {txn.account_id&&accountFilter==="All"&&accountMap[txn.account_id]&&(
+                <span style={{color:C.muted,fontSize:9,background:"rgba(255,255,255,0.04)",borderRadius:99,padding:"1px 7px",border:`1px solid ${C.border}`,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  {accountMap[txn.account_id]?.name||"Bank"}
                 </span>
-                <span style={{color:C.muted,fontSize:10}}>{txn.date}</span>
-                {txn.account_id&&accountFilter==="All"&&accountMap[txn.account_id]&&(
-                  <span style={{color:C.muted,fontSize:9,background:"rgba(255,255,255,0.04)",borderRadius:99,padding:"1px 7px",border:`1px solid ${C.border}`,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                    {accountMap[txn.account_id]?.name||"Bank"}
-                  </span>
-                )}
-                {txn.pending&&<Chip label="Pending" color={C.gold} size={9}/>}
-                {linkedBillName&&<span style={{background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:99,padding:"2px 8px",color:C.greenBright,fontSize:10,fontWeight:700}}>✓ {linkedBillName}</span>}
-              </div>
-            </div>
-            <div style={{textAlign:"right",flexShrink:0}}>
-              <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
-                {txn.amount<0?"+":"–"}${Math.abs(txn.amount).toFixed(2)}
-              </div>
-              <div style={{color:C.muted,fontSize:11,marginTop:2}}>{isExpanded?"▲":"▼"}</div>
+              )}
+              {txn.pending&&<Chip label="Pending" color={C.gold} size={9}/>}
             </div>
           </div>
-
-          {/* ── Expanded detail ── */}
-          {isExpanded&&(
-            <div style={{borderTop:`1px solid ${C.border}`,padding:"12px 16px",display:"flex",gap:8,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
-              {/* Recategorise */}
-              <button onClick={()=>setRecatTxn(txn)}
-                style={{background:txn.color+"18",border:`1px solid ${txn.color}33`,borderRadius:10,padding:"8px 14px",color:txn.color,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
-                <span style={{fontSize:14}}>✎</span> Change category
-              </button>
-              {/* Link to bill — only for expenses, only if bills exist */}
-              {txn.amount>0&&(data.bills||[]).length>0&&(
-                <button onClick={()=>{setLinkBillTxn(txn);setExpandedTxn(null);}}
-                  style={{background:"rgba(0,204,133,0.12)",border:"1px solid rgba(0,204,133,0.25)",borderRadius:10,padding:"8px 14px",color:C.greenBright,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
-                  <span style={{fontSize:14}}>📅</span> Link to a bill
-                </button>
-              )}
-              {/* Add as tracked bill — only for expenses */}
-              {txn.amount>0&&(
-                <button onClick={()=>{setBillForm({name:txn.name,amount:String(txn.amount),date:"1"});setMarkBillTxn(txn);setExpandedTxn(null);}}
-                  style={{background:C.teal+"14",border:`1px solid ${C.teal}33`,borderRadius:10,padding:"8px 14px",color:C.tealBright,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
-                  <span style={{fontSize:14}}>+</span> Track as bill
-                </button>
-              )}
+          <div style={{textAlign:"right",flexShrink:0}}>
+            <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
+              {txn.amount<0?"+":"–"}${Math.abs(txn.amount).toFixed(2)}
             </div>
-          )}
+            {txn.amount<0&&<div style={{color:C.greenBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>received</div>}
+          </div>
         </div>
-        );
-      })}
+      ))}
     </>}
     {tab==="breakdown"&&<>
       {(()=>{
         // Breakdown uses the same period-filtered set as the Transactions tab
-        // Include recategorised credits: refunds/deposits the user moved to a spending category
-        // These reduce category spend (e.g. Amazon refund → Shopping reduces Shopping total)
-        const bdTxns = acctFiltered.filter(t=>{
-          const cat = getCat(t);
-          const isCredit = t.amount < 0;
-          if(!isCredit) return t.amount>0&&!EXCLUDE_CATS.has(cat)&&!isCCPayment(t,data.debts||[]);
-          // Credit: only include if user explicitly recategorised it away from Transfer/Income
-          const originalCat = t.cat || "";
-          const wasTransfer = originalCat==="Transfer"||originalCat==="Income";
-          const nowSpendCat = !EXCLUDE_CATS.has(cat)&&cat!=="Transfer";
-          return wasTransfer && nowSpendCat; // user moved it → track it
-        });
+        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t)));
         const bdIn   = acctFiltered.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
         const bdTotal= bdTxns.reduce((s,t)=>s+t.amount,0);
         const bdByCat= {};
-        bdTxns.forEach(t=>{
-          const c=getCat(t);
-          // Positive = expense (add), Negative = refund/credit (subtract from category spend)
-          bdByCat[c]=(bdByCat[c]||0)+t.amount;
-        });
-        // Show ALL spending categories — custom cats must never be hidden by a slice limit
-        const bdTopCats=Object.entries(bdByCat).sort((a,b)=>b[1]-a[1]);
+        bdTxns.forEach(t=>{const c=getCat(t);bdByCat[c]=(bdByCat[c]||0)+t.amount;});
+        const bdTopCats=Object.entries(bdByCat).sort((a,b)=>b[1]-a[1]).slice(0,8);
         const periodLabel = period==="week"?"This week":period==="month"?monthLabel:period==="last"?"Last month":period==="3mo"?"Last 3 months":"Last 90 days";
-
-        // ── Year-over-year comparison ─────────────────────────────────────
-        // Compute the same date range but 1 year ago from all available transactions
-        const allTxns = data.transactions || [];
-        const yoyData = (() => {
-          if(period==="week") return null; // weekly YoY not meaningful
-          const now = new Date();
-          let yStart, yEnd;
-          if(period==="month") {
-            yStart = new Date(now.getFullYear()-1, now.getMonth(), 1);
-            yEnd   = new Date(now.getFullYear()-1, now.getMonth()+1, 0, 23, 59, 59);
-          } else if(period==="last") {
-            yStart = new Date(now.getFullYear()-1, now.getMonth()-1, 1);
-            yEnd   = new Date(now.getFullYear()-1, now.getMonth(), 0, 23, 59, 59);
-          } else if(period==="3mo") {
-            yStart = new Date(now.getFullYear()-1, now.getMonth()-2, 1);
-            yEnd   = new Date(now.getFullYear()-1, now.getMonth()+1, 0, 23, 59, 59);
-          } else return null;
-          const yTxns = allTxns.filter(t => {
-            if(!t.date || t.amount <= 0) return false;
-            if(EXCLUDE_CATS.has(getCat(t)) || isCCPayment(t, data.debts||[])) return false;
-            const d = new Date(t.date + "T12:00:00");
-            return d >= yStart && d <= yEnd;
-          });
-          if(yTxns.length === 0) return null; // no last-year data available
-          const yTotal = yTxns.reduce((s,t)=>s+t.amount, 0);
-          const yByCat = {};
-          yTxns.forEach(t=>{const c=getCat(t);yByCat[c]=(yByCat[c]||0)+t.amount;});
-          return { total: yTotal, byCat: yByCat, txnCount: yTxns.length };
-        })();
-
-        const yoyDelta = yoyData ? bdTotal - yoyData.total : null;
-        const yoyPct   = yoyData && yoyData.total > 0 ? ((yoyDelta / yoyData.total) * 100) : null;
-        const yoyColor = yoyDelta === null ? C.muted : yoyDelta <= 0 ? C.green : C.red;
-        const yoyLabel = yoyDelta === null ? null
-          : yoyDelta <= 0 ? `$${Math.abs(yoyDelta).toFixed(0)} less than last year ↓`
-          : `$${Math.abs(yoyDelta).toFixed(0)} more than last year ↑`;
-
         return (<>
       <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
           <div>
             <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Spent · {periodLabel}</div>
             <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>{`$${(bdTotal||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</div>
-            {yoyLabel&&(
-              <div style={{color:yoyColor,fontSize:11,fontWeight:700,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                {yoyLabel}{yoyPct!==null?` (${Math.abs(yoyPct).toFixed(0)}% ${yoyDelta<=0?"less":"more"})`:""}
-              </div>
-            )}
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
             <div style={{color:C.muted,fontSize:10,marginBottom:2}}>{bdTxns.length} transactions</div>
@@ -6815,28 +6006,15 @@ function SpendScreen({data, setAppData, setScreen}){
       </div>}
       {bdTopCats.map(([cat,amt],i)=>{
         const colors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
-        const catTxns=acctFiltered.filter(t=>{
-          if(getCat(t)!==cat) return false;
-          if(t.amount>0) return true;
-          // Credit: include if user moved it to this spending category
-          return t.amount<0 && !EXCLUDE_CATS.has(cat) && cat!=="Transfer" && (t.cat==="Transfer"||t.cat==="Income");
-        });
+        const catTxns=acctFiltered.filter(t=>getCat(t)===cat&&t.amount>0);
         const budget = (data.budgets||{})[cat] || null;
         window.__flourishBills = data.bills||[];
-        // YoY delta for this category
-        const yoyCatAmt = yoyData?.byCat?.[cat] || 0;
-        const catDelta  = yoyData ? amt - yoyCatAmt : null;
-        const catDeltaLabel = catDelta===null ? null
-          : catDelta <= 0 ? `↓ $${Math.abs(catDelta).toFixed(0)} less than last yr`
-          : `↑ $${Math.abs(catDelta).toFixed(0)} more than last yr`;
-        const catDeltaColor = catDelta===null ? null : catDelta<=0 ? C.green : C.red;
         return <ExpandableCatCard key={i} cat={cat} amt={amt} totalSpent={bdTotal} color={colors[i%6]} catTxns={catTxns}
           budget={budget} onSetBudget={(cat,val)=>{
             if(setAppData) setAppData(prev=>({...prev,budgets:{...(prev.budgets||{}),
               ...(val===null ? Object.fromEntries(Object.entries(prev.budgets||{}).filter(([k])=>k!==cat)) : {[cat]:val})
             }}));
-          }}
-          yoyLabel={catDeltaLabel} yoyColor={catDeltaColor}/>;
+          }}/>;
       })}
         </>);
       })()}
@@ -6875,22 +6053,10 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
   const [selDebt,setSelDebt]=useState(0);
   const [extra,setExtra]=useState(50);
   const [method,setMethod]=useState("avalanche");
-  // My Goals tab state — must be at component level, not inside IIFE
-  const [showForm, setShowForm] = useState(false);
-  const [editIdx, setEditIdx] = useState(null);
-  const [goalForm, setGoalForm] = useState({name:"",target:"",saved:"",monthly:"",notes:""});
   const debts=data.debts||[];
+  const safeSelDebt=Math.min(selDebt,Math.max(0,debts.length-1));
+  const debt=debts.length>0?debts[safeSelDebt]:{name:"Credit Card",balance:"3420",rate:"19.99",min:"68"};
   const noDebts = debts.length === 0;
-  // Sort debts by selected method — this IS the payoff method logic
-  const sortedDebts = [...debts].sort((a,b) =>
-    method === "avalanche"
-      ? parseFloat(b.rate||0) - parseFloat(a.rate||0)   // highest rate first
-      : parseFloat(a.balance||0) - parseFloat(b.balance||0) // lowest balance first
-  );
-  const safeSelDebt=Math.min(selDebt,Math.max(0,sortedDebts.length-1));
-  // Priority debt is always the first in the sorted order (the one to attack now)
-  const priorityDebt = sortedDebts[0] || {name:"Credit Card",balance:"3420",rate:"19.99",min:"68"};
-  const debt = sortedDebts.length>0 ? sortedDebts[safeSelDebt] : priorityDebt;
   const bal=parseFloat(debt.balance||0),rate=parseFloat(debt.rate||0),minPay=parseFloat(debt.min||68);
   const mRate=rate/100/12;
   const calc=(xtra)=>{
@@ -6909,7 +6075,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <ScreenHeader title="Goals & Wealth" onBack={setScreen?()=>setScreen("home"):null} cta={CC[data?.profile?.country||"CA"]?.flag+" "+CC[data?.profile?.country||"CA"]?.currency} ctaColor={CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}/>
     <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
-      {[["goals","My Goals"],["plan","Plan & Track"],["retire","Retirement"],["tax","Tax & Tips"]].map(([key,lbl])=>(
+      {[["goals","My Goals"],["sim","Debt Sim"],["worth","Net Worth"],["retire","Retirement"],["forecast","Wealth"],["personality","Personality"],["tax","Tax Tips"],["learn","Learn"]].map(([key,lbl])=>(
         <button key={key} onClick={()=>setTab(key)} style={{flexShrink:0,background:tab===key?C.purple+"22":C.cardAlt,border:`1px solid ${tab===key?C.purple:C.border}`,color:tab===key?C.purpleBright:C.muted,borderRadius:10,padding:"8px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>{lbl}</button>
       ))}
     </div>
@@ -6928,9 +6094,12 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         {label:"Home Reno",      icon:"🔨", color:C.orange},
         {label:"Other",          icon:"🎯", color:C.muted},
       ];
-      const form = goalForm; const setForm = setGoalForm;
-      const openAdd = () => { setGoalForm({name:"",target:"",saved:"",monthly:"",notes:""}); setEditIdx(null); setShowForm(true); };
-      const openEdit = (g,i) => { setGoalForm({name:g.name||g.label||"",target:g.target||"",saved:g.saved||g.current||"",monthly:g.monthly||"",notes:g.notes||""}); setEditIdx(i); setShowForm(true); };
+      const [showForm, setShowForm] = useState(false);
+      const [editIdx, setEditIdx] = useState(null);
+      const [form, setForm] = useState({name:"",target:"",saved:"",monthly:"",notes:""});
+
+      const openAdd = () => { setForm({name:"",target:"",saved:"",monthly:"",notes:""}); setEditIdx(null); setShowForm(true); };
+      const openEdit = (g,i) => { setForm({name:g.name||g.label||"",target:g.target||"",saved:g.saved||g.current||"",monthly:g.monthly||"",notes:g.notes||""}); setEditIdx(i); setShowForm(true); };
       const saveGoal = () => {
         if(!form.name||!form.target) return;
         if(setAppData) setAppData(prev=>{
@@ -7131,7 +6300,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               <span style={{fontSize:18}}>🤖</span>
               <div style={{flex:1}}>
                 <div style={{color:C.purpleBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Ask Coach about your goals</div>
-                <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>Your goals are shared with Flora — ask her to suggest contributions or adjust timelines.</div>
+                <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>Your goals are shared with the AI Coach — ask it to suggest contributions or adjust timelines.</div>
               </div>
               <span style={{color:C.purpleBright,fontSize:16}}>→</span>
             </div>
@@ -7140,7 +6309,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       );
     })()}
 
-    {tab==="plan"&&<>
+    {tab==="sim"&&<>
       {noDebts&&<EmptyState icon="🎯" title="No debts tracked yet" body="Add debts during setup to simulate payoff strategies and see how much interest you can save." action="Add Debts in Settings" onAction={()=>window.dispatchEvent(new CustomEvent("flourish:settings"))} color={C.purple}/>}
       {!noDebts&&debts.every(d=>!parseFloat(d.rate||0))&&(
         <div style={{background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:14,padding:"12px 14px",marginBottom:12,display:"flex",gap:10,alignItems:"flex-start"}}>
@@ -7188,13 +6357,10 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         </div>}
       </div>}
       <Card>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <div style={{color:C.cream,fontWeight:700}}>Payoff Method</div>
-          {sortedDebts.length>0&&<div style={{color:C.muted,fontSize:11}}>Attack: <span style={{color:C.purpleBright,fontWeight:700}}>{priorityDebt.name}</span></div>}
-        </div>
+        <div style={{color:C.cream,fontWeight:700,marginBottom:12}}>Payoff Method</div>
         <div style={{display:"flex",gap:8}}>
           {[["avalanche","Avalanche","Highest rate first · saves the most"],["snowball","Snowball","Smallest balance first · fastest wins"]].map(([key,lbl,desc])=>(
-            <button key={key} onClick={()=>{setMethod(key);setSelDebt(0);}} style={{flex:1,background:method===key?C.purple+"22":C.cardAlt,border:`1px solid ${method===key?C.purple:C.border}`,borderRadius:12,padding:"12px 10px",cursor:"pointer",fontFamily:"inherit",textAlign:"center"}}>
+            <button key={key} onClick={()=>setMethod(key)} style={{flex:1,background:method===key?C.purple+"22":C.cardAlt,border:`1px solid ${method===key?C.purple:C.border}`,borderRadius:12,padding:"12px 10px",cursor:"pointer",fontFamily:"inherit",textAlign:"center"}}>
               <div style={{color:method===key?C.purpleBright:C.cream,fontWeight:700,fontSize:13}}>{lbl}</div>
               <div style={{color:C.muted,fontSize:11,marginTop:4,lineHeight:1.4}}>{desc}</div>
             </button>
@@ -7203,7 +6369,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       </Card>
       {debts.length>0&&<Card>
         <div style={{color:C.cream,fontWeight:700,marginBottom:12}}>All Debts ({debts.length})</div>
-        {sortedDebts.map((d,i)=>{
+        {[...debts].sort((a,b)=>parseFloat(b.rate||0)-parseFloat(a.rate||0)).map((d,i)=>{
           const colors=[C.red,C.gold,C.blue,C.purple];
           return <div key={i} style={{marginBottom:12}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{color:C.cream,fontSize:13}}>{d.name}</span><span style={{color:colors[i%4],fontWeight:700}}>${parseFloat(d.balance).toLocaleString()} · {d.rate}%</span></div>
@@ -7212,7 +6378,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         })}
       </Card>}
     </>}
-    {tab==="plan"&&(()=>{
+    {tab==="worth"&&(()=>{
       const country=data.profile?.country||"CA";
       const allAccts=data.accounts||[];
       const investments=allAccts.filter(a=>a.type==="investment");
@@ -7269,161 +6435,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       const highPriority=tips.filter(t=>t.priority==="high");
       const medPriority=tips.filter(t=>t.priority!=="high");
       const totalSavings=highPriority.length+" high-priority credits identified";
-      const rrspR = RRSPRoomEngine.calculate(data);
-      const annualIncome = (()=>{
-        const inc = data.incomes?.[0];
-        if(!inc) return 0;
-        const amt = parseFloat(inc.amount||0);
-        const freq = inc.freq||"biweekly";
-        if(freq==="biweekly") return amt * 26;
-        if(freq==="weekly") return amt * 52;
-        if(freq==="monthly") return amt * 12;
-        if(freq==="semimonthly") return amt * 24;
-        return amt * 12;
-      })();
       return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-
-        {/* ── RRSP TAX RETURN ESTIMATOR ── */}
-        {rrspR&&annualIncome>0&&(data.profile?.country||"CA")==="CA"&&(()=>{
-          const marginalRate = rrspR.marginalRate || 0.30;
-          const remainingRoom = rrspR.remainingRoom || 0;
-          const refundPer1k = rrspR.refundPer1k || Math.round(1000 * marginalRate);
-          // Slider state — we use a ref trick since this is inside an IIFE
-          const sliderKey = "rrsp_slider_contrib";
-          const savedContrib = (() => { try { return parseFloat(localStorage.getItem(sliderKey)||"0")||Math.min(2000, remainingRoom); } catch { return Math.min(2000,remainingRoom); } })();
-          return (
-            <div style={{background:`linear-gradient(135deg,${C.green}12 0%,${C.card} 100%)`,border:`1px solid ${C.green}44`,borderRadius:20,padding:"18px 20px",position:"relative",overflow:"hidden"}}>
-              <div style={{position:"absolute",top:-20,right:-20,fontSize:80,opacity:0.05}}>🏦</div>
-              <div style={{color:C.greenBright,fontWeight:800,fontSize:13,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                🧮 RRSP Tax Return Estimator
-              </div>
-              <div style={{color:C.muted,fontSize:11,marginBottom:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                Based on your income · {Math.round(marginalRate*100)}% marginal rate · {data.profile?.province||"ON"}
-              </div>
-
-              {/* Contribution input */}
-              <div style={{marginBottom:12}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                  <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>RRSP contribution</span>
-                  <span style={{color:C.cream,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${savedContrib.toLocaleString()}</span>
-                </div>
-                <input type="range" min={0} max={Math.max(remainingRoom,5000)} step={100}
-                  defaultValue={savedContrib}
-                  onChange={e=>{
-                    const v=parseFloat(e.target.value)||0;
-                    try{localStorage.setItem(sliderKey,String(v));}catch{}
-                    // Update the display spans
-                    const card=e.target.closest("[data-rrsp-card]");
-                    if(card){
-                      const refund=Math.round(v*marginalRate);
-                      const perK=Math.round(v>0?(refund/v*1000):refundPer1k);
-                      card.querySelector("[data-contrib]").textContent="$"+v.toLocaleString();
-                      card.querySelector("[data-refund]").textContent="~$"+refund.toLocaleString();
-                      card.querySelector("[data-perk]").textContent="$"+Math.round(v>0?(refund/v*1000):refundPer1k)+" back per $1,000";
-                    }
-                  }}
-                  style={{width:"100%",accentColor:C.green,cursor:"pointer"}}
-                  data-slider="rrsp"
-                />
-                <div style={{display:"flex",justifyContent:"space-between",marginTop:2}}>
-                  <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$0</span>
-                  <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${Math.max(remainingRoom,5000).toLocaleString()} room available</span>
-                </div>
-              </div>
-
-              {/* Result card */}
-              <div style={{background:"rgba(0,204,133,0.08)",borderRadius:14,padding:"14px 16px",display:"flex",gap:12,alignItems:"center"}} data-rrsp-card>
-                <div style={{fontSize:32}}>💰</div>
-                <div style={{flex:1}}>
-                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>Estimated tax refund</div>
-                  <div style={{color:C.greenBright,fontWeight:900,fontSize:28,fontFamily:"'Playfair Display',serif",letterSpacing:-0.5}} data-refund>~${Math.round(savedContrib*marginalRate).toLocaleString()}</div>
-                  <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}} data-perk>${refundPer1k} back per $1,000 contributed</div>
-                </div>
-                <div>
-                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>Contributing</div>
-                  <div style={{color:C.cream,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',serif"}} data-contrib>${savedContrib.toLocaleString()}</div>
-                </div>
-              </div>
-
-              {remainingRoom>0&&<div style={{color:C.muted,fontSize:11,marginTop:10,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
-                💡 You have <strong style={{color:C.cream}}>${remainingRoom.toLocaleString()}</strong> of RRSP room available. Contributing the full amount could get you <strong style={{color:C.greenBright}}>~${rrspR.maxRefund.toLocaleString()}</strong> back.
-              </div>}
-              {!rrspR.hasEnoughData&&<div style={{color:C.muted,fontSize:11,marginTop:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                ℹ️ Add your RRSP room from your CRA Notice of Assessment in Settings → Profile for a more accurate estimate.
-              </div>}
-            </div>
-          );
-        })()}
-
-        {/* ── 401k TAX SAVINGS ESTIMATOR (US only) ── */}
-        {(()=>{
-          const isUS = (data.profile?.country||"CA") === "US";
-          if(!isUS) return null;
-          const us401k = US401kEngine.calculate(data);
-          if(!us401k) return null;
-          const { remainingRoom, totalLimit, marginalRate, refundPer1k, maxSavings, state } = us401k;
-          const sliderKey = "us_401k_slider_contrib";
-          const savedContrib = (() => { try { return parseFloat(localStorage.getItem(sliderKey)||"0")||Math.min(5000, remainingRoom); } catch { return Math.min(5000, remainingRoom); } })();
-          return (
-            <div style={{background:`linear-gradient(135deg,${C.blue}12 0%,${C.card} 100%)`,border:`1px solid ${C.blue}44`,borderRadius:20,padding:"18px 20px",position:"relative",overflow:"hidden"}}>
-              <div style={{position:"absolute",top:-20,right:-20,fontSize:80,opacity:0.05}}>🏛️</div>
-              <div style={{color:C.blueBright,fontWeight:800,fontSize:13,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                🧮 401(k) Tax Savings Estimator
-              </div>
-              <div style={{color:C.muted,fontSize:11,marginBottom:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                Based on your income · {Math.round(marginalRate*100)}% combined rate · {state} state tax included
-              </div>
-
-              <div style={{marginBottom:12}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                  <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>401(k) contribution</span>
-                  <span style={{color:C.cream,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${savedContrib.toLocaleString()}</span>
-                </div>
-                <input type="range" min={0} max={Math.max(remainingRoom,23500)} step={100}
-                  defaultValue={savedContrib}
-                  onChange={e=>{
-                    const v=parseFloat(e.target.value)||0;
-                    try{localStorage.setItem(sliderKey,String(v));}catch{}
-                    const card=e.target.closest("[data-401k-card]");
-                    if(card){
-                      const savings=Math.round(v*marginalRate);
-                      card.querySelector("[data-contrib-401k]").textContent="$"+v.toLocaleString();
-                      card.querySelector("[data-savings-401k]").textContent="~$"+savings.toLocaleString();
-                      card.querySelector("[data-perk-401k]").textContent="$"+Math.round(v>0?(savings/v*1000):refundPer1k)+" saved per $1,000";
-                    }
-                  }}
-                  style={{width:"100%",accentColor:C.blue,cursor:"pointer"}}
-                />
-                <div style={{display:"flex",justifyContent:"space-between",marginTop:2}}>
-                  <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$0</span>
-                  <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${Math.max(remainingRoom,23500).toLocaleString()} limit</span>
-                </div>
-              </div>
-
-              <div style={{background:"rgba(74,143,204,0.08)",borderRadius:14,padding:"14px 16px",display:"flex",gap:12,alignItems:"center"}} data-401k-card>
-                <div style={{fontSize:32}}>💼</div>
-                <div style={{flex:1}}>
-                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>Tax savings this year</div>
-                  <div style={{color:C.blueBright,fontWeight:900,fontSize:28,fontFamily:"'Playfair Display',serif",letterSpacing:-0.5}} data-savings-401k>~${Math.round(savedContrib*marginalRate).toLocaleString()}</div>
-                  <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}} data-perk-401k>${refundPer1k} saved per $1,000 contributed</div>
-                </div>
-                <div>
-                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>Contributing</div>
-                  <div style={{color:C.cream,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',serif"}} data-contrib-401k>${savedContrib.toLocaleString()}</div>
-                </div>
-              </div>
-
-              <div style={{color:C.muted,fontSize:11,marginTop:10,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
-                💡 The 2025 401(k) limit is <strong style={{color:C.cream}}>${totalLimit.toLocaleString()}</strong>
-                {us401k.contribThisYear > 0 && ` · You've contributed $${us401k.contribThisYear.toLocaleString()} so far`}.
-                {maxSavings > 0 && ` Max tax savings: `}<strong style={{color:C.blueBright}}>{maxSavings > 0 ? `~$${maxSavings.toLocaleString()}` : ""}</strong>
-              </div>
-              {!us401k.hasData&&<div style={{color:C.muted,fontSize:11,marginTop:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                ℹ️ Add your income in Settings → Profile for a more accurate estimate.
-              </div>}
-            </div>
-          );
-        })()}
 
         {/* Hero banner */}
         <div style={{background:`linear-gradient(135deg,${C.gold}18 0%,${C.gold}08 100%)`,border:`1px solid ${C.gold}40`,borderRadius:20,padding:"18px 20px",position:"relative",overflow:"hidden"}}>
@@ -7529,7 +6541,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         <div style={{background:C.green+"10",border:`1px solid ${C.green}28`,borderRadius:16,padding:"14px 18px",textAlign:"center",marginTop:4}}>
           <div style={{fontSize:20,marginBottom:6}}>🌱</div>
           <div style={{color:C.greenBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>Not sure what applies to you?</div>
-          <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Ask Flora — tell her your situation and she will identify exactly which credits you qualify for.</div>
+          <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Ask your AI Coach — tell it your situation and it will identify exactly which credits you qualify for.</div>
         </div>
 
       </div>;
@@ -7582,221 +6594,27 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               </div>
             ))}
           </div>
-          {/* Projection summary with assumption toggle */}
+          {/* Projection summary */}
           {(()=>{
             const bal = parseFloat(ret[isCA?"rrspBalance":"401kBalance"]||0) + parseFloat(ret[isCA?"tfsaBalance":"iraBalance"]||0);
             const monthly = parseFloat(ret[isCA?"rrspMonthly":"401kMonthly"]||0) + parseFloat(ret[isCA?"tfsaMonthly":"iraMonthly"]||0) + parseFloat(ret[isCA?"pensionMonthly":"otherRetire"]||0);
             if(bal<=0&&monthly<=0) return null;
-
-            // Assumption modes — stored in ret.projectionMode
-            const mode = ret.projectionMode || "moderate";
-            const MODES = [
-              { key:"conservative", label:"Conservative", rate:0.03, color:C.teal,   desc:"3% / yr — near retirement or low risk tolerance" },
-              { key:"moderate",     label:"Moderate",     rate:0.05, color:C.green,  desc:"5% / yr — balanced long-term portfolio" },
-              { key:"aggressive",   label:"Aggressive",   rate:0.07, color:C.purple, desc:"7% / yr — equity-heavy, long time horizon" },
-            ];
-            const selected = MODES.find(m=>m.key===mode) || MODES[1];
-            const r = selected.rate / 12;
-            const n = 30 * 12;
-            const fv = bal*Math.pow(1+r,n) + (monthly>0 ? monthly*((Math.pow(1+r,n)-1)/r) : 0);
-            const realFv = fv / Math.pow(1.02, 30); // inflation-adjusted at 2%
-
+            // Simple 30-year projection at 6% annual return
+            const r = 0.06/12;
+            const n = 30*12;
+            const fv = bal*Math.pow(1+r,n) + (monthly>0?monthly*((Math.pow(1+r,n)-1)/r):0);
             return (
-              <div style={{marginTop:12}}>
-                {/* Mode selector */}
-                <div style={{display:"flex",gap:6,marginBottom:10}}>
-                  {MODES.map(m=>(
-                    <button key={m.key} onClick={()=>updateRet("projectionMode", m.key)}
-                      style={{flex:1,background:mode===m.key?m.color+"22":C.cardAlt,border:`1px solid ${mode===m.key?m.color:C.border}`,borderRadius:10,padding:"7px 4px",cursor:"pointer",fontFamily:"inherit",textAlign:"center",transition:"all 0.15s"}}>
-                      <div style={{color:mode===m.key?m.color:C.muted,fontWeight:700,fontSize:10}}>{m.label}</div>
-                      <div style={{color:mode===m.key?m.color+"bb":C.muted,fontSize:9,marginTop:1}}>{(m.rate*100).toFixed(0)}%/yr</div>
-                    </button>
-                  ))}
+              <div style={{marginTop:12,background:C.teal+"10",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px"}}>
+                <div style={{color:C.tealBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                  📈 At this rate, in 30 years: ~${(fv/1000).toFixed(0)}k
                 </div>
-
-                {/* Projection result */}
-                <div style={{background:selected.color+"10",border:`1px solid ${selected.color}33`,borderRadius:12,padding:"12px 14px"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-                    <div>
-                      <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>30-year projection</div>
-                      <div style={{color:selected.color,fontWeight:900,fontSize:22,fontFamily:"'Playfair Display',serif"}}>~${(fv/1000).toFixed(0)}k</div>
-                    </div>
-                    <div style={{textAlign:"right"}}>
-                      <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>inflation-adjusted</div>
-                      <div style={{color:C.mutedHi,fontWeight:700,fontSize:16,fontFamily:"'Playfair Display',serif"}}>~${(realFv/1000).toFixed(0)}k</div>
-                    </div>
-                  </div>
-                  <div style={{color:C.muted,fontSize:10,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                    {selected.desc} · {isCA?"RRSP + TFSA":"401(k) + IRA"} · ${bal.toLocaleString()} current + ${monthly}/mo
-                  </div>
-                  {mode==="aggressive"&&(
-                    <div style={{color:C.gold,fontSize:10,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.4}}>
-                      ⚠️ 7% is optimistic — markets vary significantly year to year. Consider moderate for planning.
-                    </div>
-                  )}
-                  {mode==="conservative"&&(
-                    <div style={{color:C.teal,fontSize:10,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.4}}>
-                      💡 Good choice if you're within 10 years of retirement or prefer lower-risk investments.
-                    </div>
-                  )}
-                </div>
-                <div style={{color:C.muted,fontSize:9,marginTop:6,textAlign:"center",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                  Estimates only · not financial advice · actual returns vary
+                <div style={{color:C.muted,fontSize:10,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                  Assumes 6% avg annual return · {isCA?"RRSP + TFSA":"401(k) + IRA"} combined · ${bal.toLocaleString()} current + ${monthly}/mo
                 </div>
               </div>
             );
           })()}
         </div>
-
-        {/* ── RRSP Room Tracker (CA only) ───────────────────────────── */}
-        {isCA&&(()=>{
-          const room = RRSPRoomEngine.calculate(data);
-          return (
-            <div style={{background:C.card,borderRadius:18,padding:"16px 18px",border:`1px solid #2E8B2E44`}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
-                <div style={{width:36,height:36,borderRadius:11,background:"#2E8B2E18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🏦</div>
-                <div>
-                  <div style={{color:"#2E8B2E",fontWeight:900,fontSize:15,fontFamily:"'Playfair Display',serif"}}>RRSP Contribution Room</div>
-                  <div style={{color:C.muted,fontSize:11,marginTop:1}}>Track your room, estimate your refund</div>
-                </div>
-              </div>
-
-              {/* ── Input row ── */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-
-                <div>
-                  <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Available Room (from CRA)</div>
-                  <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
-                    <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
-                    <input value={ret.rrspRoom||""} onChange={e=>updateRet("rrspRoom",e.target.value)}
-                      type="number" inputMode="decimal" placeholder="e.g. 45000"
-                      style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:"#4CAF50",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700,width:0}}/>
-                  </div>
-                  <div style={{color:C.muted,fontSize:9,marginTop:2,lineHeight:1.4}}>Find on your CRA Notice of Assessment or CRA My Account</div>
-                </div>
-
-                <div>
-                  <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Contributed This Year</div>
-                  <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
-                    <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
-                    <input value={ret.rrspContribThisYear||""} onChange={e=>updateRet("rrspContribThisYear",e.target.value)}
-                      type="number" inputMode="decimal" placeholder="0"
-                      style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:"#4CAF50",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700,width:0}}/>
-                  </div>
-                  <div style={{color:C.muted,fontSize:9,marginTop:2,lineHeight:1.4}}>Total RRSP contributions Jan 1–now</div>
-                </div>
-
-                <div style={{gridColumn:"1/-1"}}>
-                  <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Last Year's Earned Income</div>
-                  <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
-                    <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
-                    <input value={ret.rrspPrevIncome||""} onChange={e=>updateRet("rrspPrevIncome",e.target.value)}
-                      type="number" inputMode="decimal" placeholder="e.g. 85000"
-                      style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700,width:0}}/>
-                  </div>
-                  <div style={{color:C.muted,fontSize:9,marginTop:2,lineHeight:1.4}}>Used to calculate this year's new room (18% of earned income, max $32,490)</div>
-                </div>
-              </div>
-
-              {/* ── Results ── */}
-              {room?.hasEnoughData&&<>
-
-                {/* Over-contribution warning */}
-                {room.isOverContrib&&(
-                  <div style={{background:"rgba(255,79,106,0.12)",border:"1px solid rgba(255,79,106,0.35)",borderRadius:12,padding:"10px 14px",marginBottom:12}}>
-                    <div style={{color:C.redBright||C.red,fontWeight:800,fontSize:12}}>⚠️ Over-contribution detected</div>
-                    <div style={{color:C.mutedHi,fontSize:11,marginTop:2,lineHeight:1.5}}>
-                      You've contributed ${(room.contribThisYear - room.totalRoom).toLocaleString()} over your limit.
-                      CRA charges 1%/month on excess over $2,000. File a T1-OVP immediately.
-                    </div>
-                  </div>
-                )}
-
-                {/* Progress bar */}
-                {!room.isOverContrib&&(
-                  <div style={{marginBottom:14}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6}}>
-                      <span style={{color:C.muted,fontSize:10,fontWeight:600}}>Room used</span>
-                      <span style={{color:"#4CAF50",fontSize:12,fontWeight:800}}>{room.usagePct}% of ${room.totalRoom.toLocaleString()}</span>
-                    </div>
-                    <div style={{height:8,background:C.cardAlt,borderRadius:99,overflow:"hidden"}}>
-                      <div style={{height:"100%",width:`${room.usagePct}%`,background:`linear-gradient(90deg,#2E8B2E,#4CAF50)`,borderRadius:99,transition:"width 0.6s ease"}}/>
-                    </div>
-                    <div style={{display:"flex",justifyContent:"space-between",marginTop:5}}>
-                      <span style={{color:C.muted,fontSize:10}}>Used: ${room.contribThisYear.toLocaleString()}</span>
-                      <span style={{color:"#4CAF50",fontSize:10,fontWeight:700}}>Remaining: ${room.remainingRoom.toLocaleString()}</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* New room this year */}
-                {room.newRoomThisYear>0&&(
-                  <div style={{background:"#2E8B2E12",border:"1px solid #2E8B2E33",borderRadius:10,padding:"8px 12px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{color:C.muted,fontSize:11}}>New room earned this year (18% of ${room.prevIncome.toLocaleString()})</span>
-                    <span style={{color:"#4CAF50",fontWeight:800,fontSize:12}}>+${room.newRoomThisYear.toLocaleString()}</span>
-                  </div>
-                )}
-
-                {/* Tax refund estimator */}
-                {room.remainingRoom>0&&room.maxRefund>0&&(
-                  <div style={{background:"rgba(77,168,255,0.08)",border:"1px solid rgba(77,168,255,0.25)",borderRadius:12,padding:"12px 14px",marginBottom:12}}>
-                    <div style={{color:C.blueBright,fontWeight:800,fontSize:13,marginBottom:8}}>💰 Tax Refund Estimator</div>
-                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                        <span style={{color:C.mutedHi,fontSize:12}}>Contribute your full remaining room</span>
-                        <span style={{color:C.blueBright,fontWeight:800,fontSize:14}}>≈ ${room.maxRefund.toLocaleString()} back</span>
-                      </div>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                        <span style={{color:C.muted,fontSize:11}}>Your marginal rate (est.)</span>
-                        <span style={{color:C.muted,fontSize:11,fontWeight:700}}>{Math.round(room.marginalRate*100)}%</span>
-                      </div>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                        <span style={{color:C.muted,fontSize:11}}>Refund per $1,000 contributed</span>
-                        <span style={{color:C.muted,fontSize:11,fontWeight:700}}>${room.refundPer1k}</span>
-                      </div>
-                      {room.monthsToFill&&(
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                          <span style={{color:C.muted,fontSize:11}}>Months to fill room at current rate</span>
-                          <span style={{color:C.muted,fontSize:11,fontWeight:700}}>{room.monthsToFill} months</span>
-                        </div>
-                      )}
-                    </div>
-                    <div style={{color:C.muted,fontSize:10,marginTop:8,lineHeight:1.4,borderTop:`1px solid rgba(255,255,255,0.06)`,paddingTop:8}}>
-                      Estimate only — based on simplified federal + provincial brackets for {data.profile?.province||"ON"}. Actual refund depends on all income sources. Consult a tax professional for exact amounts.
-                    </div>
-                  </div>
-                )}
-
-                {/* Room all used up */}
-                {room.remainingRoom===0&&!room.isOverContrib&&(
-                  <div style={{background:"rgba(0,204,133,0.10)",border:"1px solid rgba(0,204,133,0.25)",borderRadius:12,padding:"10px 14px"}}>
-                    <div style={{color:C.greenBright,fontWeight:800,fontSize:12}}>✓ Full room used — great work!</div>
-                    <div style={{color:C.mutedHi,fontSize:11,marginTop:2,lineHeight:1.5}}>
-                      You've maximized your RRSP contributions this year. New room resets in January.
-                    </div>
-                  </div>
-                )}
-
-                {/* No room data yet */}
-                {!room.hasCRAData&&(
-                  <div style={{color:C.muted,fontSize:11,lineHeight:1.6,marginTop:-4}}>
-                    💡 <strong style={{color:C.cream}}>Get your exact room:</strong> Log in to{" "}
-                    <span style={{color:C.teal,textDecoration:"underline"}}>CRA My Account</span>{" "}
-                    → RRSP and FHSA → Contribution room. It's the most accurate number.
-                  </div>
-                )}
-              </>}
-
-              {/* No data entered yet */}
-              {!room?.hasEnoughData&&(
-                <div style={{color:C.muted,fontSize:12,lineHeight:1.7,textAlign:"center",padding:"8px 0"}}>
-                  Enter your CRA room above to see your refund potential.<br/>
-                  Or enter last year's income and we'll estimate your room.
-                </div>
-              )}
-            </div>
-          );
-        })()}
 
         {accts.map((a,i)=>(
           <div key={i} style={{background:C.card,borderRadius:18,padding:"18px",border:`1px solid ${a.color}33`,position:"relative",overflow:"hidden"}}>
@@ -7835,9 +6653,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         </div>
       </div>;
     })()}
-    {tab==="plan"&&<WealthForecast data={data}/>}
-    {tab==="goals"&&<MoneyPersonality data={data}/>}
-        {tab==="tax"&&(()=>{
+    {tab==="forecast"&&<WealthForecast data={data}/>}
+    {tab==="personality"&&<MoneyPersonality data={data}/>}
+        {tab==="learn"&&(()=>{
       const cfg=CC[data.profile?.country||"CA"];
       return <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div style={{background:C.greenDim,border:`1px solid ${C.green}33`,borderRadius:16,padding:"12px 16px",marginBottom:4}}>
@@ -7862,12 +6680,6 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
 
 
 // ─── FAMILY ───────────────────────────────────────────────────────────────────
-const DEFAULT_CHORES = [
-  {id:1,task:"Make bed",reward:.50,done:false},{id:2,task:"Set the table",reward:.50,done:false},
-  {id:3,task:"Take out garbage",reward:1.00,done:false},{id:4,task:"Vacuum living room",reward:2.00,done:false},
-  {id:5,task:"Wash dishes",reward:1.50,done:false},{id:6,task:"Tidy bedroom",reward:1.00,done:false},
-];
-const KID_COLORS=["#00CC85","#4A8FCC","#C45898","#D97A3A","#8B6FCC","#E8B84B"];
 function Family({data,household,setHousehold,setScreen}){
   const [tab,setTab]=useState("meeting");
   const [householdTab,setHouseholdTab]=useState("join");
@@ -7880,76 +6692,12 @@ function Family({data,household,setHousehold,setScreen}){
   const [expandedItem,setExpandedItem]=useState(null);
   const [kidAge,setKidAge]=useState("8-12");
   const [showChoreIntegrations,setShowChoreIntegrations]=useState(false);
-  const [kids,setKids]=useState(()=>{
-    try { const s=localStorage.getItem("flourish_kids"); return s?JSON.parse(s):[]; } catch { return []; }
-  });
-  // familyToken links all kids together so parent can view all from one place
-  const [familyToken]=useState(()=>{
-    try {
-      let t=localStorage.getItem("flourish_family_token");
-      if(!t){t=Math.random().toString(36).substring(2,10)+Math.random().toString(36).substring(2,6);localStorage.setItem("flourish_family_token",t);}
-      return t;
-    } catch { return "family"; }
-  });
-  const [newKidName,setNewKidName]=useState("");
-  const [showAddKid,setShowAddKid]=useState(false);
-  const [kidProgress,setKidProgress]=useState({}); // {kidToken: {earned, done, total, balance}}
-  const [selectedKid,setSelectedKid]=useState(null); // kid being viewed in parent dashboard
-  const [chores,setChores]=useState(()=>{
-    try { const s=localStorage.getItem("flourish_chores"); return s?JSON.parse(s):DEFAULT_CHORES; } catch { return DEFAULT_CHORES; }
-  });
-  const [choreToken,setChoreToken]=useState(()=>{
-    try { return localStorage.getItem("flourish_chore_token")||null; } catch { return null; }
-  });
-  const [editingChore,setEditingChore]=useState(null); // {id, task, reward}
+  const [chores,setChores]=useState([
+    {id:1,task:"Make bed",reward:.50,done:true},{id:2,task:"Set the table",reward:.50,done:false},
+    {id:3,task:"Take out garbage",reward:1.00,done:true},{id:4,task:"Vacuum living room",reward:2.00,done:false},
+    {id:5,task:"Wash dishes",reward:1.50,done:false},{id:6,task:"Tidy bedroom",reward:1.00,done:false},
+  ]);
   const [customChore,setCustomChore]=useState({task:"",reward:""});
-  const [choreSaving,setChoreSaving]=useState(false);
-  const [choreToast,setChoreToast]=useState(""); // inline toast replaces alert()
-
-  // Persist chores + kids to localStorage whenever they change
-  useEffect(()=>{
-    try { localStorage.setItem("flourish_kids", JSON.stringify(kids)); } catch {}
-    // Fetch live progress for each kid from Supabase
-    if(kids.length > 0) {
-      (async()=>{
-        const tokens = kids.map(k=>k.token).filter(Boolean);
-        if(!tokens.length) return;
-        try {
-          const { data: rows } = await supabase.from("shared_chores")
-            .select("token,chores,wallet").in("token", tokens);
-          if(!rows) return;
-          const prog = {};
-          rows.forEach(row => {
-            const ch = typeof row.chores==="string" ? JSON.parse(row.chores||"[]") : (row.chores||[]);
-            const w  = typeof row.wallet==="string"  ? JSON.parse(row.wallet||"{}") : (row.wallet||{});
-            const done  = ch.filter(c=>c.done).length;
-            const total = ch.length;
-            const earned = ch.filter(c=>c.done).reduce((a,c)=>a+(c.reward||0),0);
-            prog[row.token] = { done, total, earned, balance: w.balance||0 };
-          });
-          setKidProgress(prog);
-        } catch(e) {}
-      })();
-    }
-  },[kids]);
-
-  useEffect(()=>{
-    try { localStorage.setItem("flourish_chores", JSON.stringify(chores)); } catch {}
-    // Auto-sync to Supabase if we have a share token
-    if(choreToken) {
-      const timer = setTimeout(async()=>{
-        try {
-          await supabase.from("shared_chores").upsert({
-            token: choreToken,
-            chores: JSON.stringify(chores),
-            family_name: data.profile?.name||"Our Family",
-            created_at: new Date().toISOString(),
-          });
-        } catch(e) {}
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [chores, choreToken]);
   // Derived — after all hooks
   const isCouple=data.profile?.status!=="single";
 
@@ -8312,156 +7060,57 @@ function Family({data,household,setHousehold,setScreen}){
         </div>
       </Card>
 
-      {/* ── KIDS DASHBOARD ── */}
+      {/* Chore Chart */}
       <Card>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <div style={{color:C.pinkBright,fontWeight:700,fontSize:14}}>👧 Flourish Kids</div>
-          <button onClick={()=>setShowAddKid(v=>!v)}
-            style={{background:C.pink+"18",border:`1px solid ${C.pink}33`,borderRadius:8,padding:"5px 10px",color:C.pinkBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer"}}>
-            {showAddKid?"Cancel":"+ Add child"}
-          </button>
+          <div style={{color:C.greenBright,fontWeight:700}}>🏡 Chore Chart</div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <div style={{color:C.greenBright,fontWeight:800}}>${(earned||0).toFixed(2)} earned</div>
+            <button onClick={()=>setShowChoreIntegrations(v=>!v)} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:8,padding:"4px 10px",color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer"}}>🔗 Connect app</button>
+          </div>
         </div>
-
-        {showAddKid&&(
-          <div style={{display:"flex",gap:8,marginBottom:12}}>
-            <input value={newKidName} onChange={e=>setNewKidName(e.target.value)}
-              onKeyDown={e=>{
-                if(e.key==="Enter"&&newKidName.trim()){
-                  const kidToken=Math.random().toString(36).substring(2,10)+Math.random().toString(36).substring(2,8);
-                  setKids(k=>[...k,{id:Date.now(),name:newKidName.trim(),color:KID_COLORS[k.length%KID_COLORS.length],token:kidToken,chores:DEFAULT_CHORES.map(c=>({...c,id:Date.now()+Math.random()}))}]);
-                  setNewKidName("");setShowAddKid(false);
-                }
-              }}
-              placeholder="Child's name…" autoFocus
-              style={{flex:1,background:C.cardAlt,border:`1px solid ${C.pink}44`,borderRadius:8,padding:"9px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
-            <button onClick={()=>{
-              if(!newKidName.trim()) return;
-              const kidToken=Math.random().toString(36).substring(2,10)+Math.random().toString(36).substring(2,8);
-              setKids(k=>[...k,{id:Date.now(),name:newKidName.trim(),color:KID_COLORS[k.length%KID_COLORS.length],token:kidToken,chores:DEFAULT_CHORES.map(c=>({...c,id:Date.now()+Math.random()}))}]);
-              setNewKidName("");setShowAddKid(false);
-            }} style={{background:C.pink,border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Add</button>
-          </div>
-        )}
-
-        {kids.length===0&&!showAddKid&&(
-          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"center",padding:"12px 0"}}>
-            Add your children to give each one their own chore chart, wallet, and share link.
-          </div>
-        )}
-
-        {/* Per-child progress cards */}
-        {kids.map((kid)=>{
-          const prog = kidProgress[kid.token]||{};
-          const kidChores = kid.chores||DEFAULT_CHORES;
-          const localDone = kidChores.filter(c=>c.done).length;
-          const localTotal = kidChores.length;
-          const localEarned = kidChores.filter(c=>c.done).reduce((a,c)=>a+(c.reward||0),0);
-          const done = prog.done ?? localDone;
-          const total = prog.total ?? localTotal;
-          const earned = prog.earned ?? localEarned;
-          const balance = prog.balance ?? 0;
-          const isSelected = selectedKid===kid.id;
-          return (
-            <div key={kid.id} style={{marginBottom:10}}>
-              {/* Kid header row */}
-              <div style={{background:kid.color+"10",borderRadius:isSelected?"14px 14px 0 0":14,border:`1px solid ${kid.color}${isSelected?"55":"28"}`,padding:"12px 14px",borderBottom:isSelected?"none":"",cursor:"pointer"}}
-                onClick={()=>setSelectedKid(isSelected?null:kid.id)}>
-                <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <div style={{width:34,height:34,borderRadius:"50%",background:kid.color+"22",border:`2px solid ${kid.color}`,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:15,color:kid.color,flexShrink:0}}>
-                    {kid.name[0].toUpperCase()}
-                  </div>
-                  <div style={{flex:1}}>
-                    <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{kid.name}</div>
-                    <div style={{display:"flex",gap:10,marginTop:2}}>
-                      <span style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{done}/{total} chores</span>
-                      <span style={{color:kid.color,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>${earned.toFixed(2)} earned</span>
-                      {balance>0&&<span style={{color:"#E8B84B",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>${balance.toFixed(2)} saved</span>}
-                    </div>
-                  </div>
-                  {/* Share link button */}
-                  {kid.token&&(
-                    <button onClick={async(e)=>{
-                      e.stopPropagation();
-                      const url=`${window.location.origin}/chores/${kid.token}`;
-                      // Save to Supabase first
-                      try {
-                        await supabase.from("shared_chores").upsert({
-                          token:kid.token,
-                          chores:JSON.stringify(kid.chores||DEFAULT_CHORES),
-                          family_name:`${data.profile?.name||"Our Family"} — ${kid.name}`,
-                          family_token:familyToken,
-                          child_name:kid.name,
-                          created_at:new Date().toISOString(),
-                        });
-                      } catch(e){}
-                      if(navigator.share){navigator.share({title:`${kid.name}'s Chore Chart`,url}).catch(()=>{});}
-                      else{
-                        try{await navigator.clipboard.writeText(url);}catch{}
-                        setChoreToast(`✓ ${kid.name}'s link copied!`);
-                        setTimeout(()=>setChoreToast(""),4000);
-                      }
-                    }} style={{background:C.teal+"18",border:`1px solid ${C.teal}33`,borderRadius:8,padding:"5px 10px",color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer",flexShrink:0}}>
-                      📤 Share
-                    </button>
-                  )}
-                  <span style={{color:C.muted,fontSize:14,transition:"transform .2s",display:"inline-block",transform:isSelected?"rotate(90deg)":"none"}}>›</span>
-                </div>
-                {/* Mini progress bar */}
-                {total>0&&(
-                  <div style={{marginTop:8,background:"rgba(255,255,255,0.06)",borderRadius:99,height:4,overflow:"hidden"}}>
-                    <div style={{width:`${total>0?(done/total)*100:0}%`,height:"100%",background:kid.color,borderRadius:99,transition:"width 0.5s ease"}}/>
-                  </div>
-                )}
+        <Bar v={earned} max={Math.max(chores.reduce((a,c)=>a+c.reward,0),0.01)} color={C.green} h={6}/>
+        <div style={{marginTop:12}}>
+          {chores.map(ch=>(
+            <div key={ch.id} onClick={()=>setChores(c=>c.map(x=>x.id===ch.id?{...x,done:!x.done}:x))} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
+              <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${ch.done?C.green:C.border}`,background:ch.done?C.green:"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s"}}>
+                {ch.done&&<span style={{color:C.bg,fontSize:12,fontWeight:900}}>✓</span>}
               </div>
-
-              {/* Expanded chore editor for this kid */}
-              {isSelected&&(
-                <div style={{background:C.cardAlt,borderRadius:"0 0 14px 14px",border:`1px solid ${kid.color}33`,borderTop:"none",padding:"12px 14px"}}>
-                  <div style={{color:C.muted,fontSize:11,marginBottom:10,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:1}}>Chores for {kid.name}</div>
-                  {(kid.chores||DEFAULT_CHORES).map((ch,ci)=>(
-                    <div key={ch.id} style={{display:"flex",gap:8,alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${C.border}22`}}>
-                      <div onClick={()=>{
-                        setKids(ks=>ks.map(k=>k.id===kid.id?{...k,chores:(k.chores||DEFAULT_CHORES).map(c=>c.id===ch.id?{...c,done:!c.done}:c)}:k));
-                      }} style={{width:20,height:20,borderRadius:5,border:`2px solid ${ch.done?kid.color:C.border}`,background:ch.done?kid.color:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0}}>
-                        {ch.done&&<span style={{color:"#050D09",fontSize:11,fontWeight:900}}>✓</span>}
-                      </div>
-                      <span style={{flex:1,color:ch.done?"rgba(237,233,226,0.4)":C.cream,fontSize:13,textDecoration:ch.done?"line-through":"none"}}>{ch.task}</span>
-                      <span style={{color:"#E8B84B",fontSize:12,fontWeight:700}}>${(ch.reward||0).toFixed(2)}</span>
-                      <button onClick={()=>setKids(ks=>ks.map(k=>k.id===kid.id?{...k,chores:(k.chores||[]).filter(c=>c.id!==ch.id)}:k))}
-                        style={{background:"none",border:"none",color:C.muted,fontSize:14,cursor:"pointer",padding:"0 4px",lineHeight:1}}>✕</button>
-                    </div>
-                  ))}
-                  {/* Add chore for this kid */}
-                  <div style={{marginTop:10,display:"flex",gap:6}}>
-                    <input placeholder="Add chore…" id={`chore-input-${kid.id}`}
-                      style={{flex:2,background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px",color:C.cream,fontSize:12,fontFamily:"inherit"}}/>
-                    <input placeholder="$" type="number" id={`reward-input-${kid.id}`}
-                      style={{width:50,background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px",color:C.cream,fontSize:12,fontFamily:"inherit"}}/>
-                    <button onClick={()=>{
-                      const taskEl=document.getElementById(`chore-input-${kid.id}`);
-                      const rewardEl=document.getElementById(`reward-input-${kid.id}`);
-                      if(!taskEl?.value.trim()) return;
-                      setKids(ks=>ks.map(k=>k.id===kid.id?{...k,chores:[...(k.chores||DEFAULT_CHORES),{id:Date.now(),task:taskEl.value.trim(),reward:parseFloat(rewardEl?.value)||0.50,done:false}]}:k));
-                      taskEl.value=""; if(rewardEl) rewardEl.value="";
-                    }} style={{background:kid.color,border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>+</button>
-                  </div>
-                  {/* Reset chores for this kid */}
-                  <button onClick={()=>setKids(ks=>ks.map(k=>k.id===kid.id?{...k,chores:(k.chores||DEFAULT_CHORES).map(c=>({...c,done:false}))}:k))}
-                    style={{marginTop:8,width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px",color:C.muted,fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
-                    🔄 Reset {kid.name}'s chores
-                  </button>
-                  {/* Remove kid */}
-                  <button onClick={()=>{setKids(k=>k.filter(x=>x.id!==kid.id));setSelectedKid(null);}}
-                    style={{marginTop:4,width:"100%",background:"none",border:`1px solid rgba(255,79,106,0.2)`,borderRadius:8,padding:"6px",color:"rgba(255,79,106,0.6)",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
-                    Remove {kid.name}
-                  </button>
-                </div>
-              )}
+              <span style={{flex:1,color:C.cream,fontSize:14,textDecoration:ch.done?"line-through":"none"}}>{ch.task}</span>
+              <span style={{color:C.gold,fontWeight:700}}>+${(ch.reward||0).toFixed(2)}</span>
             </div>
-          );
-        })}
+          ))}
+        </div>
+        {/* Add custom chore */}
+        <div style={{marginTop:12,display:"flex",gap:8,alignItems:"center"}}>
+          <input value={customChore.task} onChange={e=>setCustomChore(v=>({...v,task:e.target.value}))} placeholder="New chore…"
+            style={{flex:2,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
+          <input value={customChore.reward} onChange={e=>setCustomChore(v=>({...v,reward:e.target.value}))} placeholder="$" type="number"
+            style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
+          <button onClick={()=>{if(!customChore.task)return;setChores(c=>[...c,{id:Date.now(),task:customChore.task,reward:parseFloat(customChore.reward)||0.50,done:false}]);setCustomChore({task:"",reward:""}); }}
+            style={{background:C.green,border:"none",borderRadius:8,padding:"8px 12px",color:"#fff",fontWeight:700,cursor:"pointer",fontSize:13}}>+</button>
+        </div>
       </Card>
 
+      {/* Chore Integrations panel */}
+      {showChoreIntegrations&&<Card style={{border:`1px solid ${C.teal}44`,background:C.tealDim}}>
+        <div style={{color:C.tealBright,fontWeight:700,fontSize:14,marginBottom:4}}>🔗 Connect to Chore Apps</div>
+        <div style={{color:C.muted,fontSize:12,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish can't push directly to these apps yet — but here's exactly how to sync your chore list to each platform.</div>
+        {choreIntegrations.map((ci,i)=>(
+          <div key={i} style={{background:C.card,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${ci.color}22`}}>
+            <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:6}}>
+              <span style={{fontSize:20}}>{ci.icon}</span>
+              <div style={{flex:1}}>
+                <div style={{color:C.cream,fontWeight:700,fontSize:13}}>{ci.name}</div>
+                <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{ci.desc}</div>
+              </div>
+            </div>
+            <div style={{background:ci.color+"14",borderRadius:8,padding:"7px 10px",color:ci.color,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:8}}>📱 {ci.note}</div>
+            <a href={ci.url} target="_blank" rel="noopener noreferrer" style={{color:ci.color,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textDecoration:"none"}}>Open {ci.name} →</a>
+          </div>
+        ))}
+        <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4,fontStyle:"italic"}}>Native 2-way sync is on the roadmap — vote for it in the app store review!</div>
+      </Card>}
     </>}
 
     {/* ── HOUSEHOLD TAB ── */}
@@ -8529,7 +7178,7 @@ function Family({data,household,setHousehold,setScreen}){
           {householdTab==="create"&&<>
             <div style={{background:C.card,borderRadius:16,padding:"20px",border:`1px solid ${C.border}`,textAlign:"center"}}>
               <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>Your household code:</div>
-              <div style={{color:C.greenBright,fontWeight:900,fontSize:34,fontFamily:"'Playfair Display',serif",letterSpacing:5,marginBottom:8}}>{household?.code || "FLRSH" + Math.random().toString(36).slice(2,4).toUpperCase()}</div>
+              <div style={{color:C.greenBright,fontWeight:900,fontSize:34,fontFamily:"'Playfair Display',serif",letterSpacing:5,marginBottom:8}}>FLRSH1</div>
               <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Share with your partner to connect</div>
             </div>
             <div>
@@ -8560,11 +7209,6 @@ function Family({data,household,setHousehold,setScreen}){
 
 // ─── WIDGET SCREEN ────────────────────────────────────────────────────────────
 function WidgetScreen({data,onBack}){
-  // ── ALL HOOKS FIRST ──────────────────────────────────────────────────────────
-  const [wSize,setWSize]=useState("medium");
-  const [wContent,setWContent]=useState({safe:true,balance:true,health:true,nextBill:true,streak:false,cashFlow:false});
-
-  // ── Derived values (after hooks) ─────────────────────────────────────────────
   const _ss=SafeSpendEngine.calculate(data);
   const safe=_ss.safeAmount;
   const bal=_ss.balance;
@@ -8703,6 +7347,8 @@ function WidgetScreen({data,onBack}){
     </WShell>
   );
 
+  const [wSize,setWSize]=useState("medium");
+  const [wContent,setWContent]=useState({safe:true,balance:true,health:true,nextBill:true,streak:false,cashFlow:false});
   const toggleW=k=>setWContent(v=>({...v,[k]:!v[k]}));
   const sizes=[["small","Small"],["medium","Medium"],["large","Large"]];
 
@@ -8819,7 +7465,14 @@ function WidgetScreen({data,onBack}){
       ))}
     </div>
 
-    {/* Native widget roadmap note removed — show only shipping features */}
+    {/* Native widget roadmap note */}
+    <div style={{background:C.surface,borderRadius:16,padding:"14px 18px",border:`1px solid ${C.border}`,display:"flex",gap:12,alignItems:"flex-start"}}>
+      <span style={{fontSize:16,flexShrink:0}}>⚡</span>
+      <div>
+        <div style={{color:C.cream,fontWeight:600,fontSize:13,marginBottom:3}}>True native widgets coming soon</div>
+        <div style={{color:C.muted,fontSize:12,lineHeight:1.6}}>Full iOS WidgetKit and Android Glance widgets are on our roadmap — showing live balance and safe-spend right on your lock screen without opening the app.</div>
+      </div>
+    </div>
   </div>;
 }
 
@@ -9031,32 +7684,6 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
           <option value="CA">🇨🇦 Canada</option><option value="US">🇺🇸 United States</option>
         </select>
       </div>
-      <div style={row}><span style={lbl}>{data.profile?.country==="US"?"State":"Province"}</span>
-        {data.profile?.country==="US" ? (
-          <select defaultValue={data.profile?.province||"CA"} onChange={e=>updateProfile("province",e.target.value)}
-            style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
-            {[["AL","Alabama"],["AK","Alaska"],["AZ","Arizona"],["AR","Arkansas"],["CA","California"],
-              ["CO","Colorado"],["CT","Connecticut"],["DE","Delaware"],["FL","Florida"],["GA","Georgia"],
-              ["HI","Hawaii"],["ID","Idaho"],["IL","Illinois"],["IN","Indiana"],["IA","Iowa"],
-              ["KS","Kansas"],["KY","Kentucky"],["LA","Louisiana"],["ME","Maine"],["MD","Maryland"],
-              ["MA","Massachusetts"],["MI","Michigan"],["MN","Minnesota"],["MS","Mississippi"],["MO","Missouri"],
-              ["MT","Montana"],["NE","Nebraska"],["NV","Nevada"],["NH","New Hampshire"],["NJ","New Jersey"],
-              ["NM","New Mexico"],["NY","New York"],["NC","North Carolina"],["ND","North Dakota"],["OH","Ohio"],
-              ["OK","Oklahoma"],["OR","Oregon"],["PA","Pennsylvania"],["RI","Rhode Island"],["SC","South Carolina"],
-              ["SD","South Dakota"],["TN","Tennessee"],["TX","Texas"],["UT","Utah"],["VT","Vermont"],
-              ["VA","Virginia"],["WA","Washington"],["WV","West Virginia"],["WI","Wisconsin"],["WY","Wyoming"],
-              ["DC","Washington D.C."]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
-          </select>
-        ) : (
-          <select defaultValue={data.profile?.province||"ON"} onChange={e=>updateProfile("province",e.target.value)}
-            style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
-            {[["ON","Ontario"],["BC","British Columbia"],["AB","Alberta"],["QC","Quebec"],
-              ["MB","Manitoba"],["SK","Saskatchewan"],["NS","Nova Scotia"],["NB","New Brunswick"],
-              ["NL","Newfoundland"],["PE","PEI"],["YT","Yukon"],["NT","NWT"],["NU","Nunavut"]
-            ].map(([v,l])=><option key={v} value={v}>{l}</option>)}
-          </select>
-        )}
-      </div>
       <div style={row}><span style={lbl}>Status</span>
         <select defaultValue={data.profile?.status||"single"} onChange={e=>updateProfile("status",e.target.value)}
           style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
@@ -9207,58 +7834,14 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
   return null;
 }
 
-// ── FEEDBACK CARD ─────────────────────────────────────────────────────────────
-function FeedbackCard({onSend}){
-  const [text, setText] = useState("");
-  const [sent, setSent] = useState(false);
-  const [sending, setSending] = useState(false);
-  if(sent) return (
-    <div style={{background:C.teal+"12",border:`1px solid ${C.teal}33`,borderRadius:18,padding:"16px 18px",textAlign:"center",marginBottom:8}}>
-      <div style={{fontSize:28,marginBottom:8}}>🙏</div>
-      <div style={{color:C.tealBright,fontWeight:700,fontSize:14}}>Feedback received!</div>
-      <div style={{color:C.muted,fontSize:12,marginTop:4}}>We read everything. Thank you.</div>
-    </div>
-  );
-  return (
-    <div style={{background:C.card,borderRadius:18,padding:"16px 18px",border:`1px solid ${C.border}`,marginBottom:8}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-        <div style={{width:36,height:36,borderRadius:11,background:C.teal+"18",border:`1px solid ${C.teal}28`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:18}}>💬</div>
-        <div>
-          <div style={{color:C.cream,fontWeight:700,fontSize:14}}>Send feedback</div>
-          <div style={{color:C.muted,fontSize:11,marginTop:1}}>Bug, idea, or anything — we read every message</div>
-        </div>
-      </div>
-      <textarea
-        value={text}
-        onChange={e=>setText(e.target.value)}
-        placeholder="What's on your mind?"
-        rows={3}
-        style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",resize:"vertical",boxSizing:"border-box",lineHeight:1.5,marginBottom:10}}
-      />
-      <button
-        disabled={!text.trim()||sending}
-        onClick={async()=>{
-          if(!text.trim()) return;
-          setSending(true);
-          await onSend(text.trim());
-          setSent(true);
-          setSending(false);
-        }}
-        style={{width:"100%",background:text.trim()?C.teal:"rgba(255,255,255,0.06)",border:"none",borderRadius:10,padding:"11px",color:"#fff",fontWeight:700,fontSize:13,cursor:text.trim()?"pointer":"default",fontFamily:"'Plus Jakarta Sans',sans-serif",opacity:text.trim()?1:0.4,transition:"all 0.2s"}}>
-        {sending?"Sending…":"Send feedback →"}
-      </button>
-    </div>
-  );
-}
-
-function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,bankConnected,needsReconnect,reconnectLoading,onReconnect,onSendFeedback,deepLinkSection=null}){
+function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,bankConnected,needsReconnect,reconnectLoading,onReconnect}){
   const [notifToggles,setNotifToggles]=useState({overdraft:true,bills:true,coach:true,meeting:false,patterns:true});
-  const [activeSection,setActiveSection]=useState(deepLinkSection);
+  const [activeSection,setActiveSection]=useState(null);
   const handleShare=()=>{
     const url="https://flourishmoney.app";
     const text="I've been using Flourish to track my spending and it actually tells me exactly how much I can spend today. Worth checking out.";
     if(navigator.share){navigator.share({title:"Flourish Money",text,url}).catch(()=>{});}
-    else{navigator.clipboard?.writeText(url).then(()=>{ const d=document.createElement("div"); d.textContent="✓ Link copied — share it with a friend 🌱"; d.style.cssText="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#00CC85;color:#050D09;padding:12px 20px;borderRadius:12px;fontWeight:700;fontSize:13px;zIndex:99999;fontFamily:'Plus Jakarta Sans',sans-serif;boxShadow:0 8px 24px rgba(0,0,0,0.4);whiteSpace:nowrap;"; document.body.appendChild(d); setTimeout(()=>d.remove(),3500); }).catch(()=>window.open(url,"_blank"));}
+    else{navigator.clipboard?.writeText(url).then(()=>alert("Link copied! Share it with a friend 🌱")).catch(()=>window.open(url,"_blank"));}
   };
   return <div style={{color:C.cream}}>
     <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:20}}>
@@ -9288,7 +7871,18 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <span style={{color:C.muted,fontSize:18}}>›</span>
       </button>
     </div>
-    
+    <button onClick={handleShare} style={{background:"linear-gradient(135deg,#0D3320 0%,#0A2518 100%)",borderRadius:18,padding:"20px 22px",border:"1px solid rgba(0,204,133,0.25)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"inherit",width:"100%",marginBottom:10,boxShadow:"0 4px 24px rgba(0,204,133,0.12)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:14}}>
+        <div style={{width:44,height:44,borderRadius:14,background:"rgba(0,204,133,0.15)",border:"1px solid rgba(0,204,133,0.3)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <FlourishMark size={28}/>
+        </div>
+        <div style={{textAlign:"left"}}>
+          <div style={{color:"#fff",fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15,letterSpacing:-0.3}}>Share Flourish</div>
+          <div style={{color:"rgba(255,255,255,0.45)",fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3}}>Invite a friend · help them thrive</div>
+        </div>
+      </div>
+      <div style={{background:"rgba(0,204,133,0.2)",border:"1px solid rgba(0,204,133,0.35)",borderRadius:99,padding:"7px 16px",color:"#00CC85",fontSize:12,fontWeight:700,letterSpacing:0.2,flexShrink:0}}>Share ↗</div>
+    </button>
     {[
         {icon:"user",  color:C.purple, label:"Profile & Income",    sub:`${data.profile?.name||"You"} · ${data.profile?.country||"CA"}`,   key:"profile"},
         {icon:"bank",  color:C.blue,   label:"Connected Accounts",  sub:`${data.accounts?.length||0} accounts`,              key:"accounts"},
@@ -9321,7 +7915,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     {[
       ["overdraft","zap",    C.red,   "Overdraft warnings"],
       ["bills",   "calendar",C.gold,  "Bill due soon alerts"],
-      ["coach",   "sparkles",C.green, "Flora insights"],
+      ["coach",   "sparkles",C.green, "AI coach insights"],
       ["meeting", "users",   C.teal,  "Money meeting reminders"],
       ["patterns","chartUp", C.blue,  "Spending pattern alerts"],
     ].map(([key,icon,color,label])=>(
@@ -9348,9 +7942,6 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         </button>
       </div>
     )}
-    {/* ── Feedback ────────────────────────────────────────────── */}
-    {onSendFeedback&&<FeedbackCard onSend={onSendFeedback}/>}
-
     {/* ── Bank connection ──────────────────────────────────────── */}
     {(bankConnected || true)&&(
       <div style={{marginTop:10,padding:"14px 16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
@@ -9489,7 +8080,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
       const saved = JSON.parse(localStorage.getItem("flourish_coach_history") || "null");
       if (Array.isArray(saved) && saved.length > 0) return saved.slice(-40);
     } catch {}
-    return [{role:"assistant", content:"Hey! I'm Flora 🌿 — your Flourish money coach. I can see your spending patterns, balances, and financial data. What would you like to work on today?"}];
+    return [{role:"assistant", content:"Hey! I'm your Flourish AI Coach 👋 I can see your spending patterns, balances, and financial data. What would you like to work on today?"}];
   });
   const [sessionDate] = useState(()=>new Date().toLocaleDateString("en-CA",{month:"short",day:"numeric"}));
   const [input, setInput] = useState("");
@@ -9500,7 +8091,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
   // ── Constants and derived values (after all hooks) ────────────────────────
   const FREE_LIMIT=5;
   const STORAGE_KEY = "flourish_coach_history";
-  const WELCOME = {role:"assistant", content:"Hey! I'm Flora 🌿 — your Flourish money coach. I can see your spending patterns, balances, and financial data. What would you like to work on today?"};
+  const WELCOME = {role:"assistant", content:"Hey! I'm your Flourish AI Coach 👋 I can see your spending patterns, balances, and financial data. What would you like to work on today?"};
   const freeMsgsLeft=isPremium?Infinity:Math.max(0,FREE_LIMIT-coachMsgCount);
 
   // Persist messages to localStorage whenever they change
@@ -9535,14 +8126,12 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const accounts = data.accounts||[];
     const profile = data.profile||{};
     const country = profile.country||"CA";
-    const income = FinancialCalcEngine.cashFlow(data).monthlyIncome || DEMO.income;
+    const income = (data.incomes||[]).reduce((s,i)=>s+parseFloat(i.amount||0),0) || DEMO.income;
     const balance = parseFloat((accounts[0]?.balance||DEMO.balance).toString().replace(/,/g,""));
     const spending = txns.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
-    const coachCatOverrides = (() => { try { return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}"); } catch { return {}; } })();
-    const getCoachCat = (t) => coachCatOverrides[t.id] || t.cat;
     const topCats = Object.entries(
-      txns.filter(t=>t.amount>0 && getCoachCat(t)!=="Income")
-        .reduce((acc,t)=>{const c=getCoachCat(t);acc[c]=(acc[c]||0)+t.amount;return acc;},{})
+      txns.filter(t=>t.amount>0 && t.cat!=="Income")
+        .reduce((acc,t)=>{acc[t.cat]=(acc[t.cat]||0)+t.amount;return acc;},{})
     ).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`${k}: $${(v||0).toFixed(0)}`).join(", ");
 
     const goals = (data.goals||[]).map(g=>`${g.name}: $${parseFloat(g.saved||0).toFixed(0)} saved of $${parseFloat(g.target||0).toFixed(0)} target${g.monthly?`, $${g.monthly}/mo contribution`:""}`).join("; ")||"none set";
@@ -9550,21 +8139,10 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const debts = (data.debts||[]).map(d=>`${d.name} $${parseFloat(d.balance||0).toFixed(0)}${d.rate?` @ ${d.rate}%`:""}`).join("; ")||"none";
     const ret = data.profile?.retirement||{};
     const retInfo = Object.entries(ret).filter(([,v])=>parseFloat(v)>0).map(([k,v])=>`${k}: $${v}`).join(", ")||"none entered";
-    // RRSP room data
-    const rrspRoomData = (() => {
-      const r = RRSPRoomEngine.calculate(data);
-      if(!r || !r.hasEnoughData) return "not entered";
-      const parts = [];
-      if(r.totalRoom>0) parts.push(`total room $${r.totalRoom.toLocaleString()}`);
-      if(r.remainingRoom>0) parts.push(`$${r.remainingRoom.toLocaleString()} remaining`);
-      if(r.maxRefund>0) parts.push(`potential refund ~$${r.maxRefund.toLocaleString()}`);
-      if(r.isOverContrib) parts.push("WARNING: over-contributed");
-      return parts.join(", ") || "not entered";
-    })();
     return `You are a warm, expert personal finance coach for Flourish Money (${country==="CA"?"Canada":"USA"}).
 User financial snapshot:
 - Chequing balance: $${(balance||0).toFixed(2)}
-- Monthly income: $${(income||0).toFixed(2)}${(data.incomes||[]).some(i=>i.isVariable) ? " (variable income — recommend wider cash buffers)" : ""}
+- Biweekly income: $${(income||0).toFixed(2)}
 - Recent spending total: $${(spending||0).toFixed(2)}
 - Top spending categories: ${topCats||"no data"}
 - Accounts: ${accounts.map(a=>`${a.name} (${a.type}) $${a.balance}`).join("; ")||"none linked"}
@@ -9572,7 +8150,6 @@ User financial snapshot:
 - Debts: ${debts}
 - Savings goals: ${goals}
 - Retirement accounts: ${retInfo}
-- RRSP contribution room: ${rrspRoomData}
 - Country: ${country}
 
 When the user discusses or agrees to a goal, contribution amount, or financial plan, end your reply with a JSON block on its own line so the app can auto-update:
@@ -9583,8 +8160,8 @@ Only include this block when the user has explicitly agreed to a specific number
 
 Keep responses concise (3-5 sentences max), practical, and friendly. Use $ amounts when relevant. Never be preachy.
 CRITICAL RULES:
-- The balances and transactions shown are synced from the user's bank, but they may occasionally be delayed by a few hours, missing pending charges, or have a transaction miscategorised. If the user's question depends on exact current figures, you can say "this is based on your last sync" and suggest refreshing their connection in Settings — that is helpful, not a sign of unreliability.
-- If a user says their balance looks wrong, acknowledge it, suggest refreshing in Settings, and adjust your confidence in any advice that depends on that figure.
+- The balances and transactions shown are live from the user's bank via Plaid. NEVER suggest the data might be wrong, outdated, or inaccurate. NEVER recommend the user check their bank app instead — Flourish IS their financial view.
+- If a user says their balance looks wrong, acknowledge it and suggest they refresh their connection in Settings, but never imply Flourish's data is unreliable.
 - Never mention Plaid by name to users.`;
   };
 
@@ -9660,12 +8237,10 @@ CRITICAL RULES:
   const handleKey = e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); send(); }};
 
   const suggestions = [
-    "What can you help me with?",
-    "Where is my money going this month?",
-    "How does safe to spend work?",
+    "Where is my money going?",
+    "How can I save more this month?",
     "Am I on track for my goals?",
-    "What should I do with extra money?",
-    "How do I improve my financial score?",
+    "What's my biggest spending problem?",
   ];
 
   return(
@@ -9678,7 +8253,7 @@ CRITICAL RULES:
             <Icon id="sparkles" size={19} color={C.purpleBright} strokeWidth={1.5}/>
           </div>
           <div style={{flex:1}}>
-            <div style={{color:C.cream,fontWeight:800,fontSize:15}}>Flora</div>
+            <div style={{color:C.cream,fontWeight:800,fontSize:15}}>AI Coach</div>
             <div style={{color:isOnline?C.green:C.muted,fontSize:11,fontWeight:600,display:"flex",alignItems:"center",gap:4}}>
               <div style={{width:6,height:6,borderRadius:"50%",background:isOnline?C.green:C.muted}}/>
               {isOnline?"Live · Your real data":"Offline"}
@@ -9756,7 +8331,7 @@ CRITICAL RULES:
           value={input}
           onChange={e=>setInput(e.target.value)}
           onKeyDown={handleKey}
-          placeholder="Ask Flora anything…"
+          placeholder="Ask your coach anything…"
           rows={1}
           style={{
             flex:1,resize:"none",background:C.card,border:`1.5px solid ${C.border}`,
@@ -9847,7 +8422,7 @@ function CreditScreen({data,setScreen}){
 
   return(
     <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"20px 20px 80px",maxWidth:430,margin:"0 auto"}}>
-      <ScreenHeader title="Credit Score" subtitle="Estimated from your financial behaviour" onBack={setScreen?()=>setScreen("home"):null} cta="Ask Flora" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
+      <ScreenHeader title="Credit Score" subtitle="Estimated from your financial behaviour" onBack={setScreen?()=>setScreen("home"):null} cta="Ask Coach" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
       {/* Score gauge */}
       <div style={{background:C.card,borderRadius:20,padding:"24px 20px 20px",border:`1px solid ${C.border}`,marginBottom:16,textAlign:"center"}}>
         <div style={{color:C.muted,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Credit Score Estimate</div>
@@ -9949,7 +8524,7 @@ function PrivacyPolicy({onBack}){
       <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Bank connection data (Plaid):</strong> If you connect your bank, Plaid Inc. retrieves account balances and transaction history on our behalf. We receive read-only access to this data. We do not store your banking credentials. Plaid's privacy policy applies to that connection.</div>
 
       <div style={h2}>2. How We Use Your Information</div>
-      <div style={p}>We use your financial data solely to provide the Flourish Money service — including your Financial Health Score, spending insights, Flora coaching, budgeting, debt tracking, and goals. Specifically we use it to: power your personalized AI coach Flora (via Anthropic's Claude API), calculate your financial health metrics, surface relevant opportunities and warnings, and improve the App. We do not sell your personal information to third parties. We do not use your financial data for advertising profiling.</div>
+      <div style={p}>We use your financial data solely to provide the Flourish Money service — including your Financial Health Score, spending insights, AI coaching, budgeting, debt tracking, and goals. Specifically we use it to: power your personalized AI Coach (via Anthropic's Claude API), calculate your financial health metrics, surface relevant opportunities and warnings, and improve the App. We do not sell your personal information to third parties. We do not use your financial data for advertising profiling.</div>
 
       <div style={h2}>3. Legal Basis for Processing (Canada — PIPEDA)</div>
       <div style={p}>For users in Canada, we collect and process your personal information with your knowledge and consent in accordance with the <em>Personal Information Protection and Electronic Documents Act</em> (PIPEDA) and applicable provincial privacy laws. You may withdraw consent at any time by deleting your account. We retain data only as long as necessary to provide the service or as required by law.</div>
@@ -10013,7 +8588,7 @@ function TermsOfService({onBack}){
       <div style={p}>You must be at least 18 years old and a resident of Canada or the United States to use Flourish Money. By using the App, you represent and warrant that you meet these requirements.</div>
 
       <div style={h2}>3. Not Financial Advice</div>
-      <div style={{...p,background:`${C.gold}11`,borderRadius:12,padding:"12px 14px",border:`1px solid ${C.gold}33`}}>⚠️ <strong style={{color:C.goldBright}}>Important:</strong> Flourish Money is an educational financial tool, not a licensed financial advisor. Flora, insights, scores, and all content in the App are for informational purposes only and do not constitute financial, investment, tax, or legal advice. Always consult a qualified financial professional before making significant financial decisions.</div>
+      <div style={{...p,background:`${C.gold}11`,borderRadius:12,padding:"12px 14px",border:`1px solid ${C.gold}33`}}>⚠️ <strong style={{color:C.goldBright}}>Important:</strong> Flourish Money is an educational financial tool, not a licensed financial advisor. The AI Coach, insights, scores, and all content in the App are for informational purposes only and do not constitute financial, investment, tax, or legal advice. Always consult a qualified financial professional before making significant financial decisions.</div>
 
       <div style={h2}>4. Account Registration</div>
       <div style={p}>You may use Flourish Money with a guest account (data stored locally) or create a registered account with your email and password. You are responsible for maintaining the confidentiality of your account credentials and for all activity that occurs under your account. You must notify us immediately at hello@flourishmoney.app of any unauthorized use.</div>
@@ -10063,7 +8638,7 @@ function PremiumGate({feature,desc,onUpgrade}){
       <div style={{background:C.purpleDim,borderRadius:16,padding:"14px 20px",border:`1px solid ${C.purple}33`,maxWidth:280}}>
         <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish Plus includes:</div>
         <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
-          {["Flora with real data","Full credit coaching","Tax tips & benefits checker","Investment tracking","Household sharing","Debt simulator"].map((f,i)=>(
+          {["AI Coach with real data","Full credit coaching","Tax tips & benefits checker","Investment tracking","Household sharing","Debt simulator"].map((f,i)=>(
             <div key={i} style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"left",display:"flex",alignItems:"center",gap:7}}><Icon id="check" size={14} color={C.green} strokeWidth={2.0}/>{f}</div>
           ))}
         </div>
@@ -10081,14 +8656,14 @@ function Paywall({onClose,onUpgrade,country}){
   const [selected,setSelected]=useState("annual");
   const [promo,setPromo]=useState("");
   const [promoError,setPromoError]=useState("");
-  const PROMO_CODES=["FOUNDER","BETA100"];
+  const PROMO_CODES=["FLOURISH2026","AMANDA","FOUNDER","GROWSMART","BETA100"];
   const isCA=country==="CA";
   const plans={
     annual:{label:"Annual",price:isCA?"$79.99/yr":"$59.99/yr",monthly:isCA?"$6.67/mo":"$5.00/mo",save:"Save 33%",badge:"Best Value"},
     monthly:{label:"Monthly",price:isCA?"$9.99/mo":"$7.99/mo",monthly:null,save:null,badge:null},
   };
   const features=[
-    {icon:"sparkles",title:"Flora",desc:"Personalized advice from your real transaction data"},
+    {icon:"sparkles",title:"AI Coach",desc:"Personalized advice from your real transaction data"},
     {icon:"target",title:"Tax Tips & Benefits",desc:isCA?"RRSP, TFSA, CCB, GST credit, Trillium and more":"EITC, Child Tax Credit, 401k, HSA and more"},
     {icon:"shield",title:"Credit Coaching",desc:"Full factor breakdown + improvement plan"},
     {icon:"chartUp",title:"Investment Tracking",desc:isCA?"RRSP, TFSA, Questrade, Wealthsimple":"401k, IRA, Fidelity, Vanguard"},
@@ -10183,77 +8758,32 @@ function Paywall({onClose,onUpgrade,country}){
 // Shown once, immediately after onboarding completes.
 // One number. One sentence. One button.
 // Dismissed permanently after user taps through.
-function FirstVisitScreen({data, onDismiss, setScreen}) {
+function FirstVisitScreen({data, onDismiss}) {
   const [showBreakdown, setShowBreakdown] = useState(false);
 
   const { safeAmount } = SafeSpendEngine.calculate(data);
+  const { monthlyIncome, monthlyBills } = FinancialCalcEngine.cashFlow(data);
   const toMo = (amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="monthly"?a:a*2.167;};
   const incomeAmt = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
   const billsAmt = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
   const safeFloor = incomeAmt * 0.15;
+  const bufferAmt = Math.max(0, incomeAmt - billsAmt - safeFloor);
   const name = data.profile?.name || "there";
-
-  // ── State-based CTA logic ─────────────────────────────────────────────────
-  // Determine exactly where the user is and what one action they need next
-  const hasBankConnected = data.bankConnected;
-  const hasIncome        = incomeAmt > 0;
-  const hasEnoughData    = hasBankConnected && hasIncome;
-
-  const ctaState = !hasBankConnected ? "connect_bank"
-                 : !hasIncome        ? "add_income"
-                 :                     "see_number";
-
-  const ctaConfig = {
-    connect_bank: {
-      icon:    "🏦",
-      title:   "Connect your bank",
-      body:    "Flourish needs your live balance and transactions to calculate your safe-to-spend number accurately.",
-      cta:     "Connect your bank →",
-      color:   C.teal,
-      action:  () => { onDismiss(); if(setScreen) setScreen("settings:accounts"); },
-    },
-    add_income: {
-      icon:    "💰",
-      title:   "Add your income",
-      body:    "Your bank is connected. Enter how much you earn to unlock your personalised safe-to-spend number.",
-      cta:     "Add your income →",
-      color:   C.gold,
-      action:  () => { onDismiss(); if(setScreen) setScreen("settings:profile"); },
-    },
-    see_number: {
-      icon:    null,
-      title:   null,
-      body:    "After bills, savings buffer, and upcoming expenses",
-      cta:     "Go to my dashboard →",
-      color:   C.green,
-      action:  onDismiss,
-    },
-  };
-
-  const cta = ctaConfig[ctaState];
-
-  // Progress indicator — shows user how close they are to the full picture
-  const steps = [
-    { label: "Bank connected",  done: hasBankConnected },
-    { label: "Income entered",  done: hasIncome },
-    { label: "Ready",           done: hasEnoughData },
-  ];
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:9999,background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 28px",textAlign:"center"}}>
       {/* Ambient glow */}
-      <div style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:400,height:400,borderRadius:"50%",background:`radial-gradient(circle,${cta.color}14 0%,transparent 65%)`,pointerEvents:"none"}}/>
+      <div style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:400,height:400,borderRadius:"50%",background:`radial-gradient(circle,${C.green}14 0%,transparent 65%)`,pointerEvents:"none"}}/>
 
       <div style={{position:"relative",width:"100%",maxWidth:360}}>
-
         {/* Welcome */}
         <div style={{color:C.muted,fontSize:12,fontWeight:700,letterSpacing:2,textTransform:"uppercase",marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
           Welcome, {name}
         </div>
 
-        {/* The Number — only shown when data is ready */}
-        {ctaState === "see_number" ? (
-          <div style={{marginBottom:8}}>
+        {/* The Number */}
+        <div style={{marginBottom:8}}>
+          {incomeAmt > 0 ? (<>
             <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>You can safely spend</div>
             <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,lineHeight:1}}>
               <span style={{fontSize:22,color:C.greenBright+"88",verticalAlign:"top",marginTop:12,display:"inline-block"}}>$</span>
@@ -10262,51 +8792,29 @@ function FirstVisitScreen({data, onDismiss, setScreen}) {
               </span>
             </div>
             <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>today</div>
-          </div>
-        ) : (
-          <div style={{marginBottom:8}}>
-            <div style={{fontSize:64,marginBottom:12}}>{cta.icon}</div>
-            <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:cta.color,marginBottom:8,lineHeight:1.2}}>
-              {cta.title}
+          </>) : (
+            <div style={{marginTop:8}}>
+              <div style={{fontSize:64,marginBottom:12}}>🌱</div>
+              <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:C.greenBright,marginBottom:8}}>Flourish is ready</div>
             </div>
-          </div>
-        )}
-
-        {/* Body text */}
-        <div style={{color:C.mutedHi,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,maxWidth:280,margin:"0 auto 24px"}}>
-          {cta.body}
+          )}
         </div>
 
-        {/* Setup progress — shown when not fully set up */}
-        {ctaState !== "see_number" && (
-          <div style={{display:"flex",justifyContent:"center",gap:12,marginBottom:24,alignItems:"center"}}>
-            {steps.map((s,i) => (
-              <div key={i} style={{display:"flex",alignItems:"center",gap:4}}>
-                <div style={{
-                  width:20,height:20,borderRadius:"50%",
-                  background:s.done?C.green:"rgba(255,255,255,0.08)",
-                  border:`1.5px solid ${s.done?C.green:C.border}`,
-                  display:"flex",alignItems:"center",justifyContent:"center",
-                  fontSize:10,fontWeight:800,color:s.done?"#000":"transparent",
-                  transition:"all 0.3s",flexShrink:0
-                }}>{s.done?"✓":""}</div>
-                <span style={{color:s.done?C.cream:C.muted,fontSize:10,fontWeight:s.done?700:400,fontFamily:"'Plus Jakarta Sans',sans-serif",whiteSpace:"nowrap"}}>
-                  {s.label}
-                </span>
-                {i < steps.length-1 && <div style={{width:16,height:1,background:C.border,marginLeft:2}}/>}
-              </div>
-            ))}
-          </div>
-        )}
+        {/* One-line explanation */}
+        <div style={{color:C.mutedHi,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,marginBottom:32,maxWidth:280,margin:"0 auto 32px"}}>
+          {incomeAmt > 0
+            ? "After bills, savings buffer, and upcoming expenses"
+            : "Add your income in Settings to see your personalised safe-to-spend number."}
+        </div>
 
-        {/* Breakdown — progressive disclosure (only when data is ready) */}
-        {ctaState === "see_number" && showBreakdown && (
+        {/* Breakdown — progressive disclosure */}
+        {showBreakdown&&(
           <div style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:18,padding:"16px 20px",marginBottom:24,textAlign:"left"}}>
             <div style={{color:C.muted,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How this is calculated</div>
             {[
-              ["💰","Monthly income",`$${incomeAmt.toFixed(0)}`,C.greenBright],
+              ["💰","Monthly income", incomeAmt>0?`$${incomeAmt.toFixed(0)}`:"Not entered yet", incomeAmt>0?C.greenBright:C.muted],
               ["📅","Bills this period",billsAmt>0?`−$${billsAmt.toFixed(0)}`:"None tracked",billsAmt>0?C.gold:C.muted],
-              ["🛡️","Safety buffer (15%)",`−$${safeFloor.toFixed(0)}`,C.teal],
+              ["🛡️","Safety buffer (15%)",incomeAmt>0?`−$${safeFloor.toFixed(0)}`:"—",C.teal],
               ["✅","Available to spend",`$${Math.max(0,safeAmount).toFixed(0)}`,C.greenBright],
             ].map(([icon,label,val,col],i,arr)=>(
               <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:i<arr.length-1?`1px solid ${C.border}22`:"none"}}>
@@ -10314,19 +8822,20 @@ function FirstVisitScreen({data, onDismiss, setScreen}) {
                 <span style={{color:col,fontWeight:700,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{val}</span>
               </div>
             ))}
+            {!data.bankConnected&&<div style={{marginTop:12,color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>📌 Connect your bank to make this number live and precise.</div>}
           </div>
         )}
 
-        {/* Primary CTA — state-driven */}
-        {ctaState === "see_number" && !showBreakdown ? (
+        {/* Primary CTA */}
+        {!showBreakdown?(
           <button onClick={()=>setShowBreakdown(true)}
             style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
             See how this works →
           </button>
-        ) : (
-          <button onClick={cta.action}
-            style={{width:"100%",background:`linear-gradient(135deg,${cta.color},${cta.color}cc)`,border:"none",borderRadius:16,padding:"18px",color:ctaState==="see_number"?"#fff":"#000",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${cta.color}40`,marginBottom:12}}>
-            {cta.cta}
+        ):(
+          <button onClick={onDismiss}
+            style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
+            Go to my dashboard →
           </button>
         )}
 
@@ -10377,20 +8886,12 @@ function AuthScreen({ onAuth }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [showAuth, setShowAuth] = useState(false);
 
   const handleSignup = async () => {
     setLoading(true); setError("");
     const { error } = await supabase.auth.signUp({ email, password });
     if (error) { setError(error.message); setLoading(false); return; }
-    // Capture email for newsletter/beta list
-    try {
-      await supabase.from("email_signups").insert({
-        email: email.trim().toLowerCase(),
-        name: null,
-        country: null,
-        created_at: new Date().toISOString(),
-      });
-    } catch(e) { /* non-fatal — don't block signup */ }
     setSuccess("Check your email to confirm your account, then log in.");
     setMode("login"); setLoading(false);
   };
@@ -10440,7 +8941,7 @@ function AuthScreen({ onAuth }) {
   const inpStyle = {
     width: "100%", padding: "14px 16px", borderRadius: 14,
     background: "rgba(255,255,255,0.06)", border: "1.5px solid rgba(255,255,255,0.12)",
-    color: "#EDE9E2", fontSize: 15, fontFamily: "Plus Jakarta Sans,sans-serif",
+    color: "#EDE9E2", fontSize: 15, fontFamily: "'Plus Jakarta Sans',sans-serif",
     outline: "none", boxSizing: "border-box", marginBottom: 12
   };
 
@@ -10448,353 +8949,261 @@ function AuthScreen({ onAuth }) {
     width: "100%", padding: "15px", borderRadius: 14, border: "none",
     background: active ? "linear-gradient(135deg,#00D68F,#00B37A)" : "rgba(0,214,143,0.3)",
     color: "#021208", fontWeight: 800, fontSize: 15,
-    fontFamily: "Plus Jakarta Sans,sans-serif", cursor: active ? "pointer" : "not-allowed",
+    fontFamily: "'Plus Jakarta Sans',sans-serif", cursor: active ? "pointer" : "not-allowed",
     boxShadow: active ? "0 4px 20px rgba(0,214,143,0.4)" : "none"
   });
 
+  const goSignup = () => { setMode("signup"); setError(""); setSuccess(""); setShowAuth(true); };
+  const goLogin  = () => { setMode("login");  setError(""); setSuccess(""); setShowAuth(true); };
+
   return (
-    <div style={{ minHeight: "100dvh", background: "#050D09", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ width: "100%", maxWidth: 400, animation: "fadeUp .5s ease both" }}>
-        <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ marginBottom: 8, display: "flex", justifyContent: "center" }}><FlourishMark size={120}/></div>
-          <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "Plus Jakarta Sans,sans-serif", marginTop: 4 }}>Your money coach, Flora</div>
-        </div>
-        <div style={{ background: "#0D1F12", borderRadius: 24, padding: 28, border: "1px solid rgba(255,255,255,0.08)" }}>
-          {mode === "mfa_setup" && (
-            <div>
-              <div style={{ fontFamily: "Playfair Display,serif", fontSize: 20, fontWeight: 900, color: "#EDE9E2", marginBottom: 6 }}>Set up 2-factor auth</div>
-              <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "Plus Jakarta Sans,sans-serif", marginBottom: 20, lineHeight: 1.6 }}>Scan this QR code with Google Authenticator, then enter the 6-digit code.</div>
-              {qrUrl && <img src={qrUrl} alt="MFA QR" style={{ width: "100%", borderRadius: 12, marginBottom: 16, background: "#fff", padding: 8 }} />}
-              <input style={{ ...inpStyle, letterSpacing: 6, textAlign: "center", fontSize: 22 }} placeholder="000000" value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g,""))} maxLength={6} />
-              {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
-              <button style={btnStyle(!loading && mfaCode.length === 6)} onClick={handleMFASetup} disabled={loading || mfaCode.length !== 6}>{loading ? "Verifying..." : "Verify & Continue"}</button>
+    <div style={{ minHeight: "100dvh", background: "#050D09", fontFamily: "'Plus Jakarta Sans',sans-serif", overflowX: "hidden" }}>
+
+      {!showAuth ? (
+
+        /* ───────────────── LANDING PAGE ───────────────── */
+        <div style={{ display: "flex", flexDirection: "column", minHeight: "100dvh" }}>
+
+          {/* Nav */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 24px", position: "sticky", top: 0, background: "rgba(5,13,9,0.92)", backdropFilter: "blur(12px)", zIndex: 10, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <FlourishMark size={32} />
+              <span style={{ color: "#EDE9E2", fontWeight: 800, fontSize: 16, letterSpacing: -0.3 }}>Flourish</span>
             </div>
-          )}
-          {mode === "mfa_verify" && (
-            <div>
-              <div style={{ fontFamily: "Playfair Display,serif", fontSize: 20, fontWeight: 900, color: "#EDE9E2", marginBottom: 6 }}>Enter your code</div>
-              <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "Plus Jakarta Sans,sans-serif", marginBottom: 20 }}>Open Google Authenticator and enter the 6-digit code for Flourish Money.</div>
-              <input style={{ ...inpStyle, letterSpacing: 6, textAlign: "center", fontSize: 22 }} placeholder="000000" value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g,""))} maxLength={6} />
-              {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
-              <button style={btnStyle(!loading && mfaCode.length === 6)} onClick={handleMFAVerify} disabled={loading || mfaCode.length !== 6}>{loading ? "Verifying..." : "Log In"}</button>
+            <button onClick={goLogin} style={{ background: "rgba(0,214,143,0.1)", border: "1px solid rgba(0,214,143,0.3)", color: "#00D68F", borderRadius: 99, padding: "9px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+              Log In
+            </button>
+          </div>
+
+          {/* Hero */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "52px 28px 40px", textAlign: "center" }}>
+
+            <div style={{ display: "inline-block", background: "rgba(0,214,143,0.1)", border: "1px solid rgba(0,214,143,0.25)", borderRadius: 99, padding: "6px 16px", fontSize: 12, fontWeight: 700, color: "#00D68F", letterSpacing: 0.5, marginBottom: 28 }}>
+              🇨🇦 Built for Canadians
             </div>
-          )}
-          {(mode === "login" || mode === "signup") && (
-            <div>
-              <div style={{ display: "flex", background: "rgba(255,255,255,0.05)", borderRadius: 12, padding: 3, marginBottom: 24 }}>
-                {["login","signup"].map(m => (
-                  <button key={m} onClick={() => { setMode(m); setError(""); setSuccess(""); }}
-                    style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", cursor: "pointer", fontFamily: "Plus Jakarta Sans,sans-serif", fontWeight: 700, fontSize: 13,
-                      background: mode === m ? "#00D68F" : "transparent", color: mode === m ? "#021208" : "#6B7A6E" }}>
-                    {m === "login" ? "Log In" : "Sign Up"}
-                  </button>
+
+            <h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: "clamp(30px,9vw,52px)", fontWeight: 900, color: "#EDE9E2", lineHeight: 1.1, marginBottom: 18, letterSpacing: -0.5, maxWidth: 560 }}>
+              Finally know if you can afford it.{" "}
+              <span style={{ color: "#00D68F", fontStyle: "italic" }}>Before you tap your card.</span>
+            </h1>
+
+            <p style={{ color: "#6B7A6E", fontSize: 16, lineHeight: 1.75, maxWidth: 380, marginBottom: 40 }}>
+              Connect your Canadian bank accounts and get one clear number — no spreadsheets, no dread.
+            </p>
+
+            {/* Hero product card */}
+            <div style={{ width: "100%", maxWidth: 340, background: "#0D1F12", border: "1px solid rgba(0,214,143,0.2)", borderRadius: 24, padding: "28px 24px", marginBottom: 36, boxShadow: "0 0 80px rgba(0,214,143,0.07)" }}>
+              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Safe to spend today</div>
+              <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 56, fontWeight: 900, color: "#00D68F", lineHeight: 1, marginBottom: 6 }}>$247</div>
+              <div style={{ color: "rgba(237,233,226,0.35)", fontSize: 12, marginBottom: 24 }}>After bills · After buffer · From your real balance</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {[["🏦  RBC Chequing","$1,843.22"],["💳  TD Visa","−$612.00"],["📅  Upcoming bills","−$984.00"]].map(([label,amount]) => (
+                  <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "11px 14px", background: "rgba(255,255,255,0.03)", borderRadius: 12, fontSize: 13 }}>
+                    <span style={{ color: "#6B7A6E" }}>{label}</span>
+                    <span style={{ color: "#EDE9E2", fontWeight: 600 }}>{amount}</span>
+                  </div>
                 ))}
               </div>
-              {success && <div style={{ color: "#00D68F", fontSize: 13, marginBottom: 16, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10 }}>{success}</div>}
-              <input style={inpStyle} type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" name="email" />
-              <input style={{ ...inpStyle, marginBottom: 20 }} type="password" placeholder="Password (min 8 characters)" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" name="password" />
-              {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
-              <button style={btnStyle(!loading && email && password.length >= 8)} onClick={mode === "login" ? handleLogin : handleSignup} disabled={loading || !email || password.length < 8}>
-                {loading ? "..." : mode === "login" ? "Log In" : "Create Account"}
-              </button>
-              {mode === "signup" && <div style={{ color: "#6B7A6E", fontSize: 11, textAlign: "center", marginTop: 14, lineHeight: 1.5 }}>By signing up you agree to our Terms of Service and Privacy Policy.</div>}
-
             </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
-// ── SHARED CHORE BOARD (interactive — kids can check off chores) ─────────────
-function SharedChoreBoard({token}) {
-  const [chores, setChores] = useState([]);
-  const [familyName, setFamilyName] = useState("Family");
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState("chores");
-  // Wallet: {balance, transactions:[{id,desc,amount,date,type}]}
-  const [wallet, setWallet] = useState({balance:0, transactions:[]});
-  const [kids, setKids] = useState([]); // [{name, color}]
-  const [txnDesc, setTxnDesc] = useState("");
-  const [txnAmt, setTxnAmt] = useState("");
-  const [txnType, setTxnType] = useState("earn"); // earn | spend
-  const [savingGoal, setSavingGoal] = useState({name:"", target:0});
-  const [goalInput, setGoalInput] = useState({name:"", target:""});
+            {/* Primary CTA */}
+            <button onClick={goSignup} style={{ width: "100%", maxWidth: 340, padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", marginBottom: 12, boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+              Get My Number — Free
+            </button>
+            <div style={{ color: "#6B7A6E", fontSize: 12, marginBottom: 52 }}>No credit card · Connects RBC, TD, Scotiabank, CIBC + more</div>
 
-  useEffect(()=>{
-    (async()=>{
-      try {
-        const { data, error } = await supabase
-          .from("shared_chores").select("chores,family_name,wallet,kids,child_name").eq("token",token).single();
-        if(error||!data){setNotFound(true);setLoading(false);return;}
-        setChores(typeof data.chores==="string"?JSON.parse(data.chores):data.chores||[]);
-        // Use child_name if available (per-child link), otherwise family_name
-        setFamilyName(data.child_name||data.family_name||"Family");
-        if(data.wallet) setWallet(typeof data.wallet==="string"?JSON.parse(data.wallet):data.wallet);
-        if(data.kids) setKids(typeof data.kids==="string"?JSON.parse(data.kids):data.kids);
-      } catch(e){setNotFound(true);}
-      setLoading(false);
-    })();
-  },[token]);
-
-  const toggleChore = async (id) => {
-    const updated = chores.map(c=>c.id===id?{...c,done:!c.done}:c);
-    setChores(updated);
-    setSaving(true);
-    try {
-      await supabase.from("shared_chores").upsert({
-        token, chores:JSON.stringify(updated), family_name:familyName,
-        child_name:familyName, created_at:new Date().toISOString()
-      });
-    } catch(e){}
-    setSaving(false);
-  };
-
-  const saveWallet = async (newWallet) => {
-    setWallet(newWallet);
-    try {
-      await supabase.from("shared_chores").upsert({
-        token, chores:JSON.stringify(chores), family_name:familyName,
-        child_name:familyName, // preserve child_name on wallet updates
-        wallet:JSON.stringify(newWallet), kids:JSON.stringify(kids),
-        created_at: new Date().toISOString()
-      });
-    } catch(e){}
-  };
-
-  const [txnError, setTxnError] = useState("");
-
-  const addTransaction = async (type) => {
-    const amt = parseFloat(txnAmt);
-    if(!txnDesc.trim() || !amt || amt <= 0) return;
-    if(type==="spend" && amt > wallet.balance) {
-      setTxnError("Not enough money! Balance: $"+(wallet.balance||0).toFixed(2));
-      setTimeout(()=>setTxnError(""),3000); return;
-    }
-    setTxnError("");
-    const newTxn = {id:Date.now(), desc:txnDesc.trim(), amount:amt, type, date:new Date().toLocaleDateString("en-CA")};
-    const newBalance = type==="earn" ? wallet.balance + amt : wallet.balance - amt;
-    const newWallet = {balance:Math.max(0,newBalance), transactions:[newTxn,...(wallet.transactions||[])].slice(0,50)};
-    await saveWallet(newWallet);
-    setTxnDesc(""); setTxnAmt("");
-  };
-
-  const earned = chores.filter(c=>c.done).reduce((a,c)=>a+c.reward,0);
-  const total  = chores.reduce((a,c)=>a+c.reward,0);
-  const done   = chores.filter(c=>c.done).length;
-
-  if(loading) return (
-    <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={56}/></div>
-    </div>
-  );
-  if(notFound) return (
-    <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:32,textAlign:"center"}}>
-      <div style={{fontSize:48,marginBottom:16}}>🔍</div>
-      <div style={{color:"#EDE9E2",fontSize:20,fontWeight:800,fontFamily:"'Playfair Display',serif",marginBottom:8}}>Chore chart not found</div>
-      <div style={{color:"rgba(237,233,226,0.5)",fontSize:14}}>This link may have expired or been removed.</div>
-    </div>
-  );
-
-  const GRN = "#00CC85"; const GLD = "#E8B84B"; const BG = "#050D09";
-  const F = "'Plus Jakarta Sans',sans-serif"; const PF = "'Playfair Display',serif";
-
-  return (
-    <div style={{minHeight:"100dvh",background:BG,maxWidth:480,margin:"0 auto",display:"flex",flexDirection:"column"}}>
-
-      {/* Header */}
-      <div style={{padding:"28px 20px 16px",textAlign:"center",flexShrink:0}}>
-        <FlourishMark size={32}/>
-        <div style={{color:"rgba(237,233,226,0.5)",fontSize:10,marginTop:6,fontFamily:F,textTransform:"uppercase",letterSpacing:2}}>Flourish Kids ✨</div>
-        <div style={{color:"#EDE9E2",fontSize:22,fontWeight:900,fontFamily:PF,marginTop:2}}>{familyName}</div>
-        {saving&&<div style={{color:"rgba(0,204,133,0.6)",fontSize:10,marginTop:2,fontFamily:F}}>Saving…</div>}
-      </div>
-
-      {/* Tab bar */}
-      <div style={{display:"flex",gap:0,margin:"0 20px 16px",background:"rgba(255,255,255,0.04)",borderRadius:14,padding:3,flexShrink:0}}>
-        {[["chores","✅ Chores"],["wallet","💰 My Money"],["goals","🎯 Goals"]].map(([t,lbl])=>(
-          <button key={t} onClick={()=>setActiveTab(t)}
-            style={{flex:1,background:activeTab===t?"rgba(0,204,133,0.18)":"none",border:`1px solid ${activeTab===t?"rgba(0,204,133,0.35)":"transparent"}`,borderRadius:11,padding:"9px 4px",cursor:"pointer",color:activeTab===t?GRN:"rgba(237,233,226,0.45)",fontSize:11,fontWeight:700,fontFamily:F,transition:"all .2s"}}>
-            {lbl}
-          </button>
-        ))}
-      </div>
-
-      {/* Scrollable content */}
-      <div style={{flex:1,overflowY:"auto",padding:"0 20px 80px"}}>
-
-        {/* ── CHORES TAB ── */}
-        {activeTab==="chores"&&<>
-          <div style={{background:"rgba(255,255,255,0.04)",borderRadius:14,height:8,overflow:"hidden",marginBottom:6}}>
-            <div style={{width:`${total>0?(earned/total)*100:0}%`,height:"100%",background:`linear-gradient(90deg,${GRN},#6FE494)`,borderRadius:14,transition:"width 0.5s ease"}}/>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}>
-            <span style={{color:"rgba(237,233,226,0.5)",fontSize:12,fontFamily:F}}>{done} of {chores.length} done</span>
-            <span style={{color:GRN,fontWeight:800,fontSize:12,fontFamily:F}}>${earned.toFixed(2)} earned 🌟</span>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {chores.map((ch,i)=>(
-              <div key={i} onClick={()=>toggleChore(ch.id)}
-                style={{background:ch.done?"rgba(0,204,133,0.10)":"rgba(255,255,255,0.05)",borderRadius:16,padding:"16px 18px",border:`1.5px solid ${ch.done?"rgba(0,204,133,0.35)":"rgba(255,255,255,0.08)"}`,display:"flex",alignItems:"center",gap:14,cursor:"pointer",transition:"all .2s",userSelect:"none"}}>
-                <div style={{width:28,height:28,borderRadius:8,border:`2.5px solid ${ch.done?GRN:"rgba(255,255,255,0.25)"}`,background:ch.done?GRN:"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s"}}>
-                  {ch.done&&<span style={{color:BG,fontSize:15,fontWeight:900}}>✓</span>}
+            {/* Trust row */}
+            <div style={{ display: "flex", gap: 28, justifyContent: "center", flexWrap: "wrap", marginBottom: 64 }}>
+              {[["🔒","Bank-level security"],["🇨🇦","Canadian accounts"],["⚡","Live in 60 seconds"]].map(([icon,label]) => (
+                <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, color: "#6B7A6E", fontSize: 12, fontWeight: 600 }}>
+                  <span>{icon}</span><span>{label}</span>
                 </div>
-                <span style={{flex:1,color:ch.done?"rgba(237,233,226,0.4)":"#EDE9E2",fontSize:16,fontWeight:600,textDecoration:ch.done?"line-through":"none",fontFamily:F,transition:"all .2s"}}>{ch.task}</span>
-                <span style={{color:GLD,fontWeight:800,fontSize:14,fontFamily:F,flexShrink:0}}>+${(ch.reward||0).toFixed(2)}</span>
-              </div>
-            ))}
-          </div>
-          {done===chores.length&&chores.length>0&&(
-            <div style={{textAlign:"center",marginTop:24,padding:"20px",background:"rgba(0,204,133,0.08)",borderRadius:20,border:"1px solid rgba(0,204,133,0.25)"}}>
-              <div style={{fontSize:44,marginBottom:6}}>🎉</div>
-              <div style={{color:GRN,fontSize:20,fontWeight:900,fontFamily:PF}}>All done!</div>
-              <div style={{color:"rgba(237,233,226,0.6)",fontSize:13,marginTop:3,fontFamily:F}}>${earned.toFixed(2)} earned today</div>
-            </div>
-          )}
-        </>}
-
-        {/* ── WALLET TAB ── */}
-        {activeTab==="wallet"&&<>
-          {/* Balance */}
-          <div style={{background:"rgba(232,184,75,0.08)",borderRadius:20,padding:"24px 20px",border:"1px solid rgba(232,184,75,0.25)",textAlign:"center",marginBottom:16}}>
-            <div style={{color:"rgba(237,233,226,0.5)",fontSize:11,textTransform:"uppercase",letterSpacing:1.5,fontFamily:F,marginBottom:4}}>My Balance</div>
-            <div style={{color:GLD,fontSize:48,fontWeight:900,fontFamily:PF,letterSpacing:-1}}>${(wallet.balance||0).toFixed(2)}</div>
-          </div>
-
-          {/* Add / Spend */}
-          <div style={{background:"rgba(255,255,255,0.04)",borderRadius:16,padding:"16px",marginBottom:16}}>
-            <div style={{display:"flex",gap:6,marginBottom:12}}>
-              {[["earn","💰 Add money"],["spend","🛍️ Spend money"]].map(([t,lbl])=>(
-                <button key={t} onClick={()=>setTxnType(t)}
-                  style={{flex:1,background:txnType===t?(t==="earn"?"rgba(0,204,133,0.18)":"rgba(255,79,106,0.15)"):"none",border:`1px solid ${txnType===t?(t==="earn"?"rgba(0,204,133,0.4)":"rgba(255,79,106,0.3)"):"rgba(255,255,255,0.1)"}`,borderRadius:10,padding:"9px 4px",cursor:"pointer",color:txnType===t?(t==="earn"?GRN:"#FF4F6A"):"rgba(237,233,226,0.45)",fontSize:12,fontWeight:700,fontFamily:F,transition:"all .2s"}}>
-                  {lbl}
-                </button>
               ))}
             </div>
-            <input value={txnDesc} onChange={e=>setTxnDesc(e.target.value)}
-              placeholder={txnType==="earn"?"Where did you get it? (birthday, chores…)":"What did you buy?"}
-              style={{width:"100%",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"10px 12px",color:"#EDE9E2",fontSize:13,fontFamily:F,outline:"none",marginBottom:8,boxSizing:"border-box"}}/>
-            <div style={{display:"flex",gap:8}}>
-              <div style={{display:"flex",alignItems:"center",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"0 12px",flex:1}}>
-                <span style={{color:"rgba(237,233,226,0.4)",fontSize:16}}>$</span>
-                <input value={txnAmt} onChange={e=>setTxnAmt(e.target.value)} type="number" min="0" step="0.01" placeholder="0.00"
-                  style={{background:"none",border:"none",color:"#EDE9E2",fontSize:16,fontFamily:F,fontWeight:700,outline:"none",width:"100%",padding:"10px 8px"}}/>
-              </div>
-              <button onClick={()=>addTransaction(txnType)}
-                style={{background:txnType==="earn"?GRN:"#FF4F6A",border:"none",borderRadius:10,padding:"10px 20px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:F,flexShrink:0}}>
-                {txnType==="earn"?"+ Add":"- Spend"}
-              </button>
-            </div>
-            {txnError&&<div style={{color:"#FF4F6A",fontSize:12,fontFamily:F,fontWeight:600,marginTop:6}}>{txnError}</div>}
-          </div>
 
-          {/* Transaction history */}
-          {(wallet.transactions||[]).length > 0 && <>
-            <div style={{color:"rgba(237,233,226,0.4)",fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:F,marginBottom:8}}>Recent</div>
-            <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              {(wallet.transactions||[]).slice(0,15).map((t,i)=>(
-                <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(255,255,255,0.04)",borderRadius:12,padding:"12px 14px"}}>
-                  <div>
-                    <div style={{color:"#EDE9E2",fontSize:13,fontWeight:600,fontFamily:F}}>{t.desc}</div>
-                    <div style={{color:"rgba(237,233,226,0.4)",fontSize:10,marginTop:2,fontFamily:F}}>{t.date}</div>
+            {/* Pain section */}
+            <div style={{ width: "100%", maxWidth: 560, marginBottom: 64, textAlign: "left" }}>
+              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Sound familiar?</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {[
+                  "You close the banking app the second it opens because the number stresses you out.",
+                  "You tap your card and genuinely don't know if it'll go through.",
+                  "You have accounts at 3 different banks and no idea what the real total is.",
+                  "You've tried budgeting apps before and quit within a week."
+                ].map((text) => (
+                  <div key={text} style={{ display: "flex", gap: 14, alignItems: "flex-start", padding: "14px 18px", background: "#0D1F12", borderRadius: 14, border: "1px solid rgba(255,255,255,0.05)" }}>
+                    <span style={{ color: "#00D68F", fontSize: 16, flexShrink: 0, marginTop: 1 }}>✓</span>
+                    <span style={{ color: "#6B7A6E", fontSize: 14, lineHeight: 1.6 }}>{text}</span>
                   </div>
-                  <span style={{color:t.type==="earn"?GRN:"#FF4F6A",fontWeight:800,fontSize:14,fontFamily:F,flexShrink:0,marginLeft:12}}>
-                    {t.type==="earn"?"+":"-"}${(t.amount||0).toFixed(2)}
-                  </span>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </>}
-          {(wallet.transactions||[]).length===0&&(
-            <div style={{textAlign:"center",padding:"32px 20px",color:"rgba(237,233,226,0.3)",fontSize:13,fontFamily:F}}>
-              No transactions yet. Add your first one above!
-            </div>
-          )}
-        </>}
 
-        {/* ── GOALS TAB ── */}
-        {activeTab==="goals"&&<>
-          {/* Chores summary as savings */}
-          <div style={{background:"rgba(0,204,133,0.08)",borderRadius:16,padding:"16px 18px",border:"1px solid rgba(0,204,133,0.2)",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <div style={{color:"rgba(237,233,226,0.5)",fontSize:11,fontFamily:F,marginBottom:2}}>Total earned from chores</div>
-              <div style={{color:GRN,fontWeight:900,fontSize:22,fontFamily:PF}}>${earned.toFixed(2)}</div>
+            {/* How it works */}
+            <div style={{ width: "100%", maxWidth: 560, marginBottom: 64 }}>
+              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>How it works</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {[
+                  ["1","Connect your banks","Plaid securely links RBC, TD, Scotiabank, CIBC and more. Your login is never stored — Plaid is used by thousands of financial apps worldwide."],
+                  ["2","See your real number","One safe-to-spend number calculated from your real balance, upcoming bills, and a protective buffer."],
+                  ["3","Know before you tap","Check it every morning. Stop guessing. Stop dreading. Just know."]
+                ].map(([num,title,body]) => (
+                  <div key={num} style={{ display: "flex", gap: 16, padding: "18px", background: "#0D1F12", borderRadius: 16, border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 99, background: "rgba(0,214,143,0.15)", border: "1px solid rgba(0,214,143,0.3)", color: "#00D68F", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{num}</div>
+                    <div>
+                      <div style={{ color: "#EDE9E2", fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{title}</div>
+                      <div style={{ color: "#6B7A6E", fontSize: 13, lineHeight: 1.65 }}>{body}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div style={{fontSize:32}}>🌟</div>
-          </div>
 
-          {/* Savings goal */}
-          {savingGoal.target > 0 ? (
-            <div style={{background:"rgba(255,255,255,0.04)",borderRadius:16,padding:"16px 18px",marginBottom:16,border:"1px solid rgba(255,255,255,0.08)"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-                <div>
-                  <div style={{color:"rgba(237,233,226,0.5)",fontSize:10,textTransform:"uppercase",letterSpacing:1,fontFamily:F,marginBottom:2}}>Saving for</div>
-                  <div style={{color:"#EDE9E2",fontWeight:700,fontSize:16,fontFamily:PF}}>{savingGoal.name}</div>
-                </div>
-                <button onClick={()=>setSavingGoal({name:"",target:0})}
-                  style={{background:"none",border:"none",color:"rgba(237,233,226,0.3)",fontSize:16,cursor:"pointer",padding:4}}>✕</button>
+            {/* Features */}
+            <div style={{ width: "100%", maxWidth: 560, marginBottom: 64 }}>
+              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Everything in one place</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {[
+                  ["💰","Safe-to-spend number","One clear daily number that accounts for bills and buffer."],
+                  ["🤖","AI Financial Coach","Ask anything. Get honest, personalised Canadian financial advice."],
+                  ["🏦","All your accounts","RBC, TD, Scotiabank, CIBC, and more — all in one dashboard."],
+                  ["📈","RRSP & TFSA tracking","Know exactly where you stand against your contribution limits."],
+                  ["📅","Bill forecasting","See what's coming before it hits. Never be surprised."],
+                  ["🎯","Goal tracking","Set savings goals and watch them grow with 30-year projections."]
+                ].map(([icon,title,body]) => (
+                  <div key={title} style={{ padding: "16px", background: "#0D1F12", borderRadius: 16, border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ fontSize: 22, marginBottom: 8 }}>{icon}</div>
+                    <div style={{ color: "#EDE9E2", fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{title}</div>
+                    <div style={{ color: "#6B7A6E", fontSize: 11, lineHeight: 1.6 }}>{body}</div>
+                  </div>
+                ))}
               </div>
-              <div style={{background:"rgba(255,255,255,0.06)",borderRadius:99,height:10,overflow:"hidden",marginBottom:6}}>
-                <div style={{width:`${Math.min(100,((wallet.balance||0)/savingGoal.target)*100)}%`,height:"100%",background:`linear-gradient(90deg,${GLD},#F5D06A)`,borderRadius:99,transition:"width 0.5s ease"}}/>
-              </div>
-              <div style={{display:"flex",justifyContent:"space-between"}}>
-                <span style={{color:"rgba(237,233,226,0.5)",fontSize:12,fontFamily:F}}>${(wallet.balance||0).toFixed(2)} saved</span>
-                <span style={{color:GLD,fontWeight:700,fontSize:12,fontFamily:F}}>${savingGoal.target.toFixed(2)} goal</span>
-              </div>
-              {wallet.balance >= savingGoal.target&&(
-                <div style={{textAlign:"center",marginTop:12,color:GLD,fontWeight:700,fontSize:14,fontFamily:F}}>🎉 Goal reached! Time to celebrate!</div>
-              )}
             </div>
-          ) : (
-            <div style={{background:"rgba(255,255,255,0.04)",borderRadius:16,padding:"16px 18px",marginBottom:16,border:"1px solid rgba(255,255,255,0.08)"}}>
-              <div style={{color:"rgba(237,233,226,0.6)",fontSize:13,fontFamily:F,marginBottom:12}}>Set a savings goal — something to work towards!</div>
-              <input value={goalInput.name} onChange={e=>setGoalInput(v=>({...v,name:e.target.value}))}
-                placeholder="What are you saving for? (e.g. new game, toy)"
-                style={{width:"100%",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"10px 12px",color:"#EDE9E2",fontSize:13,fontFamily:F,outline:"none",marginBottom:8,boxSizing:"border-box"}}/>
-              <div style={{display:"flex",gap:8}}>
-                <div style={{display:"flex",alignItems:"center",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"0 12px",flex:1}}>
-                  <span style={{color:"rgba(237,233,226,0.4)",fontSize:16}}>$</span>
-                  <input value={goalInput.target} onChange={e=>setGoalInput(v=>({...v,target:e.target.value}))} type="number" placeholder="Amount"
-                    style={{background:"none",border:"none",color:"#EDE9E2",fontSize:15,fontFamily:F,fontWeight:700,outline:"none",width:"100%",padding:"10px 8px"}}/>
+
+            {/* Pricing */}
+            <div style={{ width: "100%", maxWidth: 400, marginBottom: 64 }}>
+              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Simple pricing</div>
+              <div style={{ background: "#0D1F12", border: "1px solid rgba(0,214,143,0.25)", borderRadius: 24, padding: "32px 28px", textAlign: "center" }}>
+                <div style={{ color: "#6B7A6E", fontSize: 13, marginBottom: 8 }}>After free trial</div>
+                <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 48, fontWeight: 900, color: "#EDE9E2", lineHeight: 1, marginBottom: 4 }}>$14.99</div>
+                <div style={{ color: "#6B7A6E", fontSize: 13, marginBottom: 28 }}>per month · Cancel anytime</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28, textAlign: "left" }}>
+                  {["All accounts connected","Safe-to-spend number daily","AI Financial Coach","RRSP & TFSA tracking","Bill forecasting","Goal tracking with projections"].map(f => (
+                    <div key={f} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                      <span style={{ color: "#00D68F", fontSize: 14 }}>✓</span>
+                      <span style={{ color: "#EDE9E2", fontSize: 13 }}>{f}</span>
+                    </div>
+                  ))}
                 </div>
-                <button onClick={()=>{
-                  if(!goalInput.name||!goalInput.target) return;
-                  setSavingGoal({name:goalInput.name,target:parseFloat(goalInput.target)});
-                  setGoalInput({name:"",target:""});
-                }} style={{background:GLD,border:"none",borderRadius:10,padding:"10px 16px",color:"#050D09",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:F,flexShrink:0}}>
-                  Set goal
+                <button onClick={goSignup} style={{ width: "100%", padding: "16px", borderRadius: 14, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 15, cursor: "pointer", boxShadow: "0 8px 32px rgba(0,214,143,0.3)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                  Start Free Trial
                 </button>
+                <div style={{ color: "#6B7A6E", fontSize: 11, marginTop: 12 }}>No credit card required</div>
               </div>
             </div>
-          )}
 
-          {/* 3 Jar Method visual */}
-          <div style={{background:"rgba(255,255,255,0.03)",borderRadius:16,padding:"16px 18px",border:"1px solid rgba(255,255,255,0.06)"}}>
-            <div style={{color:"rgba(237,233,226,0.6)",fontWeight:700,fontSize:13,fontFamily:F,marginBottom:10}}>🫙 The 3 Jar Rule</div>
-            <div style={{display:"flex",gap:8}}>
-              {[{emoji:"🎮",label:"Spend",color:"#D97A3A",pct:"50%"},{emoji:"🏦",label:"Save",color:"#4A8FCC",pct:"40%"},{emoji:"❤️",label:"Give",color:"#C45898",pct:"10%"}].map((j,i)=>(
-                <div key={i} style={{flex:1,background:j.color+"14",border:`1px solid ${j.color}33`,borderRadius:12,padding:"10px 6px",textAlign:"center"}}>
-                  <div style={{fontSize:20}}>{j.emoji}</div>
-                  <div style={{color:j.color,fontWeight:700,fontSize:12,marginTop:4,fontFamily:F}}>{j.label}</div>
-                  <div style={{color:"rgba(237,233,226,0.4)",fontSize:10,marginTop:2,fontFamily:F}}>{j.pct}</div>
-                </div>
+            {/* Bottom CTA */}
+            <div style={{ width: "100%", maxWidth: 400, textAlign: "center", marginBottom: 64 }}>
+              <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 26, fontWeight: 900, color: "#EDE9E2", lineHeight: 1.2, marginBottom: 16 }}>
+                Stop guessing.<br />
+                <span style={{ color: "#00D68F", fontStyle: "italic" }}>Start knowing.</span>
+              </div>
+              <button onClick={goSignup} style={{ width: "100%", padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 10 }}>
+                Get My Number — Free
+              </button>
+              <div style={{ color: "#6B7A6E", fontSize: 12 }}>No credit card · Takes 60 seconds</div>
+            </div>
+
+          </div>
+
+          {/* Footer */}
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", padding: "20px 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+            <span style={{ color: "#6B7A6E", fontSize: 11 }}>© 2026 GrowSmart Inc. · Flourish Money</span>
+            <div style={{ display: "flex", gap: 24 }}>
+              {[["Privacy Policy","/privacy"],["Terms of Service","/terms"]].map(([label,href]) => (
+                <a key={label} href={href} style={{ color: "#6B7A6E", fontSize: 11, textDecoration: "none" }}>{label}</a>
               ))}
             </div>
           </div>
-        </>}
 
-      </div>
+        </div>
 
-      <div style={{textAlign:"center",paddingBottom:16,color:"rgba(237,233,226,0.2)",fontSize:10,fontFamily:F,flexShrink:0}}>
-        Flourish Kids · flourishmoney.app
-      </div>
+      ) : (
+
+        /* ───────────────── AUTH FORM ───────────────── */
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: 24 }}>
+          <div style={{ width: "100%", maxWidth: 400, animation: "fadeUp .5s ease both" }}>
+
+            <div style={{ textAlign: "center", marginBottom: 28 }}>
+              <button onClick={() => setShowAuth(false)}
+                style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, margin: "0 auto 16px", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                ← Back
+              </button>
+              <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><FlourishMark size={80} /></div>
+              <div style={{ color: "#6B7A6E", fontSize: 13, marginTop: 4 }}>
+                {mode === "signup" ? "Create your free account" : "Welcome back"}
+              </div>
+            </div>
+
+            <div style={{ background: "#0D1F12", borderRadius: 24, padding: 28, border: "1px solid rgba(255,255,255,0.08)" }}>
+
+              {mode === "mfa_setup" && (
+                <div>
+                  <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 20, fontWeight: 900, color: "#EDE9E2", marginBottom: 6 }}>Set up 2-factor auth</div>
+                  <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 20, lineHeight: 1.6 }}>Scan this QR code with Google Authenticator, then enter the 6-digit code.</div>
+                  {qrUrl && <img src={qrUrl} alt="MFA QR" style={{ width: "100%", borderRadius: 12, marginBottom: 16, background: "#fff", padding: 8 }} />}
+                  <input style={{ ...inpStyle, letterSpacing: 6, textAlign: "center", fontSize: 22 }} placeholder="000000" value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g,""))} maxLength={6} />
+                  {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
+                  <button style={btnStyle(!loading && mfaCode.length === 6)} onClick={handleMFASetup} disabled={loading || mfaCode.length !== 6}>{loading ? "Verifying..." : "Verify & Continue"}</button>
+                </div>
+              )}
+
+              {mode === "mfa_verify" && (
+                <div>
+                  <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 20, fontWeight: 900, color: "#EDE9E2", marginBottom: 6 }}>Enter your code</div>
+                  <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 20 }}>Open Google Authenticator and enter the 6-digit code for Flourish Money.</div>
+                  <input style={{ ...inpStyle, letterSpacing: 6, textAlign: "center", fontSize: 22 }} placeholder="000000" value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g,""))} maxLength={6} />
+                  {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
+                  <button style={btnStyle(!loading && mfaCode.length === 6)} onClick={handleMFAVerify} disabled={loading || mfaCode.length !== 6}>{loading ? "Verifying..." : "Log In"}</button>
+                </div>
+              )}
+
+              {(mode === "login" || mode === "signup") && (
+                <div>
+                  <div style={{ display: "flex", background: "rgba(255,255,255,0.05)", borderRadius: 12, padding: 3, marginBottom: 24 }}>
+                    {["login","signup"].map(m => (
+                      <button key={m} onClick={() => { setMode(m); setError(""); setSuccess(""); }}
+                        style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 700, fontSize: 13, background: mode === m ? "#00D68F" : "transparent", color: mode === m ? "#021208" : "#6B7A6E" }}>
+                        {m === "login" ? "Log In" : "Sign Up"}
+                      </button>
+                    ))}
+                  </div>
+                  {success && <div style={{ color: "#00D68F", fontSize: 13, marginBottom: 16, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10 }}>{success}</div>}
+                  <input style={inpStyle} type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" name="email" />
+                  <input style={{ ...inpStyle, marginBottom: 20 }} type="password" placeholder="Password (min 8 characters)" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" name="password" />
+                  {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
+                  <button style={btnStyle(!loading && email && password.length >= 8)} onClick={mode === "login" ? handleLogin : handleSignup} disabled={loading || !email || password.length < 8}>
+                    {loading ? "..." : mode === "login" ? "Log In" : "Create Account"}
+                  </button>
+                  {mode === "signup" && (
+                    <div style={{ color: "#6B7A6E", fontSize: 11, textAlign: "center", marginTop: 14, lineHeight: 1.5 }}>
+                      By signing up you agree to our{" "}
+                      <a href="/terms" style={{ color: "#00D68F", textDecoration: "none" }}>Terms of Service</a>
+                      {" "}and{" "}
+                      <a href="/privacy" style={{ color: "#00D68F", textDecoration: "none" }}>Privacy Policy</a>.
+                    </div>
+                  )}
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+
+      )}
     </div>
   );
 }
-
 
 export default function FlourishApp(){
   // ── Hydrate from localStorage on first render ──────────────────
@@ -10813,14 +9222,7 @@ export default function FlourishApp(){
     const path = window.location.pathname.replace(/\/+$/,"").toLowerCase();
     if (path === "/privacy") return "privacy";
     if (path === "/terms")   return "terms";
-    if (path.startsWith("/chores/")) return "shared_chores";
     return "home";
-  })();
-  // Extract share token from URL if on shared chores page
-  const sharedChoreToken = (() => {
-    const path = window.location.pathname.replace(/\/+$/,"");
-    const match = path.match(/\/chores\/([a-z0-9]+)/i);
-    return match ? match[1] : null;
   })();
   const [screen,setScreen]=useState(initialScreen);
   const [user,setUser]=useState(null);
@@ -10903,48 +9305,6 @@ export default function FlourishApp(){
 
   useEffect(()=>{ saveState({onboarded,appData,household,isPremium,checkInBonus}); },
     [onboarded,appData,household,isPremium,checkInBonus]);
-
-  // ── Cross-device sync via Supabase ───────────────────────────
-  // On login: pull saved state from Supabase and hydrate localStorage
-  useEffect(()=>{
-    if(!user) return;
-    (async()=>{
-      try {
-        const { data, error } = await supabase
-          .from("user_data")
-          .select("state")
-          .eq("user_id", user.id)
-          .single();
-        if(error || !data?.state) return; // no saved state yet
-        const remote = typeof data.state === "string" ? JSON.parse(data.state) : data.state;
-        if(!remote || typeof remote !== "object") return;
-        // Only hydrate if remote is more complete than local
-        if(remote.onboarded) {
-          setOnboarded(true);
-          if(remote.appData) setAppData(remote.appData);
-          if(remote.household) setHousehold(remote.household);
-          if(remote.isPremium) setIsPremium(true);
-          if(remote.checkInBonus) setCheckInBonus(remote.checkInBonus);
-          saveState(remote); // write to localStorage for offline use
-        }
-      } catch(e) { /* sync failure is non-fatal */ }
-    })();
-  }, [user?.id]); // eslint-disable-line
-
-  // On state change: push to Supabase (debounced — only when settled)
-  useEffect(()=>{
-    if(!user || !onboarded) return;
-    const timer = setTimeout(async()=>{
-      try {
-        const state = JSON.stringify({onboarded,appData,household,isPremium,checkInBonus});
-        await supabase.from("user_data").upsert(
-          { user_id: user.id, state, updated_at: new Date().toISOString() },
-          { onConflict: "user_id" }
-        );
-      } catch(e) { /* sync failure is non-fatal — localStorage is the source of truth */ }
-    }, 3000); // 3s debounce — don't hammer on every keystroke
-    return () => clearTimeout(timer);
-  }, [onboarded, appData, household, isPremium, checkInBonus]); // eslint-disable-line
 
   // ── Fetch transactions on first dashboard load after bank connect ──
   // Onboarding only fetches accounts (fast). Transactions are fetched here silently.
@@ -11132,7 +9492,6 @@ export default function FlourishApp(){
             ...d,
             accounts,
             transactions,
-            bills: autoDetectPaidBills(d.bills||[], transactions),
             bankConnected: true,
             debts: [...(d.debts||[]).filter(d => d.name || d.balance), ...newCCDebts],
           };
@@ -11162,9 +9521,6 @@ export default function FlourishApp(){
   },[appData?.bankConnected, isPremium]);
 
   // ── Legal screens — always accessible, even before auth/onboarding ──
-  // Public shared chore board — no auth required
-  if(screen==="shared_chores"&&sharedChoreToken) return <SharedChoreBoard token={sharedChoreToken}/>;
-
   if(screen==="privacy")return <PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>;
   if(screen==="terms")return <TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>;  
 
@@ -11177,7 +9533,7 @@ export default function FlourishApp(){
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
   if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
-  if(!firstVisitDone&&appData)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit} setScreen={setScreen}/>;
+  if(!firstVisitDone&&appData)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}/>;
   if(showPaywall)return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;
 
   const unread = (() => {
@@ -11201,7 +9557,7 @@ export default function FlourishApp(){
     const payload = plaidAccessToken ? { access_token: plaidAccessToken } : { country };
     callPlaid("create_link_token", payload)
       .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
-      .catch(()=>{ setReconnectLoading(false); });
+      .catch(()=>{ setReconnectLoading(false); alert("Could not reconnect — please try again."); });
   };
 
   const handleAddNewBank = ()=>{
@@ -11211,7 +9567,7 @@ export default function FlourishApp(){
     const country = appData?.profile?.country || "CA";
     callPlaid("create_link_token", { country, user_id: user?.id })
       .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
-      .catch(()=>{ setReconnectLoading(false); });
+      .catch(()=>{ setReconnectLoading(false); alert("Could not start bank connection — please try again."); });
   };
 
 
@@ -11238,27 +9594,11 @@ export default function FlourishApp(){
 
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    const handleFeedback = async (msg) => {
-      try {
-        await supabase.from("feedback").insert({
-          user_id: user?.id||null,
-          email: user?.email||null,
-          message: msg,
-          created_at: new Date().toISOString(),
-          app_version: "v1-beta",
-        });
-      } catch(e) {
-        // Fallback — open email client
-        window.open(`mailto:hello@flourishmoney.app?subject=Flourish Feedback&body=${encodeURIComponent(msg)}`);
-      }
-    };
-    // Deep-link support: "settings:accounts" or "settings:profile" opens Settings to a specific section
-    const settingsDeepLink = screen.startsWith("settings:") ? screen.split(":")[1] : null;
-    if(showSettings||screen.startsWith("settings"))return <Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setScreen("home");}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} onSendFeedback={handleFeedback} deepLinkSection={settingsDeepLink}/>;
+    if(showSettings)return <Settings data={appData} setAppData={setAppData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}}/>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
-    if(screen==="coach"){const freeCoachAllowed=!isPremium&&coachMsgCount<5&&!trialExpired;const showCoach=isPremium||freeCoachAllowed;if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen}/>; if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="Flora" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>; return <PremiumGate feature="Flora" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;}
+    if(screen==="coach"){const freeCoachAllowed=!isPremium&&coachMsgCount<5&&!trialExpired;const showCoach=isPremium||freeCoachAllowed;if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen}/>; if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="AI Coach" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>; return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;}
     if(screen==="family")return <Family data={dataWithHousehold} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
     if(screen==="goals")return <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen}/>;
     if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
