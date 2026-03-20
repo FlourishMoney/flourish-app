@@ -7246,16 +7246,9 @@ function Family({data,household,setHousehold,setScreen}){
               <div style={{display:"flex",alignItems:"center",gap:10}}>
                 <select value={activeKid.theme||"pink"} onChange={e=>updateKid(activeKid.id,{theme:e.target.value})}
                   style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.cream,fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:"pointer",outline:"none",appearance:"none",WebkitAppearance:"none"}}>
-                  <optgroup label="── Dark ──">
-                    {["pink","purple","green","blue","orange","night"].filter(k=>KID_THEMES[k]).map(k=>(
-                      <option key={k} value={k}>{KID_THEMES[k].emoji} {KID_THEMES[k].name}</option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="── Light ──">
-                    {["sunshine","candy","sky","meadow","lavender","peach"].filter(k=>KID_THEMES[k]).map(k=>(
-                      <option key={k} value={k}>{KID_THEMES[k].emoji} {KID_THEMES[k].name}</option>
-                    ))}
-                  </optgroup>
+                  {Object.entries(KID_THEMES).map(([key,t])=>(
+                    <option key={key} value={key}>{t.emoji} {t.name}</option>
+                  ))}
                 </select>
                 <div style={{width:28,height:28,borderRadius:99,background:KID_THEMES[activeKid.theme||"pink"]?.primary,flexShrink:0,boxShadow:`0 0 8px ${KID_THEMES[activeKid.theme||"pink"]?.primary}88`}}/>
               </div>
