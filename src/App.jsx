@@ -6811,7 +6811,7 @@ function Family({data,household,setHousehold,setScreen}){
   ];
 
   const doneCount=Object.values(checks).filter(Boolean).length;
-  const earned=chores.filter(c=>c.done).reduce((a,c)=>a+c.reward,0);
+  const earned=(activeKid?.chores||[]).filter(c=>c.done).reduce((a,c)=>a+(c.reward||0),0);
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <ScreenHeader title="Family" subtitle="Money is a team sport" onBack={setScreen?()=>setScreen("home"):null}/>
