@@ -6693,7 +6693,9 @@ function Family({data,household,setHousehold,setScreen}){
   const [kids,setKids]=useState(()=>{
     try{return JSON.parse(localStorage.getItem("flourish_kids")||"null")||[];}catch{return[];}
   });
-  const [activeKidId,setActiveKidId]=useState(null);
+  const [activeKidId,setActiveKidId]=useState(()=>{
+    try{const k=JSON.parse(localStorage.getItem("flourish_kids")||"null")||[];return k[0]?.id||null;}catch{return null;}
+  });
   const [showAddKid,setShowAddKid]=useState(false);
   const [newKidName,setNewKidName]=useState("");
   const [newKidAge,setNewKidAge]=useState("8-12");
@@ -6717,27 +6719,26 @@ function Family({data,household,setHousehold,setScreen}){
     setActiveKidId(kid.id);
     setNewKidName("");setNewKidAge("8-12");setNewKidEmoji("🧒");setShowAddKid(false);
   };
-  const removeKid=(id)=>saveKids(kids.filter(k=>k.id!==id));
+  const removeKid=(id)=>saveKids(kids.filter(k=>String(k.id)!==String(id)));
   const addChoreToKid=(kidId)=>{
     if(!newChoreTask.trim())return;
-    const updated=kids.map(k=>k.id===kidId?{...k,chores:[...k.chores,{id:Date.now(),task:newChoreTask.trim(),reward:parseFloat(newChoreReward)||0.50,done:false}]}:k);
+    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,chores:[...k.chores,{id:Date.now(),task:newChoreTask.trim(),reward:parseFloat(newChoreReward)||0.50,done:false}]}:k);
     saveKids(updated);
     setNewChoreTask("");setNewChoreReward("");
-    // sync to localStorage for kids page
-    const kid=updated.find(k=>k.id===kidId);
+    const kid=updated.find(k=>String(k.id)===String(kidId));
     if(kid)try{localStorage.setItem("flourish_kid_chores_"+kid.code,JSON.stringify(kid.chores));}catch{}
   };
   const toggleKidChore=(kidId,choreId)=>{
-    const updated=kids.map(k=>k.id===kidId?{...k,chores:k.chores.map(c=>c.id===choreId?{...c,done:!c.done}:c)}:k);
+    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,chores:k.chores.map(c=>c.id===choreId?{...c,done:!c.done}:c)}:k);
     saveKids(updated);
-    const kid=updated.find(k=>k.id===kidId);
+    const kid=updated.find(k=>String(k.id)===String(kidId));
     if(kid)try{localStorage.setItem("flourish_kid_chores_"+kid.code,JSON.stringify(kid.chores));}catch{}
   };
   const removeKidChore=(kidId,choreId)=>{
-    const updated=kids.map(k=>k.id===kidId?{...k,chores:k.chores.filter(c=>c.id!==choreId)}:k);
+    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,chores:k.chores.filter(c=>c.id!==choreId)}:k);
     saveKids(updated);
   };
-  const activeKid=kids.find(k=>k.id===activeKidId)||null;
+  const activeKid=kids.find(k=>String(k.id)===String(activeKidId))||null;
 
   // Derived — after all hooks
   const isCouple=data.profile?.status!=="single";
@@ -7061,14 +7062,24 @@ function Family({data,household,setHousehold,setScreen}){
 
       {/* Kids tab row */}
       {kids.length>0&&(
-        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-          {kids.map(k=>(
-            <button key={k.id} onClick={()=>setActiveKidId(activeKidId===k.id?null:k.id)}
-              style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",borderRadius:99,border:`1.5px solid ${activeKidId===k.id?C.pink:C.border}`,background:activeKidId===k.id?C.pink+"22":C.cardAlt,color:activeKidId===k.id?C.pinkBright:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-              <span>{k.emoji}</span><span>{k.name}</span>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            {kids.map(k=>(
+              <button key={k.id} onClick={()=>setActiveKidId(activeKidId===k.id?null:k.id)}
+                style={{display:"flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:99,border:`2px solid ${activeKidId===k.id?C.pink:C.border}`,background:activeKidId===k.id?`linear-gradient(135deg,${C.pink}33,${C.pink}18)`:C.cardAlt,color:activeKidId===k.id?C.pinkBright:C.cream,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",transition:"all .2s",minHeight:44}}>
+                <span style={{fontSize:20}}>{k.emoji}</span>
+                <span>{k.name}</span>
+                <span style={{color:activeKidId===k.id?C.pink:C.muted,fontSize:11,marginLeft:2}}>{activeKidId===k.id?"▲":"▼"}</span>
+              </button>
+            ))}
+            <button onClick={()=>setShowAddKid(true)}
+              style={{display:"flex",alignItems:"center",gap:6,padding:"10px 18px",borderRadius:99,border:`2px solid ${C.pink}66`,background:C.pink+"14",color:C.pinkBright,fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>
+              + Add Child
             </button>
-          ))}
-          <button onClick={()=>setShowAddKid(true)} style={{padding:"8px 14px",borderRadius:99,border:`1.5px dashed ${C.border}`,background:"none",color:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>+ Add</button>
+          </div>
+          {activeKidId&&<div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontStyle:"italic",paddingLeft:4}}>
+            Tap {activeKid?.name}'s name to collapse · Share link is below the chore chart
+          </div>}
         </div>
       )}
 
@@ -7124,19 +7135,26 @@ function Family({data,household,setHousehold,setScreen}){
             </div>
 
             {/* Share link */}
-            <div style={{color:C.pinkBright,fontWeight:700,fontSize:13,marginBottom:8}}>📱 {activeKid.name}'s Flourish Link</div>
-            <div style={{background:C.bg,borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12,color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",wordBreak:"break-all"}}>{kidUrl}</div>
-            <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>{navigator.clipboard.writeText(kidUrl).then(()=>{setCopiedKidId(activeKid.id);setTimeout(()=>setCopiedKidId(null),2500);});}}
-                style={{flex:1,background:copiedKidId===activeKid.id?C.green:C.pink,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all .2s"}}>
-                {copiedKidId===activeKid.id?"✓ Copied!":"📋 Copy Link"}
-              </button>
-              <button onClick={()=>{if(navigator.share)navigator.share({title:`${activeKid.name}'s Flourish`,text:`Open ${activeKid.name}'s chore list!`,url:kidUrl}).catch(()=>{});}}
-                style={{flex:1,background:C.cardAlt,border:`1px solid ${C.pink}44`,borderRadius:10,padding:"11px",color:C.pink,fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-                🔗 Share
-              </button>
+            <div style={{background:`linear-gradient(135deg,${C.pink}22,${C.pink}11)`,border:`1.5px solid ${C.pink}55`,borderRadius:14,padding:"14px 16px",marginBottom:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                <span style={{fontSize:20}}>📱</span>
+                <div>
+                  <div style={{color:C.pinkBright,fontWeight:800,fontSize:14}}>{activeKid.name}'s Flourish Link</div>
+                  <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Opens a kids-only view — no access to your financial data</div>
+                </div>
+              </div>
+              <div style={{background:C.bg,borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12,color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",wordBreak:"break-all"}}>{kidUrl}</div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>{navigator.clipboard.writeText(kidUrl).then(()=>{setCopiedKidId(activeKid.id);setTimeout(()=>setCopiedKidId(null),2500);});}}
+                  style={{flex:1,background:copiedKidId===activeKid.id?C.green:`linear-gradient(135deg,${C.pink},#ff8cb8)`,border:"none",borderRadius:10,padding:"13px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",transition:"all .2s",minHeight:44}}>
+                  {copiedKidId===activeKid.id?"✓ Copied!":"📋 Copy Link"}
+                </button>
+                <button onClick={()=>{if(navigator.share)navigator.share({title:`${activeKid.name}'s Flourish`,text:`Open ${activeKid.name}'s chore list!`,url:kidUrl}).catch(()=>{});}}
+                  style={{flex:1,background:C.cardAlt,border:`1.5px solid ${C.pink}55`,borderRadius:10,padding:"13px",color:C.pinkBright,fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>
+                  🔗 Share
+                </button>
+              </div>
             </div>
-            <div style={{color:C.muted,fontSize:11,marginTop:8,fontFamily:"'Plus Jakarta Sans',sans-serif",fontStyle:"italic"}}>Opens a kids-only view — no access to your financial data.</div>
           </Card>
 
           {/* Chore list */}
