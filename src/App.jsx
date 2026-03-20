@@ -6722,9 +6722,13 @@ function Family({data,household,setHousehold,setScreen}){
     green:{name:"Green",emoji:"🌿",primary:"#22C55E",bg:"#22c55e22",border:"#22c55e44"},
     blue:{name:"Blue",emoji:"🌊",primary:"#38BDF8",bg:"#38bdf822",border:"#38bdf844"},
     orange:{name:"Orange",emoji:"🔥",primary:"#FB923C",bg:"#fb923c22",border:"#fb923c44"},
-    yellow:{name:"Yellow",emoji:"⭐",primary:"#EAB308",bg:"#eab30822",border:"#eab30844"},
-    teal:{name:"Teal",emoji:"🦋",primary:"#2DD4BF",bg:"#2dd4bf22",border:"#2dd4bf44"},
     night:{name:"Night",emoji:"🌙",primary:"#818CF8",bg:"#818cf822",border:"#818cf844"},
+    sunshine:{name:"Sunshine",emoji:"☀️",primary:"#D97706",bg:"#d9770620",border:"#d9770640"},
+    candy:{name:"Candy",emoji:"🍬",primary:"#DB2777",bg:"#db277720",border:"#db277740"},
+    sky:{name:"Sky",emoji:"🌤️",primary:"#0284C7",bg:"#0284c720",border:"#0284c740"},
+    meadow:{name:"Meadow",emoji:"🌼",primary:"#15803D",bg:"#15803d20",border:"#15803d40"},
+    lavender:{name:"Lavender",emoji:"💐",primary:"#7C3AED",bg:"#7c3aed20",border:"#7c3aed40"},
+    peach:{name:"Peach",emoji:"🍑",primary:"#C2410C",bg:"#c2410c20",border:"#c2410c40"},
   };
 
   const saveKids=(updated)=>{
@@ -9263,86 +9267,20 @@ function KidsMiniSite(){
   })();
 
   const THEMES={
-    // 🌸 Pink — warm bubblegum on deep rose-black
-    pink:{
-      name:"Pink",emoji:"🌸",
-      primary:"#FF6B9D",primaryDim:"#FF6B9D22",primaryBorder:"rgba(255,107,157,0.3)",
-      bg:"#0D0508",card:"#1A0A10",cardAlt:"#220D14",
-      text:"#FFE8F0",textMuted:"#C4848A",
-      header:"linear-gradient(135deg,#220D14,#0D0508)",
-      chore:"rgba(255,107,157,0.08)",choreBorder:"rgba(255,107,157,0.15)",
-      jar1:"#FF6B9D",jar2:"#FF94B8",jar3:"#FFB3C9",
-    },
-    // 💜 Purple — cosmic violet on deep indigo-black
-    purple:{
-      name:"Purple",emoji:"💜",
-      primary:"#A855F7",primaryDim:"#A855F722",primaryBorder:"rgba(168,85,247,0.3)",
-      bg:"#07040D",card:"#110A1A",cardAlt:"#180F22",
-      text:"#EDE0FF",textMuted:"#9B7AB5",
-      header:"linear-gradient(135deg,#180F22,#07040D)",
-      chore:"rgba(168,85,247,0.08)",choreBorder:"rgba(168,85,247,0.15)",
-      jar1:"#A855F7",jar2:"#C084FC",jar3:"#D8A4FF",
-    },
-    // 🌿 Green — forest on deep emerald-black
-    green:{
-      name:"Green",emoji:"🌿",
-      primary:"#22C55E",primaryDim:"#22C55E22",primaryBorder:"rgba(34,197,94,0.3)",
-      bg:"#030D06",card:"#081A0E",cardAlt:"#0D2214",
-      text:"#DCFCE7",textMuted:"#6DAF7E",
-      header:"linear-gradient(135deg,#0D2214,#030D06)",
-      chore:"rgba(34,197,94,0.08)",choreBorder:"rgba(34,197,94,0.15)",
-      jar1:"#22C55E",jar2:"#4ADE80",jar3:"#86EFAC",
-    },
-    // 🌊 Blue — ocean on deep navy-black
-    blue:{
-      name:"Blue",emoji:"🌊",
-      primary:"#38BDF8",primaryDim:"#38BDF822",primaryBorder:"rgba(56,189,248,0.3)",
-      bg:"#030810",card:"#071018",cardAlt:"#0A1620",
-      text:"#E0F4FF",textMuted:"#6B9EB5",
-      header:"linear-gradient(135deg,#0A1620,#030810)",
-      chore:"rgba(56,189,248,0.08)",choreBorder:"rgba(56,189,248,0.15)",
-      jar1:"#38BDF8",jar2:"#7DD3FC",jar3:"#BAE6FD",
-    },
-    // 🔥 Orange — sunset on deep amber-black
-    orange:{
-      name:"Orange",emoji:"🔥",
-      primary:"#FB923C",primaryDim:"#FB923C22",primaryBorder:"rgba(251,146,60,0.3)",
-      bg:"#0D0600",card:"#1A0E00",cardAlt:"#221400",
-      text:"#FFF0E0",textMuted:"#C4956A",
-      header:"linear-gradient(135deg,#221400,#0D0600)",
-      chore:"rgba(251,146,60,0.08)",choreBorder:"rgba(251,146,60,0.15)",
-      jar1:"#FB923C",jar2:"#FDBA74",jar3:"#FED7AA",
-    },
-    // ⭐ Yellow — sunshine on deep golden-black
-    yellow:{
-      name:"Yellow",emoji:"⭐",
-      primary:"#EAB308",primaryDim:"#EAB30822",primaryBorder:"rgba(234,179,8,0.3)",
-      bg:"#0A0800",card:"#181200",cardAlt:"#201800",
-      text:"#FFFCE0",textMuted:"#B5A34A",
-      header:"linear-gradient(135deg,#201800,#0A0800)",
-      chore:"rgba(234,179,8,0.08)",choreBorder:"rgba(234,179,8,0.15)",
-      jar1:"#EAB308",jar2:"#FACC15",jar3:"#FDE047",
-    },
-    // 🦋 Teal — deep sea on dark teal-black
-    teal:{
-      name:"Teal",emoji:"🦋",
-      primary:"#2DD4BF",primaryDim:"#2DD4BF22",primaryBorder:"rgba(45,212,191,0.3)",
-      bg:"#030D0C",card:"#071A18",cardAlt:"#0A2220",
-      text:"#CCFBF1",textMuted:"#5FA89E",
-      header:"linear-gradient(135deg,#0A2220,#030D0C)",
-      chore:"rgba(45,212,191,0.08)",choreBorder:"rgba(45,212,191,0.15)",
-      jar1:"#2DD4BF",jar2:"#5EEAD4",jar3:"#99F6E4",
-    },
-    // 🌙 Night — sleek dark on pure black
-    night:{
-      name:"Night",emoji:"🌙",
-      primary:"#818CF8",primaryDim:"#818CF822",primaryBorder:"rgba(129,140,248,0.3)",
-      bg:"#020204",card:"#0C0C14",cardAlt:"#12121C",
-      text:"#E8E8FF",textMuted:"#7070A0",
-      header:"linear-gradient(135deg,#12121C,#020204)",
-      chore:"rgba(129,140,248,0.08)",choreBorder:"rgba(129,140,248,0.15)",
-      jar1:"#818CF8",jar2:"#A5B4FC",jar3:"#C7D2FE",
-    },
+    // ── DARK ──
+    pink:{name:"Pink",emoji:"🌸",dark:true,primary:"#FF6B9D",primaryDim:"#FF6B9D22",primaryBorder:"rgba(255,107,157,0.3)",bg:"#0D0508",card:"#1A0A10",cardAlt:"#220D14",text:"#FFE8F0",textMuted:"#C4848A",header:"linear-gradient(135deg,#220D14,#0D0508)",chore:"rgba(255,107,157,0.08)",choreBorder:"rgba(255,107,157,0.15)",jar1:"#FF6B9D",jar2:"#FF94B8",jar3:"#FFB3C9"},
+    purple:{name:"Purple",emoji:"💜",dark:true,primary:"#A855F7",primaryDim:"#A855F722",primaryBorder:"rgba(168,85,247,0.3)",bg:"#07040D",card:"#110A1A",cardAlt:"#180F22",text:"#EDE0FF",textMuted:"#9B7AB5",header:"linear-gradient(135deg,#180F22,#07040D)",chore:"rgba(168,85,247,0.08)",choreBorder:"rgba(168,85,247,0.15)",jar1:"#A855F7",jar2:"#C084FC",jar3:"#D8A4FF"},
+    green:{name:"Green",emoji:"🌿",dark:true,primary:"#22C55E",primaryDim:"#22C55E22",primaryBorder:"rgba(34,197,94,0.3)",bg:"#030D06",card:"#081A0E",cardAlt:"#0D2214",text:"#DCFCE7",textMuted:"#6DAF7E",header:"linear-gradient(135deg,#0D2214,#030D06)",chore:"rgba(34,197,94,0.08)",choreBorder:"rgba(34,197,94,0.15)",jar1:"#22C55E",jar2:"#4ADE80",jar3:"#86EFAC"},
+    blue:{name:"Blue",emoji:"🌊",dark:true,primary:"#38BDF8",primaryDim:"#38BDF822",primaryBorder:"rgba(56,189,248,0.3)",bg:"#030810",card:"#071018",cardAlt:"#0A1620",text:"#E0F4FF",textMuted:"#6B9EB5",header:"linear-gradient(135deg,#0A1620,#030810)",chore:"rgba(56,189,248,0.08)",choreBorder:"rgba(56,189,248,0.15)",jar1:"#38BDF8",jar2:"#7DD3FC",jar3:"#BAE6FD"},
+    orange:{name:"Orange",emoji:"🔥",dark:true,primary:"#FB923C",primaryDim:"#FB923C22",primaryBorder:"rgba(251,146,60,0.3)",bg:"#0D0600",card:"#1A0E00",cardAlt:"#221400",text:"#FFF0E0",textMuted:"#C4956A",header:"linear-gradient(135deg,#221400,#0D0600)",chore:"rgba(251,146,60,0.08)",choreBorder:"rgba(251,146,60,0.15)",jar1:"#FB923C",jar2:"#FDBA74",jar3:"#FED7AA"},
+    night:{name:"Night",emoji:"🌙",dark:true,primary:"#818CF8",primaryDim:"#818CF822",primaryBorder:"rgba(129,140,248,0.3)",bg:"#020204",card:"#0C0C14",cardAlt:"#12121C",text:"#E8E8FF",textMuted:"#7070A0",header:"linear-gradient(135deg,#12121C,#020204)",chore:"rgba(129,140,248,0.08)",choreBorder:"rgba(129,140,248,0.15)",jar1:"#818CF8",jar2:"#A5B4FC",jar3:"#C7D2FE"},
+    // ── LIGHT ──
+    sunshine:{name:"Sunshine",emoji:"☀️",dark:false,primary:"#D97706",primaryDim:"#D9770618",primaryBorder:"rgba(217,119,6,0.3)",bg:"#FFFBEB",card:"#FEF3C7",cardAlt:"#FDE68A55",text:"#78350F",textMuted:"#92400E",header:"linear-gradient(135deg,#FDE68A,#FEF3C7)",chore:"rgba(217,119,6,0.08)",choreBorder:"rgba(217,119,6,0.25)",jar1:"#F59E0B",jar2:"#FBBF24",jar3:"#FCD34D"},
+    candy:{name:"Candy",emoji:"🍬",dark:false,primary:"#DB2777",primaryDim:"#DB277718",primaryBorder:"rgba(219,39,119,0.3)",bg:"#FFF0F6",card:"#FCE7F3",cardAlt:"#FBCFE855",text:"#831843",textMuted:"#9D174D",header:"linear-gradient(135deg,#FBCFE8,#FCE7F3)",chore:"rgba(219,39,119,0.08)",choreBorder:"rgba(219,39,119,0.25)",jar1:"#DB2777",jar2:"#EC4899",jar3:"#F472B6"},
+    sky:{name:"Sky",emoji:"🌤️",dark:false,primary:"#0284C7",primaryDim:"#0284C718",primaryBorder:"rgba(2,132,199,0.3)",bg:"#F0F9FF",card:"#E0F2FE",cardAlt:"#BAE6FD55",text:"#0C4A6E",textMuted:"#075985",header:"linear-gradient(135deg,#BAE6FD,#E0F2FE)",chore:"rgba(2,132,199,0.08)",choreBorder:"rgba(2,132,199,0.25)",jar1:"#0284C7",jar2:"#0EA5E9",jar3:"#38BDF8"},
+    meadow:{name:"Meadow",emoji:"🌼",dark:false,primary:"#15803D",primaryDim:"#15803D18",primaryBorder:"rgba(21,128,61,0.3)",bg:"#F0FDF4",card:"#DCFCE7",cardAlt:"#BBF7D055",text:"#14532D",textMuted:"#166534",header:"linear-gradient(135deg,#BBF7D0,#DCFCE7)",chore:"rgba(21,128,61,0.08)",choreBorder:"rgba(21,128,61,0.25)",jar1:"#15803D",jar2:"#16A34A",jar3:"#22C55E"},
+    lavender:{name:"Lavender",emoji:"💐",dark:false,primary:"#7C3AED",primaryDim:"#7C3AED18",primaryBorder:"rgba(124,58,237,0.3)",bg:"#F5F3FF",card:"#EDE9FE",cardAlt:"#DDD6FE55",text:"#3B0764",textMuted:"#5B21B6",header:"linear-gradient(135deg,#DDD6FE,#EDE9FE)",chore:"rgba(124,58,237,0.08)",choreBorder:"rgba(124,58,237,0.25)",jar1:"#7C3AED",jar2:"#8B5CF6",jar3:"#A78BFA"},
+    peach:{name:"Peach",emoji:"🍑",dark:false,primary:"#C2410C",primaryDim:"#C2410C18",primaryBorder:"rgba(194,65,12,0.3)",bg:"#FFF7ED",card:"#FFEDD5",cardAlt:"#FED7AA55",text:"#7C2D12",textMuted:"#9A3412",header:"linear-gradient(135deg,#FED7AA,#FFEDD5)",chore:"rgba(194,65,12,0.08)",choreBorder:"rgba(194,65,12,0.25)",jar1:"#C2410C",jar2:"#EA580C",jar3:"#F97316"},
   };
 
   const THEMES_KEYS=Object.keys(THEMES);
@@ -9435,13 +9373,25 @@ function KidsMiniSite(){
           </div>
         )}
         {/* Theme picker */}
-        <div style={{background:"rgba(255,255,255,0.06)",borderRadius:14,padding:"10px 14px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <span style={{color:theme.text,fontSize:12,fontWeight:700,flexShrink:0}}>🎨 My theme</span>
-          <div style={{display:"flex",gap:8,flex:1,justifyContent:"flex-end",flexWrap:"wrap"}}>
-            {Object.entries(THEMES).map(([key,t])=>(
+        <div style={{background:"rgba(128,128,128,0.1)",borderRadius:14,padding:"10px 14px",marginTop:10}}>
+          <div style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
+            <span style={{color:theme.dark?theme.text:"#444",fontSize:12,fontWeight:700,flexShrink:0}}>🎨 My theme</span>
+          </div>
+          <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:theme.dark?"rgba(255,255,255,0.4)":"rgba(0,0,0,0.35)",marginBottom:6}}>Dark</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+            {Object.entries(THEMES).filter(([,t])=>t.dark).map(([key,t])=>(
               <button key={key} onClick={()=>saveTheme(key)} title={t.name}
-                style={{width:32,height:32,borderRadius:99,border:`3px solid ${activeTheme===key?"#fff":"transparent"}`,background:t.primary,cursor:"pointer",transition:"all .2s",flexShrink:0,boxShadow:activeTheme===key?`0 0 12px ${t.primary}99`:"none",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12}}>
-                {activeTheme===key?"✓":""}
+                style={{width:34,height:34,borderRadius:99,border:`3px solid ${activeTheme===key?"#fff":"transparent"}`,background:t.primary,cursor:"pointer",transition:"all .2s",flexShrink:0,boxShadow:activeTheme===key?`0 0 12px ${t.primary}99`:"none",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:"#fff"}}>
+                {activeTheme===key?"✓":t.emoji}
+              </button>
+            ))}
+          </div>
+          <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:theme.dark?"rgba(255,255,255,0.4)":"rgba(0,0,0,0.35)",marginBottom:6}}>Light</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {Object.entries(THEMES).filter(([,t])=>!t.dark).map(([key,t])=>(
+              <button key={key} onClick={()=>saveTheme(key)} title={t.name}
+                style={{width:34,height:34,borderRadius:99,border:`3px solid ${activeTheme===key?t.primary:"rgba(0,0,0,0.15)"}`,background:t.bg,cursor:"pointer",transition:"all .2s",flexShrink:0,boxShadow:activeTheme===key?`0 0 12px ${t.primary}88`:"none",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13}}>
+                {activeTheme===key?"✓":t.emoji}
               </button>
             ))}
           </div>
