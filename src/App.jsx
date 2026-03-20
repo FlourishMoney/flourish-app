@@ -9456,6 +9456,8 @@ function KidsMiniSite(){
       </div>
     </div>
   );
+}
+
 function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
