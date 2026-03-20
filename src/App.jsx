@@ -6693,8 +6693,13 @@ function Family({data,household,setHousehold,setScreen}){
   const [kids,setKids]=useState(()=>{
     try{
       const saved=JSON.parse(localStorage.getItem("flourish_kids")||"null")||[];
-      // Ensure every kid has a chores array (backwards compat)
-      return saved.map(k=>({...k,chores:k.chores||[]}));
+      return saved.map(k=>({
+        chores:[],jars:{spend:0,save:0,give:0},
+        goal:{name:"",amount:"",emoji:"🎯"},
+        theme:"pink",streak:0,lastReset:null,
+        requireApproval:false,...k,
+        chores:(k.chores||[]).map(c=>({freq:"weekly",approved:false,...c}))
+      }));
     }catch{return[];}
   });
   const [activeKidId,setActiveKidId]=useState(()=>{
@@ -6706,18 +6711,46 @@ function Family({data,household,setHousehold,setScreen}){
   const [newKidEmoji,setNewKidEmoji]=useState("🧒");
   const [newChoreTask,setNewChoreTask]=useState("");
   const [newChoreReward,setNewChoreReward]=useState("");
-  const [editingChore,setEditingChore]=useState(null); // reserved for future inline edit
+  const [newChoreFreq,setNewChoreFreq]=useState("weekly");
   const [copiedKidId,setCopiedKidId]=useState(null);
   const [globalKidAge,setGlobalKidAge]=useState("8-12");
+  const [showPayday,setShowPayday]=useState(false);
+
+  const KID_THEMES={
+    pink:{name:"Pink",primary:"#FF6B9D",bg:"#ff6b9d22",border:"#ff6b9d44"},
+    purple:{name:"Purple",primary:"#9B7DFF",bg:"#9b7dff22",border:"#9b7dff44"},
+    green:{name:"Green",primary:"#00D68F",bg:"#00d68f22",border:"#00d68f44"},
+    blue:{name:"Blue",primary:"#4DA8FF",bg:"#4da8ff22",border:"#4da8ff44"},
+    orange:{name:"Orange",primary:"#FF8C42",bg:"#ff8c4222",border:"#ff8c4244"},
+  };
 
   const saveKids=(updated)=>{
     setKids(updated);
     try{localStorage.setItem("flourish_kids",JSON.stringify(updated));}catch{}
   };
+  const syncKidToStorage=(kid)=>{
+    if(kid)try{
+      localStorage.setItem("flourish_kid_chores_"+kid.code,JSON.stringify(kid.chores||[]));
+      localStorage.setItem("flourish_kid_data_"+kid.code,JSON.stringify({
+        name:kid.name,emoji:kid.emoji,age:kid.age,theme:kid.theme||"pink",
+        jars:kid.jars||{spend:0,save:0,give:0},
+        goal:kid.goal||{name:"",amount:"",emoji:"🎯"},
+        streak:kid.streak||0,
+      }));
+    }catch{}
+  };
+  const updateKid=(kidId,patch)=>{
+    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,...patch}:k);
+    saveKids(updated);
+    const kid=updated.find(k=>String(k.id)===String(kidId));
+    syncKidToStorage(kid);
+  };
   const addKid=()=>{
     if(!newKidName.trim())return;
     const code="KID"+Math.random().toString(36).substring(2,7).toUpperCase();
-    const kid={id:Date.now(),name:newKidName.trim(),age:newKidAge,emoji:newKidEmoji,code,chores:[]};
+    const kid={id:Date.now(),name:newKidName.trim(),age:newKidAge,emoji:newKidEmoji,code,
+      chores:[],jars:{spend:0,save:0,give:0},goal:{name:"",amount:"",emoji:"🎯"},
+      theme:"pink",streak:0,lastReset:null,requireApproval:false};
     const updated=[...kids,kid];
     saveKids(updated);
     setActiveKidId(kid.id);
@@ -6726,21 +6759,48 @@ function Family({data,household,setHousehold,setScreen}){
   const removeKid=(id)=>saveKids(kids.filter(k=>String(k.id)!==String(id)));
   const addChoreToKid=(kidId)=>{
     if(!newChoreTask.trim())return;
-    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,chores:[...k.chores,{id:Date.now(),task:newChoreTask.trim(),reward:parseFloat(newChoreReward)||0.50,done:false}]}:k);
+    const chore={id:Date.now(),task:newChoreTask.trim(),reward:parseFloat(newChoreReward)||0.50,
+      done:false,freq:newChoreFreq,approved:false};
+    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,chores:[...(k.chores||[]),chore]}:k);
     saveKids(updated);
-    setNewChoreTask("");setNewChoreReward("");
+    setNewChoreTask("");setNewChoreReward("");setNewChoreFreq("weekly");
     const kid=updated.find(k=>String(k.id)===String(kidId));
-    if(kid)try{localStorage.setItem("flourish_kid_chores_"+kid.code,JSON.stringify(kid.chores));}catch{}
+    syncKidToStorage(kid);
   };
   const toggleKidChore=(kidId,choreId)=>{
-    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,chores:k.chores.map(c=>c.id===choreId?{...c,done:!c.done}:c)}:k);
+    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,chores:(k.chores||[]).map(c=>c.id===choreId?{...c,done:!c.done,approved:false}:c)}:k);
     saveKids(updated);
     const kid=updated.find(k=>String(k.id)===String(kidId));
-    if(kid)try{localStorage.setItem("flourish_kid_chores_"+kid.code,JSON.stringify(kid.chores));}catch{}
+    syncKidToStorage(kid);
+  };
+  const approveKidChore=(kidId,choreId)=>{
+    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,chores:(k.chores||[]).map(c=>c.id===choreId?{...c,approved:true}:c)}:k);
+    saveKids(updated);
   };
   const removeKidChore=(kidId,choreId)=>{
-    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,chores:k.chores.filter(c=>c.id!==choreId)}:k);
+    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,chores:(k.chores||[]).filter(c=>c.id!==choreId)}:k);
     saveKids(updated);
+  };
+  const paydayKid=(kidId)=>{
+    const kid=kids.find(k=>String(k.id)===String(kidId));
+    if(!kid)return;
+    const chores=kid.chores||[];
+    const req=kid.requireApproval;
+    const eligible=chores.filter(c=>c.done&&(!req||c.approved));
+    const total=eligible.reduce((a,c)=>a+(c.reward||0),0);
+    if(total<=0)return;
+    const spend=Math.round(total*0.50*100)/100;
+    const save=Math.round(total*0.30*100)/100;
+    const give=total-spend-save;
+    const prevJars=kid.jars||{spend:0,save:0,give:0};
+    const newJars={spend:(prevJars.spend||0)+spend,save:(prevJars.save||0)+save,give:(prevJars.give||0)+give};
+    const allDone=chores.every(c=>c.done&&(!req||c.approved));
+    const newStreak=allDone?(kid.streak||0)+1:(kid.streak||0);
+    const resetChores=chores.map(c=>({...c,done:false,approved:false}));
+    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,jars:newJars,streak:newStreak,chores:resetChores,lastReset:new Date().toISOString()}:k);
+    saveKids(updated);
+    const updatedKid=updated.find(k=>String(k.id)===String(kidId));
+    syncKidToStorage(updatedKid);
   };
   const activeKid=kids.find(k=>String(k.id)===String(activeKidId))||null;
 
@@ -7054,36 +7114,37 @@ function Family({data,household,setHousehold,setScreen}){
 
     {/* ── KIDS TAB ── */}
     {tab==="kids"&&<>
-      {/* ── Kids list ── */}
+      {/* Empty state */}
       {kids.length===0&&!showAddKid&&(
         <Card style={{textAlign:"center",padding:"32px 20px"}}>
           <div style={{fontSize:48,marginBottom:12}}>👧</div>
           <div style={{color:C.cream,fontWeight:800,fontSize:16,fontFamily:"'Playfair Display',Georgia,serif",marginBottom:8}}>Add your first child</div>
-          <div style={{color:C.muted,fontSize:13,lineHeight:1.6,marginBottom:20}}>Each child gets their own chore list and a shareable link to their mini Flourish app — no access to your financial data.</div>
-          <button onClick={()=>setShowAddKid(true)} style={{background:`linear-gradient(135deg,${C.pink},#ff8cb8)`,border:"none",borderRadius:12,padding:"13px 28px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>+ Add Child</button>
+          <div style={{color:C.muted,fontSize:13,lineHeight:1.6,marginBottom:20}}>Each child gets their own chore list, jar tracker, savings goal, and a shareable mini app — no access to your financial data.</div>
+          <button onClick={()=>setShowAddKid(true)} style={{background:`linear-gradient(135deg,${C.pink},#ff8cb8)`,border:"none",borderRadius:12,padding:"13px 28px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>+ Add Child</button>
         </Card>
       )}
 
-      {/* Kids tab row */}
+      {/* Kid selector row */}
       {kids.length>0&&(
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-            {kids.map(k=>(
-              <button key={k.id} onClick={()=>setActiveKidId(activeKidId===k.id?null:k.id)}
-                style={{display:"flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:99,border:`2px solid ${activeKidId===k.id?C.pink:C.border}`,background:activeKidId===k.id?`linear-gradient(135deg,${C.pink}33,${C.pink}18)`:C.cardAlt,color:activeKidId===k.id?C.pinkBright:C.cream,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",transition:"all .2s",minHeight:44}}>
-                <span style={{fontSize:20}}>{k.emoji}</span>
-                <span>{k.name}</span>
-                <span style={{color:activeKidId===k.id?C.pink:C.muted,fontSize:11,marginLeft:2}}>{activeKidId===k.id?"▲":"▼"}</span>
-              </button>
-            ))}
+            {kids.map(k=>{
+              const t=KID_THEMES[k.theme||"pink"];
+              return(
+                <button key={k.id} onClick={()=>setActiveKidId(String(activeKidId)===String(k.id)?null:k.id)}
+                  style={{display:"flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:99,border:`2px solid ${String(activeKidId)===String(k.id)?t.primary:C.border}`,background:String(activeKidId)===String(k.id)?t.bg:C.cardAlt,color:String(activeKidId)===String(k.id)?t.primary:C.cream,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",transition:"all .2s",minHeight:44}}>
+                  <span style={{fontSize:20}}>{k.emoji}</span>
+                  <span>{k.name}</span>
+                  {(k.streak||0)>0&&<span style={{fontSize:11}}>🔥{k.streak}</span>}
+                  <span style={{fontSize:11,opacity:0.6}}>{String(activeKidId)===String(k.id)?"▲":"▼"}</span>
+                </button>
+              );
+            })}
             <button onClick={()=>setShowAddKid(true)}
               style={{display:"flex",alignItems:"center",gap:6,padding:"10px 18px",borderRadius:99,border:`2px solid ${C.pink}66`,background:C.pink+"14",color:C.pinkBright,fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>
               + Add Child
             </button>
           </div>
-          {activeKidId&&<div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontStyle:"italic",paddingLeft:4}}>
-            Tap {activeKid?.name}'s name to collapse · Share link is below the chore chart
-          </div>}
         </div>
       )}
 
@@ -7095,108 +7156,233 @@ function Family({data,household,setHousehold,setScreen}){
             <div style={{color:C.muted,fontSize:11,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Choose emoji</div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               {["🧒","👧","👦","🧒‍♀️","🧒‍♂️","👶","🧑","🌟","🦁","🐼","🦊","🐸"].map(e=>(
-                <button key={e} onClick={()=>setNewKidEmoji(e)} style={{fontSize:22,padding:"6px",borderRadius:8,border:`2px solid ${newKidEmoji===e?C.pink:"transparent"}`,background:newKidEmoji===e?C.pink+"22":"transparent",cursor:"pointer"}}>{e}</button>
+                <button key={e} onClick={()=>setNewKidEmoji(e)} style={{fontSize:22,padding:"6px",borderRadius:8,border:`2px solid ${newKidEmoji===e?C.pink:"transparent"}`,background:newKidEmoji===e?C.pink+"22":"transparent",cursor:"pointer",minHeight:44}}>{e}</button>
               ))}
             </div>
           </div>
-          <input value={newKidName} onChange={e=>setNewKidName(e.target.value)} placeholder="Child's name"
+          <input value={newKidName} onChange={e=>setNewKidName(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&addKid()}
+            placeholder="Child's name"
             style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 14px",color:C.cream,fontSize:14,fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"}}/>
           <div style={{marginBottom:14}}>
             <div style={{color:C.muted,fontSize:11,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Age group</div>
             <div style={{display:"flex",gap:8}}>
               {["4-7","8-12","13+"].map(a=>(
-                <button key={a} onClick={()=>setNewKidAge(a)} style={{flex:1,padding:"9px",borderRadius:10,border:`1.5px solid ${newKidAge===a?C.pink:C.border}`,background:newKidAge===a?C.pink+"22":C.cardAlt,color:newKidAge===a?C.pinkBright:C.muted,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                <button key={a} onClick={()=>setNewKidAge(a)} style={{flex:1,padding:"9px",borderRadius:10,border:`1.5px solid ${newKidAge===a?C.pink:C.border}`,background:newKidAge===a?C.pink+"22":C.cardAlt,color:newKidAge===a?C.pinkBright:C.muted,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>
                   {a==="4-7"?"🐣 4–7":a==="8-12"?"🌱 8–12":"🌳 13+"}
                 </button>
               ))}
             </div>
           </div>
           <div style={{display:"flex",gap:8}}>
-            <button onClick={addKid} style={{flex:1,background:newKidName.trim()?`linear-gradient(135deg,${C.pink},#ff8cb8)`:"rgba(255,107,157,0.3)",border:"none",borderRadius:10,padding:"12px",color:"#fff",fontWeight:800,fontSize:13,cursor:newKidName.trim()?"pointer":"default",fontFamily:"inherit"}}>
+            <button onClick={addKid} style={{flex:1,background:newKidName.trim()?`linear-gradient(135deg,${C.pink},#ff8cb8)`:"rgba(255,107,157,0.3)",border:"none",borderRadius:10,padding:"12px",color:"#fff",fontWeight:800,fontSize:13,cursor:newKidName.trim()?"pointer":"default",fontFamily:"inherit",minHeight:44}}>
               Add {newKidEmoji} {newKidName||"Child"}
             </button>
-            <button onClick={()=>{setShowAddKid(false);setNewKidName("");}} style={{padding:"12px 16px",borderRadius:10,border:`1px solid ${C.border}`,background:"none",color:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+            <button onClick={()=>{setShowAddKid(false);setNewKidName("");}} style={{padding:"12px 16px",borderRadius:10,border:`1px solid ${C.border}`,background:"none",color:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>Cancel</button>
           </div>
         </Card>
       )}
 
-      {/* Active kid detail */}
+      {/* Active kid full view */}
       {activeKid&&(()=>{
+        const kidTheme=KID_THEMES[activeKid.theme||"pink"];
         const kidUrl=`${window.location.origin}/kids?code=${activeKid.code}`;
         const kidChores=activeKid.chores||[];
-        const earned=kidChores.filter(c=>c.done).reduce((a,c)=>a+(c.reward||0),0);
-        const total=kidChores.reduce((a,c)=>a+(c.reward||0),0);
+        const jars=activeKid.jars||{spend:0,save:0,give:0};
+        const goal=activeKid.goal||{name:"",amount:"",emoji:"🎯"};
+        const totalJars=(jars.spend||0)+(jars.save||0)+(jars.give||0);
+        const goalAmt=parseFloat(goal.amount)||0;
+        const goalPct=goalAmt>0?Math.min(100,Math.round(((jars.save||0)/goalAmt)*100)):0;
+        const req=activeKid.requireApproval;
+        const earned=kidChores.filter(c=>c.done&&(!req||c.approved)).reduce((a,c)=>a+(c.reward||0),0);
+        const pendingApproval=kidChores.filter(c=>c.done&&req&&!c.approved);
+        const FREQ_LABELS={daily:"Daily",few:"Few times/week",weekly:"Weekly",monthly:"Monthly"};
+
         return(<>
-          {/* Kid header */}
-          <Card style={{background:`linear-gradient(135deg,${C.pink}18,${C.card})`,border:`1px solid ${C.pink}33`}}>
-            <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16}}>
-              <div style={{fontSize:40}}>{activeKid.emoji}</div>
+          {/* Kid header card */}
+          <Card style={{background:`linear-gradient(135deg,${kidTheme.bg},${C.card})`,border:`1.5px solid ${kidTheme.border}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:14}}>
+              <div style={{fontSize:44}}>{activeKid.emoji}</div>
               <div style={{flex:1}}>
                 <div style={{color:C.cream,fontWeight:900,fontSize:20,fontFamily:"'Playfair Display',Georgia,serif"}}>{activeKid.name}</div>
-                <div style={{color:C.muted,fontSize:12}}>Ages {activeKid.age} · {kidChores.length} chores</div>
+                <div style={{display:"flex",gap:8,alignItems:"center",marginTop:4,flexWrap:"wrap"}}>
+                  <span style={{color:C.muted,fontSize:12}}>Ages {activeKid.age}</span>
+                  {(activeKid.streak||0)>0&&<span style={{background:"#ff8c4222",border:"1px solid #ff8c4244",borderRadius:99,padding:"2px 8px",color:"#FF8C42",fontSize:11,fontWeight:700}}>🔥 {activeKid.streak} week streak</span>}
+                  <span style={{color:C.muted,fontSize:12}}>${totalJars.toFixed(2)} total saved</span>
+                </div>
               </div>
-              <button onClick={()=>{if(window.confirm(`Remove ${activeKid.name}?`)){removeKid(activeKid.id);setActiveKidId(null);}}}
+              <button onClick={()=>{if(window.confirm(`Remove ${activeKid.name}?`)){removeKid(activeKid.id);setActiveKidId(kids.find(k=>String(k.id)!==String(activeKid.id))?.id||null);}}}
                 style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",color:C.muted,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Remove</button>
             </div>
 
-            {/* Share link */}
-            <div style={{background:`linear-gradient(135deg,${C.pink}22,${C.pink}11)`,border:`1.5px solid ${C.pink}55`,borderRadius:14,padding:"14px 16px",marginBottom:0}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-                <span style={{fontSize:20}}>📱</span>
-                <div>
-                  <div style={{color:C.pinkBright,fontWeight:800,fontSize:14}}>{activeKid.name}'s Flourish Link</div>
-                  <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Opens a kids-only view — no access to your financial data</div>
-                </div>
+            {/* Theme picker */}
+            <div style={{marginBottom:14}}>
+              <div style={{color:C.muted,fontSize:11,textTransform:"uppercase",letterSpacing:1.2,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>🎨 Colour Theme</div>
+              <div style={{display:"flex",gap:8}}>
+                {Object.entries(KID_THEMES).map(([key,t])=>(
+                  <button key={key} onClick={()=>updateKid(activeKid.id,{theme:key})}
+                    style={{flex:1,padding:"8px 4px",borderRadius:10,border:`2px solid ${(activeKid.theme||"pink")===key?t.primary:C.border}`,background:(activeKid.theme||"pink")===key?t.bg:C.cardAlt,color:(activeKid.theme||"pink")===key?t.primary:C.muted,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
+                    {t.name}
+                  </button>
+                ))}
               </div>
-              <div style={{background:C.bg,borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12,color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",wordBreak:"break-all"}}>{kidUrl}</div>
+            </div>
+
+            {/* Share link */}
+            <div style={{background:C.bg,borderRadius:12,padding:"12px 14px"}}>
+              <div style={{color:kidTheme.primary,fontWeight:800,fontSize:13,marginBottom:6}}>📱 {activeKid.name}'s Flourish Link</div>
+              <div style={{fontSize:11,color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",wordBreak:"break-all",marginBottom:10}}>{kidUrl}</div>
               <div style={{display:"flex",gap:8}}>
                 <button onClick={()=>{navigator.clipboard.writeText(kidUrl).then(()=>{setCopiedKidId(activeKid.id);setTimeout(()=>setCopiedKidId(null),2500);});}}
-                  style={{flex:1,background:copiedKidId===activeKid.id?C.green:`linear-gradient(135deg,${C.pink},#ff8cb8)`,border:"none",borderRadius:10,padding:"13px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",transition:"all .2s",minHeight:44}}>
-                  {copiedKidId===activeKid.id?"✓ Copied!":"📋 Copy Link"}
+                  style={{flex:1,background:copiedKidId===String(activeKid.id)?C.green:kidTheme.primary,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all .2s",minHeight:44}}>
+                  {copiedKidId===String(activeKid.id)?"✓ Copied!":"📋 Copy Link"}
                 </button>
-                <button onClick={()=>{if(navigator.share)navigator.share({title:`${activeKid.name}'s Flourish`,text:`Open ${activeKid.name}'s chore list!`,url:kidUrl}).catch(()=>{});}}
-                  style={{flex:1,background:C.cardAlt,border:`1.5px solid ${C.pink}55`,borderRadius:10,padding:"13px",color:C.pinkBright,fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>
+                <button onClick={()=>{if(navigator.share)navigator.share({title:`${activeKid.name}'s Flourish`,url:kidUrl}).catch(()=>{});}}
+                  style={{flex:1,background:C.cardAlt,border:`1.5px solid ${kidTheme.border}`,borderRadius:10,padding:"11px",color:kidTheme.primary,fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>
                   🔗 Share
                 </button>
               </div>
             </div>
           </Card>
 
-          {/* Chore list */}
-          <Card>
+          {/* Jar balances */}
+          <Card style={{border:`1px solid ${C.gold}44`}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-              <div style={{color:C.greenBright,fontWeight:700,fontSize:14}}>🏡 {activeKid.name}'s Chores</div>
-              {total>0&&<div style={{color:C.gold,fontWeight:800}}>${earned.toFixed(2)} / ${total.toFixed(2)}</div>}
+              <div style={{color:C.gold,fontWeight:800,fontSize:14}}>🫙 {activeKid.name}'s Jars</div>
+              <div style={{color:C.gold,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>${totalJars.toFixed(2)}</div>
             </div>
+            <div style={{display:"flex",gap:8,marginBottom:12}}>
+              {[{key:"spend",name:"Spend",emoji:"🎮",color:C.orange,pct:50},{key:"save",name:"Save",emoji:"🏦",color:C.blue,pct:30},{key:"give",name:"Give",emoji:"❤️",color:C.pink,pct:20}].map(j=>(
+                <div key={j.key} style={{flex:1,background:j.color+"18",border:`1px solid ${j.color}33`,borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
+                  <div style={{fontSize:22}}>{j.emoji}</div>
+                  <div style={{color:j.color,fontWeight:800,fontSize:16,marginTop:4,fontFamily:"'Playfair Display',serif"}}>${(jars[j.key]||0).toFixed(2)}</div>
+                  <div style={{color:j.color,fontWeight:700,fontSize:11,marginTop:2}}>{j.name}</div>
+                  <div style={{color:C.muted,fontSize:9,marginTop:1}}>{j.pct}%</div>
+                </div>
+              ))}
+            </div>
+            {/* Savings goal */}
+            <div style={{background:C.cardAlt,borderRadius:12,padding:"12px 14px",marginBottom:12}}>
+              <div style={{color:C.tealBright,fontWeight:700,fontSize:13,marginBottom:8}}>🎯 Savings Goal</div>
+              {goal.name?(
+                <>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                    <span style={{color:C.cream,fontSize:13,fontWeight:600}}>{goal.emoji} {goal.name}</span>
+                    <span style={{color:C.tealBright,fontWeight:700,fontSize:13}}>{goalPct}%</span>
+                  </div>
+                  <div style={{height:8,background:C.bg,borderRadius:4,overflow:"hidden",marginBottom:6}}>
+                    <div style={{height:"100%",width:`${goalPct}%`,background:`linear-gradient(90deg,${C.teal},${C.tealBright})`,borderRadius:4,transition:"width .5s"}}/>
+                  </div>
+                  <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                    ${(jars.save||0).toFixed(2)} saved of ${goalAmt.toFixed(2)} goal
+                    {goalPct>=100&&<span style={{color:C.greenBright,fontWeight:700}}> 🎉 Goal reached!</span>}
+                  </div>
+                  <button onClick={()=>updateKid(activeKid.id,{goal:{name:"",amount:"",emoji:"🎯"}})}
+                    style={{marginTop:8,background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 10px",color:C.muted,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Change goal</button>
+                </>
+              ):(
+                <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                  <span style={{fontSize:18,cursor:"pointer"}} onClick={()=>{
+                    const emojis=["🎯","🎮","🚲","📚","🎸","⚽","🏊","🎨","✈️","🦄"];
+                    const curr=emojis.indexOf(goal.emoji||"🎯");
+                    updateKid(activeKid.id,{goal:{...goal,emoji:emojis[(curr+1)%emojis.length]||"🎯"}});
+                  }}>{goal.emoji||"🎯"}</span>
+                  <input value={goal.name||""} onChange={e=>updateKid(activeKid.id,{goal:{...goal,name:e.target.value}})}
+                    placeholder="Goal name (e.g. Nintendo game)"
+                    style={{flex:2,background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:12,fontFamily:"inherit"}}/>
+                  <input value={goal.amount||""} onChange={e=>updateKid(activeKid.id,{goal:{...goal,amount:e.target.value}})}
+                    placeholder="$" type="number"
+                    style={{width:60,background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:12,fontFamily:"inherit"}}/>
+                </div>
+              )}
+            </div>
+            {/* Payday button */}
+            {earned>0&&(
+              <button onClick={()=>{
+                  if(window.confirm(`Pay out $${earned.toFixed(2)} to ${activeKid.name}'s jars and reset chores?`)){
+                    paydayKid(activeKid.id);
+                  }
+                }}
+                style={{width:"100%",background:`linear-gradient(135deg,${C.gold},#f5cc6a)`,border:"none",borderRadius:12,padding:"14px",color:"#1a1000",fontWeight:900,fontSize:15,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>
+                💰 Payday! Pay out ${earned.toFixed(2)}
+              </button>
+            )}
+          </Card>
+
+          {/* Chore chart */}
+          <Card>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <div style={{color:C.greenBright,fontWeight:700,fontSize:14}}>🏡 {activeKid.name}'s Chores</div>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                {earned>0&&<div style={{color:C.gold,fontWeight:800,fontSize:13}}>${earned.toFixed(2)} earned</div>}
+              </div>
+            </div>
+
+            {/* Require approval toggle */}
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,padding:"8px 10px",background:C.cardAlt,borderRadius:10}}>
+              <span style={{color:C.muted,fontSize:12,flex:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Require parent approval before chores count</span>
+              <button onClick={()=>updateKid(activeKid.id,{requireApproval:!req})}
+                style={{width:44,height:24,borderRadius:99,border:"none",background:req?C.green:"rgba(255,255,255,0.12)",cursor:"pointer",position:"relative",transition:"all .2s",flexShrink:0}}>
+                <div style={{width:18,height:18,borderRadius:99,background:"#fff",position:"absolute",top:3,left:req?23:3,transition:"all .2s"}}/>
+              </button>
+            </div>
+
+            {/* Pending approval */}
+            {req&&pendingApproval.length>0&&(
+              <div style={{background:C.goldDim,border:`1px solid ${C.gold}44`,borderRadius:12,padding:"10px 14px",marginBottom:12}}>
+                <div style={{color:C.goldBright,fontWeight:700,fontSize:12,marginBottom:8}}>⏳ Waiting for your approval</div>
+                {pendingApproval.map(ch=>(
+                  <div key={ch.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                    <span style={{flex:1,color:C.cream,fontSize:13}}>{ch.task}</span>
+                    <span style={{color:C.gold,fontSize:12}}>+${(ch.reward||0).toFixed(2)}</span>
+                    <button onClick={()=>approveKidChore(activeKid.id,ch.id)}
+                      style={{background:C.green,border:"none",borderRadius:8,padding:"4px 10px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✓ Approve</button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {kidChores.length===0&&(
               <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"16px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>No chores yet — add some below!</div>
             )}
 
             {kidChores.map(ch=>(
-              <div key={ch.id} style={{display:"flex",gap:10,alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.border}`}}>
-                <div onClick={()=>toggleKidChore(activeKid.id,ch.id)} style={{width:24,height:24,borderRadius:7,border:`2px solid ${ch.done?C.green:C.border}`,background:ch.done?C.green:"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer",transition:"all .2s"}}>
-                  {ch.done&&<span style={{color:C.bg,fontSize:13,fontWeight:900}}>✓</span>}
+              <div key={ch.id} style={{display:"flex",gap:8,alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.border}`}}>
+                <div onClick={()=>toggleKidChore(activeKid.id,ch.id)} style={{width:26,height:26,borderRadius:8,border:`2px solid ${ch.done?C.green:C.border}`,background:ch.done?C.green:"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer",transition:"all .2s",minHeight:26}}>
+                  {ch.done&&<span style={{color:C.bg,fontSize:14,fontWeight:900}}>✓</span>}
                 </div>
-                <span style={{flex:1,color:ch.done?C.muted:C.cream,fontSize:14,textDecoration:ch.done?"line-through":"none"}}>{ch.task}</span>
-                <span style={{color:C.gold,fontWeight:700,fontSize:13}}>+${(ch.reward||0).toFixed(2)}</span>
-                <button onClick={()=>removeKidChore(activeKid.id,ch.id)} style={{background:"none",border:"none",color:C.muted,fontSize:16,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>
+                <div style={{flex:1}}>
+                  <div style={{color:ch.done?C.muted:C.cream,fontSize:13,textDecoration:ch.done?"line-through":"none"}}>{ch.task}</div>
+                  <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{FREQ_LABELS[ch.freq||"weekly"]}</div>
+                </div>
+                <span style={{color:C.gold,fontWeight:700,fontSize:12}}>+${(ch.reward||0).toFixed(2)}</span>
+                {ch.done&&req&&ch.approved&&<span style={{color:C.green,fontSize:11}}>✓ approved</span>}
+                <button onClick={()=>removeKidChore(activeKid.id,ch.id)} style={{background:"none",border:"none",color:C.muted,fontSize:18,cursor:"pointer",padding:"0 2px",lineHeight:1,minHeight:30}}>×</button>
               </div>
             ))}
 
-            {/* Add chore */}
-            <div style={{display:"flex",gap:8,alignItems:"center",marginTop:14}}>
-              <input value={newChoreTask} onChange={e=>setNewChoreTask(e.target.value)}
-                onKeyDown={e=>e.key==="Enter"&&addChoreToKid(activeKid.id)}
-                placeholder="Add a chore…"
-                style={{flex:3,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
-              <input value={newChoreReward} onChange={e=>setNewChoreReward(e.target.value)} placeholder="$" type="number"
-                style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
-              <button onClick={()=>addChoreToKid(activeKid.id)}
-                style={{background:C.green,border:"none",borderRadius:8,padding:"9px 14px",color:"#fff",fontWeight:800,cursor:"pointer",fontSize:14}}>+</button>
+            {/* Add chore form */}
+            <div style={{marginTop:14}}>
+              <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
+                <input value={newChoreTask} onChange={e=>setNewChoreTask(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&addChoreToKid(activeKid.id)}
+                  placeholder="Add a chore…"
+                  style={{flex:3,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
+                <input value={newChoreReward} onChange={e=>setNewChoreReward(e.target.value)} placeholder="$" type="number"
+                  style={{width:56,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 8px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
+                <button onClick={()=>addChoreToKid(activeKid.id)}
+                  style={{background:C.green,border:"none",borderRadius:8,padding:"9px 14px",color:"#fff",fontWeight:800,cursor:"pointer",fontSize:14,minHeight:40}}>+</button>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                {[{v:"daily",l:"Daily"},{v:"few",l:"Few/week"},{v:"weekly",l:"Weekly"},{v:"monthly",l:"Monthly"}].map(f=>(
+                  <button key={f.v} onClick={()=>setNewChoreFreq(f.v)}
+                    style={{flex:1,padding:"7px 4px",borderRadius:8,border:`1.5px solid ${newChoreFreq===f.v?C.teal:C.border}`,background:newChoreFreq===f.v?C.teal+"22":C.cardAlt,color:newChoreFreq===f.v?C.tealBright:C.muted,fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>
+                    {f.l}
+                  </button>
+                ))}
+              </div>
             </div>
           </Card>
-
         </>);
       })()}
       {/* ── Always-visible: Age lessons + 3 Jars ── */}
@@ -9032,13 +9218,194 @@ function KidsMiniSite(){
   const params=new URLSearchParams(window.location.search);
   const code=params.get("code")||"";
 
-  // Try to find the kid's details from parent's localStorage
   const kidData=(()=>{
     try{
       const all=JSON.parse(localStorage.getItem("flourish_kids")||"[]");
-      return all.find(k=>k.code===code)||null;
+      const k=all.find(k=>k.code===code);
+      if(k)return k;
+      // fallback to per-code storage
+      const d=JSON.parse(localStorage.getItem("flourish_kid_data_"+code)||"null");
+      return d;
     }catch{return null;}
   })();
+
+  const THEMES={
+    pink:{primary:"#FF6B9D",bg:"#050D09",card:"#0D1510",accent:"#ff6b9d22",border:"rgba(255,107,157,0.25)"},
+    purple:{primary:"#9B7DFF",bg:"#06050D",card:"#0D0B18",accent:"#9b7dff22",border:"rgba(155,125,255,0.25)"},
+    green:{primary:"#00D68F",bg:"#050D09",card:"#0A1A0E",accent:"#00d68f22",border:"rgba(0,214,143,0.25)"},
+    blue:{primary:"#4DA8FF",bg:"#05090D",card:"#0A1018",accent:"#4da8ff22",border:"rgba(77,168,255,0.25)"},
+    orange:{primary:"#FF8C42",bg:"#0D0805",card:"#180E0A",accent:"#ff8c4222",border:"rgba(255,140,66,0.25)"},
+  };
+  const theme=THEMES[kidData?.theme||"pink"];
+  const primary=theme.primary;
+
+  const [kidAge,setKidAge]=useState(kidData?.age||"8-12");
+  const [chores,setChores]=useState(()=>{
+    try{
+      const saved=JSON.parse(localStorage.getItem("flourish_kid_chores_"+code)||"null");
+      if(saved)return saved;
+      return kidData?.chores||[];
+    }catch{return[];}
+  });
+
+  const jars=kidData?.jars||{spend:0,save:0,give:0};
+  const goal=kidData?.goal||{name:"",amount:"",emoji:"🎯"};
+  const streak=kidData?.streak||0;
+  const goalAmt=parseFloat(goal.amount)||0;
+  const goalPct=goalAmt>0?Math.min(100,Math.round(((jars.save||0)/goalAmt)*100)):0;
+  const totalJars=(jars.spend||0)+(jars.save||0)+(jars.give||0);
+  const earned=chores.filter(c=>c.done).reduce((a,c)=>a+(c.reward||0),0);
+  const total=chores.reduce((a,c)=>a+(c.reward||0),0);
+  const FREQ={daily:"Daily",few:"Few/week",weekly:"Weekly",monthly:"Monthly"};
+
+  const toggle=(id)=>{
+    const updated=chores.map(c=>c.id===id?{...c,done:!c.done}:c);
+    setChores(updated);
+    try{localStorage.setItem("flourish_kid_chores_"+code,JSON.stringify(updated));}catch{}
+  };
+
+  const kidName=kidData?.name||"My";
+  const kidEmoji=kidData?.emoji||"🌱";
+
+  const lessons={
+    "4-7":[
+      {emoji:"🪙",title:"Money is for trading",body:"When you want something at the store, you give money and get the thing. Money is like a trade ticket!",activity:"Play store at home. Use toy coins to 'buy' snacks from a parent.",key:"Money is how we trade for things we want."},
+      {emoji:"🐷",title:"Saving means waiting",body:"If a toy costs $10 and you have $3, you need to save $7 more. Saving means keeping money safe until you have enough.",activity:"Put $1 in a piggy bank each day and count it every 3 days.",key:"Waiting for something makes it even better."},
+    ],
+    "8-12":[
+      {emoji:"🏦",title:"What banks do",body:"A bank keeps your money safe and pays you a little extra called interest. Like a super-safe piggy bank that rewards you for saving.",key:"Banks keep money safe AND pay you to use them."},
+      {emoji:"💳",title:"Credit cards are loans",body:"A credit card lets you buy now and pay later. But if you don't pay it all back quickly, they charge you extra. That's how people get into trouble.",key:"Pay your credit card in full every month."},
+      {emoji:"📈",title:"Money can grow",body:"$100 at 7% interest becomes $386 in 20 years — without doing anything extra! This is compound interest — money making more money.",key:"Start saving young. Time is the secret ingredient."},
+    ],
+    "13+":[
+      {emoji:"💰",title:"Budget like a boss",body:"50% needs, 30% wants, 20% savings. Without a budget, money just disappears. A budget is a plan for the life you actually want.",key:"A budget gives your money direction."},
+      {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet — and paying extra for the privilege.",key:"Debt is expensive. Use it wisely or not at all."},
+      {emoji:"📊",title:"Start investing at your first job",body:"$50/month at 7% starting at 16 = $245,000 at retirement. Starting at 30 = only $68,000. Starting early nearly triples your outcome.",key:"Invest with your very first paycheck."},
+    ],
+  };
+
+  return(
+    <div style={{minHeight:"100dvh",background:theme.bg,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"0 0 80px"}}>
+
+      {/* Header */}
+      <div style={{background:`linear-gradient(135deg,${theme.card},${theme.bg})`,padding:"28px 20px 20px",borderBottom:`1px solid ${theme.border}`}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:streak>0?10:0}}>
+          <span style={{fontSize:42}}>{kidEmoji}</span>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:"#EDE9E2",lineHeight:1}}>{kidName}'s Flourish</div>
+            <div style={{color:"#6B7A6E",fontSize:12,marginTop:2}}>Your money zone</div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{color:primary,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>${totalJars.toFixed(2)}</div>
+            <div style={{color:"#6B7A6E",fontSize:10}}>total saved</div>
+          </div>
+        </div>
+        {streak>0&&(
+          <div style={{background:"rgba(255,140,66,0.15)",border:"1px solid rgba(255,140,66,0.3)",borderRadius:10,padding:"8px 14px",display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:18}}>🔥</span>
+            <span style={{color:"#FF8C42",fontWeight:700,fontSize:13}}>{streak} week streak! Keep it going!</span>
+          </div>
+        )}
+      </div>
+
+      <div style={{padding:"16px 16px 0",display:"flex",flexDirection:"column",gap:14}}>
+
+        {/* Goal progress */}
+        {goal.name&&goalAmt>0&&(
+          <div style={{background:theme.card,borderRadius:18,padding:"18px",border:theme.border?`1px solid ${theme.border}`:"none"}}>
+            <div style={{color:"#22D3EE",fontWeight:800,fontSize:14,marginBottom:10}}>🎯 My Goal</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <span style={{color:"#EDE9E2",fontSize:15,fontWeight:700}}>{goal.emoji} {goal.name}</span>
+              <span style={{color:"#22D3EE",fontWeight:800,fontSize:16}}>{goalPct}%</span>
+            </div>
+            <div style={{height:12,background:"rgba(255,255,255,0.06)",borderRadius:6,overflow:"hidden",marginBottom:8}}>
+              <div style={{height:"100%",width:`${goalPct}%`,background:"linear-gradient(90deg,#00B4D8,#22D3EE)",borderRadius:6,transition:"width .5s"}}/>
+            </div>
+            <div style={{color:"#6B7A6E",fontSize:12}}>
+              ${(jars.save||0).toFixed(2)} saved · ${Math.max(0,goalAmt-(jars.save||0)).toFixed(2)} to go
+              {goalPct>=100&&<span style={{color:"#00D68F",fontWeight:700}}> 🎉 You did it!</span>}
+            </div>
+          </div>
+        )}
+
+        {/* Jar balances */}
+        <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid rgba(232,184,75,0.2)`}}>
+          <div style={{color:"#E8B84B",fontWeight:800,fontSize:14,marginBottom:12}}>🫙 My Jars</div>
+          <div style={{display:"flex",gap:10}}>
+            {[{key:"spend",name:"Spend",emoji:"🎮",color:"#FF8C42",pct:"50%"},{key:"save",name:"Save",emoji:"🏦",color:"#4DA8FF",pct:"30%"},{key:"give",name:"Give",emoji:"❤️",color:"#FF6B9D",pct:"20%"}].map(j=>(
+              <div key={j.key} style={{flex:1,background:j.color+"18",border:`1px solid ${j.color}33`,borderRadius:14,padding:"14px 8px",textAlign:"center"}}>
+                <div style={{fontSize:24,marginBottom:4}}>{j.emoji}</div>
+                <div style={{color:j.color,fontWeight:900,fontSize:17,fontFamily:"'Playfair Display',serif"}}>${(jars[j.key]||0).toFixed(2)}</div>
+                <div style={{color:"#EDE9E2",fontWeight:700,fontSize:11,marginTop:2}}>{j.name}</div>
+                <div style={{color:"#6B7A6E",fontSize:9,marginTop:1}}>{j.pct}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Chore Chart */}
+        <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid rgba(0,214,143,0.2)`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <div style={{color:"#00D68F",fontWeight:800,fontSize:14}}>🏡 My Chores</div>
+            {total>0&&<div style={{color:"#E8B84B",fontWeight:800,fontSize:14}}>${earned.toFixed(2)} earned</div>}
+          </div>
+          {total>0&&(
+            <div style={{height:8,background:"rgba(255,255,255,0.06)",borderRadius:4,overflow:"hidden",marginBottom:14}}>
+              <div style={{height:"100%",width:`${total>0?(earned/total)*100:0}%`,background:"linear-gradient(90deg,#00D68F,#00EFA0)",borderRadius:4,transition:"width .4s"}}/>
+            </div>
+          )}
+          {chores.length===0&&(
+            <div style={{color:"#6B7A6E",fontSize:13,textAlign:"center",padding:"12px 0"}}>No chores yet — ask a parent to add some!</div>
+          )}
+          {chores.map(ch=>(
+            <div key={ch.id} onClick={()=>toggle(ch.id)} style={{display:"flex",gap:12,alignItems:"center",padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.05)",cursor:"pointer"}}>
+              <div style={{width:28,height:28,borderRadius:8,border:`2px solid ${ch.done?"#00D68F":"rgba(255,255,255,0.15)"}`,background:ch.done?"#00D68F":"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s"}}>
+                {ch.done&&<span style={{color:theme.bg,fontSize:14,fontWeight:900}}>✓</span>}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{color:ch.done?"#6B7A6E":"#EDE9E2",fontSize:14,fontWeight:600,textDecoration:ch.done?"line-through":"none"}}>{ch.task}</div>
+                {ch.freq&&ch.freq!=="weekly"&&<div style={{color:"#6B7A6E",fontSize:10}}>{FREQ[ch.freq]||ch.freq}</div>}
+              </div>
+              <span style={{color:"#E8B84B",fontWeight:800,fontSize:13}}>+${(ch.reward||0).toFixed(2)}</span>
+            </div>
+          ))}
+          {chores.some(c=>c.done)&&earned===total&&total>0&&(
+            <div style={{marginTop:14,background:"rgba(0,214,143,0.08)",borderRadius:12,padding:"14px",textAlign:"center"}}>
+              <div style={{fontSize:28,marginBottom:4}}>🎉</div>
+              <div style={{color:"#00D68F",fontWeight:800,fontSize:14}}>All done! Ask a parent for payday!</div>
+            </div>
+          )}
+        </div>
+
+        {/* Money Lessons */}
+        <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid ${primary}33`}}>
+          <div style={{color:primary,fontWeight:800,fontSize:14,marginBottom:12}}>📚 Money Lessons</div>
+          <div style={{display:"flex",gap:8,marginBottom:14}}>
+            {["4-7","8-12","13+"].map(age=>(
+              <button key={age} onClick={()=>setKidAge(age)}
+                style={{flex:1,background:kidAge===age?primary+"22":"rgba(255,255,255,0.04)",border:`1px solid ${kidAge===age?primary:"rgba(255,255,255,0.1)"}`,color:kidAge===age?primary:"#6B7A6E",borderRadius:10,padding:"9px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
+                {age==="4-7"?"🐣 4–7":age==="8-12"?"🌱 8–12":"🌳 13+"}
+              </button>
+            ))}
+          </div>
+          {(lessons[kidAge]||[]).map((l,i)=>(
+            <div key={i} style={{background:"rgba(255,255,255,0.03)",borderRadius:14,padding:"16px",marginBottom:10,border:`1px solid ${primary}18`}}>
+              <div style={{fontSize:26,marginBottom:8}}>{l.emoji}</div>
+              <div style={{color:"#EDE9E2",fontWeight:800,fontSize:14,marginBottom:8}}>{l.title}</div>
+              <div style={{color:"#9A9A8A",fontSize:12,lineHeight:1.65,marginBottom:l.activity?10:0}}>{l.body}</div>
+              {l.activity&&<div style={{background:"rgba(0,180,216,0.1)",border:"1px solid rgba(0,180,216,0.2)",borderRadius:10,padding:"8px 12px",marginBottom:8}}>
+                <div style={{color:"#22D3EE",fontSize:10,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Try this</div>
+                <div style={{color:"#EDE9E2",fontSize:12}}>{l.activity}</div>
+              </div>}
+              <div style={{background:primary+"18",border:`1px solid ${primary}33`,borderRadius:8,padding:"6px 10px",color:primary,fontSize:11,fontWeight:600}}>💡 {l.key}</div>
+            </div>
+          ))}
+        </div>
+
+      </div>
+    </div>
+  );
+}
 
   const [kidAge,setKidAge]=useState(kidData?.age||"8-12");
   const [chores,setChores]=useState(()=>{
