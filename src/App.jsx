@@ -9300,10 +9300,12 @@ function KidsMiniSite(){
       {/* Header */}
       <div style={{background:`linear-gradient(135deg,${theme.card},${theme.bg})`,padding:"28px 20px 20px",borderBottom:`1px solid ${theme.border}`}}>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:streak>0?10:0}}>
-          <span style={{fontSize:42}}>{kidEmoji}</span>
+          <div style={{width:48,height:48,borderRadius:14,background:primary+"22",border:`1.5px solid ${primary}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            <FlourishMark size={32}/>
+          </div>
           <div style={{flex:1}}>
             <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:"#EDE9E2",lineHeight:1}}>{kidData?.name ? `${kidName}'s Flourish` : "Flourish Kids"}</div>
-            <div style={{color:"#6B7A6E",fontSize:12,marginTop:2}}>Your money zone</div>
+            <div style={{color:"#6B7A6E",fontSize:12,marginTop:2}}>Your money zone <span style={{color:primary}}>♥</span></div>
           </div>
           <div style={{textAlign:"right"}}>
             <div style={{color:primary,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>${totalJars.toFixed(2)}</div>
@@ -9426,137 +9428,6 @@ function KidsMiniSite(){
       </div>
     </div>
   );
-}
-
-  const [kidAge,setKidAge]=useState(kidData?.age||"8-12");
-  const [chores,setChores]=useState(()=>{
-    try{
-      // Try to get chores from the synced key
-      const saved=JSON.parse(localStorage.getItem("flourish_kid_chores_"+code)||"null");
-      if(saved)return saved;
-      return kidData?.chores||[];
-    }catch{return[];}
-  });
-
-  const earned=chores.filter(c=>c.done).reduce((a,c)=>a+(c.reward||0),0);
-  const total=chores.reduce((a,c)=>a+(c.reward||0),0);
-
-  const toggle=(id)=>{
-    const updated=chores.map(c=>c.id===id?{...c,done:!c.done}:c);
-    setChores(updated);
-    try{localStorage.setItem("flourish_kid_chores_"+code,JSON.stringify(updated));}catch{}
-  };
-
-  const kidName=kidData?.name||"Your";
-  const kidEmoji=kidData?.emoji||"🌱";
-
-  const lessons={
-    "4-7":[
-      {emoji:"🪙",title:"Money is for trading",body:"When you want something at the store, you give money and get the thing. Money is like a trade ticket!",key:"Money is how we trade for things we want."},
-      {emoji:"🐷",title:"Saving means waiting",body:"If a toy costs $10 and you have $3, you need to save $7 more. Saving means keeping money safe until you have enough.",key:"Waiting for something makes it even better."},
-    ],
-    "8-12":[
-      {emoji:"🏦",title:"What banks do",body:"A bank keeps your money safe and pays you a little extra called interest. Like a super-safe piggy bank that rewards you for saving.",key:"Banks keep money safe AND pay you to use them."},
-      {emoji:"💳",title:"Credit cards are loans",body:"A credit card lets you buy now and pay later. But if you don't pay it all back quickly, they charge you extra. That's how people get into trouble.",key:"Pay your credit card in full every month."},
-      {emoji:"📈",title:"Money can grow",body:"$100 at 7% interest becomes $386 in 20 years — without doing anything extra! This is compound interest — money making more money.",key:"Start saving young. Time is the secret ingredient."},
-    ],
-    "13+":[
-      {emoji:"💰",title:"Budget like a boss",body:"50% needs, 30% wants, 20% savings. Without a budget, money just disappears. A budget is a plan for the life you actually want.",key:"A budget gives your money direction."},
-      {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet — and paying extra for the privilege.",key:"Debt is expensive. Use it wisely or not at all."},
-      {emoji:"📊",title:"Start investing at your first job",body:"$50/month at 7% starting at 16 = $245,000 at retirement. Starting at 30 = only $68,000. Starting early nearly triples your outcome.",key:"Invest with your very first paycheck."},
-    ],
-  };
-
-  return(
-    <div style={{minHeight:"100dvh",background:"#050D09",fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"0 0 60px"}}>
-
-      {/* Header */}
-      <div style={{background:"linear-gradient(135deg,#0D1F12,#0A1A0E)",padding:"28px 24px 20px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <span style={{fontSize:40}}>{kidEmoji}</span>
-          <div>
-            <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:"#EDE9E2",lineHeight:1}}>{kidData?.name ? `${kidName}'s Flourish` : "Flourish Kids"}</div>
-            <div style={{color:"#6B7A6E",fontSize:12,marginTop:2}}>Your money zone 💚</div>
-          </div>
-        </div>
-      </div>
-
-      <div style={{padding:"20px 20px 0",display:"flex",flexDirection:"column",gap:14}}>
-
-        {/* Chore Chart */}
-        <div style={{background:"#0D1F12",borderRadius:18,padding:"20px",border:"1px solid rgba(0,214,143,0.2)"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-            <div style={{color:"#00D68F",fontWeight:800,fontSize:16}}>🏡 My Chores</div>
-            <div style={{textAlign:"right"}}>
-              <div style={{color:"#00D68F",fontWeight:900,fontSize:20,fontFamily:"'Playfair Display',serif"}}>${earned.toFixed(2)}</div>
-              <div style={{color:"#6B7A6E",fontSize:11}}>{total>0?`of $${total.toFixed(2)} earned`:""}</div>
-            </div>
-          </div>
-          {total>0&&(
-            <div style={{height:8,background:"rgba(255,255,255,0.06)",borderRadius:4,overflow:"hidden",marginBottom:16}}>
-              <div style={{height:"100%",width:`${(earned/total)*100}%`,background:"linear-gradient(90deg,#00D68F,#00EFA0)",borderRadius:4,transition:"width .4s"}}/>
-            </div>
-          )}
-          {chores.length===0&&(
-            <div style={{color:"#6B7A6E",fontSize:13,textAlign:"center",padding:"16px 0"}}>No chores yet — ask a parent to add some!</div>
-          )}
-          {chores.map(ch=>(
-            <div key={ch.id} onClick={()=>toggle(ch.id)} style={{display:"flex",gap:12,alignItems:"center",padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.05)",cursor:"pointer"}}>
-              <div style={{width:28,height:28,borderRadius:8,border:`2px solid ${ch.done?"#00D68F":"rgba(255,255,255,0.15)"}`,background:ch.done?"#00D68F":"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s"}}>
-                {ch.done&&<span style={{color:"#050D09",fontSize:14,fontWeight:900}}>✓</span>}
-              </div>
-              <span style={{flex:1,color:ch.done?"#6B7A6E":"#EDE9E2",fontSize:15,fontWeight:600,textDecoration:ch.done?"line-through":"none",transition:"all .2s"}}>{ch.task}</span>
-              <span style={{color:"#E8B84B",fontWeight:800,fontSize:14}}>+${(ch.reward||0).toFixed(2)}</span>
-            </div>
-          ))}
-          {chores.some(c=>c.done)&&earned===total&&total>0&&(
-            <div style={{marginTop:14,background:"rgba(0,214,143,0.08)",borderRadius:12,padding:"14px",textAlign:"center"}}>
-              <div style={{fontSize:28,marginBottom:4}}>🎉</div>
-              <div style={{color:"#00D68F",fontWeight:800,fontSize:14}}>All done! You earned ${earned.toFixed(2)} today!</div>
-            </div>
-          )}
-        </div>
-
-        {/* 3 Jar Method */}
-        <div style={{background:"#0D1F12",borderRadius:18,padding:"20px",border:"1px solid rgba(232,184,75,0.2)"}}>
-          <div style={{color:"#E8B84B",fontWeight:800,fontSize:16,marginBottom:8}}>🫙 My 3 Jars</div>
-          <div style={{color:"#6B7A6E",fontSize:12,marginBottom:14}}>Split every dollar you earn into 3 jars:</div>
-          <div style={{display:"flex",gap:10}}>
-            {[{name:"Spend",emoji:"🎮",color:"#FF8C42",pct:"50%",desc:"Fun now"},{name:"Save",emoji:"🏦",color:"#4DA8FF",pct:"30%",desc:"Big goals"},{name:"Give",emoji:"❤️",color:"#FF6B9D",pct:"20%",desc:"Others"}].map((j,i)=>(
-              <div key={i} style={{flex:1,background:j.color+"18",border:`1px solid ${j.color}33`,borderRadius:14,padding:"14px 8px",textAlign:"center"}}>
-                <div style={{fontSize:26,marginBottom:6}}>{j.emoji}</div>
-                <div style={{color:j.color,fontWeight:800,fontSize:18}}>{j.pct}</div>
-                <div style={{color:"#EDE9E2",fontWeight:700,fontSize:13,marginTop:2}}>{j.name}</div>
-                <div style={{color:"#6B7A6E",fontSize:10,marginTop:2}}>{j.desc}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Lessons */}
-        <div style={{background:"#0D1F12",borderRadius:18,padding:"20px",border:"1px solid rgba(255,107,157,0.2)"}}>
-          <div style={{color:"#FF6B9D",fontWeight:800,fontSize:16,marginBottom:14}}>📚 Money Lessons</div>
-          <div style={{display:"flex",gap:8,marginBottom:14}}>
-            {["4-7","8-12","13+"].map(age=>(
-              <button key={age} onClick={()=>setKidAge(age)} style={{flex:1,background:kidAge===age?"rgba(255,107,157,0.2)":"rgba(255,255,255,0.04)",border:`1px solid ${kidAge===age?"#FF6B9D":"rgba(255,255,255,0.1)"}`,color:kidAge===age?"#FF6B9D":"#6B7A6E",borderRadius:10,padding:"9px 0",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
-                {age==="4-7"?"🐣 4–7":age==="8-12"?"🌱 8–12":"🌳 13+"}
-              </button>
-            ))}
-          </div>
-          {(lessons[kidAge]||[]).map((l,i)=>(
-            <div key={i} style={{background:"rgba(255,255,255,0.03)",borderRadius:14,padding:"16px",marginBottom:10,border:"1px solid rgba(255,107,157,0.1)"}}>
-              <div style={{fontSize:28,marginBottom:8}}>{l.emoji}</div>
-              <div style={{color:"#EDE9E2",fontWeight:800,fontSize:15,marginBottom:8}}>{l.title}</div>
-              <div style={{color:"#9A9A8A",fontSize:13,lineHeight:1.65,marginBottom:10}}>{l.body}</div>
-              <div style={{background:"rgba(255,107,157,0.1)",border:"1px solid rgba(255,107,157,0.2)",borderRadius:10,padding:"8px 12px",color:"#FF6B9D",fontSize:12,fontWeight:600}}>💡 {l.key}</div>
-            </div>
-          ))}
-        </div>
-
-      </div>
-    </div>
-  );
-}
 function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
