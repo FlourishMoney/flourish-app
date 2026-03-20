@@ -9345,8 +9345,18 @@ function KidsMiniSite(){
     },
   };
 
+  const THEMES_KEYS=Object.keys(THEMES);
+
   const [activeTheme,setActiveTheme]=useState(()=>{
-    try{return localStorage.getItem("flourish_kid_theme_"+code)||kidData?.theme||"pink";}catch{return kidData?.theme||"pink";}
+    try{
+      // URL param takes priority (fresh share link), then localStorage, then kidData, then pink
+      const urlTheme=params.get("t");
+      if(urlTheme&&THEMES_KEYS.includes(urlTheme))return urlTheme;
+      const stored=localStorage.getItem("flourish_kid_theme_"+code);
+      if(stored&&THEMES_KEYS.includes(stored))return stored;
+      if(kidData?.theme)return kidData.theme;
+      return"pink";
+    }catch{return"pink";}
   });
   const saveTheme=(t)=>{
     setActiveTheme(t);
