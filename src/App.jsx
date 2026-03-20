@@ -6691,7 +6691,11 @@ function Family({data,household,setHousehold,setScreen}){
   const [done2,setDone2]=useState(false);
   const [expandedItem,setExpandedItem]=useState(null);
   const [kids,setKids]=useState(()=>{
-    try{return JSON.parse(localStorage.getItem("flourish_kids")||"null")||[];}catch{return[];}
+    try{
+      const saved=JSON.parse(localStorage.getItem("flourish_kids")||"null")||[];
+      // Ensure every kid has a chores array (backwards compat)
+      return saved.map(k=>({...k,chores:k.chores||[]}));
+    }catch{return[];}
   });
   const [activeKidId,setActiveKidId]=useState(()=>{
     try{const k=JSON.parse(localStorage.getItem("flourish_kids")||"null")||[];return k[0]?.id||null;}catch{return null;}
@@ -7119,8 +7123,9 @@ function Family({data,household,setHousehold,setScreen}){
       {/* Active kid detail */}
       {activeKid&&(()=>{
         const kidUrl=`${window.location.origin}/kids?code=${activeKid.code}`;
-        const earned=activeKid.chores.filter(c=>c.done).reduce((a,c)=>a+(c.reward||0),0);
-        const total=activeKid.chores.reduce((a,c)=>a+(c.reward||0),0);
+        const kidChores=activeKid.chores||[];
+        const earned=kidChores.filter(c=>c.done).reduce((a,c)=>a+(c.reward||0),0);
+        const total=kidChores.reduce((a,c)=>a+(c.reward||0),0);
         return(<>
           {/* Kid header */}
           <Card style={{background:`linear-gradient(135deg,${C.pink}18,${C.card})`,border:`1px solid ${C.pink}33`}}>
@@ -7128,7 +7133,7 @@ function Family({data,household,setHousehold,setScreen}){
               <div style={{fontSize:40}}>{activeKid.emoji}</div>
               <div style={{flex:1}}>
                 <div style={{color:C.cream,fontWeight:900,fontSize:20,fontFamily:"'Playfair Display',Georgia,serif"}}>{activeKid.name}</div>
-                <div style={{color:C.muted,fontSize:12}}>Ages {activeKid.age} · {activeKid.chores.length} chores</div>
+                <div style={{color:C.muted,fontSize:12}}>Ages {activeKid.age} · {kidChores.length} chores</div>
               </div>
               <button onClick={()=>{if(window.confirm(`Remove ${activeKid.name}?`)){removeKid(activeKid.id);setActiveKidId(null);}}}
                 style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",color:C.muted,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Remove</button>
@@ -7164,11 +7169,11 @@ function Family({data,household,setHousehold,setScreen}){
               {total>0&&<div style={{color:C.gold,fontWeight:800}}>${earned.toFixed(2)} / ${total.toFixed(2)}</div>}
             </div>
 
-            {activeKid.chores.length===0&&(
+            {kidChores.length===0&&(
               <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"16px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>No chores yet — add some below!</div>
             )}
 
-            {activeKid.chores.map(ch=>(
+            {kidChores.map(ch=>(
               <div key={ch.id} style={{display:"flex",gap:10,alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.border}`}}>
                 <div onClick={()=>toggleKidChore(activeKid.id,ch.id)} style={{width:24,height:24,borderRadius:7,border:`2px solid ${ch.done?C.green:C.border}`,background:ch.done?C.green:"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer",transition:"all .2s"}}>
                   {ch.done&&<span style={{color:C.bg,fontSize:13,fontWeight:900}}>✓</span>}
