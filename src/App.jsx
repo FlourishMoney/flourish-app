@@ -9236,7 +9236,15 @@ function KidsMiniSite(){
     blue:{primary:"#4DA8FF",bg:"#05090D",card:"#0A1018",accent:"#4da8ff22",border:"rgba(77,168,255,0.25)"},
     orange:{primary:"#FF8C42",bg:"#0D0805",card:"#180E0A",accent:"#ff8c4222",border:"rgba(255,140,66,0.25)"},
   };
-  const theme=THEMES[kidData?.theme||"pink"];
+
+  const [activeTheme,setActiveTheme]=useState(()=>{
+    try{return localStorage.getItem("flourish_kid_theme_"+code)||kidData?.theme||"pink";}catch{return kidData?.theme||"pink";}
+  });
+  const saveTheme=(t)=>{
+    setActiveTheme(t);
+    try{localStorage.setItem("flourish_kid_theme_"+code,t);}catch{}
+  };
+  const theme=THEMES[activeTheme]||THEMES.pink;
   const primary=theme.primary;
 
   const [kidAge,setKidAge]=useState(kidData?.age||"8-12");
@@ -9301,11 +9309,20 @@ function KidsMiniSite(){
           </div>
         </div>
         {streak>0&&(
-          <div style={{background:"rgba(255,140,66,0.15)",border:"1px solid rgba(255,140,66,0.3)",borderRadius:10,padding:"8px 14px",display:"flex",alignItems:"center",gap:8}}>
+          <div style={{background:"rgba(255,140,66,0.15)",border:"1px solid rgba(255,140,66,0.3)",borderRadius:10,padding:"8px 14px",display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
             <span style={{fontSize:18}}>🔥</span>
             <span style={{color:"#FF8C42",fontWeight:700,fontSize:13}}>{streak} week streak! Keep it going!</span>
           </div>
         )}
+        {/* Theme picker */}
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <span style={{color:"#6B7A6E",fontSize:11,fontWeight:600,flexShrink:0}}>🎨 My colour:</span>
+          {Object.entries(THEMES).map(([key,t])=>(
+            <button key={key} onClick={()=>saveTheme(key)}
+              style={{width:28,height:28,borderRadius:99,border:`2.5px solid ${activeTheme===key?"#fff":"transparent"}`,background:t.primary,cursor:"pointer",transition:"all .2s",flexShrink:0,outline:"none"}}>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div style={{padding:"16px 16px 0",display:"flex",flexDirection:"column",gap:14}}>
