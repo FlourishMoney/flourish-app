@@ -9372,29 +9372,23 @@ function KidsMiniSite(){
             <span style={{color:"#FF8C42",fontWeight:700,fontSize:13}}>{streak} week streak! Keep it going!</span>
           </div>
         )}
-        {/* Theme picker */}
-        <div style={{background:"rgba(128,128,128,0.1)",borderRadius:14,padding:"10px 14px",marginTop:10}}>
-          <div style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
-            <span style={{color:theme.dark?theme.text:"#444",fontSize:12,fontWeight:700,flexShrink:0}}>🎨 My theme</span>
-          </div>
-          <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:theme.dark?"rgba(255,255,255,0.4)":"rgba(0,0,0,0.35)",marginBottom:6}}>Dark</div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
-            {Object.entries(THEMES).filter(([,t])=>t.dark).map(([key,t])=>(
-              <button key={key} onClick={()=>saveTheme(key)} title={t.name}
-                style={{width:34,height:34,borderRadius:99,border:`3px solid ${activeTheme===key?"#fff":"transparent"}`,background:t.primary,cursor:"pointer",transition:"all .2s",flexShrink:0,boxShadow:activeTheme===key?`0 0 12px ${t.primary}99`:"none",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:"#fff"}}>
-                {activeTheme===key?"✓":t.emoji}
-              </button>
-            ))}
-          </div>
-          <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:theme.dark?"rgba(255,255,255,0.4)":"rgba(0,0,0,0.35)",marginBottom:6}}>Light</div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {Object.entries(THEMES).filter(([,t])=>!t.dark).map(([key,t])=>(
-              <button key={key} onClick={()=>saveTheme(key)} title={t.name}
-                style={{width:34,height:34,borderRadius:99,border:`3px solid ${activeTheme===key?t.primary:"rgba(0,0,0,0.15)"}`,background:t.bg,cursor:"pointer",transition:"all .2s",flexShrink:0,boxShadow:activeTheme===key?`0 0 12px ${t.primary}88`:"none",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13}}>
-                {activeTheme===key?"✓":t.emoji}
-              </button>
-            ))}
-          </div>
+        {/* Theme picker — compact dropdown */}
+        <div style={{marginTop:10,display:"flex",alignItems:"center",gap:10}}>
+          <span style={{color:theme.dark?"rgba(255,255,255,0.6)":"rgba(0,0,0,0.5)",fontSize:12,fontWeight:700,flexShrink:0}}>🎨 Theme</span>
+          <select value={activeTheme} onChange={e=>saveTheme(e.target.value)}
+            style={{flex:1,background:theme.dark?"rgba(255,255,255,0.08)":"rgba(0,0,0,0.06)",border:`1px solid ${theme.primaryBorder}`,borderRadius:10,padding:"9px 12px",color:theme.dark?theme.text:theme.text,fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:"pointer",outline:"none",appearance:"none",WebkitAppearance:"none"}}>
+            <optgroup label="── Dark ──">
+              {Object.entries(THEMES).filter(([,t])=>t.dark).map(([key,t])=>(
+                <option key={key} value={key}>{t.emoji} {t.name}</option>
+              ))}
+            </optgroup>
+            <optgroup label="── Light ──">
+              {Object.entries(THEMES).filter(([,t])=>!t.dark).map(([key,t])=>(
+                <option key={key} value={key}>{t.emoji} {t.name}</option>
+              ))}
+            </optgroup>
+          </select>
+          <div style={{width:28,height:28,borderRadius:99,background:primary,flexShrink:0,boxShadow:`0 0 10px ${primary}88`}}/>
         </div>
       </div>
 
