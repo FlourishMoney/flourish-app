@@ -1635,21 +1635,35 @@ function MoneyPersonality({data}) {
 function WealthForecast({data}) {
   const [extra, setExtra] = useState(0);
   const [horizon, setHorizon] = useState(20);
-  const toMonthlyAmt = (amt, freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:a; };
-    const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMonthlyAmt(i.amount,i.freq),0) || 4200;
+  const toMonthlyAmt = (amt, freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a; };
+
+  // Use REAL data from Retirement tab only — never invent savings rates
+  const ret = data.profile?.retirement || {};
+  const isCA = (data.profile?.country||"CA")==="CA";
+
+  // Current balances from retirement tab
+  const rrspBal   = parseFloat(ret[isCA?"rrspBalance":"401kBalance"]||0);
+  const tfsaBal   = parseFloat(ret[isCA?"tfsaBalance":"iraBalance"]||0);
+  const invBal    = (data.accounts||[]).filter(a=>a.type==="investment").reduce((s,a)=>s+parseFloat(a.balance||0),0);
+  const startingBal = rrspBal + tfsaBal + invBal;
+
+  // Monthly contributions using frequency
+  const rrspMo    = toMonthlyAmt(ret[isCA?"rrspMonthly":"401kMonthly"]||0, ret[isCA?"rrspFreq":"401kFreq"]||"monthly");
+  const tfsaMo    = toMonthlyAmt(ret[isCA?"tfsaMonthly":"iraMonthly"]||0, ret[isCA?"tfsaFreq":"iraFreq"]||"monthly");
+  const pensionMo = toMonthlyAmt(ret[isCA?"pensionMonthly":"otherRetire"]||0, ret[isCA?"pensionFreq":"otherRetireFreq"]||"monthly");
+  const monthlyContrib = rrspMo + tfsaMo + pensionMo;
+  const monthlyInvest = monthlyContrib + extra;
+
   const totalDebt = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.balance||0),0);
-  const bal = parseFloat((data.accounts?.[0]?.balance||0).toString().replace(/,/g,""));
-  const invBal = (data.accounts||[]).filter(a=>a.type==="investment").reduce((s,a)=>s+parseFloat(a.balance||0),0);
-  const savingsRate = 0.10; // assume 10% baseline savings
-  const monthlyInvest = monthlyIncome * savingsRate + extra;
   const annualReturn = 0.07;
+  const hasData = startingBal > 0 || monthlyContrib > 0;
 
   const project = (monthly, years) => {
-    let val = invBal + bal * 0.5;
+    let val = startingBal;
     for (let y = 0; y < years; y++) {
       val = val * (1 + annualReturn) + monthly * 12;
     }
-    return Math.round(val - totalDebt * Math.max(0, 1 - years * 0.1));
+    return Math.max(0, Math.round(val));
   };
 
   const scenarios = [
@@ -1659,67 +1673,84 @@ function WealthForecast({data}) {
   ];
 
   const vals = scenarios.map(s => project(s.monthly, horizon));
-  const maxVal = Math.max(...vals);
+  const maxVal = Math.max(...vals, 1);
 
   const fmt = n => { const v=n||0; return v >= 1000000 ? `$${(v/1000000).toFixed(2)}M` : `$${(v/1000).toFixed(0)}k`; };
 
   return (
     <div style={{background:C.card,borderRadius:20,padding:"20px",border:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-        <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7}}>
+        <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:6}}>
           <span style={{fontSize:16}}>🔭</span> Future Wealth Forecast
         </div>
         <div style={{display:"flex",gap:4}}>
           {[10,20,30].map(y=>(
-            <button key={y} onClick={()=>setHorizon(y)} style={{background:horizon===y?C.purple+"33":C.cardAlt,border:`1px solid ${horizon===y?C.purple:C.border}`,color:horizon===y?C.purpleBright:C.muted,borderRadius:99,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>{y}y</button>
+            <button key={y} onClick={()=>setHorizon(y)} style={{background:horizon===y?C.purple+"33":C.cardAlt,border:`1px solid ${horizon===y?C.purple:C.border}`,color:horizon===y?C.purpleBright:C.muted,borderRadius:8,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{y}y</button>
           ))}
         </div>
       </div>
 
-      {/* Bars */}
-      <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:18}}>
-        {scenarios.map((s,i)=>{
-          const pct = maxVal > 0 ? (vals[i]/maxVal)*100 : 0;
-          return (
-            <div key={i}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <span style={{fontSize:14}}>{s.icon}</span>
-                  <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{s.label}</span>
+      {!hasData ? (
+        <div style={{textAlign:"center",padding:"28px 20px"}}>
+          <div style={{fontSize:36,marginBottom:12}}>📊</div>
+          <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:8}}>No investment data yet</div>
+          <div style={{color:C.muted,fontSize:12,lineHeight:1.7,marginBottom:16}}>
+            Add your {isCA?"RRSP, TFSA":"401(k), IRA"} balances and monthly contributions in the <strong style={{color:C.tealBright}}>Retirement</strong> tab to see your wealth forecast.
+          </div>
+          <div style={{background:C.tealDim,border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",color:C.tealBright,fontSize:11,fontWeight:600}}>
+            Tip: Even entering $50/month shows the power of compound growth over time.
+          </div>
+        </div>
+      ) : (
+        <>
+          <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>
+            Based on ${startingBal.toLocaleString()} balance · ${Math.round(monthlyContrib).toLocaleString()}/mo contributions · 7% avg annual return
+          </div>
+          {/* Bars */}
+          <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:18}}>
+            {scenarios.map((s,i)=>{
+              const pct = maxVal > 0 ? (vals[i]/maxVal)*100 : 0;
+              return (
+                <div key={i}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{fontSize:14}}>{s.icon}</span>
+                      <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{s.label}</span>
+                    </div>
+                    <span style={{color:s.color,fontWeight:900,fontFamily:"'Playfair Display',serif",fontSize:18}}>{fmt(vals[i])}</span>
+                  </div>
+                  <div style={{height:8,borderRadius:99,background:C.border,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(to right,${s.color}88,${s.color})`,borderRadius:99,transition:"width .5s ease"}}/>
+                  </div>
                 </div>
-                <span style={{color:s.color,fontWeight:900,fontFamily:"'Playfair Display',serif",fontSize:18}}>{fmt(vals[i])}</span>
-              </div>
-              <div style={{height:8,borderRadius:99,background:C.border,overflow:"hidden"}}>
-                <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(to right,${s.color}88,${s.color})`,borderRadius:99,transition:"width 0.8s ease"}}/>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
 
-      {/* Extra investment slider */}
-      <div style={{background:C.surface,borderRadius:14,padding:"14px 16px",border:`1px solid ${C.border}`}}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
-          <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Extra monthly investment</span>
-          <span style={{color:C.greenBright,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{extra}/mo</span>
-        </div>
-        <input type="range" min={0} max={1000} step={25} value={extra} onChange={e=>setExtra(Number(e.target.value))}
-          style={{width:"100%",accentColor:C.green,cursor:"pointer"}}/>
-        <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
-          <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$0</span>
-          <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$1,000/mo</span>
-        </div>
-      </div>
-      {extra > 0 && (
-        <div style={{marginTop:10,background:C.greenDim,border:`1px solid ${C.green}33`,borderRadius:12,padding:"10px 14px",textAlign:"center"}}>
-          <span style={{color:C.green,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>
-            +${extra}/mo → {fmt(project(monthlyInvest+extra,horizon))} in {horizon} years vs {fmt(project(monthlyInvest,horizon))} now
-          </span>
-        </div>
+          {/* Extra investment slider */}
+          <div style={{background:C.surface,borderRadius:14,padding:"14px 16px",border:`1px solid ${C.border}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+              <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Extra monthly investment</span>
+              <span style={{color:C.greenBright,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{extra}/mo</span>
+            </div>
+            <input type="range" min={0} max={1000} step={25} value={extra} onChange={e=>setExtra(Number(e.target.value))}
+              style={{width:"100%",accentColor:C.green,cursor:"pointer"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
+              <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$0</span>
+              <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$1,000/mo</span>
+            </div>
+          </div>
+          {extra > 0 && (
+            <div style={{marginTop:10,background:C.greenDim,border:`1px solid ${C.green}33`,borderRadius:12,padding:"10px 14px",textAlign:"center"}}>
+              <span style={{color:C.green,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>
+                +${extra}/mo → {fmt(project(monthlyInvest+extra,horizon))} in {horizon} years vs {fmt(project(monthlyInvest,horizon))} now
+              </span>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
-}
 
 // ── OPPORTUNITY DETECTION ──────────────────────────────────────────────────────
 function OpportunityDetector({data, setScreen, setGoalsTab}) {
