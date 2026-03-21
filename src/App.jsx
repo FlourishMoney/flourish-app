@@ -5759,7 +5759,10 @@ function generateBudgetSuggestions(data) {
   const numKids  = (profile.kids||[]).length||(profile.hasKids?1:0);
   const hSize    = 1+(hasPartner?1:0)+numKids;
   // Build per-category actuals from last ~90 days of transactions
-  const IGNORE   = new Set(["Income","Transfer","Bills","Utilities"]);
+  // Exclude bill categories — bills are tracked separately, not as discretionary spending
+  const billCats = new Set((data.bills||[]).map(b=>b.category||"Other Bills").filter(Boolean));
+  const BILL_REPORTING_CATS = new Set(["Housing","Utilities","Phone & Internet","Insurance","Transportation","Other Bills"]);
+  const IGNORE   = new Set(["Income","Transfer","Bills","Utilities",...billCats,...BILL_REPORTING_CATS]);
   const txns     = (data.transactions||[]).filter(t=>t.amount>0&&!IGNORE.has(t.cat));
   const actuals  = {};
   if(txns.length>0){
@@ -6087,7 +6090,7 @@ function SpendScreen({data, setAppData, setScreen}){
   const [accountFilter,setAccountFilter]=useState("All");
   const [recatTxn,setRecatTxn]=useState(null);
   const [markBillTxn,setMarkBillTxn]=useState(null);
-  const [billForm,setBillForm]=useState({name:"",amount:"",date:"1"});
+  const [billForm,setBillForm]=useState({name:"",amount:"",date:"1",type:"fixed",category:"Bills"});
   const [arrearsPayTxn,setArrearsPayTxn]=useState(null);
   const [applyAllPrompt, setApplyAllPrompt] = useState(null);
   const [showAllBdCats, setShowAllBdCats] = useState(false);
@@ -6109,7 +6112,6 @@ function SpendScreen({data, setAppData, setScreen}){
   const recat = (txn, newCat, applyToAll=false) => {
     const overrides = JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
     if(applyToAll) {
-      // Apply to every transaction from the same merchant
       const merchantKey = (txn.name||"").toLowerCase().trim();
       const updated = {...overrides};
       txns.forEach(t => {
@@ -6119,6 +6121,20 @@ function SpendScreen({data, setAppData, setScreen}){
     } else {
       const updated = {...overrides, [txn.id]: newCat};
       localStorage.setItem("flourish_cat_overrides", JSON.stringify(updated));
+    }
+    // Auto-link: if this vendor matches a bill's name, store in vendorBillMap
+    const merchantKey = (txn.name||"").toLowerCase().trim();
+    if(merchantKey.length >= 3 && setAppData) {
+      const matchedBill = (data.bills||[]).find(b =>
+        merchantKey.includes((b.name||"").toLowerCase().trim().substring(0,5)) ||
+        (b.name||"").toLowerCase().trim().includes(merchantKey.substring(0,8))
+      );
+      if(matchedBill) {
+        setAppData(prev => ({
+          ...prev,
+          vendorBillMap: {...(prev.vendorBillMap||{}), [merchantKey]: matchedBill.name}
+        }));
+      }
     }
     setRecatTxn(null);
     setApplyAllPrompt(null);
@@ -6250,9 +6266,35 @@ function SpendScreen({data, setAppData, setScreen}){
                 </select>
               </div>
             </div>
+            {/* Fixed / Variable toggle */}
+            <div style={{marginBottom:12}}>
+              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Bill Type</div>
+              <div style={{display:"flex",gap:8}}>
+                {[["fixed","📌 Fixed","Same every month"],["variable","🔄 Variable","Changes monthly"]].map(([val,label,hint])=>(
+                  <button key={val} onClick={()=>setBillForm(v=>({...v,type:val}))}
+                    style={{flex:1,background:billForm.type===val?C.teal+"22":C.card,border:`1px solid ${billForm.type===val?C.teal:C.border}`,
+                      borderRadius:10,padding:"9px 10px",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+                    <div style={{color:billForm.type===val?C.tealBright:C.cream,fontWeight:700,fontSize:12}}>{label}</div>
+                    <div style={{color:C.muted,fontSize:10,marginTop:2}}>{hint}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Reports-under category */}
+            <div style={{marginBottom:14}}>
+              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Reports under (in Budget)</div>
+              <select value={billForm.category||"Other Bills"} onChange={e=>setBillForm(v=>({...v,category:e.target.value}))}
+                style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",
+                  color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}>
+                {["Housing","Utilities","Phone & Internet","Insurance","Subscriptions","Transportation","Health","Education","Other Bills"].map(c=>(
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <div style={{color:C.muted,fontSize:10,marginTop:4}}>Keeps bills separate from your discretionary spending budget.</div>
+            </div>
             <div style={{background:C.teal+"12",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",marginBottom:16}}>
               <div style={{color:C.tealBright,fontSize:12,fontWeight:600}}>💡 This will also update your cash-flow forecast</div>
-              <div style={{color:C.muted,fontSize:11,marginTop:2}}>Your Plan screen will now include ${billForm.amount}/month on the {billForm.date}{([11,12,13].includes(parseInt(billForm.date))?"th":["st","nd","rd"][parseInt(billForm.date||0)%10-1]||"th")}.</div>
+              <div style={{color:C.muted,fontSize:11,marginTop:2}}>Your Plan screen will now include ${billForm.amount}/month on the {billForm.date ? billForm.date+"th" : ""}</div>
             </div>
             <div style={{display:"flex",gap:10}}>
               <button
@@ -6263,15 +6305,23 @@ function SpendScreen({data, setAppData, setScreen}){
                     const billName = billForm.name.trim().toLowerCase();
                     const alreadyExists = (data.bills||[]).some(b=>b.name.trim().toLowerCase()===billName);
                     if(!alreadyExists){
-                      setAppData(prev=>({...prev,bills:[...(prev.bills||[]),{name:billForm.name.trim(),amount:billForm.amount,date:billForm.date}]}));
-                    } // end if(!alreadyExists)
-                    // Also recategorise the transaction as Bills
+                      const newBill = {name:billForm.name.trim(),amount:billForm.amount,date:billForm.date,
+                        type:billForm.type||"fixed",category:billForm.category||"Other Bills",
+                        vendorPattern:(markBillTxn?.name||"").toLowerCase().trim()};
+                      const merchantKey = (markBillTxn?.name||"").toLowerCase().trim();
+                      setAppData(prev=>({...prev,
+                        bills:[...(prev.bills||[]),newBill],
+                        vendorBillMap:{...(prev.vendorBillMap||{}),...(merchantKey?{[merchantKey]:newBill.name}:{})}}));
+                    }
+                    // Categorise transaction under bill's category (not generic "Bills")
+                    const billCat = billForm.category||"Other Bills";
                     const overrides=JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
-                    localStorage.setItem("flourish_cat_overrides",JSON.stringify({...overrides,[markBillTxn.id]:"Bills"}));
+                    localStorage.setItem("flourish_cat_overrides",JSON.stringify({...overrides,[markBillTxn.id]:billCat}));
                   }
-                  setMarkBillTxn(null);setBillForm({name:"",amount:"",date:"1"});
+                  setMarkBillTxn(null);setBillForm({name:"",amount:"",date:"1",type:"fixed",category:"Bills"});
                 }}
-                style={{flex:1,background:billForm.name&&billForm.amount?C.green:"rgba(255,255,255,0.08)",border:"none",borderRadius:12,padding:"13px",color:"#fff",fontWeight:800,fontSize:14,cursor:billForm.name&&billForm.amount?"pointer":"default",fontFamily:"inherit",opacity:!billForm.name||!billForm.amount?0.4:1}}>
+                style={{flex:1,background:billForm.name&&billForm.amount?C.green:"rgba(255,255,255,0.08)",border:"none",
+                  borderRadius:12,padding:"13px",color:billForm.name&&billForm.amount?"#041810":C.muted,fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
                 Add to Bills ✓
               </button>
               <button onClick={()=>setMarkBillTxn(null)}
@@ -7645,6 +7695,12 @@ function Family({data,household,setHousehold,setScreen}){
      metric:soonBills.length>0?`${soonBills.length} bill${soonBills.length>1?"s":""} coming · $${soonBills.reduce((a,b)=>a+parseFloat(b.amount||0),0).toFixed(0)} total`:"No bills due soon ✓",
      metricColor:soonBills.length>0?C.goldBright:C.greenBright,
      prompt:"Anything you forgot to budget for?"},
+    {id:"varbills",icon:"🔄",title:"Any variable bills to update?",desc:"Hydro, phone, internet — did any change this month?",
+     metric:(data.bills||[]).filter(b=>b.type==="variable").length>0
+       ?`${(data.bills||[]).filter(b=>b.type==="variable").length} variable bill${(data.bills||[]).filter(b=>b.type==="variable").length>1?"s":""} to review`
+       :"No variable bills tracked yet",
+     metricColor:C.tealBright,
+     prompt:"Update the amount for any bill that changed this month — your forecast will adjust automatically."},
     {id:"spend",icon:"💳",title:"How was your spending?",desc:"Honestly. No judgment.",
      metric:topCat?`Biggest spend: ${topCat[0]} · $${(topCat[1]||0).toFixed(0)}`:`Income: $${(monthlyIncome||0).toFixed(0)} · Bills: $${monthlyBills.toFixed(0)}`,
      metricColor:C.tealBright,
@@ -7750,6 +7806,35 @@ function Family({data,household,setHousehold,setScreen}){
                 </div>
               </div>;
             }
+        if(item.id==="varbills"){
+          const varBills=(data.bills||[]).filter(b=>b.type==="variable");
+          if(varBills.length===0) return <div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0"}}>
+            No variable bills set up yet. When adding a bill, mark it as Variable to track it here.
+          </div>;
+          return <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
+            {varBills.map((b,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:C.bg,borderRadius:10,border:`1px solid ${C.teal}33`}}>
+                <span style={{color:C.tealBright,fontSize:14,flexShrink:0}}>🔄</span>
+                <span style={{color:C.cream,fontSize:13,fontWeight:600,flex:1}}>{b.name}</span>
+                <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.teal}44`,borderRadius:8,overflow:"hidden"}}>
+                  <span style={{color:C.muted,padding:"0 5px 0 8px",fontSize:11}}>$</span>
+                  <input type="number" defaultValue={b.amount||""} placeholder={b.amount||"0"}
+                    onBlur={e=>{
+                      const val=parseFloat(e.target.value);
+                      if(!isNaN(val)&&val>0&&setAppData){
+                        setAppData(prev=>({...prev,bills:(prev.bills||[]).map((bill,idx)=>
+                          bill.name===b.name?{...bill,amount:String(val)}:bill
+                        )}))
+                      }
+                    }}
+                    style={{width:60,background:"none",border:"none",padding:"7px 2px",color:C.tealBright,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
+                  <span style={{color:C.muted,padding:"0 6px",fontSize:9}}>/mo</span>
+                </div>
+              </div>
+            ))}
+            <div style={{color:C.muted,fontSize:10,marginTop:2}}>Changes save immediately and update your forecast.</div>
+          </div>;
+        }
             if(item.id==="spend"){
               const cats=Object.entries(topSpend).sort((a,b)=>b[1]-a[1]).slice(0,5);
               const maxAmt=cats[0]?.[1]||1;
@@ -10955,6 +11040,110 @@ function BudgetScreen({data, setAppData, setScreen}) {
           {/* Budget exists — tracking view */}
           {hasBudgets && (
             <>
+              {/* ── BILLS SECTION ─────────────────────────────── */}
+              {(()=>{
+                const allBills = data.bills||[];
+                if(allBills.length === 0) return null;
+
+                // Match transactions to bills via vendorBillMap
+                const vendorBillMap = data.vendorBillMap||{};
+                const catOverridesLocal = (()=>{try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");}catch{return {};}})();
+                const billsWithStatus = allBills.map(bill => {
+                  // Find a transaction this month that pays this bill
+                  const linkedTxn = monthTxns.find(t => {
+                    const vendor = (t.name||"").toLowerCase().trim();
+                    const billVendor = (bill.vendorPattern||bill.name||"").toLowerCase().trim();
+                    return vendorBillMap[vendor]?.toLowerCase() === bill.name.toLowerCase() ||
+                           (billVendor.length >= 4 && (vendor.includes(billVendor.substring(0,6)) || billVendor.includes(vendor.substring(0,6))));
+                  });
+                  const isVariable = bill.type === "variable";
+                  const expectedAmt = parseFloat(bill.amount||0);
+                  const actualAmt = linkedTxn ? Math.abs(parseFloat(linkedTxn.amount||0)) : null;
+                  return { ...bill, linkedTxn, isVariable, expectedAmt, actualAmt, paid: !!linkedTxn };
+                });
+
+                const paidCount = billsWithStatus.filter(b=>b.paid).length;
+                const totalBillsAmt = billsWithStatus.reduce((s,b)=>s+b.expectedAmt,0);
+                const variableBills = billsWithStatus.filter(b=>b.isVariable);
+
+                return (
+                  <div style={{background:C.card,borderRadius:18,padding:"16px 18px",border:`1px solid ${C.border}`,marginBottom:4}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                      <div>
+                        <div style={{color:C.cream,fontWeight:800,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Monthly Bills</div>
+                        <div style={{color:C.muted,fontSize:11,marginTop:2}}>{paidCount}/{billsWithStatus.length} paid · ${Math.round(totalBillsAmt).toLocaleString()}/mo</div>
+                      </div>
+                      {variableBills.length>0&&(
+                        <div style={{background:C.gold+"18",border:`1px solid ${C.gold}33`,borderRadius:8,padding:"4px 8px"}}>
+                          <span style={{color:C.goldBright,fontSize:10,fontWeight:700}}>🔄 {variableBills.length} variable</span>
+                        </div>
+                      )}
+                    </div>
+                    {billsWithStatus.map((bill,i)=>{
+                      const color = bill.paid ? C.green : C.muted;
+                      const amtDiff = bill.actualAmt !== null ? bill.actualAmt - bill.expectedAmt : null;
+                      return (
+                        <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:i<billsWithStatus.length-1?`1px solid ${C.border}`:"none"}}>
+                          <div style={{width:8,height:8,borderRadius:"50%",background:bill.paid?C.green:C.muted,flexShrink:0}}/>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{display:"flex",alignItems:"center",gap:6}}>
+                              <span style={{color:C.cream,fontSize:13,fontWeight:600}}>{bill.name}</span>
+                              {bill.isVariable&&<span style={{background:C.teal+"18",color:C.tealBright,fontSize:9,padding:"2px 5px",borderRadius:99,border:`1px solid ${C.teal}33`}}>variable</span>}
+                              {bill.category&&<span style={{color:C.muted,fontSize:10}}>{bill.category}</span>}
+                            </div>
+                            {bill.paid&&bill.linkedTxn&&(
+                              <div style={{color:C.muted,fontSize:10,marginTop:1}}>
+                                Paid {new Date(bill.linkedTxn.date+"T12:00:00").toLocaleDateString("en",{month:"short",day:"numeric"})}
+                                {amtDiff!==null&&Math.abs(amtDiff)>2&&(
+                                  <span style={{color:amtDiff>0?C.redBright:C.greenBright,marginLeft:6}}>
+                                    {amtDiff>0?`+$${Math.round(amtDiff)} more than usual`:`$${Math.round(Math.abs(amtDiff))} less than usual`}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {!bill.paid&&(
+                              <div style={{color:C.muted,fontSize:10,marginTop:1}}>No payment found this month</div>
+                            )}
+                          </div>
+                          <div style={{textAlign:"right",flexShrink:0}}>
+                            <div style={{color:bill.paid?C.green:C.cream,fontWeight:700,fontSize:13}}>
+                              {bill.actualAmt!==null?`$${Math.round(bill.actualAmt)}`:`$${Math.round(bill.expectedAmt)}`}
+                            </div>
+                            {bill.paid&&<div style={{color:C.greenBright,fontSize:9}}>✓ paid</div>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {/* Variable bill update prompt */}
+                    {variableBills.length>0&&(
+                      <div style={{marginTop:10,background:C.teal+"10",border:`1px solid ${C.teal}28`,borderRadius:10,padding:"10px 12px"}}>
+                        <div style={{color:C.tealBright,fontWeight:700,fontSize:11,marginBottom:6}}>🔄 Update variable bills</div>
+                        {variableBills.map((bill,i)=>(
+                          <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:i<variableBills.length-1?6:0}}>
+                            <span style={{color:C.muted,fontSize:12,flex:1}}>{bill.name}</span>
+                            <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.teal}44`,borderRadius:8,overflow:"hidden"}}>
+                              <span style={{color:C.muted,padding:"0 6px",fontSize:11}}>$</span>
+                              <input type="number" defaultValue={bill.actualAmt||bill.expectedAmt||""}
+                                placeholder={String(bill.expectedAmt||"")}
+                                onBlur={e=>{
+                                  const val = parseFloat(e.target.value);
+                                  if(!isNaN(val)&&val>0&&setAppData) {
+                                    setAppData(prev=>({...prev,bills:(prev.bills||[]).map((b,idx)=>
+                                      idx===i+allBills.indexOf(allBills.find(bb=>bb.name===bill.name))?{...b,amount:String(val)}:b
+                                    )}));
+                                  }
+                                }}
+                                style={{width:60,background:"none",border:"none",padding:"6px 4px",color:C.tealBright,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
+                              <span style={{color:C.muted,padding:"0 4px",fontSize:9}}>/mo</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:4,paddingLeft:2}}>Discretionary Spending</div>
               {/* Overall month progress */}
               <div style={{ background: C.card, borderRadius: 18, padding: "16px 18px", border: `1px solid ${overBudgetCats.length > 0 ? C.red + "44" : C.green + "33"}` }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
