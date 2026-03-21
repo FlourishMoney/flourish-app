@@ -2415,90 +2415,112 @@ const SafeSpendEngine = {
 // Projects daily balance for 90 days with overdraft risk detection.
 
 const ForecastEngine = {
-  generate(data, days = 90) {
-    const { balance }       = SafeSpendEngine.calculate(data);
-    const { monthlyIncome } = FinancialCalcEngine.cashFlow(data);
-    const avgDaily          = FinancialCalcEngine.avgDailySpend(data);
-    const bills             = data.bills || [];
-    const today             = new Date();
-    const todayNum          = today.getDate();
+generate(data, days = 90) {
+  const { balance }  = SafeSpendEngine.calculate(data);
+  const avgDaily     = FinancialCalcEngine.avgDailySpend(data);
+  const bills        = data.bills || [];
+  const today        = new Date();
 
-    let running = balance;
-    const forecast = [];
-    const overdraftRisk = [];
-    const lowBalanceWarnings = [];
+  let running = balance;
+  const forecast          = [];
+  const overdraftRisk     = [];
+  const lowBalanceWarnings = [];
 
-    // Compute pay schedule — use primary income source for frequency,
-    // but calculate actual deposit amounts per income source correctly.
-    // This fixes the bug where monthlyIncome (full month) was shown instead
-    // of the actual deposit amount per paycheck.
-    const incomes = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0);
-    const primaryIncome = incomes[0];
-    const primaryFreq = primaryIncome?.freq || "biweekly";
-    // Per-paycheque amount for each income source
-    const perPaycheque = (inc) => {
-      const amt = parseFloat(inc.amount||0);
-      const f = inc.freq||"biweekly";
-      // amt is already the per-paycheque amount for most freq types
-      // EXCEPT monthly — convert to per-deposit
-      if(f==="monthly")     return amt;      // paid once per month
-      if(f==="semimonthly") return amt;      // paid twice per month
-      if(f==="biweekly")    return amt;      // already per paycheck
-      if(f==="weekly")      return amt;      // already per week
-      return amt;
-    };
-    // Primary income deposit amount
-    // If no income entered: paycheque=0, no simulated paydays (avoids phantom deposits)
-    const paycheque = primaryIncome ? perPaycheque(primaryIncome) : 0;
-    const hasRealIncome = incomes.length > 0;
-    // Secondary incomes on monthly schedule (e.g. CCB, rental income)
-    const secondaryMonthly = incomes.slice(1).filter(i=>i.freq==="monthly"||i.freq==="semimonthly");
-    const getIsPayday = (dayNum,i) => {
-      if(i===0) return false;
-      if(!hasRealIncome) return false; // no income entered → no simulated paydays
-      if(primaryFreq==="monthly")     return dayNum===1;
-      if(primaryFreq==="semimonthly") return dayNum===1||dayNum===15;
-      if(primaryFreq==="biweekly")    return i%14===0;
-      if(primaryFreq==="weekly")      return i%7===0;
-      return dayNum===1||dayNum===15;
-    };
-    const getSecondaryIncome = (dayNum) => {
-      // Monthly secondary incomes hit on the 1st
-      return secondaryMonthly.filter(i=>{
-        if(i.freq==="monthly") return dayNum===1;
-        if(i.freq==="semimonthly") return dayNum===1||dayNum===15;
-        return false;
-      }).reduce((s,i)=>s+perPaycheque(i),0);
-    };
+  const incomes       = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0);
+  const primaryIncome = incomes[0];
+  const primaryFreq   = primaryIncome?.freq || "biweekly";
+  // income.amount is the per-deposit amount for all freq types
+  const perDeposit    = (inc) => parseFloat(inc.amount||0);
+  const paycheque     = primaryIncome ? perDeposit(primaryIncome) : 0;
+  const hasIncome     = incomes.length > 0;
+  const secondaryMo   = incomes.slice(1).filter(i=>i.freq==="monthly"||i.freq==="semimonthly");
 
-    for (let i = 0; i <= days; i++) {
-      const d = new Date(today); d.setDate(todayNum + i);
-      const dayNum  = d.getDate();
-      const isPayday = getIsPayday(dayNum, i);
-      const dayBills = bills.filter(b => {
-        const bd = parseInt(b.date);
-        return bd === dayNum && bd > 0;
-      });
-      const inc  = (isPayday ? paycheque : 0) + getSecondaryIncome(dayNum);
-      // Day 0 = today: balance is already current, don't deduct spending again
-      // All other days: deduct daily spend regardless of payday (you still spend on paydays)
-      const dailySpend = i === 0 ? 0 : avgDaily * 0.8;
-      const out  = dayBills.reduce((s,b) => s + parseFloat(b.amount||0), 0) + dailySpend;
-      running = running + inc - out;
+  // ── Anchor-based payday projection ─────────────────────────────────────────
+  // Problem with old code: i%14===0 puts the first payday 14 days from today,
+  // completely ignoring that the next deposit might be 3 days away.
+  // Fix: find the last real deposit from transactions, project forward from that date.
+  const paydayDates = new Set(); // Set of "YYYY-MM-DD" strings that are paydays
+  if(hasIncome && primaryIncome) {
+    const txns      = data.transactions || [];
+    const incAmt    = parseFloat(primaryIncome.amount||0);
+    const incLabel  = (primaryIncome.label||"").toLowerCase();
+    const freqDays  = primaryFreq==="weekly" ? 7 : primaryFreq==="biweekly" ? 14 : null;
 
-      const entry = { day: i, date: d, balance: running, income: inc, expenses: out,
-                      isPayday, bills: dayBills };
-      forecast.push(entry);
-
-      if (running < 0)  overdraftRisk.push({ day: i, date: d, balance: running });
-      if (running < balance * 0.12 && running >= 0 && !isPayday)
-        lowBalanceWarnings.push({ day: i, date: d, balance: running });
+    // Find last deposit matching this income source (within 8% amount tolerance OR name match)
+    let anchor = null;
+    if(freqDays) {
+      const deposits = txns
+        .filter(t => {
+          if(t.amount >= 0) return false; // income is negative (money in)
+          const name = (t.name||"").toLowerCase();
+          const amtOk  = incAmt > 0 && Math.abs(Math.abs(t.amount)-incAmt)/incAmt < 0.08;
+          const nameOk = incLabel.length > 3 && name.includes(incLabel.substring(0,6));
+          const isInc  = t.cat==="Income" || name.includes("payroll") ||
+                         name.includes("direct deposit") || name.includes("deposit");
+          return (amtOk||nameOk) && isInc;
+        })
+        .map(t => new Date(t.date+"T12:00:00"))
+        .filter(d => !isNaN(d.getTime()))
+        .sort((a,b) => b-a);
+      anchor = deposits[0] || null;
     }
 
-    return { forecast, overdraftRisk, lowBalanceWarnings,
-             willGoNegative: overdraftRisk.length > 0,
-             firstNegativeDay: overdraftRisk[0] || null };
+    if(freqDays && anchor) {
+      // Advance from last deposit until we pass today, then keep projecting forward
+      let next = new Date(anchor);
+      next.setDate(next.getDate() + freqDays);
+      const horizon = new Date(today.getTime() + days*86400000);
+      while(next <= horizon) {
+        paydayDates.add(next.toISOString().substring(0,10));
+        next = new Date(next); next.setDate(next.getDate() + freqDays);
+      }
+    } else if(freqDays) {
+      // No anchor found — fallback: count forward from today at frequency
+      for(let k = freqDays; k <= days; k += freqDays) {
+        const d2 = new Date(today); d2.setDate(today.getDate()+k);
+        paydayDates.add(d2.toISOString().substring(0,10));
+      }
+    } else if(primaryFreq==="monthly") {
+      const payDay = primaryIncome.anchorDay || 1;
+      for(let k = 1; k <= days; k++) {
+        const d2 = new Date(today); d2.setDate(today.getDate()+k);
+        if(d2.getDate()===payDay) paydayDates.add(d2.toISOString().substring(0,10));
+      }
+    } else if(primaryFreq==="semimonthly") {
+      for(let k = 1; k <= days; k++) {
+        const d2 = new Date(today); d2.setDate(today.getDate()+k);
+        if(d2.getDate()===1||d2.getDate()===15) paydayDates.add(d2.toISOString().substring(0,10));
+      }
+    }
   }
+
+  const getSecondary = (dayNum) =>
+    secondaryMo.filter(i=>(i.freq==="monthly"?dayNum===1:(dayNum===1||dayNum===15)))
+               .reduce((s,i)=>s+perDeposit(i),0);
+
+  for(let i = 0; i <= days; i++) {
+    const d       = new Date(today); d.setDate(today.getDate()+i);
+    const dayNum  = d.getDate();
+    const dateKey = d.toISOString().substring(0,10);
+    const isPayday = i > 0 && paydayDates.has(dateKey);
+    const dayBills = bills.filter(b=>parseInt(b.date)===dayNum&&parseInt(b.date)>0);
+    const inc      = (isPayday ? paycheque : 0) + getSecondary(dayNum);
+    const out      = dayBills.reduce((s,b)=>s+parseFloat(b.amount||0),0) + (i===0?0:avgDaily*0.8);
+    running = running + inc - out;
+
+    const entry = { day:i, date:d, balance:running, income:inc, expenses:out,
+                    isPayday, bills:dayBills };
+    forecast.push(entry);
+
+    if(running < 0) overdraftRisk.push({ day:i, date:d, balance:running });
+    if(running < balance*0.12 && running >= 0 && !isPayday)
+      lowBalanceWarnings.push({ day:i, date:d, balance:running });
+  }
+
+  return { forecast, overdraftRisk, lowBalanceWarnings,
+           willGoNegative: overdraftRisk.length > 0,
+           firstNegativeDay: overdraftRisk[0] || null };
+}
 };
 
 // ── ENGINE 4: BEHAVIOR ANALYSIS ENGINE ────────────────────────────────────────
