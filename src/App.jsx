@@ -6515,7 +6515,7 @@ function SpendScreen({data, setAppData, setScreen}){
           budget={budget} onSetBudget={(cat,val)=>{
             if(setAppData) setAppData(prev=>({...prev,budgets:{...(prev.budgets||{}),
               ...(val===null ? Object.fromEntries(Object.entries(prev.budgets||{}).filter(([k])=>k!==cat)) : {[cat]:val})
-            }});});
+            }}));
           }}/>;
       })}
       {bdAllCats.length>8&&(
