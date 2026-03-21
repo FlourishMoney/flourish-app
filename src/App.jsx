@@ -9496,6 +9496,7 @@ function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [betaCode, setBetaCode] = useState("");
   const [mfaCode, setMfaCode] = useState("");
   const [qrUrl, setQrUrl] = useState("");
   const [factorId, setFactorId] = useState("");
@@ -9504,10 +9505,16 @@ function AuthScreen({ onAuth }) {
   const [success, setSuccess] = useState("");
   const [showAuth, setShowAuth] = useState(false);
 
+  const BETA_CODES = ["BETA100","FLOURISH2026","AMANDA","FOUNDER","GROWSMART"];
   const BETA_CAP = 30;
 
   const handleSignup = async () => {
     setLoading(true); setError("");
+    // Validate beta code
+    if(!BETA_CODES.includes(betaCode.trim().toUpperCase())) {
+      setError("Invalid beta code. Request one at hello@flourishmoney.app");
+      setLoading(false); return;
+    }
     // Check beta cap server-side
     try {
       const res = await fetch("/api/beta", {
@@ -9634,7 +9641,7 @@ function AuthScreen({ onAuth }) {
             </h1>
 
             <p style={{ color: "#6B7A6E", fontSize: 16, lineHeight: 1.75, maxWidth: 380, marginBottom: 40 }}>
-              Connect your Canadian bank accounts and get one clear number — no spreadsheets, no dread.
+              Connect your bank accounts and get one clear number — no spreadsheets, no dread.
             </p>
 
             {/* Hero product card */}
@@ -9643,7 +9650,7 @@ function AuthScreen({ onAuth }) {
               <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 56, fontWeight: 900, color: "#00D68F", lineHeight: 1, marginBottom: 6 }}>$247</div>
               <div style={{ color: "rgba(237,233,226,0.35)", fontSize: 12, marginBottom: 24 }}>After bills · After buffer · From your real balance</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {[["🏦  RBC Chequing","$1,843.22"],["💳  TD Visa","−$612.00"],["📅  Upcoming bills","−$984.00"]].map(([label,amount]) => (
+                {[["🏦  Chequing / Checking","$1,843.22"],["💳  Credit Card","−$612.00"],["📅  Upcoming bills","−$984.00"]].map(([label,amount]) => (
                   <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "11px 14px", background: "rgba(255,255,255,0.03)", borderRadius: 12, fontSize: 13 }}>
                     <span style={{ color: "#6B7A6E" }}>{label}</span>
                     <span style={{ color: "#EDE9E2", fontWeight: 600 }}>{amount}</span>
@@ -9656,11 +9663,11 @@ function AuthScreen({ onAuth }) {
             <button onClick={goSignup} style={{ width: "100%", maxWidth: 340, padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", marginBottom: 12, boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
               Get My Number — Free
             </button>
-            <div style={{ color: "#6B7A6E", fontSize: 12, marginBottom: 52 }}>No credit card · Connects RBC, TD, Scotiabank, CIBC + more</div>
+            <div style={{ color: "#6B7A6E", fontSize: 12, marginBottom: 52 }}>No credit card · Connects RBC, TD, Chase, Wells Fargo + thousands more</div>
 
             {/* Trust row */}
             <div style={{ display: "flex", gap: 28, justifyContent: "center", flexWrap: "wrap", marginBottom: 64 }}>
-              {[["🔒","Bank-level security"],["🇨🇦","Canadian accounts"],["⚡","Live in 60 seconds"]].map(([icon,label]) => (
+              {[["🔒","Bank-level security"],["🌎","CA & US accounts"],["⚡","Live in 60 seconds"]].map(([icon,label]) => (
                 <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, color: "#6B7A6E", fontSize: 12, fontWeight: 600 }}>
                   <span>{icon}</span><span>{label}</span>
                 </div>
@@ -9734,7 +9741,7 @@ function AuthScreen({ onAuth }) {
                 <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 48, fontWeight: 900, color: "#EDE9E2", lineHeight: 1, marginBottom: 4 }}>$14.99</div>
                 <div style={{ color: "#6B7A6E", fontSize: 13, marginBottom: 28 }}>per month · Cancel anytime</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28, textAlign: "left" }}>
-                  {["All accounts connected","Safe-to-spend number daily","AI Financial Coach","RRSP & TFSA tracking","Bill forecasting","Goal tracking with projections"].map(f => (
+                  {["All accounts connected","Safe-to-spend number daily","AI Financial Coach","Investment & retirement tracking","Bill forecasting","Goal tracking with projections"].map(f => (
                     <div key={f} style={{ display: "flex", gap: 10, alignItems: "center" }}>
                       <span style={{ color: "#00D68F", fontSize: 14 }}>✓</span>
                       <span style={{ color: "#EDE9E2", fontSize: 13 }}>{f}</span>
@@ -9826,9 +9833,12 @@ function AuthScreen({ onAuth }) {
                   </div>
                   {success && <div style={{ color: "#00D68F", fontSize: 13, marginBottom: 16, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10 }}>{success}</div>}
                   <input style={inpStyle} type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" name="email" />
-                  <input style={{ ...inpStyle, marginBottom: 20 }} type="password" placeholder="Password (min 8 characters)" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" name="password" />
+                  <input style={{ ...inpStyle, marginBottom: mode==="signup"?12:20 }} type="password" placeholder="Password (min 8 characters)" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" name="password" />
+                  {mode==="signup"&&(
+                    <input style={{ ...inpStyle, marginBottom: 20, textTransform:"uppercase", letterSpacing:2 }} type="text" placeholder="Beta access code" value={betaCode} onChange={e => setBetaCode(e.target.value)} autoComplete="off" name="betacode" maxLength={20}/>
+                  )}
                   {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
-                  <button style={btnStyle(!loading && email && password.length >= 8)} onClick={mode === "login" ? handleLogin : handleSignup} disabled={loading || !email || password.length < 8}>
+                  <button style={btnStyle(!loading && email && password.length >= 8 && (mode==="login"||betaCode.trim().length>0))} onClick={mode === "login" ? handleLogin : handleSignup} disabled={loading || !email || password.length < 8 || (mode==="signup"&&!betaCode.trim())}>
                     {loading ? "..." : mode === "login" ? "Log In" : "Create Account"}
                   </button>
                   {mode === "signup" && (
