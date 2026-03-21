@@ -11054,179 +11054,265 @@ function AuthScreen({ onAuth }) {
 
       {!showAuth ? (
 
-        /* ───────────────── LANDING PAGE ───────────────── */
-        <div style={{ display: "flex", flexDirection: "column", minHeight: "100dvh" }}>
+/* ───────────────── LANDING PAGE ───────────────── */
+<div style={{ minHeight:"100dvh", background:"#080F0A", display:"flex", flexDirection:"column" }}>
 
-          {/* Nav */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 24px", position: "sticky", top: 0, background: "rgba(5,13,9,0.92)", backdropFilter: "blur(12px)", zIndex: 10, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <FlourishMark size={32} />
-              <span style={{ color: "#EDE9E2", fontWeight: 800, fontSize: 16, letterSpacing: -0.3 }}>Flourish</span>
-            </div>
-            <button onClick={goLogin} style={{ background: "rgba(0,214,143,0.1)", border: "1px solid rgba(0,214,143,0.3)", color: "#00D68F", borderRadius: 99, padding: "9px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-              Log In
-            </button>
+  {/* ── Nav ─────────────────────────────────────────── */}
+  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
+    padding:"18px 28px", position:"sticky", top:0, zIndex:50,
+    background:"rgba(8,15,10,0.85)", backdropFilter:"blur(16px)",
+    borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+    <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+      <FlourishMark size={30}/>
+      <span style={{ color:"#EDE9E2", fontWeight:800, fontSize:15, letterSpacing:-0.3,
+        fontFamily:"'Playfair Display',serif" }}>Flourish</span>
+    </div>
+    <button onClick={goLogin} style={{ background:"rgba(0,214,143,0.08)",
+      border:"1px solid rgba(0,214,143,0.25)", borderRadius:99, padding:"8px 18px",
+      color:"#00D68F", fontSize:12, fontWeight:700, cursor:"pointer",
+      fontFamily:"'Plus Jakarta Sans',sans-serif", letterSpacing:0.3 }}>
+      Log In
+    </button>
+  </div>
+
+  {/* ── Hero ─────────────────────────────────────────── */}
+  <div style={{ display:"flex", flexDirection:"column", alignItems:"center",
+    textAlign:"center", padding:"72px 24px 56px", maxWidth:640, margin:"0 auto", width:"100%" }}>
+
+    {/* Badge row */}
+    <div style={{ display:"flex", gap:8, justifyContent:"center", flexWrap:"wrap", marginBottom:28 }}>
+      <span style={{ display:"inline-flex", alignItems:"center", gap:5,
+        background:"rgba(0,214,143,0.08)", border:"1px solid rgba(0,214,143,0.2)",
+        borderRadius:99, padding:"5px 12px", color:"#00D68F", fontSize:11, fontWeight:700,
+        letterSpacing:0.3, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+        🇨🇦🇺🇸 Built for Canada &amp; the US
+      </span>
+      <span style={{ display:"inline-flex", alignItems:"center", gap:5,
+        background:"rgba(240,196,66,0.08)", border:"1px solid rgba(240,196,66,0.2)",
+        borderRadius:99, padding:"5px 12px", color:"#F0C442", fontSize:11, fontWeight:700,
+        letterSpacing:0.3, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+        🔒 Beta — limited spots
+      </span>
+    </div>
+
+    <h1 style={{ fontFamily:"'Playfair Display',serif",
+      fontSize:"clamp(34px,8vw,58px)", fontWeight:900, color:"#EDE9E2",
+      lineHeight:1.08, marginBottom:20, letterSpacing:-1 }}>
+      Know before<br/>you spend.{" "}
+      <span style={{ color:"#00D68F", fontStyle:"italic" }}>Finally.</span>
+    </h1>
+
+    <p style={{ color:"#6B7A6E", fontSize:16, lineHeight:1.8,
+      maxWidth:420, marginBottom:36, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+      One safe-to-spend number, calculated live from every account — updated every time you open the app.
+    </p>
+
+    {/* Hero product card */}
+    <div style={{ width:"100%", maxWidth:320, background:"#0D1F12",
+      border:"1px solid rgba(0,214,143,0.18)", borderRadius:20,
+      padding:"22px 20px", marginBottom:32, textAlign:"left" }}>
+      <div style={{ color:"#6B7A6E", fontSize:10, fontWeight:700, letterSpacing:1.2,
+        textTransform:"uppercase", marginBottom:6,
+        fontFamily:"'Plus Jakarta Sans',sans-serif" }}>Today's safe-to-spend</div>
+      <div style={{ fontFamily:"'Playfair Display',serif", fontSize:52, fontWeight:900,
+        color:"#00D68F", lineHeight:1, marginBottom:4 }}>$247</div>
+      <div style={{ color:"rgba(237,233,226,0.3)", fontSize:11, marginBottom:20,
+        fontFamily:"'Plus Jakarta Sans',sans-serif" }}>After bills · After buffer · Real money</div>
+      <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+        {[["🏦 Chequing / Checking","$1,843"],["💳 Credit Card","−$612"],["📅 Upcoming bills","−$984"]].map(([label,amount])=>(
+          <div key={label} style={{ display:"flex", justifyContent:"space-between",
+            padding:"9px 12px", background:"rgba(255,255,255,0.03)",
+            borderRadius:10, border:"1px solid rgba(255,255,255,0.05)" }}>
+            <span style={{ color:"#6B7A6E", fontSize:12,
+              fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{label}</span>
+            <span style={{ color:"#EDE9E2", fontWeight:600, fontSize:12 }}>{amount}</span>
           </div>
+        ))}
+      </div>
+    </div>
 
-          {/* Hero */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "52px 28px 40px", textAlign: "center" }}>
+    <button onClick={goSignup} style={{ width:"100%", maxWidth:320, padding:"16px",
+      borderRadius:14, border:"none", background:"linear-gradient(135deg,#00D68F,#00FF9F)",
+      color:"#041810", fontWeight:800, fontSize:15, cursor:"pointer",
+      fontFamily:"'Plus Jakarta Sans',sans-serif", letterSpacing:-0.2, marginBottom:12 }}>
+      Know Before You Spend — Free
+    </button>
+    <div style={{ color:"#4A5E50", fontSize:12, marginBottom:52,
+      fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+      No credit card · Connects RBC, TD, Chase, Wells Fargo &amp; more
+    </div>
 
-            <div style={{ display: "inline-block", background: "rgba(0,214,143,0.1)", border: "1px solid rgba(0,214,143,0.25)", borderRadius: 99, padding: "6px 16px", fontSize: 12, fontWeight: 700, color: "#00D68F", letterSpacing: 0.5, marginBottom: 28 }}>
-              🇨🇦🇺🇸 Built for Canada & the US
-            </div>
-            <div style={{ display: "inline-block", background: "rgba(240,196,66,0.1)", border: "1px solid rgba(240,196,66,0.25)", borderRadius: 99, padding: "6px 16px", fontSize: 12, fontWeight: 700, color: "#F0C442", letterSpacing: 0.5, marginBottom: 28, marginLeft: 8 }}>
-              🔒 Beta — limited spots
-            </div>
-
-            <h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: "clamp(30px,9vw,52px)", fontWeight: 900, color: "#EDE9E2", lineHeight: 1.1, marginBottom: 18, letterSpacing: -0.5, maxWidth: 560 }}>
-              Know before you spend.{" "}
-              <span style={{ color: "#00D68F", fontStyle: "italic" }}>Finally.</span>
-            </h1>
-
-            <p style={{ color: "#6B7A6E", fontSize: 16, lineHeight: 1.75, maxWidth: 380, marginBottom: 40 }}>
-              Finally know if you can afford it. One safe-to-spend number, calculated from your real accounts — updated every day.
-            </p>
-
-            {/* Hero product card */}
-            <div style={{ width: "100%", maxWidth: 340, background: "#0D1F12", border: "1px solid rgba(0,214,143,0.2)", borderRadius: 24, padding: "28px 24px", marginBottom: 36, boxShadow: "0 0 80px rgba(0,214,143,0.07)" }}>
-              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Safe to spend today</div>
-              <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 56, fontWeight: 900, color: "#00D68F", lineHeight: 1, marginBottom: 6 }}>$247</div>
-              <div style={{ color: "rgba(237,233,226,0.35)", fontSize: 12, marginBottom: 24 }}>After bills · After buffer · From your real balance</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {[["🏦  Chequing / Checking","$1,843.22"],["💳  Credit Card","−$612.00"],["📅  Upcoming bills","−$984.00"]].map(([label,amount]) => (
-                  <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "11px 14px", background: "rgba(255,255,255,0.03)", borderRadius: 12, fontSize: 13 }}>
-                    <span style={{ color: "#6B7A6E" }}>{label}</span>
-                    <span style={{ color: "#EDE9E2", fontWeight: 600 }}>{amount}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Primary CTA */}
-            <button onClick={goSignup} style={{ width: "100%", maxWidth: 340, padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", marginBottom: 12, boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-              Know Before You Spend — Free
-            </button>
-            <div style={{ color: "#6B7A6E", fontSize: 12, marginBottom: 52 }}>No credit card · Connects RBC, TD, Chase, Wells Fargo + thousands more</div>
-
-            {/* Trust row */}
-            <div style={{ display: "flex", gap: 28, justifyContent: "center", flexWrap: "wrap", marginBottom: 64 }}>
-              {[["🔒","Bank-level security"],["🌎","CA & US accounts"],["⚡","Live in 60 seconds"]].map(([icon,label]) => (
-                <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, color: "#6B7A6E", fontSize: 12, fontWeight: 600 }}>
-                  <span>{icon}</span><span>{label}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Pain section */}
-            <div style={{ width: "100%", maxWidth: 560, marginBottom: 64, textAlign: "left" }}>
-              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Sound familiar?</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {[
-                  "You close the banking app the second it opens because the number stresses you out.",
-                  "You tap your card and genuinely don't know if it'll go through.",
-                  "You have accounts at 3 different banks and no idea what the real total is.",
-                  "You've tried budgeting apps before and quit within a week."
-                ].map((text) => (
-                  <div key={text} style={{ display: "flex", gap: 14, alignItems: "flex-start", padding: "14px 18px", background: "#0D1F12", borderRadius: 14, border: "1px solid rgba(255,255,255,0.05)" }}>
-                    <span style={{ color: "#00D68F", fontSize: 16, flexShrink: 0, marginTop: 1 }}>✓</span>
-                    <span style={{ color: "#6B7A6E", fontSize: 14, lineHeight: 1.6 }}>{text}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* How it works */}
-            <div style={{ width: "100%", maxWidth: 560, marginBottom: 64 }}>
-              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>How it works</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {[
-                  ["1","Connect your banks","Plaid securely links RBC, TD, Chase, Wells Fargo and thousands more. Your login is never stored — Plaid is used by millions of financial apps worldwide."],
-                  ["2","See your real number","One safe-to-spend number calculated from your real balance, upcoming bills, and a protective buffer."],
-                  ["3","Know before you tap","Check it every morning. Stop guessing. Stop dreading. Just know."]
-                ].map(([num,title,body]) => (
-                  <div key={num} style={{ display: "flex", gap: 16, padding: "18px", background: "#0D1F12", borderRadius: 16, border: "1px solid rgba(255,255,255,0.06)" }}>
-                    <div style={{ width: 30, height: 30, borderRadius: 99, background: "rgba(0,214,143,0.15)", border: "1px solid rgba(0,214,143,0.3)", color: "#00D68F", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{num}</div>
-                    <div>
-                      <div style={{ color: "#EDE9E2", fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{title}</div>
-                      <div style={{ color: "#6B7A6E", fontSize: 13, lineHeight: 1.65 }}>{body}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Features */}
-            <div style={{ width: "100%", maxWidth: 560, marginBottom: 64 }}>
-              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Everything in one place</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                {[
-                  ["💰","Safe-to-spend number","One clear daily number that accounts for bills and buffer."],
-                  ["🤖","AI Financial Coach","Ask anything. Get honest, personalised financial advice for Canada & the US."],
-                  ["🏦","All your accounts","RBC, TD, Chase, Wells Fargo, and thousands more — all in one dashboard."],
-                  ["📈","Investment tracking","Know exactly where you stand on RRSP, TFSA, 401k, and more."],
-                  ["📅","Bill forecasting","See what's coming before it hits. Never be surprised."],
-                  ["🎯","Goal tracking","Set savings goals and watch them grow with 30-year projections."]
-                ].map(([icon,title,body]) => (
-                  <div key={title} style={{ padding: "16px", background: "#0D1F12", borderRadius: 16, border: "1px solid rgba(255,255,255,0.06)" }}>
-                    <div style={{ fontSize: 22, marginBottom: 8 }}>{icon}</div>
-                    <div style={{ color: "#EDE9E2", fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{title}</div>
-                    <div style={{ color: "#6B7A6E", fontSize: 11, lineHeight: 1.6 }}>{body}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Pricing */}
-            <div style={{ width: "100%", maxWidth: 400, marginBottom: 64 }}>
-              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Simple pricing</div>
-              <div style={{ background: "#0D1F12", border: "1px solid rgba(0,214,143,0.25)", borderRadius: 24, padding: "32px 28px", textAlign: "center" }}>
-                <div style={{ color: "#6B7A6E", fontSize: 13, marginBottom: 8 }}>After free trial</div>
-                <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 48, fontWeight: 900, color: "#EDE9E2", lineHeight: 1, marginBottom: 4 }}>$14.99</div>
-                <div style={{ color: "#6B7A6E", fontSize: 13, marginBottom: 28 }}>per month · Cancel anytime</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28, textAlign: "left" }}>
-                  {["All accounts connected","Safe-to-spend number daily","AI Financial Coach","Investment & retirement tracking","Bill forecasting","Goal tracking with projections"].map(f => (
-                    <div key={f} style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                      <span style={{ color: "#00D68F", fontSize: 14 }}>✓</span>
-                      <span style={{ color: "#EDE9E2", fontSize: 13 }}>{f}</span>
-                    </div>
-                  ))}
-                </div>
-                <button onClick={goSignup} style={{ width: "100%", padding: "16px", borderRadius: 14, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 15, cursor: "pointer", boxShadow: "0 8px 32px rgba(0,214,143,0.3)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                  Start Free Trial
-                </button>
-                <div style={{ color: "#6B7A6E", fontSize: 11, marginTop: 12 }}>No credit card required</div>
-              </div>
-            </div>
-
-            {/* Bottom CTA */}
-            <div style={{ width: "100%", maxWidth: 400, textAlign: "center", marginBottom: 64 }}>
-              <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 26, fontWeight: 900, color: "#EDE9E2", lineHeight: 1.2, marginBottom: 16 }}>
-                Stop guessing.<br />
-                <span style={{ color: "#00D68F", fontStyle: "italic" }}>Start knowing.</span>
-              </div>
-              <button onClick={goSignup} style={{ width: "100%", padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 10 }}>
-                Know Before You Spend — Free
-              </button>
-              <div style={{ color: "#6B7A6E", fontSize: 12 }}>No credit card · Takes 60 seconds</div>
-            </div>
-
-          </div>
-
-          {/* Footer */}
-          <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", padding: "20px 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-            <span style={{ color: "#6B7A6E", fontSize: 11 }}>© 2026 GrowSmart Inc. · Flourish Money</span>
-            <div style={{ display: "flex", gap: 24 }}>
-              {[["Privacy Policy","/privacy"],["Terms of Service","/terms"]].map(([label,href]) => (
-                <a key={label} href={href} style={{ color: "#6B7A6E", fontSize: 11, textDecoration: "none" }}>{label}</a>
-              ))}
-            </div>
-          </div>
-
+    {/* Trust row */}
+    <div style={{ display:"flex", gap:24, justifyContent:"center",
+      flexWrap:"wrap", borderTop:"1px solid rgba(255,255,255,0.06)", paddingTop:28 }}>
+      {[["🔒","Bank-level security"],["🌎","CA & US accounts"],["⚡","Live in 60 seconds"]].map(([icon,label])=>(
+        <div key={label} style={{ display:"flex", alignItems:"center", gap:6,
+          color:"#4A5E50", fontSize:12, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+          <span>{icon}</span><span>{label}</span>
         </div>
+      ))}
+    </div>
+  </div>
 
-      ) : (
+  {/* ── Content sections ─────────────────────────────── */}
+  {/* Isolated from the hero's textAlign:center — everything below is left-aligned */}
+  <div style={{ display:"flex", flexDirection:"column", alignItems:"center",
+    gap:80, padding:"0 24px 80px" }}>
 
-        /* ───────────────── AUTH FORM ───────────────── */
+    {/* Pain points */}
+    <div style={{ width:"100%", maxWidth:560, margin:"0 auto" }}>
+      <div style={{ color:"#00D68F", fontSize:10, fontWeight:700, letterSpacing:1.8,
+        textTransform:"uppercase", marginBottom:20,
+        fontFamily:"'Plus Jakarta Sans',sans-serif" }}>Sound familiar?</div>
+      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+        {[
+          "You close the banking app the second it opens because the number stresses you out.",
+          "You tap your card and genuinely don't know if it'll go through.",
+          "You have accounts at 3 different banks and no idea what the real total is.",
+          "You've tried budgeting apps before and quit within a week."
+        ].map(text=>(
+          <div key={text} style={{ display:"flex", gap:14, alignItems:"flex-start",
+            padding:"16px 18px", background:"#0D1F12", borderRadius:14,
+            border:"1px solid rgba(255,255,255,0.05)" }}>
+            <span style={{ color:"#00D68F", fontSize:14, flexShrink:0, marginTop:2 }}>✓</span>
+            <span style={{ color:"#6B7A6E", fontSize:14, lineHeight:1.65,
+              fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{text}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    {/* How it works */}
+    <div style={{ width:"100%", maxWidth:560, margin:"0 auto" }}>
+      <div style={{ color:"#00D68F", fontSize:10, fontWeight:700, letterSpacing:1.8,
+        textTransform:"uppercase", marginBottom:20,
+        fontFamily:"'Plus Jakarta Sans',sans-serif" }}>How it works</div>
+      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+        {[
+          ["1","Connect your banks","Plaid securely links RBC, TD, Chase, Wells Fargo and thousands more. Your credentials never touch our servers."],
+          ["2","See your real number","One safe-to-spend number calculated from your real balance, upcoming bills, and a safety buffer — not a guess."],
+          ["3","Know before you tap","Check it every morning. Stop guessing. Stop dreading. Just know."]
+        ].map(([num,title,body])=>(
+          <div key={num} style={{ display:"flex", gap:16, padding:"18px",
+            background:"#0D1F12", borderRadius:14,
+            border:"1px solid rgba(255,255,255,0.05)" }}>
+            <div style={{ width:28, height:28, borderRadius:99, flexShrink:0,
+              background:"rgba(0,214,143,0.12)", border:"1px solid rgba(0,214,143,0.3)",
+              display:"flex", alignItems:"center", justifyContent:"center",
+              color:"#00D68F", fontSize:12, fontWeight:800,
+              fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{num}</div>
+            <div>
+              <div style={{ color:"#EDE9E2", fontWeight:700, fontSize:14, marginBottom:5,
+                fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{title}</div>
+              <div style={{ color:"#6B7A6E", fontSize:13, lineHeight:1.65,
+                fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{body}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    {/* Features grid */}
+    <div style={{ width:"100%", maxWidth:560, margin:"0 auto" }}>
+      <div style={{ color:"#00D68F", fontSize:10, fontWeight:700, letterSpacing:1.8,
+        textTransform:"uppercase", marginBottom:20,
+        fontFamily:"'Plus Jakarta Sans',sans-serif" }}>Everything included</div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+        {[
+          ["💰","Safe-to-spend","One clear daily number that accounts for every bill and buffer."],
+          ["🤖","AI Coach","Ask anything. Honest, personalised advice for Canada &amp; the US."],
+          ["🏦","All accounts","RBC, TD, Chase, Wells Fargo, and thousands more — unified."],
+          ["📈","Investments","RRSP, TFSA, 401k, and more tracked in one place."],
+          ["📅","Bill forecast","See what's coming before it hits. Never be surprised again."],
+          ["🎯","Goals","Sinking funds, emergency fund, savings goals with timelines."]
+        ].map(([icon,title,body])=>(
+          <div key={title} style={{ padding:"16px", background:"#0D1F12",
+            borderRadius:14, border:"1px solid rgba(255,255,255,0.05)" }}>
+            <div style={{ fontSize:20, marginBottom:8 }}>{icon}</div>
+            <div style={{ color:"#EDE9E2", fontWeight:700, fontSize:13, marginBottom:4,
+              fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{title}</div>
+            <div style={{ color:"#6B7A6E", fontSize:11, lineHeight:1.65,
+              fontFamily:"'Plus Jakarta Sans',sans-serif" }} dangerouslySetInnerHTML={{__html:body}}/>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    {/* Pricing */}
+    <div style={{ width:"100%", maxWidth:380, margin:"0 auto" }}>
+      <div style={{ color:"#00D68F", fontSize:10, fontWeight:700, letterSpacing:1.8,
+        textTransform:"uppercase", marginBottom:20, textAlign:"center",
+        fontFamily:"'Plus Jakarta Sans',sans-serif" }}>Simple pricing</div>
+      <div style={{ background:"#0D1F12", border:"1px solid rgba(0,214,143,0.22)",
+        borderRadius:24, padding:"32px 28px", textAlign:"center" }}>
+        <div style={{ color:"#6B7A6E", fontSize:12, marginBottom:6,
+          fontFamily:"'Plus Jakarta Sans',sans-serif" }}>After free trial</div>
+        <div style={{ fontFamily:"'Playfair Display',serif", fontSize:52,
+          fontWeight:900, color:"#EDE9E2", lineHeight:1, marginBottom:4 }}>
+          $14.99<span style={{ fontSize:18, fontWeight:400, color:"#6B7A6E" }}> CAD</span>
+        </div>
+        <div style={{ color:"#6B7A6E", fontSize:12, marginBottom:28,
+          fontFamily:"'Plus Jakarta Sans',sans-serif" }}>per month · Cancel anytime</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:10,
+          marginBottom:24, textAlign:"left" }}>
+          {["All accounts connected","Safe-to-spend number daily","AI Financial Coach",
+            "Investment & retirement tracking","Bill forecasting","Goals & sinking funds"].map(f=>(
+            <div key={f} style={{ display:"flex", gap:10, alignItems:"center" }}>
+              <span style={{ color:"#00D68F", fontSize:13, flexShrink:0 }}>✓</span>
+              <span style={{ color:"#EDE9E2", fontSize:13,
+                fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{f}</span>
+            </div>
+          ))}
+        </div>
+        <button onClick={goSignup} style={{ width:"100%", padding:"15px",
+          borderRadius:12, border:"none",
+          background:"linear-gradient(135deg,#00D68F,#00FF9F)",
+          color:"#041810", fontWeight:800, fontSize:14, cursor:"pointer",
+          fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+          Start Free Trial
+        </button>
+        <div style={{ color:"#4A5E50", fontSize:11, marginTop:10,
+          fontFamily:"'Plus Jakarta Sans',sans-serif" }}>No credit card required</div>
+      </div>
+    </div>
+
+    {/* Bottom CTA */}
+    <div style={{ width:"100%", maxWidth:380, margin:"0 auto", textAlign:"center" }}>
+      <div style={{ fontFamily:"'Playfair Display',serif", fontSize:30,
+        fontWeight:900, color:"#EDE9E2", lineHeight:1.15, marginBottom:24 }}>
+        Stop guessing.<br/>
+        <span style={{ color:"#00D68F", fontStyle:"italic" }}>Start knowing.</span>
+      </div>
+      <button onClick={goSignup} style={{ width:"100%", padding:"16px",
+        borderRadius:14, border:"none",
+        background:"linear-gradient(135deg,#00D68F,#00FF9F)",
+        color:"#041810", fontWeight:800, fontSize:15, cursor:"pointer",
+        fontFamily:"'Plus Jakarta Sans',sans-serif", marginBottom:10 }}>
+        Know Before You Spend — Free
+      </button>
+      <div style={{ color:"#4A5E50", fontSize:12,
+        fontFamily:"'Plus Jakarta Sans',sans-serif" }}>No credit card · Takes 60 seconds</div>
+    </div>
+
+  </div>{/* end content sections */}
+
+  {/* ── Footer ───────────────────────────────────────── */}
+  <div style={{ borderTop:"1px solid rgba(255,255,255,0.06)",
+    padding:"20px 28px", display:"flex",
+    justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:12 }}>
+    <span style={{ color:"#4A5E50", fontSize:11,
+      fontFamily:"'Plus Jakarta Sans',sans-serif" }}>© 2026 GrowSmart Inc. · Flourish Money</span>
+    <div style={{ display:"flex", gap:24 }}>
+      {[["Privacy Policy","/privacy"],["Terms of Service","/terms"]].map(([label,href])=>(
+        <a key={label} href={href} style={{ color:"#4A5E50", fontSize:11,
+          textDecoration:"none", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{label}</a>
+      ))}
+    </div>
+  </div>
+
+</div>
+
+) : (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: 24 }}>
           <div style={{ width: "100%", maxWidth: 400, animation: "fadeUp .5s ease both" }}>
 
