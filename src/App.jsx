@@ -9660,7 +9660,7 @@ function AuthScreen({ onAuth }) {
               <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>How it works</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {[
-                  ["1","Connect your banks","Plaid securely links RBC, TD, Scotiabank, CIBC and more. Your login is never stored — Plaid is used by thousands of financial apps worldwide."],
+                  ["1","Connect your banks","Plaid securely links RBC, TD, Chase, Wells Fargo and thousands more. Your login is never stored — Plaid is used by millions of financial apps worldwide."],
                   ["2","See your real number","One safe-to-spend number calculated from your real balance, upcoming bills, and a protective buffer."],
                   ["3","Know before you tap","Check it every morning. Stop guessing. Stop dreading. Just know."]
                 ].map(([num,title,body]) => (
@@ -9681,9 +9681,9 @@ function AuthScreen({ onAuth }) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 {[
                   ["💰","Safe-to-spend number","One clear daily number that accounts for bills and buffer."],
-                  ["🤖","AI Financial Coach","Ask anything. Get honest, personalised Canadian financial advice."],
-                  ["🏦","All your accounts","RBC, TD, Scotiabank, CIBC, and more — all in one dashboard."],
-                  ["📈","RRSP & TFSA tracking","Know exactly where you stand against your contribution limits."],
+                  ["🤖","AI Financial Coach","Ask anything. Get honest, personalised financial advice for Canada & the US."],
+                  ["🏦","All your accounts","RBC, TD, Chase, Wells Fargo, and thousands more — all in one dashboard."],
+                  ["📈","Investment tracking","Know exactly where you stand on RRSP, TFSA, 401k, and more."],
                   ["📅","Bill forecasting","See what's coming before it hits. Never be surprised."],
                   ["🎯","Goal tracking","Set savings goals and watch them grow with 30-year projections."]
                 ].map(([icon,title,body]) => (
