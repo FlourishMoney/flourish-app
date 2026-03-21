@@ -10728,6 +10728,373 @@ function AuthScreen({ onAuth }) {
   );
 }
 
+
+// ─── BUDGET SCREEN ─────────────────────────────────────────────────────────────
+function BudgetScreen({data, setAppData, setScreen}) {
+  const isDesktop = window.innerWidth >= 960;
+  const [editMode, setEditMode] = useState(false);
+  const [editVals, setEditVals] = useState({});
+  const [customCat, setCustomCat] = useState("");
+  const [showAddCat, setShowAddCat] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const { suggestions, netMo, fixedMo, discret, savingsMo, savingsRate, grossMo, actuals } = generateBudgetSuggestions(data);
+  const budgets = data.budgets || {};
+  const hasBudgets = Object.keys(budgets).length > 0;
+  const isCA = (data.profile?.country || "CA") === "CA";
+
+  // Month label
+  const now = new Date();
+  const monthLabel = now.toLocaleDateString("en", { month: "long", year: "numeric" });
+
+  // Active goals needing monthly savings
+  const activeGoals = (data.goals || []).filter(g => parseFloat(g.target || 0) > parseFloat(g.saved || 0));
+  const goalsMo = activeGoals.reduce((s, g) => {
+    const remaining = parseFloat(g.target || 0) - parseFloat(g.saved || 0);
+    const mo = parseFloat(g.monthly || 0);
+    return s + (mo > 0 ? mo : remaining > 0 ? Math.ceil(remaining / 24) : 0);
+  }, 0);
+  const effectiveDiscret = Math.max(50, discret - goalsMo);
+
+  // Current month spending per category
+  const catOverrides = (() => { try { return JSON.parse(localStorage.getItem("flourish_cat_overrides") || "{}"); } catch { return {}; } })();
+  const monthTxns = (data.transactions || []).filter(t => {
+    try { const d = new Date(t.date + "T12:00:00"); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && t.amount > 0; } catch { return false; }
+  });
+  const monthSpend = {};
+  monthTxns.forEach(t => { const cat = catOverrides[t.id] || t.cat; monthSpend[cat] = (monthSpend[cat] || 0) + t.amount; });
+
+  const totalBudgeted = Object.values(budgets).reduce((s, v) => s + v, 0);
+  const totalSpentBudgeted = Object.entries(budgets).reduce((s, [cat]) => s + (monthSpend[cat] || 0), 0);
+  const overallPct = totalBudgeted > 0 ? Math.min(100, Math.round(totalSpentBudgeted / totalBudgeted * 100)) : 0;
+  const overBudgetCats = Object.entries(budgets).filter(([cat, limit]) => (monthSpend[cat] || 0) > limit);
+  const totalOver = overBudgetCats.reduce((s, [cat, limit]) => s + ((monthSpend[cat] || 0) - limit), 0);
+
+  // Where to save suggestions
+  const saveSuggestions = Object.entries(budgets).map(([cat, limit]) => {
+    const spent = monthSpend[cat] || 0;
+    const pct = limit > 0 ? spent / limit : 0;
+    const avg = actuals[cat] || 0;
+    if (pct > 1.15 && avg > 20) return { cat, spent, limit, over: spent - limit, potential: Math.round((avg - limit * 0.85) / 5) * 5 };
+    return null;
+  }).filter(Boolean).sort((a, b) => b.over - a.over).slice(0, 3);
+
+  const catEmoji = { "Groceries": "🛒", "Coffee & Dining": "☕", "Gas & Transport": "🚗", "Shopping": "🛍️", "Clothing": "👗", "Subscriptions": "📱", "Health": "💊", "Personal Care": "🧴", "Entertainment": "🎬", "Hobbies & Sports": "🎯", "Kids & Extracurricular": "🧒", "Travel": "✈️", "Home": "🏠", "Education": "📚", "Fees": "🏦", "Services": "🔧", "Other": "📌" };
+  const catColor = { "Groceries": C.green, "Coffee & Dining": C.orange, "Gas & Transport": C.blue, "Shopping": C.pink, "Clothing": C.purple, "Subscriptions": C.teal, "Health": C.teal, "Personal Care": C.gold, "Entertainment": C.pink, "Hobbies & Sports": C.blue, "Kids & Extracurricular": C.green, "Travel": C.purple, "Home": C.orange, "Education": C.blue, "Fees": C.gold, "Services": C.blue, "Other": C.muted };
+
+  // Edit mode helpers
+  const openEdit = () => {
+    const seed = {};
+    Object.entries(budgets).forEach(([k, v]) => { seed[k] = String(v); });
+    Object.entries(suggestions).forEach(([k, v]) => { if (!seed[k]) seed[k] = String(v); });
+    setEditVals(seed);
+    setEditMode(true);
+    setSaved(false);
+    setShowAddCat(false);
+  };
+  const saveEdit = () => {
+    const nb = {};
+    Object.entries(editVals).forEach(([cat, v]) => {
+      const n = parseFloat(v);
+      if (!isNaN(n) && n > 0) nb[cat] = n;
+    });
+    if (setAppData) setAppData(prev => ({ ...prev, budgets: nb }));
+    setSaved(true);
+    setTimeout(() => { setEditMode(false); setSaved(false); }, 1000);
+  };
+  const deleteCat = cat => setEditVals(prev => { const n = { ...prev }; delete n[cat]; return n; });
+  const addCustom = () => {
+    const cat = customCat.trim();
+    if (!cat) return;
+    setEditVals(prev => ({ ...prev, [cat]: "50" }));
+    setCustomCat(""); setShowAddCat(false);
+  };
+
+  const totalEdited = Object.values(editVals).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+  const overDiscret = totalEdited > effectiveDiscret;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <ScreenHeader
+        title="Budget"
+        subtitle={monthLabel}
+        onBack={setScreen ? () => setScreen("home") : null}
+        cta={editMode ? (saved ? "✓ Saved!" : "Save Plan") : (hasBudgets ? "Edit Plan" : "Build Plan")}
+        onCta={editMode ? saveEdit : openEdit}
+        ctaColor={editMode ? C.green : C.purple}
+      />
+
+      {/* Money math strip */}
+      <div style={{ background: C.card, borderRadius: 18, padding: "14px 16px", border: `1px solid ${C.border}` }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {[
+            ["Take-home", `$${Math.round(netMo).toLocaleString()}/mo`, C.green, "💵"],
+            ["Fixed bills & debt", `−$${Math.round(fixedMo).toLocaleString()}/mo`, C.red, "🏠"],
+            ["Savings target", `−$${Math.round(savingsMo).toLocaleString()}/mo`, C.teal, "💰"],
+            ...(goalsMo > 0 ? [["Goal savings", `−$${Math.round(goalsMo).toLocaleString()}/mo`, C.purple, "🎯"]] : []),
+            ["Available to spend", `$${Math.round(effectiveDiscret).toLocaleString()}/mo`, C.greenBright, "✅"],
+          ].map(([label, val, color, emoji]) => (
+            <div key={label} style={{ background: C.cardAlt, borderRadius: 12, padding: "10px 12px", border: `1px solid ${C.border}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
+                <span style={{ fontSize: 12 }}>{emoji}</span>
+                <span style={{ color: C.muted, fontSize: 9, textTransform: "uppercase", letterSpacing: 1, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{label}</span>
+              </div>
+              <div style={{ color, fontWeight: 800, fontSize: 14, fontFamily: "'Playfair Display',serif" }}>{val}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── EDIT MODE ───────────────────────────────────────────────── */}
+      {editMode && (
+        <div style={{ background: C.card, borderRadius: 18, padding: "16px", border: `1px solid ${C.green}44` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div>
+              <div style={{ color: C.greenBright, fontWeight: 800, fontSize: 15, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>📊 Your Budget Plan</div>
+              <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>~${Math.round(effectiveDiscret).toLocaleString()}/mo available · adjust any amount</div>
+            </div>
+            <button onClick={() => setEditMode(false)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 18, padding: 0, lineHeight: 1 }}>✕</button>
+          </div>
+
+          {/* Savings context strip */}
+          <div style={{ background: C.cardAlt, borderRadius: 10, padding: "8px 12px", marginBottom: 12, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 16 }}>💰</span>
+            <div>
+              <div style={{ color: C.greenBright, fontWeight: 700, fontSize: 11 }}>Savings already reserved</div>
+              <div style={{ color: C.muted, fontSize: 10 }}>${Math.round(savingsMo).toLocaleString()}/mo ({Math.round(savingsRate * 100)}% of take-home) set aside before this budget</div>
+            </div>
+          </div>
+
+          {/* Category rows */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+            {Object.entries(editVals).map(([cat, val]) => {
+              const color = catColor[cat] || C.muted;
+              const emoji = catEmoji[cat] || "📌";
+              const meta = BUDGET_CAT_META[cat];
+              return (
+                <div key={cat} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: C.cardAlt, borderRadius: 10, border: `1px solid ${C.border}` }}>
+                  <span style={{ fontSize: 16, flexShrink: 0 }}>{emoji}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: C.cream, fontSize: 12, fontWeight: 600 }}>{cat}</div>
+                    {meta?.why && <div style={{ color: C.muted, fontSize: 9, marginTop: 1 }}>{meta.why}</div>}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", background: C.card, border: `1px solid ${color}55`, borderRadius: 8, overflow: "hidden", width: 96, flexShrink: 0 }}>
+                    <span style={{ color: C.muted, padding: "0 4px 0 8px", fontSize: 11 }}>$</span>
+                    <input type="number" value={val}
+                      onChange={e => setEditVals(prev => ({ ...prev, [cat]: e.target.value }))}
+                      style={{ width: 52, background: "none", border: "none", padding: "7px 2px", color: C.cream, fontSize: 13, fontFamily: "inherit", outline: "none", fontWeight: 700 }} />
+                    <span style={{ color: C.muted, padding: "0 4px", fontSize: 9 }}>/mo</span>
+                  </div>
+                  <button onClick={() => deleteCat(cat)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 16, padding: 2, flexShrink: 0, opacity: 0.6, lineHeight: 1 }}>×</button>
+                </div>
+              );
+            })}
+
+            {/* Add custom category */}
+            {showAddCat ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", background: C.cardAlt, borderRadius: 10, border: `1px dashed ${C.green}55` }}>
+                <input value={customCat} onChange={e => setCustomCat(e.target.value)}
+                  placeholder="Category name (e.g. Gym, Art Classes)"
+                  onKeyDown={e => e.key === "Enter" && addCustom()}
+                  style={{ flex: 1, background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 10px", color: C.cream, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+                <button onClick={addCustom} style={{ background: C.green, border: "none", borderRadius: 8, padding: "7px 12px", color: "#041810", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>Add</button>
+                <button onClick={() => { setShowAddCat(false); setCustomCat(""); }} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 18, padding: 0 }}>✕</button>
+              </div>
+            ) : (
+              <button onClick={() => setShowAddCat(true)} style={{ background: "none", border: `1px dashed ${C.green}44`, borderRadius: 10, padding: "9px 12px", color: C.green, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                ＋ Add a category
+              </button>
+            )}
+          </div>
+
+          {/* Total vs available */}
+          <div style={{ padding: "10px 12px", background: overDiscret ? C.red + "18" : C.green + "12", borderRadius: 10, marginBottom: 10, border: `1px solid ${overDiscret ? C.red : C.green}33` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ color: C.muted, fontSize: 11 }}>Total budgeted</span>
+              <span style={{ color: overDiscret ? C.redBright : C.greenBright, fontWeight: 800, fontSize: 14 }}>${Math.round(totalEdited).toLocaleString()}/mo</span>
+            </div>
+            {overDiscret && <div style={{ color: C.redBright, fontSize: 10, marginTop: 3 }}>⚠️ ${Math.round(totalEdited - effectiveDiscret).toLocaleString()} over your available budget — consider trimming some categories</div>}
+            {!overDiscret && totalEdited > 0 && <div style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>${Math.round(effectiveDiscret - totalEdited).toLocaleString()} remaining unallocated</div>}
+          </div>
+
+          <button onClick={saveEdit} style={{ width: "100%", background: `linear-gradient(135deg,${C.green},${C.greenBright})`, border: "none", borderRadius: 12, padding: "13px", color: "#041810", fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+            {saved ? "✅ Budget Plan Saved!" : "✓ Save Budget Plan"}
+          </button>
+        </div>
+      )}
+
+      {/* ── TRACK MODE ──────────────────────────────────────────────── */}
+      {!editMode && (
+        <>
+          {/* No budgets set — inline build prompt */}
+          {!hasBudgets && (
+            <div style={{ background: `linear-gradient(135deg,${C.green}14 0%,${C.teal}0A 100%)`, border: `1px solid ${C.green}44`, borderRadius: 18, padding: "20px" }}>
+              <div style={{ textAlign: "center", marginBottom: 16 }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
+                <div style={{ fontFamily: "'Playfair Display',serif", color: C.cream, fontWeight: 900, fontSize: 20, marginBottom: 6 }}>Build Your Budget Plan</div>
+                <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6, maxWidth: 360, margin: "0 auto" }}>
+                  We analyze your income, bills, and spending to suggest how much to allocate to groceries, dining, clothing, and more — then track it in real time.
+                </div>
+              </div>
+              <div style={{ background: C.cardAlt, borderRadius: 12, padding: "12px 14px", marginBottom: 14, border: `1px solid ${C.border}` }}>
+                <div style={{ color: C.cream, fontWeight: 700, fontSize: 12, marginBottom: 8 }}>Based on your situation:</div>
+                {[
+                  [`💵 $${Math.round(netMo).toLocaleString()}/mo take-home`, C.green],
+                  [`🏠 $${Math.round(fixedMo).toLocaleString()}/mo in fixed bills`, C.muted],
+                  [`✅ $${Math.round(effectiveDiscret).toLocaleString()}/mo available for variable spending`, C.greenBright],
+                ].map(([txt, color]) => (
+                  <div key={txt} style={{ color, fontSize: 12, marginBottom: 4 }}>• {txt}</div>
+                ))}
+              </div>
+              <button onClick={openEdit} style={{ width: "100%", background: `linear-gradient(135deg,${C.green},${C.greenBright})`, border: "none", borderRadius: 12, padding: "14px", color: "#041810", fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+                ✨ Build My Budget Plan
+              </button>
+            </div>
+          )}
+
+          {/* Budget exists — tracking view */}
+          {hasBudgets && (
+            <>
+              {/* Overall month progress */}
+              <div style={{ background: C.card, borderRadius: 18, padding: "16px 18px", border: `1px solid ${overBudgetCats.length > 0 ? C.red + "44" : C.green + "33"}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                  <div>
+                    <div style={{ color: overBudgetCats.length > 0 ? C.redBright : C.greenBright, fontWeight: 800, fontSize: 15, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                      {overBudgetCats.length > 0 ? `⚠️ Over budget in ${overBudgetCats.length} categor${overBudgetCats.length === 1 ? "y" : "ies"}` : "📊 On track this month"}
+                    </div>
+                    <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>{monthLabel}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontFamily: "'Playfair Display',serif", fontWeight: 900, fontSize: 20, color: overBudgetCats.length > 0 ? C.redBright : C.cream }}>
+                      ${Math.round(totalSpentBudgeted).toLocaleString()}
+                    </div>
+                    <div style={{ color: C.muted, fontSize: 11 }}>of ${Math.round(totalBudgeted).toLocaleString()} budgeted</div>
+                  </div>
+                </div>
+                {/* Overall progress bar */}
+                <div style={{ height: 8, background: C.border, borderRadius: 99, overflow: "hidden", marginBottom: 6 }}>
+                  <div style={{ height: "100%", width: `${overallPct}%`, borderRadius: 99, transition: "width .5s ease", background: overBudgetCats.length > 0 ? C.red : overallPct > 80 ? C.orange : `linear-gradient(to right,${C.green},${C.greenBright})` }} />
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: C.muted, fontSize: 10 }}>{overallPct}% used</span>
+                  <span style={{ color: overBudgetCats.length > 0 ? C.redBright : C.muted, fontSize: 10 }}>
+                    {overBudgetCats.length > 0 ? `$${Math.round(totalOver)} over total` : `$${Math.round(totalBudgeted - totalSpentBudgeted)} remaining`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Where to save — only when over budget */}
+              {saveSuggestions.length > 0 && (
+                <div style={{ background: C.orange + "12", border: `1px solid ${C.orange}33`, borderRadius: 16, padding: "14px 16px" }}>
+                  <div style={{ color: C.orange, fontWeight: 800, fontSize: 13, marginBottom: 10 }}>💡 Where you could cut back</div>
+                  {saveSuggestions.map(({ cat, over, potential }) => (
+                    <div key={cat} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, paddingBottom: 8, borderBottom: `1px solid ${C.border}` }}>
+                      <div>
+                        <div style={{ color: C.cream, fontSize: 12, fontWeight: 600 }}>{catEmoji[cat] || "📌"} {cat}</div>
+                        <div style={{ color: C.redBright, fontSize: 10, marginTop: 2 }}>${Math.round(over)} over budget this month</div>
+                      </div>
+                      {potential > 0 && <div style={{ textAlign: "right" }}>
+                        <div style={{ color: C.green, fontSize: 12, fontWeight: 700 }}>Save ~${potential}</div>
+                        <div style={{ color: C.muted, fontSize: 9 }}>per month</div>
+                      </div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Goal savings reminder */}
+              {goalsMo > 0 && (
+                <div style={{ background: C.purple + "14", border: `1px solid ${C.purple}33`, borderRadius: 14, padding: "12px 14px" }}>
+                  <div style={{ color: C.purpleBright, fontWeight: 700, fontSize: 12, marginBottom: 6 }}>🎯 Saving toward {activeGoals.length} goal{activeGoals.length > 1 ? "s" : ""}</div>
+                  {activeGoals.map((g, i) => {
+                    const target = parseFloat(g.target || 0);
+                    const current = parseFloat(g.saved || 0);
+                    const mo = parseFloat(g.monthly || 0) || Math.ceil((target - current) / 24);
+                    const pct = target > 0 ? Math.min(100, Math.round(current / target * 100)) : 0;
+                    return (
+                      <div key={i} style={{ marginBottom: i < activeGoals.length - 1 ? 8 : 0 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                          <span style={{ color: C.cream, fontSize: 12, fontWeight: 600 }}>{g.name || "Goal"}</span>
+                          <span style={{ color: C.purpleBright, fontSize: 11, fontWeight: 700 }}>${Math.round(mo)}/mo · {pct}% saved</span>
+                        </div>
+                        <div style={{ height: 4, background: C.border, borderRadius: 99, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${pct}%`, background: C.purple, borderRadius: 99, transition: "width .4s" }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Per-category progress bars */}
+              <div style={{ background: C.card, borderRadius: 18, padding: "16px 18px", border: `1px solid ${C.border}` }}>
+                <div style={{ color: C.cream, fontWeight: 700, fontSize: 13, marginBottom: 14, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Category Breakdown</div>
+                {Object.entries(budgets).sort(([, a], [, b]) => {
+                  // Sort: over budget first, then by % used descending
+                  const aSpent = monthSpend[Object.keys(budgets).find(k => budgets[k] === a) || ""] || 0;
+                  const bSpent = monthSpend[Object.keys(budgets).find(k => budgets[k] === b) || ""] || 0;
+                  return (bSpent / b) - (aSpent / a);
+                }).map(([cat, limit]) => {
+                  const spent = monthSpend[cat] || 0;
+                  const pct = limit > 0 ? Math.min(100, Math.round(spent / limit * 100)) : 0;
+                  const over = spent > limit;
+                  const color = catColor[cat] || C.muted;
+                  const barColor = over ? C.red : pct > 80 ? C.orange : color;
+                  return (
+                    <div key={cat} style={{ marginBottom: 14 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                          <span style={{ fontSize: 15 }}>{catEmoji[cat] || "📌"}</span>
+                          <span style={{ color: C.cream, fontSize: 13, fontWeight: 600 }}>{cat}</span>
+                          {over && <span style={{ background: C.red + "22", color: C.redBright, fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 99, border: `1px solid ${C.red}44` }}>OVER</span>}
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <span style={{ color: over ? C.redBright : C.cream, fontWeight: 700, fontSize: 13 }}>${Math.round(spent).toLocaleString()}</span>
+                          <span style={{ color: C.muted, fontSize: 11 }}> / ${Math.round(limit).toLocaleString()}</span>
+                        </div>
+                      </div>
+                      <div style={{ height: 7, background: C.border, borderRadius: 99, overflow: "hidden", marginBottom: 3 }}>
+                        <div style={{ height: "100%", width: `${over ? 100 : pct}%`, borderRadius: 99, transition: "width .4s ease", background: over ? `linear-gradient(to right,${C.orange},${C.red})` : pct > 80 ? C.orange : `linear-gradient(to right,${color}88,${color})` }} />
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ color: C.muted, fontSize: 9 }}>{pct}% used</span>
+                        <span style={{ color: over ? C.redBright : C.muted, fontSize: 9 }}>
+                          {over ? `$${Math.round(spent - limit)} over` : `$${Math.round(limit - spent)} left`}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Categories spending but not budgeted */}
+              {(() => {
+                const unbudgeted = Object.entries(monthSpend).filter(([cat, amt]) => !budgets[cat] && amt > 20 && cat !== "Transfer" && cat !== "Income");
+                if (unbudgeted.length === 0) return null;
+                return (
+                  <div style={{ background: C.cardAlt, borderRadius: 14, padding: "12px 14px", border: `1px solid ${C.border}` }}>
+                    <div style={{ color: C.mutedHi, fontWeight: 700, fontSize: 12, marginBottom: 8 }}>📋 Spending outside your budget</div>
+                    {unbudgeted.sort((a, b) => b[1] - a[1]).slice(0, 5).map(([cat, amt]) => (
+                      <div key={cat} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                        <span style={{ color: C.muted, fontSize: 12 }}>{catEmoji[cat] || "📌"} {cat}</span>
+                        <span style={{ color: C.mutedHi, fontSize: 12, fontWeight: 600 }}>${Math.round(amt).toLocaleString()}</span>
+                      </div>
+                    ))}
+                    <button onClick={openEdit} style={{ marginTop: 6, background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                      + Add these to my budget
+                    </button>
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+
 export default function FlourishApp(){
   // ── Hydrate from localStorage on first render ──────────────────
   const saved = loadState();
@@ -11126,6 +11493,7 @@ export default function FlourishApp(){
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
+  if(screen==="budget")return <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="coach"){const freeCoachAllowed=!isPremium&&coachMsgCount<5&&!trialExpired;const showCoach=isPremium||freeCoachAllowed;if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen}/>; if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="AI Coach" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>; return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;}
     if(screen==="family")return <Family data={dataWithHousehold} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
     if(screen==="goals")return <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen}/>;
@@ -11139,9 +11507,10 @@ export default function FlourishApp(){
     {id:"home",  icon:"home",    label:"Today"},
     {id:"plan",  icon:"calendar",label:"Future"},
     {id:"spend", icon:"card",    label:"Activity"},
+    {id:"budget",icon:"chartUp", label:"Budget"},
     {id:"coach", icon:"sparkles",label:"Guidance"},
     {id:"family",icon:"users",   label:"Family"},
-    {id:"goals", icon:"chartUp", label:"Goals"},
+    {id:"goals", icon:"target",  label:"Goals"},
   ];
 
   const globalStyles=`
