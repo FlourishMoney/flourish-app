@@ -386,6 +386,17 @@ async function callPlaid(action, params={}) {
 // Used by income detection, spending calc, and transparency panel — single source of truth.
 const CC_PAYMENT_KEYWORDS = ["payment","autopay","amex","visa","mastercard","credit card","card payment","minimum payment","balance payment"];
 
+// Categories that represent fixed/variable bill commitments — NOT discretionary spending.
+// These are tracked via the Bills array and must be excluded from budget category suggestions
+// and discretionary spend calculations to prevent double-counting.
+const BILL_CATS = new Set([
+  "Utilities","Housing","Bills","Phone & Internet","Insurance",
+  "Other Bills","Rent","Mortgage","Transportation" // Transportation when it's a bill payment
+]);
+
+// Categories always excluded from spending breakdowns (non-expense flows)
+const NON_SPEND_CATS = new Set(["Transfer","Income","Fees"]);
+
 // ─── CC PAYMENT DETECTOR ──────────────────────────────────────────────────────
 // Identifies transactions that are credit card payments (not spending).
 // Plaid shows CC payments as: Transfer category OR matching CC keywords in name.
@@ -2119,10 +2130,11 @@ function useWindowSize(){
 }
 
 function computeStats(txns, catOverrides={}) {
-  const SKIP_CATS = new Set(["Transfer","Income","Fees"]);
+  // Skip non-expense categories AND bill categories (bills are tracked separately)
+  const SKIP = new Set([...NON_SPEND_CATS, ...BILL_CATS]);
   // Use catOverrides so user-reassigned categories appear in breakdown
   const getC = (t) => catOverrides[t.id] || t.cat;
-  const sp = txns.filter(t=>t.amount>0 && !SKIP_CATS.has(getC(t)));
+  const sp = txns.filter(t=>t.amount>0 && !SKIP.has(getC(t)));
   const byCat={}, byDow={0:0,1:0,2:0,3:0,4:0,5:0,6:0};
   let coffee=0,coffeeCount=0,delivery=0,subs=0;
   sp.forEach(t=>{
@@ -2133,7 +2145,7 @@ function computeStats(txns, catOverrides={}) {
     if(t.name.toLowerCase().includes("uber eats")||t.name.toLowerCase().includes("doordash"))delivery+=t.amount;
     if(cat==="Subscriptions")subs+=t.amount;
   });
-  const totalSpent=sp.reduce((a,t)=>a+t.amount,0); // sp already excludes Transfer/Income via SKIP_CATS
+  const totalSpent=sp.reduce((a,t)=>a+t.amount,0); // excludes non-spend + bill categories
   const topCats=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,6);
   const days=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   const busiest=days[Object.entries(byDow).sort((a,b)=>b[1]-a[1])[0][0]];
@@ -2251,14 +2263,17 @@ const FinancialCalcEngine = {
     return { assets, liabilities, netWorth: assets - liabilities };
   },
 
-  /** Monthly cash flow = income − (bills + avg transaction spend) */
+  /** Monthly cash flow = income − bills − discretionary spend (no double-counting) */
   cashFlow(data) {
     const incomes = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
     const bills   = data.bills || [];
-    // Filter to current month only — 90 days of txns ≠ 1 month of spending
+    // catOverrides: ensures user-recategorized transactions affect cash flow correctly
+    const catOv = (()=>{ try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}")}catch{return{}} })();
+    const getEffCat = (t) => catOv[t.id] || t.cat;
+    // Filter to current month only
     const now = new Date();
     const txns = (data.transactions || []).filter(t => {
-      if(t.amount <= 0) return false; // expenses are positive
+      if(t.amount <= 0) return false;
       if(!t.date) return false;
       const d = new Date(t.date + "T12:00:00");
       return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
@@ -2274,18 +2289,17 @@ const FinancialCalcEngine = {
       }
     };
     const monthlyIncome = incomes.reduce((s,i) => s + toMonthly(i.amount, i.freq), 0) || 4200;
-    const monthlyBills    = bills.reduce((s,b) => s + parseFloat(b.amount||0), 0);
-    // monthlySpend: this month's transactions excluding transfers, income, fees, and credit card payments
-    // Credit card payments must be excluded — they are not spending, they are liability settlement.
-    // If included, paying a $3,000 Amex bill would show as $3,000 of "spending" on top of the
-    // underlying purchases already counted.
-    const monthlySpend    = txns.filter(t =>
-      t.cat !== "Transfer" &&
-      t.cat !== "Income" &&
-      t.cat !== "Fees" &&
-      !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw))
-    ).reduce((s,t) => s + t.amount, 0) || monthlyIncome * 0.68;
-    const totalExpenses   = Math.max(monthlyBills, monthlySpend);
+    // Bills: committed expenses from bills array — source of truth
+    const monthlyBills  = bills.reduce((s,b) => s + parseFloat(b.amount||0), 0);
+    // Discretionary: excludes non-spend flows, bill categories (already in monthlyBills), CC payments
+    const monthlySpend  = txns.filter(t => {
+      const cat = getEffCat(t);
+      return !NON_SPEND_CATS.has(cat) &&
+             !BILL_CATS.has(cat) &&
+             !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw));
+    }).reduce((s,t) => s + t.amount, 0) || monthlyIncome * 0.55;
+    // Total = bills + discretionary — both are real, never Math.max between them
+    const totalExpenses = monthlyBills + monthlySpend;
     return { monthlyIncome, monthlyBills, monthlySpend, totalExpenses,
              cashFlow: monthlyIncome - totalExpenses };
   },
@@ -5473,7 +5487,7 @@ function AddCustomCategory({onAdd}){
   const [show,setShow]=useState(false);
   const [val,setVal]=useState("");
   // Quick preset categories people commonly need
-  const QUICK_CATS = ["Business","Reimbursement","GrowSmart","Family","Medical","Gym","Pet","Gifts"];
+  const QUICK_CATS = ["Business","Reimbursement","Family","Medical","Gym","Pet","Gifts","Education"];
   const save=(name)=>{
     const n = (name||val).trim();
     if(!n) return;
@@ -5912,16 +5926,20 @@ function BudgetPlanCard({data, setAppData}) {
     "Kids & Extracurricular":"🧒","Kids & Activities":"🧒",
     "Travel":"✈️","Home":"🏠","Education":"📚"};
 
-  // Compute current-month spending vs budget for summary strip
-  // Apply catOverrides so recategorised transactions count correctly
-  const catOverrides = (() => { try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");}catch{return {};} })();
+
+  // Current-month spending per budget category — excludes bill categories and CC payments
+  const catOverrides = (()=>{ try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}")}catch{return{}} })();
   const now = new Date();
   const monthTxns = (data.transactions||[]).filter(t=>{
     try{const d=new Date(t.date+"T12:00:00");return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()&&t.amount>0;}catch{return false;}
   });
   const monthSpend = {};
-  monthTxns.forEach(t=>{ const cat=catOverrides[t.id]||t.cat; monthSpend[cat]=(monthSpend[cat]||0)+t.amount; });
-  const overBudgetCats = Object.entries(existingBudgets).filter(([cat,limit])=>(monthSpend[cat]||0)>limit);
+  monthTxns.forEach(t=>{
+    const cat=catOverrides[t.id]||t.cat;
+    if(!NON_SPEND_CATS.has(cat)&&!CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))){
+      monthSpend[cat]=(monthSpend[cat]||0)+t.amount;
+    }
+  });
   const totalBudgeted = Object.values(existingBudgets).reduce((s,v)=>s+v,0);
   const totalSpentThisMonth = Object.entries(existingBudgets).reduce((s,[cat])=>s+(monthSpend[cat]||0),0);
   const budgetUsedPct = totalBudgeted>0 ? Math.min(100,Math.round(totalSpentThisMonth/totalBudgeted*100)) : 0;
@@ -10868,14 +10886,19 @@ function BudgetScreen({data, setAppData, setScreen}) {
   const monthLabel = now.toLocaleDateString("en", { month: "long", year: "numeric" });
 
   // discret already accounts for goals (from generateBudgetSuggestions)
-
-  // Current month spending per category
+  // Current month spending per category — excludes bill categories (tracked separately) and CC payments
   const catOverrides = (() => { try { return JSON.parse(localStorage.getItem("flourish_cat_overrides") || "{}"); } catch { return {}; } })();
   const monthTxns = (data.transactions || []).filter(t => {
     try { const d = new Date(t.date + "T12:00:00"); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && t.amount > 0; } catch { return false; }
   });
   const monthSpend = {};
-  monthTxns.forEach(t => { const cat = catOverrides[t.id] || t.cat; monthSpend[cat] = (monthSpend[cat] || 0) + t.amount; });
+  monthTxns.forEach(t => {
+    const cat = catOverrides[t.id] || t.cat;
+    // Only track discretionary categories — bills excluded to prevent double-counting
+    if(!NON_SPEND_CATS.has(cat) && !CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))) {
+      monthSpend[cat] = (monthSpend[cat] || 0) + t.amount;
+    }
+  });
 
   const totalBudgeted = Object.values(budgets).reduce((s, v) => s + v, 0);
   const totalSpentBudgeted = Object.entries(budgets).reduce((s, [cat]) => s + (monthSpend[cat] || 0), 0);
@@ -10898,8 +10921,31 @@ function BudgetScreen({data, setAppData, setScreen}) {
   // Edit mode helpers
   const openEdit = () => {
     const seed = {};
+    // 1. Existing saved budgets — always preserved
     Object.entries(budgets).forEach(([k, v]) => { seed[k] = String(v); });
+    // 2. Situation-based suggestions for categories not yet budgeted
     Object.entries(suggestions).forEach(([k, v]) => { if (!seed[k]) seed[k] = String(v); });
+    // 3. Any custom categories that have actual spending this month — auto-appear in budget
+    const catOv = (()=>{ try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");} catch{return{};} })();
+    const customCats = JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]");
+    const now2 = new Date();
+    (data.transactions||[]).filter(t => {
+      if(t.amount <= 0 || !t.date) return false;
+      const d = new Date(t.date + "T12:00:00");
+      return d.getFullYear() === now2.getFullYear() && d.getMonth() === now2.getMonth();
+    }).forEach(t => {
+      const cat = catOv[t.id] || t.cat;
+      // Include if: it's a custom category OR it's any spend category not already seeded
+      if(!seed[cat] && !NON_SPEND_CATS.has(cat) && !BILL_CATS.has(cat)) {
+        seed[cat] = "50"; // default starting budget for new categories
+      }
+    });
+    // 4. Any custom categories ever created — even if no spend yet this month
+    customCats.forEach(cat => {
+      if(!seed[cat] && !NON_SPEND_CATS.has(cat) && !BILL_CATS.has(cat)) {
+        seed[cat] = "50";
+      }
+    });
     setEditVals(seed);
     setEditMode(true);
     setSaved(false);
