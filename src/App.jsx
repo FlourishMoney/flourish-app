@@ -596,7 +596,7 @@ function detectRecurringBills(txns) {
   if (!txns || txns.length === 0) return [];
 
   // Categories that indicate a bill (not groceries, dining, etc.)
-  const BILL_CATS = new Set([
+  const BILL_DETECT_CATS = new Set([
     "Utilities","Bills","Services","Health","Education","Home",
     "Gas & Transport","Entertainment","Shopping",
   ]);
@@ -635,7 +635,7 @@ function detectRecurringBills(txns) {
     if (txList.length < 2) return;
 
     // Check if it's a bill category OR matches a bill keyword
-    const isBillCat     = txList.some(t => BILL_CATS.has(t.cat));
+    const isBillCat     = txList.some(t => BILL_DETECT_CATS.has(t.cat));
     const isBillKeyword = BILL_KEYWORDS.some(kw => key.includes(kw));
     if (!isBillCat && !isBillKeyword) return;
 
@@ -5667,7 +5667,7 @@ function IncomeDetectionBanner({transactions, incomes, setAppData}){
   );
 }
 
-function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetBudget}){
+function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetBudget, isBillCat, bills=[]}){
   const [open, setOpen] = useState(false);
   const [editBudget, setEditBudget] = useState(false);
   const [budgetVal, setBudgetVal] = useState(budget ? String(budget) : "");
@@ -5678,6 +5678,8 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
   const pct = totalSpent > 0 ? Math.round(amt/totalSpent*100) : 0;
   const budgetPct = budget > 0 ? Math.min(100, Math.round((amt/budget)*100)) : null;
   const overBudget = budget > 0 && amt > budget;
+  // Always use getCatDisplay so icon/color update immediately after recategorization
+  const { emoji: catEmoji } = getCatDisplay(cat);
 
   const saveBudget = () => {
     const v = parseFloat(budgetVal);
@@ -5689,7 +5691,7 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
     <Card style={{cursor:"pointer"}} onClick={()=>!editBudget&&handleToggle()}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <span style={{color:C.cream,fontSize:14,display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:20}}>{catTxns[0]?.icon||"💰"}</span>{cat}
+          <span style={{fontSize:20}}>{catEmoji}</span>{cat}
         </span>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{color:overBudget?C.red:color,fontWeight:700}}>${(amt||0).toFixed(0)}
@@ -5720,26 +5722,30 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
               <div style={{color:C.muted,fontSize:10,marginTop:2,lineHeight:1.5}}>Transactions marked ✓ match your tracked bills. Your tracked bills power the forecast — this list shows what was actually paid.</div>
             </div>
           )}
-          {/* Budget setter */}
+          {/* Budget / bill tracking */}
           <div style={{marginBottom:10,padding:"8px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
-            {editBudget ? (
-              <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                <span style={{color:C.muted,fontSize:12,flexShrink:0}}>Monthly budget:</span>
-                <div style={{display:"flex",alignItems:"center",flex:1,background:C.card,border:`1px solid ${color}`,borderRadius:8,overflow:"hidden"}}>
-                  <span style={{color:C.muted,padding:"0 6px",fontSize:12}}>$</span>
-                  <input value={budgetVal} onChange={e=>setBudgetVal(e.target.value)} type="number" placeholder="0"
-                    autoFocus onKeyDown={e=>e.key==="Enter"&&saveBudget()}
-                    style={{flex:1,background:"none",border:"none",padding:"6px 4px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
-                </div>
-                <button onClick={saveBudget} style={{background:color,border:"none",borderRadius:8,padding:"6px 10px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✓</button>
-                <button onClick={()=>setEditBudget(false)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 8px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✕</button>
+          {isBillCat ? (
+            <div style={{color:C.tealBright,fontSize:11,fontWeight:600,display:"flex",alignItems:"center",gap:5}}>
+              📌 Tracked as a bill — manage in Budget → Fixed Commitments
+            </div>
+          ) : editBudget ? (
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <span style={{color:C.muted,fontSize:12,flexShrink:0}}>Monthly budget:</span>
+              <div style={{display:"flex",alignItems:"center",flex:1,background:C.card,border:`1px solid ${color}`,borderRadius:8,overflow:"hidden"}}>
+                <span style={{color:C.muted,padding:"0 6px",fontSize:12}}>$</span>
+                <input value={budgetVal} onChange={e=>setBudgetVal(e.target.value)} type="number" placeholder="0"
+                  autoFocus onKeyDown={e=>e.key==="Enter"&&saveBudget()}
+                  style={{flex:1,background:"none",border:"none",padding:"6px 4px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
               </div>
-            ) : (
-              <button onClick={e=>{e.stopPropagation();setBudgetVal(budget?String(budget):"");setEditBudget(true);}}
-                style={{background:"none",border:"none",color:budget?color:C.muted,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",padding:0}}>
-                {budget ? `📊 Budget: $${budget}/mo — tap to edit` : "＋ Set monthly budget for this category"}
-              </button>
-            )}
+              <button onClick={saveBudget} style={{background:color,border:"none",borderRadius:8,padding:"6px 10px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Save</button>
+              <button onClick={()=>setEditBudget(false)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 8px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>✕</button>
+            </div>
+          ) : (
+            <button onClick={e=>{e.stopPropagation();setBudgetVal(budget?String(budget):"");setEditBudget(true);}}
+              style={{background:"none",border:"none",color:budget?color:C.muted,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",padding:0,textAlign:"left"}}>
+              {budget ? `📊 Budget: $${budget}/mo — tap to edit` : "＋ Set monthly budget for this category"}
+            </button>
+          )}
           </div>
           {/* Transaction list */}
           {catTxns.length===0
@@ -5750,7 +5756,6 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
               const hiddenCount = sorted.length - TXN_LIMIT;
               return (<>
                 {visible.map((t,j)=>{
-                  const bills = window.__flourishBills||[];
                   const linkedBill = bills.find(b=>Math.abs(parseFloat(b.amount||0)-t.amount)<5);
                   return (
                     <div key={j} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:j<visible.length-1?`1px solid ${C.border}`:"none"}}>
@@ -6703,7 +6708,7 @@ function SpendScreen({data, setAppData, setScreen}){
     {tab==="breakdown"&&<>
       {(()=>{
         // Breakdown uses the same period-filtered set as the Transactions tab
-        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCCPayment(t,data.debts||[]));
+        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&getCat(t)!=="Fees"&&!isCCPayment(t,data.debts||[]));
         const bdIn   = acctFiltered.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
         const bdTotal= bdTxns.reduce((s,t)=>s+t.amount,0);
         const bdByCat= {};
@@ -6735,9 +6740,8 @@ function SpendScreen({data, setAppData, setScreen}){
         const colors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
         const catTxns=acctFiltered.filter(t=>getCat(t)===cat&&t.amount>0&&!isCCPayment(t,data.debts||[]));
         const budget = (data.budgets||{})[cat] || null;
-        window.__flourishBills = data.bills||[];
         return <ExpandableCatCard key={i} cat={cat} amt={amt} totalSpent={bdTotal} color={colors[i%6]} catTxns={catTxns}
-          budget={budget} onSetBudget={(cat,val)=>{
+          isBillCat={BILL_CATS.has(cat)} bills={data.bills||[]} budget={budget} onSetBudget={(cat,val)=>{
             if(setAppData) setAppData(prev=>({...prev,budgets:{...(prev.budgets||{}),
               ...(val===null ? Object.fromEntries(Object.entries(prev.budgets||{}).filter(([k])=>k!==cat)) : {[cat]:val})
             }}));
