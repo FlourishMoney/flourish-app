@@ -3029,6 +3029,7 @@ ${rawText.slice(0, 7000)}`;
 
 // ─── DASH CUSTOMIZE SHEET ─────────────────────────────────────────────────────
 function DashCustomize({ layout, onChange, onClose }) {
+  const isDesktop = window.innerWidth >= 960;
   const [items, setItems] = useState(layout);
   const [dragging, setDragging] = useState(null);
   const [dragOver, setDragOver] = useState(null);
@@ -6077,6 +6078,7 @@ function BudgetPlanCard({data, setAppData}) {
 }
 
 function SpendScreen({data, setAppData, setScreen}){
+  const isDesktop = window.innerWidth >= 960;
   // ── ALL HOOKS FIRST — no non-hook code before the last hook (TDZ prevention) ──
   const [tab,setTab]=useState("txn");
   const [catFilter,setCatFilter]=useState("All");
