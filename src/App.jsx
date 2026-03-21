@@ -6483,7 +6483,6 @@ function SpendScreen({data, setAppData, setScreen}){
         const bdByCat= {};
         bdTxns.forEach(t=>{const c=getCat(t);bdByCat[c]=(bdByCat[c]||0)+t.amount;});
         const bdAllCats=Object.entries(bdByCat).sort((a,b)=>b[1]-a[1]);
-  const [showAllBdCats,setShowAllBdCats]=useState(false);
   const bdTopCats=showAllBdCats?bdAllCats:bdAllCats.slice(0,8);
         const periodLabel = period==="week"?"This week":period==="month"?monthLabel:period==="last"?"Last month":period==="3mo"?"Last 3 months":"Last 90 days";
         return (<>
@@ -6563,6 +6562,10 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
   const [selDebt,setSelDebt]=useState(0);
   const [extra,setExtra]=useState(50);
   const [method,setMethod]=useState("avalanche");
+  // Goals tab state — must be at top level (Rules of Hooks)
+  const [showForm, setShowForm] = useState(false);
+  const [editIdx, setEditIdx] = useState(null);
+  const [form, setForm] = useState({name:"",target:"",saved:"",monthly:"",notes:""});
   const debts=data.debts||[];
   const safeSelDebt=Math.min(selDebt,Math.max(0,debts.length-1));
   const debt=debts.length>0?debts[safeSelDebt]:{name:"Credit Card",balance:"3420",rate:"19.99",min:"68"};
@@ -6604,9 +6607,6 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         {label:"Home Reno",      icon:"🔨", color:C.orange},
         {label:"Other",          icon:"🎯", color:C.muted},
       ];
-      const [showForm, setShowForm] = useState(false);
-      const [editIdx, setEditIdx] = useState(null);
-      const [form, setForm] = useState({name:"",target:"",saved:"",monthly:"",notes:""});
 
       const openAdd = () => { setForm({name:"",target:"",saved:"",monthly:"",notes:""}); setEditIdx(null); setShowForm(true); };
       const openEdit = (g,i) => { setForm({name:g.name||g.label||"",target:g.target||"",saved:g.saved||g.current||"",monthly:g.monthly||"",notes:g.notes||""}); setEditIdx(i); setShowForm(true); };
@@ -7077,37 +7077,76 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
           <div style={{color:C.tealBright,fontWeight:800,fontSize:14,fontFamily:"'Playfair Display',serif",marginBottom:14}}>
             💼 My Current Balances & Contributions
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            {(isCA?[
-              ["rrspBalance","RRSP Balance","Current RRSP value"],
-              ["rrspMonthly","RRSP Monthly Contribution","How much you add each month/paycheque"],
-              ["tfsaBalance","TFSA Balance","Current TFSA value"],
-              ["tfsaMonthly","TFSA Monthly Contribution","How much you add each month"],
-              ["pensionMonthly","Pension / Other Monthly","Other retirement contributions"],
-            ]:[
-              ["401kBalance","401(k) Balance","Current 401(k) value"],
-              ["401kMonthly","401(k) Monthly Contribution","How much you add per month"],
-              ["iraBalance","IRA/Roth IRA Balance","Current IRA value"],
-              ["iraMonthly","IRA Monthly Contribution","How much you add per month"],
-              ["otherRetire","Other Retirement Monthly","HSA, pension, etc."],
-            ]).map(([field,label,hint])=>(
-              <div key={field}>
-                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>
-                <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
-                  <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
-                  <input value={ret[field]||""} onChange={e=>updateRet(field,e.target.value)}
-                    type="number" inputMode="decimal" placeholder="0"
-                    title={hint}
-                    style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:C.tealBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700,width:0}}/>
-                </div>
-                <div style={{color:C.muted,fontSize:9,marginTop:2,lineHeight:1.4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{hint}</div>
+          {/* ── Balances row (2 col grid) */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+          {(isCA?[
+            ["rrspBalance","RRSP Balance","Current RRSP value"],
+            ["tfsaBalance","TFSA Balance","Current TFSA value"],
+          ]:[
+            ["401kBalance","401(k) Balance","Current 401(k) value"],
+            ["iraBalance","IRA / Roth IRA Balance","Current IRA value"],
+          ]).map(([field,label,hint])=>(
+            <div key={field}>
+              <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>
+              <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
+                <input value={ret[field]||""} onChange={e=>updateRet(field,e.target.value)}
+                  type="number" inputMode="decimal" placeholder="0" title={hint}
+                  style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:C.tealBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700}}/>
               </div>
-            ))}
+              <div style={{color:C.muted,fontSize:9,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{hint}</div>
+            </div>
+          ))}
+          </div>
+          {/* ── Contributions with frequency selector */}
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {(isCA?[
+            ["rrspMonthly","rrspFreq","RRSP Contribution"],
+            ["tfsaMonthly","tfsaFreq","TFSA Contribution"],
+            ["pensionMonthly","pensionFreq","Pension / Other"],
+          ]:[
+            ["401kMonthly","401kFreq","401(k) Contribution"],
+            ["iraMonthly","iraFreq","IRA / Roth IRA Contribution"],
+            ["otherRetire","otherRetireFreq","Other Retirement"],
+          ]).map(([field,freqField,label])=>{
+            const freq = ret[freqField]||"monthly";
+            const toMo = (amt,f) => { const a=parseFloat(amt||0); return f==="weekly"?a*4.333:f==="biweekly"?a*2.167:f==="annually"?a/12:a; };
+            const mo = toMo(ret[field]||0, freq);
+            return (
+              <div key={field}>
+                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <div style={{flex:1,display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                    <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
+                    <input value={ret[field]||""} onChange={e=>updateRet(field,e.target.value)}
+                      type="number" inputMode="decimal" placeholder="0"
+                      style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:C.tealBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700}}/>
+                  </div>
+                  <select value={freq} onChange={e=>updateRet(freqField,e.target.value)}
+                    style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 8px",
+                      color:C.mutedHi,fontSize:11,fontFamily:"inherit",outline:"none",flexShrink:0,cursor:"pointer"}}>
+                    <option value="weekly">Weekly</option>
+                    <option value="biweekly">Bi-weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="annually">Annually</option>
+                  </select>
+                </div>
+                {ret[field]&&freq!=="monthly"&&(
+                  <div style={{color:C.teal,fontSize:9,marginTop:3,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                    = ${mo.toFixed(0)}/mo
+                  </div>
+                )}
+              </div>
+            );
+          })}
           </div>
           {/* Projection summary */}
           {(()=>{
+            const toMo=(amt,f)=>{const a=parseFloat(amt||0);return f==="weekly"?a*4.333:f==="biweekly"?a*2.167:f==="annually"?a/12:a;};
             const bal = parseFloat(ret[isCA?"rrspBalance":"401kBalance"]||0) + parseFloat(ret[isCA?"tfsaBalance":"iraBalance"]||0);
-            const monthly = parseFloat(ret[isCA?"rrspMonthly":"401kMonthly"]||0) + parseFloat(ret[isCA?"tfsaMonthly":"iraMonthly"]||0) + parseFloat(ret[isCA?"pensionMonthly":"otherRetire"]||0);
+            const monthly = toMo(ret[isCA?"rrspMonthly":"401kMonthly"]||0, ret[isCA?"rrspFreq":"401kFreq"]||"monthly")
+                          + toMo(ret[isCA?"tfsaMonthly":"iraMonthly"]||0, ret[isCA?"tfsaFreq":"iraFreq"]||"monthly")
+                          + toMo(ret[isCA?"pensionMonthly":"otherRetire"]||0, ret[isCA?"pensionFreq":"otherRetireFreq"]||"monthly");
             if(bal<=0&&monthly<=0) return null;
             // Simple 30-year projection at 6% annual return
             const r = 0.06/12;
@@ -9630,7 +9669,7 @@ function Paywall({onClose,onUpgrade,country}){
   const [selected,setSelected]=useState("annual");
   const [promo,setPromo]=useState("");
   const [promoError,setPromoError]=useState("");
-  const PROMO_CODES=["FLOURISH2026","AMANDA","FOUNDER","GROWSMART","BETA100"];
+  const PROMO_CODES=["FLOURISH2026","FOUNDER","BETA100"];
   const isCA=country==="CA";
   const plans={
     annual:{label:"Annual",price:isCA?"$79.99/yr":"$59.99/yr",monthly:isCA?"$6.67/mo":"$5.00/mo",save:"Save 33%",badge:"Best Value"},
@@ -10116,7 +10155,7 @@ function AuthScreen({ onAuth }) {
   const [success, setSuccess] = useState("");
   const [showAuth, setShowAuth] = useState(false);
 
-  const BETA_CODES = ["BETA100","FLOURISH2026","AMANDA","FOUNDER","GROWSMART"];
+  const BETA_CODES = ["BETA100","FLOURISH2026","FOUNDER"];
   const BETA_CAP = 30;
 
   const handleSignup = async () => {
