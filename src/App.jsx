@@ -5737,78 +5737,109 @@ const BUDGET_CAT_META = {
 };
 
 function generateBudgetSuggestions(data) {
-  const profile  = data.profile || {};
-  const country  = profile.country || "CA";
-  const isCA     = country === "CA";
-  const _toMo    = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:a; };
-  const grossMo  = (data.incomes||[]).reduce((s,i)=>s+_toMo(i.amount,i.freq),0)||3000;
-  // Tax estimate — bracket-based approximation
-  const taxRate  = isCA
+  const profile   = data.profile || {};
+  const isCA      = (profile.country||"CA") === "CA";
+  const _toMo     = (amt,freq) => {
+    const a = parseFloat(amt||0);
+    return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a;
+  };
+
+  // ── Income ──────────────────────────────────────────────────────────
+  const grossMo   = (data.incomes||[]).reduce((s,i)=>s+_toMo(i.amount,i.freq),0)||0;
+  const taxRate   = isCA
     ? (grossMo>10000?0.35:grossMo>6000?0.30:grossMo>3500?0.25:0.18)
     : (grossMo>8000?0.30:grossMo>5000?0.24:grossMo>3000?0.20:0.15);
-  const netMo    = grossMo*(1-taxRate);
-  const billsMo  = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
-  const debtsMo  = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.min||0),0);
-  const fixedMo  = billsMo+debtsMo;
-  // Savings target: 15–20% of net. Lower earners: 10%. Use for display only.
+  const netMo     = Math.round(grossMo*(1-taxRate));
+
+  // ── Fixed commitments (auto-filled from bills + debt minimums) ──────
+  const billsMo   = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
+  const debtsMo   = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.min||0),0);
+  const fixedMo   = Math.round(billsMo+debtsMo);
+
+  // ── Savings ─────────────────────────────────────────────────────────
   const savingsRate = netMo < 2500 ? 0.10 : netMo < 5000 ? 0.15 : 0.20;
   const savingsMo   = Math.round(netMo * savingsRate);
-  // Discretionary = what's left after fixed bills and savings target
-  const discret  = Math.max(200, netMo - fixedMo - savingsMo);
+
+  // ── Goal savings ─────────────────────────────────────────────────────
+  const goalsMo   = (data.goals||[])
+    .filter(g=>parseFloat(g.target||0)>parseFloat(g.saved||0))
+    .reduce((s,g)=>{
+      const remaining = parseFloat(g.target||0)-parseFloat(g.saved||0);
+      const mo = parseFloat(g.monthly||0);
+      return s+(mo>0?mo:remaining>0?Math.ceil(remaining/24):0);
+    },0);
+
+  // ── Discretionary pool ──────────────────────────────────────────────
+  const discret   = Math.max(0, netMo - fixedMo - savingsMo - goalsMo);
+
+  // ── Household context ────────────────────────────────────────────────
   const hasPartner = profile.status==="couple"||profile.status==="cohabit";
-  const numKids  = (profile.kids||[]).length||(profile.hasKids?1:0);
-  const hSize    = 1+(hasPartner?1:0)+numKids;
-  // Build per-category actuals from last ~90 days of transactions
-  // Exclude bill categories — bills are tracked separately, not as discretionary spending
-  const billCats = new Set((data.bills||[]).map(b=>b.category||"Other Bills").filter(Boolean));
-  const BILL_REPORTING_CATS = new Set(["Housing","Utilities","Phone & Internet","Insurance","Transportation","Other Bills"]);
-  const IGNORE   = new Set(["Income","Transfer","Bills","Utilities",...billCats,...BILL_REPORTING_CATS]);
-  const txns     = (data.transactions||[]).filter(t=>t.amount>0&&!IGNORE.has(t.cat));
-  const actuals  = {};
-  if(txns.length>0){
-    const dates = txns.map(t=>new Date((t.date||"2025-01-01")+"T12:00:00")).filter(d=>!isNaN(d.getTime()));
-    const oldestMs = dates.length ? Math.min(...dates.map(d=>d.getTime())) : Date.now()-90*86400000;
-    const months = Math.max(1,Math.min(3,(Date.now()-oldestMs)/(30*24*3600*1000)));
-    txns.forEach(t=>{ actuals[t.cat]=(actuals[t.cat]||0)+t.amount; });
-    Object.keys(actuals).forEach(k=>{ actuals[k]=actuals[k]/months; });
+  const numKids    = (profile.kids||[]).length||(profile.hasKids?1:0);
+  const hSize      = 1+(hasPartner?1:0)+numKids;
+
+  // ── Situation-based benchmarks — NEVER blended with history ──────────
+  // All amounts are reasonable targets for this household, scaled to discret pool.
+  // Priority: Needs first (Groceries, Transport, Health), then Wants.
+  const r = (v) => Math.max(10, Math.round(v/5)*5); // round to nearest $5
+
+  const suggestions = {};
+
+  // NEEDS — always included
+  suggestions["Groceries"]       = r((isCA?280:250)*hSize);
+  suggestions["Gas & Transport"] = r(isCA?(numKids?250:180):(numKids?220:160));
+  suggestions["Health"]          = r(Math.min((isCA?55:110)*hSize, isCA?200:400));
+
+  // WANTS — scaled to what's actually available after needs
+  const needsTotal = Object.values(suggestions).reduce((s,v)=>s+v,0);
+  const wantsPool  = Math.max(0, discret - needsTotal);
+
+  suggestions["Coffee & Dining"] = r(Math.max(60, wantsPool*(numKids?0.10:0.14)));
+  suggestions["Clothing"]        = r(Math.max(30, (isCA?55:50)*hSize*(numKids?1.2:1)));
+  suggestions["Personal Care"]   = r(hasPartner?90:55);
+  suggestions["Shopping"]        = r(Math.max(30, wantsPool*(hasPartner?0.09:0.07)));
+  suggestions["Entertainment"]   = r(Math.max(30, wantsPool*(numKids?0.05:0.08)));
+  suggestions["Subscriptions"]   = r(hSize<=2?45:65);
+  if(numKids>0) suggestions["Kids & Extracurricular"] = r(numKids*(isCA?165:180));
+
+  const totalSugg  = Object.values(suggestions).reduce((s,v)=>s+v,0);
+  const canAfford  = totalSugg <= discret;
+  const shortfall  = Math.max(0, totalSugg - discret);
+
+  // ── Cut suggestions — priority order if over budget ─────────────────
+  // 1. Subscriptions (easiest, most painless)
+  // 2. Entertainment
+  // 3. Coffee & Dining
+  // 4. Shopping
+  // 5. Personal Care
+  // 6. Groceries (reduce, don't eliminate)
+  const CUT_PRIORITY = [
+    "Subscriptions","Entertainment","Coffee & Dining","Shopping",
+    "Personal Care","Groceries","Clothing","Hobbies & Sports"
+  ];
+  const cutSuggestions = [];
+  if(!canAfford) {
+    let remaining = shortfall;
+    for(const cat of CUT_PRIORITY) {
+      if(remaining <= 0) break;
+      const current = suggestions[cat]||0;
+      if(!current) continue;
+      // How much can realistically be cut from this category?
+      const maxCut = cat==="Groceries" ? Math.floor(current*0.15)   // max 15% off groceries
+                   : cat==="Personal Care" ? Math.floor(current*0.3)
+                   : Math.floor(current*0.5); // up to 50% off wants
+      const cut = Math.min(remaining, maxCut);
+      if(cut >= 5) {
+        cutSuggestions.push({cat, current, suggested: r(current-cut), saving: cut});
+        remaining -= cut;
+      }
+    }
   }
-  // Blend: actual close → 55/45 mix; way over → actual+5%; way under → benchmark×0.85
-  const blendAmt = (benchmark, cat, tol=0.45) => {
-    const actual = actuals[cat]||0;
-    let v;
-    if(!actual)                          v = benchmark;
-    else if(actual > benchmark*(1+tol))  v = actual*1.05;
-    else if(actual < benchmark*(1-tol))  v = benchmark*0.85;
-    else                                 v = benchmark*0.55+actual*0.45;
-    return Math.max(10, Math.round(v/5)*5);
+
+  return {
+    suggestions, netMo, grossMo, fixedMo, billsMo, debtsMo,
+    savingsMo, savingsRate, goalsMo, discret, wantsPool,
+    hSize, numKids, hasPartner, totalSugg, canAfford, shortfall, cutSuggestions
   };
-  const sugg = {};
-  // ── Needs ──────────────────────────────────────────────────────
-  sugg["Groceries"]         = blendAmt((isCA?310:275)*hSize, "Groceries");
-  sugg["Gas & Transport"]   = blendAmt(isCA?(numKids>0?260:190):(numKids>0?230:170), "Gas & Transport");
-  sugg["Health"]            = blendAmt(Math.min(isCA?60*hSize:120*hSize, isCA?220:450), "Health");
-  // ── Wants ──────────────────────────────────────────────────────
-  sugg["Coffee & Dining"]   = blendAmt(Math.max(75, discret*(numKids>0?0.10:0.13)), "Coffee & Dining");
-  sugg["Shopping"]          = blendAmt(Math.max(50, discret*0.07*(hasPartner?1.3:1)), "Shopping");
-  sugg["Clothing"]          = blendAmt(Math.max(40, (isCA?65:60)*hSize*(numKids>0?1.3:1)), "Clothing");
-  sugg["Subscriptions"]     = blendAmt(hSize<=2?55:75, "Subscriptions", 0.9);
-  sugg["Personal Care"]     = blendAmt(hasPartner?110:65, "Personal Care");
-  sugg["Entertainment"]     = blendAmt(Math.max(40, discret*(numKids>0?0.05:0.07)), "Entertainment");
-  sugg["Hobbies & Sports"]  = blendAmt(Math.max(40, discret*(numKids>0?0.04:0.07)*(hasPartner?1.4:1)), "Hobbies & Sports");
-  if(numKids>0) sugg["Kids & Extracurricular"] = blendAmt(numKids*(isCA?185:205), "Kids & Extracurricular", 0.8);
-  // ── Any real actuals not yet covered ───────────────────────────
-  const covered = new Set(Object.keys(sugg));
-  Object.entries(actuals).forEach(([cat,amt])=>{
-    if(!covered.has(cat)&&amt>15) sugg[cat]=Math.round(amt*1.05/5)*5;
-  });
-  // Keep essentials always; others only if user has actual spending in them
-  const essential = new Set(["Groceries","Gas & Transport","Health","Clothing"]);
-  const filtered  = {};
-  Object.entries(sugg).forEach(([cat,amt])=>{
-    if(essential.has(cat)||actuals[cat]) filtered[cat]=amt;
-  });
-  const totalSugg = Object.values(filtered).reduce((s,v)=>s+v,0);
-  return { suggestions:filtered, netMo, fixedMo, discret, savingsMo, savingsRate, hSize, numKids, totalSugg, grossMo, actuals };
 }
 
 // ─── BUDGET PLAN CARD ────────────────────────────────────────────────────────
@@ -7318,21 +7349,21 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
     })()}
     {tab==="forecast"&&<WealthForecast data={data}/>}
     {tab==="budget"&&(()=>{
-      const { suggestions, netMo, fixedMo, discret, savingsMo, savingsRate, grossMo, actuals } = generateBudgetSuggestions(data);
+      const { suggestions, netMo, fixedMo, discret, savingsMo, savingsRate, grossMo } = generateBudgetSuggestions(data);
       const budgets = data.budgets||{};
       const hasBudgets = Object.keys(budgets).length > 0;
       const isCA = (data.profile?.country||"CA")==="CA";
 
       // Monthly savings needed for active goals
       const activeGoals = (data.goals||[]).filter(g=>parseFloat(g.target||0)>parseFloat(g.saved||0));
-      const goalsMo = activeGoals.reduce((s,g)=>{
+      const localGoalsMo = activeGoals.reduce((s,g)=>{
         const remaining = parseFloat(g.target||0) - parseFloat(g.saved||0);
         const mo = parseFloat(g.monthly||0);
         return s + (mo>0 ? mo : remaining>0 ? Math.ceil(remaining/24) : 0);
       },0);
-
-      // Effective discretionary after goal savings
-      const effectiveDiscret = Math.max(50, discret - goalsMo);
+      // discret from generateBudgetSuggestions already accounts for goals globally,
+      // but inside Goals tab we recalc locally for display
+      const spendPool = Math.max(50, discret - localGoalsMo);
 
       // Current month spending per category
       const catOverrides = (()=>{try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");}catch{return {};}})();
@@ -7370,8 +7401,8 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                 ["Take-home", `$${Math.round(netMo).toLocaleString()}/mo`, C.green],
                 ["Fixed bills & debt", `−$${Math.round(fixedMo).toLocaleString()}/mo`, C.red],
                 ["Savings target", `−$${Math.round(savingsMo).toLocaleString()}/mo`, C.teal],
-                ...(goalsMo>0?[["Goal savings", `−$${Math.round(goalsMo).toLocaleString()}/mo`, C.purple]]:[]),
-                ["Available for spending", `$${Math.round(effectiveDiscret).toLocaleString()}/mo`, C.greenBright],
+                ...(localGoalsMo>0?[["Goal savings", `−$${Math.round(localGoalsMo).toLocaleString()}/mo`, C.purple]]:[]),
+                ["Available for spending", `$${Math.round(spendPool).toLocaleString()}/mo`, C.greenBright],
               ].map(([label,val,color])=>(
                 <div key={label} style={{background:C.cardAlt,borderRadius:10,padding:"8px 10px",border:`1px solid ${C.border}`}}>
                   <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1}}>{label}</div>
@@ -7382,7 +7413,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
           </div>
 
           {/* Active goal savings reminder */}
-          {goalsMo>0&&(
+          {localGoalsMo>0&&(
             <div style={{background:C.purple+"18",border:`1px solid ${C.purple}33`,borderRadius:12,padding:"10px 14px"}}>
               <div style={{color:C.purpleBright,fontWeight:700,fontSize:12,marginBottom:4}}>🎯 Saving for {activeGoals.length} goal{activeGoals.length>1?"s":""}</div>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
@@ -10823,7 +10854,11 @@ function BudgetScreen({data, setAppData, setScreen}) {
   const [showAddCat, setShowAddCat] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const { suggestions, netMo, fixedMo, discret, savingsMo, savingsRate, grossMo, actuals } = generateBudgetSuggestions(data);
+  const {
+    suggestions, netMo, fixedMo, discret, savingsMo, savingsRate,
+    grossMo, goalsMo, canAfford, shortfall, cutSuggestions,
+    hSize, numKids, totalSugg
+  } = generateBudgetSuggestions(data);
   const budgets = data.budgets || {};
   const hasBudgets = Object.keys(budgets).length > 0;
   const isCA = (data.profile?.country || "CA") === "CA";
@@ -10832,14 +10867,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
   const now = new Date();
   const monthLabel = now.toLocaleDateString("en", { month: "long", year: "numeric" });
 
-  // Active goals needing monthly savings
-  const activeGoals = (data.goals || []).filter(g => parseFloat(g.target || 0) > parseFloat(g.saved || 0));
-  const goalsMo = activeGoals.reduce((s, g) => {
-    const remaining = parseFloat(g.target || 0) - parseFloat(g.saved || 0);
-    const mo = parseFloat(g.monthly || 0);
-    return s + (mo > 0 ? mo : remaining > 0 ? Math.ceil(remaining / 24) : 0);
-  }, 0);
-  const effectiveDiscret = Math.max(50, discret - goalsMo);
+  // discret already accounts for goals (from generateBudgetSuggestions)
 
   // Current month spending per category
   const catOverrides = (() => { try { return JSON.parse(localStorage.getItem("flourish_cat_overrides") || "{}"); } catch { return {}; } })();
@@ -10856,11 +10884,11 @@ function BudgetScreen({data, setAppData, setScreen}) {
   const totalOver = overBudgetCats.reduce((s, [cat, limit]) => s + ((monthSpend[cat] || 0) - limit), 0);
 
   // Where to save suggestions
+  // Where to save — categories over budget this month
   const saveSuggestions = Object.entries(budgets).map(([cat, limit]) => {
     const spent = monthSpend[cat] || 0;
-    const pct = limit > 0 ? spent / limit : 0;
-    const avg = actuals[cat] || 0;
-    if (pct > 1.15 && avg > 20) return { cat, spent, limit, over: spent - limit, potential: Math.round((avg - limit * 0.85) / 5) * 5 };
+    const over = Math.round(spent - limit);
+    if (limit > 0 && over >= 5) return { cat, spent, limit, over };
     return null;
   }).filter(Boolean).sort((a, b) => b.over - a.over).slice(0, 3);
 
@@ -10896,7 +10924,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
   };
 
   const totalEdited = Object.values(editVals).reduce((s, v) => s + (parseFloat(v) || 0), 0);
-  const overDiscret = totalEdited > effectiveDiscret;
+  const overDiscret = totalEdited > discret;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -10917,7 +10945,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
             ["Fixed bills & debt", `−$${Math.round(fixedMo).toLocaleString()}/mo`, C.red, "🏠"],
             ["Savings target", `−$${Math.round(savingsMo).toLocaleString()}/mo`, C.teal, "💰"],
             ...(goalsMo > 0 ? [["Goal savings", `−$${Math.round(goalsMo).toLocaleString()}/mo`, C.purple, "🎯"]] : []),
-            ["Available to spend", `$${Math.round(effectiveDiscret).toLocaleString()}/mo`, C.greenBright, "✅"],
+            ["Available to spend", `$${Math.round(discret).toLocaleString()}/mo`, C.greenBright, "✅"],
           ].map(([label, val, color, emoji]) => (
             <div key={label} style={{ background: C.cardAlt, borderRadius: 12, padding: "10px 12px", border: `1px solid ${C.border}` }}>
               <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
@@ -10931,82 +10959,193 @@ function BudgetScreen({data, setAppData, setScreen}) {
       </div>
 
       {/* ── EDIT MODE ───────────────────────────────────────────────── */}
+      {/* ── SETUP MODE — 3-step plan builder ─────────────────── */}
       {editMode && (
-        <div style={{ background: C.card, borderRadius: 18, padding: "16px", border: `1px solid ${C.green}44` }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <div>
-              <div style={{ color: C.greenBright, fontWeight: 800, fontSize: 15, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>📊 Your Budget Plan</div>
-              <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>~${Math.round(effectiveDiscret).toLocaleString()}/mo available · adjust any amount</div>
-            </div>
-            <button onClick={() => setEditMode(false)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 18, padding: 0, lineHeight: 1 }}>✕</button>
-          </div>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
 
-          {/* Savings context strip */}
-          <div style={{ background: C.cardAlt, borderRadius: 10, padding: "8px 12px", marginBottom: 12, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 16 }}>💰</span>
-            <div>
-              <div style={{ color: C.greenBright, fontWeight: 700, fontSize: 11 }}>Savings already reserved</div>
-              <div style={{ color: C.muted, fontSize: 10 }}>${Math.round(savingsMo).toLocaleString()}/mo ({Math.round(savingsRate * 100)}% of take-home) set aside before this budget</div>
-            </div>
-          </div>
-
-          {/* Category rows */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
-            {Object.entries(editVals).map(([cat, val]) => {
-              const color = catColor[cat] || C.muted;
-              const emoji = catEmoji[cat] || "📌";
-              const meta = BUDGET_CAT_META[cat];
-              return (
-                <div key={cat} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: C.cardAlt, borderRadius: 10, border: `1px solid ${C.border}` }}>
-                  <span style={{ fontSize: 16, flexShrink: 0 }}>{emoji}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ color: C.cream, fontSize: 12, fontWeight: 600 }}>{cat}</div>
-                    {meta?.why && <div style={{ color: C.muted, fontSize: 9, marginTop: 1 }}>{meta.why}</div>}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", background: C.card, border: `1px solid ${color}55`, borderRadius: 8, overflow: "hidden", width: 96, flexShrink: 0 }}>
-                    <span style={{ color: C.muted, padding: "0 4px 0 8px", fontSize: 11 }}>$</span>
-                    <input type="number" value={val}
-                      onChange={e => setEditVals(prev => ({ ...prev, [cat]: e.target.value }))}
-                      style={{ width: 52, background: "none", border: "none", padding: "7px 2px", color: C.cream, fontSize: 13, fontFamily: "inherit", outline: "none", fontWeight: 700 }} />
-                    <span style={{ color: C.muted, padding: "0 4px", fontSize: 9 }}>/mo</span>
-                  </div>
-                  <button onClick={() => deleteCat(cat)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 16, padding: 2, flexShrink: 0, opacity: 0.6, lineHeight: 1 }}>×</button>
-                </div>
-              );
-            })}
-
-            {/* Add custom category */}
-            {showAddCat ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", background: C.cardAlt, borderRadius: 10, border: `1px dashed ${C.green}55` }}>
-                <input value={customCat} onChange={e => setCustomCat(e.target.value)}
-                  placeholder="Category name (e.g. Gym, Art Classes)"
-                  onKeyDown={e => e.key === "Enter" && addCustom()}
-                  style={{ flex: 1, background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 10px", color: C.cream, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
-                <button onClick={addCustom} style={{ background: C.green, border: "none", borderRadius: 8, padding: "7px 12px", color: "#041810", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>Add</button>
-                <button onClick={() => { setShowAddCat(false); setCustomCat(""); }} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 18, padding: 0 }}>✕</button>
+          {/* Step 1 — Fixed commitments (read-only, auto-filled) */}
+          <div style={{background:C.card,borderRadius:18,padding:"16px",border:`1px solid ${C.border}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+              <div style={{width:24,height:24,borderRadius:"50%",background:C.green,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,color:"#041810",flexShrink:0}}>1</div>
+              <div>
+                <div style={{color:C.cream,fontWeight:800,fontSize:14}}>Your fixed commitments</div>
+                <div style={{color:C.muted,fontSize:11,marginTop:1}}>These come out first — before anything else is planned</div>
               </div>
-            ) : (
-              <button onClick={() => setShowAddCat(true)} style={{ background: "none", border: `1px dashed ${C.green}44`, borderRadius: 10, padding: "9px 12px", color: C.green, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-                ＋ Add a category
-              </button>
+            </div>
+            {(data.bills||[]).length===0&&(data.debts||[]).length===0?(
+              <div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"10px 0"}}>
+                No bills or debts added yet. Add them in <strong style={{color:C.green}}>Settings → Bills</strong> to auto-fill this section.
+              </div>
+            ):(
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {(data.bills||[]).map((b,i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:7}}>
+                      <span style={{fontSize:14}}>{b.type==="variable"?"🔄":"📌"}</span>
+                      <div>
+                        <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{b.name}</div>
+                        {b.category&&<div style={{color:C.muted,fontSize:9}}>{b.category}</div>}
+                      </div>
+                    </div>
+                    <span style={{color:C.muted,fontWeight:700,fontSize:12}}>${parseFloat(b.amount||0).toFixed(0)}/mo</span>
+                  </div>
+                ))}
+                {(data.debts||[]).map((d,i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:7}}>
+                      <span style={{fontSize:14}}>💳</span>
+                      <div>
+                        <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{d.name||"Debt"}</div>
+                        <div style={{color:C.muted,fontSize:9}}>minimum payment</div>
+                      </div>
+                    </div>
+                    <span style={{color:C.muted,fontWeight:700,fontSize:12}}>${parseFloat(d.min||0).toFixed(0)}/mo</span>
+                  </div>
+                ))}
+                <div style={{display:"flex",justifyContent:"space-between",padding:"6px 10px",borderTop:`1px solid ${C.border}`,marginTop:2}}>
+                  <span style={{color:C.muted,fontSize:11}}>Total fixed</span>
+                  <span style={{color:C.cream,fontWeight:800,fontSize:13}}>${Math.round(fixedMo).toLocaleString()}/mo</span>
+                </div>
+              </div>
             )}
           </div>
 
-          {/* Total vs available */}
-          <div style={{ padding: "10px 12px", background: overDiscret ? C.red + "18" : C.green + "12", borderRadius: 10, marginBottom: 10, border: `1px solid ${overDiscret ? C.red : C.green}33` }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ color: C.muted, fontSize: 11 }}>Total budgeted</span>
-              <span style={{ color: overDiscret ? C.redBright : C.greenBright, fontWeight: 800, fontSize: 14 }}>${Math.round(totalEdited).toLocaleString()}/mo</span>
+          {/* Step 2 — Your spending plan (situation-based, all adjustable) */}
+          <div style={{background:C.card,borderRadius:18,padding:"16px",border:`1px solid ${C.green}33`}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+              <div style={{width:24,height:24,borderRadius:"50%",background:C.green,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,color:"#041810",flexShrink:0}}>2</div>
+              <div>
+                <div style={{color:C.cream,fontWeight:800,fontSize:14}}>Your spending plan</div>
+                <div style={{color:C.muted,fontSize:11,marginTop:1}}>Based on your household — adjust any amount</div>
+              </div>
             </div>
-            {overDiscret && <div style={{ color: C.redBright, fontSize: 10, marginTop: 3 }}>⚠️ ${Math.round(totalEdited - effectiveDiscret).toLocaleString()} over your available budget — consider trimming some categories</div>}
-            {!overDiscret && totalEdited > 0 && <div style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>${Math.round(effectiveDiscret - totalEdited).toLocaleString()} remaining unallocated</div>}
+            <div style={{background:C.green+"10",borderRadius:10,padding:"8px 12px",marginBottom:12,border:`1px solid ${C.green}22`}}>
+              <div style={{color:C.greenBright,fontSize:11,fontWeight:700}}>
+                ${Math.round(discret).toLocaleString()}/mo available after bills + savings{goalsMo>0?` + goal savings`:""} 
+              </div>
+            </div>
+
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+              {Object.entries(editVals).map(([cat,val])=>{
+                const color = catColor[cat]||C.muted;
+                const emoji = catEmoji[cat]||"📌";
+                const isSugg = !!suggestions[cat];
+                return (
+                  <div key={cat} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
+                    <span style={{fontSize:15,flexShrink:0}}>{emoji}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{cat}</div>
+                      {isSugg&&<div style={{color:C.muted,fontSize:9,marginTop:1}}>Suggested for your household</div>}
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${color}55`,borderRadius:8,overflow:"hidden",flexShrink:0}}>
+                      <span style={{color:C.muted,padding:"0 4px 0 8px",fontSize:11}}>$</span>
+                      <input type="number" value={val}
+                        onChange={e=>setEditVals(prev=>({...prev,[cat]:e.target.value}))}
+                        style={{width:54,background:"none",border:"none",padding:"7px 2px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
+                      <span style={{color:C.muted,padding:"0 4px",fontSize:9}}>/mo</span>
+                    </div>
+                    <button onClick={()=>deleteCat(cat)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,padding:2,flexShrink:0,opacity:0.6,lineHeight:1}}>×</button>
+                  </div>
+                );
+              })}
+
+              {showAddCat?(
+                <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 10px",background:C.cardAlt,borderRadius:10,border:`1px dashed ${C.green}55`}}>
+                  <input value={customCat} onChange={e=>setCustomCat(e.target.value)}
+                    placeholder="Category (e.g. Gym, Art Classes)"
+                    onKeyDown={e=>e.key==="Enter"&&addCustom()}
+                    style={{flex:1,background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none"}}/>
+                  <button onClick={addCustom} style={{background:C.green,border:"none",borderRadius:8,padding:"7px 12px",color:"#041810",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Add</button>
+                  <button onClick={()=>{setShowAddCat(false);setCustomCat("");}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0}}>✕</button>
+                </div>
+              ):(
+                <button onClick={()=>setShowAddCat(true)} style={{background:"none",border:`1px dashed ${C.green}44`,borderRadius:10,padding:"9px 12px",color:C.green,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+                  ＋ Add a category
+                </button>
+              )}
+            </div>
+
+            {/* Running total */}
+            <div style={{padding:"10px 12px",background:totalEdited>discret?C.red+"18":C.green+"10",borderRadius:10,border:`1px solid ${totalEdited>discret?C.red:C.green}33`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{color:C.muted,fontSize:11}}>Total budgeted</span>
+                <span style={{color:totalEdited>discret?C.redBright:C.greenBright,fontWeight:800,fontSize:14}}>${Math.round(totalEdited).toLocaleString()}/mo</span>
+              </div>
+              {totalEdited>discret&&<div style={{color:C.muted,fontSize:10,marginTop:3}}>
+                ${Math.round(totalEdited-discret).toLocaleString()} over — see suggested cuts below
+              </div>}
+              {totalEdited<=discret&&totalEdited>0&&<div style={{color:C.muted,fontSize:10,marginTop:3}}>
+                ${Math.round(discret-totalEdited).toLocaleString()} unallocated — consider adding to savings
+              </div>}
+            </div>
           </div>
 
-          <button onClick={saveEdit} style={{ width: "100%", background: `linear-gradient(135deg,${C.green},${C.greenBright})`, border: "none", borderRadius: 12, padding: "13px", color: "#041810", fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
-            {saved ? "✅ Budget Plan Saved!" : "✓ Save Budget Plan"}
+          {/* Step 3 — Affordability check */}
+          {totalEdited>discret&&(()=>{
+            // Generate live cut suggestions based on current editVals
+            const CUT_PRIORITY=["Subscriptions","Entertainment","Coffee & Dining","Shopping","Personal Care","Groceries","Clothing"];
+            const liveCuts=[];
+            let remaining=Math.round(totalEdited-discret);
+            for(const cat of CUT_PRIORITY){
+              if(remaining<=0) break;
+              const current=parseFloat(editVals[cat]||0);
+              if(!current) continue;
+              const maxCut=cat==="Groceries"?Math.floor(current*0.15):cat==="Personal Care"?Math.floor(current*0.3):Math.floor(current*0.5);
+              const cut=Math.min(remaining,maxCut);
+              if(cut>=5){liveCuts.push({cat,current,suggested:Math.max(10,Math.round((current-cut)/5)*5),saving:cut});remaining-=cut;}
+            }
+            return(
+              <div style={{background:C.red+"10",border:`1px solid ${C.red}33`,borderRadius:18,padding:"16px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                  <div style={{width:24,height:24,borderRadius:"50%",background:C.red,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,color:"#fff",flexShrink:0}}>3</div>
+                  <div>
+                    <div style={{color:C.redBright,fontWeight:800,fontSize:14}}>This doesn't quite fit</div>
+                    <div style={{color:C.muted,fontSize:11,marginTop:1}}>You're ${Math.round(totalEdited-discret).toLocaleString()} over — here's what to trim</div>
+                  </div>
+                </div>
+                {liveCuts.length>0?(
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {liveCuts.map(({cat,current,suggested,saving})=>(
+                      <div key={cat} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 12px",background:C.card,borderRadius:12,border:`1px solid ${C.border}`}}>
+                        <div>
+                          <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{catEmoji[cat]||"📌"} {cat}</div>
+                          <div style={{color:C.muted,fontSize:10,marginTop:1}}>${current} → ${suggested}/mo</div>
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{color:C.green,fontWeight:700,fontSize:13}}>−${saving}/mo</div>
+                          <button onClick={()=>setEditVals(prev=>({...prev,[cat]:String(suggested)}))}
+                            style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:6,padding:"3px 8px",color:C.greenBright,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginTop:3}}>
+                            Apply
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {remaining>0&&<div style={{color:C.muted,fontSize:10,textAlign:"center",padding:"4px"}}>
+                      ${remaining} still to cut — consider reducing more categories or removing one
+                    </div>}
+                  </div>
+                ):(
+                  <div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0"}}>
+                    Consider removing a category or reducing your savings rate temporarily.
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Save button */}
+          <button onClick={saveEdit} disabled={totalEdited>discret}
+            style={{width:"100%",background:totalEdited<=discret?`linear-gradient(135deg,${C.green},${C.greenBright})`:"rgba(255,255,255,0.06)",
+              border:"none",borderRadius:12,padding:"14px",color:totalEdited<=discret?"#041810":C.muted,
+              fontWeight:800,fontSize:14,cursor:totalEdited<=discret?"pointer":"not-allowed",fontFamily:"inherit",transition:"all .2s"}}>
+            {saved?"✅ Budget Plan Saved!":"✓ Save My Budget Plan"}
           </button>
+          {totalEdited>discret&&<div style={{color:C.muted,fontSize:11,textAlign:"center",marginTop:-8}}>Apply the suggested cuts above to unlock saving</div>}
+
         </div>
       )}
+
+      {/* ── TRACK MODE ──────────────────────────────────────────────── */}
 
       {/* ── TRACK MODE ──────────────────────────────────────────────── */}
       {!editMode && (
@@ -11026,7 +11165,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
                 {[
                   [`💵 $${Math.round(netMo).toLocaleString()}/mo take-home`, C.green],
                   [`🏠 $${Math.round(fixedMo).toLocaleString()}/mo in fixed bills`, C.muted],
-                  [`✅ $${Math.round(effectiveDiscret).toLocaleString()}/mo available for variable spending`, C.greenBright],
+                  [`✅ $${Math.round(discret).toLocaleString()}/mo available for variable spending`, C.greenBright],
                 ].map(([txt, color]) => (
                   <div key={txt} style={{ color, fontSize: 12, marginBottom: 4 }}>• {txt}</div>
                 ))}
