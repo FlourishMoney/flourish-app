@@ -73,7 +73,7 @@ const CC = {
     ],
     creditBureaus:["Equifax (Borrowell — free)","TransUnion (Credit Karma — free)"],
     emergencyMonths:3,
-    healthcareNote:"Healthcare is covered — emergency fund is for income disruption, not medical bills.",
+  healthcareNote:"In Canada, your emergency fund is for income disruption — job loss, car breakdown, or unexpected home repairs. Aim for 3 months of expenses.",
   },
   US:{
     currency:"USD", symbol:"$", flag:"🇺🇸", name:"United States",
@@ -2393,14 +2393,27 @@ const FinancialCalcEngine = {
     return monthlyIncome > 0 ? totalDebt / (monthlyIncome * 12) : 0;
   },
 
-  /** Emergency fund months = liquid savings / monthly expenses */
+  /** Emergency fund months = EF goal saved amount (if designated) / monthly expenses.
+   *  If no EF goal exists, falls back to savings account balance (not checking — that's
+   *  daily operating money, not a reserve). This prevents inflating EF coverage by
+   *  counting money that isn't actually set aside for emergencies. */
   emergencyFundMonths(data) {
-    const accounts = data.accounts || [];
     const { totalExpenses } = FinancialCalcEngine.cashFlow(data);
+    if(totalExpenses <= 0) return 0;
+    // Priority 1: Use designated Emergency Fund goal if user has set one up
+    const efGoal = (data.goals||[]).find(g =>
+      g.type === "emergency" ||
+      (g.name||"").toLowerCase().includes("emergency")
+    );
+    if(efGoal && parseFloat(efGoal.saved||efGoal.current||0) > 0) {
+      return parseFloat(efGoal.saved||efGoal.current||0) / totalExpenses;
+    }
+    // Priority 2: Fall back to savings accounts only (not checking — that's daily money)
+    const accounts = data.accounts || [];
     const liquidSavings = accounts
-      .filter(a => ["savings","checking","depository"].includes(a.type))
-      .reduce((s,a) => s + parseFloat(a.balance||0), 0) || 0;
-    return totalExpenses > 0 ? liquidSavings / totalExpenses : 0;
+      .filter(a => ["savings","depository"].includes(a.type))
+      .reduce((s,a) => s + Math.max(0, parseFloat(a.balance||0)), 0) || 0;
+    return liquidSavings / totalExpenses;
   },
 
   /** Average daily spend from transaction history */
@@ -5877,14 +5890,21 @@ function generateBudgetSuggestions(data) {
   const savingsRate = netMo < 2500 ? 0.10 : netMo < 5000 ? 0.15 : 0.20;
   const savingsMo   = Math.round(netMo * savingsRate);
 
-  // ── Goal savings ─────────────────────────────────────────────────────
-  const goalsMo   = (data.goals||[])
-    .filter(g=>parseFloat(g.target||0)>parseFloat(g.saved||0))
+  // ── Goal & sinking fund savings ──────────────────────────────────────────────
+  // Sinking funds and aspirational goals both reserve monthly savings,
+  // but we track them separately so the budget strip can display them distinctly.
+  const activeGoals = (data.goals||[]).filter(g=>parseFloat(g.target||0)>parseFloat(g.saved||0));
+  const sinkingMo = activeGoals
+    .filter(g => g.type==="sinking")
+    .reduce((s,g)=>{ const mo=parseFloat(g.monthly||0); return s+(mo>0?mo:0); },0);
+  const aspirationalGoalsMo = activeGoals
+    .filter(g => g.type!=="sinking" && g.type!=="emergency")
     .reduce((s,g)=>{
       const remaining = parseFloat(g.target||0)-parseFloat(g.saved||0);
       const mo = parseFloat(g.monthly||0);
       return s+(mo>0?mo:remaining>0?Math.ceil(remaining/24):0);
     },0);
+  const goalsMo = sinkingMo + aspirationalGoalsMo;
 
   // ── Discretionary pool ──────────────────────────────────────────────
   const discret   = Math.max(0, netMo - fixedMo - savingsMo - goalsMo);
@@ -5954,7 +5974,7 @@ function generateBudgetSuggestions(data) {
 
   return {
     suggestions, netMo, grossMo, fixedMo, billsMo, debtsMo,
-    savingsMo, savingsRate, goalsMo, discret, wantsPool,
+    savingsMo, savingsRate, goalsMo, sinkingMo, aspirationalGoalsMo, discret, wantsPool,
     hSize, numKids, hasPartner, totalSugg, canAfford, shortfall, cutSuggestions
   };
 }
@@ -6247,6 +6267,7 @@ function SpendScreen({data, setAppData, setScreen}){
   const [applyAllPrompt, setApplyAllPrompt] = useState(null);
   const [showAllBdCats, setShowAllBdCats] = useState(false);
   const [billAutoFlagToast, setBillAutoFlagToast] = useState(null);
+  const [sinkingAllocTxn, setSinkingAllocTxn] = useState(null);
 
   // ── NON-HOOK DERIVED VALUES (after all hooks) ──────────────────────────────
   const isDemo=!data.bankConnected;
@@ -6579,6 +6600,66 @@ function SpendScreen({data, setAppData, setScreen}){
         </div>
       </div>
     )}
+    {/* ── Sinking Fund Allocation Modal ─────────────────────────────── */}
+    {sinkingAllocTxn&&(
+      <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)"}}
+        onClick={e=>{if(e.target===e.currentTarget)setSinkingAllocTxn(null);}}>
+        <div style={{width:"100%",maxWidth:520,background:C.bg,borderRadius:isDesktop?"20px":"24px 24px 0 0",border:`1px solid ${C.border}`,boxShadow:"0 -8px 40px rgba(0,0,0,0.4)"}}>
+          <div style={{padding:"16px 20px 14px",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px",display:isDesktop?"none":"block"}}/>
+            <div style={{color:C.cream,fontWeight:800,fontSize:16}}>🪣 Allocate to sinking fund</div>
+            <div style={{color:C.muted,fontSize:12,marginTop:3}}>
+              ${(sinkingAllocTxn.amount||0).toFixed(2)} from <strong style={{color:C.mutedHi}}>{sinkingAllocTxn.name}</strong> — which fund did this come from?
+            </div>
+          </div>
+          <div style={{padding:"14px 20px 20px",maxHeight:"60vh",overflowY:"auto"}}>
+            {(data.goals||[]).filter(g=>g.type==="sinking").length===0?(
+              <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"16px 0"}}>
+                No sinking funds set up yet.<br/>
+                <span style={{fontSize:11}}>Add sinking funds in Goals to track allocations.</span>
+              </div>
+            ):(data.goals||[]).filter(g=>g.type==="sinking").map((g,gi)=>{
+              const goalIdx = (data.goals||[]).indexOf(g);
+              const saved = parseFloat(g.saved||0);
+              const amt = parseFloat(sinkingAllocTxn.amount||0);
+              const newSaved = Math.max(0, saved - amt);
+              return (
+              <div key={gi} style={{background:C.card,borderRadius:14,padding:"14px 16px",marginBottom:10,border:`1px solid ${C.teal}33`,cursor:"pointer"}}
+                onClick={()=>{
+                  if(setAppData) setAppData(prev=>({...prev,
+                    goals:(prev.goals||[]).map((goal,idx)=>
+                      idx===goalIdx?{...goal,saved:String(newSaved.toFixed(2))}:goal
+                    )
+                  }));
+                  setSinkingAllocTxn(null);
+                }}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                  <div>
+                    <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{g.name}</div>
+                    <div style={{color:C.muted,fontSize:11,marginTop:2}}>${saved.toFixed(2)} saved · ${parseFloat(g.target||0).toFixed(0)} target</div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{color:C.tealBright,fontWeight:800,fontSize:13}}>${newSaved.toFixed(2)}</div>
+                    <div style={{color:C.muted,fontSize:10,marginTop:2}}>after this spend</div>
+                  </div>
+                </div>
+                <div style={{height:4,background:C.border,borderRadius:99,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${Math.min(100,Math.round(newSaved/Math.max(1,parseFloat(g.target||1))*100))}%`,background:C.teal,borderRadius:99,transition:"width .3s"}}/>
+                </div>
+                <button style={{width:"100%",marginTop:10,background:`linear-gradient(135deg,${C.teal},${C.tealBright})`,border:"none",borderRadius:10,padding:"10px",color:"#041810",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                  Deduct ${amt.toFixed(2)} from {g.name} ✓
+                </button>
+              </div>
+              );
+            })}
+            <button onClick={()=>setSinkingAllocTxn(null)}
+              style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"11px",color:C.muted,fontWeight:600,fontSize:13,cursor:"pointer",fontFamily:"inherit",marginTop:4}}>
+              Not from a sinking fund
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     {/* ── Apply to all vendor modal ─────────────────────────────────── */}
     {applyAllPrompt&&(
       <div style={{position:"fixed",inset:0,zIndex:1001,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setApplyAllPrompt(null)}>
@@ -6765,6 +6846,12 @@ function SpendScreen({data, setAppData, setScreen}){
                 </span>
               )}
               {txn.pending&&<Chip label="Pending" color={C.gold} size={9}/>}
+              {txn.amount>0&&accountMap[txn.account_id]?.type==="savings"&&(data.goals||[]).some(g=>g.type==="sinking")&&(
+                <button onClick={e=>{e.stopPropagation();setSinkingAllocTxn(txn);}}
+                  style={{background:C.teal+"18",border:`1px solid ${C.teal}33`,borderRadius:99,padding:"2px 8px",color:C.tealBright,fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
+                  🪣 Allocate to fund
+                </button>
+              )}
               {isCashAdvance(txn)&&(
                 <div style={{width:"100%",marginTop:6,background:C.red+"14",border:`1px solid ${C.red}33`,borderRadius:8,padding:"6px 10px",display:"flex",alignItems:"center",gap:6}}>
                   <span style={{fontSize:12}}>⚠️</span>
@@ -6907,20 +6994,28 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
     {tab==="goals"&&(()=>{
       const goals = data.goals||[];
       const GOAL_TYPES = [
-        {label:"Emergency Fund", icon:"🆘", color:C.orange},
-        {label:"RRSP",           icon:"🏦", color:C.teal},
-        {label:"TFSA",           icon:"💎", color:C.green},
-        {label:"Vacation",       icon:"✈️",  color:C.blue},
-        {label:"Down Payment",   icon:"🏠", color:C.purple},
-        {label:"Car",            icon:"🚗", color:C.gold},
-        {label:"Education",      icon:"🎓", color:C.teal},
-        {label:"Wedding",        icon:"💍", color:C.pink},
-        {label:"Home Reno",      icon:"🔨", color:C.orange},
-        {label:"Other",          icon:"🎯", color:C.muted},
+        // Emergency fund — one, protected, not a spending goal
+        {label:"Emergency Fund", icon:"🆘", color:C.orange,  type:"emergency", hint:"3–6 months of expenses", suggestedMonthly:null},
+        // Sinking funds — known future expenses saved systematically
+        {label:"Car Maintenance",  icon:"🚗", color:C.gold,   type:"sinking", hint:"Tires, brakes, oil changes",      suggestedMonthly:75},
+        {label:"Home Repairs",     icon:"🏠", color:C.orange, type:"sinking", hint:"~1% of home value per year",      suggestedMonthly:150},
+        {label:"Dental & Vision",  icon:"🦷", color:C.teal,   type:"sinking", hint:"Not covered by provincial plans", suggestedMonthly:60},
+        {label:"Holidays & Gifts", icon:"🎄", color:C.pink,   type:"sinking", hint:"Spread the cost year-round",       suggestedMonthly:100},
+        {label:"Electronics",      icon:"💻", color:C.blue,   type:"sinking", hint:"Phone, laptop, appliances",         suggestedMonthly:40},
+        // Aspirational goals — saving toward something specific
+        {label:"Vacation",     icon:"✈️",  color:C.blue,   type:"goal", hint:"", suggestedMonthly:null},
+        {label:"Down Payment", icon:"🏡", color:C.purple, type:"goal", hint:"", suggestedMonthly:null},
+        {label:"Car",          icon:"🚙", color:C.gold,   type:"goal", hint:"", suggestedMonthly:null},
+        {label:"Education",    icon:"🎓", color:C.teal,   type:"goal", hint:"", suggestedMonthly:null},
+        {label:"Wedding",      icon:"💍", color:C.pink,   type:"goal", hint:"", suggestedMonthly:null},
+        {label:"Home Reno",    icon:"🔨", color:C.orange, type:"goal", hint:"", suggestedMonthly:null},
+        {label:"RRSP",         icon:"🏦", color:C.teal,   type:"goal", hint:"", suggestedMonthly:null},
+        {label:"TFSA",         icon:"💎", color:C.green,  type:"goal", hint:"", suggestedMonthly:null},
+        {label:"Other",        icon:"🎯", color:C.muted,  type:"goal", hint:"", suggestedMonthly:null},
       ];
 
-      const openAdd = () => { setForm({name:"",target:"",saved:"",monthly:"",notes:""}); setEditIdx(null); setShowForm(true); };
-      const openEdit = (g,i) => { setForm({name:g.name||g.label||"",target:g.target||"",saved:g.saved||g.current||"",monthly:g.monthly||"",notes:g.notes||""}); setEditIdx(i); setShowForm(true); };
+      const openAdd = () => { setForm({name:"",target:"",saved:"",monthly:"",notes:"",type:"goal"}); setEditIdx(null); setShowForm(true); };
+      const openEdit = (g,idx) => { setForm({name:g.name||g.label||"",target:g.target||"",saved:g.saved||g.current||"",monthly:g.monthly||"",notes:g.notes||"",type:g.type||"goal"}); setEditIdx(idx); setShowForm(true); };
       const saveGoal = () => {
         if(!form.name||!form.target) return;
         if(setAppData) setAppData(prev=>{
@@ -6969,24 +7064,33 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
             </div>
           )}
 
-          {goals.map((g,i)=>{
+        {(()=>{
+          // Helper: render one goal card (shared by all sections)
+          const GoalCard = (g,i) => {
             const target  = parseFloat(g.target||1);
             const saved   = parseFloat(g.saved||g.current||0);
             const monthly = parseFloat(g.monthly||0);
             const pct     = Math.min(100, Math.round((saved/target)*100));
             const remaining = Math.max(0, target-saved);
             const moToGo  = monthly>0 ? Math.ceil(remaining/monthly) : null;
-            const goalType = GOAL_TYPES.find(t=>t.label.toLowerCase()===((g.name||"").toLowerCase())) || GOAL_TYPES[GOAL_TYPES.length-1];
+            const goalType = GOAL_TYPES.find(t=>t.label.toLowerCase()===((g.name||"").toLowerCase()))
+                          || GOAL_TYPES.find(t=>t.type===(g.type||"goal"))
+                          || GOAL_TYPES[GOAL_TYPES.length-1];
             const col = goalType.color;
+            const isSinking = (g.type||"goal")==="sinking" || goalType.type==="sinking";
+            const isEF      = (g.type||"goal")==="emergency" || (g.name||"").toLowerCase().includes("emergency");
             return (
               <div key={g.id||i} style={{background:C.card,borderRadius:18,border:`1px solid ${col}33`,overflow:"hidden",position:"relative"}}>
-                <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${col},${col}88)`}}/>
+                <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${col},${col}cc)`}}/>
                 <div style={{padding:"14px 16px 12px"}}>
-                  {/* Top row */}
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
                     <span style={{fontSize:22,flexShrink:0}}>{goalType.icon}</span>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{color:C.cream,fontWeight:800,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.name||g.label||"Goal"}</div>
+                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                        <div style={{color:C.cream,fontWeight:800,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.name}</div>
+                        {isSinking&&<span style={{background:col+"18",color:col,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:99,border:`1px solid ${col}33`,flexShrink:0}}>SINKING</span>}
+                        {isEF&&<span style={{background:col+"18",color:col,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:99,border:`1px solid ${col}33`,flexShrink:0}}>EMERGENCY</span>}
+                      </div>
                       {g.notes&&<div style={{color:C.muted,fontSize:11,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.notes}</div>}
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
@@ -6994,11 +7098,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                       <div style={{color:C.muted,fontSize:9}}>complete</div>
                     </div>
                   </div>
-                  {/* Progress bar */}
                   <div style={{background:C.border,borderRadius:99,height:8,overflow:"hidden",marginBottom:10}}>
-                    <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${col},${col}cc)`,borderRadius:99,transition:"width .5s ease"}}/>
+                    <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${col},${col}cc)`,borderRadius:99,transition:"width .4s"}}/>
                   </div>
-                  {/* Stats row */}
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
                     {[
                       ["Saved","saved", saved>0?`$${saved.toLocaleString()}`:"$0", C.greenBright],
@@ -7011,38 +7113,101 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                           {field!=="monthly"&&<span style={{color:C.muted,fontSize:10,padding:"0 3px 0 5px"}}>$</span>}
                           <input value={g[field]||""} onChange={e=>updateField(i,field,e.target.value)}
                             type="number" inputMode="decimal" placeholder="0"
-                            style={{flex:1,background:"none",border:"none",padding:"5px 4px 5px 0",color,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",width:0,fontWeight:700}}/>
+                            style={{flex:1,background:"none",border:"none",padding:"5px 4px 5px 0",color,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700}}/>
                         </div>
                       </div>
                     ))}
                   </div>
-                  {/* Time estimate */}
                   {remaining>0&&(
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                       <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                         {moToGo
                           ? `$${remaining.toLocaleString()} to go · ~${moToGo} month${moToGo===1?"":"s"}`
-                          : `$${remaining.toLocaleString()} remaining · add monthly contribution to see timeline`}
+                          : `$${remaining.toLocaleString()} remaining · set monthly to see timeline`}
                       </div>
                       <div style={{display:"flex",gap:6}}>
                         <button onClick={()=>openEdit(g,i)}
-                          style={{background:col+"18",border:`1px solid ${col}33`,borderRadius:8,padding:"5px 10px",color:col,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:28}}>
-                          Edit
-                        </button>
+                          style={{background:col+"18",border:`1px solid ${col}33`,borderRadius:8,padding:"5px 10px",color:col,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Edit</button>
                         <button onClick={()=>removeGoal(i)}
-                          style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"5px 8px",minHeight:28,minWidth:28}}>✕</button>
+                          style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"5px 8px",minHeight:28}}>×</button>
                       </div>
                     </div>
                   )}
                   {remaining<=0&&(
-                    <div style={{background:C.green+"14",border:`1px solid ${C.green}33`,borderRadius:10,padding:"8px 12px",color:C.greenBright,fontWeight:700,fontSize:12,textAlign:"center"}}>
+                    <div style={{background:C.green+"14",border:`1px solid ${C.green}33`,borderRadius:10,padding:"8px 12px",color:C.greenBright,fontSize:12,fontWeight:700,display:"flex",alignItems:"center",gap:6}}>
                       🎉 Goal reached! Congratulations!
                     </div>
                   )}
                 </div>
               </div>
             );
-          })}
+          };
+
+          // Separate goals by type
+          const efGoals      = goals.filter(g=>(g.type||"goal")==="emergency" || (g.name||"").toLowerCase().includes("emergency fund"));
+          const sinkingGoals = goals.filter(g=>(g.type||"goal")==="sinking" && !(g.name||"").toLowerCase().includes("emergency fund"));
+          const aspGoals     = goals.filter(g=>(g.type||"goal")==="goal"    && !(g.name||"").toLowerCase().includes("emergency fund"));
+
+          // Sinking fund totals for context
+          const sinkingTotal  = sinkingGoals.reduce((s,g)=>s+parseFloat(g.saved||0),0);
+          const sinkingMonthly = sinkingGoals.reduce((s,g)=>s+parseFloat(g.monthly||0),0);
+
+          return (
+            <div style={{display:"flex",flexDirection:"column",gap:16}}>
+              {/* ── Emergency Fund ─────────────────────────────── */}
+              {efGoals.length>0&&(
+                <div>
+                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,marginBottom:8,paddingLeft:2}}>
+                    🆘 Emergency Fund
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                    {efGoals.map((g,i)=>GoalCard(g,goals.indexOf(g)))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Sinking Funds ──────────────────────────────── */}
+              {sinkingGoals.length>0&&(
+                <div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                    <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,paddingLeft:2}}>
+                      🪣 Sinking Funds
+                    </div>
+                    {sinkingTotal>0&&(
+                      <div style={{color:C.muted,fontSize:10}}>
+                        ${Math.round(sinkingTotal).toLocaleString()} saved · ${Math.round(sinkingMonthly)}/mo reserved
+                      </div>
+                    )}
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                    {sinkingGoals.map((g,i)=>GoalCard(g,goals.indexOf(g)))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Aspirational Goals ─────────────────────────── */}
+              {aspGoals.length>0&&(
+                <div>
+                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,marginBottom:8,paddingLeft:2}}>
+                    🎯 Goals
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                    {aspGoals.map((g,i)=>GoalCard(g,goals.indexOf(g)))}
+                  </div>
+                </div>
+              )}
+
+              {goals.length===0&&!showForm&&(
+                <div style={{background:C.card,borderRadius:18,padding:"28px 20px",textAlign:"center",border:`1px solid ${C.border}`}}>
+                  <div style={{fontSize:40,marginBottom:12}}>🎯</div>
+                  <div style={{color:C.cream,fontWeight:800,fontSize:16,fontFamily:"'Playfair Display',serif",marginBottom:8}}>No goals yet</div>
+                  <div style={{color:C.muted,fontSize:13,marginBottom:16,lineHeight:1.6}}>Add an emergency fund, sinking funds for car and home, or save toward a vacation or down payment.</div>
+                  <button onClick={openAdd} style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:12,padding:"10px 24px",color:C.purpleBright,fontWeight:700,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Add your first goal →</button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
           {/* Add / Edit form */}
           {showForm&&(
@@ -7055,8 +7220,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                 <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Goal Type</div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   {GOAL_TYPES.map(t=>(
-                    <button key={t.label} onClick={()=>setForm(v=>({...v,name:t.label}))}
-                      style={{background:form.name===t.label?t.color+"33":"rgba(255,255,255,0.04)",border:`1px solid ${form.name===t.label?t.color+"66":C.border}`,borderRadius:10,padding:"7px 12px",color:form.name===t.label?t.color:C.muted,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:34}}>
+                    <button key={t.label} onClick={()=>setForm(v=>({...v,name:t.label,type:t.type||"goal",monthly:v.monthly||(t.suggestedMonthly?String(t.suggestedMonthly):"")}))} style={{background:form.name===t.label?t.color+"33":"rgba(255,255,255,0.04)",border:`1px solid ${form.name===t.label?t.color:C.border}`,borderRadius:10,padding:"5px 10px",color:form.name===t.label?t.color:C.mutedHi,fontSize:11,fontWeight:form.name===t.label?700:400,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
                       {t.icon} {t.label}
                     </button>
                   ))}
@@ -7081,6 +7245,16 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                   </div>
                 ))}
               </div>
+        {/* Suggested monthly hint for sinking funds */}
+        {(()=>{
+          const t = GOAL_TYPES.find(gt=>gt.label===form.name);
+          if(!t||t.type!=="sinking"||!t.suggestedMonthly) return null;
+          return !form.monthly&&(
+            <div style={{background:C.teal+"10",border:`1px solid ${C.teal}28`,borderRadius:8,padding:"6px 10px",marginBottom:8,color:C.tealBright,fontSize:10}}>
+              💡 Experts suggest ~${t.suggestedMonthly}/mo for {t.label} · {t.hint}
+            </div>
+          );
+        })()}
               {/* Notes */}
               <div style={{marginBottom:14}}>
                 <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Notes (optional)</div>
@@ -7522,12 +7696,13 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
 
       // Monthly savings needed for active goals
       const activeGoals = (data.goals||[]).filter(g=>parseFloat(g.target||0)>parseFloat(g.saved||0));
-      const localGoalsMo = activeGoals.reduce((s,g)=>{
-        const remaining = parseFloat(g.target||0) - parseFloat(g.saved||0);
-        const mo = parseFloat(g.monthly||0);
-        return s + (mo>0 ? mo : remaining>0 ? Math.ceil(remaining/24) : 0);
-      },0);
-      // discret from generateBudgetSuggestions already accounts for goals globally,
+        const localSinkingMo = activeGoals.filter(g=>g.type==="sinking").reduce((s,g)=>{const mo=parseFloat(g.monthly||0);return s+(mo>0?mo:0);},0);
+        const localAspMo = activeGoals.filter(g=>g.type!=="sinking"&&g.type!=="emergency").reduce((s,g)=>{
+          const remaining = parseFloat(g.target||0) - parseFloat(g.saved||0);
+          const mo = parseFloat(g.monthly||0);
+          return s + (mo>0 ? mo : remaining>0 ? Math.ceil(remaining/24) : 0);
+        },0);
+        const localGoalsMo = localSinkingMo + localAspMo;
       // but inside Goals tab we recalc locally for display
       const spendPool = Math.max(50, discret - localGoalsMo);
 
@@ -7548,7 +7723,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       const saveSuggestions = Object.entries(budgets).map(([cat,limit])=>{
         const spent = monthSpend[cat]||0;
         const pct = limit>0?spent/limit:0;
-        const saving = actuals[cat]||0;
+          const saving = monthSpend[cat]||0;
         if(pct>1.2&&saving>20) return {cat, spent, limit, over:spent-limit, potential:Math.round((saving-(limit*0.85))/5)*5};
         return null;
       }).filter(Boolean).sort((a,b)=>b.over-a.over).slice(0,3);
@@ -7567,7 +7742,8 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                 ["Take-home", `$${Math.round(netMo).toLocaleString()}/mo`, C.green],
                 ["Fixed bills & debt", `−$${Math.round(fixedMo).toLocaleString()}/mo`, C.red],
                 ["Savings target", `−$${Math.round(savingsMo).toLocaleString()}/mo`, C.teal],
-                ...(localGoalsMo>0?[["Goal savings", `−$${Math.round(localGoalsMo).toLocaleString()}/mo`, C.purple]]:[]),
+                ...(localSinkingMo>0?[["Sinking funds", `−$${Math.round(localSinkingMo).toLocaleString()}/mo`, C.gold]]:[]),
+                ...(localAspMo>0?[["Goal savings", `−$${Math.round(localAspMo).toLocaleString()}/mo`, C.purple]]:[])
                 ["Available for spending", `$${Math.round(spendPool).toLocaleString()}/mo`, C.greenBright],
               ].map(([label,val,color])=>(
                 <div key={label} style={{background:C.cardAlt,borderRadius:10,padding:"8px 10px",border:`1px solid ${C.border}`}}>
@@ -8993,7 +9169,7 @@ function InlineGoalEditor({data, setAppData, color}){
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({name:"",target:"",saved:""});
   const s = {background:C.card,borderRadius:"0 0 18px 18px",border:`1px solid ${color}33`,padding:"16px 18px",marginBottom:8,borderTop:`1px solid ${color}22`};
-  const GOAL_PRESETS = ["Emergency Fund","Vacation","Down Payment","Car","Wedding","Education","Home Renovation","New Baby","Other"];
+const GOAL_PRESETS = ["Emergency Fund","Car Maintenance","Home Repairs","Dental & Vision","Holidays & Gifts","Electronics","Vacation","Down Payment","Car","Wedding","Education","Home Renovation","New Baby","Other"];
 
   const saveGoal = () => {
     if(!form.name||!form.target) return;
@@ -11020,9 +11196,9 @@ function BudgetScreen({data, setAppData, setScreen}) {
   const [showAddCat, setShowAddCat] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const {
+const {
     suggestions, netMo, fixedMo, discret, savingsMo, savingsRate,
-    grossMo, goalsMo, canAfford, shortfall, cutSuggestions,
+    grossMo, goalsMo, sinkingMo, aspirationalGoalsMo, canAfford, shortfall, cutSuggestions,
     hSize, numKids, totalSugg
   } = generateBudgetSuggestions(data);
   const budgets = data.budgets || {};
@@ -11134,13 +11310,14 @@ function BudgetScreen({data, setAppData, setScreen}) {
       {/* Money math strip */}
       <div style={{ background: C.card, borderRadius: 18, padding: "14px 16px", border: `1px solid ${C.border}` }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          {[
-            ["Take-home", `$${Math.round(netMo).toLocaleString()}/mo`, C.green, "💵"],
-            ["Fixed bills & debt", `−$${Math.round(fixedMo).toLocaleString()}/mo`, C.red, "🏠"],
-            ["Savings target", `−$${Math.round(savingsMo).toLocaleString()}/mo`, C.teal, "💰"],
-            ...(goalsMo > 0 ? [["Goal savings", `−$${Math.round(goalsMo).toLocaleString()}/mo`, C.purple, "🎯"]] : []),
-            ["Available to spend", `$${Math.round(discret).toLocaleString()}/mo`, C.greenBright, "✅"],
-          ].map(([label, val, color, emoji]) => (
+            {[
+              ["Take-home", `$${Math.round(netMo).toLocaleString()}/mo`, C.green, "💵"],
+              ["Fixed bills & debt", `−$${Math.round(fixedMo).toLocaleString()}/mo`, C.red, "🏠"],
+              ["Savings target", `−$${Math.round(savingsMo).toLocaleString()}/mo`, C.teal, "💰"],
+              ...(sinkingMo > 0 ? [["Sinking funds", `−$${Math.round(sinkingMo).toLocaleString()}/mo`, C.gold, "🪣"]] : []),
+              ...(aspirationalGoalsMo > 0 ? [["Goal savings", `−$${Math.round(aspirationalGoalsMo).toLocaleString()}/mo`, C.purple, "🎯"]] : []),
+              ["Available to spend", `$${Math.round(discret).toLocaleString()}/mo`, C.greenBright, "✅"],
+              ].map(([label, val, color, emoji]) => (
             <div key={label} style={{ background: C.cardAlt, borderRadius: 12, padding: "10px 12px", border: `1px solid ${C.border}` }}>
               <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
                 <span style={{ fontSize: 12 }}>{emoji}</span>
@@ -11226,7 +11403,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
             </div>
             <div style={{background:C.green+"10",borderRadius:10,padding:"8px 12px",marginBottom:12,border:`1px solid ${C.green}22`}}>
               <div style={{color:C.greenBright,fontSize:11,fontWeight:700}}>
-                ${Math.round(discret).toLocaleString()}/mo available after bills + savings{goalsMo>0?` + goal savings`:""} 
+              ${Math.round(discret).toLocaleString()}/mo available after bills + savings{sinkingMo>0?` + sinking funds`:""}{aspirationalGoalsMo>0?` + goal savings`:""}
               </div>
             </div>
 
