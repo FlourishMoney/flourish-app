@@ -437,15 +437,15 @@ const CC_PAYMENT_KEYWORDS = [
 // These arrive from Plaid as "Bills" or "Payment" category rather than "Transfer",
 // so isCCPayment needs to catch them by name.
 const CC_INSTITUTION_PATTERNS = [
-  "scotiaonline",      // BNS SCOTIAONLINE/TELES
-  "td online",         // TD online banking
-  "rbc online",        // RBC online bill payment
-  "bmo online",        // BMO online
-  "cibc online",       // CIBC online
-  "online bill pay",   // generic online bill pay
-  "bill payment",      // generic
-  "web payment",       // generic web payment
-  "telephone banking", // phone banking payment
+  "scotiaonline",     // BNS SCOTIAONLINE/TELES
+  "mb-credit card",  // Customer Transfer Dr. MB-CREDIT CARD/LOC PAY.
+  "credit card/loc", // LOC credit card payment
+  "mb-visa",         // Bill Payment MB-VISA ****
+  "mb-mastercard",   // Bill Payment MB-MASTERCARD ****
+  "mb-amex",         // Bill Payment MB-AMEX ****
+  "online bill pay", // generic — NOT "bill payment" (too broad, catches Enbridge/Hydro One)
+  "web payment",
+  "telephone banking",
 ];
 
 // Categories that represent fixed/variable bill commitments — NOT discretionary spending.
@@ -471,7 +471,11 @@ function isCCPayment(txn, debts=[]) {
   if(CC_PAYMENT_KEYWORDS.some(kw => name.includes(kw))) return true;
   // Institution-specific online banking payment names (catch BNS SCOTIAONLINE etc.)
   if(CC_INSTITUTION_PATTERNS.some(p => name.includes(p))) return true;
-  // Transfer category from Plaid — additional debt amount signal
+  // CC network name in payment context — catches "Bill Payment MB-RBC ROYAL BANK MASTERCARD"
+  // Safe: requires BOTH a CC network word AND a payment verb — won't catch "Esso Visa" or "Amex Cobalt"
+  if((name.includes("mastercard") || name.includes("amex") || name.includes("visa")) &&
+     (name.includes("payment") || name.includes("/loc pay") || name.includes("credit card"))) return true;
+  // Transfer category from Plaid + debt amount match
   if(cat === "TRANSFER" || cat.includes("TRANSFER")) {
     if(debts.length > 0) {
       const matchesDet = debts.some(d => {
@@ -482,8 +486,9 @@ function isCCPayment(txn, debts=[]) {
       });
       if(matchesDet) return true;
     }
-    // Round amounts to credit accounts are almost always payments
-    if(txn.amount % 50 === 0 && txn.amount >= 100) return true;
+    // NOTE: "round amount = CC payment" heuristic removed — too aggressive.
+    // The $1700 mortgage paid via e-transfer was being incorrectly hidden.
+    // Real CC payments are caught by keywords/institution patterns above.
   }
   return false;
 }
@@ -492,8 +497,9 @@ function isCCPayment(txn, debts=[]) {
 // These are money-IN transactions (negative amount) with cash advance indicators.
 // Cash advances carry high fees (2-5%) + immediate interest — user should be warned.
 function isCashAdvance(txn) {
-  if(!txn || txn.amount >= 0) return false; // must be money coming IN
+  if(!txn) return false;
   const name = (txn.name || "").toLowerCase();
+  // Flag both directions: the bank-side incoming transfer AND the credit card charge
   return name.includes("cash advance") ||
          name.includes("cash adv") ||
          name.includes("atm advance") ||
@@ -6265,7 +6271,7 @@ function SpendScreen({data, setAppData, setScreen}){
   const [billForm,setBillForm]=useState({name:"",amount:"",date:"1",type:"fixed",category:"Bills"});
   const [arrearsPayTxn,setArrearsPayTxn]=useState(null);
   const [applyAllPrompt, setApplyAllPrompt] = useState(null);
-  const [showAllBdCats, setShowAllBdCats] = useState(false);
+
   const [billAutoFlagToast, setBillAutoFlagToast] = useState(null);
   const [sinkingAllocTxn, setSinkingAllocTxn] = useState(null);
 
@@ -6870,47 +6876,144 @@ function SpendScreen({data, setAppData, setScreen}){
           <button onClick={()=>setBillAutoFlagToast(null)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,padding:0,flexShrink:0}}>✕</button>
         </div>
       )}
-    <div style={{display:"flex",gap:6,background:C.surface,borderRadius:16,padding:4}}>
-      {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeBright:C.muted,borderRadius:12,padding:"9px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
-        {t==="txn"?"Transactions":t==="breakdown"?"Breakdown":"Smart Cuts"}
-      </button>)}
-    </div>
-    {tab==="txn"&&<>
-      {/* Filter row — dropdowns for account, category, period */}
-      <div style={{display:"grid",gridTemplateColumns:accountsWithNames.length>1?"1fr 1fr 1fr":"1fr 1fr",gap:8}}>
+      {/* Period selector + Smart Cuts toggle */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+        <select value={period} onChange={e=>setPeriod(e.target.value)}
+          style={{flex:1,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}>
+          <option value="week">This week</option>
+          <option value="month">{monthLabel}</option>
+          <option value="last">Last month</option>
+          <option value="3mo">Last 3 months</option>
+          <option value="all">Last 90 days</option>
+        </select>
         {accountsWithNames.length>1&&(
-          <div>
-            <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Account</div>
-            <select value={accountFilter} onChange={e=>{setAccountFilter(e.target.value);setCatFilter("All");}}
-              style={{width:"100%",background:C.card,border:`1px solid ${accountFilter!=="All"?C.blue:C.border}`,borderRadius:10,padding:"9px 10px",color:accountFilter!=="All"?C.blueBright:C.cream,fontSize:12,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
-              <option value="All">All Accounts</option>
-              {accountsWithNames.map(a=>{
-                const icon = a.type==="credit"||a.type==="credit card"?"💳":a.type==="savings"?"🏦":a.type==="investment"?"📈":"🏦";
-                return <option key={a.id} value={a.id}>{icon} {a.name}</option>;
-              })}
-            </select>
-          </div>
+          <select value={accountFilter} onChange={e=>setAccountFilter(e.target.value)}
+            style={{flex:1,background:C.card,border:`1px solid ${accountFilter!=="All"?C.blue:C.border}`,borderRadius:10,padding:"9px 10px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}>
+            <option value="All">All Accounts</option>
+            {accountsWithNames.map(a=>{
+              const icon=a.type==="credit"||a.type==="credit card"?"💳":a.type==="savings"?"🏦":"🏦";
+              return <option key={a.id} value={a.id}>{icon} {a.name}</option>;
+            })}
+          </select>
         )}
-        <div>
-          <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Category</div>
-          <select value={catFilter} onChange={e=>setCatFilter(e.target.value)}
-            style={{width:"100%",background:C.card,border:`1px solid ${catFilter!=="All"?C.orange:C.border}`,borderRadius:10,padding:"9px 10px",color:catFilter!=="All"?C.orangeBright:C.cream,fontSize:12,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
-            {cats.map(c=><option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-        <div>
-          <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Period</div>
-          <select value={period} onChange={e=>setPeriod(e.target.value)}
-            style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px",color:C.cream,fontSize:12,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
-            <option value="week">This week</option>
-            <option value="month">{monthLabel}</option>
-            <option value="last">Last month</option>
-            <option value="3mo">Last 3 months</option>
-            <option value="all">Last 90 days</option>
-          </select>
-        </div>
+        <button onClick={()=>setTab(t=>t==="cuts"?"txn":"cuts")}
+          style={{background:tab==="cuts"?C.orange+"22":"rgba(255,255,255,0.04)",
+          border:`1px solid ${tab==="cuts"?C.orange+"55":C.border}`,borderRadius:10,padding:"9px 14px",
+          color:tab==="cuts"?C.orangeBright:C.muted,fontSize:12,fontWeight:700,cursor:"pointer",
+          fontFamily:"inherit",flexShrink:0,whiteSpace:"nowrap"}}>
+          ✂️ Smart Cuts
+        </button>
       </div>
-      {filtered.length===0&&(
+      {/* ── Category summary strip ─────────────────────────────────────── */}
+      {(()=>{
+        const bdTxns=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&getCat(t)!=="Fees"&&!isCCPayment(t,data.debts||[]));
+        const bdByCat={};
+        bdTxns.forEach(t=>{const c=getCat(t);bdByCat[c]=(bdByCat[c]||0)+t.amount;});
+        const bdTotal=bdTxns.reduce((s,t)=>s+t.amount,0);
+        const bdAllCats=Object.entries(bdByCat).sort((a,b)=>b[1]-a[1]);
+        const catColors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
+        if(bdAllCats.length===0) return null;
+        return (
+          <div>
+            {/* Total + breakdown header */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
+              <div style={{color:C.cream,fontWeight:900,fontSize:22,fontFamily:"'Playfair Display',serif",letterSpacing:-0.5}}>
+                ${(bdTotal||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}
+              </div>
+              <div style={{color:C.muted,fontSize:11}}>{bdTxns.length} transactions</div>
+            </div>
+            {/* Category pills — horizontal scroll, tap to filter */}
+            <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none",WebkitOverflowScrolling:"touch",marginBottom:4}}>
+              <button onClick={()=>setCatFilter("All")}
+                style={{flexShrink:0,background:catFilter==="All"?C.orange+"22":"rgba(255,255,255,0.04)",
+                border:`1px solid ${catFilter==="All"?C.orange+"66":C.border}`,borderRadius:99,
+                padding:"5px 12px",color:catFilter==="All"?C.orangeBright:C.muted,
+                fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                All
+              </button>
+              {bdAllCats.map(([cat,amt],ci)=>{
+                const col=catColors[ci%6];
+                const {emoji}=getCatDisplay(cat);
+                const pct=bdTotal>0?Math.round(amt/bdTotal*100):0;
+                const active=catFilter===cat;
+                return (
+                  <button key={cat} onClick={()=>setCatFilter(active?"All":cat)}
+                    style={{flexShrink:0,display:"flex",alignItems:"center",gap:5,
+                    background:active?col+"22":"rgba(255,255,255,0.04)",
+                    border:`1px solid ${active?col+"66":C.border}`,borderRadius:99,
+                    padding:"5px 10px",color:active?col:C.muted,
+                    fontSize:11,fontWeight:active?700:400,cursor:"pointer",
+                    fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                    <span style={{fontSize:12}}>{emoji}</span>
+                    <span>{cat}</span>
+                    <span style={{opacity:0.7}}>${Math.round(amt)}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {/* Budget bar if cat is budgeted */}
+            {catFilter!=="All"&&(data.budgets||{})[catFilter]>0&&(()=>{
+              const budget=(data.budgets||{})[catFilter];
+              const spent=bdByCat[catFilter]||0;
+              const over=spent>budget;
+              return (
+                <div style={{background:C.cardAlt,borderRadius:10,padding:"8px 12px",marginBottom:4,border:`1px solid ${over?C.red:C.green}22`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                    <span style={{color:over?C.redBright:C.muted,fontSize:11,fontWeight:over?700:400}}>
+                      {over?`⚠️ $${Math.round(spent-budget)} over budget`:`${Math.round(spent/budget*100)}% of $${budget} budget`}
+                    </span>
+                    <span style={{color:C.muted,fontSize:10}}>${Math.round(spent)} / ${budget}</span>
+                  </div>
+                  <div style={{height:4,background:C.border,borderRadius:99,overflow:"hidden"}}>
+                    <div style={{width:`${Math.min(100,Math.round(spent/budget*100))}%`,height:"100%",
+                    background:over?C.red:C.green,borderRadius:99,transition:"width .4s"}}/>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        );
+      })()}
+      {/* ── Smart Cuts — collapsible card ────────────────────────────── */}
+      {tab==="cuts"&&(()=>{
+        const totalSaving=cuts.reduce((s,c)=>{const m=(c.saving||"").match(/\d+/);return s+(m?parseInt(m[0]):0);},0);
+        return (
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div style={{background:`linear-gradient(135deg,${C.orangeDim},${C.card})`,border:`1px solid ${C.orange}44`,borderRadius:18,padding:"14px 16px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:cuts.length>0?10:0}}>
+                <div>
+                  <div style={{color:C.orangeBright,fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                    ✂️ Smart Cuts — save ${totalSaving}/mo
+                  </div>
+                  <div style={{color:C.muted,fontSize:11,marginTop:2}}>
+                    {cuts.length===0?"Your spending looks controlled this month 🎉"
+                    :`${cuts.length} cut${cuts.length===1?"":"s"} · $${(totalSaving*12).toLocaleString()} saved per year`}
+                  </div>
+                </div>
+                <button onClick={()=>setTab("txn")} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0}}>✕</button>
+              </div>
+              {cuts.map(s=>(
+                <div key={s.id} style={{background:C.card,borderRadius:14,padding:"12px 14px",border:`1px solid ${C.border}`,marginTop:8}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                    <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                      <Icon id={s.icon||"chartUp"} size={16} color={s.color||C.orange} strokeWidth={2.2}/>
+                      <span style={{color:C.cream,fontWeight:700,fontSize:13}}>{s.title}</span>
+                    </div>
+                    <button onClick={()=>setDismissed(d=>[...d,s.id])} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,padding:0,lineHeight:1}}>×</button>
+                  </div>
+                  <div style={{color:C.mutedHi,fontSize:11,lineHeight:1.65,marginBottom:8}}>{s.body}</div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    <Chip label={`Save ${s.saving}`} color={C.green} size={10}/>
+                    <Chip label={s.effort||"Impact"} color={s.effort==="High impact"?C.orange:s.effort==="Medium"?C.gold:C.teal} size={10}/>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+      {/* Filter row — dropdowns for account, category, period */}
+      {/* ── Transaction list ──────────────────────────────────────── */}
         <div style={{background:C.card,borderRadius:18,padding:"28px 20px",textAlign:"center",border:`1px solid ${C.border}`}}>
           {txns.length===0?(
             <>
@@ -6979,94 +7082,8 @@ function SpendScreen({data, setAppData, setScreen}){
         </div>
         );
       })}
-    </>}
-    {tab==="breakdown"&&<>
-      {(()=>{
-        // Breakdown uses the same period-filtered set as the Transactions tab
-        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&getCat(t)!=="Fees"&&!isCCPayment(t,data.debts||[]));
-        const bdIn   = acctFiltered.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
-        const bdTotal= bdTxns.reduce((s,t)=>s+t.amount,0);
-        const bdByCat= {};
-        bdTxns.forEach(t=>{const c=getCat(t);bdByCat[c]=(bdByCat[c]||0)+t.amount;});
-        const bdAllCats=Object.entries(bdByCat).sort((a,b)=>b[1]-a[1]);
-  const bdTopCats=showAllBdCats?bdAllCats:bdAllCats.slice(0,8);
-        const periodLabel = period==="week"?"This week":period==="month"?monthLabel:period==="last"?"Last month":period==="3mo"?"Last 3 months":"Last 90 days";
-        return (<>
-      <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-          <div>
-            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Spent · {periodLabel}</div>
-            <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>{`$${(bdTotal||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</div>
-          </div>
-          <div style={{textAlign:"right",flexShrink:0}}>
-            <div style={{color:C.muted,fontSize:10,marginBottom:2}}>{bdTxns.length} transactions</div>
-            <div style={{color:C.green,fontSize:11}}>+${(bdIn||0).toLocaleString("en-CA",{minimumFractionDigits:0})} in</div>
-          </div>
-        </div>
-      </Card>
-      {bdTopCats.length===0&&<div style={{background:C.card,borderRadius:16,padding:"24px 20px",textAlign:"center",border:`1px solid ${C.border}`}}>
-        <div style={{fontSize:32,marginBottom:8}}>📊</div>
-        <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:4}}>No spending data for this period</div>
-        <div style={{color:C.muted,fontSize:12}}>Try a broader time range above.</div>
-      </div>}
-      {/* Budget Plan Card — shown above category breakdown */}
-      {period==="month"&&<BudgetPlanCard data={data} setAppData={setAppData}/>}
-      {bdTopCats.map(([cat,amt],i)=>{
-        const colors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
-        const catTxns=acctFiltered.filter(t=>getCat(t)===cat&&t.amount>0&&!isCCPayment(t,data.debts||[]));
-        const budget = (data.budgets||{})[cat] || null;
-        return <ExpandableCatCard key={i} cat={cat} amt={amt} totalSpent={bdTotal} color={colors[i%6]} catTxns={catTxns}
-          isBillCat={BILL_CATS.has(cat)} bills={data.bills||[]} budget={budget} onSetBudget={(cat,val)=>{
-            if(setAppData) setAppData(prev=>({...prev,budgets:{...(prev.budgets||{}),
-              ...(val===null ? Object.fromEntries(Object.entries(prev.budgets||{}).filter(([k])=>k!==cat)) : {[cat]:val})
-            }}));
-          }}/>;
-      })}
-      {bdAllCats.length>8&&(
-        <button onClick={()=>setShowAllBdCats(v=>!v)}
-          style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:12,
-            padding:"11px",color:C.muted,fontSize:12,fontWeight:700,cursor:"pointer",
-            fontFamily:"inherit",marginTop:2}}>
-          {showAllBdCats?"▲ Show less":`▼ Show ${bdAllCats.length-8} more categor${bdAllCats.length-8===1?"y":"ies"}`}
-        </button>
-      )}
-        </>);
-      })()}
-    </>}
-  {tab==="cuts"&&<>
-  <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
-    <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:6}}>Potential monthly savings</div>
-    <div style={{fontSize:32,fontWeight:900,color:C.goldBright,fontFamily:"Georgia,serif"}}>${cuts.reduce((s,c)=>{const m=(c.saving||"").match(/\d+/);return s+(m?parseInt(m[0]):0);},0).toLocaleString()}</div>
-    <div style={{color:C.muted,fontSize:12,marginTop:2}}>
-      {cuts.length===0
-        ? "No significant cuts identified — your spending looks controlled this month 🎉"
-        : `${cuts.length} cut${cuts.length===1?"":"s"} identified from your real transactions · $${(cuts.reduce((s,c)=>{const m=(c.saving||"").match(/\d+/);return s+(m?parseInt(m[0]):0);},0)*12).toLocaleString()} a year`}
-    </div>
-  </Card>
-  {cuts.length===0&&(
-    <Card style={{textAlign:"center",padding:"30px 20px"}}>
-      <div style={{fontSize:40,marginBottom:10}}>🎉</div>
-      <div style={{color:C.cream,fontWeight:700,fontSize:15,marginBottom:6}}>Spending looks controlled</div>
-      <div style={{color:C.muted,fontSize:12,lineHeight:1.6}}>No category has a saving opportunity over $30/mo this month. Check back after more transactions come in.</div>
-    </Card>
-  )}
-  {cuts.map(s=>(
-    <Card key={s.id} glow={s.color||C.orange}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-        <div style={{display:"flex",gap:10,alignItems:"center"}}>
-          <Icon id={s.icon||"chartUp"} size={20} color={s.color||C.orange} strokeWidth={2.2}/>
-          <div style={{color:C.cream,fontWeight:800,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{s.title}</div>
-        </div>
-        <button onClick={()=>setDismissed(d=>[...d,s.id])} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:"0 0 0 8px",lineHeight:1,flexShrink:0}}>×</button>
-      </div>
-      <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,marginBottom:10}}>{s.body}</div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <Chip label={`Save ${s.saving}`} color={C.green}/>
-        <Chip label={s.effort||"Impact"} color={s.effort==="High impact"?C.orange:s.effort==="Medium"?C.gold:C.teal}/>
-      </div>
-    </Card>
-  ))}
-  </>}
+
+
   </div>;
 }
 
