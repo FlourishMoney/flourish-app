@@ -4822,7 +4822,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         </div>
 
         {/* ── STREAK + GOALS — right tile ───────────────────────────────── */}
-        <div style={{...anim(140),...glass(C.gold),borderRadius:24,padding:"18px 16px 16px",position:"relative",overflow:"hidden",cursor:"pointer"}} onClick={()=>setScreen("goals")}>
+        <div style={{...anim(140),...glass(C.gold),borderRadius:24,padding:"18px 16px 16px",position:"relative",overflow:"hidden",cursor:"pointer"}} onClick={()=>{if(setGoalsTab)setGoalsTab("goals");setScreen("goals");}}>
           <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at 100% 0%,${C.gold}14 0%,transparent 60%)`,pointerEvents:"none"}}/>
           <div style={{position:"relative"}}>
             <div style={{...label11(C.muted),marginBottom:10}}>Savings Streak</div>
@@ -11087,18 +11087,29 @@ function BudgetScreen({data, setAppData, setScreen}) {
               </div>
             ):(
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {(data.bills||[]).map((b,i)=>(
-                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
-                    <div style={{display:"flex",alignItems:"center",gap:7}}>
-                      <span style={{fontSize:14}}>{b.type==="variable"?"🔄":"📌"}</span>
-                      <div>
-                        <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{b.name}</div>
-                        {b.category&&<div style={{color:C.muted,fontSize:9}}>{b.category}</div>}
-                      </div>
+              {(data.bills||[]).map((b,idx)=>(
+                <div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
+                  <div style={{display:"flex",alignItems:"center",gap:7,flex:1,minWidth:0}}>
+                    <span style={{fontSize:14}}>{b.type==="variable"?"🔄":"📌"}</span>
+                    <div style={{minWidth:0}}>
+                      <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{b.name}</div>
+                      {b.category&&<div style={{color:C.muted,fontSize:9}}>{b.category}</div>}
                     </div>
-                    <span style={{color:C.muted,fontWeight:700,fontSize:12}}>${parseFloat(b.amount||0).toFixed(0)}/mo</span>
                   </div>
-                ))}
+                  <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.teal}44`,borderRadius:8,overflow:"hidden",flexShrink:0}}>
+                    <span style={{color:C.muted,padding:"0 4px 0 8px",fontSize:11}}>$</span>
+                    <input type="number" defaultValue={parseFloat(b.amount||0).toFixed(0)}
+                      onBlur={e=>{
+                        const val=parseFloat(e.target.value);
+                        if(!isNaN(val)&&val>=0&&setAppData){
+                          setAppData(prev=>({...prev,bills:(prev.bills||[]).map((bill,bi)=>bi===idx?{...bill,amount:String(val)}:bill)}));
+                        }
+                      }}
+                      style={{width:56,background:"none",border:"none",padding:"6px 2px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
+                    <span style={{color:C.muted,padding:"0 6px",fontSize:9}}>/mo</span>
+                  </div>
+                </div>
+              ))}
                 {(data.debts||[]).map((d,i)=>(
                   <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
                     <div style={{display:"flex",alignItems:"center",gap:7}}>
