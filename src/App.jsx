@@ -433,6 +433,21 @@ const CC_PAYMENT_KEYWORDS = [
   "credit card autopay",
 ];
 
+// Canadian and US bank online-payment transaction names that represent CC settlements.
+// These arrive from Plaid as "Bills" or "Payment" category rather than "Transfer",
+// so isCCPayment needs to catch them by name.
+const CC_INSTITUTION_PATTERNS = [
+  "scotiaonline",      // BNS SCOTIAONLINE/TELES
+  "td online",         // TD online banking
+  "rbc online",        // RBC online bill payment
+  "bmo online",        // BMO online
+  "cibc online",       // CIBC online
+  "online bill pay",   // generic online bill pay
+  "bill payment",      // generic
+  "web payment",       // generic web payment
+  "telephone banking", // phone banking payment
+];
+
 // Categories that represent fixed/variable bill commitments — NOT discretionary spending.
 // These are tracked via the Bills array and must be excluded from budget category suggestions
 // and discretionary spend calculations to prevent double-counting.
@@ -452,11 +467,12 @@ function isCCPayment(txn, debts=[]) {
   if(!txn || txn.amount <= 0) return false;
   const name = (txn.name || "").toLowerCase();
   const cat  = (txn.cat  || "").toUpperCase();
-  // Direct keyword match
+  // Compound keyword match (safe — no broad single words)
   if(CC_PAYMENT_KEYWORDS.some(kw => name.includes(kw))) return true;
-  // Transfer to credit card (Plaid categorises as Transfer)
+  // Institution-specific online banking payment names (catch BNS SCOTIAONLINE etc.)
+  if(CC_INSTITUTION_PATTERNS.some(p => name.includes(p))) return true;
+  // Transfer category from Plaid — additional debt amount signal
   if(cat === "TRANSFER" || cat.includes("TRANSFER")) {
-    // Additional signal: amount matches a known debt minimum or round payment
     if(debts.length > 0) {
       const matchesDet = debts.some(d => {
         const min = parseFloat(d.min||0);
@@ -466,10 +482,23 @@ function isCCPayment(txn, debts=[]) {
       });
       if(matchesDet) return true;
     }
-    // If it's a large transfer-out with no matching income pattern → likely CC payment
-    if(txn.amount >= 20 && cat.includes("TRANSFER")) return true;
+    // Round amounts to credit accounts are almost always payments
+    if(txn.amount % 50 === 0 && txn.amount >= 100) return true;
   }
   return false;
+}
+
+// Detects cash advances from a credit card — money pulled from the card into a bank account.
+// These are money-IN transactions (negative amount) with cash advance indicators.
+// Cash advances carry high fees (2-5%) + immediate interest — user should be warned.
+function isCashAdvance(txn) {
+  if(!txn || txn.amount >= 0) return false; // must be money coming IN
+  const name = (txn.name || "").toLowerCase();
+  return name.includes("cash advance") ||
+         name.includes("cash adv") ||
+         name.includes("atm advance") ||
+         name.includes("credit advance") ||
+         (name.includes("advance") && (name.includes("credit") || name.includes("card")));
 }
 
 // Returns CC payment transactions from a list, with the likely debt they paid
@@ -6736,13 +6765,22 @@ function SpendScreen({data, setAppData, setScreen}){
                 </span>
               )}
               {txn.pending&&<Chip label="Pending" color={C.gold} size={9}/>}
+              {isCashAdvance(txn)&&(
+                <div style={{width:"100%",marginTop:6,background:C.red+"14",border:`1px solid ${C.red}33`,borderRadius:8,padding:"6px 10px",display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:12}}>⚠️</span>
+                  <div style={{flex:1}}>
+                    <div style={{color:C.redBright,fontSize:10,fontWeight:700}}>Cash advance detected</div>
+                    <div style={{color:C.muted,fontSize:9,marginTop:1}}>Cash advances carry 2–5% fees + immediate interest at your card rate. Consider a transfer from savings instead.</div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
             <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
               {txn.amount<0?"+":"–"}${Math.abs(txn.amount).toFixed(2)}
             </div>
-            {txn.amount<0&&<div style={{color:C.greenBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>Income</div>}
+            {txn.amount<0&&(isCashAdvance(txn)?<div style={{color:C.redBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>⚠️ CASH ADVANCE</div>:<div style={{color:C.greenBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>{getCat(txn)==='Transfer'?'RECEIVED':'INCOME'}</div>)}
           </div>
         </div>
         );
