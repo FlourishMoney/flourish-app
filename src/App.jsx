@@ -4582,6 +4582,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
 
         {/* ── HERO: Safe to Spend ── full width ─────────────────────────── */}
+        {isVisible('hero')&&(
         <div style={{...anim(60),cursor:"pointer",position:"relative",overflow:"hidden",borderRadius:28,
           background:overdraftImmediate
             ?(C.isDark?"linear-gradient(155deg,rgba(24,6,16,0.92) 0%,rgba(32,8,16,0.85) 45%,rgba(12,5,10,0.90) 100%)":"linear-gradient(155deg,rgba(255,240,244,0.96) 0%,rgba(255,232,238,0.94) 45%,rgba(244,241,235,0.96) 100%)")
@@ -4825,8 +4826,10 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             </div>}
           </div>
         </div>
+        )}
 
         {/* ── BENTO ROW 1: 3 mini stat tiles inside 2-col span ──────────── */}
+        {isVisible('bento')&&(
         <div style={{...anim(110),display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
           {[
             {label:"Due Soon",value:`$${(soonTotal||0).toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
@@ -4846,8 +4849,10 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             </div>
           ))}
         </div>
+        )}
 
         {/* ── HEALTH + STREAK — 2-col row ─────────────────────────────────── */}
+        {isVisible('healthrow')&&(
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
         <div style={{...anim(140),...glass(scoreBase),borderRadius:24,padding:"18px 16px 16px",position:"relative",overflow:"hidden"}}>
           <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at 0% 100%,${scoreBase}18 0%,transparent 65%)`,pointerEvents:"none"}}/>
@@ -4896,8 +4901,10 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           </div>
         </div>
 
-        </div>{/* end health+streak 2-col */}
+        </div>
+        )}
         {/* ── SINGLE VOICE: priority-filtered action tile ──────────────────
+        {isVisible('action')&&(
             Only ONE system speaks at a time. Priority order:
             0. Income not set / suspiciously high → data quality, affects everything
             1. Overdraft risk (from forecast)     → urgent, act now
@@ -4978,6 +4985,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           // Nothing urgent — tile stays silent
           return null;
         })()}
+        )}
 
         {/* ── NET WORTH SPARKLINE — full width ──────────────────────────── */}
         {isVisible('networth')&&<div style={{...anim(190),...tileStyle('networth'),...glass(C.teal),borderRadius:22,padding:"18px 20px 16px"}}>
