@@ -1751,6 +1751,7 @@ function WealthForecast({data}) {
       )}
     </div>
   );
+}
 
 // ── OPPORTUNITY DETECTION ──────────────────────────────────────────────────────
 function OpportunityDetector({data, setScreen, setGoalsTab}) {
