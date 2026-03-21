@@ -5243,6 +5243,7 @@ function PlanAhead({data, setAppData, setScreen}){
   const [customProviders,setCustomProviders]=useState([]);
   const [showCustomForm,setShowCustomForm]=useState(false);
   const [newProvider,setNewProvider]=useState({name:"",amount:"",icon:"🏦"});
+  const [expandedPlanDay, setExpandedPlanDay] = useState(null);
   const PROVIDERS=[
     {name:"Netflix",icon:"🎬",color:"#E50914",amount:"18.99"},{name:"Spotify",icon:"🎵",color:C.green,amount:"11.99"},
     {name:"Amazon Prime",icon:"📦",color:"#FF9900",amount:"9.99"},{name:"Hydro One",icon:"⚡",color:C.gold,amount:"124.00"},
@@ -5355,7 +5356,6 @@ function PlanAhead({data, setAppData, setScreen}){
     </Card>
     <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.8,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
     {(()=>{
-      const [expandedPlanDay, setExpandedPlanDay] = useState(null);
       const avgDailySpend = FinancialCalcEngine.avgDailySpend(data);
       return days.filter((d,i)=>i===0||d.income>0||d.bills.length>0).map((day,i)=>{
         const isToday=day.idx===0,neg=day.balance<0,low=day.balance<150&&day.balance>=0;
@@ -8121,6 +8121,8 @@ function Family({data,household,setHousehold,setScreen}){
 
 // ─── WIDGET SCREEN ────────────────────────────────────────────────────────────
 function WidgetScreen({data,onBack}){
+  const [wSize,setWSize]=useState("medium");
+  const [wContent,setWContent]=useState({safe:true,balance:true,health:true,nextBill:true,streak:false,cashFlow:false});
   const _ss=SafeSpendEngine.calculate(data);
   const safe=_ss.safeAmount;
   const bal=_ss.balance;
@@ -8259,8 +8261,6 @@ function WidgetScreen({data,onBack}){
     </WShell>
   );
 
-  const [wSize,setWSize]=useState("medium");
-  const [wContent,setWContent]=useState({safe:true,balance:true,health:true,nextBill:true,streak:false,cashFlow:false});
   const toggleW=k=>setWContent(v=>({...v,[k]:!v[k]}));
   const sizes=[["small","Small"],["medium","Medium"],["large","Large"]];
 
