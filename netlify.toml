@@ -27,6 +27,12 @@
   to     = "/.netlify/functions/plaid"
   status = 200
 
+# Redirect: app calls /api/beta → Netlify function
+[[redirects]]
+  from   = "/api/beta"
+  to     = "/.netlify/functions/beta"
+  status = 200
+
 # SPA fallback — all routes → index.html
 [[redirects]]
   from   = "/*"

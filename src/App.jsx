@@ -9504,10 +9504,37 @@ function AuthScreen({ onAuth }) {
   const [success, setSuccess] = useState("");
   const [showAuth, setShowAuth] = useState(false);
 
+  const BETA_CAP = 30;
+
   const handleSignup = async () => {
     setLoading(true); setError("");
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) { setError(error.message); setLoading(false); return; }
+    // Check beta cap server-side
+    try {
+      const res = await fetch("/api/beta", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"check"})
+      });
+      const cap = await res.json();
+      if(cap.allowed === false) {
+        setError(`Beta is full (${BETA_CAP}/${BETA_CAP} testers). Join the waitlist at hello@flourishmoney.app`);
+        setLoading(false); return;
+      }
+    } catch {
+      // If check fails, allow signup so an error doesn't block testers
+    }
+    const { error } = await supabase.auth.signUp({
+      email, password,
+      options:{ data:{ beta:true, signed_up:new Date().toISOString() } }
+    });
+    if (error) {
+      if(error.message?.toLowerCase().includes("user already registered")) {
+        setError("This email is already registered. Try logging in instead.");
+      } else {
+        setError(error.message);
+      }
+      setLoading(false); return;
+    }
     setSuccess("Check your email to confirm your account, then log in.");
     setMode("login"); setLoading(false);
   };
@@ -9595,7 +9622,10 @@ function AuthScreen({ onAuth }) {
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "52px 28px 40px", textAlign: "center" }}>
 
             <div style={{ display: "inline-block", background: "rgba(0,214,143,0.1)", border: "1px solid rgba(0,214,143,0.25)", borderRadius: 99, padding: "6px 16px", fontSize: 12, fontWeight: 700, color: "#00D68F", letterSpacing: 0.5, marginBottom: 28 }}>
-              🇨🇦 Built for Canadians
+              🇨🇦🇺🇸 Built for Canada & the US
+            </div>
+            <div style={{ display: "inline-block", background: "rgba(240,196,66,0.1)", border: "1px solid rgba(240,196,66,0.25)", borderRadius: 99, padding: "6px 16px", fontSize: 12, fontWeight: 700, color: "#F0C442", letterSpacing: 0.5, marginBottom: 28, marginLeft: 8 }}>
+              🔒 Beta — limited spots
             </div>
 
             <h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: "clamp(30px,9vw,52px)", fontWeight: 900, color: "#EDE9E2", lineHeight: 1.1, marginBottom: 18, letterSpacing: -0.5, maxWidth: 560 }}>
