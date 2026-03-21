@@ -355,6 +355,39 @@ const CAT_ICON = {
 };
 function txnIcon(txn){return CAT_ICON[txn.cat]||"card";}
 
+// Maps a category name → { emoji, color hex } at render time.
+// Used so recategorizing a transaction immediately updates its icon & color
+// without needing to mutate the original txn object.
+const CAT_DISPLAY = {
+  "Groceries":            { emoji:"🛒", color:"#00CC85" },
+  "Coffee & Dining":      { emoji:"☕", color:"#FF8C42" },
+  "Gas & Transport":      { emoji:"🚗", color:"#4DA8FF" },
+  "Shopping":             { emoji:"🛍️", color:"#FF6B9D" },
+  "Clothing":             { emoji:"👗", color:"#9B7DFF" },
+  "Subscriptions":        { emoji:"📱", color:"#00C8E0" },
+  "Health":               { emoji:"💊", color:"#00C8E0" },
+  "Personal Care":        { emoji:"🧴", color:"#E8B84B" },
+  "Entertainment":        { emoji:"🎬", color:"#FF6B9D" },
+  "Hobbies & Sports":     { emoji:"🎯", color:"#4DA8FF" },
+  "Kids & Extracurricular":{ emoji:"🧒", color:"#00CC85" },
+  "Travel":               { emoji:"✈️", color:"#9B7DFF" },
+  "Home":                 { emoji:"🏠", color:"#FF8C42" },
+  "Education":            { emoji:"📚", color:"#4DA8FF" },
+  "Utilities":            { emoji:"⚡", color:"#E8B84B" },
+  "Bills":                { emoji:"📋", color:"#E8B84B" },
+  "Housing":              { emoji:"🏠", color:"#FF8C42" },
+  "Phone & Internet":     { emoji:"📡", color:"#00C8E0" },
+  "Insurance":            { emoji:"🛡️", color:"#4DA8FF" },
+  "Services":             { emoji:"⚙️", color:"#888888" },
+  "Transfer":             { emoji:"↔️", color:"#888888" },
+  "Income":               { emoji:"💰", color:"#00CC85" },
+  "Fees":                 { emoji:"🏦", color:"#888888" },
+  "Other":                { emoji:"📌", color:"#888888" },
+};
+function getCatDisplay(catName) {
+  return CAT_DISPLAY[catName] || { emoji:"📌", color:"#888888" };
+}
+
 const DEMO = {
   balance:     1_243.88,
   income:      1_847.50,
@@ -6630,20 +6663,26 @@ function SpendScreen({data, setAppData, setScreen}){
           )}
         </div>
       )}
-      {filtered.map(txn=>(
-        <div key={txn.id} style={{background:C.card,borderRadius:18,padding:"14px 16px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:13,transition:"all .2s",cursor:"default"}}
+      {filtered.map(txn=>{
+        const effCat = getCat(txn);
+        const { emoji: txnEmoji, color: txnDispColor } = getCatDisplay(effCat);
+        return (
+        <div key={txn.id} style={{background:C.card,borderRadius:18,padding:"14px 16px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12,cursor:"default",transition:"all .15s"}}
           onMouseEnter={e=>{e.currentTarget.style.borderColor=C.borderHi;e.currentTarget.style.background=C.isDark?C.cardAlt:C.surface;}}
           onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.card;}}>
-          <div style={{width:42,height:42,borderRadius:14,background:txn.color+"18",border:`1px solid ${txn.color}28`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon id={txnIcon(txn)} size={19} color={txn.color} strokeWidth={1.5}/></div>
+          <div style={{width:42,height:42,borderRadius:14,background:txnDispColor+"18",border:`1px solid ${txnDispColor}28`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>
+            {txn.logo&&<img src={txn.logo} alt="" style={{width:28,height:28,borderRadius:8,objectFit:"contain"}} onError={e=>{e.target.style.display="none";}}/>}
+            {!txn.logo&&<span>{txnEmoji}</span>}
+          </div>
           <div style={{flex:1,minWidth:0}}>
             <div style={{color:C.cream,fontWeight:600,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txn.name}</div>
             <div style={{display:"flex",gap:6,marginTop:3,alignItems:"center"}}>
-              <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.amount<0?C.green+"18":txn.color+"18",border:`1px solid ${txn.amount<0?C.green+"33":txn.color+"33"}`,borderRadius:99,padding:"2px 8px",color:txn.amount<0?C.greenBright:txn.color,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
+              <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.amount<0?C.green+"18":txnDispColor+"18",border:`1px solid ${txn.amount<0?C.green:txnDispColor}33`,borderRadius:99,padding:"2px 8px",color:txn.amount<0?C.greenBright:txnDispColor,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
                 {txn.amount<0&&getCat(txn)==="Transfer"?"Received ↓ tap to label":getCat(txn)} <span style={{opacity:0.6,fontSize:9}}>✎</span>
               </button>
               <span style={{color:C.muted,fontSize:10}}>{txn.date}</span>
               {txn.account_id&&accountFilter==="All"&&accountMap[txn.account_id]&&(
-                <span style={{color:C.muted,fontSize:9,background:"rgba(255,255,255,0.04)",borderRadius:99,padding:"1px 7px",border:`1px solid ${C.border}`,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                <span style={{color:C.muted,fontSize:9,background:"rgba(255,255,255,0.04)",borderRadius:99,padding:"1px 7px",border:`1px solid ${C.border}`}}>
                   {accountMap[txn.account_id]?.name||"Bank"}
                 </span>
               )}
@@ -6654,10 +6693,11 @@ function SpendScreen({data, setAppData, setScreen}){
             <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
               {txn.amount<0?"+":"–"}${Math.abs(txn.amount).toFixed(2)}
             </div>
-            {txn.amount<0&&<div style={{color:C.greenBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>received</div>}
+            {txn.amount<0&&<div style={{color:C.greenBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>Income</div>}
           </div>
         </div>
-      ))}
+        );
+      })}
     </>}
     {tab==="breakdown"&&<>
       {(()=>{
