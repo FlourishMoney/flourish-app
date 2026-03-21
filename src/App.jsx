@@ -6385,13 +6385,96 @@ function SpendScreen({data, setAppData, setScreen}){
   const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCCPayment(t,data.debts||[])).reduce((a,t)=>a+t.amount,0);
   const totalIn=acctFiltered.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
 
-  const cuts=[
-    stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee is adding up",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month totalling $${stats.coffee.toFixed(2)}. That's $${(stats.coffee*12).toFixed(0)}/year. Making coffee at home 4 days a week cuts this by 60%.`,saving:`$${Math.round(stats.coffee*0.6)}/mo`,effort:"Low",color:C.orange},
-    stats.delivery>0&&{id:2,icon:"package",title:"Food delivery every week",body:`$${(stats.delivery||0).toFixed(2)} on delivery this month. One fewer order per week saves $40–60/month reliably. Your wallet will notice in 30 days.`,saving:"$50/mo",effort:"Low",color:C.orange},
-    {id:3,icon:"bag",title:"Amazon impulse purchases",body:"Try the 48-hour rule: add to cart, wait 2 days. Most impulse buys get removed without regret. Studies show this cuts impulse spend by 30–40%.",saving:"$40–70/mo",effort:"Low",color:C.pink},
-    stats.subs>0&&{id:4,icon:"zap",title:"Subscriptions creeping up",body:`$${(stats.subs||0).toFixed(2)}/mo in subscriptions. Go through each one — did you use it last month? Most households find 1–2 to cancel painlessly.`,saving:"$15–35/mo",effort:"Low",color:C.purple},
-    {id:5,icon:"chartUp",title:`${stats.busiest} is your expensive day`,body:`You spend significantly more on ${stats.busiest}s than any other day. Knowing this is half the battle — awareness alone cuts it 20–30%.`,saving:"$30–60/mo",effort:"Very Low",color:C.blue},
-  ].filter(Boolean).filter(s=>!dismissed.includes(s.id));
+  // ── RUTHLESS SMART CUTS ENGINE ──────────────────────────────────────────────
+  // Driven entirely by real transaction data — no hardcoded generic tips.
+  // Algorithm:
+  //   1. Compute last-3-months average per category (from full txns history)
+  //   2. Get this month's spend per category
+  //   3. Rank by (a) absolute dollar amount and (b) spike vs 3mo average
+  //   4. For each cut: show exact $, annualised saving, debt payoff framing
+  //   5. Only surface cuts ≥ $30/mo saving potential
+  const SKIP_CATS = new Set([...NON_SPEND_CATS, ...BILL_CATS]);
+  const _getCatCuts = (t) => catOverrides[t.id] || t.cat;
+
+  // 3-month average per category (previous 3 calendar months, not current)
+  const _3moAvg = (() => {
+    const now3 = new Date();
+    const cutoff = new Date(now3.getFullYear(), now3.getMonth() - 3, 1);
+    const end3mo = new Date(now3.getFullYear(), now3.getMonth(), 1);
+    const hist = txns.filter(t => {
+      if(!t.date || t.amount <= 0) return false;
+      const d = new Date(t.date + 'T12:00:00');
+      return d >= cutoff && d < end3mo && !SKIP_CATS.has(_getCatCuts(t)) && !isCCPayment(t, data.debts||[]);
+    });
+    const byCat3 = {};
+    hist.forEach(t => { const c=_getCatCuts(t); byCat3[c]=(byCat3[c]||0)+t.amount; });
+    // Divide by 3 for monthly average
+    return Object.fromEntries(Object.entries(byCat3).map(([c,v])=>[c, v/3]));
+  })();
+
+  // This month's spend per category (already in stats.byCat)
+  const _thisMoByCat = stats.byCat || {};
+
+  // Monthly income for context framing
+  const _moInc = FinancialCalcEngine.cashFlow(data).monthlyIncome || 0;
+
+  // Total debt for payoff framing
+  const _totalDebt = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.balance||0),0);
+  const _topDebt = (data.debts||[]).sort((a,b)=>parseFloat(b.balance||0)-parseFloat(a.balance||0))[0];
+  const _topDebtRate = _topDebt ? parseFloat(_topDebt.rate||0) : 19.99;
+
+  // For each category: compute potential saving as min(50% of spend, spike above avg)
+  const _catCuts = Object.entries(_thisMoByCat)
+    .filter(([cat, amt]) => !SKIP_CATS.has(cat) && amt >= 30)
+    .map(([cat, amt]) => {
+      const avg3 = _3moAvg[cat] || 0;
+      const spike = avg3 > 0 ? amt - avg3 : 0;
+      // Saving = if spiking: bring back to avg; else suggest 30% reduction
+      const suggestedSaving = spike > 15 ? Math.round(spike) : Math.round(amt * 0.30);
+      const annualSaving = suggestedSaving * 12;
+      // Debt payoff framing: months saved at this card rate
+      const debtMonthsSaved = _totalDebt > 0 && suggestedSaving > 0
+        ? Math.round(_totalDebt / suggestedSaving * (_topDebtRate/100/12) * 12) 
+        : 0;
+      // Income % framing
+      const pctOfIncome = _moInc > 0 ? Math.round(amt / _moInc * 100) : 0;
+      return { cat, amt, avg3, spike, suggestedSaving, annualSaving, debtMonthsSaved, pctOfIncome };
+    })
+    .filter(c => c.suggestedSaving >= 30)
+    .sort((a,b) => b.suggestedSaving - a.suggestedSaving)
+    .slice(0, 6);
+
+  // Icon map for categories
+  const _cutIcon = {
+    'Coffee & Dining':'coffee','Shopping':'bag','Entertainment':'film',
+    'Groceries':'shoppingCart','Subscriptions':'zap','Gas & Transport':'car',
+    'Health':'heart','Personal Care':'star','Travel':'map','Home':'home',
+    'Education':'book','Clothing':'shirt','Other':'chartUp',
+  };
+
+  // Build cut cards from real data
+  const cuts = _catCuts.map((c, idx) => {
+    const icon = _cutIcon[c.cat] || 'chartUp';
+    const isSpike = c.spike > 15 && c.avg3 > 0;
+    const avgStr = c.avg3 > 0 ? `$${Math.round(c.avg3)}/mo avg` : null;
+    const spikeStr = isSpike ? ` — up $${Math.round(c.spike)} vs your usual` : '';
+    const debtLine = c.debtMonthsSaved > 0 && _topDebt
+      ? ` Redirect this to your ${_topDebt.name} and pay it off ~${c.debtMonthsSaved} month${c.debtMonthsSaved===1?'':'s'} sooner.`
+      : '';
+    const incomeLine = c.pctOfIncome >= 8 ? ` That's ${c.pctOfIncome}% of your monthly take-home.` : '';
+    const body = `$${Math.round(c.amt)} this month${avgStr ? ` (${avgStr}${spikeStr})` : ''}.${incomeLine} Cutting to $${Math.round(c.amt - c.suggestedSaving)}/mo saves $${c.suggestedSaving}/mo — $${c.annualSaving.toLocaleString()} a year.${debtLine}`;
+    return {
+      id: idx + 10,
+      icon,
+      title: isSpike
+        ? `${c.cat} spiked this month`
+        : `${c.cat} is your #${idx+1} spend`,
+      body,
+      saving: `$${c.suggestedSaving}/mo`,
+      effort: c.suggestedSaving > 100 ? 'High impact' : c.suggestedSaving > 50 ? 'Medium' : 'Easy win',
+      color: isSpike ? C.red : C.orange,
+    };
+  }).filter(s => !dismissed.includes(s.id));
 
   const ALL_CATS = ["Food & Drink","Groceries","Transport","Shopping","Entertainment","Bills & Utilities","Health","Income","Subscriptions","Travel","Other"];
 
@@ -6724,11 +6807,35 @@ function SpendScreen({data, setAppData, setScreen}){
           {/* Scrollable categories */}
           <div style={{overflowY:"auto",padding:"16px 20px",flex:1}}>
             <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
-              {[...ALL_CATS, ...(JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]"))].map(cat=>(
-                <button key={cat} onClick={()=>recatWithSmartPrompt(recatTxn,cat)} style={{background:getCat(recatTxn)===cat?C.orange+"33":C.cardAlt,border:`1px solid ${getCat(recatTxn)===cat?C.orange:C.border}`,color:getCat(recatTxn)===cat?C.orangeBright:C.muted,borderRadius:99,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",minHeight:36}}>
-                  {cat}
-                </button>
-              ))}
+        {[...ALL_CATS, ...(JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]"))].map((cat,ci)=>{
+          const isCustom = ci >= ALL_CATS.length;
+          return (
+            <div key={cat} style={{position:"relative",display:"inline-flex"}}>
+              <button onClick={()=>recatWithSmartPrompt(recatTxn,cat)}
+                style={{background:getCat(recatTxn)===cat?C.green+"33":"rgba(255,255,255,0.04)",
+                border:`1px solid ${getCat(recatTxn)===cat?C.green:C.border}`,borderRadius:10,
+                padding:"5px 10px",color:getCat(recatTxn)===cat?C.greenBright:C.mutedHi,fontSize:11,
+                fontWeight:getCat(recatTxn)===cat?700:400,cursor:"pointer",fontFamily:"inherit",
+                paddingRight:isCustom?"22px":"10px"}}>
+                {cat}
+              </button>
+              {isCustom&&(
+                <button onClick={e=>{e.stopPropagation();
+                  const existing=JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]");
+                  localStorage.setItem("flourish_custom_cats",JSON.stringify(existing.filter(c=>c!==cat)));
+                  const ov=JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
+                  const cleaned=Object.fromEntries(Object.entries(ov).filter(([,v])=>v!==cat));
+                  localStorage.setItem("flourish_cat_overrides",JSON.stringify(cleaned));
+                  setRecatTxn(t=>({...t})); // force re-render
+                }}
+                style={{position:"absolute",top:-4,right:-4,width:14,height:14,borderRadius:"50%",
+                background:C.red,border:"none",color:"#fff",fontSize:8,fontWeight:900,
+                cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
+                lineHeight:1,padding:0,zIndex:2}}>×</button>
+              )}
+            </div>
+          );
+        })}
             </div>
             {/* Add custom category */}
             <AddCustomCategory onAdd={(cat)=>recatWithSmartPrompt(recatTxn,cat)}/>
@@ -6926,29 +7033,40 @@ function SpendScreen({data, setAppData, setScreen}){
         </>);
       })()}
     </>}
-    {tab==="cuts"&&<>
-      <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
-        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Potential Monthly Savings</div>
-        <div style={{fontSize:32,fontWeight:900,color:C.goldBright,fontFamily:"Georgia,serif"}}>${(()=>{
-              const total = cuts.reduce((s,c)=>{
-                // saving field is like "$50/mo" or "$40–70/mo" — extract first number
-                const match = (c.saving||"").match(/\d+/);
-                return s + (match ? parseInt(match[0]) : 0);
-              },0);
-              return total > 0 ? total.toLocaleString() : "0";
-            })()}</div>
-        <div style={{color:C.muted,fontSize:12}}>from {cuts.length} suggestions based on your real transactions</div>
-      </Card>
-      {cuts.length===0?<Card style={{textAlign:"center",padding:"30px 20px"}}><div style={{fontSize:40}}>🎉</div><div style={{color:C.greenBright,fontWeight:700,marginTop:10}}>All suggestions reviewed!</div></Card>
-        :cuts.map(s=><Card key={s.id} glow={s.color}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-            <div style={{display:"flex",gap:10,alignItems:"center"}}><Icon id={s.icon||"card"} size={20} color={C.mutedHi} strokeWidth={1.5}/><span style={{color:s.color,fontWeight:800,fontSize:14}}>{s.title}</span></div>
-            <button onClick={()=>setDismissed(d=>[...d,s.id])} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>✕</button>
-          </div>
-          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:10}}>{s.body}</div>
-          <div style={{display:"flex",gap:8}}><Chip label={`Save ${s.saving}`} color={C.green}/><Chip label={`Effort: ${s.effort}`} color={s.effort.includes("Very")?C.teal:C.green}/></div>
-        </Card>)}
-    </>}
+  {tab==="cuts"&&<>
+  <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
+    <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:6}}>Potential monthly savings</div>
+    <div style={{fontSize:32,fontWeight:900,color:C.goldBright,fontFamily:"Georgia,serif"}}>${cuts.reduce((s,c)=>{const m=(c.saving||"").match(/\d+/);return s+(m?parseInt(m[0]):0);},0).toLocaleString()}</div>
+    <div style={{color:C.muted,fontSize:12,marginTop:2}}>
+      {cuts.length===0
+        ? "No significant cuts identified — your spending looks controlled this month 🎉"
+        : `${cuts.length} cut${cuts.length===1?"":"s"} identified from your real transactions · $${(cuts.reduce((s,c)=>{const m=(c.saving||"").match(/\d+/);return s+(m?parseInt(m[0]):0);},0)*12).toLocaleString()} a year`}
+    </div>
+  </Card>
+  {cuts.length===0&&(
+    <Card style={{textAlign:"center",padding:"30px 20px"}}>
+      <div style={{fontSize:40,marginBottom:10}}>🎉</div>
+      <div style={{color:C.cream,fontWeight:700,fontSize:15,marginBottom:6}}>Spending looks controlled</div>
+      <div style={{color:C.muted,fontSize:12,lineHeight:1.6}}>No category has a saving opportunity over $30/mo this month. Check back after more transactions come in.</div>
+    </Card>
+  )}
+  {cuts.map(s=>(
+    <Card key={s.id} glow={s.color||C.orange}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+        <div style={{display:"flex",gap:10,alignItems:"center"}}>
+          <Icon id={s.icon||"chartUp"} size={20} color={s.color||C.orange} strokeWidth={2.2}/>
+          <div style={{color:C.cream,fontWeight:800,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{s.title}</div>
+        </div>
+        <button onClick={()=>setDismissed(d=>[...d,s.id])} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:"0 0 0 8px",lineHeight:1,flexShrink:0}}>×</button>
+      </div>
+      <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,marginBottom:10}}>{s.body}</div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <Chip label={`Save ${s.saving}`} color={C.green}/>
+        <Chip label={s.effort||"Impact"} color={s.effort==="High impact"?C.orange:s.effort==="Medium"?C.gold:C.teal}/>
+      </div>
+    </Card>
+  ))}
+  </>}
   </div>;
 }
 
