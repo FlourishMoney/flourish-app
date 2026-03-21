@@ -1519,67 +1519,90 @@ Respond ONLY with valid JSON (no markdown) like:
 // ── MONEY PERSONALITY ──────────────────────────────────────────────────────────
 function calcPersonality(txns, data) {
   const t = txns || [];
-  const neg = t.filter(x => x.amount > 0);  // expenses are positive
+  const neg = t.filter(x => x.amount > 0);  // expenses are positive in Plaid
   const total = neg.reduce((s,x) => s + Math.abs(x.amount), 0) || 1;
 
-  const food    = neg.filter(x=>["Food","Coffee","Dining"].includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
-  const shop    = neg.filter(x=>x.cat==="Shopping").reduce((s,x)=>s+Math.abs(x.amount),0);
-  const subs    = neg.filter(x=>x.cat==="Subscriptions").reduce((s,x)=>s+Math.abs(x.amount),0);
-  const ent     = neg.filter(x=>x.cat==="Entertainment").reduce((s,x)=>s+Math.abs(x.amount),0);
-  const income  = (data.incomes||[]).length;
+  // Real Plaid/Flourish category names
+  const FOOD_CATS  = ["Coffee & Dining","Groceries","Food & Drink","Food","Coffee","Dining"];
+  const SHOP_CATS  = ["Shopping","Clothing","Online Shopping"];
+  const SUB_CATS   = ["Subscriptions","Streaming"];
+  const ENT_CATS   = ["Entertainment","Recreation","Hobbies","Sports"];
+  const TRANS_CATS = ["Transport","Gas","Parking","Auto"];
+
+  const food  = neg.filter(x=>FOOD_CATS.includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
+  const shop  = neg.filter(x=>SHOP_CATS.includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
+  const subs  = neg.filter(x=>SUB_CATS.includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
+  const ent   = neg.filter(x=>ENT_CATS.includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
+  const trans = neg.filter(x=>TRANS_CATS.includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
+
+  // Builder score earned through REAL financial behaviour — not just income count
+  const ret = data.profile?.retirement || {};
+  const isCA = (data.profile?.country||"CA")==="CA";
+  const hasRetirementSavings = parseFloat(ret[isCA?"rrspBalance":"401kBalance"]||0)>0 || parseFloat(ret[isCA?"rrspMonthly":"401kMonthly"]||0)>0;
+  const hasGoals = (data.goals||[]).length > 0;
+  const accts = data.accounts||[];
+  const isOverdraft = accts.some(a=>a.type!=="credit"&&parseFloat(a.balance||0)<0);
+  const hasSavings = accts.some(a=>a.type==="savings"&&parseFloat(a.balance||0)>500);
+  const multiIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0).length > 1;
+  const builderScore = (hasRetirementSavings?0.3:0)+(hasGoals?0.15:0)+(hasSavings?0.15:0)+(multiIncome&&!isOverdraft?0.1:0)-(isOverdraft?0.4:0);
 
   const scores = {
     convenience: food/total,
     lifestyle:   (shop+ent)/total,
     digital:     subs/total,
-    builder:     income > 1 ? 0.8 : 0.3,
+    mobile:      trans/total,
+    builder:     Math.max(0, builderScore),
   };
   const top = Object.entries(scores).sort((a,b)=>b[1]-a[1])[0][0];
 
-  const personas = {
-    convenience: {
-      name:"The Convenience Spender", emoji:"🛍️",
-      color:C.orange,
-      traits:["High food delivery spend","Values time over money","Subscription-heavy lifestyle"],
-      insight:"Your biggest lever is replacing 3 deliveries/week with home cooking — saves ~$180/mo.",
-      shareText:"I'm a Convenience Spender 🛍️ on @flourishmoney"
-    },
-    lifestyle: {
-      name:"The Experience Collector", emoji:"✈️",
-      color:C.purple,
-      traits:["Prioritizes experiences","Shopping for quality","Social spending peaks"],
-      insight:"You spend richly on life. Automating $200/mo to savings before spending keeps goals on track.",
-      shareText:"I'm an Experience Collector ✈️ on @flourishmoney"
-    },
-    digital: {
-      name:"The Digital Native", emoji:"💻",
-      color:C.teal,
-      traits:["Heavy subscription stack","Tech-first spending","Optimizes with apps"],
-      insight:"You have ~$82/mo in subscriptions. Auditing unused ones could free up a full investment contribution.",
-      shareText:"I'm a Digital Native 💻 on @flourishmoney"
-    },
-    builder: {
-      name:"The Wealth Builder", emoji:"🏗️",
-      color:C.green,
-      traits:["Multiple income streams","Disciplined with spending","Goal-oriented mindset"],
-      insight:"You're already ahead — make sure your savings are in a high-interest account earning 4%+.",
-      shareText:"I'm a Wealth Builder 🏗️ on @flourishmoney"
-    }
-  };
-  return {...personas[top], scores, topKey:top};
+
+const personas = {
+  convenience: {
+    name:"The Convenience Spender", emoji:"🛍️", color:C.orange,
+    traits:["High food & delivery spend","Values time over money","Subscription-heavy"],
+    insight:"Replacing 3 food deliveries/week with home cooking saves ~$180/mo.",
+    shareText:"I'm a Convenience Spender 🛍️ on @flourishmoney"
+  },
+  lifestyle: {
+    name:"The Experience Collector", emoji:"✈️", color:C.purple,
+    traits:["Prioritizes experiences","Shopping for quality","Social spending peaks"],
+    insight:"You spend richly on life. Automating $200/mo to savings before spending keeps goals on track.",
+    shareText:"I'm an Experience Collector ✈️ on @flourishmoney"
+  },
+  digital: {
+    name:"The Digital Native", emoji:"💻", color:C.teal,
+    traits:["Heavy subscription stack","Tech-first spending","Optimizes with apps"],
+    insight:"Audit your subscriptions — cancelling unused ones often frees $50-100/mo instantly.",
+    shareText:"I'm a Digital Native 💻 on @flourishmoney"
+  },
+  mobile: {
+    name:"The Commuter", emoji:"🚗", color:C.gold,
+    traits:["High transport spend","Life on the go","Gas & parking costs add up"],
+    insight:"Transport is your biggest variable cost. Carpooling or transit 2x/week can save $150+/mo.",
+    shareText:"I'm a Commuter 🚗 on @flourishmoney"
+  },
+  builder: {
+    name:"The Wealth Builder", emoji:"🏗️", color:C.green,
+    traits:["Saving for retirement","Goal-oriented mindset","Building long-term wealth"],
+    insight:"You're building real wealth. Make sure your RRSP/TFSA are maximized each year.",
+    shareText:"I'm a Wealth Builder 🏗️ on @flourishmoney"
+  }
+};
+return {...personas[top], scores, topKey:top};
 }
 
 function MoneyPersonality({data}) {
-  const [revealed, setRevealed] = useState(false);
-  const txns = data.transactions || [];
-  const p = calcPersonality(txns, data);
-  const bars = [
-    {label:"Convenience", pct:Math.round(p.scores.convenience*100), color:C.orange},
-    {label:"Lifestyle",   pct:Math.round(p.scores.lifestyle*100),   color:C.purple},
-    {label:"Digital",     pct:Math.round(p.scores.digital*100),      color:C.teal},
-    {label:"Builder",     pct:Math.round(p.scores.builder*100),      color:C.green},
-  ];
-
+const [revealed, setRevealed] = useState(false);
+const txns = data.transactions || [];
+const hasEnoughData = txns.filter(x=>x.amount>0).length >= 5;
+const p = calcPersonality(txns, data);
+const bars = [
+  {label:"Convenience", pct:Math.round(p.scores.convenience*100), color:C.orange},
+  {label:"Lifestyle",   pct:Math.round(p.scores.lifestyle*100),   color:C.purple},
+  {label:"Digital",     pct:Math.round(p.scores.digital*100),     color:C.teal},
+  {label:"Commuter",    pct:Math.round(p.scores.mobile*100),      color:C.gold},
+  {label:"Builder",     pct:Math.round(p.scores.builder*100),     color:C.green},
+];
   return (
     <div style={{background:C.card,borderRadius:20,padding:"20px",border:`1.5px solid ${p.color}33`,position:"relative",overflow:"hidden"}}>
       <div style={{position:"absolute",top:-40,right:-40,width:140,height:140,borderRadius:"50%",background:`radial-gradient(circle,${p.color}12 0%,transparent 70%)`,pointerEvents:"none"}}/>
@@ -1590,7 +1613,13 @@ function MoneyPersonality({data}) {
         <span style={{background:p.color+"22",color:p.color,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"3px 8px",borderRadius:99,textTransform:"uppercase",letterSpacing:0.8}}>Your type</span>
       </div>
 
-      {!revealed ? (
+  {!hasEnoughData ? (
+    <div style={{textAlign:"center",padding:"24px 16px"}}>
+      <div style={{fontSize:36,marginBottom:10}}>🔍</div>
+      <div style={{color:C.cream,fontWeight:700,fontSize:13,marginBottom:8}}>Not enough data yet</div>
+      <div style={{color:C.muted,fontSize:12,lineHeight:1.7}}>Connect your bank and use the app for a few days — your money personality is calculated from your real spending patterns.</div>
+    </div>
+  ) : !revealed ? (
         <div style={{textAlign:"center",padding:"16px 0 8px"}}>
           <div style={{fontSize:48,marginBottom:10,filter:"blur(8px)",transition:"filter .3s"}}>?</div>
           <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:16}}>Based on your spending patterns</div>
