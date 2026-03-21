@@ -3361,6 +3361,41 @@ function Onboarding({onComplete,onViewLegal,userId}){
         </div>
       </div>
 
+
+        {/* RRSP / TFSA contribution room — CA only, optional */}
+        {p.country==="CA"&&(
+          <div style={{marginBottom:14}}>
+            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:4,fontWeight:700}}>
+              Contribution Room <span style={{fontSize:9,fontWeight:400,textTransform:"none",letterSpacing:0}}>(optional — personalises tax tips)</span>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <div style={{flex:1}}>
+                <div style={{color:C.muted,fontSize:10,marginBottom:4}}>RRSP Room</div>
+                <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                  <span style={{color:C.muted,padding:"0 8px",fontSize:12}}>$</span>
+                  <input type="number" min="0" step="500" value={p.rrspRoom}
+                    onChange={e=>setP({...p,rrspRoom:e.target.value})}
+                    placeholder="e.g. 24000"
+                    style={{flex:1,background:"none",border:"none",padding:"10px 6px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+                </div>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{color:C.muted,fontSize:10,marginBottom:4}}>TFSA Room</div>
+                <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                  <span style={{color:C.muted,padding:"0 8px",fontSize:12}}>$</span>
+                  <input type="number" min="0" step="500" value={p.tfsaRoom}
+                    onChange={e=>setP({...p,tfsaRoom:e.target.value})}
+                    placeholder="e.g. 7000"
+                    style={{flex:1,background:"none",border:"none",padding:"10px 6px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+                </div>
+              </div>
+            </div>
+            <div style={{color:C.muted,fontSize:10,marginTop:5}}>
+              Find your room on <strong style={{color:C.mutedHi}}>CRA MyAccount</strong> or last year's NOA. Leave blank if unsure.
+            </div>
+          </div>
+        )}
+
       <Btn label="Continue →" onClick={()=>setStep(2)} disabled={!p.name}/>
     </div>,
 
@@ -5992,6 +6027,7 @@ function SpendScreen({data, setAppData, setScreen}){
   const [billForm,setBillForm]=useState({name:"",amount:"",date:"1"});
   const [arrearsPayTxn,setArrearsPayTxn]=useState(null);
   const [applyAllPrompt, setApplyAllPrompt] = useState(null);
+  const [showAllBdCats, setShowAllBdCats] = useState(false);
 
   // ── NON-HOOK DERIVED VALUES (after all hooks) ──────────────────────────────
   const isDemo=!data.bankConnected;
@@ -6092,7 +6128,7 @@ function SpendScreen({data, setAppData, setScreen}){
     : catFilter==="Received"
       ? acctFiltered.filter(t=>getCat(t)==="Transfer"&&t.amount<0)
       : acctFiltered.filter(t=>getCat(t)===catFilter);
-  const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))).reduce((a,t)=>a+t.amount,0);
+  const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCCPayment(t,data.debts||[])).reduce((a,t)=>a+t.amount,0);
   const totalIn=acctFiltered.filter(t=>t.amount<0).reduce((a,t)=>a+Math.abs(t.amount),0);
 
   const cuts=[
@@ -6441,12 +6477,14 @@ function SpendScreen({data, setAppData, setScreen}){
     {tab==="breakdown"&&<>
       {(()=>{
         // Breakdown uses the same period-filtered set as the Transactions tab
-        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t)));
+        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCCPayment(t,data.debts||[]));
         const bdIn   = acctFiltered.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
         const bdTotal= bdTxns.reduce((s,t)=>s+t.amount,0);
         const bdByCat= {};
         bdTxns.forEach(t=>{const c=getCat(t);bdByCat[c]=(bdByCat[c]||0)+t.amount;});
-        const bdTopCats=Object.entries(bdByCat).sort((a,b)=>b[1]-a[1]).slice(0,8);
+        const bdAllCats=Object.entries(bdByCat).sort((a,b)=>b[1]-a[1]);
+  const [showAllBdCats,setShowAllBdCats]=useState(false);
+  const bdTopCats=showAllBdCats?bdAllCats:bdAllCats.slice(0,8);
         const periodLabel = period==="week"?"This week":period==="month"?monthLabel:period==="last"?"Last month":period==="3mo"?"Last 3 months":"Last 90 days";
         return (<>
       <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
@@ -6470,16 +6508,24 @@ function SpendScreen({data, setAppData, setScreen}){
       {period==="month"&&<BudgetPlanCard data={data} setAppData={setAppData}/>}
       {bdTopCats.map(([cat,amt],i)=>{
         const colors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
-        const catTxns=acctFiltered.filter(t=>getCat(t)===cat&&t.amount>0);
+        const catTxns=acctFiltered.filter(t=>getCat(t)===cat&&t.amount>0&&!isCCPayment(t,data.debts||[]));
         const budget = (data.budgets||{})[cat] || null;
         window.__flourishBills = data.bills||[];
         return <ExpandableCatCard key={i} cat={cat} amt={amt} totalSpent={bdTotal} color={colors[i%6]} catTxns={catTxns}
           budget={budget} onSetBudget={(cat,val)=>{
             if(setAppData) setAppData(prev=>({...prev,budgets:{...(prev.budgets||{}),
               ...(val===null ? Object.fromEntries(Object.entries(prev.budgets||{}).filter(([k])=>k!==cat)) : {[cat]:val})
-            }}));
+            }});});
           }}/>;
       })}
+      {bdAllCats.length>8&&(
+        <button onClick={()=>setShowAllBdCats(v=>!v)}
+          style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:12,
+            padding:"11px",color:C.muted,fontSize:12,fontWeight:700,cursor:"pointer",
+            fontFamily:"inherit",marginTop:2}}>
+          {showAllBdCats?"▲ Show less":`▼ Show ${bdAllCats.length-8} more categor${bdAllCats.length-8===1?"y":"ies"}`}
+        </button>
+      )}
         </>);
       })()}
     </>}
@@ -9349,6 +9395,84 @@ function CreditScreen({data,setScreen}){
 }
 
 // ─── PRIVACY POLICY ───────────────────────────────────────────────────────────
+// ─── FEEDBACK MODAL ───────────────────────────────────────────────────────────
+function FeedbackModal({onClose}){
+  const [msg,setMsg]=useState("");
+  const [type,setType]=useState("bug");
+  const [sent,setSent]=useState(false);
+  const [sending,setSending]=useState(false);
+
+  const submit=async()=>{
+    if(!msg.trim()) return;
+    setSending(true);
+    try{
+      await fetch("https://formspree.io/f/xnnqoqkl",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","Accept":"application/json"},
+        body:JSON.stringify({type,message:msg,url:window.location.href})
+      });
+    }catch{}
+    setSent(true);
+    setSending(false);
+    setTimeout(onClose,1800);
+  };
+
+  const types=[["🐛","bug","Bug"],["💡","idea","Idea"],["👍","praise","Praise"],["❓","question","Question"]];
+
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",
+      display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"0 0 20px"}}
+      onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{width:"100%",maxWidth:430,background:C.surface,borderRadius:20,padding:"20px 20px 24px",
+        border:`1px solid ${C.border}`,animation:"slideUp .28s ease"}}>
+        {sent?(
+          <div style={{textAlign:"center",padding:"28px 0"}}>
+            <div style={{fontSize:40,marginBottom:10}}>🙏</div>
+            <div style={{color:C.greenBright,fontWeight:800,fontSize:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+              Thanks for your feedback!
+            </div>
+            <div style={{color:C.muted,fontSize:13,marginTop:6}}>It goes straight to Amanda.</div>
+          </div>
+        ):(
+          <>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                Beta Feedback
+              </div>
+              <button onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:20,cursor:"pointer",padding:0,lineHeight:1}}>✕</button>
+            </div>
+            {/* Type selector */}
+            <div style={{display:"flex",gap:6,marginBottom:14}}>
+              {types.map(([emoji,val,label])=>(
+                <button key={val} onClick={()=>setType(val)}
+                  style={{flex:1,background:type===val?C.green+"33":C.cardAlt,border:`1px solid ${type===val?C.green:C.border}`,
+                    borderRadius:10,padding:"8px 4px",color:type===val?C.greenBright:C.muted,
+                    fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                    display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                  <span style={{fontSize:16}}>{emoji}</span>{label}
+                </button>
+              ))}
+            </div>
+            <textarea value={msg} onChange={e=>setMsg(e.target.value)}
+              placeholder={type==="bug"?"What happened? What did you expect?":type==="idea"?"What would make Flourish better?":type==="praise"?"What do you love?":"What's your question?"}
+              rows={4}
+              style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,
+                padding:"12px 14px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",
+                outline:"none",resize:"none",lineHeight:1.6,boxSizing:"border-box"}}/>
+            <button onClick={submit} disabled={!msg.trim()||sending}
+              style={{width:"100%",background:msg.trim()&&!sending?`linear-gradient(135deg,${C.green},${C.greenBright})`:"rgba(255,255,255,0.06)",
+                border:"none",borderRadius:12,padding:"13px",color:msg.trim()&&!sending?"#041810":C.muted,
+                fontWeight:800,fontSize:13,cursor:msg.trim()&&!sending?"pointer":"default",
+                fontFamily:"inherit",marginTop:10}}>
+              {sending?"Sending…":"Send Feedback →"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PrivacyPolicy({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
@@ -10373,6 +10497,9 @@ export default function FlourishApp(){
   const [authLoading,setAuthLoading]=useState(true);
   const [showNotifs,setShowNotifs]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
+  const [showFeedback,setShowFeedback]=useState(false);
+  const [tourStep,setTourStep]=useState(()=>{ try{return localStorage.getItem("flourish_tour_done")==="1"?null:0;}catch{return 0;} });
+  const dismissTour=()=>{ try{localStorage.setItem("flourish_tour_done","1");}catch{} setTourStep(null); };
   const [household,setHousehold]=useState(()=>saved?.household||null);
   const [isPremium,setIsPremium]=useState(()=>saved?.isPremium||false);
   const [showPaywall,setShowPaywall]=useState(false);
@@ -10962,6 +11089,74 @@ input,button,select,textarea { font-family:inherit; }
           </div>
           </>
         )}
+
+        {/* ── FEEDBACK FLOATING BUTTON ──────────────────── */}
+        {!showNotifs&&!showSettings&&(
+          <button onClick={()=>setShowFeedback(true)}
+            style={{position:"fixed",bottom:84,right:16,zIndex:60,
+              background:`linear-gradient(135deg,${C.purple}CC,${C.purpleDim}CC)`,
+              backdropFilter:"blur(8px)",border:`1px solid ${C.purple}55`,
+              borderRadius:99,padding:"7px 13px",display:"flex",alignItems:"center",gap:5,
+              boxShadow:"0 4px 20px rgba(0,0,0,0.4)",cursor:"pointer",
+              color:C.purpleBright,fontSize:11,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            <span style={{fontSize:13}}>💬</span> Feedback
+          </button>
+        )}
+
+        {/* ── ONBOARDING TOUR ──────────────────────────── */}
+        {tourStep!==null&&onboarded&&!showNotifs&&!showSettings&&(()=>{
+          const TOUR=[
+            {screen:"home",   emoji:"🏠", title:"Today Screen",        body:"Your financial snapshot — safe-to-spend, balance, and daily insights. This is your home base."},
+            {screen:"spend",  emoji:"📊", title:"Activity & Budgets",   body:"See where your money goes, set budgets per category, and track trends over time."},
+            {screen:"coach",  emoji:"✨", title:"AI Financial Guidance", body:"Ask anything — tax tips, debt strategy, savings plans. Powered by your real data."},
+            {screen:"goals",  emoji:"🎯", title:"Goals & Credit",        body:"Set savings goals, track your debt payoff, and monitor your credit score health."},
+          ];
+          const step=TOUR[tourStep];
+          const isLast=tourStep===TOUR.length-1;
+          return(
+            <div style={{position:"fixed",inset:0,zIndex:200,pointerEvents:"none"}}>
+              <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.72)",pointerEvents:"auto"}}
+                onClick={()=>{if(isLast) dismissTour();}}/>
+              <div style={{position:"absolute",bottom:100,left:"50%",transform:"translateX(-50%)",
+                width:"calc(100% - 40px)",maxWidth:390,
+                background:C.surface,borderRadius:20,padding:"20px 20px 16px",
+                border:`1px solid ${C.green}44`,boxShadow:`0 8px 40px rgba(0,0,0,0.6)`,
+                pointerEvents:"auto",animation:"slideUp .3s ease",zIndex:201}}>
+                <div style={{display:"flex",gap:5,marginBottom:14,justifyContent:"center"}}>
+                  {TOUR.map((_,i)=>(
+                    <div key={i} style={{width:i===tourStep?20:6,height:6,borderRadius:99,transition:"width .3s",
+                      background:i<=tourStep?C.green:C.border}}/>
+                  ))}
+                </div>
+                <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:14}}>
+                  <div style={{fontSize:28,lineHeight:1,flexShrink:0}}>{step.emoji}</div>
+                  <div>
+                    <div style={{color:C.greenBright,fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>
+                      {step.title}
+                    </div>
+                    <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>{step.body}</div>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={dismissTour}
+                    style={{background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",
+                      color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",flex:"0 0 auto"}}>
+                    Skip Tour
+                  </button>
+                  <button onClick={()=>{ if(isLast){dismissTour();}else{setTourStep(t=>t+1);setScreen(TOUR[tourStep+1].screen);}}}
+                    style={{flex:1,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,
+                      border:"none",borderRadius:12,padding:"10px",color:"#041810",
+                      fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                    {isLast?"Done ✓":"Next →"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── FEEDBACK MODAL ──────────────────────────── */}
+        {showFeedback&&<FeedbackModal onClose={()=>setShowFeedback(false)}/>}
       </div>
     </div>
   );
