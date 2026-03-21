@@ -1428,7 +1428,7 @@ Respond ONLY with valid JSON (no markdown) like:
   const impactColor = (v) => v==="safe"||v==="none"||v==="decreases"?C.greenBright:v==="tight"||v==="increases"?C.goldBright:C.redBright;
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)",zIndex:999,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)",zIndex:999,display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div style={{background:C.bg,borderRadius:"28px 28px 0 0",padding:"28px 24px 44px",width:"100%",maxWidth:520,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 -20px 60px rgba(0,0,0,0.2)"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
           <div>
@@ -2853,7 +2853,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
   ];
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)",zIndex:999,display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"0 0 0 0"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)",zIndex:999,display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",justifyContent:"center",padding:"0 0 0 0"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div style={{background:C.bg,borderRadius:"28px 28px 0 0",padding:"28px 24px 40px",width:"100%",maxWidth:520,maxHeight:"88vh",overflowY:"auto",boxShadow:"0 -20px 60px rgba(0,0,0,0.2)"}}>
         {/* Step indicator */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
@@ -2996,7 +2996,7 @@ function DashCustomize({ layout, onChange, onClose }) {
   const meta = id => DASH_TILES.find(t=>t.id===id)||{label:id,icon:'□'};
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:9000,display:'flex',alignItems:'flex-end',justifyContent:'center',background:'rgba(0,0,0,0.55)',backdropFilter:'blur(4px)'}} onClick={onClose}>
+    <div style={{position:'fixed',inset:0,zIndex:9000,display:'flex',alignItems:isDesktop?'center':'flex-end',justifyContent:'center',background:'rgba(0,0,0,0.55)',backdropFilter:'blur(4px)'}} onClick={onClose}>
       <div style={{width:'100%',maxWidth:430,background:C.card,borderRadius:'24px 24px 0 0',maxHeight:'85vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 48px rgba(0,0,0,0.5)'}} onClick={e=>e.stopPropagation()}>
         <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:'0 auto 20px'}}/>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
@@ -4023,7 +4023,7 @@ function DataTransparencyPanel({data, onClose}) {
   );
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:999,display:"flex",alignItems:"flex-end",backdropFilter:"blur(4px)"}}
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:999,display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",backdropFilter:"blur(4px)"}}
       onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
       <div style={{width:"100%",maxWidth:480,margin:"0 auto",background:C.bg,borderRadius:"22px 22px 0 0",
         border:`1px solid ${C.border}`,maxHeight:"85vh",display:"flex",flexDirection:"column"}}>
@@ -5064,7 +5064,7 @@ function BillManager({data, setAppData, onClose}){
   const ord = n => { const v=parseInt(n); return [11,12,13].includes(v)?"th":["st","nd","rd"][v%10-1]||"th"; };
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={onClose}>
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)",display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",justifyContent:"center"}} onClick={onClose}>
       <div style={{width:"100%",maxWidth:520,background:C.bg,borderRadius:"24px 24px 0 0",maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 -12px 48px rgba(0,0,0,0.5)"}} onClick={e=>e.stopPropagation()}>
         <div style={{padding:"14px 20px 12px",flexShrink:0,borderBottom:`1px solid ${C.border}`}}>
           <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 12px"}}/>
@@ -6147,7 +6147,7 @@ function SpendScreen({data, setAppData, setScreen}){
     <ScreenHeader title="Transactions" subtitle={monthLabel} onBack={setScreen?()=>setScreen("home"):null} cta="Ask Coach" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
     {/* Mark as Bill modal */}
     {markBillTxn&&(
-      <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setMarkBillTxn(null)}>
+      <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setMarkBillTxn(null)}>
         <div style={{background:C.bg,borderRadius:"24px 24px 0 0",width:"100%",maxWidth:520,border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",padding:"0 0 env(safe-area-inset-bottom,16px)"}} onClick={e=>e.stopPropagation()}>
           <div style={{padding:"16px 20px 14px",borderBottom:`1px solid ${C.border}`}}>
             <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
@@ -6226,7 +6226,7 @@ function SpendScreen({data, setAppData, setScreen}){
         We deduct the transaction amount from that bill's arrears balance.
     ────────────────────────────────────────────────────────────────── */}
     {arrearsPayTxn&&(
-      <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setArrearsPayTxn(null)}>
+      <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setArrearsPayTxn(null)}>
         <div style={{width:"100%",maxWidth:520,background:C.bg,borderRadius:"24px 24px 0 0",border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",padding:"0 0 env(safe-area-inset-bottom,16px)"}} onClick={e=>e.stopPropagation()}>
           <div style={{padding:"16px 20px 14px",borderBottom:`1px solid ${C.border}`}}>
             <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
@@ -6296,7 +6296,7 @@ function SpendScreen({data, setAppData, setScreen}){
     )}
     {/* ── Apply to all vendor modal ─────────────────────────────────── */}
     {applyAllPrompt&&(
-      <div style={{position:"fixed",inset:0,zIndex:1001,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setApplyAllPrompt(null)}>
+      <div style={{position:"fixed",inset:0,zIndex:1001,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setApplyAllPrompt(null)}>
         <div style={{width:"100%",maxWidth:520,background:C.bg,borderRadius:"24px 24px 0 0",border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",padding:"0 0 env(safe-area-inset-bottom,16px)"}} onClick={e=>e.stopPropagation()}>
           <div style={{padding:"16px 20px 14px",borderBottom:`1px solid ${C.border}`}}>
             <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
@@ -6325,11 +6325,12 @@ function SpendScreen({data, setAppData, setScreen}){
 
     {/* Re-categorize bottom sheet */}
     {recatTxn&&(
-      <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={()=>setRecatTxn(null)}>
-        <div style={{background:C.card,borderRadius:"24px 24px 0 0",width:"100%",maxWidth:520,border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",display:"flex",flexDirection:"column",maxHeight:"80vh"}} onClick={e=>e.stopPropagation()}>
+      <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}}
+        onClick={e=>{if(e.target===e.currentTarget)setRecatTxn(null);}}>
+        <div style={{background:C.card,borderRadius:isDesktop?"20px":"24px 24px 0 0",width:"100%",maxWidth:520,border:`1px solid ${C.border}`,boxShadow:"0 8px 60px rgba(0,0,0,0.5)",display:"flex",flexDirection:"column",maxHeight:isDesktop?"80vh":"85vh"}}>
           {/* Fixed header */}
           <div style={{padding:"16px 20px 12px",flexShrink:0,borderBottom:`1px solid ${C.border}`}}>
-            <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
+            {!isDesktop&&<div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{color:C.cream,fontWeight:800,fontSize:15}}>Change Category</div>
