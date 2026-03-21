@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   Home, Calendar, CreditCard, Sparkles, Users, User,
   Bell, Settings as LucideSettings, ShoppingCart, Coffee,
@@ -4805,6 +4805,42 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           <DecisionEngine data={data} safe={safe} bal={bal} monthlyIncome={monthlyIncome} soonBills={soonBills} todayDate={today} setScreen={setScreen}/>
         </div>}
 
+        {/* ── OVER-BUDGET NUDGE (dashboard) ─────────────────────────────── */}
+        {(()=>{
+          const budgets = data.budgets||{};
+          if(!Object.keys(budgets).length) return null;
+          const now = new Date();
+          const monthTxns = (data.transactions||[]).filter(t=>{
+            try{const d=new Date(t.date+"T12:00:00");return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()&&t.amount>0;}catch{return false;}
+          });
+          const monthSpend = {};
+          monthTxns.forEach(t=>{ monthSpend[t.cat]=(monthSpend[t.cat]||0)+t.amount; });
+          const overCats = Object.entries(budgets).filter(([cat,limit])=>(monthSpend[cat]||0)>limit);
+          if(!overCats.length) return null;
+          const totalOver = overCats.reduce((s,[cat,limit])=>s+((monthSpend[cat]||0)-limit),0);
+          const catEmojis={"Groceries":"🛒","Coffee & Dining":"☕","Gas & Transport":"🚗","Shopping":"🛍️","Clothing":"👗","Subscriptions":"📱","Health":"💊","Personal Care":"🧴","Entertainment":"🎬","Hobbies & Sports":"🎯","Kids & Extracurricular":"🧒","Kids & Activities":"🧒","Travel":"✈️","Home":"🏠","Education":"📚"};
+          return (
+            <div style={{...anim(215),background:"rgba(255,80,80,0.06)",backdropFilter:"blur(20px)",
+              WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.red}33`,borderRadius:16,
+              padding:"12px 14px",cursor:"pointer"}} onClick={()=>setScreen("spend")}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <div style={{color:C.redBright,fontWeight:800,fontSize:13}}>
+                  ⚠️ Over budget · ${Math.round(totalOver).toLocaleString()} this month
+                </div>
+                <span style={{color:C.muted,fontSize:11}}>View →</span>
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                {overCats.map(([cat,limit])=>(
+                  <span key={cat} style={{background:C.red+"22",border:`1px solid ${C.red}33`,
+                    borderRadius:99,padding:"3px 8px",fontSize:10,color:C.redBright,fontWeight:600}}>
+                    {catEmojis[cat]||""} {cat} +${Math.round((monthSpend[cat]||0)-limit)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ── AUTOPILOT ─────────────────────────────────────────────────── */}
         {isVisible('autopilot')&&<div style={{...anim(225),...tileStyle('autopilot'),background:C.isDark?"rgba(77,168,255,0.04)":"rgba(77,168,255,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.blue}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden"}}>
           <AutopilotCard data={data} setScreen={setScreen}/>
@@ -5584,6 +5620,366 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
   );
 }
 
+// ─── BUDGET SUGGESTION ENGINE ────────────────────────────────────────────────
+// Category metadata: emoji, colour key, plain-English reason shown to user
+const BUDGET_CAT_META = {
+  "Groceries":         { emoji:"🛒", colorKey:"green",  why:"Based on household size" },
+  "Coffee & Dining":   { emoji:"☕", colorKey:"orange", why:"Based on your dining history" },
+  "Gas & Transport":   { emoji:"🚗", colorKey:"blue",   why:"Commuting & errands" },
+  "Shopping":          { emoji:"🛍️", colorKey:"pink",   why:"General retail purchases" },
+  "Clothing":          { emoji:"👗", colorKey:"purple", why:"Clothes & apparel for your household" },
+  "Subscriptions":     { emoji:"📱", colorKey:"teal",   why:"Streaming, apps, memberships" },
+  "Health":            { emoji:"💊", colorKey:"teal",   why:"Pharmacy, dental, fitness" },
+  "Personal Care":     { emoji:"🧴", colorKey:"gold",   why:"Grooming, beauty, hygiene" },
+  "Entertainment":     { emoji:"🎬", colorKey:"pink",   why:"Fun money — movies, games, nights out" },
+  "Hobbies & Sports":  { emoji:"🎯", colorKey:"blue",   why:"Extracurriculars, leagues, classes" },
+  "Kids & Extracurricular": { emoji:"🧒", colorKey:"green", why:"Activities, camps, sports per child" },
+  "Travel":            { emoji:"✈️", colorKey:"purple", why:"Trips & weekend getaways (monthly reserve)" },
+  "Home":              { emoji:"🏠", colorKey:"orange", why:"Repairs, décor, household supplies" },
+  "Education":         { emoji:"📚", colorKey:"blue",   why:"Courses, books, tuition" },
+};
+
+function generateBudgetSuggestions(data) {
+  const profile  = data.profile || {};
+  const country  = profile.country || "CA";
+  const isCA     = country === "CA";
+  const _toMo    = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:a; };
+  const grossMo  = (data.incomes||[]).reduce((s,i)=>s+_toMo(i.amount,i.freq),0)||3000;
+  // Tax estimate — bracket-based approximation
+  const taxRate  = isCA
+    ? (grossMo>10000?0.35:grossMo>6000?0.30:grossMo>3500?0.25:0.18)
+    : (grossMo>8000?0.30:grossMo>5000?0.24:grossMo>3000?0.20:0.15);
+  const netMo    = grossMo*(1-taxRate);
+  const billsMo  = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
+  const debtsMo  = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.min||0),0);
+  const fixedMo  = billsMo+debtsMo;
+  // Savings target: 15–20% of net. Lower earners: 10%. Use for display only.
+  const savingsRate = netMo < 2500 ? 0.10 : netMo < 5000 ? 0.15 : 0.20;
+  const savingsMo   = Math.round(netMo * savingsRate);
+  // Discretionary = what's left after fixed bills and savings target
+  const discret  = Math.max(200, netMo - fixedMo - savingsMo);
+  const hasPartner = profile.status==="couple"||profile.status==="cohabit";
+  const numKids  = (profile.kids||[]).length||(profile.hasKids?1:0);
+  const hSize    = 1+(hasPartner?1:0)+numKids;
+  // Build per-category actuals from last ~90 days of transactions
+  const IGNORE   = new Set(["Income","Transfer","Bills","Utilities"]);
+  const txns     = (data.transactions||[]).filter(t=>t.amount>0&&!IGNORE.has(t.cat));
+  const actuals  = {};
+  if(txns.length>0){
+    const dates = txns.map(t=>new Date((t.date||"2025-01-01")+"T12:00:00")).filter(d=>!isNaN(d.getTime()));
+    const oldestMs = dates.length ? Math.min(...dates.map(d=>d.getTime())) : Date.now()-90*86400000;
+    const months = Math.max(1,Math.min(3,(Date.now()-oldestMs)/(30*24*3600*1000)));
+    txns.forEach(t=>{ actuals[t.cat]=(actuals[t.cat]||0)+t.amount; });
+    Object.keys(actuals).forEach(k=>{ actuals[k]=actuals[k]/months; });
+  }
+  // Blend: actual close → 55/45 mix; way over → actual+5%; way under → benchmark×0.85
+  const blendAmt = (benchmark, cat, tol=0.45) => {
+    const actual = actuals[cat]||0;
+    let v;
+    if(!actual)                          v = benchmark;
+    else if(actual > benchmark*(1+tol))  v = actual*1.05;
+    else if(actual < benchmark*(1-tol))  v = benchmark*0.85;
+    else                                 v = benchmark*0.55+actual*0.45;
+    return Math.max(10, Math.round(v/5)*5);
+  };
+  const sugg = {};
+  // ── Needs ──────────────────────────────────────────────────────
+  sugg["Groceries"]         = blendAmt((isCA?310:275)*hSize, "Groceries");
+  sugg["Gas & Transport"]   = blendAmt(isCA?(numKids>0?260:190):(numKids>0?230:170), "Gas & Transport");
+  sugg["Health"]            = blendAmt(Math.min(isCA?60*hSize:120*hSize, isCA?220:450), "Health");
+  // ── Wants ──────────────────────────────────────────────────────
+  sugg["Coffee & Dining"]   = blendAmt(Math.max(75, discret*(numKids>0?0.10:0.13)), "Coffee & Dining");
+  sugg["Shopping"]          = blendAmt(Math.max(50, discret*0.07*(hasPartner?1.3:1)), "Shopping");
+  sugg["Clothing"]          = blendAmt(Math.max(40, (isCA?65:60)*hSize*(numKids>0?1.3:1)), "Clothing");
+  sugg["Subscriptions"]     = blendAmt(hSize<=2?55:75, "Subscriptions", 0.9);
+  sugg["Personal Care"]     = blendAmt(hasPartner?110:65, "Personal Care");
+  sugg["Entertainment"]     = blendAmt(Math.max(40, discret*(numKids>0?0.05:0.07)), "Entertainment");
+  sugg["Hobbies & Sports"]  = blendAmt(Math.max(40, discret*(numKids>0?0.04:0.07)*(hasPartner?1.4:1)), "Hobbies & Sports");
+  if(numKids>0) sugg["Kids & Extracurricular"] = blendAmt(numKids*(isCA?185:205), "Kids & Extracurricular", 0.8);
+  // ── Any real actuals not yet covered ───────────────────────────
+  const covered = new Set(Object.keys(sugg));
+  Object.entries(actuals).forEach(([cat,amt])=>{
+    if(!covered.has(cat)&&amt>15) sugg[cat]=Math.round(amt*1.05/5)*5;
+  });
+  // Keep essentials always; others only if user has actual spending in them
+  const essential = new Set(["Groceries","Gas & Transport","Health","Clothing"]);
+  const filtered  = {};
+  Object.entries(sugg).forEach(([cat,amt])=>{
+    if(essential.has(cat)||actuals[cat]) filtered[cat]=amt;
+  });
+  const totalSugg = Object.values(filtered).reduce((s,v)=>s+v,0);
+  return { suggestions:filtered, netMo, fixedMo, discret, savingsMo, savingsRate, hSize, numKids, totalSugg };
+}
+
+// ─── BUDGET PLAN CARD ────────────────────────────────────────────────────────
+function BudgetPlanCard({data, setAppData}) {
+  const existingBudgets = data.budgets||{};
+  const hasBudgets = Object.keys(existingBudgets).length > 0;
+  const [open, setOpen] = useState(false);
+  const [dismissed, setDismissed] = useState(()=>{ try{return localStorage.getItem("flourish_budget_dismissed")==="1";}catch{return false;} });
+  const [editVals, setEditVals] = useState({});
+  const [accepted, setAccepted] = useState(false);
+  const [customCat, setCustomCat] = useState("");
+  const [showAddCat, setShowAddCat] = useState(false);
+
+  const { suggestions, netMo, discret, savingsMo, savingsRate, numKids, totalSugg } = useMemo(()=>generateBudgetSuggestions(data),[data]);
+
+  // Open panel: seed edit values from saved budgets or suggestions
+  const handleOpen = () => {
+    const seed = {};
+    // Start with all existing budgeted categories
+    Object.entries(existingBudgets).forEach(([cat,amt])=>{ seed[cat]=String(amt); });
+    // Add any suggested categories not yet budgeted
+    Object.entries(suggestions).forEach(([cat,amt])=>{ if(!seed[cat]) seed[cat]=String(amt); });
+    setEditVals(seed);
+    setOpen(true);
+    setAccepted(false);
+    setShowAddCat(false);
+    setCustomCat("");
+    // Reset dismissed when user actively opens the panel
+    setDismissed(false);
+    try{localStorage.removeItem("flourish_budget_dismissed");}catch{}
+  };
+
+  const handleAcceptAll = () => {
+    const newBudgets = {};
+    Object.entries(editVals).forEach(([cat,v])=>{
+      const n=parseFloat(v);
+      if(!isNaN(n)&&n>0) newBudgets[cat]=n;
+    });
+    if(setAppData) setAppData(prev=>({...prev,budgets:newBudgets}));
+    setAccepted(true);
+    setTimeout(()=>setOpen(false),1200);
+  };
+
+  const handleDismiss = () => {
+    setDismissed(true);
+    setOpen(false);
+    try{localStorage.setItem("flourish_budget_dismissed","1");}catch{}
+  };
+
+  const handleAddCustom = () => {
+    const cat = customCat.trim();
+    if(!cat) return;
+    setEditVals(prev=>({...prev,[cat]:"50"}));
+    setCustomCat("");
+    setShowAddCat(false);
+  };
+
+  const handleDeleteCat = (cat) => {
+    setEditVals(prev=>{ const n={...prev}; delete n[cat]; return n; });
+  };
+
+  const catColors = {"Groceries":C.green,"Coffee & Dining":C.orange,"Gas & Transport":C.blue,
+    "Shopping":C.pink,"Clothing":C.purple,"Subscriptions":C.teal,"Health":C.teal,
+    "Personal Care":C.gold,"Entertainment":C.pink,"Hobbies & Sports":C.blue,
+    "Kids & Extracurricular":C.green,"Kids & Activities":C.green,
+    "Travel":C.purple,"Home":C.orange,"Education":C.blue};
+  const catEmoji = {"Groceries":"🛒","Coffee & Dining":"☕","Gas & Transport":"🚗",
+    "Shopping":"🛍️","Clothing":"👗","Subscriptions":"📱","Health":"💊",
+    "Personal Care":"🧴","Entertainment":"🎬","Hobbies & Sports":"🎯",
+    "Kids & Extracurricular":"🧒","Kids & Activities":"🧒",
+    "Travel":"✈️","Home":"🏠","Education":"📚"};
+
+  // Compute current-month spending vs budget for summary strip
+  // Apply catOverrides so recategorised transactions count correctly
+  const catOverrides = (() => { try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");}catch{return {};} })();
+  const now = new Date();
+  const monthTxns = (data.transactions||[]).filter(t=>{
+    try{const d=new Date(t.date+"T12:00:00");return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()&&t.amount>0;}catch{return false;}
+  });
+  const monthSpend = {};
+  monthTxns.forEach(t=>{ const cat=catOverrides[t.id]||t.cat; monthSpend[cat]=(monthSpend[cat]||0)+t.amount; });
+  const overBudgetCats = Object.entries(existingBudgets).filter(([cat,limit])=>(monthSpend[cat]||0)>limit);
+  const totalBudgeted = Object.values(existingBudgets).reduce((s,v)=>s+v,0);
+  const totalSpentThisMonth = Object.entries(existingBudgets).reduce((s,[cat])=>s+(monthSpend[cat]||0),0);
+  const budgetUsedPct = totalBudgeted>0 ? Math.min(100,Math.round(totalSpentThisMonth/totalBudgeted*100)) : 0;
+
+  // Compact "budget active" strip when not editing
+  if(hasBudgets&&!open) return (
+    <div style={{background:overBudgetCats.length>0?C.red+"15":C.green+"12",
+      border:`1px solid ${overBudgetCats.length>0?C.red:C.green}33`,
+      borderRadius:14,padding:"12px 14px",marginBottom:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:overBudgetCats.length>0?8:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:18}}>{overBudgetCats.length>0?"⚠️":"📊"}</span>
+          <div>
+            <div style={{color:overBudgetCats.length>0?C.redBright:C.greenBright,fontWeight:800,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+              {overBudgetCats.length>0?`Over budget in ${overBudgetCats.length} categor${overBudgetCats.length===1?"y":"ies"}`:"Budget Plan Active"}
+            </div>
+            <div style={{color:C.muted,fontSize:10}}>
+              ${Math.round(totalSpentThisMonth).toLocaleString()} / ${Math.round(totalBudgeted).toLocaleString()} this month ({budgetUsedPct}%)
+            </div>
+          </div>
+        </div>
+        <button onClick={handleOpen}
+          style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 10px",
+            color:C.muted,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Edit</button>
+      </div>
+      {/* Progress bar */}
+      <div style={{height:4,background:C.border,borderRadius:99,overflow:"hidden"}}>
+        <div style={{width:`${budgetUsedPct}%`,height:"100%",borderRadius:99,transition:"width .4s",
+          background:overBudgetCats.length>0?C.red:budgetUsedPct>80?C.orange:C.green}}/>
+      </div>
+      {overBudgetCats.length>0&&(
+        <div style={{color:C.muted,fontSize:10,marginTop:6}}>
+          {overBudgetCats.map(([cat,limit])=>`${catEmoji[cat]||""}${cat}: $${Math.round((monthSpend[cat]||0)-limit)} over`).join(" · ")}
+        </div>
+      )}
+    </div>
+  );
+
+  // Initial banner when no budgets set — respect dismissed flag
+  if(dismissed&&!hasBudgets&&!open) return null;
+  if(!open) return (
+    <div style={{background:`linear-gradient(135deg,${C.green}18 0%,${C.teal}12 100%)`,
+      borderRadius:16,padding:"14px 16px",marginBottom:8,border:`1px solid ${C.green}33`,
+      display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+      <div style={{flex:1}}>
+        <div style={{color:C.greenBright,fontWeight:800,fontSize:13,marginBottom:2}}>✨ Build Your Budget Plan</div>
+        <div style={{color:C.muted,fontSize:11,lineHeight:1.5}}>
+          We'll suggest spending limits for groceries, clothing, extracurriculars and more — based on your ${Math.round(netMo).toLocaleString()}/mo take-home.
+        </div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
+        <button onClick={handleOpen}
+          style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",
+            borderRadius:10,padding:"8px 14px",color:"#041810",fontWeight:800,fontSize:12,
+            cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>Build Plan</button>
+        <button onClick={handleDismiss}
+          style={{background:"none",border:"none",color:C.muted,fontSize:10,cursor:"pointer",
+            fontFamily:"inherit",padding:0}}>No thanks</button>
+      </div>
+    </div>
+  );
+
+  // ── Edit panel ──────────────────────────────────────────────────────────────
+  const totalEdited = Object.values(editVals).reduce((s,v)=>s+(parseFloat(v)||0),0);
+  const overDiscret = totalEdited > discret;
+
+  return (
+    <div style={{background:`linear-gradient(135deg,${C.green}0A 0%,${C.card} 100%)`,
+      border:`1px solid ${C.green}44`,borderRadius:16,padding:"14px",marginBottom:8}}>
+
+      {/* Header */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+        <div>
+          <div style={{color:C.greenBright,fontWeight:900,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            {accepted?"✅ Budget Plan Saved!":"📊 Your Budget Plan"}
+          </div>
+          <div style={{color:C.muted,fontSize:11,marginTop:2}}>
+            ~${Math.round(discret).toLocaleString()}/mo discretionary · adjust any amount · add categories
+          </div>
+        </div>
+        <button onClick={()=>setOpen(false)}
+          style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0,lineHeight:1}}>✕</button>
+      </div>
+
+      {/* Savings context strip */}
+      <div style={{background:C.cardAlt,borderRadius:10,padding:"8px 10px",marginBottom:10,
+        border:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:14}}>💰</span>
+          <div>
+            <div style={{color:C.greenBright,fontWeight:700,fontSize:11}}>Savings target included</div>
+            <div style={{color:C.muted,fontSize:10}}>${Math.round(savingsMo).toLocaleString()}/mo ({Math.round(savingsRate*100)}% of take-home) set aside before this budget</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Category rows */}
+      <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:10}}>
+        {Object.entries(editVals).map(([cat,val])=>{
+          const cc = catColors[cat]||C.muted;
+          const emoji = catEmoji[cat]||"📌";
+          const meta = BUDGET_CAT_META[cat];
+          const isSuggested = !!suggestions[cat];
+          return (
+            <div key={cat} style={{display:"flex",alignItems:"center",gap:8,
+              padding:"8px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
+              <span style={{fontSize:15,flexShrink:0}}>{emoji}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{cat}</div>
+                {meta?.why&&<div style={{color:C.muted,fontSize:9,marginTop:1}}>{meta.why}</div>}
+              </div>
+              <div style={{display:"flex",alignItems:"center",background:C.card,
+                border:`1px solid ${cc}55`,borderRadius:8,overflow:"hidden",width:90,flexShrink:0}}>
+                <span style={{color:C.muted,padding:"0 4px",fontSize:11}}>$</span>
+                <input type="number" value={val}
+                  onChange={e=>setEditVals(prev=>({...prev,[cat]:e.target.value}))}
+                  style={{width:50,background:"none",border:"none",padding:"6px 2px",color:C.cream,
+                    fontSize:12,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
+                <span style={{color:C.muted,padding:"0 3px",fontSize:9}}>/mo</span>
+              </div>
+              <button onClick={()=>handleDeleteCat(cat)}
+                style={{background:"none",border:"none",color:C.muted,cursor:"pointer",
+                  fontSize:14,padding:"2px",flexShrink:0,opacity:0.6,lineHeight:1}}
+                title="Remove category">×</button>
+            </div>
+          );
+        })}
+
+        {/* Add custom category */}
+        {showAddCat ? (
+          <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 10px",
+            background:C.cardAlt,borderRadius:10,border:`1px dashed ${C.green}55`}}>
+            <input value={customCat} onChange={e=>setCustomCat(e.target.value)}
+              placeholder="Category name (e.g. Gym, Art Classes)"
+              onKeyDown={e=>e.key==="Enter"&&handleAddCustom()}
+              style={{flex:1,background:"none",border:`1px solid ${C.border}`,borderRadius:8,
+                padding:"7px 10px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none"}}/>
+            <button onClick={handleAddCustom}
+              style={{background:C.green,border:"none",borderRadius:8,padding:"7px 10px",
+                color:"#041810",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Add</button>
+            <button onClick={()=>{setShowAddCat(false);setCustomCat("");}}
+              style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0}}>✕</button>
+          </div>
+        ) : (
+          <button onClick={()=>setShowAddCat(true)}
+            style={{background:"none",border:`1px dashed ${C.green}44`,borderRadius:10,
+              padding:"9px 10px",color:C.green,fontWeight:700,fontSize:12,
+              cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+            ＋ Add a category
+          </button>
+        )}
+      </div>
+
+      {/* Total vs discretionary */}
+      <div style={{padding:"9px 12px",background:overDiscret?C.red+"18":C.green+"12",
+        borderRadius:10,marginBottom:10,border:`1px solid ${overDiscret?C.red:C.green}33`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{color:C.muted,fontSize:11}}>Total budgeted</span>
+          <span style={{color:overDiscret?C.redBright:C.greenBright,fontWeight:800,fontSize:13}}>
+            ${Math.round(totalEdited).toLocaleString()} / mo
+          </span>
+        </div>
+        {overDiscret&&(
+          <div style={{color:C.redBright,fontSize:10,marginTop:3}}>
+            ⚠️ ${Math.round(totalEdited-discret).toLocaleString()} over your discretionary budget — consider trimming some categories
+          </div>
+        )}
+        {!overDiscret&&totalEdited>0&&(
+          <div style={{color:C.muted,fontSize:10,marginTop:3}}>
+            ${Math.round(discret-totalEdited).toLocaleString()} discretionary remaining unallocated
+          </div>
+        )}
+      </div>
+
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={handleAcceptAll}
+          style={{flex:1,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",
+            borderRadius:12,padding:"12px",color:"#041810",fontWeight:800,fontSize:13,
+            cursor:"pointer",fontFamily:"inherit"}}>
+          {accepted?"✅ Saved!":"✓ Save Budget Plan"}
+        </button>
+        <button onClick={()=>setOpen(false)}
+          style={{background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",
+            color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 function SpendScreen({data, setAppData, setScreen}){
   // ── ALL HOOKS FIRST — no non-hook code before the last hook (TDZ prevention) ──
   const [tab,setTab]=useState("txn");
@@ -6070,6 +6466,8 @@ function SpendScreen({data, setAppData, setScreen}){
         <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:4}}>No spending data for this period</div>
         <div style={{color:C.muted,fontSize:12}}>Try a broader time range above.</div>
       </div>}
+      {/* Budget Plan Card — shown above category breakdown */}
+      {period==="month"&&<BudgetPlanCard data={data} setAppData={setAppData}/>}
       {bdTopCats.map(([cat,amt],i)=>{
         const colors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
         const catTxns=acctFiltered.filter(t=>getCat(t)===cat&&t.amount>0);
