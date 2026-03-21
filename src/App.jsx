@@ -6304,13 +6304,14 @@ function SpendScreen({data, setAppData, setScreen}){
   const acctFiltered = accountFilter==="All" ? displayTxns : displayTxns.filter(t=>t.account_id===accountFilter);
   const filtered=catFilter==="All"
     ? acctFiltered.filter(t=>{
+        if(isCCPayment(t,data.debts||[])) return false; // CC payments are balance sheet events — hide from list
         const cat=getCat(t);
-        if(cat==="Transfer") return t.amount<0; // show incoming transfers (e-transfers in), hide outgoing
+        if(cat==="Transfer") return t.amount<0; // show incoming (e-transfers in), hide outgoing
         return true;
       })
     : catFilter==="Received"
       ? acctFiltered.filter(t=>getCat(t)==="Transfer"&&t.amount<0)
-      : acctFiltered.filter(t=>getCat(t)===catFilter);
+      : acctFiltered.filter(t=>getCat(t)===catFilter&&!isCCPayment(t,data.debts||[]));
   const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCCPayment(t,data.debts||[])).reduce((a,t)=>a+t.amount,0);
   const totalIn=acctFiltered.filter(t=>t.amount<0).reduce((a,t)=>a+Math.abs(t.amount),0);
 
@@ -6554,7 +6555,7 @@ function SpendScreen({data, setAppData, setScreen}){
                 <div style={{color:C.muted,fontSize:11,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:240}}>{recatTxn.name}</div>
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
-                {setAppData&&recatTxn.amount>0&&<button onClick={()=>{
+                {setAppData&&recatTxn.amount>0&&!isCCPayment(recatTxn,data.debts||[])&&<button onClick={()=>{
                   const day=recatTxn.date?new Date(recatTxn.date+"T12:00:00").getDate():new Date().getDate();
                   setBillForm({name:recatTxn.name,amount:(recatTxn.amount||0).toFixed(2),date:String(day)});
                   setMarkBillTxn(recatTxn);setRecatTxn(null);
