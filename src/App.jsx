@@ -3245,7 +3245,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
         👀 Try Demo (no account needed)
       </button>
 
-      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:14}}>Free to start · Available in 🇨🇦 Canada & 🇺🇸 USA</div>
+      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:14}}>Free to start · Canada & USA · No credit card</div>
 
       {/* PIPEDA consent notice */}
       <div style={{marginTop:20,padding:"12px 16px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`,maxWidth:320,textAlign:"left"}}>
@@ -9636,12 +9636,12 @@ function AuthScreen({ onAuth }) {
             </div>
 
             <h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: "clamp(30px,9vw,52px)", fontWeight: 900, color: "#EDE9E2", lineHeight: 1.1, marginBottom: 18, letterSpacing: -0.5, maxWidth: 560 }}>
-              Finally know if you can afford it.{" "}
-              <span style={{ color: "#00D68F", fontStyle: "italic" }}>Before you tap your card.</span>
+              Know before you spend.{" "}
+              <span style={{ color: "#00D68F", fontStyle: "italic" }}>Finally.</span>
             </h1>
 
             <p style={{ color: "#6B7A6E", fontSize: 16, lineHeight: 1.75, maxWidth: 380, marginBottom: 40 }}>
-              Connect your bank accounts and get one clear number — no spreadsheets, no dread.
+              Finally know if you can afford it. One safe-to-spend number, calculated from your real accounts — updated every day.
             </p>
 
             {/* Hero product card */}
@@ -9661,7 +9661,7 @@ function AuthScreen({ onAuth }) {
 
             {/* Primary CTA */}
             <button onClick={goSignup} style={{ width: "100%", maxWidth: 340, padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", marginBottom: 12, boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-              Get My Number — Free
+              Know Before You Spend — Free
             </button>
             <div style={{ color: "#6B7A6E", fontSize: 12, marginBottom: 52 }}>No credit card · Connects RBC, TD, Chase, Wells Fargo + thousands more</div>
 
@@ -9762,7 +9762,7 @@ function AuthScreen({ onAuth }) {
                 <span style={{ color: "#00D68F", fontStyle: "italic" }}>Start knowing.</span>
               </div>
               <button onClick={goSignup} style={{ width: "100%", padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 10 }}>
-                Get My Number — Free
+                Know Before You Spend — Free
               </button>
               <div style={{ color: "#6B7A6E", fontSize: 12 }}>No credit card · Takes 60 seconds</div>
             </div>
