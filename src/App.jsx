@@ -37,17 +37,17 @@ const CC = {
     ],
     debtTypes:["Credit Card","Line of Credit","HELOC","Car Loan","OSAP / Student Loan","Personal Loan","Mortgage","Buy Now Pay Later","Other"],
     taxTips:[
-      {title:"RRSP Contribution",body:"Every RRSP dollar reduces your taxable income. At a 30% marginal rate, putting in $5,000 gets you ~$1,500 back at tax time. Deadline is March 1.",savings:"Up to 33%",flag:"🇨🇦",priority:"high",action:"Check My RRSP Room"},
+      {title:"RRSP Contribution",body:"Every RRSP dollar reduces your taxable income. At a 30% marginal rate, putting in $5,000 gets you ~$1,500 back at tax time. Deadline is the first 60 days of the following year (typically early March — check CRA for the exact date).",savings:"Up to 33%",flag:"🇨🇦",priority:"high",action:"Check My RRSP Room"},
       {title:"TFSA — You're Probably Under-Using It",body:"Your TFSA isn't just for savings — it's for investing. Any growth inside is 100% tax-free forever. If you opened one at 18, you may have $75,000+ of contribution room sitting unused.",savings:"Tax-free growth",flag:"🇨🇦",priority:"high",action:"Calculate My Room"},
       {title:"FHSA (First Home Savings Account)",body:"If you've never owned a home, you can contribute up to $8,000/year and get a tax deduction — like an RRSP. Unused room carries forward. Withdraw tax-free to buy your first home.",savings:"Up to $8,000/yr",flag:"🇨🇦",priority:"high",action:"Open an FHSA"},
-      {title:"GST/HST Credit",body:"Filing your taxes means CRA automatically checks if you qualify for quarterly GST/HST credits. Under ~$50k income? You likely qualify and may not know it. File every year even if you owe nothing.",savings:"Up to $519/yr",flag:"🇨🇦",priority:"medium",action:"File Your Taxes"},
-      {title:"Canada Child Benefit (CCB)",body:"Tax-free monthly payments if you have children under 18. A family earning $50k with two kids can get $12,000+/year. Apply on CRA My Account or when registering the birth.",savings:"Up to $7,787/child",flag:"🇨🇦",priority:"high",action:"Apply on CRA"},
-      {title:"Home Office Deduction",body:"Work from home? Even employees can claim a flat $2/day (up to $500) without receipts. Self-employed? Claim actual rent, internet, hydro proportionally.",savings:"$200–$1,200",flag:"🇨🇦",priority:"medium",action:"Track Home Office Days"},
-      {title:"Ontario Trillium Benefit",body:"Ontario residents: combines the Ontario Sales Tax Credit, Ontario Energy Credit, and Northern Ontario Energy Credit into one monthly payment. Low-to-mid income earners often miss this.",savings:"Up to $1,421/yr",flag:"🏙️ ON",priority:"medium",action:"Apply on CRA"},
-      {title:"Disability Tax Credit (DTC)",body:"If you or a dependent has a severe disability, the DTC provides up to ~$1,300/year in federal tax credits, plus retroactive claims. Often missed — a doctor fills out T2201.",savings:"Up to $1,300/yr",flag:"🇨🇦",priority:"medium",action:"Get T2201 Form"},
-      {title:"Child Care Expense Deduction",body:"Daycare, after-school programs, summer camp — most childcare costs are deductible from the lower-income spouse's return. Families earning $50k often leave $2,000–$4,000 on the table.",savings:"$1,200–$4,000",flag:"🇨🇦",priority:"high",action:"Gather Receipts"},
+      {title:"GST/HST Credit",body:"Filing your taxes means CRA automatically checks if you qualify for quarterly GST/HST credits. 2025–26 maximum: $533/yr single, $698/yr couple. Under ~$55k income? You likely qualify and may not know it. File every year even if you owe nothing.",savings:"Up to $533/yr",flag:"🇨🇦",priority:"medium",action:"File Your Taxes"},
+      {title:"Canada Child Benefit (CCB)",body:"Tax-free monthly payments for children under 18. Maximum 2025–26: $7,997/yr per child under 6 ($666/mo) and $6,748/yr per child aged 6–17 ($562/mo). A family with two kids under 6 at modest income can receive nearly $16,000/year tax-free. Apply on CRA My Account or at birth registration.",savings:"Up to $7,997/child under 6",flag:"🇨🇦",priority:"high",action:"Apply on CRA"},
+      {title:"Home Office Deduction",body:"Work from home? Employees must use the detailed method with a signed T2200 from their employer (the $2/day flat rate ended after 2022). Claim your workspace percentage of rent, utilities, and internet. Self-employed? Claim actual rent, internet, hydro proportionally.",savings:"Varies — % of home expenses",flag:"🇨🇦",priority:"medium",action:"Track Home Office Days"},
+      {title:"Ontario Trillium Benefit",body:"Ontario residents: combines the Ontario Sales Tax Credit, Ontario Energy Credit, and Northern Ontario Energy Credit into one monthly payment. Low-to-mid income earners often miss this.",savings:"Up to $1,654/yr (OEPTC+OSTC)",flag:"🏙️ ON",priority:"medium",action:"Apply on CRA"},
+      {title:"Disability Tax Credit (DTC)",body:"If you or a dependent has a severe disability, the DTC provides up to ~$1,470/year in federal tax reduction (14.5% × $10,138 base amount for 2025), plus retroactive claims. Often missed — a doctor fills out T2201.",savings:"~$1,470 federal tax reduction",flag:"🇨🇦",priority:"medium",action:"Get T2201 Form"},
+      {title:"Child Care Expense Deduction",body:"Daycare, after-school programs, summer camp — most childcare costs are deductible from the lower-income spouse's return. CRA limits: $8,000/child under 7, $5,000/child aged 7–16. Claimed at a 30% rate, one toddler in daycare saves ~$2,400.",savings:"$1,200–$4,000",flag:"🇨🇦",priority:"high",action:"Gather Receipts"},
       {title:"RESP — Free Government Money",body:"Open an RESP for your child and the government adds 20% on the first $2,500/year = $500 free per child. Canada Learning Bond adds another $500 for lower-income families.",savings:"$500–$1,000/yr free",flag:"🇨🇦",priority:"high",action:"Open an RESP"},
-      {title:"Working Income Tax Benefit (CWB)",body:"Working but earning under ~$36k? CRA may owe you a refundable tax credit just for filing. Many low-income workers miss this entirely.",savings:"Up to $1,428",flag:"🇨🇦",priority:"medium",action:"Check Eligibility"},
+      {title:"Working Income Tax Benefit (CWB)",body:"Working but earning under ~$37,742 (single) or ~$49,393 (family)? CRA owes you a refundable tax credit just for filing. Many low-income workers miss this entirely.",savings:"Up to $1,633 single / $2,813 family",flag:"🇨🇦",priority:"medium",action:"Check Eligibility"},
     ],
     learnCards:[
       {emoji:"🏦",title:"TFSA vs RRSP — The Real Difference",body:"RRSP lowers your taxes now but you pay tax when you withdraw. TFSA has no upfront deduction but all growth and withdrawals are 100% tax-free. If you're in a low tax bracket now, use TFSA first. If you're in a high bracket, RRSP first.",key:"Low income now → TFSA. High income now → RRSP."},
@@ -58,18 +58,18 @@ const CC = {
       {emoji:"🆘",title:"The emergency fund rule",body:"One car repair without savings = credit card debt at 20%. A $1,000 cushion breaks that cycle. In Canada, keep it in a TFSA high-interest savings account.",key:"Build $1,000 in a TFSA HISA first."},
     ],
     retirementAccounts:[
-      {id:"rrsp",name:"RRSP",fullName:"Registered Retirement Savings Plan",icon:"🏦",color:"#2E8B2E",annualLimit:"18% of income (max $31,560)",taxNote:"Contributions deductible. Withdrawals taxed as income.",tip:"Contribute in high-income years. Use spousal RRSP for income splitting."},
-      {id:"tfsa",name:"TFSA",fullName:"Tax-Free Savings Account",icon:"🛡️",color:"#2FADA6",annualLimit:"$7,000 (2024). Unused room accumulates.",taxNote:"No deduction on contribution. All growth and withdrawals tax-free.",tip:"Invest in ETFs inside your TFSA — don't just park cash."},
+      {id:"rrsp",name:"RRSP",fullName:"Registered Retirement Savings Plan",icon:"🏦",color:"#2E8B2E",annualLimit:"18% of income (max $32,490 for 2025)",taxNote:"Contributions deductible. Withdrawals taxed as income.",tip:"Contribute in high-income years. Use spousal RRSP for income splitting."},
+      {id:"tfsa",name:"TFSA",fullName:"Tax-Free Savings Account",icon:"🛡️",color:"#2FADA6",annualLimit:"$7,000 (2025 & 2026). Unused room accumulates.",taxNote:"No deduction on contribution. All growth and withdrawals tax-free.",tip:"Invest in ETFs inside your TFSA — don't just park cash."},
       {id:"fhsa",name:"FHSA",fullName:"First Home Savings Account",icon:"🏠",color:"#CFA03E",annualLimit:"$8,000/yr (max $40,000 lifetime)",taxNote:"Deductible going in. Tax-free withdrawal for first home purchase.",tip:"Best account for first-time buyers. Open even if you're not buying immediately — room accumulates."},
       {id:"resp",name:"RESP",fullName:"Registered Education Savings Plan",icon:"👶",color:"#8A5FC8",annualLimit:"$2,500/yr to maximize CESG grant",taxNote:"No deduction. Government adds 20% (CESG) on first $2,500/yr.",tip:"Even $2,500/yr gets $500 free from government. Start at birth."},
     ],
     benefitsChecker:[
-      {name:"Canada Child Benefit",icon:"👶",eligible:"Has children under 18",amount:"Up to $7,787/child under 6",apply:"CRA My Account",url:"https://canada.ca/ccb"},
-      {name:"GST/HST Credit",icon:"🛒",eligible:"Under ~$50k income",amount:"Up to $519/yr",apply:"File your taxes",url:"https://canada.ca/gst-credit"},
-      {name:"Ontario Trillium Benefit",icon:"🏙️",eligible:"Ontario residents, low-mid income",amount:"Up to $1,421/yr",apply:"ON-BEN form with taxes",url:"https://canada.ca/trillium"},
-      {name:"Canada Workers Benefit",icon:"💼",eligible:"Working, under ~$36k",amount:"Up to $1,428",apply:"Schedule 6 with taxes",url:"https://canada.ca/cwb"},
-      {name:"CERB / CRB Replacements",icon:"📋",eligible:"Income disruption",amount:"Varies",apply:"CRA My Account",url:"https://canada.ca/ei"},
-      {name:"Disability Tax Credit",icon:"♿",eligible:"Severe disability",amount:"~$1,300 credit",apply:"T2201 with doctor",url:"https://canada.ca/dtc"},
+      {name:"Canada Child Benefit",icon:"👶",eligible:"Has children under 18",amount:"Up to $7,997/child under 6",apply:"CRA My Account",url:"https://canada.ca/ccb"},
+      {name:"GST/HST Credit",icon:"🛒",eligible:"Under ~$50k income",amount:"Up to $533/yr",apply:"File your taxes",url:"https://canada.ca/gst-credit"},
+      {name:"Ontario Trillium Benefit",icon:"🏙️",eligible:"Ontario residents, low-mid income",amount:"Up to $1,654/yr",apply:"ON-BEN form with taxes",url:"https://canada.ca/trillium"},
+      {name:"Canada Workers Benefit",icon:"💼",eligible:"Working, under ~$37,742 single",amount:"Up to $1,633 single / $2,813 family",apply:"Schedule 6 with taxes",url:"https://canada.ca/cwb"},
+      {name:"Canada Disability Benefit (CDB)",icon:"♿",eligible:"DTC-approved, age 18–64, low income",amount:"Up to $200/mo ($2,400/yr)",apply:"Service Canada online",url:"https://canada.ca/cdb"},
+      {name:"Disability Tax Credit",icon:"♿",eligible:"Severe disability",amount:"~$1,470 federal credit",apply:"T2201 with doctor",url:"https://canada.ca/dtc"},
     ],
     creditBureaus:["Equifax (Borrowell — free)","TransUnion (Credit Karma — free)"],
     emergencyMonths:3,
@@ -94,17 +94,19 @@ const CC = {
     ],
     debtTypes:["Credit Card","Student Loan (Federal)","Student Loan (Private)","Medical Debt","Car Loan","Personal Loan","Mortgage","HELOC","Payday Loan","Buy Now Pay Later","Other"],
     taxTips:[
-      {title:"Earned Income Tax Credit (EITC)",body:"One of the most under-claimed credits in America. Under ~$63k with qualifying children? You could get up to $7,430 back — even if you owe nothing. Must file to claim.",savings:"Up to $7,430",flag:"🇺🇸",priority:"high",action:"Check EITC Eligibility"},
-      {title:"Child Tax Credit",body:"Up to $2,000 per qualifying child under 17. Partially refundable — meaning you can get money back even if you owe nothing. File even if your income is low.",savings:"$2,000/child",flag:"🇺🇸",priority:"high",action:"Claim on Schedule 8812"},
-      {title:"401(k) — Get the Full Match First",body:"If your employer matches 401(k) contributions, not contributing enough to get the full match is leaving free money on the table. A 4% match on $50k = $2,000/year you're giving up.",savings:"Up to $23,000/yr",flag:"🇺🇸",priority:"high",action:"Increase 401k Contributions"},
-      {title:"HSA: The Triple Tax Advantage",body:"If you have a high-deductible health plan, an HSA lets you contribute pre-tax, grow tax-free, and withdraw tax-free for medical expenses. It's legally the most tax-advantaged account available.",savings:"Up to $4,150/yr",flag:"🇺🇸",priority:"high",action:"Open an HSA"},
-      {title:"Roth IRA: Tax-Free Retirement",body:"Under $146k single / $230k married? You can contribute $7,000/year to a Roth IRA. You pay tax now, but all growth and withdrawals are 100% tax-free in retirement.",savings:"$7,000/yr tax-free",flag:"🇺🇸",priority:"high",action:"Open a Roth IRA"},
+      {title:"Earned Income Tax Credit (EITC)",body:"One of the most under-claimed credits in America. Under $61,555 (single) or $68,675 (married) with qualifying children? You could get up to $8,046 back (2025, 3 or more children) — even if you owe nothing. Must file to claim.",savings:"Up to $8,046 (2025, 3+ children)",flag:"🇺🇸",priority:"high",action:"Check EITC Eligibility"},
+      {title:"Child Tax Credit",body:"Up to $2,200 per qualifying child under 17 (increased by OBBBA, July 2025). Partially refundable up to $1,700 — meaning you can get money back even if you owe nothing. File even if your income is low.",savings:"$2,200/child (2025)",flag:"🇺🇸",priority:"high",action:"Claim on Schedule 8812"},
+      {title:"401(k) — Get the Full Match First",body:"If your employer matches 401(k) contributions, not contributing enough to get the full match is leaving free money on the table. A 4% match on $50k = $2,000/year you're giving up.",savings:"Up to $23,500/yr (2025)",flag:"🇺🇸",priority:"high",action:"Increase 401k Contributions"},
+      {title:"HSA: The Triple Tax Advantage",body:"If you have a high-deductible health plan, an HSA lets you contribute pre-tax, grow tax-free, and withdraw tax-free for medical expenses. It's legally the most tax-advantaged account available.",savings:"Up to $4,300/yr (2025)",flag:"🇺🇸",priority:"high",action:"Open an HSA"},
+      {title:"Roth IRA: Tax-Free Retirement",body:"Under $150k single / $236k married? You can contribute $7,000/year to a Roth IRA (2025 income limits). You pay tax now, but all growth and withdrawals are 100% tax-free in retirement.",savings:"$7,000/yr tax-free",flag:"🇺🇸",priority:"high",action:"Open a Roth IRA"},
       {title:"Student Loan Interest Deduction",body:"Paying student loans? You may be able to deduct up to $2,500 of interest per year, reducing taxable income directly — even without itemizing.",savings:"Up to $2,500",flag:"🇺🇸",priority:"medium",action:"Find 1098-E Form"},
-      {title:"Child & Dependent Care Credit",body:"Paying for daycare, after-school, or a caregiver while you work? You can claim 20–35% of up to $3,000 in care expenses as a tax credit — not just a deduction.",savings:"$600–$1,050",flag:"🇺🇸",priority:"medium",action:"Track Care Receipts"},
-      {title:"Saver's Credit",body:"Low-to-mid income and contributing to a 401k or IRA? The Saver's Credit gives you up to 50% of your contribution back as a tax credit. Under $36k single? You likely qualify.",savings:"Up to $1,000",flag:"🇺🇸",priority:"medium",action:"Check Form 8880"},
+      {title:"Child & Dependent Care Credit",body:"Paying for daycare, after-school, or a caregiver while you work? You can claim 20–35% of up to $3,000 (1 child) or $6,000 (2+ children) in care expenses as a tax credit.",savings:"$600–$2,100 (1–2 children)",flag:"🇺🇸",priority:"medium",action:"Track Care Receipts"},
+      {title:"Saver's Credit",body:"Low-to-mid income and contributing to a 401k or IRA? The Saver's Credit gives you up to 50% of your contribution back as a tax credit. Under $39,500 single? You likely qualify.",savings:"Up to $1,000",flag:"🇺🇸",priority:"medium",action:"Check Form 8880"},
       {title:"American Opportunity Tax Credit",body:"Paying for the first 4 years of college? You can claim up to $2,500/year per student — and 40% is refundable even if you owe nothing.",savings:"Up to $2,500/yr",flag:"🇺🇸",priority:"medium",action:"Claim on Form 8863"},
       {title:"Medical Expense Deduction",body:"Medical expenses exceeding 7.5% of your AGI are deductible if you itemize. For Americans with significant medical debt, this can mean thousands back.",savings:"Varies",flag:"🇺🇸",priority:"low",action:"Track Medical Receipts"},
       {title:"Home Office Deduction",body:"Self-employed and work from home? The simplified method allows $5 per square foot (up to 300 sq ft = $1,500). No complex calculations needed.",savings:"Up to $1,500",flag:"🇺🇸",priority:"medium",action:"Measure Your Office"},
+      {title:"No Tax on Tips (2025–2028)",body:"Work in a tipped occupation — restaurant, salon, hotel, rideshare, personal trainer? Deduct up to $25,000 of qualified tips from your federal income. No itemizing required. Phases out above $150k MAGI. Expires after 2028 unless extended.",savings:"Up to $25,000 deduction",flag:"🇺🇸",priority:"high",action:"Track Tips — Form 4137"},
+      {title:"No Tax on Overtime (2025–2028)",body:"Earn FLSA-required overtime (time-and-a-half)? You can deduct the premium 'half' portion — up to $12,500 ($25,000 if married filing jointly). Phases out above $150k MAGI. Expires after 2028. Salary-exempt workers generally don't qualify.",savings:"Up to $12,500 deduction",flag:"🇺🇸",priority:"medium",action:"Check Your W-2 Overtime"},
     ],
     learnCards:[
       {emoji:"🏦",title:"401(k) vs Roth IRA: Which First?",body:"Your 401(k) lowers taxes now — great if you're in a high bracket. A Roth IRA gives tax-free income in retirement — great if you're younger or lower income. Rule of thumb: get the full 401k employer match first, then max your Roth IRA, then go back to the 401k.",key:"Always get the full employer match first. It's a 50–100% instant return."},
@@ -115,16 +117,16 @@ const CC = {
       {emoji:"🆘",title:"The emergency fund rule",body:"Medical emergencies are the #1 cause of bankruptcy in America. A $1,000 cushion in a high-yield savings account (4–5% APY) breaks the cycle of borrowing.",key:"Keep your emergency fund in a high-yield savings account."},
     ],
     retirementAccounts:[
-      {id:"401k",name:"401(k)",fullName:"Employer Retirement Plan",icon:"🏦",color:"#2E8B2E",annualLimit:"$23,000/yr ($30,500 if 50+)",taxNote:"Traditional: contributions pre-tax, withdrawals taxed. Roth 401k: after-tax contributions, tax-free withdrawals.",tip:"Always contribute enough to get the full employer match — it's free money."},
-      {id:"roth",name:"Roth IRA",fullName:"Individual Retirement Account",icon:"🛡️",color:"#2FADA6",annualLimit:"$7,000/yr ($8,000 if 50+). Phaseout at $146k+",taxNote:"After-tax contributions. All growth and qualified withdrawals 100% tax-free.",tip:"Open early — the tax-free compounding over decades is massive. Use Fidelity or Vanguard."},
-      {id:"hsa",name:"HSA",fullName:"Health Savings Account",icon:"🏥",color:"#CFA03E",annualLimit:"$4,150 single / $8,300 family (2024)",taxNote:"Triple tax advantage: pre-tax in, tax-free growth, tax-free for medical expenses.",tip:"After 65, HSA funds can be used for anything (taxed like a 401k). Best account in the US tax code."},
-      {id:"529",name:"529 Plan",fullName:"Education Savings Account",icon:"🎓",color:"#8A5FC8",annualLimit:"No annual limit. $18k/yr gift tax exclusion.",taxNote:"State deduction varies. Federal tax-free growth and withdrawals for education.",tip:"Start when kids are young. Some states give immediate tax deductions."},
+      {id:"401k",name:"401(k)",fullName:"Employer Retirement Plan",icon:"🏦",color:"#2E8B2E",annualLimit:"$23,500/yr (2025; $31,000 if 50+)",taxNote:"Traditional: contributions pre-tax, withdrawals taxed. Roth 401k: after-tax contributions, tax-free withdrawals.",tip:"Always contribute enough to get the full employer match — it's free money."},
+      {id:"roth",name:"Roth IRA",fullName:"Individual Retirement Account",icon:"🛡️",color:"#2FADA6",annualLimit:"$7,000/yr ($8,000 if 50+). Phaseout at $150k single/$236k MFJ (2025)",taxNote:"After-tax contributions. All growth and qualified withdrawals 100% tax-free.",tip:"Open early — the tax-free compounding over decades is massive. Use Fidelity or Vanguard."},
+      {id:"hsa",name:"HSA",fullName:"Health Savings Account",icon:"🏥",color:"#CFA03E",annualLimit:"$4,300 single / $8,550 family (2025)",taxNote:"Triple tax advantage: pre-tax in, tax-free growth, tax-free for medical expenses.",tip:"After 65, HSA funds can be used for anything (taxed like a 401k). Best account in the US tax code."},
+      {id:"529",name:"529 Plan",fullName:"Education Savings Account",icon:"🎓",color:"#8A5FC8",annualLimit:"No annual limit. $19,000/yr gift tax exclusion (2025).",taxNote:"State deduction varies. Federal tax-free growth and withdrawals for education.",tip:"Start when kids are young. Some states give immediate tax deductions."},
     ],
     benefitsChecker:[
-      {name:"Earned Income Tax Credit",icon:"💰",eligible:"Working, under ~$63k",amount:"Up to $7,430",apply:"File taxes (IRS Free File)",url:"https://irs.gov/eitc"},
-      {name:"SNAP (Food Stamps)",icon:"🛒",eligible:"Low income households",amount:"$291/mo average",apply:"Benefits.gov",url:"https://benefits.gov"},
+      {name:"Earned Income Tax Credit",icon:"💰",eligible:"Working, under $61,555 (single) / $68,675 (MFJ)",amount:"Up to $8,046 (2025, 3+ children)",apply:"File taxes (IRS Free File)",url:"https://irs.gov/eitc"},
+      {name:"SNAP (Food Stamps)",icon:"🛒",eligible:"Low income households",amount:"~$191/mo per person (USDA FY2025)",apply:"Benefits.gov",url:"https://benefits.gov"},
       {name:"Medicaid / CHIP",icon:"🏥",eligible:"Low-income adults and children",amount:"Free/low-cost healthcare",apply:"Healthcare.gov",url:"https://healthcare.gov"},
-      {name:"Child Tax Credit",icon:"👶",eligible:"Children under 17",amount:"Up to $2,000/child",apply:"File taxes",url:"https://irs.gov/ctc"},
+      {name:"Child Tax Credit",icon:"👶",eligible:"Children under 17",amount:"Up to $2,200/child (2025)",apply:"File taxes",url:"https://irs.gov/ctc"},
       {name:"LIHEAP Energy Assistance",icon:"⚡",eligible:"Low income, utility hardship",amount:"Varies by state",apply:"Benefits.gov",url:"https://benefits.gov"},
       {name:"WIC Program",icon:"🍼",eligible:"Pregnant/postpartum, children under 5",amount:"Food + support",apply:"Local health dept",url:"https://wic.fns.usda.gov"},
     ],
@@ -141,15 +143,19 @@ const CC = {
 function getPersonalizedTaxCredits(profile) {
   const country   = profile?.country   || "CA";
   const province  = profile?.province  || "ON";
-  // lifeStages is now an array — support both old string format and new array format
   const rawLifeStage = profile?.lifeStages || profile?.lifeStage || "employed";
   const lifeStages = Array.isArray(rawLifeStage) ? rawLifeStage : [rawLifeStage];
-  // Helper: check if any life stage matches
   const hasStage = (...stages) => stages.some(s => lifeStages.includes(s));
-  // For backwards compat, keep lifeStage as the primary one for block-level checks
   const lifeStage = lifeStages[0] || "employed";
   const hasKids   = profile?.hasKids   || false;
   const status    = profile?.status    || "single";
+  const isHomeowner = profile?.isHomeowner || false;
+  const empType   = profile?.employmentType || "t4";
+  const isSelfEmp = empType==="selfemployed"||empType==="incorporated";
+  const birthYear = parseInt(profile?.birthYear||"0");
+  const age       = birthYear>0 ? new Date().getFullYear()-birthYear : null;
+  const isSenior  = (age&&age>=65)||hasStage("senior","retired");
+  const isStudent = hasStage("student")||empType==="student";
   const incomeTypes = (profile?.incomeTypes || []).map(t => t.toLowerCase());
   const cfg = CC[country] || CC.CA;
 
@@ -159,18 +165,18 @@ function getPersonalizedTaxCredits(profile) {
   // ── FILTER: remove tips that clearly don't apply ──────────────────────────
   tips = tips.filter(tip => {
     const t = tip.title.toLowerCase();
-    // Kids-only tips
     if ((t.includes("child") || t.includes("ccb") || t.includes("resp") || t.includes("dependent care") || t.includes("childcare") || t.includes("child care")) && !hasKids) return false;
-    // Homeowner tips — FHSA only for non-seniors/non-retired
-    if (t.includes("fhsa") && hasStage("senior", "retired")) return false;
-    // RESP only for people with kids
+    // FHSA only for non-homeowners
+    if (t.includes("fhsa") && (isHomeowner || isSenior)) return false;
+    if (t.includes("first home") && isHomeowner) return false;
     if (t.includes("resp") && !hasKids) return false;
-    // Student loan deduction only for students or recent grads
-    if (t.includes("student loan interest") && !hasStage("student", "employed")) return false;
-    // Home office — self-employed or employed (remote)
-    if (t.includes("home office") && hasStage("student") && !hasStage("employed", "selfemployed")) return false;
-    // Working income / CWB — not for retired/senior on fixed income
-    if ((t.includes("working income") || t.includes("cwb")) && hasStage("retired") && !hasStage("employed", "selfemployed")) return false;
+    if (t.includes("student loan interest") && !isStudent) return false;
+    if (t.includes("home office") && isStudent && !hasStage("employed","selfemployed") && !isSelfEmp) return false;
+    if ((t.includes("working income") || t.includes("cwb")) && isSenior && !hasStage("employed","selfemployed") && !isSelfEmp) return false;
+    // Self-employment tips — only for self-employed
+    if ((t.includes("hst") || t.includes("gst registration") || t.includes("schedule c") || t.includes("quarterly estimated") || t.includes("sep-ira") || t.includes("solo 401")) && !isSelfEmp) return false;
+    // Senior tips — only for seniors
+    if ((t.includes("age amount") || t.includes("pension income split") || t.includes("oas") || t.includes("gis") || t.includes("rmd") || t.includes("social security taxation")) && !isSenior) return false;
     return true;
   });
 
@@ -180,7 +186,7 @@ function getPersonalizedTaxCredits(profile) {
       tips.unshift(
         {title:"Tuition Tax Credit",body:"Your T2202 slip from your school lets you claim every dollar of tuition as a federal tax credit (15% federal rate). Unused amounts carry forward indefinitely — you can use them in future high-income years. Transfer up to $5,000 unused amount to a parent or spouse.",savings:"15% of tuition paid",flag:"🇨🇦",priority:"high",action:"Get Your T2202"},
         {title:"Canada Training Credit",body:"You accumulate $250/year in Canada Training Credit room (up to $5,000 lifetime). This is a refundable credit — you get money back even if you owe nothing. Claim on line 45350 of your return.",savings:"Up to $250/yr",flag:"🇨🇦",priority:"high",action:"Check CTC Room on CRA"},
-        {title:"GST/HST Credit — Students Almost Always Qualify",body:"If your income is low (most students qualify), file your taxes and CRA automatically pays you quarterly GST/HST credits. No application needed — just file. Many students skip filing because they 'don't earn much' and miss hundreds.",savings:"Up to $519/yr",flag:"🇨🇦",priority:"high",action:"File Your Taxes"},
+        {title:"GST/HST Credit — Students Almost Always Qualify",body:"If your income is low (most students qualify), file your taxes and CRA automatically pays you quarterly GST/HST credits. No application needed — just file. Many students skip filing because they 'don't earn much' and miss hundreds.",savings:"Up to $533/yr",flag:"🇨🇦",priority:"high",action:"File Your Taxes"},
         {title:"Student Loan Interest Credit",body:"Paying interest on government student loans (OSAP, NSLSC)? That interest is 100% claimable as a non-refundable federal tax credit. Private loans don't qualify — only government loans. Keep your annual interest statement.",savings:"15% of interest paid",flag:"🇨🇦",priority:"medium",action:"Get NSLSC Statement"},
         {title:"Moving Expenses Deduction",body:"If you moved more than 40km to attend school full-time, you can deduct eligible moving expenses from your scholarship or research income. Keep your receipts — this is often missed.",savings:"Varies",flag:"🇨🇦",priority:"medium",action:"Track Moving Receipts"}
       );
@@ -261,7 +267,7 @@ function getPersonalizedTaxCredits(profile) {
   // ── ADD: Province-specific credits for all users ───────────────────────────
   if (country === "CA") {
     if (province === "ON" && !tips.find(t => t.title.includes("Trillium"))) {
-      tips.push({title:"Ontario Trillium Benefit",body:"Ontario residents: combines the Ontario Sales Tax Credit, Ontario Energy Credit, and Northern Ontario Energy Credit into one monthly payment. Low-to-mid income earners often miss this.",savings:"Up to $1,421/yr",flag:"🏙️ ON",priority:"medium",action:"Apply on CRA"});
+      tips.push({title:"Ontario Trillium Benefit",body:"Ontario residents: combines the Ontario Sales Tax Credit, Ontario Energy Credit, and Northern Ontario Energy Credit into one monthly payment. Low-to-mid income earners often miss this.",savings:"Up to $1,654/yr (OEPTC+OSTC)",flag:"🏙️ ON",priority:"medium",action:"Apply on CRA"});
     }
     if (province === "QC") {
       tips.push(
@@ -3039,7 +3045,7 @@ function DashCustomize({ layout, onChange, onClose }) {
 // ─── ONBOARDING ───────────────────────────────────────────────────────────────
 function Onboarding({onComplete,onViewLegal,userId}){
   const [step,setStep]=useState(0);
-  const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false,lifeStages:["employed"]});
+  const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false,lifeStages:["employed"],birthYear:"",kids:[],isHomeowner:false,employmentType:"t4",rrspRoom:"",tfsaRoom:"",retirementRoom:""});
   const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment",isVariable:false}]);
   const [bills,setBills]=useState([{name:"",amount:"",date:""}]);
   const [debts,setDebts]=useState([{name:"",balance:"",rate:"",min:""}]);
@@ -3261,40 +3267,100 @@ function Onboarding({onComplete,onViewLegal,userId}){
     // 1: Profile
     <div>
       <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:30,color:C.cream,marginBottom:6,letterSpacing:-0.5}}>About you</div>
-      <div style={{color:C.muted,fontSize:14,marginBottom:20,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Just the basics. Everything stays on your device.</div>
+      <div style={{color:C.muted,fontSize:14,marginBottom:20,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Helps us personalise your tax advice and financial coaching.</div>
       <Inp label="First Name" value={p.name} onChange={v=>setP({...p,name:v})} placeholder="First name"/>
       <Sel label="Country" value={p.country} onChange={v=>setP({...p,country:v,province:v==="CA"?"ON":"CA"})} options={[{value:"CA",label:"🇨🇦 Canada"},{value:"US",label:"🇺🇸 United States"}]}/>
       <Sel label={p.country==="CA"?"Province":"State"} value={p.province} onChange={v=>setP({...p,province:v})}
-        options={p.country==="CA"?[{value:"ON",label:"Ontario"},{value:"BC",label:"British Columbia"},{value:"AB",label:"Alberta"},{value:"QC",label:"Quebec"},{value:"MB",label:"Manitoba"},{value:"OTHER",label:"Other"}]:[{value:"CA",label:"California"},{value:"TX",label:"Texas"},{value:"NY",label:"New York"},{value:"FL",label:"Florida"},{value:"OTHER",label:"Other"}]}/>
+        options={p.country==="CA"?[{value:"ON",label:"Ontario"},{value:"BC",label:"British Columbia"},{value:"AB",label:"Alberta"},{value:"QC",label:"Quebec"},{value:"MB",label:"Manitoba"},{value:"SK",label:"Saskatchewan"},{value:"NS",label:"Nova Scotia"},{value:"NB",label:"New Brunswick"},{value:"OTHER",label:"Other"}]:[{value:"CA",label:"California"},{value:"TX",label:"Texas"},{value:"NY",label:"New York"},{value:"FL",label:"Florida"},{value:"WA",label:"Washington"},{value:"IL",label:"Illinois"},{value:"OTHER",label:"Other"}]}/>
+
+      {/* Birth year */}
+      <Sel label="Birth Year" value={p.birthYear} onChange={v=>setP({...p,birthYear:v})}
+        options={[{value:"",label:"Select year…"},...Array.from({length:80},(_,i)=>{const y=new Date().getFullYear()-18-i;return{value:String(y),label:String(y)};})]}/>
+
       <Sel label="Relationship Status" value={p.status} onChange={v=>setP({...p,status:v})} options={[{value:"single",label:"Single"},{value:"couple",label:"Married"},{value:"cohabit",label:"Common Law"}]}/>
       {p.status!=="single"&&<Inp label="Partner's Name (optional)" value={p.partnerName} onChange={v=>setP({...p,partnerName:v})} placeholder="Partner's first name"/>}
+
+      {/* Homeowner */}
       <div style={{marginBottom:14}}>
-        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:8,fontWeight:700}}>Do you have kids?</div>
+        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:8,fontWeight:700}}>Do you own your home?</div>
         <div style={{display:"flex",gap:10}}>
-          {["Yes","No"].map(opt=><button key={opt} onClick={()=>setP({...p,hasKids:opt==="Yes"})} style={{flex:1,background:(opt==="Yes"?p.hasKids:!p.hasKids)?C.green+"33":C.cardAlt,border:`1px solid ${(opt==="Yes"?p.hasKids:!p.hasKids)?C.green:C.border}`,color:(opt==="Yes"?p.hasKids:!p.hasKids)?C.greenBright:C.muted,borderRadius:12,padding:"12px",cursor:"pointer",fontSize:14,fontWeight:700,fontFamily:"inherit"}}>{opt}</button>)}
+          {[["Yes",true],["No",false]].map(([label,val])=>(
+            <button key={label} onClick={()=>setP({...p,isHomeowner:val})}
+              style={{flex:1,background:p.isHomeowner===val?C.teal+"33":C.cardAlt,border:`1px solid ${p.isHomeowner===val?C.teal:C.border}`,color:p.isHomeowner===val?C.tealBright:C.muted,borderRadius:12,padding:"12px",cursor:"pointer",fontSize:14,fontWeight:700,fontFamily:"inherit"}}>
+              {label}
+            </button>
+          ))}
         </div>
       </div>
+
+      {/* Kids */}
       <div style={{marginBottom:14}}>
-        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:4,fontWeight:700}}>Which best describes you?</div>
-        <div style={{color:C.muted,fontSize:11,marginBottom:10}}>Select all that apply</div>
+        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:8,fontWeight:700}}>Do you have children?</div>
+        <div style={{display:"flex",gap:10,marginBottom:p.hasKids?12:0}}>
+          {["Yes","No"].map(opt=>(
+            <button key={opt} onClick={()=>setP({...p,hasKids:opt==="Yes",kids:opt==="No"?[]:p.kids})}
+              style={{flex:1,background:(opt==="Yes"?p.hasKids:!p.hasKids)?C.pink+"33":C.cardAlt,border:`1px solid ${(opt==="Yes"?p.hasKids:!p.hasKids)?C.pink:C.border}`,color:(opt==="Yes"?p.hasKids:!p.hasKids)?C.pinkBright:C.muted,borderRadius:12,padding:"12px",cursor:"pointer",fontSize:14,fontWeight:700,fontFamily:"inherit"}}>
+              {opt}
+            </button>
+          ))}
+        </div>
+        {p.hasKids&&(
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {(p.kids||[]).map((kid,i)=>(
+              <div key={i} style={{display:"flex",gap:8,alignItems:"center"}}>
+                <Inp label="" value={kid.name||""} onChange={v=>{const k=[...p.kids];k[i]={...k[i],name:v};setP({...p,kids:k});}} placeholder={`Child ${i+1} name`}/>
+                <div style={{width:110,flexShrink:0}}>
+                  <select value={kid.birthYear||""} onChange={e=>{const k=[...p.kids];k[i]={...k[i],birthYear:e.target.value};setP({...p,kids:k});}}
+                    style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 10px",color:kid.birthYear?C.cream:C.muted,fontSize:13,fontFamily:"inherit",outline:"none"}}>
+                    <option value="">Year born</option>
+                    {Array.from({length:25},(_,i)=>{const y=new Date().getFullYear()-i;return<option key={y} value={String(y)}>{y}</option>;})}
+                  </select>
+                </div>
+                <button onClick={()=>setP({...p,kids:p.kids.filter((_,j)=>j!==i)})}
+                  style={{background:"none",border:"none",color:C.muted,fontSize:18,cursor:"pointer",padding:"0 4px",flexShrink:0}}>×</button>
+              </div>
+            ))}
+            <button onClick={()=>setP({...p,kids:[...(p.kids||[]),{name:"",birthYear:""}]})}
+              style={{background:C.pink+"18",border:`1px solid ${C.pink}44`,borderRadius:10,padding:"10px",color:C.pinkBright,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              + Add child
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Employment type */}
+      <div style={{marginBottom:14}}>
+        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:8,fontWeight:700}}>Employment type</div>
         <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-          {[["💼","employed","Employed"],["🎓","student","Student"],["🧾","selfemployed","Self-Employed"],["🏛️","senior","Senior (65+)"],["🌅","retired","Retired"],["➕","other","Other"]].map(([emoji,val,label])=>{
+          {(p.country==="CA"
+            ?[["🏢","t4","T4 Employee"],["🧾","selfemployed","Self-Employed"],["🏛️","incorporated","Incorporated"],["🎓","student","Student"],["🌅","retired","Retired"]]
+            :[["🏢","w2","W-2 Employee"],["🧾","selfemployed","Self-Employed / 1099"],["🏛️","incorporated","Business Owner"],["🎓","student","Student"],["🌅","retired","Retired"]]
+          ).map(([emoji,val,label])=>(
+            <button key={val} onClick={()=>setP({...p,employmentType:val})}
+              style={{background:p.employmentType===val?C.blue+"33":C.cardAlt,border:`1px solid ${p.employmentType===val?C.blue:C.border}`,color:p.employmentType===val?C.blueBright||"#4DA8FF":C.muted,borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
+              <span>{emoji}</span>{label}
+              {p.employmentType===val&&<span style={{fontSize:10}}>✓</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Life stages */}
+      <div style={{marginBottom:14}}>
+        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:4,fontWeight:700}}>Which else applies? <span style={{fontWeight:400}}>(optional)</span></div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+          {[["🏠","homeoffice","Home Office"],["🌐","contractor","Contractor"],["💰","investor","Investor"],["➕","other","Other"]].map(([emoji,val,label])=>{
             const selected=(p.lifeStages||[]).includes(val);
-            const toggle=()=>{
-              const cur=p.lifeStages||[];
-              const next=selected?cur.filter(v=>v!==val):[...cur,val];
-              setP({...p,lifeStages:next.length>0?next:["other"]});
-            };
             return(
-              <button key={val} onClick={toggle} style={{background:selected?C.green+"33":C.cardAlt,border:`1px solid ${selected?C.green:C.border}`,color:selected?C.greenBright:C.muted,borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",display:"flex",alignItems:"center",gap:6,transition:"all .15s"}}>
-                <span style={{fontSize:15}}>{emoji}</span>
-                {label}
-                {selected&&<span style={{fontSize:10,opacity:0.8}}>✓</span>}
+              <button key={val} onClick={()=>{const cur=p.lifeStages||[];const next=selected?cur.filter(v=>v!==val):[...cur,val];setP({...p,lifeStages:next});}}
+                style={{background:selected?C.green+"33":C.cardAlt,border:`1px solid ${selected?C.green:C.border}`,color:selected?C.greenBright:C.muted,borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
+                <span>{emoji}</span>{label}{selected&&<span style={{fontSize:10}}>✓</span>}
               </button>
             );
           })}
         </div>
       </div>
+
       <Btn label="Continue →" onClick={()=>setStep(2)} disabled={!p.name}/>
     </div>,
 
@@ -8496,36 +8562,59 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
       txns.filter(t=>t.amount>0 && t.cat!=="Income")
         .reduce((acc,t)=>{acc[t.cat]=(acc[t.cat]||0)+t.amount;return acc;},{})
     ).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`${k}: $${(v||0).toFixed(0)}`).join(", ");
-
     const goals = (data.goals||[]).map(g=>`${g.name}: $${parseFloat(g.saved||0).toFixed(0)} saved of $${parseFloat(g.target||0).toFixed(0)} target${g.monthly?`, $${g.monthly}/mo contribution`:""}`).join("; ")||"none set";
     const bills = (data.bills||[]).map(b=>`${b.name} $${b.amount}/mo${b.arrears?` (arrears: $${b.arrears})`:""}` ).join("; ")||"none tracked";
     const debts = (data.debts||[]).map(d=>`${d.name} $${parseFloat(d.balance||0).toFixed(0)}${d.rate?` @ ${d.rate}%`:""}`).join("; ")||"none";
-    const ret = data.profile?.retirement||{};
+    const ret = profile.retirement||{};
     const retInfo = Object.entries(ret).filter(([,v])=>parseFloat(v)>0).map(([k,v])=>`${k}: $${v}`).join(", ")||"none entered";
+    const birthYear = parseInt(profile.birthYear||"0");
+    const age = birthYear>0 ? new Date().getFullYear()-birthYear : null;
+    const kidsArr = profile.kids||[];
+    const kidsInfo = kidsArr.length>0
+      ? kidsArr.map(k=>`${k.name||"Child"} (born ${k.birthYear||"?"}, age ${k.birthYear?new Date().getFullYear()-parseInt(k.birthYear):"?"})`).join(", ")
+      : profile.hasKids?"yes (ages unknown)":"none";
+    const empType = profile.employmentType||"employed";
+    const empLabel = {t4:"T4 Employee",w2:"W-2 Employee",selfemployed:"Self-Employed",incorporated:"Incorporated Business Owner",student:"Student",retired:"Retired"}[empType]||empType;
+    const isSelfEmp = empType==="selfemployed"||empType==="incorporated";
     return `You are a warm, expert personal finance coach for Flourish Money (${country==="CA"?"Canada":"USA"}).
-User financial snapshot:
-- Chequing balance: $${(balance||0).toFixed(2)}
-- Biweekly income: $${(income||0).toFixed(2)}
-- Recent spending total: $${(spending||0).toFixed(2)}
-- Top spending categories: ${topCats||"no data"}
+
+User profile:
+- Name: ${profile.name||"User"} | Age: ${age?`${age} (born ${birthYear})`:"not provided"}
+- Location: ${country==="CA"?"Canada":"United States"} — ${profile.province||"unknown"}
+- Status: ${profile.status||"single"}${profile.partnerName?` (partner: ${profile.partnerName})`:""}
+- Employment: ${empLabel} | Homeowner: ${profile.isHomeowner?"Yes":"No"}
+- Children: ${kidsInfo}
+
+Financial snapshot:
+- Balance: $${(balance||0).toFixed(2)} | Income (biweekly): $${(income||0).toFixed(2)}
+- Recent spending: $${(spending||0).toFixed(2)} | Top categories: ${topCats||"no data"}
 - Accounts: ${accounts.map(a=>`${a.name} (${a.type}) $${a.balance}`).join("; ")||"none linked"}
 - Bills: ${bills}
 - Debts: ${debts}
 - Savings goals: ${goals}
-- Retirement accounts: ${retInfo}
-- Country: ${country}
+- Retirement accounts: ${retInfo}${profile.rrspRoom?`
+- RRSP room: $${profile.rrspRoom}`:""}${profile.tfsaRoom?`
+- TFSA room: $${profile.tfsaRoom}`:""}
 
-When the user discusses or agrees to a goal, contribution amount, or financial plan, end your reply with a JSON block on its own line so the app can auto-update:
-FLOURISH_UPDATE:{"action":"update_goal","name":"<goal name>","target":<number>,"saved":<number>,"monthly":<number>}
-Or to add a new goal:
-FLOURISH_UPDATE:{"action":"add_goal","name":"<name>","target":<number>,"saved":<number>,"monthly":<number>}
-Only include this block when the user has explicitly agreed to a specific number or plan.
+Tax & advice context (use these to give accurate, personalised advice):
+${country==="CA"?`- Employment: ${isSelfEmp?"SELF-EMPLOYED — mention HST/GST ($30k threshold), quarterly installments, home office, business deductions, CRA My Account":"T4 EMPLOYEE — standard employment deductions, RRSP, union dues, home office if remote"}
+- ${age&&age>=65?"SENIOR 65+: Age Amount credit, pension income splitting (Form T1032), OAS ($727/mo), GIS if low income, medical expense credit, RRIF withdrawals":""}
+- ${age&&age<71?"RRSP contribution room matters — deadline to convert is age 71":"age 71+: RRIF required, minimum withdrawals apply"}
+- ${!profile.isHomeowner&&(!age||age<40)?"FIRST-TIME BUYER ELIGIBLE: FHSA ($8,000/yr deductible, tax-free growth), HBP (borrow up to $60k from RRSP — limit raised in Budget 2024), First Home Buyers Tax Credit ($1,500)":""}
+- ${profile.hasKids?`PARENT: CCB (2025: $7,997/yr under-6, $6,748/yr ages 6–17 — tax-free, income-tested), RESP+CESG (government adds 20% on first $2,500/yr = $500 free/child/yr), childcare deduction (lower-income spouse claims), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?"college-age child: consider RESP withdrawal strategy":""}`:""}
+- Province ${profile.province||"ON"}: apply correct provincial tax rates and credits`:
+`- Employment: ${isSelfEmp?"SELF-EMPLOYED — quarterly estimated taxes, Schedule C, SE tax deduction (50% of SE tax), home office Form 8829, retirement via SEP-IRA or Solo 401k":"W-2 EMPLOYEE — check withholding accuracy, max employer 401k match first"}
+- ${age&&age>=65?"SENIOR 65+: Social Security taxation (up to 85% taxable), RMDs start at 73, higher standard deduction ($1,950 extra single), OBBBA NEW $6,000 senior bonus deduction (2025–2028, phases out at $75k MAGI), QCD from IRA up to $108,000 (2025 indexed limit)":""}
+- ${age&&age>=73?"RMDs ARE REQUIRED — penalty is 25% of missed amount. Calculate and plan withdrawals carefully":""}
+- ${!profile.isHomeowner&&(!age||age<40)?"FIRST-TIME BUYER: mortgage interest deduction, property tax deduction, $10k IRA penalty-free withdrawal, check state programs":""}
+- ${profile.hasKids?`PARENT: Child Tax Credit ($2,200/child under 17 — OBBBA 2025), Dependent Care FSA ($5,000 pre-tax for 2025; rises to $7,500 for 2026 per OBBBA), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?"AOTC for college ($2,500/yr, 40% refundable)":""}`:""}
+- State ${profile.province||"unknown"}: ${profile.province==="TX"||profile.province==="FL"||profile.province==="WA"?"NO state income tax — higher effective savings rate possible":"state income tax applies — factor into net income calculations"}`}
 
-Keep responses concise (3-5 sentences max), practical, and friendly. Use $ amounts when relevant. Never be preachy.
-CRITICAL RULES:
-- The balances and transactions shown are live from the user's bank via Plaid. NEVER suggest the data might be wrong, outdated, or inaccurate. NEVER recommend the user check their bank app instead — Flourish IS their financial view.
-- If a user says their balance looks wrong, acknowledge it and suggest they refresh their connection in Settings, but never imply Flourish's data is unreliable.
-- Never mention Plaid by name to users.`;
+When user agrees to a specific goal or plan: FLOURISH_UPDATE:{"action":"update_goal","name":"<n>","target":<n>,"saved":<n>,"monthly":<n>}
+To add new goal: FLOURISH_UPDATE:{"action":"add_goal","name":"<n>","target":<n>,"saved":<n>,"monthly":<n>}
+
+Keep responses concise (3-5 sentences), practical, warm. Use $ amounts. Never be preachy.
+CRITICAL: Balances are live. NEVER tell user to check their bank app — Flourish IS their financial view. Never mention Plaid.`;
   };
 
   const send = async ()=>{
