@@ -73,7 +73,7 @@ const CC = {
     ],
     creditBureaus:["Equifax (Borrowell — free)","TransUnion (Credit Karma — free)"],
     emergencyMonths:3,
-  healthcareNote:"In Canada, your emergency fund is for income disruption — job loss, car breakdown, or unexpected home repairs. Aim for 3 months of expenses.",
+    healthcareNote:"Healthcare is covered — emergency fund is for income disruption, not medical bills.",
   },
   US:{
     currency:"USD", symbol:"$", flag:"🇺🇸", name:"United States",
@@ -417,10 +417,8 @@ async function callPlaid(action, params={}) {
 // Plaid Personal Finance Category (PFC) primary values → Flourish display meta
 // Shared keyword list for detecting credit card payments in transactions.
 // Used by income detection, spending calc, and transparency panel — single source of truth.
-// IMPORTANT: These must be COMPOUND phrases only — single words like "payment", "visa", "amex"
-// are too broad and will hide legitimate transactions (Bell Canada Payment, VISA DEBIT PURCHASE, etc.)
-// Real CC payments are already caught by their Transfer category in EXCLUDE_CATS.
-// These keywords are a safety net for CC settlements that arrive with non-Transfer categories.
+// Compound phrases only — single words like "payment","visa","amex" are too broad
+// Real CC payments are caught by Transfer category. These catch non-Transfer settlements.
 const CC_PAYMENT_KEYWORDS = [
   "credit card payment",
   "card payment",
@@ -433,17 +431,16 @@ const CC_PAYMENT_KEYWORDS = [
   "credit card autopay",
 ];
 
-// Canadian and US bank online-payment transaction names that represent CC settlements.
-// These arrive from Plaid as "Bills" or "Payment" category rather than "Transfer",
-// so isCCPayment needs to catch them by name.
+// Canadian/US bank online payment names — catch BNS SCOTIAONLINE etc.
+// NOT "bill payment" — too broad, catches Enbridge/Hydro One
 const CC_INSTITUTION_PATTERNS = [
-  "scotiaonline",     // BNS SCOTIAONLINE/TELES
-  "mb-credit card",  // Customer Transfer Dr. MB-CREDIT CARD/LOC PAY.
-  "credit card/loc", // LOC credit card payment
-  "mb-visa",         // Bill Payment MB-VISA ****
-  "mb-mastercard",   // Bill Payment MB-MASTERCARD ****
-  "mb-amex",         // Bill Payment MB-AMEX ****
-  "online bill pay", // generic — NOT "bill payment" (too broad, catches Enbridge/Hydro One)
+  "scotiaonline",
+  "mb-credit card",
+  "credit card/loc",
+  "mb-visa",
+  "mb-mastercard",
+  "mb-amex",
+  "online bill pay",
   "web payment",
   "telephone banking",
 ];
@@ -469,13 +466,12 @@ function isCCPayment(txn, debts=[]) {
   const cat  = (txn.cat  || "").toUpperCase();
   // Compound keyword match (safe — no broad single words)
   if(CC_PAYMENT_KEYWORDS.some(kw => name.includes(kw))) return true;
-  // Institution-specific online banking payment names (catch BNS SCOTIAONLINE etc.)
+  // Institution-specific online banking payment names
   if(CC_INSTITUTION_PATTERNS.some(p => name.includes(p))) return true;
-  // CC network name in payment context — catches "Bill Payment MB-RBC ROYAL BANK MASTERCARD"
-  // Safe: requires BOTH a CC network word AND a payment verb — won't catch "Esso Visa" or "Amex Cobalt"
+  // CC network name + payment verb — catches "MB-RBC ROYAL BANK MASTERCARD"
   if((name.includes("mastercard") || name.includes("amex") || name.includes("visa")) &&
      (name.includes("payment") || name.includes("/loc pay") || name.includes("credit card"))) return true;
-  // Transfer category from Plaid + debt amount match
+  // Transfer category + debt amount match (specific, not broad)
   if(cat === "TRANSFER" || cat.includes("TRANSFER")) {
     if(debts.length > 0) {
       const matchesDet = debts.some(d => {
@@ -486,20 +482,14 @@ function isCCPayment(txn, debts=[]) {
       });
       if(matchesDet) return true;
     }
-    // NOTE: "round amount = CC payment" heuristic removed — too aggressive.
-    // The $1700 mortgage paid via e-transfer was being incorrectly hidden.
-    // Real CC payments are caught by keywords/institution patterns above.
+    // NOTE: round-amount heuristic removed — too aggressive, hid mortgage payments
   }
   return false;
 }
 
-// Detects cash advances from a credit card — money pulled from the card into a bank account.
-// These are money-IN transactions (negative amount) with cash advance indicators.
-// Cash advances carry high fees (2-5%) + immediate interest — user should be warned.
 function isCashAdvance(txn) {
-  if(!txn) return false;
+  if(!txn) return false; // both directions — CC charge and bank transfer
   const name = (txn.name || "").toLowerCase();
-  // Flag both directions: the bank-side incoming transfer AND the credit card charge
   return name.includes("cash advance") ||
          name.includes("cash adv") ||
          name.includes("atm advance") ||
@@ -645,7 +635,7 @@ function detectRecurringBills(txns) {
   if (!txns || txns.length === 0) return [];
 
   // Categories that indicate a bill (not groceries, dining, etc.)
-  const BILL_DETECT_CATS = new Set([
+  const BILL_CATS = new Set([
     "Utilities","Bills","Services","Health","Education","Home",
     "Gas & Transport","Entertainment","Shopping",
   ]);
@@ -684,7 +674,7 @@ function detectRecurringBills(txns) {
     if (txList.length < 2) return;
 
     // Check if it's a bill category OR matches a bill keyword
-    const isBillCat     = txList.some(t => BILL_DETECT_CATS.has(t.cat));
+    const isBillCat     = txList.some(t => BILL_CATS.has(t.cat));
     const isBillKeyword = BILL_KEYWORDS.some(kw => key.includes(kw));
     if (!isBillCat && !isBillKeyword) return;
 
@@ -2399,27 +2389,14 @@ const FinancialCalcEngine = {
     return monthlyIncome > 0 ? totalDebt / (monthlyIncome * 12) : 0;
   },
 
-  /** Emergency fund months = EF goal saved amount (if designated) / monthly expenses.
-   *  If no EF goal exists, falls back to savings account balance (not checking — that's
-   *  daily operating money, not a reserve). This prevents inflating EF coverage by
-   *  counting money that isn't actually set aside for emergencies. */
+  /** Emergency fund months = liquid savings / monthly expenses */
   emergencyFundMonths(data) {
-    const { totalExpenses } = FinancialCalcEngine.cashFlow(data);
-    if(totalExpenses <= 0) return 0;
-    // Priority 1: Use designated Emergency Fund goal if user has set one up
-    const efGoal = (data.goals||[]).find(g =>
-      g.type === "emergency" ||
-      (g.name||"").toLowerCase().includes("emergency")
-    );
-    if(efGoal && parseFloat(efGoal.saved||efGoal.current||0) > 0) {
-      return parseFloat(efGoal.saved||efGoal.current||0) / totalExpenses;
-    }
-    // Priority 2: Fall back to savings accounts only (not checking — that's daily money)
     const accounts = data.accounts || [];
+    const { totalExpenses } = FinancialCalcEngine.cashFlow(data);
     const liquidSavings = accounts
-      .filter(a => ["savings","depository"].includes(a.type))
-      .reduce((s,a) => s + Math.max(0, parseFloat(a.balance||0)), 0) || 0;
-    return liquidSavings / totalExpenses;
+      .filter(a => ["savings","checking","depository"].includes(a.type))
+      .reduce((s,a) => s + parseFloat(a.balance||0), 0) || 0;
+    return totalExpenses > 0 ? liquidSavings / totalExpenses : 0;
   },
 
   /** Average daily spend from transaction history */
@@ -3074,14 +3051,20 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
 
 // ─── DASHBOARD TILE REGISTRY ──────────────────────────────────────────────────
 const DASH_TILES = [
-  { id: 'networth',    label: 'Net Worth Trend',    icon: '📈' },
-  { id: 'decision',   label: 'Decision Engine',     icon: '🧠' },
-  { id: 'autopilot',  label: 'Autopilot',           icon: '✈️' },
-  { id: 'forecast',   label: 'Cash Flow Forecast',  icon: '📅' },
-  { id: 'opportunity',label: 'Opportunities',       icon: '💡' },
-  { id: 'health',     label: 'Health Score',        icon: '💚' },
-  { id: 'credit',     label: 'Credit Score',        icon: '💳' },
-  { id: 'quicknav',   label: 'Quick Navigation',    icon: '⚡' },
+  // Core sections — always on dashboard, user can hide or reorder
+  { id: 'hero',        label: 'Safe-to-Spend',       icon: '💰', alwaysVisible: true },
+  { id: 'bento',       label: 'Stats Row',            icon: '📊' },
+  { id: 'healthrow',   label: 'Health & Streak',      icon: '💚' },
+  { id: 'action',      label: 'Action Alert',         icon: '⚡' },
+  // Extended tiles
+  { id: 'networth',    label: 'Net Worth Trend',      icon: '📈' },
+  { id: 'forecast',    label: 'Cash Flow Forecast',   icon: '📅' },
+  { id: 'decision',    label: 'Decision Engine',      icon: '🧠' },
+  { id: 'autopilot',   label: 'Autopilot',            icon: '✈️'  },
+  { id: 'opportunity', label: 'Opportunities',        icon: '💡' },
+  { id: 'health',      label: 'Health Score Detail',  icon: '🏥' },
+  { id: 'credit',      label: 'Credit Score',         icon: '💳' },
+  { id: 'quicknav',    label: 'Quick Navigation',     icon: '⚡' },
 ];
 
 // ─── STATEMENT PARSING HELPERS ────────────────────────────────────────────────
@@ -3166,7 +3149,11 @@ function DashCustomize({ layout, onChange, onClose }) {
   const [dragOver, setDragOver] = useState(null);
 
   const save = () => { onChange(items); onClose(); };
-  const toggle = (id) => setItems(prev => prev.map(t => t.id===id ? {...t, visible:!t.visible} : t));
+  const toggle = (id) => {
+    const tile = DASH_TILES.find(t=>t.id===id);
+    if(tile?.alwaysVisible) return;
+    setItems(prev => prev.map(t => t.id===id ? {...t, visible:!t.visible} : t));
+  };
   const toggleLock = (id) => setItems(prev => prev.map(t => t.id===id ? {...t, locked:!t.locked} : t));
   const onDragStart = (id) => setDragging(id);
   const onDragEnter = (id) => {
@@ -3212,7 +3199,8 @@ function DashCustomize({ layout, onChange, onClose }) {
                 cursor:tile.locked?'default':'grab',transition:'all .15s',opacity:tile.visible?1:0.5}}>
               <span style={{fontSize:18,cursor:tile.locked?'default':'grab',color:tile.locked?C.gold:C.muted,userSelect:'none'}}>{tile.locked?'📌':'☰'}</span>
               <span style={{fontSize:20}}>{m.icon}</span>
-              <div style={{flex:1,color:C.cream,fontWeight:600,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{m.label}</div>
+              <div style={{flex:1,color:C.cream,fontWeight:600,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+              {m.label}{m.alwaysVisible&&<span style={{color:C.gold,fontSize:10,marginLeft:6,fontWeight:700}}>always on</span>}</div>
               <div style={{display:'flex',gap:8,alignItems:'center'}}>
                 <button onClick={()=>toggleLock(tile.id)} title={tile.locked?"Unlock":"Lock position"}
                   style={{background:tile.locked?C.gold+'22':'transparent',border:`1px solid ${tile.locked?C.gold+'55':C.border}`,borderRadius:10,width:44,height:44,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>
@@ -5729,7 +5717,7 @@ function IncomeDetectionBanner({transactions, incomes, setAppData}){
   );
 }
 
-function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetBudget, isBillCat, bills=[]}){
+function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetBudget}){
   const [open, setOpen] = useState(false);
   const [editBudget, setEditBudget] = useState(false);
   const [budgetVal, setBudgetVal] = useState(budget ? String(budget) : "");
@@ -5740,8 +5728,6 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
   const pct = totalSpent > 0 ? Math.round(amt/totalSpent*100) : 0;
   const budgetPct = budget > 0 ? Math.min(100, Math.round((amt/budget)*100)) : null;
   const overBudget = budget > 0 && amt > budget;
-  // Always use getCatDisplay so icon/color update immediately after recategorization
-  const { emoji: catEmoji } = getCatDisplay(cat);
 
   const saveBudget = () => {
     const v = parseFloat(budgetVal);
@@ -5753,7 +5739,7 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
     <Card style={{cursor:"pointer"}} onClick={()=>!editBudget&&handleToggle()}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <span style={{color:C.cream,fontSize:14,display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:20}}>{catEmoji}</span>{cat}
+          <span style={{fontSize:20}}>{catTxns[0]?.icon||"💰"}</span>{cat}
         </span>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{color:overBudget?C.red:color,fontWeight:700}}>${(amt||0).toFixed(0)}
@@ -5784,30 +5770,26 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
               <div style={{color:C.muted,fontSize:10,marginTop:2,lineHeight:1.5}}>Transactions marked ✓ match your tracked bills. Your tracked bills power the forecast — this list shows what was actually paid.</div>
             </div>
           )}
-          {/* Budget / bill tracking */}
+          {/* Budget setter */}
           <div style={{marginBottom:10,padding:"8px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
-          {isBillCat ? (
-            <div style={{color:C.tealBright,fontSize:11,fontWeight:600,display:"flex",alignItems:"center",gap:5}}>
-              📌 Tracked as a bill — manage in Budget → Fixed Commitments
-            </div>
-          ) : editBudget ? (
-            <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <span style={{color:C.muted,fontSize:12,flexShrink:0}}>Monthly budget:</span>
-              <div style={{display:"flex",alignItems:"center",flex:1,background:C.card,border:`1px solid ${color}`,borderRadius:8,overflow:"hidden"}}>
-                <span style={{color:C.muted,padding:"0 6px",fontSize:12}}>$</span>
-                <input value={budgetVal} onChange={e=>setBudgetVal(e.target.value)} type="number" placeholder="0"
-                  autoFocus onKeyDown={e=>e.key==="Enter"&&saveBudget()}
-                  style={{flex:1,background:"none",border:"none",padding:"6px 4px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+            {editBudget ? (
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <span style={{color:C.muted,fontSize:12,flexShrink:0}}>Monthly budget:</span>
+                <div style={{display:"flex",alignItems:"center",flex:1,background:C.card,border:`1px solid ${color}`,borderRadius:8,overflow:"hidden"}}>
+                  <span style={{color:C.muted,padding:"0 6px",fontSize:12}}>$</span>
+                  <input value={budgetVal} onChange={e=>setBudgetVal(e.target.value)} type="number" placeholder="0"
+                    autoFocus onKeyDown={e=>e.key==="Enter"&&saveBudget()}
+                    style={{flex:1,background:"none",border:"none",padding:"6px 4px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+                </div>
+                <button onClick={saveBudget} style={{background:color,border:"none",borderRadius:8,padding:"6px 10px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✓</button>
+                <button onClick={()=>setEditBudget(false)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 8px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✕</button>
               </div>
-              <button onClick={saveBudget} style={{background:color,border:"none",borderRadius:8,padding:"6px 10px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Save</button>
-              <button onClick={()=>setEditBudget(false)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 8px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>✕</button>
-            </div>
-          ) : (
-            <button onClick={e=>{e.stopPropagation();setBudgetVal(budget?String(budget):"");setEditBudget(true);}}
-              style={{background:"none",border:"none",color:budget?color:C.muted,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",padding:0,textAlign:"left"}}>
-              {budget ? `📊 Budget: $${budget}/mo — tap to edit` : "＋ Set monthly budget for this category"}
-            </button>
-          )}
+            ) : (
+              <button onClick={e=>{e.stopPropagation();setBudgetVal(budget?String(budget):"");setEditBudget(true);}}
+                style={{background:"none",border:"none",color:budget?color:C.muted,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",padding:0}}>
+                {budget ? `📊 Budget: $${budget}/mo — tap to edit` : "＋ Set monthly budget for this category"}
+              </button>
+            )}
           </div>
           {/* Transaction list */}
           {catTxns.length===0
@@ -5818,6 +5800,7 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
               const hiddenCount = sorted.length - TXN_LIMIT;
               return (<>
                 {visible.map((t,j)=>{
+                  const bills = window.__flourishBills||[];
                   const linkedBill = bills.find(b=>Math.abs(parseFloat(b.amount||0)-t.amount)<5);
                   return (
                     <div key={j} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:j<visible.length-1?`1px solid ${C.border}`:"none"}}>
@@ -5896,21 +5879,14 @@ function generateBudgetSuggestions(data) {
   const savingsRate = netMo < 2500 ? 0.10 : netMo < 5000 ? 0.15 : 0.20;
   const savingsMo   = Math.round(netMo * savingsRate);
 
-  // ── Goal & sinking fund savings ──────────────────────────────────────────────
-  // Sinking funds and aspirational goals both reserve monthly savings,
-  // but we track them separately so the budget strip can display them distinctly.
-  const activeGoals = (data.goals||[]).filter(g=>parseFloat(g.target||0)>parseFloat(g.saved||0));
-  const sinkingMo = activeGoals
-    .filter(g => g.type==="sinking")
-    .reduce((s,g)=>{ const mo=parseFloat(g.monthly||0); return s+(mo>0?mo:0); },0);
-  const aspirationalGoalsMo = activeGoals
-    .filter(g => g.type!=="sinking" && g.type!=="emergency")
+  // ── Goal savings ─────────────────────────────────────────────────────
+  const goalsMo   = (data.goals||[])
+    .filter(g=>parseFloat(g.target||0)>parseFloat(g.saved||0))
     .reduce((s,g)=>{
       const remaining = parseFloat(g.target||0)-parseFloat(g.saved||0);
       const mo = parseFloat(g.monthly||0);
       return s+(mo>0?mo:remaining>0?Math.ceil(remaining/24):0);
     },0);
-  const goalsMo = sinkingMo + aspirationalGoalsMo;
 
   // ── Discretionary pool ──────────────────────────────────────────────
   const discret   = Math.max(0, netMo - fixedMo - savingsMo - goalsMo);
@@ -5980,7 +5956,7 @@ function generateBudgetSuggestions(data) {
 
   return {
     suggestions, netMo, grossMo, fixedMo, billsMo, debtsMo,
-    savingsMo, savingsRate, goalsMo, sinkingMo, aspirationalGoalsMo, discret, wantsPool,
+    savingsMo, savingsRate, goalsMo, discret, wantsPool,
     hSize, numKids, hasPartner, totalSugg, canAfford, shortfall, cutSuggestions
   };
 }
@@ -6271,9 +6247,7 @@ function SpendScreen({data, setAppData, setScreen}){
   const [billForm,setBillForm]=useState({name:"",amount:"",date:"1",type:"fixed",category:"Bills"});
   const [arrearsPayTxn,setArrearsPayTxn]=useState(null);
   const [applyAllPrompt, setApplyAllPrompt] = useState(null);
-
-  const [billAutoFlagToast, setBillAutoFlagToast] = useState(null);
-  const [sinkingAllocTxn, setSinkingAllocTxn] = useState(null);
+  const [showAllBdCats, setShowAllBdCats] = useState(false);
 
   // ── NON-HOOK DERIVED VALUES (after all hooks) ──────────────────────────────
   const isDemo=!data.bankConnected;
@@ -6391,96 +6365,13 @@ function SpendScreen({data, setAppData, setScreen}){
   const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCCPayment(t,data.debts||[])).reduce((a,t)=>a+t.amount,0);
   const totalIn=acctFiltered.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
 
-  // ── RUTHLESS SMART CUTS ENGINE ──────────────────────────────────────────────
-  // Driven entirely by real transaction data — no hardcoded generic tips.
-  // Algorithm:
-  //   1. Compute last-3-months average per category (from full txns history)
-  //   2. Get this month's spend per category
-  //   3. Rank by (a) absolute dollar amount and (b) spike vs 3mo average
-  //   4. For each cut: show exact $, annualised saving, debt payoff framing
-  //   5. Only surface cuts ≥ $30/mo saving potential
-  const SKIP_CATS = new Set([...NON_SPEND_CATS, ...BILL_CATS]);
-  const _getCatCuts = (t) => catOverrides[t.id] || t.cat;
-
-  // 3-month average per category (previous 3 calendar months, not current)
-  const _3moAvg = (() => {
-    const now3 = new Date();
-    const cutoff = new Date(now3.getFullYear(), now3.getMonth() - 3, 1);
-    const end3mo = new Date(now3.getFullYear(), now3.getMonth(), 1);
-    const hist = txns.filter(t => {
-      if(!t.date || t.amount <= 0) return false;
-      const d = new Date(t.date + 'T12:00:00');
-      return d >= cutoff && d < end3mo && !SKIP_CATS.has(_getCatCuts(t)) && !isCCPayment(t, data.debts||[]);
-    });
-    const byCat3 = {};
-    hist.forEach(t => { const c=_getCatCuts(t); byCat3[c]=(byCat3[c]||0)+t.amount; });
-    // Divide by 3 for monthly average
-    return Object.fromEntries(Object.entries(byCat3).map(([c,v])=>[c, v/3]));
-  })();
-
-  // This month's spend per category (already in stats.byCat)
-  const _thisMoByCat = stats.byCat || {};
-
-  // Monthly income for context framing
-  const _moInc = FinancialCalcEngine.cashFlow(data).monthlyIncome || 0;
-
-  // Total debt for payoff framing
-  const _totalDebt = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.balance||0),0);
-  const _topDebt = (data.debts||[]).sort((a,b)=>parseFloat(b.balance||0)-parseFloat(a.balance||0))[0];
-  const _topDebtRate = _topDebt ? parseFloat(_topDebt.rate||0) : 19.99;
-
-  // For each category: compute potential saving as min(50% of spend, spike above avg)
-  const _catCuts = Object.entries(_thisMoByCat)
-    .filter(([cat, amt]) => !SKIP_CATS.has(cat) && amt >= 30)
-    .map(([cat, amt]) => {
-      const avg3 = _3moAvg[cat] || 0;
-      const spike = avg3 > 0 ? amt - avg3 : 0;
-      // Saving = if spiking: bring back to avg; else suggest 30% reduction
-      const suggestedSaving = spike > 15 ? Math.round(spike) : Math.round(amt * 0.30);
-      const annualSaving = suggestedSaving * 12;
-      // Debt payoff framing: months saved at this card rate
-      const debtMonthsSaved = _totalDebt > 0 && suggestedSaving > 0
-        ? Math.round(_totalDebt / suggestedSaving * (_topDebtRate/100/12) * 12) 
-        : 0;
-      // Income % framing
-      const pctOfIncome = _moInc > 0 ? Math.round(amt / _moInc * 100) : 0;
-      return { cat, amt, avg3, spike, suggestedSaving, annualSaving, debtMonthsSaved, pctOfIncome };
-    })
-    .filter(c => c.suggestedSaving >= 30)
-    .sort((a,b) => b.suggestedSaving - a.suggestedSaving)
-    .slice(0, 6);
-
-  // Icon map for categories
-  const _cutIcon = {
-    'Coffee & Dining':'coffee','Shopping':'bag','Entertainment':'film',
-    'Groceries':'shoppingCart','Subscriptions':'zap','Gas & Transport':'car',
-    'Health':'heart','Personal Care':'star','Travel':'map','Home':'home',
-    'Education':'book','Clothing':'shirt','Other':'chartUp',
-  };
-
-  // Build cut cards from real data
-  const cuts = _catCuts.map((c, idx) => {
-    const icon = _cutIcon[c.cat] || 'chartUp';
-    const isSpike = c.spike > 15 && c.avg3 > 0;
-    const avgStr = c.avg3 > 0 ? `$${Math.round(c.avg3)}/mo avg` : null;
-    const spikeStr = isSpike ? ` — up $${Math.round(c.spike)} vs your usual` : '';
-    const debtLine = c.debtMonthsSaved > 0 && _topDebt
-      ? ` Redirect this to your ${_topDebt.name} and pay it off ~${c.debtMonthsSaved} month${c.debtMonthsSaved===1?'':'s'} sooner.`
-      : '';
-    const incomeLine = c.pctOfIncome >= 8 ? ` That's ${c.pctOfIncome}% of your monthly take-home.` : '';
-    const body = `$${Math.round(c.amt)} this month${avgStr ? ` (${avgStr}${spikeStr})` : ''}.${incomeLine} Cutting to $${Math.round(c.amt - c.suggestedSaving)}/mo saves $${c.suggestedSaving}/mo — $${c.annualSaving.toLocaleString()} a year.${debtLine}`;
-    return {
-      id: idx + 10,
-      icon,
-      title: isSpike
-        ? `${c.cat} spiked this month`
-        : `${c.cat} is your #${idx+1} spend`,
-      body,
-      saving: `$${c.suggestedSaving}/mo`,
-      effort: c.suggestedSaving > 100 ? 'High impact' : c.suggestedSaving > 50 ? 'Medium' : 'Easy win',
-      color: isSpike ? C.red : C.orange,
-    };
-  }).filter(s => !dismissed.includes(s.id));
+  const cuts=[
+    stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee is adding up",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month totalling $${stats.coffee.toFixed(2)}. That's $${(stats.coffee*12).toFixed(0)}/year. Making coffee at home 4 days a week cuts this by 60%.`,saving:`$${Math.round(stats.coffee*0.6)}/mo`,effort:"Low",color:C.orange},
+    stats.delivery>0&&{id:2,icon:"package",title:"Food delivery every week",body:`$${(stats.delivery||0).toFixed(2)} on delivery this month. One fewer order per week saves $40–60/month reliably. Your wallet will notice in 30 days.`,saving:"$50/mo",effort:"Low",color:C.orange},
+    {id:3,icon:"bag",title:"Amazon impulse purchases",body:"Try the 48-hour rule: add to cart, wait 2 days. Most impulse buys get removed without regret. Studies show this cuts impulse spend by 30–40%.",saving:"$40–70/mo",effort:"Low",color:C.pink},
+    stats.subs>0&&{id:4,icon:"zap",title:"Subscriptions creeping up",body:`$${(stats.subs||0).toFixed(2)}/mo in subscriptions. Go through each one — did you use it last month? Most households find 1–2 to cancel painlessly.`,saving:"$15–35/mo",effort:"Low",color:C.purple},
+    {id:5,icon:"chartUp",title:`${stats.busiest} is your expensive day`,body:`You spend significantly more on ${stats.busiest}s than any other day. Knowing this is half the battle — awareness alone cuts it 20–30%.`,saving:"$30–60/mo",effort:"Very Low",color:C.blue},
+  ].filter(Boolean).filter(s=>!dismissed.includes(s.id));
 
   const ALL_CATS = ["Food & Drink","Groceries","Transport","Shopping","Entertainment","Bills & Utilities","Health","Income","Subscriptions","Travel","Other"];
 
@@ -6577,28 +6468,10 @@ function SpendScreen({data, setAppData, setScreen}){
                         bills:[...(prev.bills||[]),newBill],
                         vendorBillMap:{...(prev.vendorBillMap||{}),...(merchantKey?{[merchantKey]:newBill.name}:{})}}));
                     }
-                    // Categorise the tapped transaction and ALL past transactions from same vendor
+                    // Categorise transaction under bill's category (not generic "Bills")
                     const billCat = billForm.category||"Other Bills";
-                    const allOverrides=JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
-                    // Tag the tapped transaction
-                    allOverrides[markBillTxn.id]=billCat;
-                    // Auto-flag all other transactions from the same vendor
-                    const vendorKey=(markBillTxn.name||"").toLowerCase().trim();
-                    let autoFlagged=0;
-                    if(vendorKey.length>=3){
-                      txns.forEach(t=>{
-                        if(t.id!==markBillTxn.id&&(t.name||"").toLowerCase().trim()===vendorKey){
-                          allOverrides[t.id]=billCat;
-                          autoFlagged++;
-                        }
-                      });
-                    }
-                    localStorage.setItem("flourish_cat_overrides",JSON.stringify(allOverrides));
-                    // Show toast confirmation
-                    if(autoFlagged>0){
-                      setBillAutoFlagToast({name:markBillTxn.name,count:autoFlagged,cat:billCat});
-                      setTimeout(()=>setBillAutoFlagToast(null),4000);
-                    }
+                    const overrides=JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
+                    localStorage.setItem("flourish_cat_overrides",JSON.stringify({...overrides,[markBillTxn.id]:billCat}));
                   }
                   setMarkBillTxn(null);setBillForm({name:"",amount:"",date:"1",type:"fixed",category:"Bills"});
                 }}
@@ -6689,66 +6562,6 @@ function SpendScreen({data, setAppData, setScreen}){
         </div>
       </div>
     )}
-    {/* ── Sinking Fund Allocation Modal ─────────────────────────────── */}
-    {sinkingAllocTxn&&(
-      <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)"}}
-        onClick={e=>{if(e.target===e.currentTarget)setSinkingAllocTxn(null);}}>
-        <div style={{width:"100%",maxWidth:520,background:C.bg,borderRadius:isDesktop?"20px":"24px 24px 0 0",border:`1px solid ${C.border}`,boxShadow:"0 -8px 40px rgba(0,0,0,0.4)"}}>
-          <div style={{padding:"16px 20px 14px",borderBottom:`1px solid ${C.border}`}}>
-            <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px",display:isDesktop?"none":"block"}}/>
-            <div style={{color:C.cream,fontWeight:800,fontSize:16}}>🪣 Allocate to sinking fund</div>
-            <div style={{color:C.muted,fontSize:12,marginTop:3}}>
-              ${(sinkingAllocTxn.amount||0).toFixed(2)} from <strong style={{color:C.mutedHi}}>{sinkingAllocTxn.name}</strong> — which fund did this come from?
-            </div>
-          </div>
-          <div style={{padding:"14px 20px 20px",maxHeight:"60vh",overflowY:"auto"}}>
-            {(data.goals||[]).filter(g=>g.type==="sinking").length===0?(
-              <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"16px 0"}}>
-                No sinking funds set up yet.<br/>
-                <span style={{fontSize:11}}>Add sinking funds in Goals to track allocations.</span>
-              </div>
-            ):(data.goals||[]).filter(g=>g.type==="sinking").map((g,gi)=>{
-              const goalIdx = (data.goals||[]).indexOf(g);
-              const saved = parseFloat(g.saved||0);
-              const amt = parseFloat(sinkingAllocTxn.amount||0);
-              const newSaved = Math.max(0, saved - amt);
-              return (
-              <div key={gi} style={{background:C.card,borderRadius:14,padding:"14px 16px",marginBottom:10,border:`1px solid ${C.teal}33`,cursor:"pointer"}}
-                onClick={()=>{
-                  if(setAppData) setAppData(prev=>({...prev,
-                    goals:(prev.goals||[]).map((goal,idx)=>
-                      idx===goalIdx?{...goal,saved:String(newSaved.toFixed(2))}:goal
-                    )
-                  }));
-                  setSinkingAllocTxn(null);
-                }}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-                  <div>
-                    <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{g.name}</div>
-                    <div style={{color:C.muted,fontSize:11,marginTop:2}}>${saved.toFixed(2)} saved · ${parseFloat(g.target||0).toFixed(0)} target</div>
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{color:C.tealBright,fontWeight:800,fontSize:13}}>${newSaved.toFixed(2)}</div>
-                    <div style={{color:C.muted,fontSize:10,marginTop:2}}>after this spend</div>
-                  </div>
-                </div>
-                <div style={{height:4,background:C.border,borderRadius:99,overflow:"hidden"}}>
-                  <div style={{height:"100%",width:`${Math.min(100,Math.round(newSaved/Math.max(1,parseFloat(g.target||1))*100))}%`,background:C.teal,borderRadius:99,transition:"width .3s"}}/>
-                </div>
-                <button style={{width:"100%",marginTop:10,background:`linear-gradient(135deg,${C.teal},${C.tealBright})`,border:"none",borderRadius:10,padding:"10px",color:"#041810",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-                  Deduct ${amt.toFixed(2)} from {g.name} ✓
-                </button>
-              </div>
-              );
-            })}
-            <button onClick={()=>setSinkingAllocTxn(null)}
-              style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"11px",color:C.muted,fontWeight:600,fontSize:13,cursor:"pointer",fontFamily:"inherit",marginTop:4}}>
-              Not from a sinking fund
-            </button>
-          </div>
-        </div>
-      </div>
-    )}
     {/* ── Apply to all vendor modal ─────────────────────────────────── */}
     {applyAllPrompt&&(
       <div style={{position:"fixed",inset:0,zIndex:1001,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setApplyAllPrompt(null)}>
@@ -6813,35 +6626,11 @@ function SpendScreen({data, setAppData, setScreen}){
           {/* Scrollable categories */}
           <div style={{overflowY:"auto",padding:"16px 20px",flex:1}}>
             <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
-        {[...ALL_CATS, ...(JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]"))].map((cat,ci)=>{
-          const isCustom = ci >= ALL_CATS.length;
-          return (
-            <div key={cat} style={{position:"relative",display:"inline-flex"}}>
-              <button onClick={()=>recatWithSmartPrompt(recatTxn,cat)}
-                style={{background:getCat(recatTxn)===cat?C.green+"33":"rgba(255,255,255,0.04)",
-                border:`1px solid ${getCat(recatTxn)===cat?C.green:C.border}`,borderRadius:10,
-                padding:"5px 10px",color:getCat(recatTxn)===cat?C.greenBright:C.mutedHi,fontSize:11,
-                fontWeight:getCat(recatTxn)===cat?700:400,cursor:"pointer",fontFamily:"inherit",
-                paddingRight:isCustom?"22px":"10px"}}>
-                {cat}
-              </button>
-              {isCustom&&(
-                <button onClick={e=>{e.stopPropagation();
-                  const existing=JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]");
-                  localStorage.setItem("flourish_custom_cats",JSON.stringify(existing.filter(c=>c!==cat)));
-                  const ov=JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
-                  const cleaned=Object.fromEntries(Object.entries(ov).filter(([,v])=>v!==cat));
-                  localStorage.setItem("flourish_cat_overrides",JSON.stringify(cleaned));
-                  setRecatTxn(t=>({...t})); // force re-render
-                }}
-                style={{position:"absolute",top:-4,right:-4,width:14,height:14,borderRadius:"50%",
-                background:C.red,border:"none",color:"#fff",fontSize:8,fontWeight:900,
-                cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
-                lineHeight:1,padding:0,zIndex:2}}>×</button>
-              )}
-            </div>
-          );
-        })}
+              {[...ALL_CATS, ...(JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]"))].map(cat=>(
+                <button key={cat} onClick={()=>recatWithSmartPrompt(recatTxn,cat)} style={{background:getCat(recatTxn)===cat?C.orange+"33":C.cardAlt,border:`1px solid ${getCat(recatTxn)===cat?C.orange:C.border}`,color:getCat(recatTxn)===cat?C.orangeBright:C.muted,borderRadius:99,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",minHeight:36}}>
+                  {cat}
+                </button>
+              ))}
             </div>
             {/* Add custom category */}
             <AddCustomCategory onAdd={(cat)=>recatWithSmartPrompt(recatTxn,cat)}/>
@@ -6866,154 +6655,47 @@ function SpendScreen({data, setAppData, setScreen}){
     </div>
 
     {!isDemo&&<IncomeDetectionBanner transactions={txns} incomes={data.incomes} setAppData={setAppData}/>}
-      {billAutoFlagToast&&(
-        <div style={{background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,animation:"fadeUp 0.3s ease"}}>
-          <span style={{fontSize:18,flexShrink:0}}>✅</span>
-          <div style={{flex:1}}>
-            <div style={{color:C.greenBright,fontWeight:700,fontSize:12}}>{billAutoFlagToast.count} past transaction{billAutoFlagToast.count===1?'':'s'} from {billAutoFlagToast.name} auto-categorized</div>
-            <div style={{color:C.muted,fontSize:10,marginTop:2}}>All filed as {billAutoFlagToast.cat} — your breakdown is now accurate</div>
-          </div>
-          <button onClick={()=>setBillAutoFlagToast(null)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,padding:0,flexShrink:0}}>✕</button>
-        </div>
-      )}
-      {/* Period selector + Smart Cuts toggle */}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-        <select value={period} onChange={e=>setPeriod(e.target.value)}
-          style={{flex:1,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}>
-          <option value="week">This week</option>
-          <option value="month">{monthLabel}</option>
-          <option value="last">Last month</option>
-          <option value="3mo">Last 3 months</option>
-          <option value="all">Last 90 days</option>
-        </select>
-        {accountsWithNames.length>1&&(
-          <select value={accountFilter} onChange={e=>setAccountFilter(e.target.value)}
-            style={{flex:1,background:C.card,border:`1px solid ${accountFilter!=="All"?C.blue:C.border}`,borderRadius:10,padding:"9px 10px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}>
-            <option value="All">All Accounts</option>
-            {accountsWithNames.map(a=>{
-              const icon=a.type==="credit"||a.type==="credit card"?"💳":a.type==="savings"?"🏦":"🏦";
-              return <option key={a.id} value={a.id}>{icon} {a.name}</option>;
-            })}
-          </select>
-        )}
-        <button onClick={()=>setTab(t=>t==="cuts"?"txn":"cuts")}
-          style={{background:tab==="cuts"?C.orange+"22":"rgba(255,255,255,0.04)",
-          border:`1px solid ${tab==="cuts"?C.orange+"55":C.border}`,borderRadius:10,padding:"9px 14px",
-          color:tab==="cuts"?C.orangeBright:C.muted,fontSize:12,fontWeight:700,cursor:"pointer",
-          fontFamily:"inherit",flexShrink:0,whiteSpace:"nowrap"}}>
-          ✂️ Smart Cuts
-        </button>
-      </div>
-      {/* ── Category summary strip ─────────────────────────────────────── */}
-      {(()=>{
-        const bdTxns=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&getCat(t)!=="Fees"&&!isCCPayment(t,data.debts||[]));
-        const bdByCat={};
-        bdTxns.forEach(t=>{const c=getCat(t);bdByCat[c]=(bdByCat[c]||0)+t.amount;});
-        const bdTotal=bdTxns.reduce((s,t)=>s+t.amount,0);
-        const bdAllCats=Object.entries(bdByCat).sort((a,b)=>b[1]-a[1]);
-        const catColors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
-        if(bdAllCats.length===0) return null;
-        return (
-          <div>
-            {/* Total + breakdown header */}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
-              <div style={{color:C.cream,fontWeight:900,fontSize:22,fontFamily:"'Playfair Display',serif",letterSpacing:-0.5}}>
-                ${(bdTotal||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}
-              </div>
-              <div style={{color:C.muted,fontSize:11}}>{bdTxns.length} transactions</div>
-            </div>
-            {/* Category pills — horizontal scroll, tap to filter */}
-            <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none",WebkitOverflowScrolling:"touch",marginBottom:4}}>
-              <button onClick={()=>setCatFilter("All")}
-                style={{flexShrink:0,background:catFilter==="All"?C.orange+"22":"rgba(255,255,255,0.04)",
-                border:`1px solid ${catFilter==="All"?C.orange+"66":C.border}`,borderRadius:99,
-                padding:"5px 12px",color:catFilter==="All"?C.orangeBright:C.muted,
-                fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
-                All
-              </button>
-              {bdAllCats.map(([cat,amt],ci)=>{
-                const col=catColors[ci%6];
-                const {emoji}=getCatDisplay(cat);
-                const pct=bdTotal>0?Math.round(amt/bdTotal*100):0;
-                const active=catFilter===cat;
-                return (
-                  <button key={cat} onClick={()=>setCatFilter(active?"All":cat)}
-                    style={{flexShrink:0,display:"flex",alignItems:"center",gap:5,
-                    background:active?col+"22":"rgba(255,255,255,0.04)",
-                    border:`1px solid ${active?col+"66":C.border}`,borderRadius:99,
-                    padding:"5px 10px",color:active?col:C.muted,
-                    fontSize:11,fontWeight:active?700:400,cursor:"pointer",
-                    fontFamily:"inherit",whiteSpace:"nowrap"}}>
-                    <span style={{fontSize:12}}>{emoji}</span>
-                    <span>{cat}</span>
-                    <span style={{opacity:0.7}}>${Math.round(amt)}</span>
-                  </button>
-                );
-              })}
-            </div>
-            {/* Budget bar if cat is budgeted */}
-            {catFilter!=="All"&&(data.budgets||{})[catFilter]>0&&(()=>{
-              const budget=(data.budgets||{})[catFilter];
-              const spent=bdByCat[catFilter]||0;
-              const over=spent>budget;
-              return (
-                <div style={{background:C.cardAlt,borderRadius:10,padding:"8px 12px",marginBottom:4,border:`1px solid ${over?C.red:C.green}22`}}>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                    <span style={{color:over?C.redBright:C.muted,fontSize:11,fontWeight:over?700:400}}>
-                      {over?`⚠️ $${Math.round(spent-budget)} over budget`:`${Math.round(spent/budget*100)}% of $${budget} budget`}
-                    </span>
-                    <span style={{color:C.muted,fontSize:10}}>${Math.round(spent)} / ${budget}</span>
-                  </div>
-                  <div style={{height:4,background:C.border,borderRadius:99,overflow:"hidden"}}>
-                    <div style={{width:`${Math.min(100,Math.round(spent/budget*100))}%`,height:"100%",
-                    background:over?C.red:C.green,borderRadius:99,transition:"width .4s"}}/>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-        );
-      })()}
-      {/* ── Smart Cuts — collapsible card ────────────────────────────── */}
-      {tab==="cuts"&&(()=>{
-        const totalSaving=cuts.reduce((s,c)=>{const m=(c.saving||"").match(/\d+/);return s+(m?parseInt(m[0]):0);},0);
-        return (
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{background:`linear-gradient(135deg,${C.orangeDim},${C.card})`,border:`1px solid ${C.orange}44`,borderRadius:18,padding:"14px 16px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:cuts.length>0?10:0}}>
-                <div>
-                  <div style={{color:C.orangeBright,fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                    ✂️ Smart Cuts — save ${totalSaving}/mo
-                  </div>
-                  <div style={{color:C.muted,fontSize:11,marginTop:2}}>
-                    {cuts.length===0?"Your spending looks controlled this month 🎉"
-                    :`${cuts.length} cut${cuts.length===1?"":"s"} · $${(totalSaving*12).toLocaleString()} saved per year`}
-                  </div>
-                </div>
-                <button onClick={()=>setTab("txn")} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0}}>✕</button>
-              </div>
-              {cuts.map(s=>(
-                <div key={s.id} style={{background:C.card,borderRadius:14,padding:"12px 14px",border:`1px solid ${C.border}`,marginTop:8}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-                    <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                      <Icon id={s.icon||"chartUp"} size={16} color={s.color||C.orange} strokeWidth={2.2}/>
-                      <span style={{color:C.cream,fontWeight:700,fontSize:13}}>{s.title}</span>
-                    </div>
-                    <button onClick={()=>setDismissed(d=>[...d,s.id])} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,padding:0,lineHeight:1}}>×</button>
-                  </div>
-                  <div style={{color:C.mutedHi,fontSize:11,lineHeight:1.65,marginBottom:8}}>{s.body}</div>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                    <Chip label={`Save ${s.saving}`} color={C.green} size={10}/>
-                    <Chip label={s.effort||"Impact"} color={s.effort==="High impact"?C.orange:s.effort==="Medium"?C.gold:C.teal} size={10}/>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
+    <div style={{display:"flex",gap:6,background:C.surface,borderRadius:16,padding:4}}>
+      {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeBright:C.muted,borderRadius:12,padding:"9px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
+        {t==="txn"?"Transactions":t==="breakdown"?"Breakdown":"Smart Cuts"}
+      </button>)}
+    </div>
+    {tab==="txn"&&<>
       {/* Filter row — dropdowns for account, category, period */}
-      {/* ── Transaction list ──────────────────────────────────────── */}
+      <div style={{display:"grid",gridTemplateColumns:accountsWithNames.length>1?"1fr 1fr 1fr":"1fr 1fr",gap:8}}>
+        {accountsWithNames.length>1&&(
+          <div>
+            <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Account</div>
+            <select value={accountFilter} onChange={e=>{setAccountFilter(e.target.value);setCatFilter("All");}}
+              style={{width:"100%",background:C.card,border:`1px solid ${accountFilter!=="All"?C.blue:C.border}`,borderRadius:10,padding:"9px 10px",color:accountFilter!=="All"?C.blueBright:C.cream,fontSize:12,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
+              <option value="All">All Accounts</option>
+              {accountsWithNames.map(a=>{
+                const icon = a.type==="credit"||a.type==="credit card"?"💳":a.type==="savings"?"🏦":a.type==="investment"?"📈":"🏦";
+                return <option key={a.id} value={a.id}>{icon} {a.name}</option>;
+              })}
+            </select>
+          </div>
+        )}
+        <div>
+          <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Category</div>
+          <select value={catFilter} onChange={e=>setCatFilter(e.target.value)}
+            style={{width:"100%",background:C.card,border:`1px solid ${catFilter!=="All"?C.orange:C.border}`,borderRadius:10,padding:"9px 10px",color:catFilter!=="All"?C.orangeBright:C.cream,fontSize:12,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
+            {cats.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Period</div>
+          <select value={period} onChange={e=>setPeriod(e.target.value)}
+            style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px",color:C.cream,fontSize:12,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
+            <option value="week">This week</option>
+            <option value="month">{monthLabel}</option>
+            <option value="last">Last month</option>
+            <option value="3mo">Last 3 months</option>
+            <option value="all">Last 90 days</option>
+          </select>
+        </div>
+      </div>
+      {filtered.length===0&&(
         <div style={{background:C.card,borderRadius:18,padding:"28px 20px",textAlign:"center",border:`1px solid ${C.border}`}}>
           {txns.length===0?(
             <>
@@ -7056,34 +6738,95 @@ function SpendScreen({data, setAppData, setScreen}){
                 </span>
               )}
               {txn.pending&&<Chip label="Pending" color={C.gold} size={9}/>}
-              {txn.amount>0&&accountMap[txn.account_id]?.type==="savings"&&(data.goals||[]).some(g=>g.type==="sinking")&&(
-                <button onClick={e=>{e.stopPropagation();setSinkingAllocTxn(txn);}}
-                  style={{background:C.teal+"18",border:`1px solid ${C.teal}33`,borderRadius:99,padding:"2px 8px",color:C.tealBright,fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
-                  🪣 Allocate to fund
-                </button>
-              )}
-              {isCashAdvance(txn)&&(
-                <div style={{width:"100%",marginTop:6,background:C.red+"14",border:`1px solid ${C.red}33`,borderRadius:8,padding:"6px 10px",display:"flex",alignItems:"center",gap:6}}>
-                  <span style={{fontSize:12}}>⚠️</span>
-                  <div style={{flex:1}}>
-                    <div style={{color:C.redBright,fontSize:10,fontWeight:700}}>Cash advance detected</div>
-                    <div style={{color:C.muted,fontSize:9,marginTop:1}}>Cash advances carry 2–5% fees + immediate interest at your card rate. Consider a transfer from savings instead.</div>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
             <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
               {txn.amount<0?"+":"–"}${Math.abs(txn.amount).toFixed(2)}
             </div>
-            {txn.amount<0&&(isCashAdvance(txn)?<div style={{color:C.redBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>⚠️ CASH ADVANCE</div>:<div style={{color:C.greenBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>{getCat(txn)==='Transfer'?'RECEIVED':'INCOME'}</div>)}
+            {txn.amount<0&&(isCashAdvance(txn)?<div style={{color:C.redBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>⚠️ CASH ADVANCE</div>:<div style={{color:C.greenBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>{getCat(txn)==="Transfer"?"RECEIVED":"INCOME"}</div>)}
           </div>
         </div>
         );
       })}
-
-
+    </>}
+    {tab==="breakdown"&&<>
+      {(()=>{
+        // Breakdown uses the same period-filtered set as the Transactions tab
+        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&getCat(t)!=="Fees"&&!isCCPayment(t,data.debts||[]));
+        const bdIn   = acctFiltered.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
+        const bdTotal= bdTxns.reduce((s,t)=>s+t.amount,0);
+        const bdByCat= {};
+        bdTxns.forEach(t=>{const c=getCat(t);bdByCat[c]=(bdByCat[c]||0)+t.amount;});
+        const bdAllCats=Object.entries(bdByCat).sort((a,b)=>b[1]-a[1]);
+  const bdTopCats=showAllBdCats?bdAllCats:bdAllCats.slice(0,8);
+        const periodLabel = period==="week"?"This week":period==="month"?monthLabel:period==="last"?"Last month":period==="3mo"?"Last 3 months":"Last 90 days";
+        return (<>
+      <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <div>
+            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Spent · {periodLabel}</div>
+            <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>{`$${(bdTotal||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</div>
+          </div>
+          <div style={{textAlign:"right",flexShrink:0}}>
+            <div style={{color:C.muted,fontSize:10,marginBottom:2}}>{bdTxns.length} transactions</div>
+            <div style={{color:C.green,fontSize:11}}>+${(bdIn||0).toLocaleString("en-CA",{minimumFractionDigits:0})} in</div>
+          </div>
+        </div>
+      </Card>
+      {bdTopCats.length===0&&<div style={{background:C.card,borderRadius:16,padding:"24px 20px",textAlign:"center",border:`1px solid ${C.border}`}}>
+        <div style={{fontSize:32,marginBottom:8}}>📊</div>
+        <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:4}}>No spending data for this period</div>
+        <div style={{color:C.muted,fontSize:12}}>Try a broader time range above.</div>
+      </div>}
+      {/* Budget Plan Card — shown above category breakdown */}
+      {period==="month"&&<BudgetPlanCard data={data} setAppData={setAppData}/>}
+      {bdTopCats.map(([cat,amt],i)=>{
+        const colors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
+        const catTxns=acctFiltered.filter(t=>getCat(t)===cat&&t.amount>0&&!isCCPayment(t,data.debts||[]));
+        const budget = (data.budgets||{})[cat] || null;
+        window.__flourishBills = data.bills||[];
+        return <ExpandableCatCard key={i} cat={cat} amt={amt} totalSpent={bdTotal} color={colors[i%6]} catTxns={catTxns}
+          budget={budget} onSetBudget={(cat,val)=>{
+            if(setAppData) setAppData(prev=>({...prev,budgets:{...(prev.budgets||{}),
+              ...(val===null ? Object.fromEntries(Object.entries(prev.budgets||{}).filter(([k])=>k!==cat)) : {[cat]:val})
+            }}));
+          }}/>;
+      })}
+      {bdAllCats.length>8&&(
+        <button onClick={()=>setShowAllBdCats(v=>!v)}
+          style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:12,
+            padding:"11px",color:C.muted,fontSize:12,fontWeight:700,cursor:"pointer",
+            fontFamily:"inherit",marginTop:2}}>
+          {showAllBdCats?"▲ Show less":`▼ Show ${bdAllCats.length-8} more categor${bdAllCats.length-8===1?"y":"ies"}`}
+        </button>
+      )}
+        </>);
+      })()}
+    </>}
+    {tab==="cuts"&&<>
+      <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
+        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Potential Monthly Savings</div>
+        <div style={{fontSize:32,fontWeight:900,color:C.goldBright,fontFamily:"Georgia,serif"}}>${(()=>{
+              const total = cuts.reduce((s,c)=>{
+                // saving field is like "$50/mo" or "$40–70/mo" — extract first number
+                const match = (c.saving||"").match(/\d+/);
+                return s + (match ? parseInt(match[0]) : 0);
+              },0);
+              return total > 0 ? total.toLocaleString() : "0";
+            })()}</div>
+        <div style={{color:C.muted,fontSize:12}}>from {cuts.length} suggestions based on your real transactions</div>
+      </Card>
+      {cuts.length===0?<Card style={{textAlign:"center",padding:"30px 20px"}}><div style={{fontSize:40}}>🎉</div><div style={{color:C.greenBright,fontWeight:700,marginTop:10}}>All suggestions reviewed!</div></Card>
+        :cuts.map(s=><Card key={s.id} glow={s.color}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+            <div style={{display:"flex",gap:10,alignItems:"center"}}><Icon id={s.icon||"card"} size={20} color={C.mutedHi} strokeWidth={1.5}/><span style={{color:s.color,fontWeight:800,fontSize:14}}>{s.title}</span></div>
+            <button onClick={()=>setDismissed(d=>[...d,s.id])} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>✕</button>
+          </div>
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:10}}>{s.body}</div>
+          <div style={{display:"flex",gap:8}}><Chip label={`Save ${s.saving}`} color={C.green}/><Chip label={`Effort: ${s.effort}`} color={s.effort.includes("Very")?C.teal:C.green}/></div>
+        </Card>)}
+    </>}
   </div>;
 }
 
@@ -7129,28 +6872,20 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
     {tab==="goals"&&(()=>{
       const goals = data.goals||[];
       const GOAL_TYPES = [
-        // Emergency fund — one, protected, not a spending goal
-        {label:"Emergency Fund", icon:"🆘", color:C.orange,  type:"emergency", hint:"3–6 months of expenses", suggestedMonthly:null},
-        // Sinking funds — known future expenses saved systematically
-        {label:"Car Maintenance",  icon:"🚗", color:C.gold,   type:"sinking", hint:"Tires, brakes, oil changes",      suggestedMonthly:75},
-        {label:"Home Repairs",     icon:"🏠", color:C.orange, type:"sinking", hint:"~1% of home value per year",      suggestedMonthly:150},
-        {label:"Dental & Vision",  icon:"🦷", color:C.teal,   type:"sinking", hint:"Not covered by provincial plans", suggestedMonthly:60},
-        {label:"Holidays & Gifts", icon:"🎄", color:C.pink,   type:"sinking", hint:"Spread the cost year-round",       suggestedMonthly:100},
-        {label:"Electronics",      icon:"💻", color:C.blue,   type:"sinking", hint:"Phone, laptop, appliances",         suggestedMonthly:40},
-        // Aspirational goals — saving toward something specific
-        {label:"Vacation",     icon:"✈️",  color:C.blue,   type:"goal", hint:"", suggestedMonthly:null},
-        {label:"Down Payment", icon:"🏡", color:C.purple, type:"goal", hint:"", suggestedMonthly:null},
-        {label:"Car",          icon:"🚙", color:C.gold,   type:"goal", hint:"", suggestedMonthly:null},
-        {label:"Education",    icon:"🎓", color:C.teal,   type:"goal", hint:"", suggestedMonthly:null},
-        {label:"Wedding",      icon:"💍", color:C.pink,   type:"goal", hint:"", suggestedMonthly:null},
-        {label:"Home Reno",    icon:"🔨", color:C.orange, type:"goal", hint:"", suggestedMonthly:null},
-        {label:"RRSP",         icon:"🏦", color:C.teal,   type:"goal", hint:"", suggestedMonthly:null},
-        {label:"TFSA",         icon:"💎", color:C.green,  type:"goal", hint:"", suggestedMonthly:null},
-        {label:"Other",        icon:"🎯", color:C.muted,  type:"goal", hint:"", suggestedMonthly:null},
+        {label:"Emergency Fund", icon:"🆘", color:C.orange},
+        {label:"RRSP",           icon:"🏦", color:C.teal},
+        {label:"TFSA",           icon:"💎", color:C.green},
+        {label:"Vacation",       icon:"✈️",  color:C.blue},
+        {label:"Down Payment",   icon:"🏠", color:C.purple},
+        {label:"Car",            icon:"🚗", color:C.gold},
+        {label:"Education",      icon:"🎓", color:C.teal},
+        {label:"Wedding",        icon:"💍", color:C.pink},
+        {label:"Home Reno",      icon:"🔨", color:C.orange},
+        {label:"Other",          icon:"🎯", color:C.muted},
       ];
 
-      const openAdd = () => { setForm({name:"",target:"",saved:"",monthly:"",notes:"",type:"goal"}); setEditIdx(null); setShowForm(true); };
-      const openEdit = (g,idx) => { setForm({name:g.name||g.label||"",target:g.target||"",saved:g.saved||g.current||"",monthly:g.monthly||"",notes:g.notes||"",type:g.type||"goal"}); setEditIdx(idx); setShowForm(true); };
+      const openAdd = () => { setForm({name:"",target:"",saved:"",monthly:"",notes:""}); setEditIdx(null); setShowForm(true); };
+      const openEdit = (g,i) => { setForm({name:g.name||g.label||"",target:g.target||"",saved:g.saved||g.current||"",monthly:g.monthly||"",notes:g.notes||""}); setEditIdx(i); setShowForm(true); };
       const saveGoal = () => {
         if(!form.name||!form.target) return;
         if(setAppData) setAppData(prev=>{
@@ -7199,33 +6934,24 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
             </div>
           )}
 
-        {(()=>{
-          // Helper: render one goal card (shared by all sections)
-          const GoalCard = (g,i) => {
+          {goals.map((g,i)=>{
             const target  = parseFloat(g.target||1);
             const saved   = parseFloat(g.saved||g.current||0);
             const monthly = parseFloat(g.monthly||0);
             const pct     = Math.min(100, Math.round((saved/target)*100));
             const remaining = Math.max(0, target-saved);
             const moToGo  = monthly>0 ? Math.ceil(remaining/monthly) : null;
-            const goalType = GOAL_TYPES.find(t=>t.label.toLowerCase()===((g.name||"").toLowerCase()))
-                          || GOAL_TYPES.find(t=>t.type===(g.type||"goal"))
-                          || GOAL_TYPES[GOAL_TYPES.length-1];
+            const goalType = GOAL_TYPES.find(t=>t.label.toLowerCase()===((g.name||"").toLowerCase())) || GOAL_TYPES[GOAL_TYPES.length-1];
             const col = goalType.color;
-            const isSinking = (g.type||"goal")==="sinking" || goalType.type==="sinking";
-            const isEF      = (g.type||"goal")==="emergency" || (g.name||"").toLowerCase().includes("emergency");
             return (
               <div key={g.id||i} style={{background:C.card,borderRadius:18,border:`1px solid ${col}33`,overflow:"hidden",position:"relative"}}>
-                <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${col},${col}cc)`}}/>
+                <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${col},${col}88)`}}/>
                 <div style={{padding:"14px 16px 12px"}}>
+                  {/* Top row */}
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
                     <span style={{fontSize:22,flexShrink:0}}>{goalType.icon}</span>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:"flex",alignItems:"center",gap:6}}>
-                        <div style={{color:C.cream,fontWeight:800,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.name}</div>
-                        {isSinking&&<span style={{background:col+"18",color:col,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:99,border:`1px solid ${col}33`,flexShrink:0}}>SINKING</span>}
-                        {isEF&&<span style={{background:col+"18",color:col,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:99,border:`1px solid ${col}33`,flexShrink:0}}>EMERGENCY</span>}
-                      </div>
+                      <div style={{color:C.cream,fontWeight:800,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.name||g.label||"Goal"}</div>
                       {g.notes&&<div style={{color:C.muted,fontSize:11,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.notes}</div>}
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
@@ -7233,9 +6959,11 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                       <div style={{color:C.muted,fontSize:9}}>complete</div>
                     </div>
                   </div>
+                  {/* Progress bar */}
                   <div style={{background:C.border,borderRadius:99,height:8,overflow:"hidden",marginBottom:10}}>
-                    <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${col},${col}cc)`,borderRadius:99,transition:"width .4s"}}/>
+                    <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${col},${col}cc)`,borderRadius:99,transition:"width .5s ease"}}/>
                   </div>
+                  {/* Stats row */}
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
                     {[
                       ["Saved","saved", saved>0?`$${saved.toLocaleString()}`:"$0", C.greenBright],
@@ -7248,101 +6976,38 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                           {field!=="monthly"&&<span style={{color:C.muted,fontSize:10,padding:"0 3px 0 5px"}}>$</span>}
                           <input value={g[field]||""} onChange={e=>updateField(i,field,e.target.value)}
                             type="number" inputMode="decimal" placeholder="0"
-                            style={{flex:1,background:"none",border:"none",padding:"5px 4px 5px 0",color,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700}}/>
+                            style={{flex:1,background:"none",border:"none",padding:"5px 4px 5px 0",color,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",width:0,fontWeight:700}}/>
                         </div>
                       </div>
                     ))}
                   </div>
+                  {/* Time estimate */}
                   {remaining>0&&(
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                       <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                         {moToGo
                           ? `$${remaining.toLocaleString()} to go · ~${moToGo} month${moToGo===1?"":"s"}`
-                          : `$${remaining.toLocaleString()} remaining · set monthly to see timeline`}
+                          : `$${remaining.toLocaleString()} remaining · add monthly contribution to see timeline`}
                       </div>
                       <div style={{display:"flex",gap:6}}>
                         <button onClick={()=>openEdit(g,i)}
-                          style={{background:col+"18",border:`1px solid ${col}33`,borderRadius:8,padding:"5px 10px",color:col,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Edit</button>
+                          style={{background:col+"18",border:`1px solid ${col}33`,borderRadius:8,padding:"5px 10px",color:col,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:28}}>
+                          Edit
+                        </button>
                         <button onClick={()=>removeGoal(i)}
-                          style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"5px 8px",minHeight:28}}>×</button>
+                          style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"5px 8px",minHeight:28,minWidth:28}}>✕</button>
                       </div>
                     </div>
                   )}
                   {remaining<=0&&(
-                    <div style={{background:C.green+"14",border:`1px solid ${C.green}33`,borderRadius:10,padding:"8px 12px",color:C.greenBright,fontSize:12,fontWeight:700,display:"flex",alignItems:"center",gap:6}}>
+                    <div style={{background:C.green+"14",border:`1px solid ${C.green}33`,borderRadius:10,padding:"8px 12px",color:C.greenBright,fontWeight:700,fontSize:12,textAlign:"center"}}>
                       🎉 Goal reached! Congratulations!
                     </div>
                   )}
                 </div>
               </div>
             );
-          };
-
-          // Separate goals by type
-          const efGoals      = goals.filter(g=>(g.type||"goal")==="emergency" || (g.name||"").toLowerCase().includes("emergency fund"));
-          const sinkingGoals = goals.filter(g=>(g.type||"goal")==="sinking" && !(g.name||"").toLowerCase().includes("emergency fund"));
-          const aspGoals     = goals.filter(g=>(g.type||"goal")==="goal"    && !(g.name||"").toLowerCase().includes("emergency fund"));
-
-          // Sinking fund totals for context
-          const sinkingTotal  = sinkingGoals.reduce((s,g)=>s+parseFloat(g.saved||0),0);
-          const sinkingMonthly = sinkingGoals.reduce((s,g)=>s+parseFloat(g.monthly||0),0);
-
-          return (
-            <div style={{display:"flex",flexDirection:"column",gap:16}}>
-              {/* ── Emergency Fund ─────────────────────────────── */}
-              {efGoals.length>0&&(
-                <div>
-                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,marginBottom:8,paddingLeft:2}}>
-                    🆘 Emergency Fund
-                  </div>
-                  <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                    {efGoals.map((g,i)=>GoalCard(g,goals.indexOf(g)))}
-                  </div>
-                </div>
-              )}
-
-              {/* ── Sinking Funds ──────────────────────────────── */}
-              {sinkingGoals.length>0&&(
-                <div>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                    <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,paddingLeft:2}}>
-                      🪣 Sinking Funds
-                    </div>
-                    {sinkingTotal>0&&(
-                      <div style={{color:C.muted,fontSize:10}}>
-                        ${Math.round(sinkingTotal).toLocaleString()} saved · ${Math.round(sinkingMonthly)}/mo reserved
-                      </div>
-                    )}
-                  </div>
-                  <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                    {sinkingGoals.map((g,i)=>GoalCard(g,goals.indexOf(g)))}
-                  </div>
-                </div>
-              )}
-
-              {/* ── Aspirational Goals ─────────────────────────── */}
-              {aspGoals.length>0&&(
-                <div>
-                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,marginBottom:8,paddingLeft:2}}>
-                    🎯 Goals
-                  </div>
-                  <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                    {aspGoals.map((g,i)=>GoalCard(g,goals.indexOf(g)))}
-                  </div>
-                </div>
-              )}
-
-              {goals.length===0&&!showForm&&(
-                <div style={{background:C.card,borderRadius:18,padding:"28px 20px",textAlign:"center",border:`1px solid ${C.border}`}}>
-                  <div style={{fontSize:40,marginBottom:12}}>🎯</div>
-                  <div style={{color:C.cream,fontWeight:800,fontSize:16,fontFamily:"'Playfair Display',serif",marginBottom:8}}>No goals yet</div>
-                  <div style={{color:C.muted,fontSize:13,marginBottom:16,lineHeight:1.6}}>Add an emergency fund, sinking funds for car and home, or save toward a vacation or down payment.</div>
-                  <button onClick={openAdd} style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:12,padding:"10px 24px",color:C.purpleBright,fontWeight:700,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Add your first goal →</button>
-                </div>
-              )}
-            </div>
-          );
-        })()}
+          })}
 
           {/* Add / Edit form */}
           {showForm&&(
@@ -7355,7 +7020,8 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                 <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Goal Type</div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   {GOAL_TYPES.map(t=>(
-                    <button key={t.label} onClick={()=>setForm(v=>({...v,name:t.label,type:t.type||"goal",monthly:v.monthly||(t.suggestedMonthly?String(t.suggestedMonthly):"")}))} style={{background:form.name===t.label?t.color+"33":"rgba(255,255,255,0.04)",border:`1px solid ${form.name===t.label?t.color:C.border}`,borderRadius:10,padding:"5px 10px",color:form.name===t.label?t.color:C.mutedHi,fontSize:11,fontWeight:form.name===t.label?700:400,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                    <button key={t.label} onClick={()=>setForm(v=>({...v,name:t.label}))}
+                      style={{background:form.name===t.label?t.color+"33":"rgba(255,255,255,0.04)",border:`1px solid ${form.name===t.label?t.color+"66":C.border}`,borderRadius:10,padding:"7px 12px",color:form.name===t.label?t.color:C.muted,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:34}}>
                       {t.icon} {t.label}
                     </button>
                   ))}
@@ -7380,16 +7046,6 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                   </div>
                 ))}
               </div>
-        {/* Suggested monthly hint for sinking funds */}
-        {(()=>{
-          const t = GOAL_TYPES.find(gt=>gt.label===form.name);
-          if(!t||t.type!=="sinking"||!t.suggestedMonthly) return null;
-          return !form.monthly&&(
-            <div style={{background:C.teal+"10",border:`1px solid ${C.teal}28`,borderRadius:8,padding:"6px 10px",marginBottom:8,color:C.tealBright,fontSize:10}}>
-              💡 Experts suggest ~${t.suggestedMonthly}/mo for {t.label} · {t.hint}
-            </div>
-          );
-        })()}
               {/* Notes */}
               <div style={{marginBottom:14}}>
                 <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Notes (optional)</div>
@@ -7831,13 +7487,12 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
 
       // Monthly savings needed for active goals
       const activeGoals = (data.goals||[]).filter(g=>parseFloat(g.target||0)>parseFloat(g.saved||0));
-        const localSinkingMo = activeGoals.filter(g=>g.type==="sinking").reduce((s,g)=>{const mo=parseFloat(g.monthly||0);return s+(mo>0?mo:0);},0);
-        const localAspMo = activeGoals.filter(g=>g.type!=="sinking"&&g.type!=="emergency").reduce((s,g)=>{
-          const remaining = parseFloat(g.target||0) - parseFloat(g.saved||0);
-          const mo = parseFloat(g.monthly||0);
-          return s + (mo>0 ? mo : remaining>0 ? Math.ceil(remaining/24) : 0);
-        },0);
-        const localGoalsMo = localSinkingMo + localAspMo;
+      const localGoalsMo = activeGoals.reduce((s,g)=>{
+        const remaining = parseFloat(g.target||0) - parseFloat(g.saved||0);
+        const mo = parseFloat(g.monthly||0);
+        return s + (mo>0 ? mo : remaining>0 ? Math.ceil(remaining/24) : 0);
+      },0);
+      // discret from generateBudgetSuggestions already accounts for goals globally,
       // but inside Goals tab we recalc locally for display
       const spendPool = Math.max(50, discret - localGoalsMo);
 
@@ -7858,7 +7513,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       const saveSuggestions = Object.entries(budgets).map(([cat,limit])=>{
         const spent = monthSpend[cat]||0;
         const pct = limit>0?spent/limit:0;
-          const saving = monthSpend[cat]||0;
+        const saving = actuals[cat]||0;
         if(pct>1.2&&saving>20) return {cat, spent, limit, over:spent-limit, potential:Math.round((saving-(limit*0.85))/5)*5};
         return null;
       }).filter(Boolean).sort((a,b)=>b.over-a.over).slice(0,3);
@@ -7877,8 +7532,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                 ["Take-home", `$${Math.round(netMo).toLocaleString()}/mo`, C.green],
                 ["Fixed bills & debt", `−$${Math.round(fixedMo).toLocaleString()}/mo`, C.red],
                 ["Savings target", `−$${Math.round(savingsMo).toLocaleString()}/mo`, C.teal],
-                ...(localSinkingMo>0?[["Sinking funds", `−$${Math.round(localSinkingMo).toLocaleString()}/mo`, C.gold]]:[]),
-                ...(localAspMo>0?[["Goal savings", `−$${Math.round(localAspMo).toLocaleString()}/mo`, C.purple]]:[])
+                ...(localGoalsMo>0?[["Goal savings", `−$${Math.round(localGoalsMo).toLocaleString()}/mo`, C.purple]]:[]),
                 ["Available for spending", `$${Math.round(spendPool).toLocaleString()}/mo`, C.greenBright],
               ].map(([label,val,color])=>(
                 <div key={label} style={{background:C.cardAlt,borderRadius:10,padding:"8px 10px",border:`1px solid ${C.border}`}}>
@@ -9304,7 +8958,7 @@ function InlineGoalEditor({data, setAppData, color}){
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({name:"",target:"",saved:""});
   const s = {background:C.card,borderRadius:"0 0 18px 18px",border:`1px solid ${color}33`,padding:"16px 18px",marginBottom:8,borderTop:`1px solid ${color}22`};
-const GOAL_PRESETS = ["Emergency Fund","Car Maintenance","Home Repairs","Dental & Vision","Holidays & Gifts","Electronics","Vacation","Down Payment","Car","Wedding","Education","Home Renovation","New Baby","Other"];
+  const GOAL_PRESETS = ["Emergency Fund","Vacation","Down Payment","Car","Wedding","Education","Home Renovation","New Baby","Other"];
 
   const saveGoal = () => {
     if(!form.name||!form.target) return;
@@ -11071,265 +10725,179 @@ function AuthScreen({ onAuth }) {
 
       {!showAuth ? (
 
-/* ───────────────── LANDING PAGE ───────────────── */
-<div style={{ minHeight:"100dvh", background:"#080F0A", display:"flex", flexDirection:"column" }}>
+        /* ───────────────── LANDING PAGE ───────────────── */
+        <div style={{ display: "flex", flexDirection: "column", minHeight: "100dvh" }}>
 
-  {/* ── Nav ─────────────────────────────────────────── */}
-  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
-    padding:"18px 28px", position:"sticky", top:0, zIndex:50,
-    background:"rgba(8,15,10,0.85)", backdropFilter:"blur(16px)",
-    borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
-    <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-      <FlourishMark size={30}/>
-      <span style={{ color:"#EDE9E2", fontWeight:800, fontSize:15, letterSpacing:-0.3,
-        fontFamily:"'Playfair Display',serif" }}>Flourish</span>
-    </div>
-    <button onClick={goLogin} style={{ background:"rgba(0,214,143,0.08)",
-      border:"1px solid rgba(0,214,143,0.25)", borderRadius:99, padding:"8px 18px",
-      color:"#00D68F", fontSize:12, fontWeight:700, cursor:"pointer",
-      fontFamily:"'Plus Jakarta Sans',sans-serif", letterSpacing:0.3 }}>
-      Log In
-    </button>
-  </div>
-
-  {/* ── Hero ─────────────────────────────────────────── */}
-  <div style={{ display:"flex", flexDirection:"column", alignItems:"center",
-    textAlign:"center", padding:"72px 24px 56px", maxWidth:640, margin:"0 auto", width:"100%" }}>
-
-    {/* Badge row */}
-    <div style={{ display:"flex", gap:8, justifyContent:"center", flexWrap:"wrap", marginBottom:28 }}>
-      <span style={{ display:"inline-flex", alignItems:"center", gap:5,
-        background:"rgba(0,214,143,0.08)", border:"1px solid rgba(0,214,143,0.2)",
-        borderRadius:99, padding:"5px 12px", color:"#00D68F", fontSize:11, fontWeight:700,
-        letterSpacing:0.3, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-        🇨🇦🇺🇸 Built for Canada &amp; the US
-      </span>
-      <span style={{ display:"inline-flex", alignItems:"center", gap:5,
-        background:"rgba(240,196,66,0.08)", border:"1px solid rgba(240,196,66,0.2)",
-        borderRadius:99, padding:"5px 12px", color:"#F0C442", fontSize:11, fontWeight:700,
-        letterSpacing:0.3, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-        🔒 Beta — limited spots
-      </span>
-    </div>
-
-    <h1 style={{ fontFamily:"'Playfair Display',serif",
-      fontSize:"clamp(34px,8vw,58px)", fontWeight:900, color:"#EDE9E2",
-      lineHeight:1.08, marginBottom:20, letterSpacing:-1 }}>
-      Know before<br/>you spend.{" "}
-      <span style={{ color:"#00D68F", fontStyle:"italic" }}>Finally.</span>
-    </h1>
-
-    <p style={{ color:"#6B7A6E", fontSize:16, lineHeight:1.8,
-      maxWidth:420, marginBottom:36, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-      One safe-to-spend number, calculated live from every account — updated every time you open the app.
-    </p>
-
-    {/* Hero product card */}
-    <div style={{ width:"100%", maxWidth:320, background:"#0D1F12",
-      border:"1px solid rgba(0,214,143,0.18)", borderRadius:20,
-      padding:"22px 20px", marginBottom:32, textAlign:"left" }}>
-      <div style={{ color:"#6B7A6E", fontSize:10, fontWeight:700, letterSpacing:1.2,
-        textTransform:"uppercase", marginBottom:6,
-        fontFamily:"'Plus Jakarta Sans',sans-serif" }}>Today's safe-to-spend</div>
-      <div style={{ fontFamily:"'Playfair Display',serif", fontSize:52, fontWeight:900,
-        color:"#00D68F", lineHeight:1, marginBottom:4 }}>$247</div>
-      <div style={{ color:"rgba(237,233,226,0.3)", fontSize:11, marginBottom:20,
-        fontFamily:"'Plus Jakarta Sans',sans-serif" }}>After bills · After buffer · Real money</div>
-      <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-        {[["🏦 Chequing / Checking","$1,843"],["💳 Credit Card","−$612"],["📅 Upcoming bills","−$984"]].map(([label,amount])=>(
-          <div key={label} style={{ display:"flex", justifyContent:"space-between",
-            padding:"9px 12px", background:"rgba(255,255,255,0.03)",
-            borderRadius:10, border:"1px solid rgba(255,255,255,0.05)" }}>
-            <span style={{ color:"#6B7A6E", fontSize:12,
-              fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{label}</span>
-            <span style={{ color:"#EDE9E2", fontWeight:600, fontSize:12 }}>{amount}</span>
+          {/* Nav */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 24px", position: "sticky", top: 0, background: "rgba(5,13,9,0.92)", backdropFilter: "blur(12px)", zIndex: 10, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <FlourishMark size={32} />
+              <span style={{ color: "#EDE9E2", fontWeight: 800, fontSize: 16, letterSpacing: -0.3 }}>Flourish</span>
+            </div>
+            <button onClick={goLogin} style={{ background: "rgba(0,214,143,0.1)", border: "1px solid rgba(0,214,143,0.3)", color: "#00D68F", borderRadius: 99, padding: "9px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+              Log In
+            </button>
           </div>
-        ))}
-      </div>
-    </div>
 
-    <button onClick={goSignup} style={{ width:"100%", maxWidth:320, padding:"16px",
-      borderRadius:14, border:"none", background:"linear-gradient(135deg,#00D68F,#00FF9F)",
-      color:"#041810", fontWeight:800, fontSize:15, cursor:"pointer",
-      fontFamily:"'Plus Jakarta Sans',sans-serif", letterSpacing:-0.2, marginBottom:12 }}>
-      Know Before You Spend — Free
-    </button>
-    <div style={{ color:"#4A5E50", fontSize:12, marginBottom:52,
-      fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-      No credit card · Connects RBC, TD, Chase, Wells Fargo &amp; more
-    </div>
+          {/* Hero */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "52px 28px 40px", textAlign: "center" }}>
 
-    {/* Trust row */}
-    <div style={{ display:"flex", gap:24, justifyContent:"center",
-      flexWrap:"wrap", borderTop:"1px solid rgba(255,255,255,0.06)", paddingTop:28 }}>
-      {[["🔒","Bank-level security"],["🌎","CA & US accounts"],["⚡","Live in 60 seconds"]].map(([icon,label])=>(
-        <div key={label} style={{ display:"flex", alignItems:"center", gap:6,
-          color:"#4A5E50", fontSize:12, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-          <span>{icon}</span><span>{label}</span>
-        </div>
-      ))}
-    </div>
-  </div>
+            <div style={{ display: "inline-block", background: "rgba(0,214,143,0.1)", border: "1px solid rgba(0,214,143,0.25)", borderRadius: 99, padding: "6px 16px", fontSize: 12, fontWeight: 700, color: "#00D68F", letterSpacing: 0.5, marginBottom: 28 }}>
+              🇨🇦🇺🇸 Built for Canada & the US
+            </div>
+            <div style={{ display: "inline-block", background: "rgba(240,196,66,0.1)", border: "1px solid rgba(240,196,66,0.25)", borderRadius: 99, padding: "6px 16px", fontSize: 12, fontWeight: 700, color: "#F0C442", letterSpacing: 0.5, marginBottom: 28, marginLeft: 8 }}>
+              🔒 Beta — limited spots
+            </div>
 
-  {/* ── Content sections ─────────────────────────────── */}
-  {/* Isolated from the hero's textAlign:center — everything below is left-aligned */}
-  <div style={{ display:"flex", flexDirection:"column", alignItems:"center",
-    gap:80, padding:"0 24px 80px" }}>
+            <h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: "clamp(30px,9vw,52px)", fontWeight: 900, color: "#EDE9E2", lineHeight: 1.1, marginBottom: 18, letterSpacing: -0.5, maxWidth: 560 }}>
+              Know before you spend.{" "}
+              <span style={{ color: "#00D68F", fontStyle: "italic" }}>Finally.</span>
+            </h1>
 
-    {/* Pain points */}
-    <div style={{ width:"100%", maxWidth:560, margin:"0 auto" }}>
-      <div style={{ color:"#00D68F", fontSize:10, fontWeight:700, letterSpacing:1.8,
-        textTransform:"uppercase", marginBottom:20,
-        fontFamily:"'Plus Jakarta Sans',sans-serif" }}>Sound familiar?</div>
-      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-        {[
-          "You close the banking app the second it opens because the number stresses you out.",
-          "You tap your card and genuinely don't know if it'll go through.",
-          "You have accounts at 3 different banks and no idea what the real total is.",
-          "You've tried budgeting apps before and quit within a week."
-        ].map(text=>(
-          <div key={text} style={{ display:"flex", gap:14, alignItems:"flex-start",
-            padding:"16px 18px", background:"#0D1F12", borderRadius:14,
-            border:"1px solid rgba(255,255,255,0.05)" }}>
-            <span style={{ color:"#00D68F", fontSize:14, flexShrink:0, marginTop:2 }}>✓</span>
-            <span style={{ color:"#6B7A6E", fontSize:14, lineHeight:1.65,
-              fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{text}</span>
+            <p style={{ color: "#6B7A6E", fontSize: 16, lineHeight: 1.75, maxWidth: 380, marginBottom: 40 }}>
+              Finally know if you can afford it. One safe-to-spend number, calculated from your real accounts — updated every day.
+            </p>
+
+            {/* Hero product card */}
+            <div style={{ width: "100%", maxWidth: 340, background: "#0D1F12", border: "1px solid rgba(0,214,143,0.2)", borderRadius: 24, padding: "28px 24px", marginBottom: 36, boxShadow: "0 0 80px rgba(0,214,143,0.07)" }}>
+              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Safe to spend today</div>
+              <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 56, fontWeight: 900, color: "#00D68F", lineHeight: 1, marginBottom: 6 }}>$247</div>
+              <div style={{ color: "rgba(237,233,226,0.35)", fontSize: 12, marginBottom: 24 }}>After bills · After buffer · From your real balance</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {[["🏦  Chequing / Checking","$1,843.22"],["💳  Credit Card","−$612.00"],["📅  Upcoming bills","−$984.00"]].map(([label,amount]) => (
+                  <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "11px 14px", background: "rgba(255,255,255,0.03)", borderRadius: 12, fontSize: 13 }}>
+                    <span style={{ color: "#6B7A6E" }}>{label}</span>
+                    <span style={{ color: "#EDE9E2", fontWeight: 600 }}>{amount}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Primary CTA */}
+            <button onClick={goSignup} style={{ width: "100%", maxWidth: 340, padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", marginBottom: 12, boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+              Know Before You Spend — Free
+            </button>
+            <div style={{ color: "#6B7A6E", fontSize: 12, marginBottom: 52 }}>No credit card · Connects RBC, TD, Chase, Wells Fargo + thousands more</div>
+
+            {/* Trust row */}
+            <div style={{ display: "flex", gap: 28, justifyContent: "center", flexWrap: "wrap", marginBottom: 64 }}>
+              {[["🔒","Bank-level security"],["🌎","CA & US accounts"],["⚡","Live in 60 seconds"]].map(([icon,label]) => (
+                <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, color: "#6B7A6E", fontSize: 12, fontWeight: 600 }}>
+                  <span>{icon}</span><span>{label}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Pain section */}
+            <div style={{ width: "100%", maxWidth: 560, marginBottom: 64, textAlign: "left" }}>
+              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Sound familiar?</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {[
+                  "You close the banking app the second it opens because the number stresses you out.",
+                  "You tap your card and genuinely don't know if it'll go through.",
+                  "You have accounts at 3 different banks and no idea what the real total is.",
+                  "You've tried budgeting apps before and quit within a week."
+                ].map((text) => (
+                  <div key={text} style={{ display: "flex", gap: 14, alignItems: "flex-start", padding: "14px 18px", background: "#0D1F12", borderRadius: 14, border: "1px solid rgba(255,255,255,0.05)" }}>
+                    <span style={{ color: "#00D68F", fontSize: 16, flexShrink: 0, marginTop: 1 }}>✓</span>
+                    <span style={{ color: "#6B7A6E", fontSize: 14, lineHeight: 1.6 }}>{text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* How it works */}
+            <div style={{ width: "100%", maxWidth: 560, marginBottom: 64 }}>
+              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>How it works</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {[
+                  ["1","Connect your banks","Plaid securely links RBC, TD, Chase, Wells Fargo and thousands more. Your login is never stored — Plaid is used by millions of financial apps worldwide."],
+                  ["2","See your real number","One safe-to-spend number calculated from your real balance, upcoming bills, and a protective buffer."],
+                  ["3","Know before you tap","Check it every morning. Stop guessing. Stop dreading. Just know."]
+                ].map(([num,title,body]) => (
+                  <div key={num} style={{ display: "flex", gap: 16, padding: "18px", background: "#0D1F12", borderRadius: 16, border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 99, background: "rgba(0,214,143,0.15)", border: "1px solid rgba(0,214,143,0.3)", color: "#00D68F", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{num}</div>
+                    <div>
+                      <div style={{ color: "#EDE9E2", fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{title}</div>
+                      <div style={{ color: "#6B7A6E", fontSize: 13, lineHeight: 1.65 }}>{body}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Features */}
+            <div style={{ width: "100%", maxWidth: 560, marginBottom: 64 }}>
+              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Everything in one place</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {[
+                  ["💰","Safe-to-spend number","One clear daily number that accounts for bills and buffer."],
+                  ["🤖","AI Financial Coach","Ask anything. Get honest, personalised financial advice for Canada & the US."],
+                  ["🏦","All your accounts","RBC, TD, Chase, Wells Fargo, and thousands more — all in one dashboard."],
+                  ["📈","Investment tracking","Know exactly where you stand on RRSP, TFSA, 401k, and more."],
+                  ["📅","Bill forecasting","See what's coming before it hits. Never be surprised."],
+                  ["🎯","Goal tracking","Set savings goals and watch them grow with 30-year projections."]
+                ].map(([icon,title,body]) => (
+                  <div key={title} style={{ padding: "16px", background: "#0D1F12", borderRadius: 16, border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ fontSize: 22, marginBottom: 8 }}>{icon}</div>
+                    <div style={{ color: "#EDE9E2", fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{title}</div>
+                    <div style={{ color: "#6B7A6E", fontSize: 11, lineHeight: 1.6 }}>{body}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Pricing */}
+            <div style={{ width: "100%", maxWidth: 400, marginBottom: 64 }}>
+              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Simple pricing</div>
+              <div style={{ background: "#0D1F12", border: "1px solid rgba(0,214,143,0.25)", borderRadius: 24, padding: "32px 28px", textAlign: "center" }}>
+                <div style={{ color: "#6B7A6E", fontSize: 13, marginBottom: 8 }}>After free trial</div>
+                <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 48, fontWeight: 900, color: "#EDE9E2", lineHeight: 1, marginBottom: 4 }}>$14.99</div>
+                <div style={{ color: "#6B7A6E", fontSize: 13, marginBottom: 28 }}>per month · Cancel anytime</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28, textAlign: "left" }}>
+                  {["All accounts connected","Safe-to-spend number daily","AI Financial Coach","Investment & retirement tracking","Bill forecasting","Goal tracking with projections"].map(f => (
+                    <div key={f} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                      <span style={{ color: "#00D68F", fontSize: 14 }}>✓</span>
+                      <span style={{ color: "#EDE9E2", fontSize: 13 }}>{f}</span>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={goSignup} style={{ width: "100%", padding: "16px", borderRadius: 14, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 15, cursor: "pointer", boxShadow: "0 8px 32px rgba(0,214,143,0.3)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                  Start Free Trial
+                </button>
+                <div style={{ color: "#6B7A6E", fontSize: 11, marginTop: 12 }}>No credit card required</div>
+              </div>
+            </div>
+
+            {/* Bottom CTA */}
+            <div style={{ width: "100%", maxWidth: 400, textAlign: "center", marginBottom: 64 }}>
+              <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 26, fontWeight: 900, color: "#EDE9E2", lineHeight: 1.2, marginBottom: 16 }}>
+                Stop guessing.<br />
+                <span style={{ color: "#00D68F", fontStyle: "italic" }}>Start knowing.</span>
+              </div>
+              <button onClick={goSignup} style={{ width: "100%", padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 10 }}>
+                Know Before You Spend — Free
+              </button>
+              <div style={{ color: "#6B7A6E", fontSize: 12 }}>No credit card · Takes 60 seconds</div>
+            </div>
+
           </div>
-        ))}
-      </div>
-    </div>
 
-    {/* How it works */}
-    <div style={{ width:"100%", maxWidth:560, margin:"0 auto" }}>
-      <div style={{ color:"#00D68F", fontSize:10, fontWeight:700, letterSpacing:1.8,
-        textTransform:"uppercase", marginBottom:20,
-        fontFamily:"'Plus Jakarta Sans',sans-serif" }}>How it works</div>
-      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-        {[
-          ["1","Connect your banks","Plaid securely links RBC, TD, Chase, Wells Fargo and thousands more. Your credentials never touch our servers."],
-          ["2","See your real number","One safe-to-spend number calculated from your real balance, upcoming bills, and a safety buffer — not a guess."],
-          ["3","Know before you tap","Check it every morning. Stop guessing. Stop dreading. Just know."]
-        ].map(([num,title,body])=>(
-          <div key={num} style={{ display:"flex", gap:16, padding:"18px",
-            background:"#0D1F12", borderRadius:14,
-            border:"1px solid rgba(255,255,255,0.05)" }}>
-            <div style={{ width:28, height:28, borderRadius:99, flexShrink:0,
-              background:"rgba(0,214,143,0.12)", border:"1px solid rgba(0,214,143,0.3)",
-              display:"flex", alignItems:"center", justifyContent:"center",
-              color:"#00D68F", fontSize:12, fontWeight:800,
-              fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{num}</div>
-            <div>
-              <div style={{ color:"#EDE9E2", fontWeight:700, fontSize:14, marginBottom:5,
-                fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{title}</div>
-              <div style={{ color:"#6B7A6E", fontSize:13, lineHeight:1.65,
-                fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{body}</div>
+          {/* Footer */}
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", padding: "20px 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+            <span style={{ color: "#6B7A6E", fontSize: 11 }}>© 2026 GrowSmart Inc. · Flourish Money</span>
+            <div style={{ display: "flex", gap: 24 }}>
+              {[["Privacy Policy","/privacy"],["Terms of Service","/terms"]].map(([label,href]) => (
+                <a key={label} href={href} style={{ color: "#6B7A6E", fontSize: 11, textDecoration: "none" }}>{label}</a>
+              ))}
             </div>
           </div>
-        ))}
-      </div>
-    </div>
 
-    {/* Features grid */}
-    <div style={{ width:"100%", maxWidth:560, margin:"0 auto" }}>
-      <div style={{ color:"#00D68F", fontSize:10, fontWeight:700, letterSpacing:1.8,
-        textTransform:"uppercase", marginBottom:20,
-        fontFamily:"'Plus Jakarta Sans',sans-serif" }}>Everything included</div>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-        {[
-          ["💰","Safe-to-spend","One clear daily number that accounts for every bill and buffer."],
-          ["🤖","AI Coach","Ask anything. Honest, personalised advice for Canada &amp; the US."],
-          ["🏦","All accounts","RBC, TD, Chase, Wells Fargo, and thousands more — unified."],
-          ["📈","Investments","RRSP, TFSA, 401k, and more tracked in one place."],
-          ["📅","Bill forecast","See what's coming before it hits. Never be surprised again."],
-          ["🎯","Goals","Sinking funds, emergency fund, savings goals with timelines."]
-        ].map(([icon,title,body])=>(
-          <div key={title} style={{ padding:"16px", background:"#0D1F12",
-            borderRadius:14, border:"1px solid rgba(255,255,255,0.05)" }}>
-            <div style={{ fontSize:20, marginBottom:8 }}>{icon}</div>
-            <div style={{ color:"#EDE9E2", fontWeight:700, fontSize:13, marginBottom:4,
-              fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{title}</div>
-            <div style={{ color:"#6B7A6E", fontSize:11, lineHeight:1.65,
-              fontFamily:"'Plus Jakarta Sans',sans-serif" }} dangerouslySetInnerHTML={{__html:body}}/>
-          </div>
-        ))}
-      </div>
-    </div>
-
-    {/* Pricing */}
-    <div style={{ width:"100%", maxWidth:380, margin:"0 auto" }}>
-      <div style={{ color:"#00D68F", fontSize:10, fontWeight:700, letterSpacing:1.8,
-        textTransform:"uppercase", marginBottom:20, textAlign:"center",
-        fontFamily:"'Plus Jakarta Sans',sans-serif" }}>Simple pricing</div>
-      <div style={{ background:"#0D1F12", border:"1px solid rgba(0,214,143,0.22)",
-        borderRadius:24, padding:"32px 28px", textAlign:"center" }}>
-        <div style={{ color:"#6B7A6E", fontSize:12, marginBottom:6,
-          fontFamily:"'Plus Jakarta Sans',sans-serif" }}>After free trial</div>
-        <div style={{ fontFamily:"'Playfair Display',serif", fontSize:52,
-          fontWeight:900, color:"#EDE9E2", lineHeight:1, marginBottom:4 }}>
-          $14.99<span style={{ fontSize:18, fontWeight:400, color:"#6B7A6E" }}> CAD</span>
         </div>
-        <div style={{ color:"#6B7A6E", fontSize:12, marginBottom:28,
-          fontFamily:"'Plus Jakarta Sans',sans-serif" }}>per month · Cancel anytime</div>
-        <div style={{ display:"flex", flexDirection:"column", gap:10,
-          marginBottom:24, textAlign:"left" }}>
-          {["All accounts connected","Safe-to-spend number daily","AI Financial Coach",
-            "Investment & retirement tracking","Bill forecasting","Goals & sinking funds"].map(f=>(
-            <div key={f} style={{ display:"flex", gap:10, alignItems:"center" }}>
-              <span style={{ color:"#00D68F", fontSize:13, flexShrink:0 }}>✓</span>
-              <span style={{ color:"#EDE9E2", fontSize:13,
-                fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{f}</span>
-            </div>
-          ))}
-        </div>
-        <button onClick={goSignup} style={{ width:"100%", padding:"15px",
-          borderRadius:12, border:"none",
-          background:"linear-gradient(135deg,#00D68F,#00FF9F)",
-          color:"#041810", fontWeight:800, fontSize:14, cursor:"pointer",
-          fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
-          Start Free Trial
-        </button>
-        <div style={{ color:"#4A5E50", fontSize:11, marginTop:10,
-          fontFamily:"'Plus Jakarta Sans',sans-serif" }}>No credit card required</div>
-      </div>
-    </div>
 
-    {/* Bottom CTA */}
-    <div style={{ width:"100%", maxWidth:380, margin:"0 auto", textAlign:"center" }}>
-      <div style={{ fontFamily:"'Playfair Display',serif", fontSize:30,
-        fontWeight:900, color:"#EDE9E2", lineHeight:1.15, marginBottom:24 }}>
-        Stop guessing.<br/>
-        <span style={{ color:"#00D68F", fontStyle:"italic" }}>Start knowing.</span>
-      </div>
-      <button onClick={goSignup} style={{ width:"100%", padding:"16px",
-        borderRadius:14, border:"none",
-        background:"linear-gradient(135deg,#00D68F,#00FF9F)",
-        color:"#041810", fontWeight:800, fontSize:15, cursor:"pointer",
-        fontFamily:"'Plus Jakarta Sans',sans-serif", marginBottom:10 }}>
-        Know Before You Spend — Free
-      </button>
-      <div style={{ color:"#4A5E50", fontSize:12,
-        fontFamily:"'Plus Jakarta Sans',sans-serif" }}>No credit card · Takes 60 seconds</div>
-    </div>
+      ) : (
 
-  </div>{/* end content sections */}
-
-  {/* ── Footer ───────────────────────────────────────── */}
-  <div style={{ borderTop:"1px solid rgba(255,255,255,0.06)",
-    padding:"20px 28px", display:"flex",
-    justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:12 }}>
-    <span style={{ color:"#4A5E50", fontSize:11,
-      fontFamily:"'Plus Jakarta Sans',sans-serif" }}>© 2026 GrowSmart Inc. · Flourish Money</span>
-    <div style={{ display:"flex", gap:24 }}>
-      {[["Privacy Policy","/privacy"],["Terms of Service","/terms"]].map(([label,href])=>(
-        <a key={label} href={href} style={{ color:"#4A5E50", fontSize:11,
-          textDecoration:"none", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{label}</a>
-      ))}
-    </div>
-  </div>
-
-</div>
-
-) : (
+        /* ───────────────── AUTH FORM ───────────────── */
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: 24 }}>
           <div style={{ width: "100%", maxWidth: 400, animation: "fadeUp .5s ease both" }}>
 
@@ -11417,9 +10985,9 @@ function BudgetScreen({data, setAppData, setScreen}) {
   const [showAddCat, setShowAddCat] = useState(false);
   const [saved, setSaved] = useState(false);
 
-const {
+  const {
     suggestions, netMo, fixedMo, discret, savingsMo, savingsRate,
-    grossMo, goalsMo, sinkingMo, aspirationalGoalsMo, canAfford, shortfall, cutSuggestions,
+    grossMo, goalsMo, canAfford, shortfall, cutSuggestions,
     hSize, numKids, totalSugg
   } = generateBudgetSuggestions(data);
   const budgets = data.budgets || {};
@@ -11531,14 +11099,13 @@ const {
       {/* Money math strip */}
       <div style={{ background: C.card, borderRadius: 18, padding: "14px 16px", border: `1px solid ${C.border}` }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            {[
-              ["Take-home", `$${Math.round(netMo).toLocaleString()}/mo`, C.green, "💵"],
-              ["Fixed bills & debt", `−$${Math.round(fixedMo).toLocaleString()}/mo`, C.red, "🏠"],
-              ["Savings target", `−$${Math.round(savingsMo).toLocaleString()}/mo`, C.teal, "💰"],
-              ...(sinkingMo > 0 ? [["Sinking funds", `−$${Math.round(sinkingMo).toLocaleString()}/mo`, C.gold, "🪣"]] : []),
-              ...(aspirationalGoalsMo > 0 ? [["Goal savings", `−$${Math.round(aspirationalGoalsMo).toLocaleString()}/mo`, C.purple, "🎯"]] : []),
-              ["Available to spend", `$${Math.round(discret).toLocaleString()}/mo`, C.greenBright, "✅"],
-              ].map(([label, val, color, emoji]) => (
+          {[
+            ["Take-home", `$${Math.round(netMo).toLocaleString()}/mo`, C.green, "💵"],
+            ["Fixed bills & debt", `−$${Math.round(fixedMo).toLocaleString()}/mo`, C.red, "🏠"],
+            ["Savings target", `−$${Math.round(savingsMo).toLocaleString()}/mo`, C.teal, "💰"],
+            ...(goalsMo > 0 ? [["Goal savings", `−$${Math.round(goalsMo).toLocaleString()}/mo`, C.purple, "🎯"]] : []),
+            ["Available to spend", `$${Math.round(discret).toLocaleString()}/mo`, C.greenBright, "✅"],
+          ].map(([label, val, color, emoji]) => (
             <div key={label} style={{ background: C.cardAlt, borderRadius: 12, padding: "10px 12px", border: `1px solid ${C.border}` }}>
               <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
                 <span style={{ fontSize: 12 }}>{emoji}</span>
@@ -11624,7 +11191,7 @@ const {
             </div>
             <div style={{background:C.green+"10",borderRadius:10,padding:"8px 12px",marginBottom:12,border:`1px solid ${C.green}22`}}>
               <div style={{color:C.greenBright,fontSize:11,fontWeight:700}}>
-              ${Math.round(discret).toLocaleString()}/mo available after bills + savings{sinkingMo>0?` + sinking funds`:""}{aspirationalGoalsMo>0?` + goal savings`:""}
+                ${Math.round(discret).toLocaleString()}/mo available after bills + savings{goalsMo>0?` + goal savings`:""} 
               </div>
             </div>
 
@@ -11790,34 +11357,19 @@ const {
                 // Match transactions to bills via vendorBillMap
                 const vendorBillMap = data.vendorBillMap||{};
                 const catOverridesLocal = (()=>{try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");}catch{return {};}})();
-        const billsWithStatus = allBills.map(bill => {
-          // Find a transaction this month that pays this bill
-          const linkedTxn = monthTxns.find(t => {
-            const vendor = (t.name||"").toLowerCase().trim();
-            const billVendor = (bill.vendorPattern||bill.name||"").toLowerCase().trim();
-            return vendorBillMap[vendor]?.toLowerCase() === bill.name.toLowerCase() ||
-              (billVendor.length >= 4 && (vendor.includes(billVendor.substring(0,6)) || billVendor.includes(vendor.substring(0,8))));
-          });
-          const isVariable = bill.type === "variable";
-          const expectedAmt = parseFloat(bill.amount||0);
-          const actualAmt = linkedTxn ? Math.abs(parseFloat(linkedTxn.amount||0)) : null;
-          // Reconciliation status — replaces manual arrears entry
-          let reconcileStatus, balanceOwing=0;
-          if(!linkedTxn) {
-            reconcileStatus = 'unpaid';
-            balanceOwing = expectedAmt;
-          } else if(actualAmt >= expectedAmt * 0.85) {
-            reconcileStatus = 'paid';
-            balanceOwing = 0;
-          } else {
-            reconcileStatus = 'partial';
-            balanceOwing = Math.round(expectedAmt - actualAmt);
-          }
-          // Flag variable bill if actual differs >10% from expected
-          const suggestUpdate = isVariable && actualAmt !== null && Math.abs(actualAmt - expectedAmt) > expectedAmt * 0.10;
-          return { ...bill, linkedTxn, isVariable, expectedAmt, actualAmt,
-            paid: reconcileStatus !== 'unpaid', reconcileStatus, balanceOwing, suggestUpdate };
-        });
+                const billsWithStatus = allBills.map(bill => {
+                  // Find a transaction this month that pays this bill
+                  const linkedTxn = monthTxns.find(t => {
+                    const vendor = (t.name||"").toLowerCase().trim();
+                    const billVendor = (bill.vendorPattern||bill.name||"").toLowerCase().trim();
+                    return vendorBillMap[vendor]?.toLowerCase() === bill.name.toLowerCase() ||
+                           (billVendor.length >= 4 && (vendor.includes(billVendor.substring(0,6)) || billVendor.includes(vendor.substring(0,6))));
+                  });
+                  const isVariable = bill.type === "variable";
+                  const expectedAmt = parseFloat(bill.amount||0);
+                  const actualAmt = linkedTxn ? Math.abs(parseFloat(linkedTxn.amount||0)) : null;
+                  return { ...bill, linkedTxn, isVariable, expectedAmt, actualAmt, paid: !!linkedTxn };
+                });
 
                 const paidCount = billsWithStatus.filter(b=>b.paid).length;
                 const totalBillsAmt = billsWithStatus.reduce((s,b)=>s+b.expectedAmt,0);
@@ -11836,47 +11388,41 @@ const {
                         </div>
                       )}
                     </div>
-        {billsWithStatus.map((bill,idx)=>{
-          const dotColor = bill.reconcileStatus==='paid'?C.green:bill.reconcileStatus==='partial'?C.gold:C.red;
-          return (
-          <div key={idx} style={{padding:"10px 0",borderBottom:idx<billsWithStatus.length-1?`1px solid ${C.border}`:"none"}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <div style={{width:8,height:8,borderRadius:"50%",background:dotColor,flexShrink:0,marginTop:2}}/>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <span style={{color:C.cream,fontSize:13,fontWeight:600}}>{bill.name}</span>
-                  {bill.isVariable&&<span style={{background:C.teal+"18",color:C.tealBright,fontSize:9,padding:"2px 5px",borderRadius:99,border:`1px solid ${C.teal}33`}}>variable</span>}
-                </div>
-                {bill.reconcileStatus==='paid'&&bill.linkedTxn&&(
-                  <div style={{color:C.muted,fontSize:10,marginTop:2}}>
-                    ✓ Paid {new Date(bill.linkedTxn.date+"T12:00:00").toLocaleDateString("en",{month:"short",day:"numeric"})}
-                    {bill.suggestUpdate&&<span style={{color:C.gold,marginLeft:6}}>· amount changed — update below</span>}
-                  </div>
-                )}
-                {bill.reconcileStatus==='partial'&&(
-                  <div style={{color:C.gold,fontSize:10,fontWeight:700,marginTop:2}}>
-                    ⚠️ Partial payment — ${bill.balanceOwing} still owing
-                  </div>
-                )}
-                {bill.reconcileStatus==='unpaid'&&(
-                  <div style={{color:C.red,fontSize:10,marginTop:2}}>No payment found this month</div>
-                )}
-              </div>
-              <div style={{textAlign:"right",flexShrink:0}}>
-                <div style={{color:dotColor,fontWeight:700,fontSize:13}}>
-                  {bill.actualAmt!==null?`$${Math.round(bill.actualAmt)}`:`$${Math.round(bill.expectedAmt)}`}
-                </div>
-                {bill.reconcileStatus==='partial'&&(
-                  <div style={{color:C.gold,fontSize:9}}>of ${Math.round(bill.expectedAmt)} due</div>
-                )}
-                {bill.reconcileStatus==='unpaid'&&(
-                  <div style={{color:C.red,fontSize:9}}>unpaid</div>
-                )}
-              </div>
-            </div>
-          </div>
-          );
-        })}
+                    {billsWithStatus.map((bill,i)=>{
+                      const color = bill.paid ? C.green : C.muted;
+                      const amtDiff = bill.actualAmt !== null ? bill.actualAmt - bill.expectedAmt : null;
+                      return (
+                        <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:i<billsWithStatus.length-1?`1px solid ${C.border}`:"none"}}>
+                          <div style={{width:8,height:8,borderRadius:"50%",background:bill.paid?C.green:C.muted,flexShrink:0}}/>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{display:"flex",alignItems:"center",gap:6}}>
+                              <span style={{color:C.cream,fontSize:13,fontWeight:600}}>{bill.name}</span>
+                              {bill.isVariable&&<span style={{background:C.teal+"18",color:C.tealBright,fontSize:9,padding:"2px 5px",borderRadius:99,border:`1px solid ${C.teal}33`}}>variable</span>}
+                              {bill.category&&<span style={{color:C.muted,fontSize:10}}>{bill.category}</span>}
+                            </div>
+                            {bill.paid&&bill.linkedTxn&&(
+                              <div style={{color:C.muted,fontSize:10,marginTop:1}}>
+                                Paid {new Date(bill.linkedTxn.date+"T12:00:00").toLocaleDateString("en",{month:"short",day:"numeric"})}
+                                {amtDiff!==null&&Math.abs(amtDiff)>2&&(
+                                  <span style={{color:amtDiff>0?C.redBright:C.greenBright,marginLeft:6}}>
+                                    {amtDiff>0?`+$${Math.round(amtDiff)} more than usual`:`$${Math.round(Math.abs(amtDiff))} less than usual`}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {!bill.paid&&(
+                              <div style={{color:C.muted,fontSize:10,marginTop:1}}>No payment found this month</div>
+                            )}
+                          </div>
+                          <div style={{textAlign:"right",flexShrink:0}}>
+                            <div style={{color:bill.paid?C.green:C.cream,fontWeight:700,fontSize:13}}>
+                              {bill.actualAmt!==null?`$${Math.round(bill.actualAmt)}`:`$${Math.round(bill.expectedAmt)}`}
+                            </div>
+                            {bill.paid&&<div style={{color:C.greenBright,fontSize:9}}>✓ paid</div>}
+                          </div>
+                        </div>
+                      );
+                    })}
                     {/* Variable bill update prompt */}
                     {variableBills.length>0&&(
                       <div style={{marginTop:10,background:C.teal+"10",border:`1px solid ${C.teal}28`,borderRadius:10,padding:"10px 12px"}}>
