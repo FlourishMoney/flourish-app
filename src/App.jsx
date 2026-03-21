@@ -6217,6 +6217,7 @@ function SpendScreen({data, setAppData, setScreen}){
   const [arrearsPayTxn,setArrearsPayTxn]=useState(null);
   const [applyAllPrompt, setApplyAllPrompt] = useState(null);
   const [showAllBdCats, setShowAllBdCats] = useState(false);
+  const [billAutoFlagToast, setBillAutoFlagToast] = useState(null);
 
   // ── NON-HOOK DERIVED VALUES (after all hooks) ──────────────────────────────
   const isDemo=!data.bankConnected;
@@ -6437,10 +6438,28 @@ function SpendScreen({data, setAppData, setScreen}){
                         bills:[...(prev.bills||[]),newBill],
                         vendorBillMap:{...(prev.vendorBillMap||{}),...(merchantKey?{[merchantKey]:newBill.name}:{})}}));
                     }
-                    // Categorise transaction under bill's category (not generic "Bills")
+                    // Categorise the tapped transaction and ALL past transactions from same vendor
                     const billCat = billForm.category||"Other Bills";
-                    const overrides=JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
-                    localStorage.setItem("flourish_cat_overrides",JSON.stringify({...overrides,[markBillTxn.id]:billCat}));
+                    const allOverrides=JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
+                    // Tag the tapped transaction
+                    allOverrides[markBillTxn.id]=billCat;
+                    // Auto-flag all other transactions from the same vendor
+                    const vendorKey=(markBillTxn.name||"").toLowerCase().trim();
+                    let autoFlagged=0;
+                    if(vendorKey.length>=3){
+                      txns.forEach(t=>{
+                        if(t.id!==markBillTxn.id&&(t.name||"").toLowerCase().trim()===vendorKey){
+                          allOverrides[t.id]=billCat;
+                          autoFlagged++;
+                        }
+                      });
+                    }
+                    localStorage.setItem("flourish_cat_overrides",JSON.stringify(allOverrides));
+                    // Show toast confirmation
+                    if(autoFlagged>0){
+                      setBillAutoFlagToast({name:markBillTxn.name,count:autoFlagged,cat:billCat});
+                      setTimeout(()=>setBillAutoFlagToast(null),4000);
+                    }
                   }
                   setMarkBillTxn(null);setBillForm({name:"",amount:"",date:"1",type:"fixed",category:"Bills"});
                 }}
@@ -6624,6 +6643,16 @@ function SpendScreen({data, setAppData, setScreen}){
     </div>
 
     {!isDemo&&<IncomeDetectionBanner transactions={txns} incomes={data.incomes} setAppData={setAppData}/>}
+      {billAutoFlagToast&&(
+        <div style={{background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,animation:"fadeUp 0.3s ease"}}>
+          <span style={{fontSize:18,flexShrink:0}}>✅</span>
+          <div style={{flex:1}}>
+            <div style={{color:C.greenBright,fontWeight:700,fontSize:12}}>{billAutoFlagToast.count} past transaction{billAutoFlagToast.count===1?'':'s'} from {billAutoFlagToast.name} auto-categorized</div>
+            <div style={{color:C.muted,fontSize:10,marginTop:2}}>All filed as {billAutoFlagToast.cat} — your breakdown is now accurate</div>
+          </div>
+          <button onClick={()=>setBillAutoFlagToast(null)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,padding:0,flexShrink:0}}>✕</button>
+        </div>
+      )}
     <div style={{display:"flex",gap:6,background:C.surface,borderRadius:16,padding:4}}>
       {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeBright:C.muted,borderRadius:12,padding:"9px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
         {t==="txn"?"Transactions":t==="breakdown"?"Breakdown":"Smart Cuts"}
@@ -11325,19 +11354,34 @@ function BudgetScreen({data, setAppData, setScreen}) {
                 // Match transactions to bills via vendorBillMap
                 const vendorBillMap = data.vendorBillMap||{};
                 const catOverridesLocal = (()=>{try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");}catch{return {};}})();
-                const billsWithStatus = allBills.map(bill => {
-                  // Find a transaction this month that pays this bill
-                  const linkedTxn = monthTxns.find(t => {
-                    const vendor = (t.name||"").toLowerCase().trim();
-                    const billVendor = (bill.vendorPattern||bill.name||"").toLowerCase().trim();
-                    return vendorBillMap[vendor]?.toLowerCase() === bill.name.toLowerCase() ||
-                           (billVendor.length >= 4 && (vendor.includes(billVendor.substring(0,6)) || billVendor.includes(vendor.substring(0,6))));
-                  });
-                  const isVariable = bill.type === "variable";
-                  const expectedAmt = parseFloat(bill.amount||0);
-                  const actualAmt = linkedTxn ? Math.abs(parseFloat(linkedTxn.amount||0)) : null;
-                  return { ...bill, linkedTxn, isVariable, expectedAmt, actualAmt, paid: !!linkedTxn };
-                });
+        const billsWithStatus = allBills.map(bill => {
+          // Find a transaction this month that pays this bill
+          const linkedTxn = monthTxns.find(t => {
+            const vendor = (t.name||"").toLowerCase().trim();
+            const billVendor = (bill.vendorPattern||bill.name||"").toLowerCase().trim();
+            return vendorBillMap[vendor]?.toLowerCase() === bill.name.toLowerCase() ||
+              (billVendor.length >= 4 && (vendor.includes(billVendor.substring(0,6)) || billVendor.includes(vendor.substring(0,8))));
+          });
+          const isVariable = bill.type === "variable";
+          const expectedAmt = parseFloat(bill.amount||0);
+          const actualAmt = linkedTxn ? Math.abs(parseFloat(linkedTxn.amount||0)) : null;
+          // Reconciliation status — replaces manual arrears entry
+          let reconcileStatus, balanceOwing=0;
+          if(!linkedTxn) {
+            reconcileStatus = 'unpaid';
+            balanceOwing = expectedAmt;
+          } else if(actualAmt >= expectedAmt * 0.85) {
+            reconcileStatus = 'paid';
+            balanceOwing = 0;
+          } else {
+            reconcileStatus = 'partial';
+            balanceOwing = Math.round(expectedAmt - actualAmt);
+          }
+          // Flag variable bill if actual differs >10% from expected
+          const suggestUpdate = isVariable && actualAmt !== null && Math.abs(actualAmt - expectedAmt) > expectedAmt * 0.10;
+          return { ...bill, linkedTxn, isVariable, expectedAmt, actualAmt,
+            paid: reconcileStatus !== 'unpaid', reconcileStatus, balanceOwing, suggestUpdate };
+        });
 
                 const paidCount = billsWithStatus.filter(b=>b.paid).length;
                 const totalBillsAmt = billsWithStatus.reduce((s,b)=>s+b.expectedAmt,0);
@@ -11356,41 +11400,47 @@ function BudgetScreen({data, setAppData, setScreen}) {
                         </div>
                       )}
                     </div>
-                    {billsWithStatus.map((bill,i)=>{
-                      const color = bill.paid ? C.green : C.muted;
-                      const amtDiff = bill.actualAmt !== null ? bill.actualAmt - bill.expectedAmt : null;
-                      return (
-                        <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:i<billsWithStatus.length-1?`1px solid ${C.border}`:"none"}}>
-                          <div style={{width:8,height:8,borderRadius:"50%",background:bill.paid?C.green:C.muted,flexShrink:0}}/>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{display:"flex",alignItems:"center",gap:6}}>
-                              <span style={{color:C.cream,fontSize:13,fontWeight:600}}>{bill.name}</span>
-                              {bill.isVariable&&<span style={{background:C.teal+"18",color:C.tealBright,fontSize:9,padding:"2px 5px",borderRadius:99,border:`1px solid ${C.teal}33`}}>variable</span>}
-                              {bill.category&&<span style={{color:C.muted,fontSize:10}}>{bill.category}</span>}
-                            </div>
-                            {bill.paid&&bill.linkedTxn&&(
-                              <div style={{color:C.muted,fontSize:10,marginTop:1}}>
-                                Paid {new Date(bill.linkedTxn.date+"T12:00:00").toLocaleDateString("en",{month:"short",day:"numeric"})}
-                                {amtDiff!==null&&Math.abs(amtDiff)>2&&(
-                                  <span style={{color:amtDiff>0?C.redBright:C.greenBright,marginLeft:6}}>
-                                    {amtDiff>0?`+$${Math.round(amtDiff)} more than usual`:`$${Math.round(Math.abs(amtDiff))} less than usual`}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                            {!bill.paid&&(
-                              <div style={{color:C.muted,fontSize:10,marginTop:1}}>No payment found this month</div>
-                            )}
-                          </div>
-                          <div style={{textAlign:"right",flexShrink:0}}>
-                            <div style={{color:bill.paid?C.green:C.cream,fontWeight:700,fontSize:13}}>
-                              {bill.actualAmt!==null?`$${Math.round(bill.actualAmt)}`:`$${Math.round(bill.expectedAmt)}`}
-                            </div>
-                            {bill.paid&&<div style={{color:C.greenBright,fontSize:9}}>✓ paid</div>}
-                          </div>
-                        </div>
-                      );
-                    })}
+        {billsWithStatus.map((bill,idx)=>{
+          const dotColor = bill.reconcileStatus==='paid'?C.green:bill.reconcileStatus==='partial'?C.gold:C.red;
+          return (
+          <div key={idx} style={{padding:"10px 0",borderBottom:idx<billsWithStatus.length-1?`1px solid ${C.border}`:"none"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{width:8,height:8,borderRadius:"50%",background:dotColor,flexShrink:0,marginTop:2}}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{color:C.cream,fontSize:13,fontWeight:600}}>{bill.name}</span>
+                  {bill.isVariable&&<span style={{background:C.teal+"18",color:C.tealBright,fontSize:9,padding:"2px 5px",borderRadius:99,border:`1px solid ${C.teal}33`}}>variable</span>}
+                </div>
+                {bill.reconcileStatus==='paid'&&bill.linkedTxn&&(
+                  <div style={{color:C.muted,fontSize:10,marginTop:2}}>
+                    ✓ Paid {new Date(bill.linkedTxn.date+"T12:00:00").toLocaleDateString("en",{month:"short",day:"numeric"})}
+                    {bill.suggestUpdate&&<span style={{color:C.gold,marginLeft:6}}>· amount changed — update below</span>}
+                  </div>
+                )}
+                {bill.reconcileStatus==='partial'&&(
+                  <div style={{color:C.gold,fontSize:10,fontWeight:700,marginTop:2}}>
+                    ⚠️ Partial payment — ${bill.balanceOwing} still owing
+                  </div>
+                )}
+                {bill.reconcileStatus==='unpaid'&&(
+                  <div style={{color:C.red,fontSize:10,marginTop:2}}>No payment found this month</div>
+                )}
+              </div>
+              <div style={{textAlign:"right",flexShrink:0}}>
+                <div style={{color:dotColor,fontWeight:700,fontSize:13}}>
+                  {bill.actualAmt!==null?`$${Math.round(bill.actualAmt)}`:`$${Math.round(bill.expectedAmt)}`}
+                </div>
+                {bill.reconcileStatus==='partial'&&(
+                  <div style={{color:C.gold,fontSize:9}}>of ${Math.round(bill.expectedAmt)} due</div>
+                )}
+                {bill.reconcileStatus==='unpaid'&&(
+                  <div style={{color:C.red,fontSize:9}}>unpaid</div>
+                )}
+              </div>
+            </div>
+          </div>
+          );
+        })}
                     {/* Variable bill update prompt */}
                     {variableBills.length>0&&(
                       <div style={{marginTop:10,background:C.teal+"10",border:`1px solid ${C.teal}28`,borderRadius:10,padding:"10px 12px"}}>
