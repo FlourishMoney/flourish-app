@@ -417,7 +417,21 @@ async function callPlaid(action, params={}) {
 // Plaid Personal Finance Category (PFC) primary values → Flourish display meta
 // Shared keyword list for detecting credit card payments in transactions.
 // Used by income detection, spending calc, and transparency panel — single source of truth.
-const CC_PAYMENT_KEYWORDS = ["payment","autopay","amex","visa","mastercard","credit card","card payment","minimum payment","balance payment"];
+// IMPORTANT: These must be COMPOUND phrases only — single words like "payment", "visa", "amex"
+// are too broad and will hide legitimate transactions (Bell Canada Payment, VISA DEBIT PURCHASE, etc.)
+// Real CC payments are already caught by their Transfer category in EXCLUDE_CATS.
+// These keywords are a safety net for CC settlements that arrive with non-Transfer categories.
+const CC_PAYMENT_KEYWORDS = [
+  "credit card payment",
+  "card payment",
+  "minimum payment",
+  "balance payment",
+  "autopay",
+  "amex payment",
+  "visa payment",
+  "mastercard payment",
+  "credit card autopay",
+];
 
 // Categories that represent fixed/variable bill commitments — NOT discretionary spending.
 // These are tracked via the Bills array and must be excluded from budget category suggestions
@@ -6318,7 +6332,7 @@ function SpendScreen({data, setAppData, setScreen}){
       ? acctFiltered.filter(t=>getCat(t)==="Transfer"&&t.amount<0)
       : acctFiltered.filter(t=>getCat(t)===catFilter&&!isCCPayment(t,data.debts||[]));
   const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCCPayment(t,data.debts||[])).reduce((a,t)=>a+t.amount,0);
-  const totalIn=acctFiltered.filter(t=>t.amount<0).reduce((a,t)=>a+Math.abs(t.amount),0);
+  const totalIn=acctFiltered.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
 
   const cuts=[
     stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee is adding up",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month totalling $${stats.coffee.toFixed(2)}. That's $${(stats.coffee*12).toFixed(0)}/year. Making coffee at home 4 days a week cuts this by 60%.`,saving:`$${Math.round(stats.coffee*0.6)}/mo`,effort:"Low",color:C.orange},
