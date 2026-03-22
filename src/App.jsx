@@ -2425,9 +2425,12 @@ const FinancialCalcEngine = {
   avgDailySpend(data) {
     const txns = (data.transactions || []).filter(t =>
       t.amount > 0 &&
+      !t.pending &&
       t.cat !== "Transfer" &&
       t.cat !== "Income" &&
-      t.cat !== "Fees"
+      t.cat !== "Fees" &&
+      !BILL_CATS.has(t.cat) && // exclude recurring bills already in upcomingBills
+      !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw))
     );
     if(txns.length === 0) return 0;
     const total = txns.reduce((s,t) => s + Math.abs(t.amount), 0);
@@ -2459,10 +2462,20 @@ const SafeSpendEngine = {
     // Bills due in the next 10 days — use real date arithmetic to handle month boundaries
     const todayDate = new Date();
     const in10Days  = new Date(todayDate); in10Days.setDate(todayDate.getDate() + 10);
+    // Detect bills already paid this month by matching transactions
+    const txnNames = (data.transactions||[])
+      .filter(t => { try { const d=new Date(t.date+"T12:00:00"); return d.getMonth()===todayDate.getMonth()&&d.getFullYear()===todayDate.getFullYear(); } catch{return false;} })
+      .map(t => (t.name||"").toLowerCase());
+    const isBillPaid = (bill) => {
+      const billName = (bill.vendorPattern||bill.name||"").toLowerCase().trim();
+      if(billName.length < 3) return false;
+      return txnNames.some(n => n.includes(billName.substring(0,Math.min(6,billName.length))) || billName.includes(n.substring(0,Math.min(6,n.length))));
+    };
     const upcomingBills = bills
       .filter(b => {
         const dueDay = parseInt(b.date);
         if(!dueDay) return false;
+        if(isBillPaid(b)) return false; // already paid this month — don't double-subtract
         // Build this month's due date
         const thisMonth = new Date(todayDate.getFullYear(), todayDate.getMonth(), dueDay);
         // Build next month's due date
@@ -2496,6 +2509,7 @@ const SafeSpendEngine = {
       soonBills: bills.filter(b => {
         const dueDay = parseInt(b.date);
         if(!dueDay) return false;
+        if(isBillPaid(b)) return false;
         const thisMonth = new Date(todayDate.getFullYear(), todayDate.getMonth(), dueDay);
         const nextMonth = new Date(todayDate.getFullYear(), todayDate.getMonth()+1, dueDay);
         return (thisMonth >= todayDate && thisMonth <= in10Days) ||
