@@ -5,7 +5,8 @@ import {
   Zap, Package, Film, Music, Pill, Shirt,
   TrendingUp, Shield, CheckCircle,
   Target, PiggyBank, DollarSign,
-  ShoppingBag, Flame, Star, Car, BarChart2
+  ShoppingBag, Flame, Star, Car, BarChart2,
+  Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -3063,19 +3064,19 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
 // ─── DASHBOARD TILE REGISTRY ──────────────────────────────────────────────────
 const DASH_TILES = [
   // Core sections — always on dashboard, user can hide or reorder
-  { id: 'hero',        label: 'Safe-to-Spend',       icon: '💰', alwaysVisible: true },
-  { id: 'bento',       label: 'Stats Row',            icon: '📊' },
-  { id: 'healthrow',   label: 'Health & Streak',      icon: '💚' },
-  { id: 'action',      label: 'Action Alert',         icon: '⚡' },
+  { id: 'hero',        label: 'Safe-to-Spend',       lucide:'dollar-sign',  alwaysVisible: true },
+  { id: 'bento',       label: 'Stats Row',            lucide:'bar-chart-2'  },
+  { id: 'healthrow',   label: 'Health & Streak',      lucide:'heart'        },
+  { id: 'action',      label: 'Action Alert',         lucide:'zap'          },
   // Extended tiles
-  { id: 'networth',    label: 'Net Worth Trend',      icon: '📈' },
-  { id: 'forecast',    label: 'Cash Flow Forecast',   icon: '📅' },
-  { id: 'decision',    label: 'Decision Engine',      icon: '🧠' },
-  { id: 'autopilot',   label: 'Autopilot',            icon: '✈️'  },
-  { id: 'opportunity', label: 'Opportunities',        icon: '💡' },
-  { id: 'health',      label: 'Health Score Detail',  icon: '🏥' },
-  { id: 'credit',      label: 'Credit Score',         icon: '💳' },
-  { id: 'quicknav',    label: 'Quick Navigation',     icon: '⚡' },
+  { id: 'networth',    label: 'Net Worth Trend',      lucide:'trending-up'  },
+  { id: 'forecast',    label: 'Cash Flow Forecast',   lucide:'calendar'     },
+  { id: 'decision',    label: 'Decision Engine',      lucide:'cpu'          },
+  { id: 'autopilot',   label: 'Autopilot',            lucide:'navigation'   },
+  { id: 'opportunity', label: 'Opportunities',        lucide:'star'         },
+  { id: 'health',      label: 'Health Score',         lucide:'shield'       },
+  { id: 'credit',      label: 'Credit Score',         lucide:'credit-card'  },
+  { id: 'quicknav',    label: 'Quick Navigation',     lucide:'grid'         },
 ];
 
 // ─── STATEMENT PARSING HELPERS ────────────────────────────────────────────────
@@ -3152,88 +3153,125 @@ ${rawText.slice(0, 7000)}`;
   return txns.map((t,i) => ({ id:`stmt_${i}`, date: t.date||'', name: t.name||'Transaction', amount: Number(t.amount)||0, category:'OTHER', pending:false })).filter(t=>t.date);
 }
 
+// ─── TILE ICON HELPER ────────────────────────────────────────────────────────
+function TileIcon({id, size=18, color}){
+  const props={size,color,strokeWidth:1.8};
+  switch(id){
+    case 'hero':        return <DollarSign {...props}/>;
+    case 'bento':       return <BarChart2 {...props}/>;
+    case 'healthrow':   return <Heart {...props}/>;
+    case 'action':      return <Zap {...props}/>;
+    case 'networth':    return <TrendingUp {...props}/>;
+    case 'forecast':    return <Calendar {...props}/>;
+    case 'decision':    return <Cpu {...props}/>;
+    case 'autopilot':   return <Navigation {...props}/>;
+    case 'opportunity': return <Star {...props}/>;
+    case 'health':      return <Shield {...props}/>;
+    case 'credit':      return <CreditCard {...props}/>;
+    case 'quicknav':    return <LayoutGrid {...props}/>;
+    default:            return <LayoutGrid {...props}/>;
+  }
+}
 // ─── DASH CUSTOMIZE SHEET ─────────────────────────────────────────────────────
 function DashCustomize({ layout, onChange, onClose }) {
   const isDesktop = window.innerWidth >= 960;
   const [items, setItems] = useState(layout);
-  const [dragging, setDragging] = useState(null);
-  const [dragOver, setDragOver] = useState(null);
 
   const save = () => { onChange(items); onClose(); };
+
   const toggle = (id) => {
     const tile = DASH_TILES.find(t=>t.id===id);
     if(tile?.alwaysVisible) return;
     setItems(prev => prev.map(t => t.id===id ? {...t, visible:!t.visible} : t));
   };
-  const toggleLock = (id) => setItems(prev => prev.map(t => t.id===id ? {...t, locked:!t.locked} : t));
-  const onDragStart = (id) => setDragging(id);
-  const onDragEnter = (id) => {
-    if (!dragging || dragging === id) return;
-    // Don't move locked tiles
-    const dragItem = items.find(t=>t.id===dragging);
-    const targetItem = items.find(t=>t.id===id);
-    if(dragItem?.locked || targetItem?.locked) return;
-    setDragOver(id);
+
+  const moveUp = (id) => {
     setItems(prev => {
-      const from = prev.findIndex(t=>t.id===dragging);
-      const to   = prev.findIndex(t=>t.id===id);
+      const idx = prev.findIndex(t=>t.id===id);
+      if(idx <= 0) return prev;
+      let target = idx - 1;
+      while(target >= 0 && prev[target].locked) target--;
+      if(target < 0) return prev;
       const next = [...prev];
-      const [removed] = next.splice(from, 1);
-      next.splice(to, 0, removed);
+      [next[target], next[idx]] = [next[idx], next[target]];
       return next;
     });
   };
-  const onDragEnd = () => { setDragging(null); setDragOver(null); };
-  const meta = id => DASH_TILES.find(t=>t.id===id)||{label:id,icon:'□'};
+
+  const moveDown = (id) => {
+    setItems(prev => {
+      const idx = prev.findIndex(t=>t.id===id);
+      if(idx >= prev.length - 1) return prev;
+      let target = idx + 1;
+      while(target < prev.length && prev[target].locked) target++;
+      if(target >= prev.length) return prev;
+      const next = [...prev];
+      [next[target], next[idx]] = [next[idx], next[target]];
+      return next;
+    });
+  };
+
+  const meta = id => DASH_TILES.find(t=>t.id===id)||{label:id};
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:9000,display:'flex',alignItems:isDesktop?'center':'flex-end',justifyContent:'center',background:'rgba(0,0,0,0.55)',backdropFilter:'blur(4px)'}} onClick={onClose}>
-      <div style={{width:'100%',maxWidth:430,background:C.card,borderRadius:'24px 24px 0 0',maxHeight:'85vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 48px rgba(0,0,0,0.5)'}} onClick={e=>e.stopPropagation()}>
-        <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:'0 auto 20px'}}/>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
+    <div style={{position:'fixed',inset:0,zIndex:9000,display:'flex',alignItems:isDesktop?'center':'flex-end',justifyContent:'center',background:'rgba(0,0,0,0.6)',backdropFilter:'blur(6px)'}} onClick={onClose}>
+      <div style={{width:'100%',maxWidth:440,background:C.card,borderRadius:isDesktop?'24px':'24px 24px 0 0',maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 48px rgba(0,0,0,0.5)'}} onClick={e=>e.stopPropagation()}>
+        {!isDesktop&&<div style={{width:36,height:4,borderRadius:99,background:C.border,margin:'12px auto 0',flexShrink:0}}/>}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'20px 20px 0',flexShrink:0}}>
           <div style={{color:C.cream,fontWeight:800,fontSize:18,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Customize Dashboard</div>
-          <span style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Drag ☰ to reorder · tap 🔓 to lock</span>
+          <button onClick={onClose} style={{background:'none',border:'none',color:C.muted,fontSize:22,cursor:'pointer',padding:4,lineHeight:1,fontFamily:'inherit'}}>×</button>
         </div>
-        </div>
-        <div style={{overflowY:'auto',flex:1,paddingBottom:8}}>
-        {items.map(tile => {
-          const m = meta(tile.id);
-          return (
-            <div key={tile.id}
-              draggable={!tile.locked}
-              onDragStart={()=>!tile.locked&&onDragStart(tile.id)}
-              onDragEnter={()=>onDragEnter(tile.id)}
-              onDragEnd={onDragEnd}
-              style={{display:'flex',alignItems:'center',gap:12,padding:'12px 14px',borderRadius:14,marginBottom:8,
-                background: dragOver===tile.id ? C.green+'14' : tile.locked ? C.gold+'08' : C.cardAlt,
-                border:`1px solid ${tile.locked ? C.gold+'44' : tile.visible ? C.green+'33' : C.border}`,
-                cursor:tile.locked?'default':'grab',transition:'all .15s',opacity:tile.visible?1:0.5}}>
-              <span style={{fontSize:18,cursor:tile.locked?'default':'grab',color:tile.locked?C.gold:C.muted,userSelect:'none'}}>{tile.locked?'📌':'☰'}</span>
-              <span style={{fontSize:20}}>{m.icon}</span>
-              <div style={{flex:1,color:C.cream,fontWeight:600,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-              {m.label}{m.alwaysVisible&&<span style={{color:C.gold,fontSize:10,marginLeft:6,fontWeight:700}}>always on</span>}</div>
-              <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                <button onClick={()=>toggleLock(tile.id)} title={tile.locked?"Unlock":"Lock position"}
-                  style={{background:tile.locked?C.gold+'22':'transparent',border:`1px solid ${tile.locked?C.gold+'55':C.border}`,borderRadius:10,width:44,height:44,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>
+        <div style={{color:C.muted,fontSize:12,padding:'4px 20px 14px',fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Use ↑↓ to reorder · toggle to show or hide</div>
+        <div style={{overflowY:'auto',flex:1,padding:'0 16px 8px'}}>
+          {items.map((tile, idx) => {
+            const m = meta(tile.id);
+            return (
+              <div key={tile.id} style={{display:'flex',alignItems:'center',gap:10,padding:'11px 12px',borderRadius:14,marginBottom:7,
+                background:tile.locked?C.gold+'0A':C.cardAlt,
+                border:`1px solid ${tile.locked?C.gold+'44':tile.visible!==false?C.green+'33':C.border}`,
+                opacity:tile.visible!==false?1:0.5,transition:'all .15s'}}>
+                <div style={{display:'flex',flexDirection:'column',gap:1,flexShrink:0}}>
+                  <button onClick={()=>!tile.locked&&moveUp(tile.id)}
+                    style={{background:'none',border:'none',color:idx===0||tile.locked?C.border:C.muted,cursor:idx===0||tile.locked?'default':'pointer',fontSize:13,lineHeight:1,padding:'3px 6px',borderRadius:6,transition:'color .15s',fontFamily:'inherit'}}>▲</button>
+                  <button onClick={()=>!tile.locked&&moveDown(tile.id)}
+                    style={{background:'none',border:'none',color:idx===items.length-1||tile.locked?C.border:C.muted,cursor:idx===items.length-1||tile.locked?'default':'pointer',fontSize:13,lineHeight:1,padding:'3px 6px',borderRadius:6,transition:'color .15s',fontFamily:'inherit'}}>▼</button>
+                </div>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:32,height:32,borderRadius:9,background:tile.visible!==false?C.green+'18':C.cardAlt,border:`1px solid ${tile.visible!==false?C.green+'33':C.border}`,flexShrink:0}}>
+                  <TileIcon id={tile.id} size={16} color={tile.visible!==false?C.greenBright:C.muted}/>
+                </div>
+                <div style={{flex:1,color:C.cream,fontWeight:600,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",display:'flex',alignItems:'center',gap:8,minWidth:0}}>
+                  <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.label}</span>
+                  {m.alwaysVisible&&<span style={{color:C.gold,fontSize:10,fontWeight:700,flexShrink:0}}>always on</span>}
+                  {tile.locked&&<span style={{color:C.gold,fontSize:10,fontWeight:700,flexShrink:0}}>pinned</span>}
+                </div>
+                <button onClick={()=>setItems(prev=>prev.map(t=>t.id===tile.id?{...t,locked:!t.locked}:t))}
+                  style={{background:'none',border:`1px solid ${tile.locked?C.gold+'55':C.border}`,borderRadius:8,width:36,height:36,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,flexShrink:0,color:tile.locked?C.gold:C.muted,transition:'all .15s'}}>
                   {tile.locked?'🔒':'🔓'}
                 </button>
-                <div onClick={()=>toggle(tile.id)}
-                  style={{width:40,height:22,borderRadius:99,background:tile.visible?C.green:'rgba(255,255,255,0.08)',border:`1px solid ${tile.visible?C.green:C.border}`,position:'relative',cursor:'pointer',transition:'background .2s',flexShrink:0}}>
-                  <div style={{position:'absolute',top:2,left:tile.visible?20:2,width:16,height:16,borderRadius:'50%',background:'white',transition:'left .2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}}/>
-                </div>
+                {!m.alwaysVisible&&(
+                  <div onClick={()=>toggle(tile.id)}
+                    style={{width:44,height:26,borderRadius:99,background:tile.visible!==false?C.green:'rgba(255,255,255,0.09)',border:`1px solid ${tile.visible!==false?C.green:C.border}`,position:'relative',cursor:'pointer',transition:'background .2s',flexShrink:0}}>
+                    <div style={{position:'absolute',top:3,left:tile.visible!==false?21:3,width:18,height:18,borderRadius:'50%',background:'white',transition:'left .2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}}/>
+                  </div>
+                )}
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
         </div>
-        <div style={{padding:'0 0 8px',flexShrink:0}}>
-        <button onClick={save} style={{width:'100%',background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:'none',borderRadius:14,padding:'14px',color:'#fff',fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer',marginTop:8}}>Save Layout</button>
-        <button onClick={()=>{setItems(DASH_TILES.map(t=>({id:t.id,visible:true})));}} style={{width:'100%',background:'none',border:'none',color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer',marginTop:8,padding:'6px'}}>Reset to default</button>
+        <div style={{padding:'12px 16px 20px',flexShrink:0,borderTop:`1px solid ${C.border}`,display:'flex',gap:10}}>
+          <button onClick={()=>setItems(DASH_TILES.map(t=>({id:t.id,visible:true,locked:false})))}
+            style={{flex:1,background:'none',border:`1px solid ${C.border}`,borderRadius:12,padding:'12px',color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer',fontWeight:600}}>
+            Reset
+          </button>
+          <button onClick={save}
+            style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:'none',borderRadius:12,padding:'12px',color:'#021208',fontWeight:800,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer'}}>
+            Save Layout
+          </button>
+        </div>
       </div>
     </div>
   );
 }
-
 // ─── ONBOARDING ───────────────────────────────────────────────────────────────
 function Onboarding({onComplete,onViewLegal,userId}){
   const [step,setStep]=useState(0);
@@ -7838,8 +7876,9 @@ function Family({data,household,setHousehold,setScreen}){
     const eligible=chores.filter(c=>c.done&&(!req||c.approved));
     const total=eligible.reduce((a,c)=>a+(c.reward||0),0);
     if(total<=0)return;
-    const spend=Math.round(total*0.50*100)/100;
-    const save=Math.round(total*0.30*100)/100;
+    const split=kid.jarSplit||{spend:50,save:30,give:20};
+    const spend=Math.round(total*(split.spend/100)*100)/100;
+    const save=Math.round(total*(split.save/100)*100)/100;
     const give=total-spend-save;
     const prevJars=kid.jars||{spend:0,save:0,give:0};
     const newJars={spend:(prevJars.spend||0)+spend,save:(prevJars.save||0)+save,give:(prevJars.give||0)+give};
@@ -8337,7 +8376,7 @@ function Family({data,household,setHousehold,setScreen}){
               <div style={{color:C.gold,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>${totalJars.toFixed(2)}</div>
             </div>
             <div style={{display:"flex",gap:8,marginBottom:12}}>
-              {[{key:"spend",name:"Spend",emoji:"🎮",color:C.orange,pct:50},{key:"save",name:"Save",emoji:"🏦",color:C.blue,pct:30},{key:"give",name:"Give",emoji:"❤️",color:C.pink,pct:20}].map(j=>(
+              {(()=>{const split=activeKid.jarSplit||{spend:50,save:30,give:20};return [{key:"spend",name:"Spend",emoji:"🎮",color:C.orange,pct:split.spend},{key:"save",name:"Save",emoji:"🏦",color:C.blue,pct:split.save},{key:"give",name:"Give",emoji:"❤️",color:C.pink,pct:split.give}];})().map(j=>(
                 <div key={j.key} style={{flex:1,background:j.color+"18",border:`1px solid ${j.color}33`,borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
                   <div style={{fontSize:22}}>{j.emoji}</div>
                   <div style={{color:j.color,fontWeight:800,fontSize:16,marginTop:4,fontFamily:"'Playfair Display',serif"}}>${(jars[j.key]||0).toFixed(2)}</div>
@@ -8345,6 +8384,44 @@ function Family({data,household,setHousehold,setScreen}){
                   <div style={{color:C.muted,fontSize:9,marginTop:1}}>{j.pct}%</div>
                 </div>
               ))}
+            </div>
+            {/* Jar split editor */}
+            <div style={{background:C.cardAlt,borderRadius:12,padding:"12px 14px",marginBottom:12}}>
+              <div style={{color:C.purpleBright||C.tealBright,fontWeight:700,fontSize:13,marginBottom:8}}>🫙 Jar Percentages</div>
+              <div style={{color:C.muted,fontSize:11,marginBottom:10}}>How earnings split across Spend / Save / Give (must total 100%)</div>
+              {(()=>{
+                const split=activeKid.jarSplit||{spend:50,save:30,give:20};
+                const colors={spend:C.orange,save:C.blue,give:C.pink};
+                const total=split.spend+split.save+split.give;
+                return (
+                  <>
+                    {["spend","save","give"].map(key=>(
+                      <div key={key} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                        <div style={{width:44,color:colors[key],fontWeight:700,fontSize:12,textTransform:"capitalize"}}>{key}</div>
+                        <input type="range" min={0} max={100} value={split[key]}
+                          onChange={e=>{
+                            const val=parseInt(e.target.value)||0;
+                            const others=["spend","save","give"].filter(k=>k!==key);
+                            const remaining=100-val;
+                            const otherTotal=split[others[0]]+split[others[1]];
+                            let newSplit={...split,[key]:val};
+                            if(otherTotal>0){
+                              newSplit[others[0]]=Math.round(remaining*(split[others[0]]/otherTotal));
+                              newSplit[others[1]]=100-val-newSplit[others[0]];
+                            } else {
+                              newSplit[others[0]]=Math.floor(remaining/2);
+                              newSplit[others[1]]=remaining-newSplit[others[0]];
+                            }
+                            updateKid(activeKid.id,{jarSplit:newSplit});
+                          }}
+                          style={{flex:1,accentColor:colors[key]}}/>
+                        <div style={{width:34,textAlign:"right",color:total===100?colors[key]:C.red,fontWeight:700,fontSize:12}}>{split[key]}%</div>
+                      </div>
+                    ))}
+                    {total!==100&&<div style={{color:C.red,fontSize:11,marginTop:4}}>⚠ Must total 100% (currently {total}%)</div>}
+                  </>
+                );
+              })()}
             </div>
             {/* Savings goal */}
             <div style={{background:C.cardAlt,borderRadius:12,padding:"12px 14px",marginBottom:12}}>
@@ -10483,9 +10560,53 @@ function KidsMiniSite(){
   const total=chores.reduce((a,c)=>a+(c.reward||0),0);
   const FREQ={daily:"Daily",few:"Few/week",weekly:"Weekly",monthly:"Monthly"};
 
+  // ── Sounds ──────────────────────────────────────────────────────────────────
+  const playSound=(type)=>{
+    try{
+      const ctx=new(window.AudioContext||window.webkitAudioContext)();
+      if(type==="chore"){
+        const freqs=[[523,0],[659,0.1],[784,0.2]];
+        freqs.forEach(([freq,t])=>{
+          const o=ctx.createOscillator(),g=ctx.createGain();
+          o.connect(g);g.connect(ctx.destination);
+          o.type="sine";o.frequency.value=freq;
+          g.gain.setValueAtTime(0.22,ctx.currentTime+t);
+          g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+t+0.28);
+          o.start(ctx.currentTime+t);o.stop(ctx.currentTime+t+0.3);
+        });
+      } else if(type==="complete"){
+        [523,659,784,1047,1319].forEach((freq,i)=>{
+          const o=ctx.createOscillator(),g=ctx.createGain();
+          o.connect(g);g.connect(ctx.destination);
+          o.type="triangle";o.frequency.value=freq;
+          g.gain.setValueAtTime(0.18,ctx.currentTime+i*0.09);
+          g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+i*0.09+0.55);
+          o.start(ctx.currentTime+i*0.09);o.stop(ctx.currentTime+i*0.09+0.6);
+        });
+      } else if(type==="goal"){
+        // Fanfare
+        const notes=[523,659,784,659,1047];
+        const times=[0,0.1,0.2,0.3,0.45];
+        notes.forEach((freq,i)=>{
+          const o=ctx.createOscillator(),g=ctx.createGain();
+          o.connect(g);g.connect(ctx.destination);
+          o.type="square";o.frequency.value=freq;
+          g.gain.setValueAtTime(0.15,ctx.currentTime+times[i]);
+          g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+times[i]+0.35);
+          o.start(ctx.currentTime+times[i]);o.stop(ctx.currentTime+times[i]+0.4);
+        });
+      }
+    }catch(e){}
+  };
+
   const toggle=(id)=>{
     const updated=chores.map(c=>c.id===id?{...c,done:!c.done}:c);
+    const wasUndone=chores.find(c=>c.id===id)?.done===false;
     setChores(updated);
+    if(wasUndone){
+      const allNowDone=updated.filter(c=>c.reward>0).every(c=>c.done);
+      if(allNowDone) playSound("complete"); else playSound("chore");
+    }
     try{localStorage.setItem("flourish_kid_chores_"+code,JSON.stringify(updated));}catch{}
   };
 
@@ -10533,51 +10654,120 @@ function KidsMiniSite(){
             <span style={{color:"#FF8C42",fontWeight:700,fontSize:13}}>{streak} week streak! Keep it going!</span>
           </div>
         )}
-        {/* Theme picker — compact dropdown */}
-        <div style={{marginTop:10,display:"flex",alignItems:"center",gap:10}}>
-          <span style={{color:theme.dark?"rgba(255,255,255,0.6)":"rgba(0,0,0,0.5)",fontSize:12,fontWeight:700,flexShrink:0}}>🎨 Theme</span>
-          <select value={activeTheme} onChange={e=>saveTheme(e.target.value)}
-            style={{flex:1,background:theme.dark?"rgba(255,255,255,0.08)":"rgba(0,0,0,0.06)",border:`1px solid ${theme.primaryBorder}`,borderRadius:10,padding:"9px 12px",color:theme.dark?theme.text:theme.text,fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:"pointer",outline:"none",appearance:"none",WebkitAppearance:"none"}}>
-            <optgroup label="── Dark ──">
-              {Object.entries(THEMES).filter(([,t])=>t.dark).map(([key,t])=>(
-                <option key={key} value={key}>{t.emoji} {t.name}</option>
-              ))}
-            </optgroup>
-            <optgroup label="── Light ──">
-              {Object.entries(THEMES).filter(([,t])=>!t.dark).map(([key,t])=>(
-                <option key={key} value={key}>{t.emoji} {t.name}</option>
-              ))}
-            </optgroup>
-          </select>
-          <div style={{width:28,height:28,borderRadius:99,background:primary,flexShrink:0,boxShadow:`0 0 10px ${primary}88`}}/>
+        {/* Theme picker — visual swatch grid */}
+        <div style={{marginTop:10}}>
+          <span style={{color:theme.dark?"rgba(255,255,255,0.55)":"rgba(0,0,0,0.45)",fontSize:11,fontWeight:700,letterSpacing:0.8,textTransform:"uppercase",display:"block",marginBottom:8}}>🎨 Theme</span>
+          <div style={{display:"flex",gap:7,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
+            {Object.entries(THEMES).map(([key,t])=>(
+              <button key={key} onClick={()=>saveTheme(key)}
+                style={{flexShrink:0,width:54,padding:"8px 4px 6px",borderRadius:14,background:t.card,border:`2px solid ${activeTheme===key?t.primary:"transparent"}`,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,boxShadow:activeTheme===key?`0 0 14px ${t.primary}77`:"0 2px 6px rgba(0,0,0,0.25)",transition:"all .2s",outline:"none"}}>
+                <span style={{fontSize:18,lineHeight:1}}>{t.emoji}</span>
+                <span style={{fontSize:9,fontWeight:700,color:t.text,fontFamily:"inherit",lineHeight:1,textAlign:"center",letterSpacing:0.2}}>{t.name}</span>
+                <div style={{width:20,height:4,borderRadius:99,background:t.primary,marginTop:2}}/>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       <div style={{padding:"16px 16px 0",display:"flex",flexDirection:"column",gap:14}}>
 
-        {/* Goal progress */}
-        {goal.name&&goalAmt>0&&(
-          <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid ${theme.primaryBorder}`}}>
-            <div style={{color:primary,fontWeight:800,fontSize:14,marginBottom:10}}>🎯 My Goal</div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-              <span style={{color:theme.text,fontSize:15,fontWeight:700}}>{goal.emoji} {goal.name}</span>
-              <span style={{color:primary,fontWeight:800,fontSize:16}}>{goalPct}%</span>
+        {/* Goal — always shown, kid can set or update */}
+        {(()=>{
+          const [editingGoal,setEditingGoal]=React.useState(false);
+          const [goalName,setGoalName]=React.useState(goal.name||"");
+          const [goalAmt2,setGoalAmt2]=React.useState(goal.amount||"");
+          const [goalEmoji2,setGoalEmoji2]=React.useState(goal.emoji||"🎯");
+          const goalEmojis=["🎯","🎮","🚲","📚","🎸","⚽","🏊","🎨","✈️","🦄","👟","🍕","🏆","🎪","🤖"];
+          const saveGoal=()=>{
+            if(!goalName||!goalAmt2)return;
+            try{
+              const all=JSON.parse(localStorage.getItem("flourish_kids")||"[]");
+              const updated=all.map(k=>String(k.id)===String(code||"")||k.code===code?{...k,goal:{name:goalName,amount:goalAmt2,emoji:goalEmoji2}}:k);
+              if(!updated.some(k=>k.code===code)){
+                // Store locally under this code
+                const stored=JSON.parse(localStorage.getItem("flourish_kid_goal_"+code)||"null")||{};
+                localStorage.setItem("flourish_kid_goal_"+code,JSON.stringify({name:goalName,amount:goalAmt2,emoji:goalEmoji2}));
+              } else {
+                localStorage.setItem("flourish_kids",JSON.stringify(updated));
+              }
+              localStorage.setItem("flourish_kid_goal_"+code,JSON.stringify({name:goalName,amount:goalAmt2,emoji:goalEmoji2}));
+            }catch{}
+            setEditingGoal(false);
+          };
+          // Read any locally saved goal override
+          let displayGoal=goal;
+          try{
+            const local=JSON.parse(localStorage.getItem("flourish_kid_goal_"+code)||"null");
+            if(local?.name)displayGoal=local;
+          }catch{}
+          const dAmt=parseFloat(displayGoal.amount)||0;
+          const dPct=dAmt>0?Math.min(100,Math.round(((jars.save||0)/dAmt)*100)):0;
+
+          return (
+            <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid ${theme.primaryBorder}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                <div style={{color:primary,fontWeight:800,fontSize:14}}>🎯 My Goal</div>
+                <button onClick={()=>{setGoalName(displayGoal.name||"");setGoalAmt2(displayGoal.amount||"");setGoalEmoji2(displayGoal.emoji||"🎯");setEditingGoal(e=>!e);}}
+                  style={{background:"none",border:`1px solid ${theme.primaryBorder}`,borderRadius:8,padding:"4px 10px",color:primary,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                  {editingGoal?"Cancel":displayGoal.name?"Change":"Set Goal"}
+                </button>
+              </div>
+              {editingGoal?(
+                <div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+                    {goalEmojis.map(e=>(
+                      <button key={e} onClick={()=>setGoalEmoji2(e)}
+                        style={{background:goalEmoji2===e?theme.primaryDim:"none",border:`1px solid ${goalEmoji2===e?primary:theme.choreBorder}`,borderRadius:8,padding:"6px",fontSize:18,cursor:"pointer"}}>
+                        {e}
+                      </button>
+                    ))}
+                  </div>
+                  <input value={goalName} onChange={e=>setGoalName(e.target.value)} placeholder="What are you saving for?"
+                    style={{width:"100%",background:theme.cardAlt,border:`1px solid ${theme.choreBorder}`,borderRadius:10,padding:"10px 12px",color:theme.text,fontSize:13,fontFamily:"inherit",boxSizing:"border-box",marginBottom:8,outline:"none"}}/>
+                  <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
+                    <span style={{color:primary,fontSize:15,fontWeight:700}}>$</span>
+                    <input value={goalAmt2} onChange={e=>setGoalAmt2(e.target.value)} placeholder="Amount" type="number"
+                      style={{flex:1,background:theme.cardAlt,border:`1px solid ${theme.choreBorder}`,borderRadius:10,padding:"10px 12px",color:theme.text,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+                  </div>
+                  <button onClick={saveGoal} disabled={!goalName||!goalAmt2}
+                    style={{width:"100%",background:goalName&&goalAmt2?primary:"rgba(255,255,255,0.1)",border:"none",borderRadius:12,padding:"12px",color:goalName&&goalAmt2?theme.bg:"rgba(255,255,255,0.3)",fontWeight:800,fontSize:14,cursor:goalName&&goalAmt2?"pointer":"default",fontFamily:"inherit"}}>
+                    Save Goal {goalEmoji2}
+                  </button>
+                </div>
+              ):displayGoal.name&&dAmt>0?(
+                <>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                    <span style={{color:theme.text,fontSize:15,fontWeight:700}}>{displayGoal.emoji} {displayGoal.name}</span>
+                    <span style={{color:primary,fontWeight:800,fontSize:16}}>{dPct}%</span>
+                  </div>
+                  <div style={{height:12,background:"rgba(255,255,255,0.06)",borderRadius:6,overflow:"hidden",marginBottom:8}}>
+                    <div style={{height:"100%",width:`${dPct}%`,background:`linear-gradient(90deg,${theme.jar1},${theme.jar2})`,borderRadius:6,transition:"width .5s"}}/>
+                  </div>
+                  <div style={{color:theme.textMuted,fontSize:12}}>
+                    ${(jars.save||0).toFixed(2)} saved · ${Math.max(0,dAmt-(jars.save||0)).toFixed(2)} to go
+                    {dPct>=100&&<span style={{color:theme.jar1,fontWeight:700}}> 🎉 You did it!</span>}
+                  </div>
+                  {dPct>=100&&<div onClick={()=>playSound("goal")} style={{marginTop:10,background:theme.primaryDim,border:`1px solid ${theme.primaryBorder}`,borderRadius:12,padding:"12px",textAlign:"center",cursor:"pointer"}}>
+                    <span style={{fontSize:26}}>🎉</span>
+                    <div style={{color:primary,fontWeight:800,fontSize:13,marginTop:4}}>Goal reached! Tap to celebrate!</div>
+                  </div>}
+                </>
+              ):(
+                <div style={{color:theme.textMuted,fontSize:13,textAlign:"center",padding:"8px 0"}}>Tap "Set Goal" to pick something to save for!</div>
+              )}
             </div>
-            <div style={{height:12,background:"rgba(255,255,255,0.06)",borderRadius:6,overflow:"hidden",marginBottom:8}}>
-              <div style={{height:"100%",width:`${goalPct}%`,background:`linear-gradient(90deg,${theme.jar1},${theme.jar2})`,borderRadius:6,transition:"width .5s"}}/>
-            </div>
-            <div style={{color:theme.textMuted,fontSize:12}}>
-              ${(jars.save||0).toFixed(2)} saved · ${Math.max(0,goalAmt-(jars.save||0)).toFixed(2)} to go
-              {goalPct>=100&&<span style={{color:theme.jar1,fontWeight:700}}> 🎉 You did it!</span>}
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Jar balances */}
         <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid rgba(255,255,255,0.08)`}}>
           <div style={{color:primary,fontWeight:800,fontSize:14,marginBottom:12}}>🫙 My Jars</div>
           <div style={{display:"flex",gap:10}}>
-            {[{key:"spend",name:"Spend",emoji:"🎮",color:theme.jar1,pct:"50%"},{key:"save",name:"Save",emoji:"🏦",color:theme.jar2,pct:"30%"},{key:"give",name:"Give",emoji:"❤️",color:theme.jar3,pct:"20%"}].map(j=>(
+            {(()=>{
+            const split=kidData?.jarSplit||{spend:50,save:30,give:20};
+            return [{key:"spend",name:"Spend",emoji:"🎮",color:theme.jar1,pct:split.spend+"%"},{key:"save",name:"Save",emoji:"🏦",color:theme.jar2,pct:split.save+"%"},{key:"give",name:"Give",emoji:"❤️",color:theme.jar3,pct:split.give+"%"}];
+          })().map(j=>(
               <div key={j.key} style={{flex:1,background:j.color+"22",border:`1px solid ${j.color}44`,borderRadius:14,padding:"14px 8px",textAlign:"center"}}>
                 <div style={{fontSize:24,marginBottom:4}}>{j.emoji}</div>
                 <div style={{color:j.color,fontWeight:900,fontSize:17,fontFamily:"'Playfair Display',serif"}}>${(jars[j.key]||0).toFixed(2)}</div>
@@ -10877,15 +11067,15 @@ function AuthScreen({ onAuth }) {
               <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Everything in one place</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 {[
-                  ["💰","Safe-to-spend number","One clear daily number that accounts for bills and buffer."],
-                  ["🤖","AI Financial Coach","Ask anything. Get honest, personalised financial advice for Canada & the US."],
-                  ["🏦","All your accounts","RBC, TD, Chase, Wells Fargo, and thousands more — all in one dashboard."],
-                  ["📈","Investment tracking","Know exactly where you stand on RRSP, TFSA, 401k, and more."],
-                  ["📅","Bill forecasting","See what's coming before it hits. Never be surprised."],
-                  ["🎯","Goal tracking","Set savings goals and watch them grow with 30-year projections."]
+                  [<DollarSign size={20} color="#00D68F" strokeWidth={1.8}/>, "Safe-to-spend number", "One clear daily number that accounts for bills and buffer."],
+                  [<Sparkles size={20} color="#00D68F" strokeWidth={1.8}/>, "AI Financial Coach", "Ask anything. Get honest, personalised financial advice for Canada & the US."],
+                  [<CreditCard size={20} color="#00D68F" strokeWidth={1.8}/>, "All your accounts", "RBC, TD, Chase, Wells Fargo, and thousands more — all in one dashboard."],
+                  [<TrendingUp size={20} color="#00D68F" strokeWidth={1.8}/>, "Investment tracking", "Know exactly where you stand on RRSP, TFSA, 401k, and more."],
+                  [<Calendar size={20} color="#00D68F" strokeWidth={1.8}/>, "Bill forecasting", "See what's coming before it hits. Never be surprised."],
+                  [<Target size={20} color="#00D68F" strokeWidth={1.8}/>, "Goal tracking", "Set savings goals and watch them grow with 30-year projections."]
                 ].map(([icon,title,body]) => (
                   <div key={title} style={{ padding: "16px", background: "#0D1F12", borderRadius: 16, border: "1px solid rgba(255,255,255,0.06)" }}>
-                    <div style={{ fontSize: 22, marginBottom: 8 }}>{icon}</div>
+                    <div style={{ marginBottom: 10, display:"flex", alignItems:"center", justifyContent:"center", width:38, height:38, borderRadius:10, background:"rgba(0,214,143,0.1)", border:"1px solid rgba(0,214,143,0.2)" }}>{icon}</div>
                     <div style={{ color: "#EDE9E2", fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{title}</div>
                     <div style={{ color: "#6B7A6E", fontSize: 11, lineHeight: 1.6 }}>{body}</div>
                   </div>
