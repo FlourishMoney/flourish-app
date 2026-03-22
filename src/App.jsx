@@ -3907,6 +3907,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
       ):connAccts.some(a=>a.institution!=="Manual")?(
         <div style={{background:C.tealDim,border:`1px solid ${C.teal}33`,borderRadius:14,padding:"12px 16px",marginBottom:14}}>
           <div style={{color:C.tealBright,fontWeight:700,fontSize:13,marginBottom:2}}>✦ Bills will auto-detect</div>
+              <span style={{background:C.gold+"22",border:`1px solid ${C.gold}44`,borderRadius:99,padding:"2px 8px",color:C.goldBright,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"inline-block",marginTop:4}}>Manual · not yet matched to bank</span>
           <div style={{color:C.muted,fontSize:12}}>Your bank is connected. Recurring bills will be detected automatically once your transactions load. You can also add them manually below.</div>
         </div>
       ):(
@@ -4732,7 +4733,9 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
               <div style={{width:6,height:6,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 10px ${heroColor}`,animation:"pulse 2.5s ease-in-out infinite"}}/>
               <span style={{color:heroColorBright+"99",fontSize:9,textTransform:"uppercase",letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Today's Safe Limit</span>
-              {data.bankConnected&&<span style={{color:heroColorBright+"55",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· live</span>}
+              {data.bankConnected
+                ? <span style={{color:heroColorBright+"55",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· live</span>
+                : <span style={{color:C.gold+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· estimated</span>}
             </div>
             <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.88,marginBottom:18,position:"relative",display:"inline-block"}}>
               <span style={{fontSize:24,color:heroColorBright+"77",verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
@@ -4777,17 +4780,28 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                   </div>
                 </div>
               );
-              // Proof: max 2 parts — balance + biggest deduction. Scannable, not a math lesson.
-              const balLabel = totalBalance!=null ? `$${totalBalance.toFixed(0)} balance` : `~$${(bal||0).toFixed(0)}`;
-              const bigDeduct = billsTotal > bufferAmt
-                ? (billsTotal > 0 ? `$${billsTotal.toFixed(0)} in bills` : null)
-                : (bufferAmt > 0 ? `$${bufferAmt.toFixed(0)} safety buffer` : null);
-              const proofLine = bigDeduct ? `${balLabel} · minus ${bigDeduct}` : balLabel;
+              // Full breakdown — 4 lines, tap-to-see or always visible
+              const avgSpend = FinancialCalcEngine.avgDailySpend(data);
+              const spendReserve = Math.round(avgSpend * 10);
+              const breakdownRows = [
+                {label: totalBalance!=null ? "In your accounts" : "Est. balance", value: `$${(totalBalance||bal||0).toFixed(0)}`, sign: "", color: heroColorBright+"99"},
+                ...(billsTotal>0 ? [{label:"Upcoming bills", value:`$${billsTotal.toFixed(0)}`, sign:"−", color:C.gold+"CC"}] : []),
+                ...(spendReserve>0 ? [{label:"Expected spending", value:`$${spendReserve.toFixed(0)}`, sign:"−", color:heroColorBright+"66"}] : []),
+                {label:"Buffer (15%)", value:`$${bufferAmt.toFixed(0)}`, sign:"−", color:heroColorBright+"44"},
+              ];
               return (
                 <div style={{marginBottom:14}}>
-                  <div style={{color:heroColorBright+"66",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2,lineHeight:1.5}}>
-                    {proofLine} → <strong style={{color:heroColorBright+"99"}}>${Math.max(0,safe).toFixed(0)} today</strong>
+                  {breakdownRows.map((r,i)=>(
+                    <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"2px 0"}}>
+                      <span style={{color:heroColorBright+"55",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign} {r.label}</span>
+                      <span style={{color:r.color,fontSize:10,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.value}</span>
+                    </div>
+                  ))}
+                  <div style={{borderTop:`1px solid ${heroColor}22`,marginTop:5,paddingTop:5,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{color:heroColorBright+"88",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>= Safe to spend</span>
+                    <span style={{color:heroColorBright,fontSize:13,fontWeight:900,fontFamily:"'Playfair Display',serif"}}>${Math.max(0,safe).toFixed(0)}</span>
                   </div>
+                  {!data.bankConnected&&<div style={{color:C.gold+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>📊 Estimated · Connect bank for real numbers</div>}
                 </div>
               );
             })()}
@@ -7319,6 +7333,12 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Your Net Worth</div>
         <div style={{fontSize:44,fontWeight:900,color:C.tealBright,fontFamily:"'Playfair Display',serif",letterSpacing:-1}}>{realNetWorth>=0?"+":""}$<CountUp to={Math.abs(realNetWorth)} decimals={0}/></div>
         <div style={{color:C.muted,fontSize:12,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Assets minus liabilities · includes investments</div>
+        <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
+          {data.bankConnected
+            ? <span style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px",color:C.greenBright,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✓ Bank verified</span>
+            : <span style={{background:C.gold+"22",border:`1px solid ${C.gold}44`,borderRadius:99,padding:"2px 8px",color:C.goldBright,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📊 Estimated</span>}
+          {manualNonBankDebts>0&&<span style={{background:C.orange+"22",border:`1px solid ${C.orange}44`,borderRadius:99,padding:"2px 8px",color:C.orange,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Includes manual debt</span>}
+        </div>
         {totalInvested>0&&<div style={{marginTop:12,display:"flex",gap:10}}>
           <div style={{flex:1,background:C.purple+"15",borderRadius:12,padding:"10px 14px",border:`1px solid ${C.purple}22`}}>
             <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Invested</div>
