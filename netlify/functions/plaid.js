@@ -105,11 +105,13 @@ exports.handler = async (event) => {
     if (action === "create_link_token") {
       const country = body.country === "US" ? "US" : "CA";
       const isUpdate = !!body.access_token;
+      const WEBHOOK_URL = "https://flourishmoney.app/.netlify/functions/plaid-webhook";
       const linkBody = isUpdate
         ? {
             user:         { client_user_id: body.user_id || "flourish-user" },
             client_name:  "Flourish Money",
             access_token: body.access_token,
+            webhook:      WEBHOOK_URL,
             language:     "en",
           }
         : {
@@ -120,6 +122,7 @@ exports.handler = async (event) => {
             language:      "en",
             transactions:  { days_requested: 90 },
             redirect_uri:  "https://flourishmoney.app",
+            webhook:       WEBHOOK_URL,
           };
       const data = await plaid("/link/token/create", linkBody);
       return ok({ link_token: data.link_token });
