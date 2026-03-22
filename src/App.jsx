@@ -4554,7 +4554,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const soonTotal   = _ss.upcomingBills;
   const today       = new Date().getDate();
   const monthlyIncome = FinancialCalcEngine.cashFlow(data).monthlyIncome;
-  const { netWorth } = FinancialCalcEngine.netWorth(data);
+  const { netWorth, liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
   // Badge reads live from localStorage so it updates after Notifications marks-read
   const getUnreadCount = () => {
     try {
@@ -7966,7 +7966,7 @@ function Family({data,household,setHousehold,setScreen}){
   // Pull real metrics for meeting
   const _ss=SafeSpendEngine.calculate(data);
   const {monthlyIncome,monthlyBills,cashFlow}=FinancialCalcEngine.cashFlow(data);
-  const totalDebt=(data.debts||[]).reduce((a,d)=>a+parseFloat(d.balance||0),0);
+  const { liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
   const SKIP_FAM = new Set(["Transfer","Income","Fees"]);
   const topSpend=(data.transactions||[])
     .filter(t=>t.amount>0 && !SKIP_FAM.has(t.cat))
