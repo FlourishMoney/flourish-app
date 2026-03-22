@@ -1,11 +1,12 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   Home, Calendar, CreditCard, Sparkles, Users, User,
   Bell, Settings as LucideSettings, ShoppingCart, Coffee,
   Zap, Package, Film, Music, Pill, Shirt,
   TrendingUp, Shield, CheckCircle,
   Target, PiggyBank, DollarSign,
-  ShoppingBag, Flame, Star, Car, BarChart2
+  ShoppingBag, Flame, Star, Car, BarChart2,
+  Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -14,33 +15,6 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 );
-
-const STYLES = `
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
-@keyframes fadeUp    { from{opacity:0;transform:translateY(24px) scale(0.98)} to{opacity:1;transform:translateY(0) scale(1)} }
-@keyframes fadeIn    { from{opacity:0} to{opacity:1} }
-@keyframes slideUp   { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-@keyframes slideIn   { from{opacity:0;transform:translateX(-16px)} to{opacity:1;transform:translateX(0)} }
-@keyframes pulse     { 0%,100%{opacity:1} 50%{opacity:0.4} }
-@keyframes shimmer   { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
-@keyframes mintGlow  { 0%,100%{box-shadow:0 0 0 0 rgba(0,214,143,0)} 50%{box-shadow:0 0 70px 10px rgba(0,214,143,0.14)} }
-@keyframes goldGlow  { 0%,100%{box-shadow:0 0 0 0 rgba(240,196,66,0)} 50%{box-shadow:0 0 60px 8px rgba(240,196,66,0.12)} }
-@keyframes ringPulse { 0%{transform:scale(1);opacity:0.7} 100%{transform:scale(2.6);opacity:0} }
-@keyframes spin      { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
-@keyframes floatUp   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
-@keyframes numberIn  { from{opacity:0;transform:translateY(10px) scale(0.96)} to{opacity:1;transform:translateY(0) scale(1)} }
-@keyframes gradShift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
-@keyframes breathe   { 0%,100%{opacity:0.5;transform:scale(1)} 50%{opacity:0.9;transform:scale(1.04)} }
-@keyframes orbit     { from{transform:translate(-50%,-50%) rotate(0deg) translateX(110px)} to{transform:translate(-50%,-50%) rotate(360deg) translateX(110px)} }
-@keyframes logoFloat { 0%,100%{transform:translateY(0) rotate(-1deg)} 50%{transform:translateY(-6px) rotate(1deg)} }
-@keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
-* { -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; box-sizing:border-box; }
-*:focus-visible { outline:2px solid rgba(0,214,143,0.55); outline-offset:2px; border-radius:4px; }
-::selection { background:rgba(0,214,143,0.25); color:#fff; }
-::-webkit-scrollbar { width:0; background:transparent; }
-input,button,select,textarea { font-family:inherit; }
-button { cursor:pointer; }
-`;
 
 
 // ─── COUNTRY CONFIG ────────────────────────────────────────────────────────────
@@ -64,17 +38,17 @@ const CC = {
     ],
     debtTypes:["Credit Card","Line of Credit","HELOC","Car Loan","OSAP / Student Loan","Personal Loan","Mortgage","Buy Now Pay Later","Other"],
     taxTips:[
-      {title:"RRSP Contribution",body:"Every RRSP dollar reduces your taxable income. At a 30% marginal rate, putting in $5,000 gets you ~$1,500 back at tax time. Deadline is March 1.",savings:"Up to 33%",flag:"🇨🇦",priority:"high",action:"Check My RRSP Room"},
+      {title:"RRSP Contribution",body:"Every RRSP dollar reduces your taxable income. At a 30% marginal rate, putting in $5,000 gets you ~$1,500 back at tax time. Deadline is the first 60 days of the following year (typically early March — check CRA for the exact date).",savings:"Up to 33%",flag:"🇨🇦",priority:"high",action:"Check My RRSP Room"},
       {title:"TFSA — You're Probably Under-Using It",body:"Your TFSA isn't just for savings — it's for investing. Any growth inside is 100% tax-free forever. If you opened one at 18, you may have $75,000+ of contribution room sitting unused.",savings:"Tax-free growth",flag:"🇨🇦",priority:"high",action:"Calculate My Room"},
       {title:"FHSA (First Home Savings Account)",body:"If you've never owned a home, you can contribute up to $8,000/year and get a tax deduction — like an RRSP. Unused room carries forward. Withdraw tax-free to buy your first home.",savings:"Up to $8,000/yr",flag:"🇨🇦",priority:"high",action:"Open an FHSA"},
-      {title:"GST/HST Credit",body:"Filing your taxes means CRA automatically checks if you qualify for quarterly GST/HST credits. Under ~$50k income? You likely qualify and may not know it. File every year even if you owe nothing.",savings:"Up to $519/yr",flag:"🇨🇦",priority:"medium",action:"File Your Taxes"},
-      {title:"Canada Child Benefit (CCB)",body:"Tax-free monthly payments if you have children under 18. A family earning $50k with two kids can get $12,000+/year. Apply on CRA My Account or when registering the birth.",savings:"Up to $7,787/child",flag:"🇨🇦",priority:"high",action:"Apply on CRA"},
-      {title:"Home Office Deduction",body:"Work from home? Even employees can claim a flat $2/day (up to $500) without receipts. Self-employed? Claim actual rent, internet, hydro proportionally.",savings:"$200–$1,200",flag:"🇨🇦",priority:"medium",action:"Track Home Office Days"},
-      {title:"Ontario Trillium Benefit",body:"Ontario residents: combines the Ontario Sales Tax Credit, Ontario Energy Credit, and Northern Ontario Energy Credit into one monthly payment. Low-to-mid income earners often miss this.",savings:"Up to $1,421/yr",flag:"🏙️ ON",priority:"medium",action:"Apply on CRA"},
-      {title:"Disability Tax Credit (DTC)",body:"If you or a dependent has a severe disability, the DTC provides up to ~$1,300/year in federal tax credits, plus retroactive claims. Often missed — a doctor fills out T2201.",savings:"Up to $1,300/yr",flag:"🇨🇦",priority:"medium",action:"Get T2201 Form"},
-      {title:"Child Care Expense Deduction",body:"Daycare, after-school programs, summer camp — most childcare costs are deductible from the lower-income spouse's return. Families earning $50k often leave $2,000–$4,000 on the table.",savings:"$1,200–$4,000",flag:"🇨🇦",priority:"high",action:"Gather Receipts"},
+      {title:"GST/HST Credit",body:"Filing your taxes means CRA automatically checks if you qualify for quarterly GST/HST credits. 2025–26 maximum: $533/yr single, $698/yr couple. Under ~$55k income? You likely qualify and may not know it. File every year even if you owe nothing.",savings:"Up to $533/yr",flag:"🇨🇦",priority:"medium",action:"File Your Taxes"},
+      {title:"Canada Child Benefit (CCB)",body:"Tax-free monthly payments for children under 18. Maximum 2025–26: $7,997/yr per child under 6 ($666/mo) and $6,748/yr per child aged 6–17 ($562/mo). A family with two kids under 6 at modest income can receive nearly $16,000/year tax-free. Apply on CRA My Account or at birth registration.",savings:"Up to $7,997/child under 6",flag:"🇨🇦",priority:"high",action:"Apply on CRA"},
+      {title:"Home Office Deduction",body:"Work from home? Employees must use the detailed method with a signed T2200 from their employer (the $2/day flat rate ended after 2022). Claim your workspace percentage of rent, utilities, and internet. Self-employed? Claim actual rent, internet, hydro proportionally.",savings:"Varies — % of home expenses",flag:"🇨🇦",priority:"medium",action:"Track Home Office Days"},
+      {title:"Ontario Trillium Benefit",body:"Ontario residents: combines the Ontario Sales Tax Credit, Ontario Energy Credit, and Northern Ontario Energy Credit into one monthly payment. Low-to-mid income earners often miss this.",savings:"Up to $1,654/yr (OEPTC+OSTC)",flag:"🏙️ ON",priority:"medium",action:"Apply on CRA"},
+      {title:"Disability Tax Credit (DTC)",body:"If you or a dependent has a severe disability, the DTC provides up to ~$1,470/year in federal tax reduction (14.5% × $10,138 base amount for 2025), plus retroactive claims. Often missed — a doctor fills out T2201.",savings:"~$1,470 federal tax reduction",flag:"🇨🇦",priority:"medium",action:"Get T2201 Form"},
+      {title:"Child Care Expense Deduction",body:"Daycare, after-school programs, summer camp — most childcare costs are deductible from the lower-income spouse's return. CRA limits: $8,000/child under 7, $5,000/child aged 7–16. Claimed at a 30% rate, one toddler in daycare saves ~$2,400.",savings:"$1,200–$4,000",flag:"🇨🇦",priority:"high",action:"Gather Receipts"},
       {title:"RESP — Free Government Money",body:"Open an RESP for your child and the government adds 20% on the first $2,500/year = $500 free per child. Canada Learning Bond adds another $500 for lower-income families.",savings:"$500–$1,000/yr free",flag:"🇨🇦",priority:"high",action:"Open an RESP"},
-      {title:"Working Income Tax Benefit (CWB)",body:"Working but earning under ~$36k? CRA may owe you a refundable tax credit just for filing. Many low-income workers miss this entirely.",savings:"Up to $1,428",flag:"🇨🇦",priority:"medium",action:"Check Eligibility"},
+      {title:"Working Income Tax Benefit (CWB)",body:"Working but earning under ~$37,742 (single) or ~$49,393 (family)? CRA owes you a refundable tax credit just for filing. Many low-income workers miss this entirely.",savings:"Up to $1,633 single / $2,813 family",flag:"🇨🇦",priority:"medium",action:"Check Eligibility"},
     ],
     learnCards:[
       {emoji:"🏦",title:"TFSA vs RRSP — The Real Difference",body:"RRSP lowers your taxes now but you pay tax when you withdraw. TFSA has no upfront deduction but all growth and withdrawals are 100% tax-free. If you're in a low tax bracket now, use TFSA first. If you're in a high bracket, RRSP first.",key:"Low income now → TFSA. High income now → RRSP."},
@@ -85,18 +59,18 @@ const CC = {
       {emoji:"🆘",title:"The emergency fund rule",body:"One car repair without savings = credit card debt at 20%. A $1,000 cushion breaks that cycle. In Canada, keep it in a TFSA high-interest savings account.",key:"Build $1,000 in a TFSA HISA first."},
     ],
     retirementAccounts:[
-      {id:"rrsp",name:"RRSP",fullName:"Registered Retirement Savings Plan",icon:"🏦",color:"#2E8B2E",annualLimit:"18% of income (max $31,560)",taxNote:"Contributions deductible. Withdrawals taxed as income.",tip:"Contribute in high-income years. Use spousal RRSP for income splitting."},
-      {id:"tfsa",name:"TFSA",fullName:"Tax-Free Savings Account",icon:"🛡️",color:"#2FADA6",annualLimit:"$7,000 (2024). Unused room accumulates.",taxNote:"No deduction on contribution. All growth and withdrawals tax-free.",tip:"Invest in ETFs inside your TFSA — don't just park cash."},
+      {id:"rrsp",name:"RRSP",fullName:"Registered Retirement Savings Plan",icon:"🏦",color:"#2E8B2E",annualLimit:"18% of income (max $32,490 for 2025)",taxNote:"Contributions deductible. Withdrawals taxed as income.",tip:"Contribute in high-income years. Use spousal RRSP for income splitting."},
+      {id:"tfsa",name:"TFSA",fullName:"Tax-Free Savings Account",icon:"🛡️",color:"#2FADA6",annualLimit:"$7,000 (2025 & 2026). Unused room accumulates.",taxNote:"No deduction on contribution. All growth and withdrawals tax-free.",tip:"Invest in ETFs inside your TFSA — don't just park cash."},
       {id:"fhsa",name:"FHSA",fullName:"First Home Savings Account",icon:"🏠",color:"#CFA03E",annualLimit:"$8,000/yr (max $40,000 lifetime)",taxNote:"Deductible going in. Tax-free withdrawal for first home purchase.",tip:"Best account for first-time buyers. Open even if you're not buying immediately — room accumulates."},
       {id:"resp",name:"RESP",fullName:"Registered Education Savings Plan",icon:"👶",color:"#8A5FC8",annualLimit:"$2,500/yr to maximize CESG grant",taxNote:"No deduction. Government adds 20% (CESG) on first $2,500/yr.",tip:"Even $2,500/yr gets $500 free from government. Start at birth."},
     ],
     benefitsChecker:[
-      {name:"Canada Child Benefit",icon:"👶",eligible:"Has children under 18",amount:"Up to $7,787/child under 6",apply:"CRA My Account",url:"https://canada.ca/ccb"},
-      {name:"GST/HST Credit",icon:"🛒",eligible:"Under ~$50k income",amount:"Up to $519/yr",apply:"File your taxes",url:"https://canada.ca/gst-credit"},
-      {name:"Ontario Trillium Benefit",icon:"🏙️",eligible:"Ontario residents, low-mid income",amount:"Up to $1,421/yr",apply:"ON-BEN form with taxes",url:"https://canada.ca/trillium"},
-      {name:"Canada Workers Benefit",icon:"💼",eligible:"Working, under ~$36k",amount:"Up to $1,428",apply:"Schedule 6 with taxes",url:"https://canada.ca/cwb"},
-      {name:"CERB / CRB Replacements",icon:"📋",eligible:"Income disruption",amount:"Varies",apply:"CRA My Account",url:"https://canada.ca/ei"},
-      {name:"Disability Tax Credit",icon:"♿",eligible:"Severe disability",amount:"~$1,300 credit",apply:"T2201 with doctor",url:"https://canada.ca/dtc"},
+      {name:"Canada Child Benefit",icon:"👶",eligible:"Has children under 18",amount:"Up to $7,997/child under 6",apply:"CRA My Account",url:"https://canada.ca/ccb"},
+      {name:"GST/HST Credit",icon:"🛒",eligible:"Under ~$50k income",amount:"Up to $533/yr",apply:"File your taxes",url:"https://canada.ca/gst-credit"},
+      {name:"Ontario Trillium Benefit",icon:"🏙️",eligible:"Ontario residents, low-mid income",amount:"Up to $1,654/yr",apply:"ON-BEN form with taxes",url:"https://canada.ca/trillium"},
+      {name:"Canada Workers Benefit",icon:"💼",eligible:"Working, under ~$37,742 single",amount:"Up to $1,633 single / $2,813 family",apply:"Schedule 6 with taxes",url:"https://canada.ca/cwb"},
+      {name:"Canada Disability Benefit (CDB)",icon:"♿",eligible:"DTC-approved, age 18–64, low income",amount:"Up to $200/mo ($2,400/yr)",apply:"Service Canada online",url:"https://canada.ca/cdb"},
+      {name:"Disability Tax Credit",icon:"♿",eligible:"Severe disability",amount:"~$1,470 federal credit",apply:"T2201 with doctor",url:"https://canada.ca/dtc"},
     ],
     creditBureaus:["Equifax (Borrowell — free)","TransUnion (Credit Karma — free)"],
     emergencyMonths:3,
@@ -121,17 +95,19 @@ const CC = {
     ],
     debtTypes:["Credit Card","Student Loan (Federal)","Student Loan (Private)","Medical Debt","Car Loan","Personal Loan","Mortgage","HELOC","Payday Loan","Buy Now Pay Later","Other"],
     taxTips:[
-      {title:"Earned Income Tax Credit (EITC)",body:"One of the most under-claimed credits in America. Under ~$63k with qualifying children? You could get up to $7,430 back — even if you owe nothing. Must file to claim.",savings:"Up to $7,430",flag:"🇺🇸",priority:"high",action:"Check EITC Eligibility"},
-      {title:"Child Tax Credit",body:"Up to $2,000 per qualifying child under 17. Partially refundable — meaning you can get money back even if you owe nothing. File even if your income is low.",savings:"$2,000/child",flag:"🇺🇸",priority:"high",action:"Claim on Schedule 8812"},
-      {title:"401(k) — Get the Full Match First",body:"If your employer matches 401(k) contributions, not contributing enough to get the full match is leaving free money on the table. A 4% match on $50k = $2,000/year you're giving up.",savings:"Up to $23,000/yr",flag:"🇺🇸",priority:"high",action:"Increase 401k Contributions"},
-      {title:"HSA: The Triple Tax Advantage",body:"If you have a high-deductible health plan, an HSA lets you contribute pre-tax, grow tax-free, and withdraw tax-free for medical expenses. It's legally the most tax-advantaged account available.",savings:"Up to $4,150/yr",flag:"🇺🇸",priority:"high",action:"Open an HSA"},
-      {title:"Roth IRA: Tax-Free Retirement",body:"Under $146k single / $230k married? You can contribute $7,000/year to a Roth IRA. You pay tax now, but all growth and withdrawals are 100% tax-free in retirement.",savings:"$7,000/yr tax-free",flag:"🇺🇸",priority:"high",action:"Open a Roth IRA"},
+      {title:"Earned Income Tax Credit (EITC)",body:"One of the most under-claimed credits in America. Under $61,555 (single) or $68,675 (married) with qualifying children? You could get up to $8,046 back (2025, 3 or more children) — even if you owe nothing. Must file to claim.",savings:"Up to $8,046 (2025, 3+ children)",flag:"🇺🇸",priority:"high",action:"Check EITC Eligibility"},
+      {title:"Child Tax Credit",body:"Up to $2,200 per qualifying child under 17 (increased by OBBBA, July 2025). Partially refundable up to $1,700 — meaning you can get money back even if you owe nothing. File even if your income is low.",savings:"$2,200/child (2025)",flag:"🇺🇸",priority:"high",action:"Claim on Schedule 8812"},
+      {title:"401(k) — Get the Full Match First",body:"If your employer matches 401(k) contributions, not contributing enough to get the full match is leaving free money on the table. A 4% match on $50k = $2,000/year you're giving up.",savings:"Up to $23,500/yr (2025)",flag:"🇺🇸",priority:"high",action:"Increase 401k Contributions"},
+      {title:"HSA: The Triple Tax Advantage",body:"If you have a high-deductible health plan, an HSA lets you contribute pre-tax, grow tax-free, and withdraw tax-free for medical expenses. It's legally the most tax-advantaged account available.",savings:"Up to $4,300/yr (2025)",flag:"🇺🇸",priority:"high",action:"Open an HSA"},
+      {title:"Roth IRA: Tax-Free Retirement",body:"Under $150k single / $236k married? You can contribute $7,000/year to a Roth IRA (2025 income limits). You pay tax now, but all growth and withdrawals are 100% tax-free in retirement.",savings:"$7,000/yr tax-free",flag:"🇺🇸",priority:"high",action:"Open a Roth IRA"},
       {title:"Student Loan Interest Deduction",body:"Paying student loans? You may be able to deduct up to $2,500 of interest per year, reducing taxable income directly — even without itemizing.",savings:"Up to $2,500",flag:"🇺🇸",priority:"medium",action:"Find 1098-E Form"},
-      {title:"Child & Dependent Care Credit",body:"Paying for daycare, after-school, or a caregiver while you work? You can claim 20–35% of up to $3,000 in care expenses as a tax credit — not just a deduction.",savings:"$600–$1,050",flag:"🇺🇸",priority:"medium",action:"Track Care Receipts"},
-      {title:"Saver's Credit",body:"Low-to-mid income and contributing to a 401k or IRA? The Saver's Credit gives you up to 50% of your contribution back as a tax credit. Under $36k single? You likely qualify.",savings:"Up to $1,000",flag:"🇺🇸",priority:"medium",action:"Check Form 8880"},
+      {title:"Child & Dependent Care Credit",body:"Paying for daycare, after-school, or a caregiver while you work? You can claim 20–35% of up to $3,000 (1 child) or $6,000 (2+ children) in care expenses as a tax credit.",savings:"$600–$2,100 (1–2 children)",flag:"🇺🇸",priority:"medium",action:"Track Care Receipts"},
+      {title:"Saver's Credit",body:"Low-to-mid income and contributing to a 401k or IRA? The Saver's Credit gives you up to 50% of your contribution back as a tax credit. Under $39,500 single? You likely qualify.",savings:"Up to $1,000",flag:"🇺🇸",priority:"medium",action:"Check Form 8880"},
       {title:"American Opportunity Tax Credit",body:"Paying for the first 4 years of college? You can claim up to $2,500/year per student — and 40% is refundable even if you owe nothing.",savings:"Up to $2,500/yr",flag:"🇺🇸",priority:"medium",action:"Claim on Form 8863"},
       {title:"Medical Expense Deduction",body:"Medical expenses exceeding 7.5% of your AGI are deductible if you itemize. For Americans with significant medical debt, this can mean thousands back.",savings:"Varies",flag:"🇺🇸",priority:"low",action:"Track Medical Receipts"},
       {title:"Home Office Deduction",body:"Self-employed and work from home? The simplified method allows $5 per square foot (up to 300 sq ft = $1,500). No complex calculations needed.",savings:"Up to $1,500",flag:"🇺🇸",priority:"medium",action:"Measure Your Office"},
+      {title:"No Tax on Tips (2025–2028)",body:"Work in a tipped occupation — restaurant, salon, hotel, rideshare, personal trainer? Deduct up to $25,000 of qualified tips from your federal income. No itemizing required. Phases out above $150k MAGI. Expires after 2028 unless extended.",savings:"Up to $25,000 deduction",flag:"🇺🇸",priority:"high",action:"Track Tips — Form 4137"},
+      {title:"No Tax on Overtime (2025–2028)",body:"Earn FLSA-required overtime (time-and-a-half)? You can deduct the premium 'half' portion — up to $12,500 ($25,000 if married filing jointly). Phases out above $150k MAGI. Expires after 2028. Salary-exempt workers generally don't qualify.",savings:"Up to $12,500 deduction",flag:"🇺🇸",priority:"medium",action:"Check Your W-2 Overtime"},
     ],
     learnCards:[
       {emoji:"🏦",title:"401(k) vs Roth IRA: Which First?",body:"Your 401(k) lowers taxes now — great if you're in a high bracket. A Roth IRA gives tax-free income in retirement — great if you're younger or lower income. Rule of thumb: get the full 401k employer match first, then max your Roth IRA, then go back to the 401k.",key:"Always get the full employer match first. It's a 50–100% instant return."},
@@ -142,16 +118,16 @@ const CC = {
       {emoji:"🆘",title:"The emergency fund rule",body:"Medical emergencies are the #1 cause of bankruptcy in America. A $1,000 cushion in a high-yield savings account (4–5% APY) breaks the cycle of borrowing.",key:"Keep your emergency fund in a high-yield savings account."},
     ],
     retirementAccounts:[
-      {id:"401k",name:"401(k)",fullName:"Employer Retirement Plan",icon:"🏦",color:"#2E8B2E",annualLimit:"$23,000/yr ($30,500 if 50+)",taxNote:"Traditional: contributions pre-tax, withdrawals taxed. Roth 401k: after-tax contributions, tax-free withdrawals.",tip:"Always contribute enough to get the full employer match — it's free money."},
-      {id:"roth",name:"Roth IRA",fullName:"Individual Retirement Account",icon:"🛡️",color:"#2FADA6",annualLimit:"$7,000/yr ($8,000 if 50+). Phaseout at $146k+",taxNote:"After-tax contributions. All growth and qualified withdrawals 100% tax-free.",tip:"Open early — the tax-free compounding over decades is massive. Use Fidelity or Vanguard."},
-      {id:"hsa",name:"HSA",fullName:"Health Savings Account",icon:"🏥",color:"#CFA03E",annualLimit:"$4,150 single / $8,300 family (2024)",taxNote:"Triple tax advantage: pre-tax in, tax-free growth, tax-free for medical expenses.",tip:"After 65, HSA funds can be used for anything (taxed like a 401k). Best account in the US tax code."},
-      {id:"529",name:"529 Plan",fullName:"Education Savings Account",icon:"🎓",color:"#8A5FC8",annualLimit:"No annual limit. $18k/yr gift tax exclusion.",taxNote:"State deduction varies. Federal tax-free growth and withdrawals for education.",tip:"Start when kids are young. Some states give immediate tax deductions."},
+      {id:"401k",name:"401(k)",fullName:"Employer Retirement Plan",icon:"🏦",color:"#2E8B2E",annualLimit:"$23,500/yr (2025; $31,000 if 50+)",taxNote:"Traditional: contributions pre-tax, withdrawals taxed. Roth 401k: after-tax contributions, tax-free withdrawals.",tip:"Always contribute enough to get the full employer match — it's free money."},
+      {id:"roth",name:"Roth IRA",fullName:"Individual Retirement Account",icon:"🛡️",color:"#2FADA6",annualLimit:"$7,000/yr ($8,000 if 50+). Phaseout at $150k single/$236k MFJ (2025)",taxNote:"After-tax contributions. All growth and qualified withdrawals 100% tax-free.",tip:"Open early — the tax-free compounding over decades is massive. Use Fidelity or Vanguard."},
+      {id:"hsa",name:"HSA",fullName:"Health Savings Account",icon:"🏥",color:"#CFA03E",annualLimit:"$4,300 single / $8,550 family (2025)",taxNote:"Triple tax advantage: pre-tax in, tax-free growth, tax-free for medical expenses.",tip:"After 65, HSA funds can be used for anything (taxed like a 401k). Best account in the US tax code."},
+      {id:"529",name:"529 Plan",fullName:"Education Savings Account",icon:"🎓",color:"#8A5FC8",annualLimit:"No annual limit. $19,000/yr gift tax exclusion (2025).",taxNote:"State deduction varies. Federal tax-free growth and withdrawals for education.",tip:"Start when kids are young. Some states give immediate tax deductions."},
     ],
     benefitsChecker:[
-      {name:"Earned Income Tax Credit",icon:"💰",eligible:"Working, under ~$63k",amount:"Up to $7,430",apply:"File taxes (IRS Free File)",url:"https://irs.gov/eitc"},
-      {name:"SNAP (Food Stamps)",icon:"🛒",eligible:"Low income households",amount:"$291/mo average",apply:"Benefits.gov",url:"https://benefits.gov"},
+      {name:"Earned Income Tax Credit",icon:"💰",eligible:"Working, under $61,555 (single) / $68,675 (MFJ)",amount:"Up to $8,046 (2025, 3+ children)",apply:"File taxes (IRS Free File)",url:"https://irs.gov/eitc"},
+      {name:"SNAP (Food Stamps)",icon:"🛒",eligible:"Low income households",amount:"~$191/mo per person (USDA FY2025)",apply:"Benefits.gov",url:"https://benefits.gov"},
       {name:"Medicaid / CHIP",icon:"🏥",eligible:"Low-income adults and children",amount:"Free/low-cost healthcare",apply:"Healthcare.gov",url:"https://healthcare.gov"},
-      {name:"Child Tax Credit",icon:"👶",eligible:"Children under 17",amount:"Up to $2,000/child",apply:"File taxes",url:"https://irs.gov/ctc"},
+      {name:"Child Tax Credit",icon:"👶",eligible:"Children under 17",amount:"Up to $2,200/child (2025)",apply:"File taxes",url:"https://irs.gov/ctc"},
       {name:"LIHEAP Energy Assistance",icon:"⚡",eligible:"Low income, utility hardship",amount:"Varies by state",apply:"Benefits.gov",url:"https://benefits.gov"},
       {name:"WIC Program",icon:"🍼",eligible:"Pregnant/postpartum, children under 5",amount:"Food + support",apply:"Local health dept",url:"https://wic.fns.usda.gov"},
     ],
@@ -160,6 +136,170 @@ const CC = {
     healthcareNote:"Medical emergencies are the #1 cause of US bankruptcy. 6 months of expenses is the minimum.",
   },
 };
+
+// ─── PERSONALIZED TAX CREDIT ENGINE ─────────────────────────────────────────
+// Returns a filtered + enriched tax tip array based on profile.
+// Surfaces only credits that apply to the user's life stage, province/state,
+// income types, and family situation.
+function getPersonalizedTaxCredits(profile) {
+  const country   = profile?.country   || "CA";
+  const province  = profile?.province  || "ON";
+  const rawLifeStage = profile?.lifeStages || profile?.lifeStage || "employed";
+  const lifeStages = Array.isArray(rawLifeStage) ? rawLifeStage : [rawLifeStage];
+  const hasStage = (...stages) => stages.some(s => lifeStages.includes(s));
+  const lifeStage = lifeStages[0] || "employed";
+  const hasKids   = profile?.hasKids   || false;
+  const status    = profile?.status    || "single";
+  const isHomeowner = profile?.isHomeowner || false;
+  const empType   = profile?.employmentType || "t4";
+  const isSelfEmp = empType==="selfemployed"||empType==="incorporated";
+  const birthYear = parseInt(profile?.birthYear||"0");
+  const age       = birthYear>0 ? new Date().getFullYear()-birthYear : null;
+  const isSenior  = (age&&age>=65)||hasStage("senior","retired");
+  const isStudent = hasStage("student")||empType==="student";
+  const incomeTypes = (profile?.incomeTypes || []).map(t => t.toLowerCase());
+  const cfg = CC[country] || CC.CA;
+
+  // Start with base country tips, then add life-stage + province specific ones
+  let tips = [...(cfg.taxTips || [])];
+
+  // ── FILTER: remove tips that clearly don't apply ──────────────────────────
+  tips = tips.filter(tip => {
+    const t = tip.title.toLowerCase();
+    if ((t.includes("child") || t.includes("ccb") || t.includes("resp") || t.includes("dependent care") || t.includes("childcare") || t.includes("child care")) && !hasKids) return false;
+    // FHSA only for non-homeowners
+    if (t.includes("fhsa") && (isHomeowner || isSenior)) return false;
+    if (t.includes("first home") && isHomeowner) return false;
+    if (t.includes("resp") && !hasKids) return false;
+    if (t.includes("student loan interest") && !isStudent) return false;
+    if (t.includes("home office") && isStudent && !hasStage("employed","selfemployed") && !isSelfEmp) return false;
+    if ((t.includes("working income") || t.includes("cwb")) && isSenior && !hasStage("employed","selfemployed") && !isSelfEmp) return false;
+    // Self-employment tips — only for self-employed
+    if ((t.includes("hst") || t.includes("gst registration") || t.includes("schedule c") || t.includes("quarterly estimated") || t.includes("sep-ira") || t.includes("solo 401")) && !isSelfEmp) return false;
+    // Senior tips — only for seniors
+    if ((t.includes("age amount") || t.includes("pension income split") || t.includes("oas") || t.includes("gis") || t.includes("rmd") || t.includes("social security taxation")) && !isSenior) return false;
+    return true;
+  });
+
+  // ── ADD: Student-specific credits ────────────────────────────────────────
+  if (hasStage("student")) {
+    if (country === "CA") {
+      tips.unshift(
+        {title:"Tuition Tax Credit",body:"Your T2202 slip from your school lets you claim every dollar of tuition as a federal tax credit (15% federal rate). Unused amounts carry forward indefinitely — you can use them in future high-income years. Transfer up to $5,000 unused amount to a parent or spouse.",savings:"15% of tuition paid",flag:"🇨🇦",priority:"high",action:"Get Your T2202"},
+        {title:"Canada Training Credit",body:"You accumulate $250/year in Canada Training Credit room (up to $5,000 lifetime). This is a refundable credit — you get money back even if you owe nothing. Claim on line 45350 of your return.",savings:"Up to $250/yr",flag:"🇨🇦",priority:"high",action:"Check CTC Room on CRA"},
+        {title:"GST/HST Credit — Students Almost Always Qualify",body:"If your income is low (most students qualify), file your taxes and CRA automatically pays you quarterly GST/HST credits. No application needed — just file. Many students skip filing because they 'don't earn much' and miss hundreds.",savings:"Up to $533/yr",flag:"🇨🇦",priority:"high",action:"File Your Taxes"},
+        {title:"Student Loan Interest Credit",body:"Paying interest on government student loans (OSAP, NSLSC)? That interest is 100% claimable as a non-refundable federal tax credit. Private loans don't qualify — only government loans. Keep your annual interest statement.",savings:"15% of interest paid",flag:"🇨🇦",priority:"medium",action:"Get NSLSC Statement"},
+        {title:"Moving Expenses Deduction",body:"If you moved more than 40km to attend school full-time, you can deduct eligible moving expenses from your scholarship or research income. Keep your receipts — this is often missed.",savings:"Varies",flag:"🇨🇦",priority:"medium",action:"Track Moving Receipts"}
+      );
+      // Province-specific student credits
+      if (province === "MB") {
+        tips.push({title:"Manitoba Tuition Fee Income Tax Rebate",body:"Stay and work in Manitoba after graduating and you can recover up to 60% of your Manitoba tuition paid over your working years. Claim up to $2,500/year as a Manitoba resident.",savings:"Up to 60% of MB tuition",flag:"🏙️ MB",priority:"high",action:"Apply After Graduation"});
+      }
+      if (province === "SK") {
+        tips.push({title:"Saskatchewan Graduate Retention Program",body:"Graduate and work in Saskatchewan to receive up to $20,000 in provincial tax credits over 7 years. One of the most generous graduate incentives in Canada.",savings:"Up to $20,000",flag:"🏙️ SK",priority:"high",action:"Apply After Graduation"});
+      }
+      if (province === "NB" || province === "NS" || province === "PEI" || province === "NL") {
+        tips.push({title:"Atlantic Graduate Tax Credit",body:"Atlantic provinces offer graduate tax credits to encourage graduates to stay and work in the region. Specific amounts vary by province — check your provincial tax return.",savings:"Varies by province",flag:"🏙️ Atlantic",priority:"medium",action:"Check Provincial Return"});
+      }
+    }
+    if (country === "US") {
+      tips.unshift(
+        {title:"American Opportunity Tax Credit (AOTC)",body:"In your first 4 years of college? Claim up to $2,500/year per eligible student. 40% is fully refundable — meaning you get up to $1,000 back even if you owe nothing. This is the most valuable education credit available.",savings:"Up to $2,500/yr",flag:"🇺🇸",priority:"high",action:"Claim on Form 8863"},
+        {title:"Lifetime Learning Credit",body:"Beyond the first 4 years, or taking part-time courses? The Lifetime Learning Credit gives you 20% of up to $10,000 in tuition = $2,000/year. No limit on the number of years you can claim it.",savings:"Up to $2,000/yr",flag:"🇺🇸",priority:"high",action:"Claim on Form 8863"},
+        {title:"Student Loan Interest Deduction",body:"Paying interest on student loans? Deduct up to $2,500 of interest per year — even without itemizing. Income phase-out starts at $75k single / $155k married. Check your 1098-E form from your loan servicer.",savings:"Up to $2,500",flag:"🇺🇸",priority:"high",action:"Find Your 1098-E"},
+        {title:"Scholarship & Fellowship Exclusion",body:"Scholarships used for tuition, fees, and required course materials are tax-free. Amounts used for room, board, or stipends are taxable. Keep records of how scholarship funds are spent.",savings:"Potentially thousands",flag:"🇺🇸",priority:"medium",action:"Track Scholarship Use"},
+        {title:"529 Plan Tax-Free Withdrawals",body:"If a parent or grandparent has a 529 plan for you, qualified withdrawals for tuition, fees, books, and room & board are 100% tax-free. Some states also let you deduct contributions.",savings:"Tax-free growth",flag:"🇺🇸",priority:"medium",action:"Confirm Qualified Expenses"}
+      );
+      // State-specific student credits
+      if (province === "NY") {
+        tips.push({title:"New York College Tuition Tax Credit",body:"New York residents can claim a tuition credit of up to $400 per student, or a tuition itemized deduction on your NY state return. Both can be worth claiming — compare which is larger for your situation.",savings:"Up to $400 credit",flag:"🗽 NY",priority:"medium",action:"Check IT-272 Form"});
+      }
+      if (province === "IL") {
+        tips.push({title:"Illinois Education Expense Credit",body:"Illinois residents can claim a 25% credit on qualified K-12 education expenses up to $500 — and college expenses for dependent students may also qualify under certain conditions.",savings:"Up to $500",flag:"🏙️ IL",priority:"medium",action:"Check Schedule ICR"});
+      }
+      if (province === "MN") {
+        tips.push({title:"Minnesota K-12 Education Credit",body:"Minnesota offers education credits and deductions that can apply to post-secondary expenses for dependents. Check Form M1ED for your specific eligibility.",savings:"Varies",flag:"🏙️ MN",priority:"medium",action:"Check Form M1ED"});
+      }
+    }
+  }
+
+  // ── ADD: Senior / Retired credits ─────────────────────────────────────────
+  if (hasStage("senior", "retired")) {
+    if (country === "CA") {
+      tips.unshift(
+        {title:"Age Amount Credit",body:"If you're 65 or older, you can claim the Age Amount — a federal non-refundable tax credit worth up to $8,396 (2024). It reduces if your income exceeds $42,335 and disappears above ~$98k. Even partial claims are worth thousands.",savings:"Up to $1,259 in tax saved",flag:"🇨🇦",priority:"high",action:"Claim on Line 30100"},
+        {title:"Pension Income Splitting",body:"If you receive eligible pension income (RPP, RRIF, annuity), you can split up to 50% with your spouse. If your spouse is in a lower tax bracket, this can save your household thousands every year.",savings:"Potentially thousands",flag:"🇨🇦",priority:"high",action:"File Form T1032"},
+        {title:"Pension Income Tax Credit",body:"The first $2,000 of eligible pension income qualifies for a 15% federal credit ($300 saved). Even if you're splitting pension income, your spouse can also claim this credit on the transferred amount.",savings:"Up to $300 federal",flag:"🇨🇦",priority:"high",action:"Claim on Line 31400"},
+        {title:"OAS & GIS — Are You Getting Everything?",body:"Old Age Security ($727.67/mo at 65) is automatic, but the Guaranteed Income Supplement (GIS) is not — you must apply. Low-income seniors leave GIS unclaimed every year. If your income is under ~$21,624, apply immediately.",savings:"Up to $1,065/mo (GIS)",flag:"🇨🇦",priority:"high",action:"Apply at Service Canada"},
+      {title:"CPP Maximum — Know What You're Entitled To",body:"The maximum CPP retirement pension is $1,364.60/mo (2025) at age 65. Your actual amount depends on contributions history. You can check your CPP Statement of Contributions at My Service Canada Account.",savings:"Up to $1,364.60/mo",flag:"🇨🇦",priority:"medium",action:"Check My Service Canada"},
+        {title:"Medical Expense Tax Credit",body:"Seniors often have significant medical costs — prescriptions, dental, vision, hearing aids, home care. Expenses exceeding 3% of your net income (or $2,635 — whichever is less) are claimable. Keep every receipt.",savings:"15% of qualifying expenses",flag:"🇨🇦",priority:"high",action:"Gather Medical Receipts"},
+        {title:"Home Accessibility Tax Credit",body:"Making your home safer and more accessible? Renovations like grab bars, wheelchair ramps, or walk-in tubs qualify for a 15% federal credit on up to $20,000 of expenses per year.",savings:"Up to $3,000",flag:"🇨🇦",priority:"medium",action:"Keep Renovation Receipts"}
+      );
+    }
+    if (country === "US") {
+      tips.unshift(
+        {title:"Social Security Taxation — Know Your Threshold",body:"Up to 85% of Social Security benefits may be taxable depending on your 'combined income'. If you're near the threshold, strategic Roth conversions or timing of other income can reduce how much gets taxed.",savings:"Potentially thousands",flag:"🇺🇸",priority:"high",action:"Calculate Combined Income"},
+        {title:"Higher Standard Deduction at 65+",body:"Americans 65 and older get an additional standard deduction ($1,950 single / $1,550 married per qualifying spouse in 2024) on top of the regular deduction. No action needed — it applies automatically when you file.",savings:"$1,550–$3,900 extra deduction",flag:"🇺🇸",priority:"high",action:"File Taxes — Applied Automatically"},
+        {title:"Credit for the Elderly or Disabled",body:"Low-income seniors (under $17,500 single) may qualify for a tax credit of $3,750–$7,500. Often overlooked because Social Security recipients don't expect to owe tax, but this is a direct credit against taxes owed.",savings:"Up to $7,500",flag:"🇺🇸",priority:"high",action:"Check Schedule R"},
+        {title:"Required Minimum Distributions (RMDs)",body:"At age 73, you must begin taking RMDs from traditional IRAs and 401(k)s. Missing an RMD triggers a 25% penalty on the missed amount. Plan withdrawals carefully — Roth IRAs have no RMD requirement.",savings:"Avoid 25% penalty",flag:"🇺🇸",priority:"high",action:"Calculate Your RMD"},
+        {title:"Qualified Charitable Distribution (QCD)",body:"If you're 70½ or older, you can transfer up to $105,000/year directly from your IRA to charity. This counts toward your RMD and is excluded from taxable income — better than donating cash.",savings:"Up to $105,000 excluded",flag:"🇺🇸",priority:"medium",action:"Contact Your IRA Custodian"}
+      );
+    }
+  }
+
+  // ── ADD: Self-employed additions ─────────────────────────────────────────
+  if (hasStage("selfemployed")) {
+    if (country === "CA") {
+      tips.push(
+        {title:"Business Expenses — What You Can Actually Claim",body:"Vehicle (business km %), phone (business %), internet, software, accounting fees, professional dues, advertising, and meals (50%). Every legitimate expense reduces your taxable income dollar for dollar.",savings:"Varies — often $3,000–$15,000",flag:"🇨🇦",priority:"high",action:"Track All Receipts"},
+        {title:"HST Registration Threshold",body:"Once your revenue exceeds $30,000 in a calendar quarter or over 4 quarters, you must register for HST. Register voluntarily earlier to claim Input Tax Credits on business purchases.",savings:"Claim back HST paid",flag:"🇨🇦",priority:"high",action:"Register on CRA Business"},
+        {title:"CPP Contributions — Both Sides",body:"As self-employed, you pay both the employee (5.95%) and employer (5.95%) portions of CPP on net self-employment income. The employer portion is deductible. CPP2 contributions also apply above the second ceiling.",savings:"Employer portion is deductible",flag:"🇨🇦",priority:"high",action:"See Schedule 8"}
+      );
+    }
+    if (country === "US") {
+      tips.push(
+        {title:"Self-Employment Tax Deduction",body:"You pay 15.3% self-employment tax on net earnings, but you can deduct half of it from your gross income. This reduces your taxable income before the standard deduction — often worth $1,000–$4,000.",savings:"Half of SE tax deducted",flag:"🇺🇸",priority:"high",action:"See Schedule SE"},
+        {title:"Qualified Business Income (QBI) Deduction",body:"If you're a sole proprietor, partnership, or S-corp, you may deduct up to 20% of qualified business income from your taxable income. One of the largest deductions available to self-employed people.",savings:"Up to 20% of net income",flag:"🇺🇸",priority:"high",action:"Check Form 8995"},
+        {title:"SEP-IRA or Solo 401(k)",body:"Self-employed? You can contribute up to 25% of net self-employment income to a SEP-IRA (max $69,000 in 2024) — fully deductible. Solo 401(k) allows even higher contributions plus a Roth option.",savings:"Up to $69,000/yr",flag:"🇺🇸",priority:"high",action:"Open SEP-IRA or Solo 401k"}
+      );
+    }
+  }
+
+  // ── ADD: Province-specific credits for all users ───────────────────────────
+  if (country === "CA") {
+    if (province === "ON" && !tips.find(t => t.title.includes("Trillium"))) {
+      tips.push({title:"Ontario Trillium Benefit",body:"Ontario residents: combines the Ontario Sales Tax Credit, Ontario Energy Credit, and Northern Ontario Energy Credit into one monthly payment. Low-to-mid income earners often miss this.",savings:"Up to $1,654/yr (OEPTC+OSTC)",flag:"🏙️ ON",priority:"medium",action:"Apply on CRA"});
+    }
+    if (province === "QC") {
+      tips.push(
+        {title:"Quebec Solidarity Tax Credit",body:"Quebec's refundable solidarity tax credit combines housing, QST, and northern village components. Apply on your Quebec TP-1 return. Many Quebecers eligible for $300–$2,000+ per year.",savings:"$300–$2,000+",flag:"🏙️ QC",priority:"high",action:"Claim on TP-1 Return"},
+        {title:"Quebec Child Assistance Payment",body:"Quebec provides a refundable tax credit for families with children — separate from the federal CCB. Amounts depend on income and number of children, paid quarterly.",savings:"Varies by family",flag:"🏙️ QC",priority:"high",action:"Apply via Revenu Québec"}
+      );
+    }
+    if (province === "AB") {
+      tips.push({title:"Alberta Has No Provincial Income Tax Credits",body:"Alberta has no provincial income tax on top of federal — your effective tax rate is already lower than most provinces. Focus on maximizing federal credits: RRSP, TFSA, FHSA, and GST/HST credit.",savings:"Lower baseline rate",flag:"🏙️ AB",priority:"medium",action:"Maximize Federal Credits"});
+    }
+    if (province === "BC") {
+      tips.push({title:"BC Climate Action Tax Credit",body:"BC residents with moderate incomes receive a quarterly climate action tax credit — automatic when you file your taxes. Single individuals can receive up to $447/year.",savings:"Up to $447/yr",flag:"🏙️ BC",priority:"medium",action:"File Your Taxes"});
+    }
+  }
+
+  // ── Deduplicate by title ──────────────────────────────────────────────────
+  const seen = new Set();
+  tips = tips.filter(t => {
+    if (seen.has(t.title)) return false;
+    seen.add(t.title);
+    return true;
+  });
+
+  // ── Re-sort: high priority first ─────────────────────────────────────────
+  tips.sort((a,b) => {
+    const order = {high:0, medium:1, low:2};
+    return (order[a.priority]??1) - (order[b.priority]??1);
+  });
+
+  return tips;
+}
 
 // ─── THEME PALETTES ──────────────────────────────────────────────────────────
 const DARK_C = {
@@ -216,6 +356,39 @@ const CAT_ICON = {
 };
 function txnIcon(txn){return CAT_ICON[txn.cat]||"card";}
 
+// Maps a category name → { emoji, color hex } at render time.
+// Used so recategorizing a transaction immediately updates its icon & color
+// without needing to mutate the original txn object.
+const CAT_DISPLAY = {
+  "Groceries":            { emoji:"🛒", color:"#00CC85" },
+  "Coffee & Dining":      { emoji:"☕", color:"#FF8C42" },
+  "Gas & Transport":      { emoji:"🚗", color:"#4DA8FF" },
+  "Shopping":             { emoji:"🛍️", color:"#FF6B9D" },
+  "Clothing":             { emoji:"👗", color:"#9B7DFF" },
+  "Subscriptions":        { emoji:"📱", color:"#00C8E0" },
+  "Health":               { emoji:"💊", color:"#00C8E0" },
+  "Personal Care":        { emoji:"🧴", color:"#E8B84B" },
+  "Entertainment":        { emoji:"🎬", color:"#FF6B9D" },
+  "Hobbies & Sports":     { emoji:"🎯", color:"#4DA8FF" },
+  "Kids & Extracurricular":{ emoji:"🧒", color:"#00CC85" },
+  "Travel":               { emoji:"✈️", color:"#9B7DFF" },
+  "Home":                 { emoji:"🏠", color:"#FF8C42" },
+  "Education":            { emoji:"📚", color:"#4DA8FF" },
+  "Utilities":            { emoji:"⚡", color:"#E8B84B" },
+  "Bills":                { emoji:"📋", color:"#E8B84B" },
+  "Housing":              { emoji:"🏠", color:"#FF8C42" },
+  "Phone & Internet":     { emoji:"📡", color:"#00C8E0" },
+  "Insurance":            { emoji:"🛡️", color:"#4DA8FF" },
+  "Services":             { emoji:"⚙️", color:"#888888" },
+  "Transfer":             { emoji:"↔️", color:"#888888" },
+  "Income":               { emoji:"💰", color:"#00CC85" },
+  "Fees":                 { emoji:"🏦", color:"#888888" },
+  "Other":                { emoji:"📌", color:"#888888" },
+};
+function getCatDisplay(catName) {
+  return CAT_DISPLAY[catName] || { emoji:"📌", color:"#888888" };
+}
+
 const DEMO = {
   balance:     1_243.88,
   income:      1_847.50,
@@ -243,6 +416,103 @@ async function callPlaid(action, params={}) {
 }
 
 // Plaid Personal Finance Category (PFC) primary values → Flourish display meta
+// Shared keyword list for detecting credit card payments in transactions.
+// Used by income detection, spending calc, and transparency panel — single source of truth.
+// Compound phrases only — single words like "payment","visa","amex" are too broad
+// Real CC payments are caught by Transfer category. These catch non-Transfer settlements.
+const CC_PAYMENT_KEYWORDS = [
+  "credit card payment",
+  "card payment",
+  "minimum payment",
+  "balance payment",
+  "autopay",
+  "amex payment",
+  "visa payment",
+  "mastercard payment",
+  "credit card autopay",
+];
+
+// Canadian/US bank online payment names — catch BNS SCOTIAONLINE etc.
+// NOT "bill payment" — too broad, catches Enbridge/Hydro One
+const CC_INSTITUTION_PATTERNS = [
+  "scotiaonline",
+  "mb-credit card",
+  "credit card/loc",
+  "mb-visa",
+  "mb-mastercard",
+  "mb-amex",
+  "online bill pay",
+  "web payment",
+  "telephone banking",
+];
+
+// Categories that represent fixed/variable bill commitments — NOT discretionary spending.
+// These are tracked via the Bills array and must be excluded from budget category suggestions
+// and discretionary spend calculations to prevent double-counting.
+const BILL_CATS = new Set([
+  "Utilities","Housing","Bills","Phone & Internet","Insurance",
+  "Other Bills","Rent","Mortgage","Transportation" // Transportation when it's a bill payment
+]);
+
+// Categories always excluded from spending breakdowns (non-expense flows)
+const NON_SPEND_CATS = new Set(["Transfer","Income","Fees"]);
+
+// ─── CC PAYMENT DETECTOR ──────────────────────────────────────────────────────
+// Identifies transactions that are credit card payments (not spending).
+// Plaid shows CC payments as: Transfer category OR matching CC keywords in name.
+// Also detects by amount matching a known debt balance (±$5 tolerance).
+function isCCPayment(txn, debts=[]) {
+  if(!txn || txn.amount <= 0) return false;
+  const name = (txn.name || "").toLowerCase();
+  const cat  = (txn.cat  || "").toUpperCase();
+  // Compound keyword match (safe — no broad single words)
+  if(CC_PAYMENT_KEYWORDS.some(kw => name.includes(kw))) return true;
+  // Institution-specific online banking payment names
+  if(CC_INSTITUTION_PATTERNS.some(p => name.includes(p))) return true;
+  // CC network name + payment verb — catches "MB-RBC ROYAL BANK MASTERCARD"
+  if((name.includes("mastercard") || name.includes("amex") || name.includes("visa")) &&
+     (name.includes("payment") || name.includes("/loc pay") || name.includes("credit card"))) return true;
+  // Transfer category + debt amount match (specific, not broad)
+  if(cat === "TRANSFER" || cat.includes("TRANSFER")) {
+    if(debts.length > 0) {
+      const matchesDet = debts.some(d => {
+        const min = parseFloat(d.min||0);
+        const bal = parseFloat(d.balance||0);
+        return (min > 0 && Math.abs(txn.amount - min) < 5) ||
+               (bal > 0 && Math.abs(txn.amount - bal) < 5);
+      });
+      if(matchesDet) return true;
+    }
+    // NOTE: round-amount heuristic removed — too aggressive, hid mortgage payments
+  }
+  return false;
+}
+
+function isCashAdvance(txn) {
+  if(!txn) return false; // both directions — CC charge and bank transfer
+  const name = (txn.name || "").toLowerCase();
+  return name.includes("cash advance") ||
+         name.includes("cash adv") ||
+         name.includes("atm advance") ||
+         name.includes("credit advance") ||
+         (name.includes("advance") && (name.includes("credit") || name.includes("card")));
+}
+
+// Returns CC payment transactions from a list, with the likely debt they paid
+function detectCCPayments(txns, debts=[]) {
+  return txns
+    .filter(t => t.amount > 0 && isCCPayment(t, debts))
+    .map(t => {
+      const matchedDebt = debts.find(d => {
+        const min = parseFloat(d.min||0);
+        const bal = parseFloat(d.balance||0);
+        return (min > 0 && Math.abs(t.amount - min) < 5) ||
+               (bal > 0 && Math.abs(t.amount - bal) < 50);
+      });
+      return { ...t, likelyCCPayment: true, matchedDebt: matchedDebt?.name || null };
+    });
+}
+
 const CAT_META = {
   FOOD_AND_DRINK:            { cat:"Coffee & Dining", icon:"🍕", color:"#D97A3A" },
   GROCERIES:                 { cat:"Groceries",       icon:"🛒", color:"#2E8B2E" },
@@ -260,6 +530,7 @@ const CAT_META = {
   INCOME:                    { cat:"Income",          icon:"💰", color:"#6FE494" },
   TRANSFER_IN:               { cat:"Transfer",        icon:"↔️", color:"#888"    },
   TRANSFER_OUT:              { cat:"Transfer",        icon:"↔️", color:"#888"    },
+  CREDIT_CARD_PAYMENT:       { cat:"Transfer",        icon:"💳", color:"#888"    },
   BANK_FEES:                 { cat:"Fees",            icon:"🏦", color:"#888"    },
   GENERAL_SERVICES:          { cat:"Services",        icon:"⚙️", color:"#888"    },
   GOVERNMENT_AND_NON_PROFIT: { cat:"Services",        icon:"🏛️", color:"#888"    },
@@ -308,18 +579,27 @@ function normaliseTxns(plaidTxns) {
 function detectIncomeFromTxns(txns) {
   if (!txns || txns.length === 0) return null;
   // Income = negative amounts (money in) with income-like categories
-  const incomeTxns = txns.filter(t =>
-    t.amount < 0 && (
-      (t.cat||"").toUpperCase().includes("INCOME") ||
-      (t.cat||"").toUpperCase().includes("PAYROLL") ||
-      (t.cat||"").toUpperCase().includes("TRANSFER") ||
-      (t.name||"").toLowerCase().includes("payroll") ||
-      (t.name||"").toLowerCase().includes("direct deposit") ||
-      (t.name||"").toLowerCase().includes("salary") ||
-      (t.name||"").toLowerCase().includes("pay ") ||
-      Math.abs(t.amount) > 500 // large deposits likely income
-    )
-  );
+  // CRITICAL: TRANSFER is excluded — credit card payments show as TRANSFER_IN
+  // and must never be counted as income. Only true payroll/direct deposits qualify.
+  const incomeTxns = txns.filter(t => {
+    if (t.amount >= 0) return false; // must be money IN (negative in Plaid convention)
+    const name = (t.name || "").toLowerCase();
+    const cat  = (t.cat  || "").toUpperCase();
+    // Exclude anything that looks like a credit card payment
+    if (CC_PAYMENT_KEYWORDS.some(kw => name.includes(kw))) return false;
+    // Exclude pure transfers — these are account-to-account moves, not income
+    if (cat.includes("TRANSFER")) return false;
+    // Only count genuine income signals
+    return (
+      cat.includes("INCOME") ||
+      cat.includes("PAYROLL") ||
+      name.includes("payroll") ||
+      name.includes("direct deposit") ||
+      name.includes("salary") ||
+      name.includes("pay ") ||
+      name.includes("deposit")
+    );
+  });
   if (incomeTxns.length === 0) return null;
 
   // Group by month
@@ -694,9 +974,36 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
 // ── AUTOPILOT CARD (Dashboard component) ──────────────────────────────────────
 function AutopilotCard({data, setScreen}) {
   const [revealed, setRevealed] = useState(false);
+  const [showDrillDown, setShowDrillDown] = useState(false);
   const plan = AutopilotEngine.generate(data);
   const today = new Date().toLocaleDateString("en-CA", {weekday:"long", month:"long", day:"numeric"});
   const hasActions = plan.savingsTransfer > 0 || plan.debtPayment > 0 || plan.goalContribution > 0;
+
+  // Build overdraft drill-down: which specific bills cause the shortfall
+  const { forecast, overdraftRisk } = ForecastEngine.generate(data, 14);
+  const overdraftCulprits = (() => {
+    if (!overdraftRisk.length) return [];
+    const items = [];
+    const balance = SafeSpendEngine.calculate(data).balance;
+    let running = balance;
+    for (const ev of forecast) {
+      if (ev.day === 0) continue;
+      if (ev.bills.length > 0) {
+        for (const b of ev.bills) {
+          running -= parseFloat(b.amount || 0);
+          items.push({
+            name: b.name || "Bill",
+            amount: parseFloat(b.amount || 0),
+            date: ev.date.toLocaleDateString("en-CA", {month:"short", day:"numeric"}),
+            runningBalance: running,
+            danger: running < 0,
+          });
+        }
+      }
+      if (ev.day > 0) running -= (ev.expenses - ev.bills.reduce((s,b)=>s+parseFloat(b.amount||0),0));
+    }
+    return items.slice(0, 6);
+  })();
 
   const lineItems = [
     plan.dailySpendLimit > 0 && {
@@ -756,11 +1063,44 @@ function AutopilotCard({data, setScreen}) {
         </div>
       </div>
 
-      {/* Alert banner */}
+      {/* Alert banner — clickable to show drill-down */}
       {plan.alerts.length > 0 && (
-        <div style={{margin:"12px 20px 0",background:autoAlertBg,border:`1px solid ${autoAlertBdr}`,borderRadius:12,padding:"10px 14px",display:"flex",gap:8,alignItems:"flex-start"}}>
+        <div
+          onClick={()=>setShowDrillDown(d=>!d)}
+          style={{margin:"12px 20px 0",background:autoAlertBg,border:`1px solid ${autoAlertBdr}`,borderRadius:12,padding:"10px 14px",display:"flex",gap:8,alignItems:"flex-start",cursor:"pointer",userSelect:"none"}}
+        >
           <span style={{fontSize:14,flexShrink:0}}>⚠️</span>
-          <span style={{color:autoAlertText,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{plan.alerts[0].msg}</span>
+          <span style={{color:autoAlertText,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,flex:1}}>{plan.alerts[0].msg}</span>
+          <span style={{color:autoAlertText,fontSize:11,fontWeight:700,flexShrink:0}}>{showDrillDown?"▲":"▼"}</span>
+        </div>
+      )}
+
+      {/* Overdraft drill-down panel */}
+      {showDrillDown && overdraftCulprits.length > 0 && (
+        <div style={{margin:"8px 20px 0",background:"rgba(255,79,106,0.06)",border:`1px solid ${C.red}33`,borderRadius:14,padding:"14px 16px"}}>
+          <div style={{color:C.redBright,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>📋 Upcoming charges causing this</div>
+          <div style={{display:"flex",flexDirection:"column",gap:7}}>
+            {overdraftCulprits.map((item,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:7,borderBottom:i<overdraftCulprits.length-1?`1px solid ${C.red}18`:"none"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:14}}>{item.danger?"🔴":"🟡"}</span>
+                  <div>
+                    <div style={{color:C.cream,fontSize:12,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.name}</div>
+                    <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.date}</div>
+                  </div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{color:C.redBright,fontWeight:800,fontSize:13,fontFamily:"'Playfair Display',serif"}}>−${item.amount.toFixed(0)}</div>
+                  <div style={{color:item.runningBalance<0?C.redBright:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:item.runningBalance<0?700:400}}>
+                    {item.runningBalance<0?`$${Math.abs(item.runningBalance).toFixed(0)} overdrawn`:`$${item.runningBalance.toFixed(0)} left`}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{marginTop:10,padding:"8px 10px",background:"rgba(255,79,106,0.08)",borderRadius:10,color:C.redBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,textAlign:"center"}}>
+            💡 Move money before these hit to avoid NSF fees ($45–$48 each)
+          </div>
         </div>
       )}
 
@@ -809,6 +1149,7 @@ function TimeMachine({data}) {
   const [inputVal, setInputVal] = useState("");
   const [activePreset, setActivePreset] = useState(null);
   const [expanded, setExpanded] = useState(false);
+  const [expandedDay, setExpandedDay] = useState(null); // day index that is drilled into
 
   // Single source of truth: ForecastEngine (uses real income schedule, not mocked payday)
   const { forecast } = ForecastEngine.generate(data, 30);
@@ -893,37 +1234,110 @@ function TimeMachine({data}) {
             const balColor = isLow ? C.redBright : ev.isPayday ? C.greenBright : C.mutedHi;
             const overlaydiff = overlayBal !== null ? overlayBal - baseBalance : 0;
 
+            const isDrilled = expandedDay === ev.day;
+            const avgDaily = FinancialCalcEngine.avgDailySpend(data);
             return (
-              <div key={idx} style={{display:"flex",gap:14,paddingBottom:14,position:"relative"}}>
-                <div style={{width:40,display:"flex",justifyContent:"center",flexShrink:0,paddingTop:3}}>
-                  <div style={{width:14,height:14,borderRadius:"50%",background:dotColor,border:`3px solid ${C.bg}`,zIndex:1,boxShadow:ev.day===0||ev.isPayday?`0 0 8px ${dotColor}88`:"none",flexShrink:0}}/>
-                </div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:ev.isPayday||ev.bills.length>0?3:0}}>
-                        {ev.day===0?"Today":ev.day===1?"Tomorrow":ev.date.toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}
-                      </div>
-                      {ev.isPayday && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(FinancialCalcEngine.cashFlow(data).monthlyIncome||0).toFixed(0)} paycheck`}</div>}
-                      {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${b.amount}</div>)}
-                      {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
-                    </div>
-                    <div style={{textAlign:"right",flexShrink:0,minWidth:80}}>
-                      {/* Base balance */}
-                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${(baseBalance||0).toFixed(0)}`}</div>
-                      {/* What-if overlay balance */}
-                      {overlayBal !== null && (
-                        <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:11,color:overlayLow?C.redBright:C.purpleBright,marginTop:2}}>
-                          → ${(overlayBal||0).toFixed(0)}
-                          <span style={{color:overlaydiff<0?C.redBright:C.greenBright,fontSize:9,marginLeft:3}}>
-                            ({overlaydiff>0?"+":""}{(overlaydiff||0).toFixed(0)})
-                          </span>
+              <div key={idx} style={{paddingBottom:6,position:"relative"}}>
+                {/* Row — tappable */}
+                <div
+                  onClick={()=>setExpandedDay(isDrilled ? null : ev.day)}
+                  style={{display:"flex",gap:14,paddingBottom:8,cursor:"pointer",borderRadius:12,padding:"8px 6px",background:isDrilled?"rgba(255,255,255,0.03)":"transparent",transition:"background .15s"}}
+                >
+                  <div style={{width:40,display:"flex",justifyContent:"center",flexShrink:0,paddingTop:3}}>
+                    <div style={{width:14,height:14,borderRadius:"50%",background:dotColor,border:`3px solid ${C.bg}`,zIndex:1,boxShadow:ev.day===0||ev.isPayday?`0 0 8px ${dotColor}88`:"none",flexShrink:0}}/>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:ev.isPayday||ev.bills.length>0?3:0}}>
+                          {ev.day===0?"Today":ev.day===1?"Tomorrow":ev.date.toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}
+                          <span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
                         </div>
-                      )}
-                      <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
+                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(ev.income||0).toFixed(0)} paycheck`}</div>}
+                        {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${parseFloat(b.amount||0).toFixed(0)}</div>)}
+                        {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
+                      </div>
+                      <div style={{textAlign:"right",flexShrink:0,minWidth:80}}>
+                        <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${(baseBalance||0).toFixed(0)}`}</div>
+                        {overlayBal !== null && (
+                          <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:11,color:overlayLow?C.redBright:C.purpleBright,marginTop:2}}>
+                            → ${(overlayBal||0).toFixed(0)}
+                            <span style={{color:overlaydiff<0?C.redBright:C.greenBright,fontSize:9,marginLeft:3}}>
+                              ({overlaydiff>0?"+":""}{(overlaydiff||0).toFixed(0)})
+                            </span>
+                          </div>
+                        )}
+                        <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
+                      </div>
                     </div>
                   </div>
                 </div>
+                {/* Drill-down panel */}
+                {isDrilled && (
+                  <div style={{marginLeft:54,marginBottom:8,background:"rgba(255,255,255,0.03)",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px"}}>
+                    <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>
+                      {ev.day===0?"Today's snapshot":"Cash flow breakdown"}
+                    </div>
+                    {/* Previous balance */}
+                    {ev.day>0&&(()=>{
+                      const prevEv = forecast[ev.day-1];
+                      return prevEv ? (
+                        <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}>
+                          <span style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Opening balance</span>
+                          <span style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${(prevEv.balance||0).toFixed(0)}</span>
+                        </div>
+                      ) : null;
+                    })()}
+                    {/* Income */}
+                    {ev.isPayday&&(
+                      <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}22`}}>
+                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
+                          <span style={{width:6,height:6,borderRadius:"50%",background:C.green,display:"inline-block"}}/>💰 Paycheck
+                        </span>
+                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>+${(ev.income||0).toFixed(0)}</span>
+                      </div>
+                    )}
+                    {/* Bills */}
+                    {ev.bills.length>0&&ev.bills.map((b,bi)=>(
+                      <div key={bi} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}22`}}>
+                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
+                          <span style={{width:6,height:6,borderRadius:"50%",background:C.gold,display:"inline-block"}}/>📅 {b.name}
+                        </span>
+                        <span style={{color:C.gold,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>−${parseFloat(b.amount||0).toFixed(0)}</span>
+                      </div>
+                    ))}
+                    {/* Daily spend estimate */}
+                    {ev.day>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}22`}}>
+                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
+                          <span style={{width:6,height:6,borderRadius:"50%",background:C.muted,display:"inline-block"}}/>🛒 Est. daily spend
+                          <span style={{color:C.muted,fontSize:9}}>(30d avg)</span>
+                        </span>
+                        <span style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>−${(avgDaily*0.8).toFixed(0)}</span>
+                      </div>
+                    )}
+                    {/* Divider + balance result */}
+                    <div style={{borderTop:`1px solid ${C.border}`,marginTop:4,paddingTop:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span style={{color:C.cream,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                        {ev.day===0?"Current balance":"Projected balance"}
+                      </span>
+                      <div style={{textAlign:"right"}}>
+                        <span style={{color:isLow?C.redBright:baseBalance<0?C.redBright:C.greenBright,fontWeight:900,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
+                          {baseBalance<0?"−":""}${Math.abs(baseBalance||0).toFixed(0)}
+                        </span>
+                        {isLow&&baseBalance>=0&&<div style={{color:C.goldBright,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>below safety floor</div>}
+                        {baseBalance<0&&<div style={{color:C.redBright,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>overdrawn</div>}
+                      </div>
+                    </div>
+                    {isLow&&(
+                      <div style={{marginTop:8,background:baseBalance<0?C.red+"18":C.gold+"11",borderRadius:8,padding:"7px 10px",color:baseBalance<0?C.redBright:C.goldBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
+                        {baseBalance<0
+                          ? "⚠ Projected overdraft — NSF fees $45–48 each. Transfer funds before this date."
+                          : "⚠ Balance near safety floor — hold non-essential spending until after this date."}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -952,10 +1366,12 @@ function TimeMachine({data}) {
 // which reads income frequency from onboarding. Single source of truth.
 function FinancialTimeline({data}) {
   const [expanded, setExpanded] = useState(false);
+  const [expandedDay, setExpandedDay] = useState(null);
   // ── Delegate to ForecastEngine — no duplicate forecasting logic ──
   const { forecast } = ForecastEngine.generate(data, 30);
   const safeFloor = SafeSpendEngine.calculate(data).balance * 0.12;
   const { monthlyIncome } = FinancialCalcEngine.cashFlow(data);
+  const avgDaily = FinancialCalcEngine.avgDailySpend(data);
 
   const events = forecast.filter(f => f.day === 0 || f.isPayday || f.bills.length > 0 || f.day === 30);
   const displayed = expanded ? events : events.slice(0, 4);
@@ -979,25 +1395,59 @@ function FinancialTimeline({data}) {
             const dotColor = ev.day===0 ? C.green : ev.isPayday ? C.greenBright : ev.bills.length>0 ? C.gold : isLow ? C.red : C.border;
             const balColor = isLow ? C.redBright : ev.isPayday ? C.greenBright : C.mutedHi;
             const label = ev.day===0?"Today":ev.day===1?"Tomorrow":ev.date.toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"});
+            const isDrilled = expandedDay === ev.day;
             return (
-              <div key={idx} style={{display:"flex",gap:14,paddingBottom:14,position:"relative"}}>
-                <div style={{width:40,display:"flex",justifyContent:"center",flexShrink:0,paddingTop:2}}>
-                  <div style={{width:14,height:14,borderRadius:"50%",background:dotColor,border:`3px solid ${C.bg}`,zIndex:1,boxShadow:ev.day===0||ev.isPayday?`0 0 10px ${dotColor}88`:"none",flexShrink:0}}/>
-                </div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:2}}>{label}</div>
-                      {ev.isPayday && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(monthlyIncome||0).toFixed(0)} paycheck`}</div>}
-                      {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${b.amount}</div>)}
-                      {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
-                    </div>
-                    <div style={{textAlign:"right",flexShrink:0}}>
-                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${(ev.balance||0).toFixed(0)}`}</div>
-                      <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
+              <div key={idx} style={{paddingBottom:4,position:"relative"}}>
+                <div onClick={()=>setExpandedDay(isDrilled?null:ev.day)}
+                  style={{display:"flex",gap:14,padding:"8px 6px",cursor:"pointer",borderRadius:12,background:isDrilled?"rgba(255,255,255,0.03)":"transparent",transition:"background .15s"}}>
+                  <div style={{width:40,display:"flex",justifyContent:"center",flexShrink:0,paddingTop:2}}>
+                    <div style={{width:14,height:14,borderRadius:"50%",background:dotColor,border:`3px solid ${C.bg}`,zIndex:1,boxShadow:ev.day===0||ev.isPayday?`0 0 10px ${dotColor}88`:"none",flexShrink:0}}/>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:2}}>
+                          {label}<span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
+                        </div>
+                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(ev.income||0).toFixed(0)} paycheck`}</div>}
+                        {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${parseFloat(b.amount||0).toFixed(0)}</div>)}
+                        {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
+                      </div>
+                      <div style={{textAlign:"right",flexShrink:0}}>
+                        <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${(ev.balance||0).toFixed(0)}`}</div>
+                        <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
+                      </div>
                     </div>
                   </div>
                 </div>
+                {isDrilled&&(
+                  <div style={{marginLeft:54,marginBottom:6,background:"rgba(255,255,255,0.03)",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px"}}>
+                    <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>Day breakdown</div>
+                    {ev.isPayday&&(
+                      <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
+                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💰 Paycheck</span>
+                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+${(monthlyIncome||0).toFixed(0)}</span>
+                      </div>
+                    )}
+                    {ev.bills.map((b,bi)=>(
+                      <div key={bi} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
+                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📅 {b.name}</span>
+                        <span style={{color:C.gold,fontWeight:700,fontSize:12}}>−${parseFloat(b.amount||0).toFixed(0)}</span>
+                      </div>
+                    ))}
+                    {ev.day>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
+                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🛒 Est. daily spend</span>
+                        <span style={{color:C.muted,fontSize:12}}>−${(avgDaily*0.8).toFixed(0)}</span>
+                      </div>
+                    )}
+                    <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0 0"}}>
+                      <span style={{color:C.cream,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Projected balance</span>
+                      <span style={{color:isLow?C.redBright:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Playfair Display',serif"}}>${(ev.balance||0).toFixed(0)}</span>
+                    </div>
+                    {isLow&&<div style={{marginTop:8,background:C.red+"11",borderRadius:8,padding:"6px 10px",color:C.redBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>⚠ Balance drops below safety floor here</div>}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1062,7 +1512,7 @@ Respond ONLY with valid JSON (no markdown) like:
   const impactColor = (v) => v==="safe"||v==="none"||v==="decreases"?C.greenBright:v==="tight"||v==="increases"?C.goldBright:C.redBright;
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)",zIndex:999,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)",zIndex:999,display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div style={{background:C.bg,borderRadius:"28px 28px 0 0",padding:"28px 24px 44px",width:"100%",maxWidth:520,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 -20px 60px rgba(0,0,0,0.2)"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
           <div>
@@ -1153,67 +1603,90 @@ Respond ONLY with valid JSON (no markdown) like:
 // ── MONEY PERSONALITY ──────────────────────────────────────────────────────────
 function calcPersonality(txns, data) {
   const t = txns || [];
-  const neg = t.filter(x => x.amount > 0);  // expenses are positive
+  const neg = t.filter(x => x.amount > 0);  // expenses are positive in Plaid
   const total = neg.reduce((s,x) => s + Math.abs(x.amount), 0) || 1;
 
-  const food    = neg.filter(x=>["Food","Coffee","Dining"].includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
-  const shop    = neg.filter(x=>x.cat==="Shopping").reduce((s,x)=>s+Math.abs(x.amount),0);
-  const subs    = neg.filter(x=>x.cat==="Subscriptions").reduce((s,x)=>s+Math.abs(x.amount),0);
-  const ent     = neg.filter(x=>x.cat==="Entertainment").reduce((s,x)=>s+Math.abs(x.amount),0);
-  const income  = (data.incomes||[]).length;
+  // Real Plaid/Flourish category names
+  const FOOD_CATS  = ["Coffee & Dining","Groceries","Food & Drink","Food","Coffee","Dining"];
+  const SHOP_CATS  = ["Shopping","Clothing","Online Shopping"];
+  const SUB_CATS   = ["Subscriptions","Streaming"];
+  const ENT_CATS   = ["Entertainment","Recreation","Hobbies","Sports"];
+  const TRANS_CATS = ["Transport","Gas","Parking","Auto"];
+
+  const food  = neg.filter(x=>FOOD_CATS.includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
+  const shop  = neg.filter(x=>SHOP_CATS.includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
+  const subs  = neg.filter(x=>SUB_CATS.includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
+  const ent   = neg.filter(x=>ENT_CATS.includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
+  const trans = neg.filter(x=>TRANS_CATS.includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
+
+  // Builder score earned through REAL financial behaviour — not just income count
+  const ret = data.profile?.retirement || {};
+  const isCA = (data.profile?.country||"CA")==="CA";
+  const hasRetirementSavings = parseFloat(ret[isCA?"rrspBalance":"401kBalance"]||0)>0 || parseFloat(ret[isCA?"rrspMonthly":"401kMonthly"]||0)>0;
+  const hasGoals = (data.goals||[]).length > 0;
+  const accts = data.accounts||[];
+  const isOverdraft = accts.some(a=>a.type!=="credit"&&parseFloat(a.balance||0)<0);
+  const hasSavings = accts.some(a=>a.type==="savings"&&parseFloat(a.balance||0)>500);
+  const multiIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0).length > 1;
+  const builderScore = (hasRetirementSavings?0.3:0)+(hasGoals?0.15:0)+(hasSavings?0.15:0)+(multiIncome&&!isOverdraft?0.1:0)-(isOverdraft?0.4:0);
 
   const scores = {
     convenience: food/total,
     lifestyle:   (shop+ent)/total,
     digital:     subs/total,
-    builder:     income > 1 ? 0.8 : 0.3,
+    mobile:      trans/total,
+    builder:     Math.max(0, builderScore),
   };
   const top = Object.entries(scores).sort((a,b)=>b[1]-a[1])[0][0];
 
-  const personas = {
-    convenience: {
-      name:"The Convenience Spender", emoji:"🛍️",
-      color:C.orange,
-      traits:["High food delivery spend","Values time over money","Subscription-heavy lifestyle"],
-      insight:"Your biggest lever is replacing 3 deliveries/week with home cooking — saves ~$180/mo.",
-      shareText:"I'm a Convenience Spender 🛍️ on @flourishmoney"
-    },
-    lifestyle: {
-      name:"The Experience Collector", emoji:"✈️",
-      color:C.purple,
-      traits:["Prioritizes experiences","Shopping for quality","Social spending peaks"],
-      insight:"You spend richly on life. Automating $200/mo to savings before spending keeps goals on track.",
-      shareText:"I'm an Experience Collector ✈️ on @flourishmoney"
-    },
-    digital: {
-      name:"The Digital Native", emoji:"💻",
-      color:C.teal,
-      traits:["Heavy subscription stack","Tech-first spending","Optimizes with apps"],
-      insight:"You have ~$82/mo in subscriptions. Auditing unused ones could free up a full investment contribution.",
-      shareText:"I'm a Digital Native 💻 on @flourishmoney"
-    },
-    builder: {
-      name:"The Wealth Builder", emoji:"🏗️",
-      color:C.green,
-      traits:["Multiple income streams","Disciplined with spending","Goal-oriented mindset"],
-      insight:"You're already ahead — make sure your savings are in a high-interest account earning 4%+.",
-      shareText:"I'm a Wealth Builder 🏗️ on @flourishmoney"
-    }
-  };
-  return {...personas[top], scores, topKey:top};
+
+const personas = {
+  convenience: {
+    name:"The Convenience Spender", emoji:"🛍️", color:C.orange,
+    traits:["High food & delivery spend","Values time over money","Subscription-heavy"],
+    insight:"Replacing 3 food deliveries/week with home cooking saves ~$180/mo.",
+    shareText:"I'm a Convenience Spender 🛍️ on @flourishmoney"
+  },
+  lifestyle: {
+    name:"The Experience Collector", emoji:"✈️", color:C.purple,
+    traits:["Prioritizes experiences","Shopping for quality","Social spending peaks"],
+    insight:"You spend richly on life. Automating $200/mo to savings before spending keeps goals on track.",
+    shareText:"I'm an Experience Collector ✈️ on @flourishmoney"
+  },
+  digital: {
+    name:"The Digital Native", emoji:"💻", color:C.teal,
+    traits:["Heavy subscription stack","Tech-first spending","Optimizes with apps"],
+    insight:"Audit your subscriptions — cancelling unused ones often frees $50-100/mo instantly.",
+    shareText:"I'm a Digital Native 💻 on @flourishmoney"
+  },
+  mobile: {
+    name:"The Commuter", emoji:"🚗", color:C.gold,
+    traits:["High transport spend","Life on the go","Gas & parking costs add up"],
+    insight:"Transport is your biggest variable cost. Carpooling or transit 2x/week can save $150+/mo.",
+    shareText:"I'm a Commuter 🚗 on @flourishmoney"
+  },
+  builder: {
+    name:"The Wealth Builder", emoji:"🏗️", color:C.green,
+    traits:["Saving for retirement","Goal-oriented mindset","Building long-term wealth"],
+    insight:"You're building real wealth. Make sure your RRSP/TFSA are maximized each year.",
+    shareText:"I'm a Wealth Builder 🏗️ on @flourishmoney"
+  }
+};
+return {...personas[top], scores, topKey:top};
 }
 
 function MoneyPersonality({data}) {
-  const [revealed, setRevealed] = useState(false);
-  const txns = data.transactions || [];
-  const p = calcPersonality(txns, data);
-  const bars = [
-    {label:"Convenience", pct:Math.round(p.scores.convenience*100), color:C.orange},
-    {label:"Lifestyle",   pct:Math.round(p.scores.lifestyle*100),   color:C.purple},
-    {label:"Digital",     pct:Math.round(p.scores.digital*100),      color:C.teal},
-    {label:"Builder",     pct:Math.round(p.scores.builder*100),      color:C.green},
-  ];
-
+const [revealed, setRevealed] = useState(false);
+const txns = data.transactions || [];
+const hasEnoughData = txns.filter(x=>x.amount>0).length >= 5;
+const p = calcPersonality(txns, data);
+const bars = [
+  {label:"Convenience", pct:Math.round(p.scores.convenience*100), color:C.orange},
+  {label:"Lifestyle",   pct:Math.round(p.scores.lifestyle*100),   color:C.purple},
+  {label:"Digital",     pct:Math.round(p.scores.digital*100),     color:C.teal},
+  {label:"Commuter",    pct:Math.round(p.scores.mobile*100),      color:C.gold},
+  {label:"Builder",     pct:Math.round(p.scores.builder*100),     color:C.green},
+];
   return (
     <div style={{background:C.card,borderRadius:20,padding:"20px",border:`1.5px solid ${p.color}33`,position:"relative",overflow:"hidden"}}>
       <div style={{position:"absolute",top:-40,right:-40,width:140,height:140,borderRadius:"50%",background:`radial-gradient(circle,${p.color}12 0%,transparent 70%)`,pointerEvents:"none"}}/>
@@ -1224,7 +1697,13 @@ function MoneyPersonality({data}) {
         <span style={{background:p.color+"22",color:p.color,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"3px 8px",borderRadius:99,textTransform:"uppercase",letterSpacing:0.8}}>Your type</span>
       </div>
 
-      {!revealed ? (
+  {!hasEnoughData ? (
+    <div style={{textAlign:"center",padding:"24px 16px"}}>
+      <div style={{fontSize:36,marginBottom:10}}>🔍</div>
+      <div style={{color:C.cream,fontWeight:700,fontSize:13,marginBottom:8}}>Not enough data yet</div>
+      <div style={{color:C.muted,fontSize:12,lineHeight:1.7}}>Connect your bank and use the app for a few days — your money personality is calculated from your real spending patterns.</div>
+    </div>
+  ) : !revealed ? (
         <div style={{textAlign:"center",padding:"16px 0 8px"}}>
           <div style={{fontSize:48,marginBottom:10,filter:"blur(8px)",transition:"filter .3s"}}>?</div>
           <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:16}}>Based on your spending patterns</div>
@@ -1269,21 +1748,35 @@ function MoneyPersonality({data}) {
 function WealthForecast({data}) {
   const [extra, setExtra] = useState(0);
   const [horizon, setHorizon] = useState(20);
-  const toMonthlyAmt = (amt, freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:a; };
-    const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMonthlyAmt(i.amount,i.freq),0) || 4200;
+  const toMonthlyAmt = (amt, freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a; };
+
+  // Use REAL data from Retirement tab only — never invent savings rates
+  const ret = data.profile?.retirement || {};
+  const isCA = (data.profile?.country||"CA")==="CA";
+
+  // Current balances from retirement tab
+  const rrspBal   = parseFloat(ret[isCA?"rrspBalance":"401kBalance"]||0);
+  const tfsaBal   = parseFloat(ret[isCA?"tfsaBalance":"iraBalance"]||0);
+  const invBal    = (data.accounts||[]).filter(a=>a.type==="investment").reduce((s,a)=>s+parseFloat(a.balance||0),0);
+  const startingBal = rrspBal + tfsaBal + invBal;
+
+  // Monthly contributions using frequency
+  const rrspMo    = toMonthlyAmt(ret[isCA?"rrspMonthly":"401kMonthly"]||0, ret[isCA?"rrspFreq":"401kFreq"]||"monthly");
+  const tfsaMo    = toMonthlyAmt(ret[isCA?"tfsaMonthly":"iraMonthly"]||0, ret[isCA?"tfsaFreq":"iraFreq"]||"monthly");
+  const pensionMo = toMonthlyAmt(ret[isCA?"pensionMonthly":"otherRetire"]||0, ret[isCA?"pensionFreq":"otherRetireFreq"]||"monthly");
+  const monthlyContrib = rrspMo + tfsaMo + pensionMo;
+  const monthlyInvest = monthlyContrib + extra;
+
   const totalDebt = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.balance||0),0);
-  const bal = parseFloat((data.accounts?.[0]?.balance||0).toString().replace(/,/g,""));
-  const invBal = (data.accounts||[]).filter(a=>a.type==="investment").reduce((s,a)=>s+parseFloat(a.balance||0),0);
-  const savingsRate = 0.10; // assume 10% baseline savings
-  const monthlyInvest = monthlyIncome * savingsRate + extra;
   const annualReturn = 0.07;
+  const hasData = startingBal > 0 || monthlyContrib > 0;
 
   const project = (monthly, years) => {
-    let val = invBal + bal * 0.5;
+    let val = startingBal;
     for (let y = 0; y < years; y++) {
       val = val * (1 + annualReturn) + monthly * 12;
     }
-    return Math.round(val - totalDebt * Math.max(0, 1 - years * 0.1));
+    return Math.max(0, Math.round(val));
   };
 
   const scenarios = [
@@ -1293,63 +1786,81 @@ function WealthForecast({data}) {
   ];
 
   const vals = scenarios.map(s => project(s.monthly, horizon));
-  const maxVal = Math.max(...vals);
+  const maxVal = Math.max(...vals, 1);
 
   const fmt = n => { const v=n||0; return v >= 1000000 ? `$${(v/1000000).toFixed(2)}M` : `$${(v/1000).toFixed(0)}k`; };
 
   return (
     <div style={{background:C.card,borderRadius:20,padding:"20px",border:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-        <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7}}>
+        <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:6}}>
           <span style={{fontSize:16}}>🔭</span> Future Wealth Forecast
         </div>
         <div style={{display:"flex",gap:4}}>
           {[10,20,30].map(y=>(
-            <button key={y} onClick={()=>setHorizon(y)} style={{background:horizon===y?C.purple+"33":C.cardAlt,border:`1px solid ${horizon===y?C.purple:C.border}`,color:horizon===y?C.purpleBright:C.muted,borderRadius:99,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>{y}y</button>
+            <button key={y} onClick={()=>setHorizon(y)} style={{background:horizon===y?C.purple+"33":C.cardAlt,border:`1px solid ${horizon===y?C.purple:C.border}`,color:horizon===y?C.purpleBright:C.muted,borderRadius:8,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{y}y</button>
           ))}
         </div>
       </div>
 
-      {/* Bars */}
-      <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:18}}>
-        {scenarios.map((s,i)=>{
-          const pct = maxVal > 0 ? (vals[i]/maxVal)*100 : 0;
-          return (
-            <div key={i}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <span style={{fontSize:14}}>{s.icon}</span>
-                  <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{s.label}</span>
+      {!hasData ? (
+        <div style={{textAlign:"center",padding:"28px 20px"}}>
+          <div style={{fontSize:36,marginBottom:12}}>📊</div>
+          <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:8}}>No investment data yet</div>
+          <div style={{color:C.muted,fontSize:12,lineHeight:1.7,marginBottom:16}}>
+            Add your {isCA?"RRSP, TFSA":"401(k), IRA"} balances and monthly contributions in the <strong style={{color:C.tealBright}}>Retirement</strong> tab to see your wealth forecast.
+          </div>
+          <div style={{background:C.tealDim,border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",color:C.tealBright,fontSize:11,fontWeight:600}}>
+            Tip: Even entering $50/month shows the power of compound growth over time.
+          </div>
+        </div>
+      ) : (
+        <>
+          <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>
+            Based on ${startingBal.toLocaleString()} balance · ${Math.round(monthlyContrib).toLocaleString()}/mo contributions · 7% avg annual return
+          </div>
+          {/* Bars */}
+          <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:18}}>
+            {scenarios.map((s,i)=>{
+              const pct = maxVal > 0 ? (vals[i]/maxVal)*100 : 0;
+              return (
+                <div key={i}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{fontSize:14}}>{s.icon}</span>
+                      <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{s.label}</span>
+                    </div>
+                    <span style={{color:s.color,fontWeight:900,fontFamily:"'Playfair Display',serif",fontSize:18}}>{fmt(vals[i])}</span>
+                  </div>
+                  <div style={{height:8,borderRadius:99,background:C.border,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(to right,${s.color}88,${s.color})`,borderRadius:99,transition:"width .5s ease"}}/>
+                  </div>
                 </div>
-                <span style={{color:s.color,fontWeight:900,fontFamily:"'Playfair Display',serif",fontSize:18}}>{fmt(vals[i])}</span>
-              </div>
-              <div style={{height:8,borderRadius:99,background:C.border,overflow:"hidden"}}>
-                <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(to right,${s.color}88,${s.color})`,borderRadius:99,transition:"width 0.8s ease"}}/>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
 
-      {/* Extra investment slider */}
-      <div style={{background:C.surface,borderRadius:14,padding:"14px 16px",border:`1px solid ${C.border}`}}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
-          <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Extra monthly investment</span>
-          <span style={{color:C.greenBright,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{extra}/mo</span>
-        </div>
-        <input type="range" min={0} max={1000} step={25} value={extra} onChange={e=>setExtra(Number(e.target.value))}
-          style={{width:"100%",accentColor:C.green,cursor:"pointer"}}/>
-        <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
-          <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$0</span>
-          <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$1,000/mo</span>
-        </div>
-      </div>
-      {extra > 0 && (
-        <div style={{marginTop:10,background:C.greenDim,border:`1px solid ${C.green}33`,borderRadius:12,padding:"10px 14px",textAlign:"center"}}>
-          <span style={{color:C.green,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>
-            +${extra}/mo → {fmt(project(monthlyInvest+extra,horizon))} in {horizon} years vs {fmt(project(monthlyInvest,horizon))} now
-          </span>
-        </div>
+          {/* Extra investment slider */}
+          <div style={{background:C.surface,borderRadius:14,padding:"14px 16px",border:`1px solid ${C.border}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+              <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Extra monthly investment</span>
+              <span style={{color:C.greenBright,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{extra}/mo</span>
+            </div>
+            <input type="range" min={0} max={1000} step={25} value={extra} onChange={e=>setExtra(Number(e.target.value))}
+              style={{width:"100%",accentColor:C.green,cursor:"pointer"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
+              <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$0</span>
+              <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$1,000/mo</span>
+            </div>
+          </div>
+          {extra > 0 && (
+            <div style={{marginTop:10,background:C.greenDim,border:`1px solid ${C.green}33`,borderRadius:12,padding:"10px 14px",textAlign:"center"}}>
+              <span style={{color:C.green,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>
+                +${extra}/mo → {fmt(project(monthlyInvest+extra,horizon))} in {horizon} years vs {fmt(project(monthlyInvest,horizon))} now
+              </span>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -1624,11 +2135,22 @@ function EmptyState({icon, title, body, action, onAction, color}) {
 function FlourishMark({ size = 24, style = {} }) {
   return (
     <img
-      src={`data:image/png;base64,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`}
+      src="/flourish-adult-app-icon-180"
       width={size}
       height={size}
       alt="Flourish"
-      style={{ flexShrink: 0, display: "block", borderRadius: size > 30 ? Math.round(size * 0.28) : 0, ...style }}
+      style={{ flexShrink: 0, display: "block", borderRadius: size > 30 ? Math.round(size * 0.28) : Math.round(size * 0.22), objectFit: "cover", ...style }}
+    />
+  );
+}
+function FlourishMarkKids({ size = 24, style = {} }) {
+  return (
+    <img
+      src="/flourish-kids-app-icon-180"
+      width={size}
+      height={size}
+      alt="Flourish Kids"
+      style={{ flexShrink: 0, display: "block", borderRadius: size > 30 ? Math.round(size * 0.28) : Math.round(size * 0.22), objectFit: "cover", ...style }}
     />
   );
 }
@@ -1691,19 +2213,23 @@ function useWindowSize(){
   return size;
 }
 
-function computeStats(txns) {
-  const SKIP_CATS = new Set(["Transfer","Income","Fees"]);
-  const sp = txns.filter(t=>t.amount>0 && !SKIP_CATS.has(t.cat));
+function computeStats(txns, catOverrides={}) {
+  // Skip non-expense categories AND bill categories (bills are tracked separately)
+  const SKIP = new Set([...NON_SPEND_CATS, ...BILL_CATS]);
+  // Use catOverrides so user-reassigned categories appear in breakdown
+  const getC = (t) => catOverrides[t.id] || t.cat;
+  const sp = txns.filter(t=>t.amount>0 && !SKIP.has(getC(t)));
   const byCat={}, byDow={0:0,1:0,2:0,3:0,4:0,5:0,6:0};
   let coffee=0,coffeeCount=0,delivery=0,subs=0;
   sp.forEach(t=>{
-    byCat[t.cat]=(byCat[t.cat]||0)+t.amount;
+    const cat = getC(t);
+    byCat[cat]=(byCat[cat]||0)+t.amount;
     byDow[t.dow]=(byDow[t.dow]||0)+t.amount;
     if(t.icon==="☕"){coffee+=t.amount;coffeeCount++;}
     if(t.name.toLowerCase().includes("uber eats")||t.name.toLowerCase().includes("doordash"))delivery+=t.amount;
-    if(t.cat==="Subscriptions")subs+=t.amount;
+    if(cat==="Subscriptions")subs+=t.amount;
   });
-  const totalSpent=sp.reduce((a,t)=>a+t.amount,0); // sp already excludes Transfer/Income via SKIP_CATS
+  const totalSpent=sp.reduce((a,t)=>a+t.amount,0); // excludes non-spend + bill categories
   const topCats=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,6);
   const days=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   const busiest=days[Object.entries(byDow).sort((a,b)=>b[1]-a[1])[0][0]];
@@ -1812,7 +2338,7 @@ const FinancialCalcEngine = {
       .reduce((s,a) => s + Math.max(0, parseFloat(a.balance||0)), 0);
     // Liabilities: credit card balances from accounts + any manually entered debts
     const creditFromAccounts = accounts
-      .filter(a => a.type === "credit" || a.type === "credit card")
+      .filter(a => a.type === "credit" || a.type === "credit card" || a.subtype === "credit card" || a.type === "line of credit")
       .reduce((s,a) => s + Math.abs(parseFloat(a.balance||0)), 0);
     const manualDebts = debts.reduce((s,d) => s + parseFloat(d.balance||0), 0);
     // Avoid double-counting: use max of manual debts vs credit accounts
@@ -1821,14 +2347,17 @@ const FinancialCalcEngine = {
     return { assets, liabilities, netWorth: assets - liabilities };
   },
 
-  /** Monthly cash flow = income − (bills + avg transaction spend) */
+  /** Monthly cash flow = income − bills − discretionary spend (no double-counting) */
   cashFlow(data) {
     const incomes = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
     const bills   = data.bills || [];
-    // Filter to current month only — 90 days of txns ≠ 1 month of spending
+    // catOverrides: ensures user-recategorized transactions affect cash flow correctly
+    const catOv = (()=>{ try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}")}catch{return{}} })();
+    const getEffCat = (t) => catOv[t.id] || t.cat;
+    // Filter to current month only
     const now = new Date();
     const txns = (data.transactions || []).filter(t => {
-      if(t.amount <= 0) return false; // expenses are positive
+      if(t.amount <= 0) return false;
       if(!t.date) return false;
       const d = new Date(t.date + "T12:00:00");
       return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
@@ -1844,10 +2373,17 @@ const FinancialCalcEngine = {
       }
     };
     const monthlyIncome = incomes.reduce((s,i) => s + toMonthly(i.amount, i.freq), 0) || 4200;
-    const monthlyBills    = bills.reduce((s,b) => s + parseFloat(b.amount||0), 0);
-    // monthlySpend: this month's transactions excluding transfers
-    const monthlySpend    = txns.filter(t=>t.cat!=="Transfer"&&t.cat!=="Income"&&t.cat!=="Fees").reduce((s,t) => s + t.amount, 0) || monthlyIncome * 0.68;
-    const totalExpenses   = Math.max(monthlyBills, monthlySpend);
+    // Bills: committed expenses from bills array — source of truth
+    const monthlyBills  = bills.reduce((s,b) => s + parseFloat(b.amount||0), 0);
+    // Discretionary: excludes non-spend flows, bill categories (already in monthlyBills), CC payments
+    const monthlySpend  = txns.filter(t => {
+      const cat = getEffCat(t);
+      return !NON_SPEND_CATS.has(cat) &&
+             !BILL_CATS.has(cat) &&
+             !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw));
+    }).reduce((s,t) => s + t.amount, 0) || monthlyIncome * 0.55;
+    // Total = bills + discretionary — both are real, never Math.max between them
+    const totalExpenses = monthlyBills + monthlySpend;
     return { monthlyIncome, monthlyBills, monthlySpend, totalExpenses,
              cashFlow: monthlyIncome - totalExpenses };
   },
@@ -1963,62 +2499,112 @@ const SafeSpendEngine = {
 // Projects daily balance for 90 days with overdraft risk detection.
 
 const ForecastEngine = {
-  generate(data, days = 90) {
-    const { balance }       = SafeSpendEngine.calculate(data);
-    const { monthlyIncome } = FinancialCalcEngine.cashFlow(data);
-    const avgDaily          = FinancialCalcEngine.avgDailySpend(data);
-    const bills             = data.bills || [];
-    const today             = new Date();
-    const todayNum          = today.getDate();
+generate(data, days = 90) {
+  const { balance }  = SafeSpendEngine.calculate(data);
+  const avgDaily     = FinancialCalcEngine.avgDailySpend(data);
+  const bills        = data.bills || [];
+  const today        = new Date();
 
-    let running = balance;
-    const forecast = [];
-    const overdraftRisk = [];
-    const lowBalanceWarnings = [];
+  let running = balance;
+  const forecast          = [];
+  const overdraftRisk     = [];
+  const lowBalanceWarnings = [];
 
-    // Compute pay schedule outside loop for performance
-    const primaryFreq = (data.incomes||[])[0]?.freq || "biweekly";
-    const paycheque = primaryFreq==="monthly" ? monthlyIncome :
-                      primaryFreq==="semimonthly" ? monthlyIncome/2 :
-                      primaryFreq==="biweekly" ? monthlyIncome/2.167 :
-                      primaryFreq==="weekly" ? monthlyIncome/4.333 : monthlyIncome/2;
-    const getIsPayday = (dayNum,i) => {
-      if(i===0) return false;
-      if(primaryFreq==="monthly")     return dayNum===1;
-      if(primaryFreq==="semimonthly") return dayNum===1||dayNum===15;
-      if(primaryFreq==="biweekly")    return i%14===0;
-      if(primaryFreq==="weekly")      return i%7===0;
-      return dayNum===1||dayNum===15;
-    };
+  const incomes       = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0);
+  const primaryIncome = incomes[0];
+  const primaryFreq   = primaryIncome?.freq || "biweekly";
+  // income.amount is the per-deposit amount for all freq types
+  const perDeposit    = (inc) => parseFloat(inc.amount||0);
+  const paycheque     = primaryIncome ? perDeposit(primaryIncome) : 0;
+  const hasIncome     = incomes.length > 0;
+  const secondaryMo   = incomes.slice(1).filter(i=>i.freq==="monthly"||i.freq==="semimonthly");
 
-    for (let i = 0; i <= days; i++) {
-      const d = new Date(today); d.setDate(todayNum + i);
-      const dayNum  = d.getDate();
-      const isPayday = getIsPayday(dayNum, i);
-      const dayBills = bills.filter(b => {
-        const bd = parseInt(b.date);
-        return bd === dayNum && bd > 0;
-      });
-      const inc  = isPayday ? paycheque : 0;
-      // Day 0 = today: balance is already current, don't deduct spending again
-      // All other days: deduct daily spend regardless of payday (you still spend on paydays)
-      const dailySpend = i === 0 ? 0 : avgDaily * 0.8;
-      const out  = dayBills.reduce((s,b) => s + parseFloat(b.amount||0), 0) + dailySpend;
-      running = running + inc - out;
+  // ── Anchor-based payday projection ─────────────────────────────────────────
+  // Problem with old code: i%14===0 puts the first payday 14 days from today,
+  // completely ignoring that the next deposit might be 3 days away.
+  // Fix: find the last real deposit from transactions, project forward from that date.
+  const paydayDates = new Set(); // Set of "YYYY-MM-DD" strings that are paydays
+  if(hasIncome && primaryIncome) {
+    const txns      = data.transactions || [];
+    const incAmt    = parseFloat(primaryIncome.amount||0);
+    const incLabel  = (primaryIncome.label||"").toLowerCase();
+    const freqDays  = primaryFreq==="weekly" ? 7 : primaryFreq==="biweekly" ? 14 : null;
 
-      const entry = { day: i, date: d, balance: running, income: inc, expenses: out,
-                      isPayday, bills: dayBills };
-      forecast.push(entry);
-
-      if (running < 0)  overdraftRisk.push({ day: i, date: d, balance: running });
-      if (running < balance * 0.12 && running >= 0 && !isPayday)
-        lowBalanceWarnings.push({ day: i, date: d, balance: running });
+    // Find last deposit matching this income source (within 8% amount tolerance OR name match)
+    let anchor = null;
+    if(freqDays) {
+      const deposits = txns
+        .filter(t => {
+          if(t.amount >= 0) return false; // income is negative (money in)
+          const name = (t.name||"").toLowerCase();
+          const amtOk  = incAmt > 0 && Math.abs(Math.abs(t.amount)-incAmt)/incAmt < 0.08;
+          const nameOk = incLabel.length > 3 && name.includes(incLabel.substring(0,6));
+          const isInc  = t.cat==="Income" || name.includes("payroll") ||
+                         name.includes("direct deposit") || name.includes("deposit");
+          return (amtOk||nameOk) && isInc;
+        })
+        .map(t => new Date(t.date+"T12:00:00"))
+        .filter(d => !isNaN(d.getTime()))
+        .sort((a,b) => b-a);
+      anchor = deposits[0] || null;
     }
 
-    return { forecast, overdraftRisk, lowBalanceWarnings,
-             willGoNegative: overdraftRisk.length > 0,
-             firstNegativeDay: overdraftRisk[0] || null };
+    if(freqDays && anchor) {
+      // Advance from last deposit until we pass today, then keep projecting forward
+      let next = new Date(anchor);
+      next.setDate(next.getDate() + freqDays);
+      const horizon = new Date(today.getTime() + days*86400000);
+      while(next <= horizon) {
+        paydayDates.add(next.toISOString().substring(0,10));
+        next = new Date(next); next.setDate(next.getDate() + freqDays);
+      }
+    } else if(freqDays) {
+      // No anchor found — fallback: count forward from today at frequency
+      for(let k = freqDays; k <= days; k += freqDays) {
+        const d2 = new Date(today); d2.setDate(today.getDate()+k);
+        paydayDates.add(d2.toISOString().substring(0,10));
+      }
+    } else if(primaryFreq==="monthly") {
+      const payDay = primaryIncome.anchorDay || 1;
+      for(let k = 1; k <= days; k++) {
+        const d2 = new Date(today); d2.setDate(today.getDate()+k);
+        if(d2.getDate()===payDay) paydayDates.add(d2.toISOString().substring(0,10));
+      }
+    } else if(primaryFreq==="semimonthly") {
+      for(let k = 1; k <= days; k++) {
+        const d2 = new Date(today); d2.setDate(today.getDate()+k);
+        if(d2.getDate()===1||d2.getDate()===15) paydayDates.add(d2.toISOString().substring(0,10));
+      }
+    }
   }
+
+  const getSecondary = (dayNum) =>
+    secondaryMo.filter(i=>(i.freq==="monthly"?dayNum===1:(dayNum===1||dayNum===15)))
+               .reduce((s,i)=>s+perDeposit(i),0);
+
+  for(let i = 0; i <= days; i++) {
+    const d       = new Date(today); d.setDate(today.getDate()+i);
+    const dayNum  = d.getDate();
+    const dateKey = d.toISOString().substring(0,10);
+    const isPayday = i > 0 && paydayDates.has(dateKey);
+    const dayBills = bills.filter(b=>parseInt(b.date)===dayNum&&parseInt(b.date)>0);
+    const inc      = (isPayday ? paycheque : 0) + getSecondary(dayNum);
+    const out      = dayBills.reduce((s,b)=>s+parseFloat(b.amount||0),0) + (i===0?0:avgDaily*0.8);
+    running = running + inc - out;
+
+    const entry = { day:i, date:d, balance:running, income:inc, expenses:out,
+                    isPayday, bills:dayBills };
+    forecast.push(entry);
+
+    if(running < 0) overdraftRisk.push({ day:i, date:d, balance:running });
+    if(running < balance*0.12 && running >= 0 && !isPayday)
+      lowBalanceWarnings.push({ day:i, date:d, balance:running });
+  }
+
+  return { forecast, overdraftRisk, lowBalanceWarnings,
+           willGoNegative: overdraftRisk.length > 0,
+           firstNegativeDay: overdraftRisk[0] || null };
+}
 };
 
 // ── ENGINE 4: BEHAVIOR ANALYSIS ENGINE ────────────────────────────────────────
@@ -2448,7 +3034,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
   ];
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)",zIndex:999,display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"0 0 0 0"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)",zIndex:999,display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",justifyContent:"center",padding:"0 0 0 0"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div style={{background:C.bg,borderRadius:"28px 28px 0 0",padding:"28px 24px 40px",width:"100%",maxWidth:520,maxHeight:"88vh",overflowY:"auto",boxShadow:"0 -20px 60px rgba(0,0,0,0.2)"}}>
         {/* Step indicator */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
@@ -2477,14 +3063,20 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
 
 // ─── DASHBOARD TILE REGISTRY ──────────────────────────────────────────────────
 const DASH_TILES = [
-  { id: 'networth',    label: 'Net Worth Trend',    icon: '📈' },
-  { id: 'decision',   label: 'Decision Engine',     icon: '🧠' },
-  { id: 'autopilot',  label: 'Autopilot',           icon: '✈️' },
-  { id: 'forecast',   label: 'Cash Flow Forecast',  icon: '📅' },
-  { id: 'opportunity',label: 'Opportunities',       icon: '💡' },
-  { id: 'health',     label: 'Health Score',        icon: '💚' },
-  { id: 'credit',     label: 'Credit Score',        icon: '💳' },
-  { id: 'quicknav',   label: 'Quick Navigation',    icon: '⚡' },
+  // Core sections — always on dashboard, user can hide or reorder
+  { id: 'hero',        label: 'Safe-to-Spend',       lucide:'dollar-sign',  alwaysVisible: true },
+  { id: 'bento',       label: 'Stats Row',            lucide:'bar-chart-2'  },
+  { id: 'healthrow',   label: 'Health & Streak',      lucide:'heart'        },
+  { id: 'action',      label: 'Action Alert',         lucide:'zap'          },
+  // Extended tiles
+  { id: 'networth',    label: 'Net Worth Trend',      lucide:'trending-up'  },
+  { id: 'forecast',    label: 'Cash Flow Forecast',   lucide:'calendar'     },
+  { id: 'decision',    label: 'Decision Engine',      lucide:'cpu'          },
+  { id: 'autopilot',   label: 'Autopilot',            lucide:'navigation'   },
+  { id: 'opportunity', label: 'Opportunities',        lucide:'star'         },
+  { id: 'health',      label: 'Health Score',         lucide:'shield'       },
+  { id: 'credit',      label: 'Credit Score',         lucide:'credit-card'  },
+  { id: 'quicknav',    label: 'Quick Navigation',     lucide:'grid'         },
 ];
 
 // ─── STATEMENT PARSING HELPERS ────────────────────────────────────────────────
@@ -2561,86 +3153,129 @@ ${rawText.slice(0, 7000)}`;
   return txns.map((t,i) => ({ id:`stmt_${i}`, date: t.date||'', name: t.name||'Transaction', amount: Number(t.amount)||0, category:'OTHER', pending:false })).filter(t=>t.date);
 }
 
+// ─── TILE ICON HELPER ────────────────────────────────────────────────────────
+function TileIcon({id, size=18, color}){
+  const props={size,color,strokeWidth:1.8};
+  switch(id){
+    case 'hero':        return <DollarSign {...props}/>;
+    case 'bento':       return <BarChart2 {...props}/>;
+    case 'healthrow':   return <Heart {...props}/>;
+    case 'action':      return <Zap {...props}/>;
+    case 'networth':    return <TrendingUp {...props}/>;
+    case 'forecast':    return <Calendar {...props}/>;
+    case 'decision':    return <Cpu {...props}/>;
+    case 'autopilot':   return <Navigation {...props}/>;
+    case 'opportunity': return <Star {...props}/>;
+    case 'health':      return <Shield {...props}/>;
+    case 'credit':      return <CreditCard {...props}/>;
+    case 'quicknav':    return <LayoutGrid {...props}/>;
+    default:            return <LayoutGrid {...props}/>;
+  }
+}
 // ─── DASH CUSTOMIZE SHEET ─────────────────────────────────────────────────────
 function DashCustomize({ layout, onChange, onClose }) {
+  const isDesktop = window.innerWidth >= 960;
   const [items, setItems] = useState(layout);
-  const [dragging, setDragging] = useState(null);
-  const [dragOver, setDragOver] = useState(null);
 
   const save = () => { onChange(items); onClose(); };
-  const toggle = (id) => setItems(prev => prev.map(t => t.id===id ? {...t, visible:!t.visible} : t));
-  const toggleLock = (id) => setItems(prev => prev.map(t => t.id===id ? {...t, locked:!t.locked} : t));
-  const onDragStart = (id) => setDragging(id);
-  const onDragEnter = (id) => {
-    if (!dragging || dragging === id) return;
-    // Don't move locked tiles
-    const dragItem = items.find(t=>t.id===dragging);
-    const targetItem = items.find(t=>t.id===id);
-    if(dragItem?.locked || targetItem?.locked) return;
-    setDragOver(id);
+
+  const toggle = (id) => {
+    const tile = DASH_TILES.find(t=>t.id===id);
+    if(tile?.alwaysVisible) return;
+    setItems(prev => prev.map(t => t.id===id ? {...t, visible:!t.visible} : t));
+  };
+
+  const moveUp = (id) => {
     setItems(prev => {
-      const from = prev.findIndex(t=>t.id===dragging);
-      const to   = prev.findIndex(t=>t.id===id);
+      const idx = prev.findIndex(t=>t.id===id);
+      if(idx <= 0) return prev;
+      let target = idx - 1;
+      while(target >= 0 && prev[target].locked) target--;
+      if(target < 0) return prev;
       const next = [...prev];
-      const [removed] = next.splice(from, 1);
-      next.splice(to, 0, removed);
+      [next[target], next[idx]] = [next[idx], next[target]];
       return next;
     });
   };
-  const onDragEnd = () => { setDragging(null); setDragOver(null); };
-  const meta = id => DASH_TILES.find(t=>t.id===id)||{label:id,icon:'□'};
+
+  const moveDown = (id) => {
+    setItems(prev => {
+      const idx = prev.findIndex(t=>t.id===id);
+      if(idx >= prev.length - 1) return prev;
+      let target = idx + 1;
+      while(target < prev.length && prev[target].locked) target++;
+      if(target >= prev.length) return prev;
+      const next = [...prev];
+      [next[target], next[idx]] = [next[idx], next[target]];
+      return next;
+    });
+  };
+
+  const meta = id => DASH_TILES.find(t=>t.id===id)||{label:id};
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:9000,display:'flex',alignItems:'flex-end',justifyContent:'center',background:'rgba(0,0,0,0.55)',backdropFilter:'blur(4px)'}} onClick={onClose}>
-      <div style={{width:'100%',maxWidth:430,background:C.card,borderRadius:'24px 24px 0 0',maxHeight:'85vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 48px rgba(0,0,0,0.5)'}} onClick={e=>e.stopPropagation()}>
-        <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:'0 auto 20px'}}/>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
+    <div style={{position:'fixed',inset:0,zIndex:9000,display:'flex',alignItems:isDesktop?'center':'flex-end',justifyContent:'center',background:'rgba(0,0,0,0.6)',backdropFilter:'blur(6px)'}} onClick={onClose}>
+      <div style={{width:'100%',maxWidth:440,background:C.card,borderRadius:isDesktop?'24px':'24px 24px 0 0',maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 48px rgba(0,0,0,0.5)'}} onClick={e=>e.stopPropagation()}>
+        {!isDesktop&&<div style={{width:36,height:4,borderRadius:99,background:C.border,margin:'12px auto 0',flexShrink:0}}/>}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'20px 20px 0',flexShrink:0}}>
           <div style={{color:C.cream,fontWeight:800,fontSize:18,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Customize Dashboard</div>
-          <span style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Drag ☰ to reorder · tap 🔓 to lock</span>
+          <button onClick={onClose} style={{background:'none',border:'none',color:C.muted,fontSize:22,cursor:'pointer',padding:4,lineHeight:1,fontFamily:'inherit'}}>×</button>
         </div>
-        </div>
-        <div style={{overflowY:'auto',flex:1,paddingBottom:8}}>
-        {items.map(tile => {
-          const m = meta(tile.id);
-          return (
-            <div key={tile.id}
-              draggable={!tile.locked}
-              onDragStart={()=>!tile.locked&&onDragStart(tile.id)}
-              onDragEnter={()=>onDragEnter(tile.id)}
-              onDragEnd={onDragEnd}
-              style={{display:'flex',alignItems:'center',gap:12,padding:'12px 14px',borderRadius:14,marginBottom:8,
-                background: dragOver===tile.id ? C.green+'14' : tile.locked ? C.gold+'08' : C.cardAlt,
-                border:`1px solid ${tile.locked ? C.gold+'44' : tile.visible ? C.green+'33' : C.border}`,
-                cursor:tile.locked?'default':'grab',transition:'all .15s',opacity:tile.visible?1:0.5}}>
-              <span style={{fontSize:18,cursor:tile.locked?'default':'grab',color:tile.locked?C.gold:C.muted,userSelect:'none'}}>{tile.locked?'📌':'☰'}</span>
-              <span style={{fontSize:20}}>{m.icon}</span>
-              <div style={{flex:1,color:C.cream,fontWeight:600,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{m.label}</div>
-              <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                <button onClick={()=>toggleLock(tile.id)} title={tile.locked?"Unlock":"Lock position"}
-                  style={{background:tile.locked?C.gold+'22':'transparent',border:`1px solid ${tile.locked?C.gold+'55':C.border}`,borderRadius:10,width:44,height:44,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>
+        <div style={{color:C.muted,fontSize:12,padding:'4px 20px 14px',fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Use ↑↓ to reorder · toggle to show or hide</div>
+        <div style={{overflowY:'auto',flex:1,padding:'0 16px 8px'}}>
+          {items.map((tile, idx) => {
+            const m = meta(tile.id);
+            return (
+              <div key={tile.id} style={{display:'flex',alignItems:'center',gap:10,padding:'11px 12px',borderRadius:14,marginBottom:7,
+                background:tile.locked?C.gold+'0A':C.cardAlt,
+                border:`1px solid ${tile.locked?C.gold+'44':tile.visible!==false?C.green+'33':C.border}`,
+                opacity:tile.visible!==false?1:0.5,transition:'all .15s'}}>
+                <div style={{display:'flex',flexDirection:'column',gap:1,flexShrink:0}}>
+                  <button onClick={()=>!tile.locked&&moveUp(tile.id)}
+                    style={{background:'none',border:'none',color:idx===0||tile.locked?C.border:C.muted,cursor:idx===0||tile.locked?'default':'pointer',fontSize:13,lineHeight:1,padding:'3px 6px',borderRadius:6,transition:'color .15s',fontFamily:'inherit'}}>▲</button>
+                  <button onClick={()=>!tile.locked&&moveDown(tile.id)}
+                    style={{background:'none',border:'none',color:idx===items.length-1||tile.locked?C.border:C.muted,cursor:idx===items.length-1||tile.locked?'default':'pointer',fontSize:13,lineHeight:1,padding:'3px 6px',borderRadius:6,transition:'color .15s',fontFamily:'inherit'}}>▼</button>
+                </div>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:32,height:32,borderRadius:9,background:tile.visible!==false?C.green+'18':C.cardAlt,border:`1px solid ${tile.visible!==false?C.green+'33':C.border}`,flexShrink:0}}>
+                  <TileIcon id={tile.id} size={16} color={tile.visible!==false?C.greenBright:C.muted}/>
+                </div>
+                <div style={{flex:1,color:C.cream,fontWeight:600,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",display:'flex',alignItems:'center',gap:8,minWidth:0}}>
+                  <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.label}</span>
+                  {m.alwaysVisible&&<span style={{color:C.gold,fontSize:10,fontWeight:700,flexShrink:0}}>always on</span>}
+                  {tile.locked&&<span style={{color:C.gold,fontSize:10,fontWeight:700,flexShrink:0}}>pinned</span>}
+                </div>
+                <button onClick={()=>setItems(prev=>prev.map(t=>t.id===tile.id?{...t,locked:!t.locked}:t))}
+                  style={{background:'none',border:`1px solid ${tile.locked?C.gold+'55':C.border}`,borderRadius:8,width:36,height:36,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,flexShrink:0,color:tile.locked?C.gold:C.muted,transition:'all .15s'}}>
                   {tile.locked?'🔒':'🔓'}
                 </button>
-                <div onClick={()=>toggle(tile.id)}
-                  style={{width:40,height:22,borderRadius:99,background:tile.visible?C.green:'rgba(255,255,255,0.08)',border:`1px solid ${tile.visible?C.green:C.border}`,position:'relative',cursor:'pointer',transition:'background .2s',flexShrink:0}}>
-                  <div style={{position:'absolute',top:2,left:tile.visible?20:2,width:16,height:16,borderRadius:'50%',background:'white',transition:'left .2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}}/>
-                </div>
+                {!m.alwaysVisible&&(
+                  <div onClick={()=>toggle(tile.id)}
+                    style={{width:44,height:26,borderRadius:99,background:tile.visible!==false?C.green:'rgba(255,255,255,0.09)',border:`1px solid ${tile.visible!==false?C.green:C.border}`,position:'relative',cursor:'pointer',transition:'background .2s',flexShrink:0}}>
+                    <div style={{position:'absolute',top:3,left:tile.visible!==false?21:3,width:18,height:18,borderRadius:'50%',background:'white',transition:'left .2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}}/>
+                  </div>
+                )}
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
         </div>
-        <div style={{padding:'0 0 8px',flexShrink:0}}>
-        <button onClick={save} style={{width:'100%',background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:'none',borderRadius:14,padding:'14px',color:'#fff',fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer',marginTop:8}}>Save Layout</button>
-        <button onClick={()=>{setItems(DASH_TILES.map(t=>({id:t.id,visible:true})));}} style={{width:'100%',background:'none',border:'none',color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer',marginTop:8,padding:'6px'}}>Reset to default</button>
+        <div style={{padding:'12px 16px 20px',flexShrink:0,borderTop:`1px solid ${C.border}`,display:'flex',gap:10}}>
+          <button onClick={()=>setItems(DASH_TILES.map(t=>({id:t.id,visible:true,locked:false})))}
+            style={{flex:1,background:'none',border:`1px solid ${C.border}`,borderRadius:12,padding:'12px',color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer',fontWeight:600}}>
+            Reset
+          </button>
+          <button onClick={save}
+            style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:'none',borderRadius:12,padding:'12px',color:'#021208',fontWeight:800,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer'}}>
+            Save Layout
+          </button>
+        </div>
       </div>
     </div>
   );
 }
-
 // ─── ONBOARDING ───────────────────────────────────────────────────────────────
-function Onboarding({onComplete,onViewLegal}){
+function Onboarding({onComplete,onViewLegal,userId}){
   const [step,setStep]=useState(0);
-  const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false});
+  const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false,lifeStages:["employed"],birthYear:"",kids:[],isHomeowner:false,employmentType:"t4",rrspRoom:"",tfsaRoom:"",retirementRoom:""});
   const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment",isVariable:false}]);
   const [bills,setBills]=useState([{name:"",amount:"",date:""}]);
   const [debts,setDebts]=useState([{name:"",balance:"",rate:"",min:""}]);
@@ -2679,7 +3314,7 @@ function Onboarding({onComplete,onViewLegal}){
     if(linkToken) return; // already have one
     setLinkTokenLoading(true);
     setBankError(null);
-    callPlaid("create_link_token",{country:p.country})
+    callPlaid("create_link_token",{country:p.country, user_id: userId || ("guest-" + Math.random().toString(36).slice(2))})
       .then(d=>{ setLinkToken(d.link_token); setLinkTokenLoading(false); })
       .catch(()=>{ setBankError("Could not connect to your bank — please check your connection and try again."); setLinkTokenLoading(false); });
   },[linkToken, p.country]); // eslint-disable-line
@@ -2701,8 +3336,11 @@ function Onboarding({onComplete,onViewLegal}){
       try{
         // Multi-bank: save to array
         const existing = JSON.parse(localStorage.getItem("flourish_plaid_tokens")||"[]");
+        const instName = ex.institution_name||"Your Bank";
+        // Replace existing token for this institution (prevents duplicate entries)
         const bankId = "bank_" + Date.now();
-        const updated = [...existing, {id:bankId,token:ex.access_token,institution:ex.institution_name||"Your Bank"}];
+        const filtered = existing.filter(b => (b.institution||"").toLowerCase() !== instName.toLowerCase());
+        const updated = [...filtered, {id:bankId, token:ex.access_token, institution:instName}];
         localStorage.setItem("flourish_plaid_tokens", JSON.stringify(updated));
         // Keep legacy key for backwards compatibility
         localStorage.setItem("flourish_plaid_token", ex.access_token);
@@ -2832,7 +3470,7 @@ function Onboarding({onComplete,onViewLegal}){
 
       {/* Demo mode — required for App Store review */}
       <button onClick={()=>onComplete({
-        profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true},
+        profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true,lifeStages:["employed"]},
         incomes:[{id:1,label:"Full-time Job",amount:"2840",freq:"biweekly",type:"employment"},{id:2,label:"Canada Child Benefit",amount:"560",freq:"monthly",type:"ccb"}],
         bills:[{name:"Rent",amount:"1650",date:"1"},{name:"Hydro",amount:"95",date:"11"},{name:"Phone",amount:"65",date:"15"},{name:"Netflix",amount:"18.99",date:"22"}],
         debts:[{name:"TD Visa",balance:"3420",rate:"19.99",min:"68"},{name:"Car Loan",balance:"8200",rate:"6.99",min:"280"}],
@@ -2843,7 +3481,7 @@ function Onboarding({onComplete,onViewLegal}){
         👀 Try Demo (no account needed)
       </button>
 
-      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:14}}>Free to start · Available in 🇨🇦 Canada & 🇺🇸 USA</div>
+      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:14}}>Free to start · Canada & USA · No credit card</div>
 
       {/* PIPEDA consent notice */}
       <div style={{marginTop:20,padding:"12px 16px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`,maxWidth:320,textAlign:"left"}}>
@@ -2859,19 +3497,135 @@ function Onboarding({onComplete,onViewLegal}){
     // 1: Profile
     <div>
       <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:30,color:C.cream,marginBottom:6,letterSpacing:-0.5}}>About you</div>
-      <div style={{color:C.muted,fontSize:14,marginBottom:20,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Just the basics. Everything stays on your device.</div>
+      <div style={{color:C.muted,fontSize:14,marginBottom:20,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Helps us personalise your tax advice and financial coaching.</div>
       <Inp label="First Name" value={p.name} onChange={v=>setP({...p,name:v})} placeholder="First name"/>
       <Sel label="Country" value={p.country} onChange={v=>setP({...p,country:v,province:v==="CA"?"ON":"CA"})} options={[{value:"CA",label:"🇨🇦 Canada"},{value:"US",label:"🇺🇸 United States"}]}/>
       <Sel label={p.country==="CA"?"Province":"State"} value={p.province} onChange={v=>setP({...p,province:v})}
-        options={p.country==="CA"?[{value:"ON",label:"Ontario"},{value:"BC",label:"British Columbia"},{value:"AB",label:"Alberta"},{value:"QC",label:"Quebec"},{value:"MB",label:"Manitoba"},{value:"OTHER",label:"Other"}]:[{value:"CA",label:"California"},{value:"TX",label:"Texas"},{value:"NY",label:"New York"},{value:"FL",label:"Florida"},{value:"OTHER",label:"Other"}]}/>
+        options={p.country==="CA"?[{value:"ON",label:"Ontario"},{value:"BC",label:"British Columbia"},{value:"AB",label:"Alberta"},{value:"QC",label:"Quebec"},{value:"MB",label:"Manitoba"},{value:"SK",label:"Saskatchewan"},{value:"NS",label:"Nova Scotia"},{value:"NB",label:"New Brunswick"},{value:"OTHER",label:"Other"}]:[{value:"CA",label:"California"},{value:"TX",label:"Texas"},{value:"NY",label:"New York"},{value:"FL",label:"Florida"},{value:"WA",label:"Washington"},{value:"IL",label:"Illinois"},{value:"OTHER",label:"Other"}]}/>
+
+      {/* Birth year */}
+      <Sel label="Birth Year" value={p.birthYear} onChange={v=>setP({...p,birthYear:v})}
+        options={[{value:"",label:"Select year…"},...Array.from({length:80},(_,i)=>{const y=new Date().getFullYear()-18-i;return{value:String(y),label:String(y)};})]}/>
+
       <Sel label="Relationship Status" value={p.status} onChange={v=>setP({...p,status:v})} options={[{value:"single",label:"Single"},{value:"couple",label:"Married"},{value:"cohabit",label:"Common Law"}]}/>
       {p.status!=="single"&&<Inp label="Partner's Name (optional)" value={p.partnerName} onChange={v=>setP({...p,partnerName:v})} placeholder="Partner's first name"/>}
+
+      {/* Homeowner */}
       <div style={{marginBottom:14}}>
-        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:8,fontWeight:700}}>Do you have kids?</div>
+        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:8,fontWeight:700}}>Do you own your home?</div>
         <div style={{display:"flex",gap:10}}>
-          {["Yes","No"].map(opt=><button key={opt} onClick={()=>setP({...p,hasKids:opt==="Yes"})} style={{flex:1,background:(opt==="Yes"?p.hasKids:!p.hasKids)?C.green+"33":C.cardAlt,border:`1px solid ${(opt==="Yes"?p.hasKids:!p.hasKids)?C.green:C.border}`,color:(opt==="Yes"?p.hasKids:!p.hasKids)?C.greenBright:C.muted,borderRadius:12,padding:"12px",cursor:"pointer",fontSize:14,fontWeight:700,fontFamily:"inherit"}}>{opt}</button>)}
+          {[["Yes",true],["No",false]].map(([label,val])=>(
+            <button key={label} onClick={()=>setP({...p,isHomeowner:val})}
+              style={{flex:1,background:p.isHomeowner===val?C.teal+"33":C.cardAlt,border:`1px solid ${p.isHomeowner===val?C.teal:C.border}`,color:p.isHomeowner===val?C.tealBright:C.muted,borderRadius:12,padding:"12px",cursor:"pointer",fontSize:14,fontWeight:700,fontFamily:"inherit"}}>
+              {label}
+            </button>
+          ))}
         </div>
       </div>
+
+      {/* Kids */}
+      <div style={{marginBottom:14}}>
+        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:8,fontWeight:700}}>Do you have children?</div>
+        <div style={{display:"flex",gap:10,marginBottom:p.hasKids?12:0}}>
+          {["Yes","No"].map(opt=>(
+            <button key={opt} onClick={()=>setP({...p,hasKids:opt==="Yes",kids:opt==="No"?[]:p.kids})}
+              style={{flex:1,background:(opt==="Yes"?p.hasKids:!p.hasKids)?C.pink+"33":C.cardAlt,border:`1px solid ${(opt==="Yes"?p.hasKids:!p.hasKids)?C.pink:C.border}`,color:(opt==="Yes"?p.hasKids:!p.hasKids)?C.pinkBright:C.muted,borderRadius:12,padding:"12px",cursor:"pointer",fontSize:14,fontWeight:700,fontFamily:"inherit"}}>
+              {opt}
+            </button>
+          ))}
+        </div>
+        {p.hasKids&&(
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {(p.kids||[]).map((kid,i)=>(
+              <div key={i} style={{display:"flex",gap:8,alignItems:"center"}}>
+                <Inp label="" value={kid.name||""} onChange={v=>{const k=[...p.kids];k[i]={...k[i],name:v};setP({...p,kids:k});}} placeholder={`Child ${i+1} name`}/>
+                <div style={{width:110,flexShrink:0}}>
+                  <select value={kid.birthYear||""} onChange={e=>{const k=[...p.kids];k[i]={...k[i],birthYear:e.target.value};setP({...p,kids:k});}}
+                    style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 10px",color:kid.birthYear?C.cream:C.muted,fontSize:13,fontFamily:"inherit",outline:"none"}}>
+                    <option value="">Year born</option>
+                    {Array.from({length:25},(_,i)=>{const y=new Date().getFullYear()-i;return<option key={y} value={String(y)}>{y}</option>;})}
+                  </select>
+                </div>
+                <button onClick={()=>setP({...p,kids:p.kids.filter((_,j)=>j!==i)})}
+                  style={{background:"none",border:"none",color:C.muted,fontSize:18,cursor:"pointer",padding:"0 4px",flexShrink:0}}>×</button>
+              </div>
+            ))}
+            <button onClick={()=>setP({...p,kids:[...(p.kids||[]),{name:"",birthYear:""}]})}
+              style={{background:C.pink+"18",border:`1px solid ${C.pink}44`,borderRadius:10,padding:"10px",color:C.pinkBright,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              + Add child
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Employment type */}
+      <div style={{marginBottom:14}}>
+        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:8,fontWeight:700}}>Employment type</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+          {(p.country==="CA"
+            ?[["🏢","t4","T4 Employee"],["🧾","selfemployed","Self-Employed"],["🏛️","incorporated","Incorporated"],["🎓","student","Student"],["🌅","retired","Retired"]]
+            :[["🏢","w2","W-2 Employee"],["🧾","selfemployed","Self-Employed / 1099"],["🏛️","incorporated","Business Owner"],["🎓","student","Student"],["🌅","retired","Retired"]]
+          ).map(([emoji,val,label])=>(
+            <button key={val} onClick={()=>setP({...p,employmentType:val})}
+              style={{background:p.employmentType===val?C.blue+"33":C.cardAlt,border:`1px solid ${p.employmentType===val?C.blue:C.border}`,color:p.employmentType===val?C.blueBright||"#4DA8FF":C.muted,borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
+              <span>{emoji}</span>{label}
+              {p.employmentType===val&&<span style={{fontSize:10}}>✓</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Life stages */}
+      <div style={{marginBottom:14}}>
+        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:4,fontWeight:700}}>Which else applies? <span style={{fontWeight:400}}>(optional)</span></div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+          {[["🏠","homeoffice","Home Office"],["🌐","contractor","Contractor"],["💰","investor","Investor"],["➕","other","Other"]].map(([emoji,val,label])=>{
+            const selected=(p.lifeStages||[]).includes(val);
+            return(
+              <button key={val} onClick={()=>{const cur=p.lifeStages||[];const next=selected?cur.filter(v=>v!==val):[...cur,val];setP({...p,lifeStages:next});}}
+                style={{background:selected?C.green+"33":C.cardAlt,border:`1px solid ${selected?C.green:C.border}`,color:selected?C.greenBright:C.muted,borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
+                <span>{emoji}</span>{label}{selected&&<span style={{fontSize:10}}>✓</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+
+        {/* RRSP / TFSA contribution room — CA only, optional */}
+        {p.country==="CA"&&(
+          <div style={{marginBottom:14}}>
+            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:4,fontWeight:700}}>
+              Contribution Room <span style={{fontSize:9,fontWeight:400,textTransform:"none",letterSpacing:0}}>(optional — personalises tax tips)</span>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <div style={{flex:1}}>
+                <div style={{color:C.muted,fontSize:10,marginBottom:4}}>RRSP Room</div>
+                <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                  <span style={{color:C.muted,padding:"0 8px",fontSize:12}}>$</span>
+                  <input type="number" min="0" step="500" value={p.rrspRoom}
+                    onChange={e=>setP({...p,rrspRoom:e.target.value})}
+                    placeholder="e.g. 24000"
+                    style={{flex:1,background:"none",border:"none",padding:"10px 6px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+                </div>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{color:C.muted,fontSize:10,marginBottom:4}}>TFSA Room</div>
+                <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                  <span style={{color:C.muted,padding:"0 8px",fontSize:12}}>$</span>
+                  <input type="number" min="0" step="500" value={p.tfsaRoom}
+                    onChange={e=>setP({...p,tfsaRoom:e.target.value})}
+                    placeholder="e.g. 7000"
+                    style={{flex:1,background:"none",border:"none",padding:"10px 6px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+                </div>
+              </div>
+            </div>
+            <div style={{color:C.muted,fontSize:10,marginTop:5}}>
+              Find your room on <strong style={{color:C.mutedHi}}>CRA MyAccount</strong> or last year's NOA. Leave blank if unsure.
+            </div>
+          </div>
+        )}
+
       <Btn label="Continue →" onClick={()=>setStep(2)} disabled={!p.name}/>
     </div>,
 
@@ -2975,88 +3729,117 @@ function Onboarding({onComplete,onViewLegal}){
       <div style={{color:C.muted,fontSize:14,marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
         {incomes[0]?.autoDetected
           ? "We detected your income from your transactions. Confirm or adjust below."
-          : "Add every source of income — employment, freelance, benefits, rental, your partner's pay. We map it all."}
+          : "Add every source — employment, freelance, benefits, rental, a partner's income. We map it all against your bills."}
       </div>
-      {incomes.map((inc,i)=>(
-        <div key={inc.id} style={{background:C.card,borderRadius:16,padding:"16px",border:`1px solid ${C.border}`,marginBottom:12}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{inc.label||`Income Source ${i+1}`}</div>
-              {inc.autoDetected&&<span style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px",color:C.greenBright,fontSize:10,fontWeight:700}}>Auto-detected ✓</span>}
-            </div>
-            {incomes.length>1&&<button onClick={()=>setIncomes(incomes.filter(x=>x.id!==inc.id))} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0}}>×</button>}
-          </div>
-          <div style={{marginBottom:10}}>
-            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Label</div>
-            <input value={inc.label} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,label:e.target.value}:x))}
-              placeholder="e.g. Full-time job, Freelance"
-              style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}}/>
-          </div>
-          {/* Variable income — auto flag or manual toggle */}
-          {/* Income amount — single field only. App calculates everything else. */}
-          {inc.autoDetected ? (
-            // Bank connected — show detected amount, allow adjustment
-            <div style={{marginBottom:10}}>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>
-                {inc.isVariable ? "Average Monthly Take-Home" : "Monthly Take-Home (detected)"}
+      {incomes.map((inc,i)=>{
+        const incTypeMeta = {
+          employment:{label:"Full-time Job",emoji:"💼"},
+          selfemployed:{label:"Self-Employed",emoji:"🧾"},
+          cpp:{label:"CPP / Pension",emoji:"🏛️"},
+          ei:{label:"EI Benefits",emoji:"📋"},
+          odsp:{label:"ODSP / Ontario Works",emoji:"♿"},
+          ccb:{label:"Canada Child Benefit",emoji:"👶"},
+          rental:{label:"Rental Income",emoji:"🏠"},
+          gig:{label:"Gig / Freelance",emoji:"🚗"},
+          other:{label:"Other",emoji:"➕"},
+          // US
+          salary:{label:"Salary",emoji:"💼"},
+          hourly:{label:"Hourly",emoji:"⏱️"},
+          ssi:{label:"SSI / Disability",emoji:"♿"},
+          snap:{label:"SNAP / Benefits",emoji:"📋"},
+          investment:{label:"Investment Income",emoji:"📈"},
+        };
+        const meta = incTypeMeta[inc.type] || {label:inc.type,emoji:"💰"};
+        const freqLabel = {weekly:"weekly",biweekly:"every 2 weeks",semimonthly:"twice/month",monthly:"monthly"}[inc.freq]||"";
+        const summaryAmt = parseFloat(inc.amount||inc.typicalAmount||0);
+        return (
+          <div key={inc.id} style={{background:C.card,borderRadius:18,border:`1px solid ${C.border}`,marginBottom:12,overflow:"hidden"}}>
+            {/* Card header */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px 0"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:20}}>{meta.emoji}</span>
+                <div>
+                  <div style={{color:C.cream,fontWeight:700,fontSize:14,lineHeight:1.2}}>{inc.label||meta.label||`Income ${i+1}`}</div>
+                  {summaryAmt>0&&<div style={{color:C.greenBright,fontSize:11,fontWeight:600,marginTop:1}}>${summaryAmt.toLocaleString()} {freqLabel}</div>}
+                </div>
+                {inc.autoDetected&&<span style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px",color:C.greenBright,fontSize:10,fontWeight:700,marginLeft:4}}>Auto ✓</span>}
+                {inc.isVariable&&<span style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:99,padding:"2px 8px",color:C.purpleBright||C.tealBright,fontSize:10,fontWeight:700}}>Variable</span>}
               </div>
-              <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.green}44`,borderRadius:10,overflow:"hidden"}}>
-                <span style={{color:C.muted,padding:"0 10px",fontSize:14}}>$</span>
-                <input value={inc.amount} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,amount:e.target.value,typicalAmount:e.target.value}:x))}
-                  type="number"
-                  style={{flex:1,background:"none",border:"none",padding:"10px 12px 10px 0",color:C.greenBright,fontSize:16,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
-                <span style={{color:C.green,fontSize:11,fontWeight:700,paddingRight:10}}>Auto ✓</span>
-              </div>
-              {inc.isVariable&&<div style={{color:C.muted,fontSize:11,marginTop:6}}>📊 Income varies — we detected your range and will use it for planning.</div>}
+              {incomes.length>1&&<button onClick={()=>setIncomes(incomes.filter(x=>x.id!==inc.id))}
+                style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:20,padding:"0 0 0 8px",lineHeight:1}}>×</button>}
             </div>
-          ) : (
-            // No bank — ask for last paycheque only
-            <div style={{marginBottom:10}}>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Your Last Paycheque (take-home)</div>
-              <div style={{display:"flex",gap:10}}>
-                <div style={{flex:1}}>
-                  <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
-                    <span style={{color:C.muted,padding:"0 10px",fontSize:14}}>$</span>
-                    <input value={inc.amount} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,amount:e.target.value}:x))}
+
+            <div style={{padding:"12px 16px 16px"}}>
+              {/* Step 1 — Income type chips */}
+              <div style={{marginBottom:12}}>
+                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:8}}>Income type</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {(CC[p.country]?.incomeTypes||CC.CA.incomeTypes).map(([val,lbl])=>(
+                    <button key={val} onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,type:val,label:x.label||(incTypeMeta[val]?.label||"")}:x))}
+                      style={{background:inc.type===val?C.green+"22":C.cardAlt,border:`1px solid ${inc.type===val?C.green:C.border}`,color:inc.type===val?C.greenBright:C.muted,borderRadius:99,padding:"6px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:inc.type===val?700:400,transition:"all .15s"}}>{lbl}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Step 2 — Label */}
+              <div style={{marginBottom:12}}>
+                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Label <span style={{color:C.border,textTransform:"none",letterSpacing:0}}>(optional — e.g. "Part-time at Tim's")</span></div>
+                <input value={inc.label} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,label:e.target.value}:x))}
+                  placeholder={meta.label}
+                  style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:14,fontFamily:"inherit",boxSizing:"border-box",outline:"none"}}/>
+              </div>
+
+              {/* Step 3 — Amount + Frequency (always shown for both paths) */}
+              <div style={{marginBottom:12}}>
+                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>
+                  {inc.isVariable ? "Typical paycheque (take-home)" : inc.autoDetected ? "Paycheque amount (take-home)" : "Paycheque amount (take-home)"}
+                </div>
+                <div style={{display:"flex",gap:10}}>
+                  {/* Amount */}
+                  <div style={{flex:1.2,display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${inc.autoDetected?C.green+"66":C.border}`,borderRadius:10,overflow:"hidden"}}>
+                    <span style={{color:C.muted,padding:"0 10px",fontSize:14,flexShrink:0}}>$</span>
+                    <input
+                      value={inc.amount}
+                      onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,amount:e.target.value,typicalAmount:e.target.value}:x))}
                       type="number" placeholder="e.g. 2100"
-                      style={{flex:1,background:"none",border:"none",padding:"10px 12px 10px 0",color:C.cream,fontSize:14,fontFamily:"inherit",outline:"none"}}/>
+                      style={{flex:1,background:"none",border:"none",padding:"11px 10px 11px 0",color:inc.autoDetected?C.greenBright:C.cream,fontSize:15,fontFamily:"inherit",outline:"none",fontWeight:inc.autoDetected?700:400}}/>
+                    {inc.autoDetected&&<span style={{color:C.green,fontSize:10,fontWeight:700,paddingRight:10,flexShrink:0}}>✓</span>}
+                  </div>
+                  {/* Frequency — always shown */}
+                  <div style={{flex:1}}>
+                    <select value={inc.freq} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,freq:e.target.value}:x))}
+                      style={{width:"100%",height:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 10px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}>
+                      <option value="weekly">Weekly</option>
+                      <option value="biweekly">Every 2 weeks</option>
+                      <option value="semimonthly">Twice a month</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
                   </div>
                 </div>
-                <div style={{flex:1}}>
-                  <select value={inc.freq} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,freq:e.target.value}:x))}
-                    style={{width:"100%",height:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}>
-                    <option value="weekly">Weekly</option>
-                    <option value="biweekly">Every 2 weeks</option>
-                    <option value="semimonthly">Twice a month</option>
-                    <option value="monthly">Monthly</option>
-                  </select>
-                </div>
               </div>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:10}}>
-                <div style={{color:C.muted,fontSize:11}}>Income varies month to month?</div>
+
+              {/* Step 4 — Variable toggle */}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:inc.isVariable?C.purple+"11":C.cardAlt,border:`1px solid ${inc.isVariable?C.purple+"44":C.border}`,borderRadius:12,padding:"10px 14px",transition:"all .2s"}}>
+                <div>
+                  <div style={{color:inc.isVariable?C.purpleBright||C.tealBright:C.mutedHi,fontSize:13,fontWeight:600}}>Variable income</div>
+                  <div style={{color:C.muted,fontSize:11,marginTop:1}}>{inc.isVariable?"Amount changes — we'll use your typical paycheque for planning":"Consistent amount every pay period"}</div>
+                </div>
                 <button onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,isVariable:!inc.isVariable}:x))}
-                  style={{width:44,height:24,borderRadius:99,background:inc.isVariable?C.green:C.cardAlt,border:`1px solid ${inc.isVariable?C.green:C.border}`,cursor:"pointer",position:"relative",transition:"all .2s",flexShrink:0}}>
-                  <div style={{position:"absolute",top:2,left:inc.isVariable?22:2,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"all .2s"}}/>
+                  style={{width:46,height:26,borderRadius:99,background:inc.isVariable?C.purple||C.teal:C.cardAlt,border:`1px solid ${inc.isVariable?C.purple||C.teal:C.border}`,cursor:"pointer",position:"relative",transition:"all .2s",flexShrink:0}}>
+                  <div style={{position:"absolute",top:3,left:inc.isVariable?23:3,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"all .2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
                 </button>
               </div>
-              {inc.isVariable&&<div style={{color:C.muted,fontSize:11,marginTop:6,lineHeight:1.5}}>💡 No problem — enter your typical paycheque. We'll use it for planning and adjust as we learn your patterns.</div>}
-            </div>
-          )}
-          <div>
-            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Type</div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              {(CC[p.country]?.incomeTypes||CC.CA.incomeTypes).map(([val,lbl])=>(
-                <button key={val} onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,type:val}:x))}
-                  style={{background:inc.type===val?C.green+"22":C.cardAlt,border:`1px solid ${inc.type===val?C.green:C.border}`,color:inc.type===val?C.greenBright:C.muted,borderRadius:99,padding:"5px 10px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{lbl}</button>
-              ))}
             </div>
           </div>
-        </div>
-      ))}
-      <button onClick={()=>setIncomes([...incomes,{id:Date.now(),label:"",amount:"",freq:"biweekly",type:"employment"}])}
-        style={{width:"100%",background:"none",border:`1px dashed ${C.green}`,borderRadius:14,padding:"12px",color:C.green,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginBottom:14,fontWeight:600}}>
-        + Add Another Income Source
+        );
+      })}
+
+      {/* Add income button — prominent */}
+      <button onClick={()=>setIncomes([...incomes,{id:Date.now(),label:"",amount:"",freq:"biweekly",type:"employment",isVariable:false}])}
+        style={{width:"100%",background:`linear-gradient(135deg,${C.green}18,${C.green}08)`,border:`1px solid ${C.green}66`,borderRadius:14,padding:"14px",color:C.greenBright,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginBottom:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+        <span style={{fontSize:18,lineHeight:1}}>＋</span> Add Another Income Source
       </button>
+
       <div style={{background:C.goldDim,border:`1px solid ${C.gold}44`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
         <div style={{color:C.goldBright,fontSize:13,lineHeight:1.6}}>💡 Include every source — even irregular ones. Flourish maps all income vs. bills to warn you <strong>before</strong> you hit zero.</div>
       </div>
@@ -3103,24 +3886,31 @@ function Onboarding({onComplete,onViewLegal}){
     // 5: Debts
     <div>
       <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Your debts</div>
-      <div style={{color:C.muted,fontSize:14,marginBottom:20}}>
-        {connAccts.some(a=>a.type==="credit"||a.type==="credit card")
-          ? "We've pulled in your credit cards. Add the interest rate and minimum payment for each — or skip."
-          : "No judgment — we'll build a real payoff plan with a simulator."}
-      </div>
+      {connAccts.some(a=>a.type==="credit"||a.type==="credit card"||a.subtype==="credit card")?(
+        <div style={{background:C.green+"11",border:`1px solid ${C.green}33`,borderRadius:14,padding:"12px 14px",marginBottom:16,display:"flex",gap:10,alignItems:"flex-start"}}>
+          <span style={{fontSize:18,flexShrink:0}}>🏦</span>
+          <div>
+            <div style={{color:C.greenBright,fontWeight:700,fontSize:13,marginBottom:2}}>Credit cards imported from your bank</div>
+            <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.6}}>We found {connAccts.filter(a=>a.type==="credit"||a.type==="credit card"||a.subtype==="credit card").length} credit card{connAccts.filter(a=>a.type==="credit"||a.type==="credit card"||a.subtype==="credit card").length!==1?"s":""} — balances are live. Add the interest rate and minimum payment so we can build your payoff plan.</div>
+          </div>
+        </div>
+      ):(
+        <div style={{color:C.muted,fontSize:14,marginBottom:20}}>No judgment — we&#39;ll build a real payoff plan with a simulator.</div>
+      )}
       {debts.map((d,i)=>(
         <div key={i} style={{background:C.cardAlt,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}`,marginBottom:10}}>
           <div style={{display:"flex",gap:8}}>
             <div style={{flex:1}}>
               <div style={{position:"relative"}}>
                 <Inp label="Name" value={d.name} onChange={v=>upDebt(i,"name",v)} placeholder="Visa, Car Loan…" sm/>
-                {d.fromBank&&<span style={{position:"absolute",top:0,right:0,fontSize:9,fontWeight:700,color:C.greenBright,background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"1px 6px"}}>from bank</span>}
+                {d.fromBank&&<span style={{position:"absolute",top:0,right:0,fontSize:9,fontWeight:700,color:C.greenBright,background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px"}}>🏦 live balance</span>}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <Inp label="Balance $" value={d.balance} onChange={v=>upDebt(i,"balance",v)} type="number" sm/>
-                <Inp label="Rate %" value={d.rate} onChange={v=>upDebt(i,"rate",v)} type="number" sm/>
+                <Inp label="Rate %" value={d.rate} onChange={v=>upDebt(i,"rate",v)} type="number" sm placeholder="e.g. 19.99"/>
               </div>
               <Inp label="Min Payment $" value={d.min} onChange={v=>upDebt(i,"min",v)} type="number" sm/>
+              {d.fromBank&&!d.rate&&<div style={{color:C.gold,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2,marginBottom:4}}>⚡ Add interest rate to unlock payoff simulator</div>}
             </div>
             {debts.length>1&&<button onClick={()=>rmDebt(i)} style={{background:C.redDim,border:"none",color:C.red,borderRadius:8,padding:"6px 10px",cursor:"pointer",alignSelf:"flex-start",marginTop:18}}>✕</button>}
           </div>
@@ -3255,9 +4045,9 @@ function buildLiveNotifs(data) {
 }
 
 function Notifications({onClose, data, onMarkAllRead}){
-  const getReadIds = () => { try { return new Set(JSON.parse(localStorage.getItem("flourish_read_notifs")||"[]")); } catch { return new Set(); } };
+  // useState with inline lazy initialiser — avoids TDZ from named function before hook
+  const [readIds, setReadIds] = useState(()=>{ try { return new Set(JSON.parse(localStorage.getItem("flourish_read_notifs")||"[]")); } catch { return new Set(); } });
   const liveNotifs = data ? [...buildLiveNotifs(data), ...INIT_NOTIFS] : INIT_NOTIFS;
-  const [readIds, setReadIds] = useState(getReadIds);
   const notifs = liveNotifs.map(n=>({...n, read: readIds.has(n.id)}));
   const unread = notifs.filter(n=>!n.read).length;
   const markAll = () => {
@@ -3369,26 +4159,323 @@ async function backgroundRefresh(isPremium, setAppData) {
       callPlaid("get_transactions", { access_token: accessToken, days: 90 }),
     ]);
     const normalisedTxns = normaliseTxns(txnData.transactions||[]);
-    setAppData(prev => ({
-      ...prev,
-      accounts: acctData.accounts.map(a => ({
+    setAppData(prev => {
+      const freshAccounts = acctData.accounts.map(a => ({
         id: a.id,
         name: a.name,
         type: a.subtype||a.type,
         balance: a.type==="credit" ? -(a.balance.current||0) : (a.balance.current??a.balance.available??0),
         institution: prev.accounts?.find(p=>p.id===a.id)?.institution||"Bank",
-      })),
-      transactions: normalisedTxns.length > 0 ? normalisedTxns : prev.transactions,
-    }));
+      }));
+      // Sync new credit card accounts into debts on background refresh
+      const creditAccts = freshAccounts.filter(a =>
+        a.type === "credit" || a.type === "credit card" ||
+        a.subtype === "credit card" || a.type === "line of credit"
+      );
+      const existingDebtNames = new Set((prev.debts||[]).map(d => (d.name||"").toLowerCase()));
+      const newCCDebts = creditAccts
+        .filter(a => !existingDebtNames.has((a.name||"").toLowerCase()))
+        .map(a => ({
+          name: a.name || "Credit Card",
+          balance: Math.abs(a.balance || 0).toFixed(2),
+          rate: "", min: "", fromBank: true,
+        }));
+      return {
+        ...prev,
+        accounts: freshAccounts,
+        transactions: normalisedTxns.length > 0 ? normalisedTxns : prev.transactions,
+        debts: newCCDebts.length > 0
+          ? [...(prev.debts||[]).filter(d => d.name || d.balance), ...newCCDebts]
+          : prev.debts,
+      };
+    });
     localStorage.setItem("flourish_last_refresh", Date.now().toString());
   } catch { /* silent failure */ }
 }
 
-function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab}){
+
+// ─── DATA TRANSPARENCY PANEL ─────────────────────────────────────────────────
+// Shows exactly how every key number is calculated — income, spending, balance,
+// what was excluded and why (credit card payments, transfers, etc.)
+function DataTransparencyPanel({data, onClose}) {
+  const [tab, setTab] = useState("income");
+  const s = {fontFamily:"'Plus Jakarta Sans',sans-serif"};
+
+  // ── Rebuild calc data with full audit trail ──────────────────────────────
+  const profile   = data.profile || {};
+  const accounts  = data.accounts || [];
+  const incomes   = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
+  const bills     = data.bills || [];
+  const txns      = data.transactions || [];
+  const now       = new Date();
+
+  // Income inputs
+  const toMonthly = (amt, freq) => {
+    const a = parseFloat(amt||0);
+    switch(freq) {
+      case "weekly":      return a * 4.333;
+      case "biweekly":    return a * 2.167;
+      case "semimonthly": return a * 2;
+      case "monthly":     return a;
+      default:            return a * 2.167;
+    }
+  };
+  const incomeRows = incomes.map(i => ({
+    label: i.label || i.type || "Income",
+    entered: parseFloat(i.amount||0),
+    freq: i.freq || "biweekly",
+    monthly: toMonthly(i.amount, i.freq),
+  }));
+  const totalMonthlyIncome = incomeRows.reduce((s,r) => s+r.monthly, 0) || 4200;
+
+  // Spending audit — this month
+  const thisMonthTxns = txns.filter(t => {
+    if (!t.date) return false;
+    const d = new Date(t.date + "T12:00:00");
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  });
+  const included = thisMonthTxns.filter(t =>
+    t.amount > 0 &&
+    t.cat !== "Transfer" &&
+    t.cat !== "Income" &&
+    t.cat !== "Fees" &&
+    !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw))
+  );
+  const excluded = thisMonthTxns.filter(t =>
+    t.amount > 0 && (
+      t.cat === "Transfer" ||
+      t.cat === "Income" ||
+      t.cat === "Fees" ||
+      CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw))
+    )
+  );
+  const totalSpend = included.reduce((s,t) => s+t.amount, 0);
+
+  // Balance audit
+  const chequingAccts = accounts.filter(a => a.type !== "credit" && a.type !== "investment");
+  const creditAccts   = accounts.filter(a => a.type === "credit" || a.type === "credit card" || a.subtype === "credit card" || a.type === "line of credit");
+  const totalBalance  = chequingAccts.reduce((s,a) => s + parseFloat(a.balance||0), 0);
+
+  // Category breakdown
+  const catBreakdown = {};
+  included.forEach(t => { catBreakdown[t.cat] = (catBreakdown[t.cat]||0) + t.amount; });
+  const catRows = Object.entries(catBreakdown).sort((a,b) => b[1]-a[1]);
+
+  const TabBtn = ({id, label}) => (
+    <button onClick={()=>setTab(id)} style={{
+      ...s, flex:1, padding:"9px 6px", fontSize:11, fontWeight:700,
+      background: tab===id ? C.green+"22" : "transparent",
+      border: tab===id ? `1px solid ${C.green}44` : `1px solid transparent`,
+      borderRadius:10, color: tab===id ? C.greenBright : C.muted, cursor:"pointer"
+    }}>{label}</button>
+  );
+
+  const Row = ({label, value, sub, color, indent=false}) => (
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",
+      padding:"9px 0",borderBottom:`1px solid ${C.border}`,paddingLeft:indent?14:0}}>
+      <div>
+        <div style={{...s,fontSize:12,color:C.cream,fontWeight:indent?400:600}}>{label}</div>
+        {sub&&<div style={{...s,fontSize:10,color:C.muted,marginTop:1}}>{sub}</div>}
+      </div>
+      <div style={{...s,fontSize:13,fontWeight:800,color:color||C.cream,flexShrink:0,marginLeft:12}}>{value}</div>
+    </div>
+  );
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:999,display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",backdropFilter:"blur(4px)"}}
+      onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{width:"100%",maxWidth:480,margin:"0 auto",background:C.bg,borderRadius:"22px 22px 0 0",
+        border:`1px solid ${C.border}`,maxHeight:"85vh",display:"flex",flexDirection:"column"}}>
+
+        {/* Header */}
+        <div style={{padding:"18px 20px 12px",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <div>
+              <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.cream}}>How it's calculated</div>
+              <div style={{...s,fontSize:11,color:C.muted,marginTop:2}}>Full audit trail of every number in Flourish</div>
+            </div>
+            <button onClick={onClose} style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,
+              borderRadius:10,padding:"8px 12px",color:C.muted,cursor:"pointer",...s,fontSize:13,minHeight:36}}>✕</button>
+          </div>
+          {/* Tabs */}
+          <div style={{display:"flex",gap:6}}>
+            <TabBtn id="income"  label="💰 Income"/>
+            <TabBtn id="spending" label="💸 Spending"/>
+            <TabBtn id="balance" label="🏦 Balance"/>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div style={{flex:1,overflowY:"auto",padding:"16px 20px 32px"}}>
+
+          {/* ── INCOME TAB ── */}
+          {tab==="income"&&<>
+            <div style={{...s,fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,marginBottom:12}}>
+              Income from your profile (what you told us)
+            </div>
+            {incomeRows.length===0&&(
+              <div style={{background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:14,padding:"14px 16px",marginBottom:8}}>
+                <div style={{...s,fontSize:12,color:C.goldBright,fontWeight:700,marginBottom:4}}>⚠️ No income entered</div>
+                <div style={{...s,fontSize:12,color:C.mutedHi,lineHeight:1.7}}>Flourish is using a default estimate of $4,200/month. Go to <strong style={{color:C.cream}}>Settings → Edit Profile</strong> to enter your real income — this affects every calculation in the app.</div>
+              </div>
+            )}
+            {incomeRows.map((r,i)=>(
+              <Row key={i}
+                label={r.label}
+                sub={`$${r.entered.toFixed(2)} × ${r.freq} = $${r.monthly.toFixed(0)}/mo`}
+                value={`$${r.monthly.toFixed(0)}/mo`}
+                color={C.greenBright}
+              />
+            ))}
+            {incomeRows.length>0&&(
+              <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",marginTop:4}}>
+                <div style={{...s,fontSize:13,fontWeight:800,color:C.cream}}>Total monthly income</div>
+                <div style={{...s,fontSize:16,fontWeight:900,color:C.greenBright,fontFamily:"'Playfair Display',serif"}}>${totalMonthlyIncome.toFixed(0)}</div>
+              </div>
+            )}
+            <div style={{marginTop:16,background:C.blue+"11",border:`1px solid ${C.blue}33`,borderRadius:14,padding:"12px 14px"}}>
+              <div style={{...s,fontSize:11,color:C.blueBright,fontWeight:700,marginBottom:4}}>ℹ️ Why transactions aren't used for income</div>
+              <div style={{...s,fontSize:11,color:C.mutedHi,lineHeight:1.7}}>
+                Credit card payments (Amex, Visa, Mastercard) appear as money coming IN on your chequing account — but they are debt repayment, not income. Using transactions for income detection caused inflated figures. Your income is based only on what you entered during setup.
+              </div>
+            </div>
+          </>}
+
+          {/* ── SPENDING TAB ── */}
+          {tab==="spending"&&<>
+            <div style={{...s,fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,marginBottom:12}}>
+              This month's spending — {now.toLocaleDateString("en-CA",{month:"long",year:"numeric"})}
+            </div>
+
+            {/* Category breakdown */}
+            {catRows.length>0&&<div style={{...s,fontSize:11,color:C.muted,marginBottom:10}}>
+              {included.length} transaction{included.length!==1?"s":""} · {excluded.length} excluded
+            </div>}
+            {catRows.length>0&&<>
+              {catRows.map(([cat,amt],i)=>(
+                <Row key={i} label={cat} value={`$${amt.toFixed(0)}`} indent/>
+              ))}
+              <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",marginTop:4}}>
+                <div style={{...s,fontSize:13,fontWeight:800,color:C.cream}}>Total included spending</div>
+                <div style={{...s,fontSize:16,fontWeight:900,color:C.redBright,fontFamily:"'Playfair Display',serif"}}>${totalSpend.toFixed(0)}</div>
+              </div>
+            </>}
+
+            {/* Excluded transactions */}
+            {excluded.length>0&&<>
+              <div style={{...s,fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,margin:"16px 0 8px"}}>
+                ✅ Excluded from spending (correctly)
+              </div>
+              {excluded.slice(0,8).map((t,i)=>(
+                <Row key={i}
+                  label={t.name}
+                  sub={`${t.cat} · excluded: ${
+                    CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))?"credit card payment" :
+                    t.cat==="Transfer"?(()=>{
+                      const matched = (data.debts||[]).find(d=>{
+                        const min=parseFloat(d.min||0), bal=parseFloat(d.balance||0);
+                        return (min>0&&Math.abs(t.amount-min)<5)||(bal>0&&Math.abs(t.amount-bal)<50);
+                      });
+                      return matched?`CC payment → ${matched.name}`:"account transfer";
+                    })():
+                    t.cat==="Fees"?"bank fee":"income"
+                  }`}
+                  value={`$${(t.amount||0).toFixed(0)}`}
+                  color={C.muted}
+                  indent
+                />
+              ))}
+              {excluded.length>8&&<div style={{...s,fontSize:11,color:C.muted,textAlign:"center",padding:"8px 0"}}>+{excluded.length-8} more excluded</div>}
+            </>}
+
+            {included.length===0&&excluded.length===0&&(
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"14px 16px",textAlign:"center"}}>
+                <div style={{fontSize:24,marginBottom:8}}>💳</div>
+                <div style={{...s,fontSize:13,color:C.mutedHi,fontWeight:600,marginBottom:4}}>No transactions this month yet</div>
+                <div style={{...s,fontSize:12,color:C.muted,lineHeight:1.65}}>Connect your bank in Settings to see live spending data, or upload a bank statement from the Transactions screen.</div>
+              </div>
+            )}
+          </>}
+
+          {/* ── BALANCE TAB ── */}
+          {tab==="balance"&&<>
+            <div style={{...s,fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,marginBottom:12}}>
+              Accounts used for your balance
+            </div>
+
+            {chequingAccts.length>0&&<>
+              <div style={{...s,fontSize:11,color:C.greenBright,fontWeight:700,marginBottom:6}}>✅ Included in balance</div>
+              {chequingAccts.map((a,i)=>(
+                <Row key={i}
+                  label={a.name}
+                  sub={`${a.institution||"Bank"} · ${a.type}`}
+                  value={`$${parseFloat(a.balance||0).toFixed(0)}`}
+                  color={C.greenBright}
+                  indent
+                />
+              ))}
+              <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",marginTop:4}}>
+                <div style={{...s,fontSize:13,fontWeight:800,color:C.cream}}>Available balance</div>
+                <div style={{...s,fontSize:16,fontWeight:900,color:C.greenBright,fontFamily:"'Playfair Display',serif"}}>${totalBalance.toFixed(0)}</div>
+              </div>
+            </>}
+
+            {creditAccts.length>0&&<>
+              <div style={{...s,fontSize:11,color:C.redBright,fontWeight:700,margin:"16px 0 6px"}}>⚠️ Credit cards — liabilities, not balance</div>
+              {creditAccts.map((a,i)=>(
+                <Row key={i}
+                  label={a.name}
+                  sub={`${a.institution||"Bank"} · credit — excluded from balance, shown as debt`}
+                  value={`−$${Math.abs(parseFloat(a.balance||0)).toFixed(0)}`}
+                  color={C.redBright}
+                  indent
+                />
+              ))}
+              <div style={{marginTop:8,background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:12,padding:"10px 12px"}}>
+                <div style={{...s,fontSize:11,color:C.goldBright,lineHeight:1.65}}>
+                  💡 Credit card balances are liabilities — they reduce your net worth but are NOT deducted from your chequing balance. Your "balance" in Flourish always means available cash, not net position.
+                </div>
+              </div>
+            </>}
+
+            {accounts.length===0&&(
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"14px 16px",textAlign:"center"}}>
+                <div style={{fontSize:24,marginBottom:8}}>🏦</div>
+                <div style={{...s,fontSize:13,color:C.mutedHi,fontWeight:600,marginBottom:4}}>No accounts connected</div>
+                <div style={{...s,fontSize:12,color:C.muted}}>Connect your bank in Settings to see live balance data.</div>
+              </div>
+            )}
+            {chequingAccts.length>0&&creditAccts.length>0&&(
+              <div style={{marginTop:12,background:C.teal+"11",border:`1px solid ${C.teal}33`,borderRadius:14,padding:"12px 14px"}}>
+                <div style={{...s,fontSize:11,color:C.tealBright,fontWeight:700,marginBottom:4}}>📊 Net cash position</div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div style={{...s,fontSize:12,color:C.mutedHi}}>
+                    Cash (${totalBalance.toFixed(0)}) − Credit owed (${creditAccts.reduce((s,a)=>s+Math.abs(parseFloat(a.balance||0)),0).toFixed(0)})
+                  </div>
+                  <div style={{...s,fontSize:14,fontWeight:900,fontFamily:"'Playfair Display',serif",
+                    color:(totalBalance - creditAccts.reduce((s,a)=>s+Math.abs(parseFloat(a.balance||0)),0))>=0?C.greenBright:C.redBright}}>
+                    ${(totalBalance - creditAccts.reduce((s,a)=>s+Math.abs(parseFloat(a.balance||0)),0)).toFixed(0)}
+                  </div>
+                </div>
+              </div>
+            )}
+          </>}
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false}){
   const [mounted,setMounted]=useState(false);
   const [expandedTile,setExpandedTile]=useState(null);
   const [showCustomize,setShowCustomize]=useState(false);
+  const [showTransparency,setShowTransparency]=useState(false);
   const [nwHistory,setNwHistory]=useState(()=>getNetWorthHistory());
+  const [affordInput, setAffordInput] = useState("");
+  const [affordResult, setAffordResult] = useState(null);
+  const [affordFocused, setAffordFocused] = useState(false);
   useEffect(()=>{const t=setTimeout(()=>setMounted(true),60);return()=>clearTimeout(t);},[]);
   useEffect(()=>{
     if(data.bankConnected) {
@@ -3406,7 +4493,11 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const _ss         = SafeSpendEngine.calculate(data);
   const bal         = _ss.balance;
   const safe        = _ss.safeAmount;
-  const overdraft   = _ss.overdraft;
+  // overdraft: either bills in next 10 days exceed balance (immediate)
+  // OR forecast shows negative balance within 7 days (imminent)
+  // sevenDayRisk is calculated below — use a temporary check here with SafeSpend only,
+  // then upgrade after sevenDayRisk is available
+  const overdraftImmediate = _ss.overdraft;
   const soonBills   = _ss.soonBills;
   const soonTotal   = _ss.upcomingBills;
   const today       = new Date().getDate();
@@ -3424,8 +4515,8 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const spark=[-4200,-3800,-3100,-2600,-1900,netWorth];
   const sMin=Math.min(...spark),sMax=Math.max(...spark);
   const sN=spark.map(v=>90-((v-sMin)/(sMax-sMin)||0)*70);
-  const heroColor=overdraft?C.red:C.green;
-  const heroColorBright=overdraft?C.redBright:C.greenBright;
+  const heroColor=overdraftImmediate?C.red:sevenDayOverdraft?C.gold:C.green;
+  const heroColorBright=overdraftImmediate?C.redBright:sevenDayOverdraft?C.goldBright:C.greenBright;
   const {score:healthScore,pillars}=calcHealthScore(data);
   const adjScore=Math.min(100,healthScore+(checkInBonus||0));
   const scoreColor=adjScore>=80?C.greenBright:adjScore>=65?C.tealBright:adjScore>=50?C.goldBright:adjScore>=35?C.orangeBright:C.redBright;
@@ -3437,6 +4528,13 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   // ── Generative priority logic ────────────────────────────────────────────────
   const urgentBill = soonBills.find(b=>parseInt(b.date)-today<=2);
   const isPayday   = today===15||today===1; // simple heuristic
+  // 7-day forecast — calculated once here, shared with priority filter tile
+  const { overdraftRisk: sevenDayRisk, willGoNegative: sevenDayOverdraft } = ForecastEngine.generate(data, 7);
+  // Combined overdraft signal: immediate (10-day window) OR imminent (7-day forecast)
+  const overdraft = overdraftImmediate || sevenDayOverdraft;
+  // 14-day forecast — shared with "Can I afford this?" widget. No per-keystroke calls.
+  const { forecast: afford14Forecast } = ForecastEngine.generate(data, 14);
+  const nextPaydayDay = afford14Forecast.find(f => f.isPayday && f.day > 0)?.day || null;
 
   // ── Style helpers ────────────────────────────────────────────────────────────
   const anim=(delay=0,extra={})=>mounted?{animation:`fadeUp 0.55s cubic-bezier(.16,1,.3,1) ${delay}ms both`,...extra}:{opacity:0,...extra};
@@ -3463,10 +4561,11 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   return (
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       {showCustomize&&dashLayout&&<DashCustomize layout={dashLayout} onChange={setDashLayout} onClose={()=>setShowCustomize(false)}/>}
+      {showTransparency&&<DataTransparencyPanel data={data} onClose={()=>setShowTransparency(false)}/>}
 
       {/* ── Top status bar ───────────────────────────────────────────────── */}
       <div style={{...anim(0),display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:2}}>
-        <div style={{display:"flex",alignItems:"center",gap:7,background:"rgba(0,204,133,0.06)",border:"1px solid rgba(0,204,133,0.12)",borderRadius:99,padding:"4px 10px"}}>
+        <div onClick={()=>setShowTransparency(true)} style={{display:"flex",alignItems:"center",gap:7,background:"rgba(0,204,133,0.06)",border:"1px solid rgba(0,204,133,0.12)",borderRadius:99,padding:"4px 10px",cursor:"pointer"}} title="How is this calculated?">
           <div style={{width:6,height:6,borderRadius:"50%",background:C.green,boxShadow:`0 0 8px ${C.green}`,animation:"pulse 2.8s ease-in-out infinite",flexShrink:0}}/>
           <span style={{color:C.green,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>Live</span>
           <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{
@@ -3501,16 +4600,59 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         </button>
       </div>
 
-      {/* ── Sample data banner — before bento so it reads as a context setter ── */}
-      {(!data.transactions||data.transactions.length===0)&&(
-        <div style={{...anim(50),...glass(C.gold,C.gold+"28"),borderRadius:16,padding:"11px 16px",display:"flex",gap:10,alignItems:"center"}}>
-          <span style={{fontSize:16,flexShrink:0}}>🔗</span>
-          <div style={{flex:1}}>
-            <span style={{color:C.goldBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Sample data shown</span>
-            <span style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginLeft:6}}>Connect your bank in Settings</span>
+      {/* ── Pre-bank estimated insight — replaces generic "sample data" banner ── */}
+      {(!data.transactions||data.transactions.length===0)&&(()=>{
+        // Calculate a real estimate from their onboarding data
+        const toMo = (amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="monthly"?a:a*2.167;};
+        const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
+        const monthlyBills = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
+        const safetyBuffer = monthlyIncome * 0.15;
+        const estimatedSpend = monthlyIncome * 0.68; // avg spend rate
+        const surplus = monthlyIncome - monthlyBills - safetyBuffer;
+        const overspend = estimatedSpend - (monthlyIncome - monthlyBills - safetyBuffer);
+        const hasData = monthlyIncome > 0;
+        return(
+          <div style={{...anim(50),background:hasData?(overspend>0?C.red+"12":C.green+"10"):C.gold+"10",
+            border:`1px solid ${hasData?(overspend>0?C.red+"33":C.green+"30"):C.gold+"33"}`,
+            borderRadius:16,padding:"14px 16px",cursor:"pointer"}}
+            onClick={()=>setScreen("coach")}>
+            <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+              <span style={{fontSize:20,flexShrink:0}}>{hasData?(overspend>0?"⚠️":"💡"):"🔗"}</span>
+              <div style={{flex:1}}>
+                {hasData?(
+                  <>
+                    <div style={{color:overspend>0?C.redBright:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:3}}>
+                      {overspend>0
+                        ? `Based on your setup, you may be overspending by $${Math.round(overspend).toLocaleString()}/mo`
+                        : `Based on your setup, you have ~$${Math.round(Math.max(0,surplus)).toLocaleString()}/mo to work with`}
+                    </div>
+                    <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>
+                      {overspend>0
+                        ? "Connect your bank to see exactly where it's going — and fix it."
+                        : "Connect your bank to track it live and make it work harder."}
+                    </div>
+                    <div style={{marginTop:8,display:"flex",gap:8}}>
+                      <button onClick={e=>{e.stopPropagation();setScreen("coach");}} style={{background:overspend>0?C.red+"22":C.green+"22",border:`1px solid ${overspend>0?C.red+"44":C.green+"44"}`,borderRadius:99,padding:"6px 14px",color:overspend>0?C.redBright:C.greenBright,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                        Ask Coach →
+                      </button>
+                      <button onClick={e=>{e.stopPropagation();window.dispatchEvent(new CustomEvent("flourish:settings"));}} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,borderRadius:99,padding:"6px 14px",color:C.mutedHi,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                        Connect Bank
+                      </button>
+                    </div>
+                  </>
+                ):(
+                  <>
+                    <span style={{color:C.goldBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Estimates based on your setup</span>
+                    <span style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginLeft:6}}>Connect your bank for live data</span>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* Income accuracy: folded into priority tile below */}
 
       {/* ═══════════════════════════════════════════════════════════════════
           BENTO GRID — rendered in user's custom order from dashLayout
@@ -3518,10 +4660,13 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
 
         {/* ── HERO: Safe to Spend ── full width ─────────────────────────── */}
+        {isVisible('hero')&&(
         <div style={{...anim(60),cursor:"pointer",position:"relative",overflow:"hidden",borderRadius:28,
-          background:overdraft
+          background:overdraftImmediate
             ?(C.isDark?"linear-gradient(155deg,rgba(24,6,16,0.92) 0%,rgba(32,8,16,0.85) 45%,rgba(12,5,10,0.90) 100%)":"linear-gradient(155deg,rgba(255,240,244,0.96) 0%,rgba(255,232,238,0.94) 45%,rgba(244,241,235,0.96) 100%)")
-            :(C.isDark?"linear-gradient(155deg,rgba(5,21,9,0.92) 0%,rgba(8,30,13,0.85) 45%,rgba(6,10,14,0.90) 100%)":"linear-gradient(155deg,rgba(236,252,244,0.96) 0%,rgba(228,250,238,0.94) 45%,rgba(244,241,235,0.96) 100%)"),
+            :sevenDayOverdraft
+              ?(C.isDark?"linear-gradient(155deg,rgba(24,16,6,0.92) 0%,rgba(32,22,8,0.85) 45%,rgba(12,9,5,0.90) 100%)":"linear-gradient(155deg,rgba(255,248,236,0.96) 0%,rgba(255,244,220,0.94) 45%,rgba(244,241,235,0.96) 100%)")
+              :(C.isDark?"linear-gradient(155deg,rgba(5,21,9,0.92) 0%,rgba(8,30,13,0.85) 45%,rgba(6,10,14,0.90) 100%)":"linear-gradient(155deg,rgba(236,252,244,0.96) 0%,rgba(228,250,238,0.94) 45%,rgba(244,241,235,0.96) 100%)"),
           backdropFilter:"blur(24px)",
           WebkitBackdropFilter:"blur(24px)",
           border:`1px solid ${heroColor}28`,
@@ -3534,35 +4679,224 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           <div style={{position:"absolute",inset:0,backgroundImage:`radial-gradient(circle,${heroColor}18 1px,transparent 1px)`,backgroundSize:"24px 24px",pointerEvents:"none",opacity:0.45,maskImage:"radial-gradient(ellipse 100% 80% at 50% 50%,black 40%,transparent 100%)"}}/>
           <div style={{position:"relative",padding:"24px 24px 20px"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-              <div style={{width:6,height:6,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 10px ${heroColor}`}}/>
+              <div style={{width:6,height:6,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 10px ${heroColor}`,animation:"pulse 2.5s ease-in-out infinite"}}/>
               <span style={{color:heroColorBright+"99",fontSize:9,textTransform:"uppercase",letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Today's Safe Limit</span>
+              {data.bankConnected&&<span style={{color:heroColorBright+"55",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· live</span>}
             </div>
-            <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.88,marginBottom:18}}>
+            <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.88,marginBottom:18,position:"relative",display:"inline-block"}}>
               <span style={{fontSize:24,color:heroColorBright+"77",verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
-              <span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`}}>
-                <CountUp to={safe} decimals={2} dur={1200}/>
+              <span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`,
+                transition:"opacity .3s",opacity:isRefreshing?0.4:1}}>
+                <CountUp to={safe} decimals={0} dur={300}/>
               </span>
+              {/* Shimmer bar — signals live update in progress */}
+              {isRefreshing&&(
+                <div style={{position:"absolute",bottom:-6,left:0,right:0,height:2,borderRadius:99,
+                  background:`linear-gradient(90deg,transparent 0%,${heroColorBright} 50%,transparent 100%)`,
+                  backgroundSize:"200% 100%",animation:"shimmer 1.2s ease-in-out infinite"}}/>
+              )}
             </div>
-            {/* Balance + accounts breakdown */}
+            {/* ── Timestamp — hidden during refresh to avoid contradiction ── */}
+            {data.bankConnected&&!isRefreshing&&(()=>{
+              const lastRefresh = parseInt(localStorage.getItem("flourish_last_refresh")||"0");
+              if (!lastRefresh) return null;
+              const mins = Math.round((Date.now()-lastRefresh)/60000);
+              const label = mins < 1 ? "just updated" : mins < 60 ? `updated ${mins}m ago` : mins < 1440 ? `updated ${Math.floor(mins/60)}h ago` : "updated today";
+              return (
+                <div style={{color:heroColorBright+"44",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:500,letterSpacing:0.3,marginBottom:4}}>
+                  {label}
+                </div>
+              );
+            })()}
+            {/* ── Inline math proof — one line, no tap required ── */}
+            {(()=>{
+              const accts = data.accounts||[];
+              const chequing = accts.filter(a=>a.type==="checking"||a.type==="depository").reduce((s,a)=>s+(a.balance||0),0);
+              const savings  = accts.filter(a=>a.type==="savings").reduce((s,a)=>s+(a.balance||0),0);
+              const totalBalance = data.bankConnected ? (chequing||savings||bal)||0 : null;
+              const billsTotal  = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
+              const bufferAmt   = monthlyIncome * 0.15;
+              // Overdraft: show a focused warning instead of the math
+              if (overdraft) return (
+                <div style={{marginBottom:14}}>
+                  <div style={{color:overdraftImmediate?C.redBright+"88":C.goldBright+"88",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
+                    {overdraftImmediate
+                      ? "Bills exceed your balance — tap to see forecast and fix it"
+                      : "You will overdraft within 7 days — tap to see what's coming"}
+                  </div>
+                </div>
+              );
+              // Proof: max 2 parts — balance + biggest deduction. Scannable, not a math lesson.
+              const balLabel = totalBalance!=null ? `$${totalBalance.toFixed(0)} balance` : `~$${(bal||0).toFixed(0)}`;
+              const bigDeduct = billsTotal > bufferAmt
+                ? (billsTotal > 0 ? `$${billsTotal.toFixed(0)} in bills` : null)
+                : (bufferAmt > 0 ? `$${bufferAmt.toFixed(0)} safety buffer` : null);
+              const proofLine = bigDeduct ? `${balLabel} · minus ${bigDeduct}` : balLabel;
+              return (
+                <div style={{marginBottom:14}}>
+                  <div style={{color:heroColorBright+"66",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2,lineHeight:1.5}}>
+                    {proofLine} → <strong style={{color:heroColorBright+"99"}}>${Math.max(0,safe).toFixed(0)} today</strong>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── Can I afford this? ──────────────────────────────────────
+                Pure math. No AI call. Instant answer.
+                Subtracts from safe amount → one of three states.
+            ─────────────────────────────────────────────────────────────── */}
+            {/* Afford widget: hidden if immediate overdraft (balance already negative-bound)
+                but shown with warning if only 7-day forecast overdraft */}
+            {!overdraftImmediate&&<div style={{marginTop:16,borderTop:`1px solid ${heroColor}18`,paddingTop:14}}
+              onClick={e=>e.stopPropagation()}>
+              {(()=>{
+                // R1: Uses pre-calculated nextPaydayDay — no ForecastEngine call per keystroke
+                const checkAfford = (raw) => {
+                  const amt = parseFloat(raw.replace(/[^0-9.]/g,""));
+                  // R10: cap at $99,999 — avoids absurd results
+                  if (!amt || amt <= 0 || amt > 99999) { setAffordResult(null); return; }
+                  const remaining = safe - amt;
+                  // R2: Threshold is 10% of safe — scales with the user's actual situation
+                  const tightThreshold = Math.max(10, safe * 0.10);
+                  const waitMsg = nextPaydayDay === 1
+                    ? "tomorrow"
+                    : nextPaydayDay
+                      ? `in ${nextPaydayDay} day${nextPaydayDay===1?"":"s"}`
+                      : "after your next paycheck";
+                  if (remaining >= tightThreshold) {
+                    setAffordResult({
+                      state: "yes",
+                      msg: "Yes — you can afford this",
+                      sub: `$${remaining.toFixed(0)} left in your safe limit today`,
+                      color: C.green,
+                    });
+                  } else if (remaining >= 0) {
+                    // R6: $0 remaining says "Nothing left" not "Only $0 left"
+                    const leftMsg = remaining < 1 ? "Nothing left after this" : `Only $${remaining.toFixed(0)} left`;
+                    setAffordResult({
+                      state: "tight",
+                      msg: "You can — but it's tight",
+                      sub: `${leftMsg}. Hold everything else today.`,
+                      color: C.gold,
+                    });
+                  } else {
+                    setAffordResult({
+                      state: "no",
+                      msg: "Not right now",
+                      sub: `This puts you $${Math.abs(remaining).toFixed(0)} over your limit. Wait ${waitMsg}.`,
+                      color: C.red,
+                    });
+                  }
+                };
+
+                return (
+                  <div>
+                    <div style={{color:heroColorBright+"66",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>
+                      Can I afford this?
+                    </div>
+                    <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                      <div style={{position:"relative",flex:1}}>
+                        <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:affordFocused||affordInput?heroColorBright:C.muted,fontSize:14,fontWeight:700,pointerEvents:"none",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$</span>
+                        {/* R7: type=text+inputMode=decimal — shows numeric keyboard, respects placeholder */}
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          value={affordInput}
+                          onFocus={()=>setAffordFocused(true)}
+                          onBlur={()=>setAffordFocused(false)}
+                          onChange={e=>{setAffordInput(e.target.value);checkAfford(e.target.value);}}
+                          style={{
+                            width:"100%",background:"rgba(255,255,255,0.06)",
+                            border:`1px solid ${affordFocused?heroColor+"66":heroColor+"22"}`,
+                            borderRadius:12,padding:"10px 12px 10px 26px",
+                            color:C.cream,fontSize:15,fontWeight:700,
+                            fontFamily:"'Plus Jakarta Sans',sans-serif",
+                            outline:"none",transition:"border-color .15s",
+                            /* R4: hide number spinners */
+                            WebkitAppearance:"none",MozAppearance:"textfield",
+                          }}
+                        />
+                      </div>
+                      {affordInput&&(
+                        <button onClick={()=>{setAffordInput("");setAffordResult(null);}}
+                          style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${heroColor}22`,borderRadius:10,padding:"10px 12px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0,minHeight:40,minWidth:40,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                          ✕
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Quick-tap presets — scaled to actual safe amount so every preset is meaningful */}
+                    {!affordResult&&!affordInput&&safe>0&&(()=>{
+                      // Generate 3 presets relative to safe: ~25%, ~50%, ~90%
+                      // Round to nearest $5 for clean numbers, min $1
+                      const p = (pct) => Math.max(1, Math.round((safe * pct) / 5) * 5);
+                      const presets = [p(0.25), p(0.50), p(0.90)]
+                        .filter((v,i,a) => a.indexOf(v) === i) // dedupe
+                        .slice(0, 3);
+                      return (
+                        <div style={{display:"flex",gap:6,marginTop:8}}>
+                          {presets.map(amt=>(
+                            <button key={amt} onClick={()=>{setAffordInput(String(amt));checkAfford(String(amt));}}
+                              style={{flex:1,background:heroColor+"0D",border:`1px solid ${heroColor}22`,borderRadius:10,
+                                padding:"7px 0",color:heroColorBright+"88",fontSize:12,fontWeight:700,cursor:"pointer",
+                                fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .15s",minHeight:34}}
+                              onMouseEnter={e=>{e.currentTarget.style.background=heroColor+"22";e.currentTarget.style.color=heroColorBright;}}
+                              onMouseLeave={e=>{e.currentTarget.style.background=heroColor+"0D";e.currentTarget.style.color=heroColorBright+"88";}}>
+                              ${amt}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Result — tappable to dismiss */}
+                    {affordResult&&(
+                      <div onClick={()=>{setAffordResult(null);setAffordInput("");}}
+                        style={{
+                          marginTop:10,padding:"10px 14px",borderRadius:12,
+                          background:affordResult.color+"14",
+                          border:`1px solid ${affordResult.color}33`,
+                          display:"flex",alignItems:"flex-start",gap:10,
+                          animation:"fadeIn 0.2s ease",
+                          cursor:"pointer",
+                        }}>
+                        <span style={{fontSize:16,flexShrink:0,marginTop:1}}>
+                          {affordResult.state==="yes"?"✅":affordResult.state==="tight"?"⚠️":"❌"}
+                        </span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{color:affordResult.state==="yes"?C.greenBright:affordResult.state==="tight"?C.goldBright:C.redBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.3}}>
+                            {affordResult.msg}
+                          </div>
+                          <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3,lineHeight:1.5}}>
+                            {affordResult.sub}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>}
+
+            {/* ── Bottom row: actions + tap affordance ── */}
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-              <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
-                {(()=>{
-                  const accts = data.accounts||[];
-                  const chequing = accts.filter(a=>a.type==="checking"||a.type==="depository").reduce((s,a)=>s+(a.balance||0),0);
-                  const savings = accts.filter(a=>a.type==="savings").reduce((s,a)=>s+(a.balance||0),0);
-                  const creditOwed = accts.filter(a=>a.type==="credit").reduce((s,a)=>s+Math.abs(a.balance||0),0);
-                  return <>
-                    {chequing > 0 && <div><span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:0.8}}>Chequing</span><div style={{color:C.greenBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${(chequing||0).toFixed(2)}</div></div>}
-                    {savings > 0 && <div><span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:0.8}}>Savings</span><div style={{color:C.tealBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${(savings||0).toFixed(2)}</div></div>}
-                    {creditOwed > 0 && <div><span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:0.8}}>Credit Owing</span><div style={{color:C.red,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>–${(creditOwed||0).toFixed(2)}</div></div>}
-                    {chequing === 0 && savings === 0 && creditOwed === 0 && <div><span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Balance </span><span style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>${(bal||0).toFixed(2)}</span></div>}
-                  </>;
-                })()}
-                <span style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>· bills out</span>
-              </div>
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                {onWhatIf&&<button onClick={e=>{e.stopPropagation();onWhatIf();}} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:10,padding:"5px 11px",borderRadius:99,cursor:"pointer"}}>What if? →</button>}
-                <span style={{color:heroColor,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Forecast →</span>
+                {onWhatIf&&<button onClick={e=>{e.stopPropagation();onWhatIf();}} style={{background:"rgba(255,255,255,0.08)",border:`1px solid rgba(255,255,255,0.12)`,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:10,padding:"6px 12px",borderRadius:99,cursor:"pointer",minHeight:36}}>What if? →</button>}
+              </div>
+              {/* Tap affordance — prominent pill, clear action */}
+              <div onClick={e=>{e.stopPropagation();overdraft?setScreen("plan"):setShowTransparency(true);}}
+                style={{display:"flex",alignItems:"center",gap:6,
+                  background:`linear-gradient(135deg,${heroColor}22,${heroColor}12)`,
+                  border:`1px solid ${heroColor}44`,
+                  borderRadius:99,padding:"10px 16px",cursor:"pointer",minHeight:44,
+                  transition:"all .15s",boxShadow:`0 2px 12px ${heroColor}20`}}
+                onMouseEnter={e=>{e.currentTarget.style.background=`linear-gradient(135deg,${heroColor}33,${heroColor}22)`;e.currentTarget.style.boxShadow=`0 4px 20px ${heroColor}35`;}}
+                onMouseLeave={e=>{e.currentTarget.style.background=`linear-gradient(135deg,${heroColor}22,${heroColor}12)`;e.currentTarget.style.boxShadow=`0 2px 12px ${heroColor}20`;}}>
+                <span style={{color:heroColorBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,letterSpacing:0.2}}>
+                  {overdraft?"Fix this":"Why this number?"}
+                </span>
+                <span style={{color:heroColorBright,fontSize:14,lineHeight:1}}>→</span>
               </div>
             </div>
             {overdraft&&<div style={{marginTop:12,padding:"10px 14px",background:C.red+"18",borderRadius:14,border:`1px solid ${C.red}33`,color:C.cream,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
@@ -3570,13 +4904,15 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             </div>}
           </div>
         </div>
+        )}
 
         {/* ── BENTO ROW 1: 3 mini stat tiles inside 2-col span ──────────── */}
+        {isVisible('bento')&&(
         <div style={{...anim(110),display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
           {[
             {label:"Due Soon",value:`$${(soonTotal||0).toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
             {label:totalDebt>0?"Total Debt":"Debt Free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
-            {label:"Net Worth",value:`${netWorth>=0?"+":""}$${(Math.abs(netWorth)/1000).toFixed(1)}k`,sub:"total net worth",color:C.teal,icon:"chartUp",screen:"plan"},
+            {label:"Net Worth",value:`${netWorth>=0?"+":""}$${(Math.abs(netWorth)/1000).toFixed(1)}k`,sub:"total net worth",color:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
           ].map((s,i)=>(
             <div key={i} onClick={()=>{if(s.tab&&setGoalsTab)setGoalsTab(s.tab);setScreen(s.screen);}} style={{...glass(s.color),borderRadius:20,padding:"14px 12px 12px",textAlign:"center",position:"relative",overflow:"hidden",cursor:"pointer",transition:"transform .2s, box-shadow .2s"}}
               onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 12px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)`;}}
@@ -3591,8 +4927,10 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             </div>
           ))}
         </div>
+        )}
 
         {/* ── HEALTH + STREAK — 2-col row ─────────────────────────────────── */}
+        {isVisible('healthrow')&&(
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
         <div style={{...anim(140),...glass(scoreBase),borderRadius:24,padding:"18px 16px 16px",position:"relative",overflow:"hidden"}}>
           <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at 0% 100%,${scoreBase}18 0%,transparent 65%)`,pointerEvents:"none"}}/>
@@ -3617,7 +4955,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         </div>
 
         {/* ── STREAK + GOALS — right tile ───────────────────────────────── */}
-        <div style={{...anim(140),...glass(C.gold),borderRadius:24,padding:"18px 16px 16px",position:"relative",overflow:"hidden",cursor:"pointer"}} onClick={()=>setScreen("goals")}>
+        <div style={{...anim(140),...glass(C.gold),borderRadius:24,padding:"18px 16px 16px",position:"relative",overflow:"hidden",cursor:"pointer"}} onClick={()=>{if(setGoalsTab)setGoalsTab("goals");setScreen("goals");}}>
           <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at 100% 0%,${C.gold}14 0%,transparent 60%)`,pointerEvents:"none"}}/>
           <div style={{position:"relative"}}>
             <div style={{...label11(C.muted),marginBottom:10}}>Savings Streak</div>
@@ -3641,30 +4979,90 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           </div>
         </div>
 
-        </div>{/* end health+streak 2-col */}
-        {/* ── GENERATIVE TILE: urgent bill warning if needed ─────────────── */}
-        {urgentBill&&(
-          <div style={{...anim(170),...glass(C.red,C.red+"33"),borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("plan")}>
-            <div style={{width:44,height:44,borderRadius:14,background:C.red+"20",border:`1px solid ${C.red}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>⚠️</div>
-            <div style={{flex:1}}>
-              <div style={{color:C.redBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{urgentBill.name} due in {parseInt(urgentBill.date)-today} day{parseInt(urgentBill.date)-today===1?"":"s"}</div>
-              <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>${urgentBill.amount} will be deducted · Tap to see full forecast</div>
-            </div>
-            <span style={{color:C.red,fontSize:18}}>→</span>
-          </div>
+        </div>
         )}
+        {/* ── SINGLE VOICE: priority-filtered action tile ──────────────────
+        {isVisible('action')&&(
+            Only ONE system speaks at a time. Priority order:
+            0. Income not set / suspiciously high → data quality, affects everything
+            1. Overdraft risk (from forecast)     → urgent, act now
+            2. Urgent bill ≤2 days               → time-sensitive
+            3. Payday                            → money decision moment
+            Nothing else competes here.
+        ─────────────────────────────────────────────────────────────────── */}
+        {(()=>{
+          // Uses sevenDayRisk pre-calculated above — no duplicate ForecastEngine call
+          const isForecastOverdraft = sevenDayOverdraft && sevenDayRisk.length > 0;
 
-        {/* ── PAYDAY SAVINGS NUDGE: generative, only on payday ─────────── */}
-        {isPayday&&!urgentBill&&(
-          <div style={{...anim(170),...glass(C.green,C.green+"33"),borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("goals")}>
-            <div style={{width:44,height:44,borderRadius:14,background:C.green+"20",border:`1px solid ${C.green}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>💸</div>
-            <div style={{flex:1}}>
-              <div style={{color:C.greenBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Payday! Save before you spend</div>
-              <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>Transfer ${((safe||0)*0.2).toFixed(0)} to savings first · See your goals</div>
-            </div>
-            <span style={{color:C.green,fontSize:18}}>→</span>
-          </div>
-        )}
+          // Priority 0 — income data quality (affects every calculation)
+          const incomeCheck = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0);
+          const toMoCheck = (amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="monthly"?a:a*2.167;};
+          const totalMoCheck = incomeCheck.reduce((s,i)=>s+toMoCheck(i.amount,i.freq),0);
+          const incomeUsingDefault = incomeCheck.length === 0;
+          const incomeSuspicious = totalMoCheck > 25000;
+          if (incomeUsingDefault || incomeSuspicious) {
+            return (
+              <div style={{...anim(170),background:C.gold+"0D",border:`1px solid ${C.gold}33`,borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setShowTransparency(true)}>
+                <div style={{width:44,height:44,borderRadius:14,background:C.gold+"18",border:`1px solid ${C.gold}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>💰</div>
+                <div style={{flex:1}}>
+                  <div style={{color:C.goldBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                    {incomeUsingDefault?"Income not set — every number is an estimate":`Income showing $${totalMoCheck.toLocaleString()}/mo — does this look right?`}
+                  </div>
+                  <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>
+                    {incomeUsingDefault?"Tap to set your income — takes 30 seconds":"Tap to see how this is calculated"}
+                  </div>
+                </div>
+                <span style={{color:C.goldBright,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0}}>Fix →</span>
+              </div>
+            );
+          }
+
+          // Priority 1 — forecast overdraft within 7 days
+          if (isForecastOverdraft) {
+            const firstNeg = sevenDayRisk[0];
+            return (
+              <div style={{...anim(170),background:"rgba(255,60,80,0.10)",border:`1px solid ${C.red}44`,borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("plan")}>
+                <div style={{width:44,height:44,borderRadius:14,background:C.red+"20",border:`1px solid ${C.red}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>⚠️</div>
+                <div style={{flex:1}}>
+                  <div style={{color:C.redBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Projected overdraft in {firstNeg.day} day{firstNeg.day===1?"":"s"}</div>
+                  <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>Your balance will go negative — tap to see which bills cause this and fix it now.</div>
+                </div>
+                <span style={{color:C.redBright,fontSize:18,fontWeight:700}}>Fix →</span>
+              </div>
+            );
+          }
+
+          // Priority 2 — urgent bill ≤2 days
+          if (urgentBill) {
+            return (
+              <div style={{...anim(170),background:"rgba(232,184,75,0.08)",border:`1px solid ${C.gold}44`,borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("plan")}>
+                <div style={{width:44,height:44,borderRadius:14,background:C.gold+"18",border:`1px solid ${C.gold}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>📅</div>
+                <div style={{flex:1}}>
+                  <div style={{color:C.goldBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{urgentBill.name} due in {parseInt(urgentBill.date)-today} day{parseInt(urgentBill.date)-today===1?"":"s"}</div>
+                  <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>${urgentBill.amount} coming out · Tap to see full forecast</div>
+                </div>
+                <span style={{color:C.goldBright,fontSize:18}}>→</span>
+              </div>
+            );
+          }
+
+          // Priority 3 — payday
+          if (isPayday) {
+            return (
+              <div style={{...anim(170),background:"rgba(0,204,133,0.07)",border:`1px solid ${C.green}33`,borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("goals")}>
+                <div style={{width:44,height:44,borderRadius:14,background:C.green+"18",border:`1px solid ${C.green}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>💸</div>
+                <div style={{flex:1}}>
+                  <div style={{color:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Payday — save before you spend</div>
+                  <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>Transfer ${((safe||0)*0.2).toFixed(0)} now and you'll barely notice it · See your goals</div>
+                </div>
+                <span style={{color:C.greenBright,fontSize:18}}>→</span>
+              </div>
+            );
+          }
+
+          // Nothing urgent — tile stays silent
+          return null;
+        })()}
 
         {/* ── NET WORTH SPARKLINE — full width ──────────────────────────── */}
         {isVisible('networth')&&<div style={{...anim(190),...tileStyle('networth'),...glass(C.teal),borderRadius:22,padding:"18px 20px 16px"}}>
@@ -3704,12 +5102,48 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         </div>}
 
         {/* ── DECISION ENGINE ───────────────────────────────────────────── */}
-        {isVisible('decision')&&<div style={{...anim(210),...tileStyle('decision'),...glass(C.purple),borderRadius:22,overflow:"hidden"}}>
+        {isVisible('decision')&&<div style={{...anim(210),...tileStyle('decision'),background:C.isDark?"rgba(155,125,255,0.04)":"rgba(155,125,255,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.purple}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden"}}>
           <DecisionEngine data={data} safe={safe} bal={bal} monthlyIncome={monthlyIncome} soonBills={soonBills} todayDate={today} setScreen={setScreen}/>
         </div>}
 
+        {/* ── OVER-BUDGET NUDGE (dashboard) ─────────────────────────────── */}
+        {(()=>{
+          const budgets = data.budgets||{};
+          if(!Object.keys(budgets).length) return null;
+          const now = new Date();
+          const monthTxns = (data.transactions||[]).filter(t=>{
+            try{const d=new Date(t.date+"T12:00:00");return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()&&t.amount>0;}catch{return false;}
+          });
+          const monthSpend = {};
+          monthTxns.forEach(t=>{ monthSpend[t.cat]=(monthSpend[t.cat]||0)+t.amount; });
+          const overCats = Object.entries(budgets).filter(([cat,limit])=>(monthSpend[cat]||0)>limit);
+          if(!overCats.length) return null;
+          const totalOver = overCats.reduce((s,[cat,limit])=>s+((monthSpend[cat]||0)-limit),0);
+          const catEmojis={"Groceries":"🛒","Coffee & Dining":"☕","Gas & Transport":"🚗","Shopping":"🛍️","Clothing":"👗","Subscriptions":"📱","Health":"💊","Personal Care":"🧴","Entertainment":"🎬","Hobbies & Sports":"🎯","Kids & Extracurricular":"🧒","Kids & Activities":"🧒","Travel":"✈️","Home":"🏠","Education":"📚"};
+          return (
+            <div style={{...anim(215),background:"rgba(255,80,80,0.06)",backdropFilter:"blur(20px)",
+              WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.red}33`,borderRadius:16,
+              padding:"12px 14px",cursor:"pointer"}} onClick={()=>setScreen("spend")}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <div style={{color:C.redBright,fontWeight:800,fontSize:13}}>
+                  ⚠️ Over budget · ${Math.round(totalOver).toLocaleString()} this month
+                </div>
+                <span style={{color:C.muted,fontSize:11}}>View →</span>
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                {overCats.map(([cat,limit])=>(
+                  <span key={cat} style={{background:C.red+"22",border:`1px solid ${C.red}33`,
+                    borderRadius:99,padding:"3px 8px",fontSize:10,color:C.redBright,fontWeight:600}}>
+                    {catEmojis[cat]||""} {cat} +${Math.round((monthSpend[cat]||0)-limit)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ── AUTOPILOT ─────────────────────────────────────────────────── */}
-        {isVisible('autopilot')&&<div style={{...anim(225),...tileStyle('autopilot'),...glass(C.blue),borderRadius:22,overflow:"hidden"}}>
+        {isVisible('autopilot')&&<div style={{...anim(225),...tileStyle('autopilot'),background:C.isDark?"rgba(77,168,255,0.04)":"rgba(77,168,255,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.blue}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden"}}>
           <AutopilotCard data={data} setScreen={setScreen}/>
         </div>}
 
@@ -3719,7 +5153,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         </div>}
 
         {/* ── OPPORTUNITY DETECTOR ─────────────────────────────────────── */}
-        {isVisible('opportunity')&&<div style={{...anim(255),...tileStyle('opportunity'),...glass(C.gold),borderRadius:22,overflow:"hidden"}}>
+        {isVisible('opportunity')&&<div style={{...anim(255),...tileStyle('opportunity'),background:C.isDark?"rgba(232,184,75,0.04)":"rgba(232,184,75,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.gold}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden"}}>
           <OpportunityDetector data={data} setScreen={setScreen} setGoalsTab={setGoalsTab}/>
         </div>}
 
@@ -3876,14 +5310,14 @@ const BILL_TEMPLATES = {
 const BILL_CAT_COLORS={housing:"#00CC85",utilities:"#E8B84B",telecom:"#4DA8FF",transport:"#FF8C42",insurance:"#9B7DFF",debt:"#FF4F6A",lifestyle:"#00C8E0"};
 
 function BillManager({data, setAppData, onClose}){
-  const country = data.profile?.country||"CA";
-  const templates = BILL_TEMPLATES[country]||BILL_TEMPLATES.CA;
-  const existingNames = new Set((data.bills||[]).map(b=>b.name.toLowerCase()));
   const [adding, setAdding] = useState(null);
   const [amount, setAmount] = useState("");
   const [dueDate, setDueDate] = useState("1");
   const [customName, setCustomName] = useState("");
   const [saved, setSaved] = useState("");
+  const country = data.profile?.country||"CA";
+  const templates = BILL_TEMPLATES[country]||BILL_TEMPLATES.CA;
+  const existingNames = new Set((data.bills||[]).map(b=>b.name.toLowerCase()));
 
   const saveBill = name => {
     if(!amount||!name) return;
@@ -3896,7 +5330,7 @@ function BillManager({data, setAppData, onClose}){
   const ord = n => { const v=parseInt(n); return [11,12,13].includes(v)?"th":["st","nd","rd"][v%10-1]||"th"; };
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={onClose}>
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)",display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",justifyContent:"center"}} onClick={onClose}>
       <div style={{width:"100%",maxWidth:520,background:C.bg,borderRadius:"24px 24px 0 0",maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 -12px 48px rgba(0,0,0,0.5)"}} onClick={e=>e.stopPropagation()}>
         <div style={{padding:"14px 20px 12px",flexShrink:0,borderBottom:`1px solid ${C.border}`}}>
           <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 12px"}}/>
@@ -3912,20 +5346,61 @@ function BillManager({data, setAppData, onClose}){
           {(data.bills||[]).length>0&&(
             <div style={{marginBottom:20}}>
               <div style={{color:C.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:10}}>Your Current Bills</div>
-              {(data.bills||[]).map((b,i)=>(
-                <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:C.card,borderRadius:14,padding:"10px 14px",marginBottom:8,border:`1px solid ${C.border}`}}>
-                  <div style={{flex:1}}>
-                    <div style={{color:C.cream,fontWeight:600,fontSize:13}}>{b.name}</div>
-                    <div style={{color:C.muted,fontSize:11}}>Due {b.date}{ord(b.date)} of the month</div>
+              {(data.bills||[]).map((b,i)=>{
+                const hasArrears = parseFloat(b.arrears||0) > 0;
+                return (
+                <div key={i} style={{background:C.card,borderRadius:16,marginBottom:10,border:`1px solid ${hasArrears?C.gold+"44":C.border}`,overflow:"hidden"}}>
+                  {/* Main row */}
+                  <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px"}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{color:C.cream,fontWeight:700,fontSize:13}}>{b.name}</div>
+                      {hasArrears&&(
+                        <div style={{color:C.goldBright,fontSize:10,fontWeight:700,marginTop:2}}>
+                          ⚠ ${parseFloat(b.arrears).toFixed(2)} in arrears
+                        </div>
+                      )}
+                    </div>
+                    {/* Amount — always editable */}
+                    <div>
+                      <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:3,textAlign:"center"}}>Monthly</div>
+                      <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",width:80}}>
+                        <span style={{color:C.muted,fontSize:11,padding:"0 4px 0 6px"}}>$</span>
+                        <input value={b.amount} onChange={e=>updateBill(i,"amount",e.target.value)}
+                          type="number" inputMode="decimal"
+                          style={{flex:1,background:"none",border:"none",padding:"7px 4px 7px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,fontWeight:700}}/>
+                      </div>
+                    </div>
+                    {/* Due date — always editable */}
+                    <div>
+                      <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:3,textAlign:"center"}}>Due</div>
+                      <select value={b.date||"1"} onChange={e=>updateBill(i,"date",e.target.value)}
+                        style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 6px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none",minHeight:33}}>
+                        {Array.from({length:28},(_,d)=><option key={d+1} value={String(d+1)}>{d+1}{ord(d+1)}</option>)}
+                      </select>
+                    </div>
+                    <button onClick={()=>removeBill(i)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:15,padding:"4px 6px",minWidth:32,minHeight:32,flexShrink:0}}>✕</button>
                   </div>
-                  <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",width:80}}>
-                    <span style={{color:C.muted,fontSize:11,padding:"0 4px"}}>$</span>
-                    <input value={b.amount} onChange={e=>updateBill(i,"amount",e.target.value)} type="number"
-                      style={{flex:1,background:"none",border:"none",padding:"6px 4px 6px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,fontWeight:600}}/>
+                  {/* Arrears row — expandable */}
+                  <div style={{borderTop:`1px solid ${C.border}`,padding:"10px 14px",background:C.cardAlt+"88"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{flex:1}}>
+                        <div style={{color:C.muted,fontSize:10,fontWeight:700,marginBottom:1}}>Amount currently owed (arrears)</div>
+                        <div style={{color:C.muted,fontSize:10,lineHeight:1.4}}>
+                          {hasArrears
+                            ? "Payments from Transactions will reduce this balance."
+                            : "Behind on this bill? Enter the total you owe — not the monthly amount."}
+                        </div>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${hasArrears?C.gold+"66":C.border}`,borderRadius:8,overflow:"hidden",width:96}}>
+                        <span style={{color:C.muted,fontSize:11,padding:"0 4px 0 6px"}}>$</span>
+                        <input value={b.arrears||""} onChange={e=>updateBill(i,"arrears",e.target.value)}
+                          type="number" inputMode="decimal" placeholder="0.00"
+                          style={{flex:1,background:"none",border:"none",padding:"7px 4px 7px 0",color:hasArrears?C.goldBright:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,fontWeight:700}}/>
+                      </div>
+                    </div>
                   </div>
-                  <button onClick={()=>removeBill(i)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:15,padding:"4px 6px",minWidth:28,minHeight:28}}>✕</button>
                 </div>
-              ))}
+              );})}
             </div>
           )}
           {adding&&(
@@ -3992,7 +5467,40 @@ function BillManager({data, setAppData, onClose}){
   );
 }
 
-function PlanAhead({data, setAppData}){
+
+// ─── SHARED SCREEN HEADER ────────────────────────────────────────────────────
+// Consistent back button + title + optional CTA on every main screen
+function ScreenHeader({title, subtitle, onBack, cta, onCta, ctaColor}) {
+  const C_ = typeof C !== "undefined" ? C : {};
+  return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,gap:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,flex:1,minWidth:0}}>
+        {onBack&&(
+          <button onClick={onBack} style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,borderRadius:12,
+            width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,
+            color:C.cream,fontSize:18,transition:"all .15s"}}
+            onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.10)"}
+            onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.06)"}>
+            ←
+          </button>
+        )}
+        <div style={{minWidth:0}}>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream,letterSpacing:-0.5,lineHeight:1.15}}>{title}</div>
+          {subtitle&&<div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{subtitle}</div>}
+        </div>
+      </div>
+      {cta&&onCta&&(
+        <button onClick={onCta} style={{background:(ctaColor||C.green)+"22",border:`1px solid ${(ctaColor||C.green)}44`,
+          borderRadius:99,padding:"8px 14px",color:ctaColor||C.greenBright,fontSize:11,fontWeight:700,
+          cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",whiteSpace:"nowrap",flexShrink:0,minHeight:36}}>
+          {cta}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function PlanAhead({data, setAppData, setScreen}){
   const [range,setRange]=useState(14);
   const [showBillManager,setShowBillManager]=useState(false);
   const [connected,setConnected]=useState([]);  // Start empty — user connects their own
@@ -4001,6 +5509,7 @@ function PlanAhead({data, setAppData}){
   const [customProviders,setCustomProviders]=useState([]);
   const [showCustomForm,setShowCustomForm]=useState(false);
   const [newProvider,setNewProvider]=useState({name:"",amount:"",icon:"🏦"});
+  const [expandedPlanDay, setExpandedPlanDay] = useState(null);
   const PROVIDERS=[
     {name:"Netflix",icon:"🎬",color:"#E50914",amount:"18.99"},{name:"Spotify",icon:"🎵",color:C.green,amount:"11.99"},
     {name:"Amazon Prime",icon:"📦",color:"#FF9900",amount:"9.99"},{name:"Hydro One",icon:"⚡",color:C.gold,amount:"124.00"},
@@ -4018,7 +5527,10 @@ function PlanAhead({data, setAppData}){
     income: f.income, balance: f.balance, idx: f.day
   }));
   const { balance: bal } = SafeSpendEngine.calculate(data);
-  const income = FinancialCalcEngine.cashFlow(data).monthlyIncome / 2; // bi-monthly
+  // Use actual per-paycheque amount based on income frequency
+  const _retFreq = (data.incomes||[])[0]?.freq||"biweekly";
+  const _retMoInc = FinancialCalcEngine.cashFlow(data).monthlyIncome;
+  const income = _retFreq==="monthly"?_retMoInc:_retFreq==="semimonthly"?_retMoInc/2:_retFreq==="weekly"?_retMoInc/4.333:_retMoInc/2.167;
   const minBalance = Math.min(...days.map(d => d.balance));
 
   const hasBills = (data.bills||[]).length > 0;
@@ -4026,8 +5538,8 @@ function PlanAhead({data, setAppData}){
     {showBillManager&&setAppData&&<BillManager data={data} setAppData={setAppData} onClose={()=>setShowBillManager(false)}/>}
     {!hasBills&&<EmptyState icon="📅" title="No bills tracked yet" body="Add your recurring bills to see a personalized cash-flow forecast." action="Add Bills →" onAction={()=>setShowBillManager(true)} color={C.teal}/>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <div><div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>2-Week Forecast</div><div style={{color:C.muted,fontSize:12,marginTop:3}}>Your financial crystal ball</div></div>
-      <div style={{display:"flex",gap:6,background:C.surface,borderRadius:12,padding:3}}>{[7,14].map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"6px 16px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .22s"}}>{r}d</button>)}</div>
+      <ScreenHeader title="Plan Ahead" subtitle="Your financial crystal ball" onBack={setScreen?()=>setScreen("home"):null}/>
+      <div style={{display:"flex",gap:6,background:C.surface,borderRadius:12,padding:3,flexShrink:0,marginBottom:16}}>{[7,14].map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"6px 16px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .22s"}}>{r}d</button>)}</div>
     </div>
     {(()=>{
       const _fbal = SafeSpendEngine.calculate(data).balance;
@@ -4109,26 +5621,54 @@ function PlanAhead({data, setAppData}){
       </div>}
     </Card>
     <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.8,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
-    {days.filter((d,i)=>i===0||d.income>0||d.bills.length>0).map((day,i)=>{
-      const isToday=day.idx===0,neg=day.balance<0,low=day.balance<150&&day.balance>=0;
-      return <div key={i} style={{background:isToday?C.greenDim:neg?C.redDim:C.card,borderRadius:20,padding:"16px 18px",border:`1px solid ${isToday?C.green+"55":neg?C.red+"55":low?C.gold+"44":C.border}`,boxShadow:isToday?`0 0 24px ${C.green}18`:neg?`0 0 24px ${C.red}18`:"none"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-          <div>
-            <div style={{color:isToday?C.greenBright:C.mutedHi,fontWeight:isToday?700:500,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{isToday?"Today ✦":day.d.toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}</div>
-            {day.income>0&&<div style={{color:C.green,fontWeight:700,fontSize:14,marginTop:3}}>{`+$${day.income.toLocaleString()} deposited`}</div>}
-            {day.bills.map((b,j)=><div key={j} style={{color:C.red,fontSize:13,marginTop:3}}>📤 {b.name}: –${parseFloat(b.amount).toFixed(2)}</div>)}
-            {isToday&&!day.income&&!day.bills.length&&<div style={{color:C.muted,fontSize:12,marginTop:2}}>No scheduled activity</div>}
+    {(()=>{
+      const avgDailySpend = FinancialCalcEngine.avgDailySpend(data);
+      return days.filter((d,i)=>i===0||d.income>0||d.bills.length>0).map((day,i)=>{
+        const isToday=day.idx===0,neg=day.balance<0,low=day.balance<150&&day.balance>=0;
+        const isDrilled=expandedPlanDay===day.idx;
+        const prevBalance=day.idx>0?(_forecast[day.idx-1]?.balance||0):day.balance;
+        const billsTotal=day.bills.reduce((s,b)=>s+parseFloat(b.amount||0),0);
+        const borderColor=isToday?C.green+"55":neg?C.red+"55":low?C.gold+"44":isDrilled?C.teal+"33":C.border;
+        return (
+          <div key={i} style={{background:isToday?C.greenDim:neg?C.redDim:C.card,borderRadius:20,border:`1px solid ${borderColor}`,boxShadow:isToday?`0 0 24px ${C.green}18`:neg?`0 0 24px ${C.red}18`:"none",overflow:"hidden"}}>
+            <div onClick={()=>setExpandedPlanDay(isDrilled?null:day.idx)} style={{padding:"16px 18px",cursor:"pointer"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{color:isToday?C.greenBright:C.mutedHi,fontWeight:isToday?700:500,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{isToday?"Today ✦":day.d.toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}</div>
+                    <span style={{color:C.muted,fontSize:10}}>{isDrilled?"▲":"▼"}</span>
+                  </div>
+                  {day.income>0&&<div style={{color:C.green,fontWeight:700,fontSize:13,marginTop:3}}>💰 +${day.income.toLocaleString()} paycheck</div>}
+                  {day.bills.map((b,j)=><div key={j} style={{color:C.gold,fontSize:12,marginTop:2}}>📅 {b.name}: −${parseFloat(b.amount).toFixed(0)}</div>)}
+                  {isToday&&!day.income&&!day.bills.length&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>Tap to see balance breakdown</div>}
+                </div>
+                <div style={{textAlign:"right",flexShrink:0}}>
+                  <div style={{fontSize:17,fontWeight:800,fontFamily:"Georgia,serif",color:neg?C.redBright:low?C.goldBright:C.greenBright}}>{neg?"−":""}${Math.abs(day.balance||0).toFixed(0)}</div>
+                  <div style={{color:C.muted,fontSize:9}}>balance</div>
+                </div>
+              </div>
+              <Bar v={Math.max(0,day.balance)} max={bal+income} color={neg?C.red:low?C.gold:C.green} h={4}/>
+              {neg&&<div style={{marginTop:8,color:C.redBright,fontSize:12,fontWeight:600}}>⚠️ Projected overdraft — NSF fees $45–48. Move money now.</div>}
+              {low&&!neg&&<div style={{marginTop:6,color:C.goldBright,fontSize:11}}>⚠ Getting low — hold non-essential spending.</div>}
+            </div>
+            {isDrilled&&(
+              <div style={{borderTop:`1px solid ${C.border}`,padding:"12px 18px 14px",background:"rgba(0,0,0,0.2)"}}>
+                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,marginBottom:10}}>Cash flow breakdown</div>
+                {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.muted,fontSize:11}}>Opening balance</span><span style={{color:C.muted,fontSize:11}}>${(prevBalance||0).toFixed(0)}</span></div>}
+                {day.income>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>💰 Paycheck</span><span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+${(day.income||0).toFixed(0)}</span></div>}
+                {day.bills.map((b,j)=><div key={j} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>📅 {b.name}</span><span style={{color:C.gold,fontWeight:700,fontSize:12}}>−${parseFloat(b.amount||0).toFixed(0)}</span></div>)}
+                {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>🛒 Est. daily spend <span style={{color:C.muted,fontSize:9}}>(30d avg)</span></span><span style={{color:C.muted,fontSize:12}}>−${(avgDailySpend*0.8).toFixed(0)}</span></div>}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${C.border}`,paddingTop:8,marginTop:4}}>
+                  <span style={{color:C.cream,fontWeight:700,fontSize:13}}>{isToday?"Current balance":"Projected balance"}</span>
+                  <span style={{color:neg?C.redBright:low?C.goldBright:C.greenBright,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{neg?"−":""}${Math.abs(day.balance||0).toFixed(0)}</span>
+                </div>
+                {day.idx>0&&<div style={{marginTop:6,color:C.muted,fontSize:10,lineHeight:1.7}}>${(prevBalance||0).toFixed(0)}{day.income>0&&<span style={{color:C.green}}> +${(day.income||0).toFixed(0)}</span>}{billsTotal>0&&<span style={{color:C.gold}}> −${billsTotal.toFixed(0)} bills</span>}<span style={{color:C.muted}}> −${(avgDailySpend*0.8).toFixed(0)} spend</span><span style={{color:neg?C.redBright:C.greenBright}}> = ${(day.balance||0).toFixed(0)}</span></div>}
+              </div>
+            )}
           </div>
-          <div style={{textAlign:"right"}}>
-            <div style={{fontSize:18,fontWeight:800,fontFamily:"Georgia,serif",color:neg?C.redBright:low?C.goldBright:C.greenBright}}>{`$${(day.balance||0).toFixed(2)}`}</div>
-            <div style={{color:C.muted,fontSize:10}}>balance</div>
-          </div>
-        </div>
-        <Bar v={Math.max(0,day.balance)} max={bal+income} color={neg?C.red:low?C.gold:C.green} h={5}/>
-        {neg&&<div style={{marginTop:8,color:C.redBright,fontSize:12,fontWeight:600}}>⚠️ Projected overdraft — NSF fees cost $45–48. Move money now.</div>}
-        {low&&!neg&&<div style={{marginTop:8,color:C.goldBright,fontSize:12}}>Getting low — hold non-essential spending until next deposit.</div>}
-      </div>;
-    })}
+        );
+      });
+    })()}
   </div>;
 }
 
@@ -4136,11 +5676,14 @@ function PlanAhead({data, setAppData}){
 function AddCustomCategory({onAdd}){
   const [show,setShow]=useState(false);
   const [val,setVal]=useState("");
-  const save=()=>{
-    if(!val.trim()) return;
+  // Quick preset categories people commonly need
+  const QUICK_CATS = ["Business","Reimbursement","Family","Medical","Gym","Pet","Gifts","Education"];
+  const save=(name)=>{
+    const n = (name||val).trim();
+    if(!n) return;
     const existing=JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]");
-    localStorage.setItem("flourish_custom_cats",JSON.stringify([...existing,val.trim()]));
-    onAdd(val.trim());
+    if(!existing.includes(n)) localStorage.setItem("flourish_custom_cats",JSON.stringify([...existing,n]));
+    onAdd(n);
     setVal(""); setShow(false);
   };
   if(!show) return (
@@ -4149,12 +5692,24 @@ function AddCustomCategory({onAdd}){
     </button>
   );
   return (
-    <div style={{display:"flex",gap:8,alignItems:"center"}}>
-      <input value={val} onChange={e=>setVal(e.target.value)} placeholder="Category name…"
-        onKeyDown={e=>{if(e.key==="Enter") save();}}
-        style={{flex:1,background:C.cardAlt,border:`1px solid ${C.green}`,borderRadius:10,padding:"8px 12px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}} autoFocus/>
-      <button onClick={save} style={{background:C.green,border:"none",borderRadius:10,padding:"8px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>Add</button>
-      <button onClick={()=>{setShow(false);setVal("");}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 12px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>Cancel</button>
+    <div style={{marginTop:8}}>
+      {/* Quick presets */}
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+        {QUICK_CATS.map(c=>(
+          <button key={c} onClick={()=>save(c)}
+            style={{background:C.green+"14",border:`1px solid ${C.green}33`,borderRadius:99,padding:"5px 12px",color:C.greenBright,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:30}}>
+            {c}
+          </button>
+        ))}
+      </div>
+      {/* Custom name input */}
+      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        <input value={val} onChange={e=>setVal(e.target.value)} placeholder="Or type a custom name…"
+          onKeyDown={e=>{if(e.key==="Enter") save();}}
+          style={{flex:1,background:C.cardAlt,border:`1px solid ${C.green}`,borderRadius:10,padding:"8px 12px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}} autoFocus/>
+        <button onClick={()=>save()} style={{background:C.green,border:"none",borderRadius:10,padding:"8px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>Add</button>
+        <button onClick={()=>{setShow(false);setVal("");}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 12px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>✕</button>
+      </div>
     </div>
   );
 }
@@ -4187,9 +5742,12 @@ function detectPayroll(transactions, existingIncomes) {
     .sort((a,b) => b.avgAmount - a.avgAmount)
     .slice(0,3);
 
-  // Filter out already-added income sources
-  const existingAmts = new Set((existingIncomes||[]).map(i=>Math.round(parseFloat(i.amount||0))));
-  return candidates.filter(c => !existingAmts.has(c.avgAmount));
+  // Filter out already-added income sources — fuzzy match within 15% so biweekly
+  // vs monthly rounding doesn't create duplicate suggestions
+  const existingAmounts = (existingIncomes||[]).map(i=>parseFloat(i.amount||0)).filter(a=>a>0);
+  return candidates.filter(c =>
+    !existingAmounts.some(ea => Math.abs(ea - c.avgAmount) / Math.max(ea, c.avgAmount) < 0.15)
+  );
 }
 
 function IncomeDetectionBanner({transactions, incomes, setAppData}){
@@ -4206,9 +5764,20 @@ function IncomeDetectionBanner({transactions, incomes, setAppData}){
     try { localStorage.setItem("flourish_dismissed_income", JSON.stringify(updated)); } catch {}
   };
   const addIncome = () => {
-    if(setAppData) setAppData(prev=>({...prev,
-      incomes:[...(prev.incomes||[]), {id:Date.now(),label:c0.name,amount:String(c0.avgAmount),freq:"biweekly",type:"employment",isVariable:false}]
-    }));
+    if(setAppData) setAppData(prev=>{
+      const existing = prev.incomes || [];
+      // Don't add if a similar amount already exists (within 15% — same paycheck)
+      const isDuplicate = existing.some(i => {
+        const existAmt = parseFloat(i.amount || 0);
+        const newAmt = c0.avgAmount;
+        return existAmt > 0 && Math.abs(existAmt - newAmt) / Math.max(existAmt, newAmt) < 0.15;
+      });
+      if (isDuplicate) return prev; // already tracked — don't add
+      return {
+        ...prev,
+        incomes: [...existing, {id:Date.now(),label:c0.name,amount:String(c0.avgAmount),freq:"biweekly",type:"employment",isVariable:false,autoDetected:true}]
+      };
+    });
     dismiss();
   };
 
@@ -4237,6 +5806,10 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
   const [open, setOpen] = useState(false);
   const [editBudget, setEditBudget] = useState(false);
   const [budgetVal, setBudgetVal] = useState(budget ? String(budget) : "");
+  const [showAllTxns, setShowAllTxns] = useState(false);
+  const TXN_LIMIT = 8;
+  // Reset expanded state when card closes
+  const handleToggle = () => { if(open) setShowAllTxns(false); setOpen(o=>!o); };
   const pct = totalSpent > 0 ? Math.round(amt/totalSpent*100) : 0;
   const budgetPct = budget > 0 ? Math.min(100, Math.round((amt/budget)*100)) : null;
   const overBudget = budget > 0 && amt > budget;
@@ -4248,7 +5821,7 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
   };
 
   return (
-    <Card style={{cursor:"pointer"}} onClick={()=>!editBudget&&setOpen(o=>!o)}>
+    <Card style={{cursor:"pointer"}} onClick={()=>!editBudget&&handleToggle()}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <span style={{color:C.cream,fontSize:14,display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:20}}>{catTxns[0]?.icon||"💰"}</span>{cat}
@@ -4306,61 +5879,554 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
           {/* Transaction list */}
           {catTxns.length===0
             ? <div style={{color:C.muted,fontSize:12}}>No transactions in this category this month.</div>
-            : catTxns.sort((a,b)=>b.amount-a.amount).slice(0,10).map((t,j)=>{
-              const bills = window.__flourishBills||[];
-              const linkedBill = bills.find(b=>Math.abs(parseFloat(b.amount||0)-t.amount)<5);
-              return (
-              <div key={j} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:j<Math.min(catTxns.length,10)-1?`1px solid ${C.border}`:"none"}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                    <div style={{color:C.cream,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:180}}>{t.name}</div>
-                    {linkedBill&&<span style={{background:C.green+"22",color:C.greenBright,fontSize:9,fontWeight:700,borderRadius:99,padding:"1px 6px",flexShrink:0}}>✓ {linkedBill.name}</span>}
-                  </div>
-                  <div style={{color:C.muted,fontSize:10}}>{t.date}</div>
-                </div>
-                <span style={{color:linkedBill?C.greenBright:color,fontWeight:700,fontSize:13,flexShrink:0,marginLeft:8}}>${(t.amount||0).toFixed(2)}</span>
-              </div>
-              );})
-          }
-          {catTxns.length>10&&<div style={{color:C.muted,fontSize:11,marginTop:6,textAlign:"center"}}>+{catTxns.length-10} more transactions</div>}
+            : (()=>{
+              const sorted = catTxns.sort((a,b)=>b.amount-a.amount);
+              const visible = showAllTxns ? sorted : sorted.slice(0, TXN_LIMIT);
+              const hiddenCount = sorted.length - TXN_LIMIT;
+              return (<>
+                {visible.map((t,j)=>{
+                  const bills = window.__flourishBills||[];
+                  const linkedBill = bills.find(b=>Math.abs(parseFloat(b.amount||0)-t.amount)<5);
+                  return (
+                    <div key={j} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:j<visible.length-1?`1px solid ${C.border}`:"none"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                          <div style={{color:C.cream,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:180}}>{t.name}</div>
+                          {linkedBill&&<span style={{background:C.green+"22",color:C.greenBright,fontSize:9,fontWeight:700,borderRadius:99,padding:"1px 6px",flexShrink:0}}>✓ {linkedBill.name}</span>}
+                        </div>
+                        <div style={{color:C.muted,fontSize:10}}>{t.date}</div>
+                      </div>
+                      <span style={{color:linkedBill?C.greenBright:color,fontWeight:700,fontSize:13,flexShrink:0,marginLeft:8}}>${(t.amount||0).toFixed(2)}</span>
+                    </div>
+                  );
+                })}
+                {!showAllTxns && hiddenCount > 0 && (
+                  <button onClick={e=>{e.stopPropagation();setShowAllTxns(true);}}
+                    style={{width:"100%",marginTop:8,background:color+"12",border:`1px solid ${color}33`,borderRadius:10,padding:"8px",color,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
+                    Show {hiddenCount} more transaction{hiddenCount===1?"":"s"} ↓
+                  </button>
+                )}
+                {showAllTxns && sorted.length > TXN_LIMIT && (
+                  <button onClick={e=>{e.stopPropagation();setShowAllTxns(false);}}
+                    style={{width:"100%",marginTop:8,background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px",color:C.muted,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
+                    Show less ↑
+                  </button>
+                )}
+              </>);
+            })()}
         </div>
       )}
     </Card>
   );
 }
 
-function SpendScreen({data, setAppData}){
+// ─── BUDGET SUGGESTION ENGINE ────────────────────────────────────────────────
+// Category metadata: emoji, colour key, plain-English reason shown to user
+const BUDGET_CAT_META = {
+  "Groceries":         { emoji:"🛒", colorKey:"green",  why:"Based on household size" },
+  "Coffee & Dining":   { emoji:"☕", colorKey:"orange", why:"Based on your dining history" },
+  "Gas & Transport":   { emoji:"🚗", colorKey:"blue",   why:"Commuting & errands" },
+  "Shopping":          { emoji:"🛍️", colorKey:"pink",   why:"General retail purchases" },
+  "Clothing":          { emoji:"👗", colorKey:"purple", why:"Clothes & apparel for your household" },
+  "Subscriptions":     { emoji:"📱", colorKey:"teal",   why:"Streaming, apps, memberships" },
+  "Health":            { emoji:"💊", colorKey:"teal",   why:"Pharmacy, dental, fitness" },
+  "Personal Care":     { emoji:"🧴", colorKey:"gold",   why:"Grooming, beauty, hygiene" },
+  "Entertainment":     { emoji:"🎬", colorKey:"pink",   why:"Fun money — movies, games, nights out" },
+  "Hobbies & Sports":  { emoji:"🎯", colorKey:"blue",   why:"Extracurriculars, leagues, classes" },
+  "Kids & Extracurricular": { emoji:"🧒", colorKey:"green", why:"Activities, camps, sports per child" },
+  "Travel":            { emoji:"✈️", colorKey:"purple", why:"Trips & weekend getaways (monthly reserve)" },
+  "Home":              { emoji:"🏠", colorKey:"orange", why:"Repairs, décor, household supplies" },
+  "Education":         { emoji:"📚", colorKey:"blue",   why:"Courses, books, tuition" },
+};
+
+function generateBudgetSuggestions(data) {
+  const profile   = data.profile || {};
+  const isCA      = (profile.country||"CA") === "CA";
+  const _toMo     = (amt,freq) => {
+    const a = parseFloat(amt||0);
+    return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a;
+  };
+
+  // ── Income ──────────────────────────────────────────────────────────
+  const grossMo   = (data.incomes||[]).reduce((s,i)=>s+_toMo(i.amount,i.freq),0)||0;
+  const taxRate   = isCA
+    ? (grossMo>10000?0.35:grossMo>6000?0.30:grossMo>3500?0.25:0.18)
+    : (grossMo>8000?0.30:grossMo>5000?0.24:grossMo>3000?0.20:0.15);
+  const netMo     = Math.round(grossMo*(1-taxRate));
+
+  // ── Fixed commitments (auto-filled from bills + debt minimums) ──────
+  const billsMo   = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
+  const debtsMo   = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.min||0),0);
+  const fixedMo   = Math.round(billsMo+debtsMo);
+
+  // ── Savings ─────────────────────────────────────────────────────────
+  const savingsRate = netMo < 2500 ? 0.10 : netMo < 5000 ? 0.15 : 0.20;
+  const savingsMo   = Math.round(netMo * savingsRate);
+
+  // ── Goal savings ─────────────────────────────────────────────────────
+  const goalsMo   = (data.goals||[])
+    .filter(g=>parseFloat(g.target||0)>parseFloat(g.saved||0))
+    .reduce((s,g)=>{
+      const remaining = parseFloat(g.target||0)-parseFloat(g.saved||0);
+      const mo = parseFloat(g.monthly||0);
+      return s+(mo>0?mo:remaining>0?Math.ceil(remaining/24):0);
+    },0);
+
+  // ── Discretionary pool ──────────────────────────────────────────────
+  const discret   = Math.max(0, netMo - fixedMo - savingsMo - goalsMo);
+
+  // ── Household context ────────────────────────────────────────────────
+  const hasPartner = profile.status==="couple"||profile.status==="cohabit";
+  const numKids    = (profile.kids||[]).length||(profile.hasKids?1:0);
+  const hSize      = 1+(hasPartner?1:0)+numKids;
+
+  // ── Situation-based benchmarks — NEVER blended with history ──────────
+  // All amounts are reasonable targets for this household, scaled to discret pool.
+  // Priority: Needs first (Groceries, Transport, Health), then Wants.
+  const r = (v) => Math.max(10, Math.round(v/5)*5); // round to nearest $5
+
+  const suggestions = {};
+
+  // NEEDS — always included
+  suggestions["Groceries"]       = r((isCA?280:250)*hSize);
+  suggestions["Gas & Transport"] = r(isCA?(numKids?250:180):(numKids?220:160));
+  suggestions["Health"]          = r(Math.min((isCA?55:110)*hSize, isCA?200:400));
+
+  // WANTS — scaled to what's actually available after needs
+  const needsTotal = Object.values(suggestions).reduce((s,v)=>s+v,0);
+  const wantsPool  = Math.max(0, discret - needsTotal);
+
+  suggestions["Coffee & Dining"] = r(Math.max(60, wantsPool*(numKids?0.10:0.14)));
+  suggestions["Clothing"]        = r(Math.max(30, (isCA?55:50)*hSize*(numKids?1.2:1)));
+  suggestions["Personal Care"]   = r(hasPartner?90:55);
+  suggestions["Shopping"]        = r(Math.max(30, wantsPool*(hasPartner?0.09:0.07)));
+  suggestions["Entertainment"]   = r(Math.max(30, wantsPool*(numKids?0.05:0.08)));
+  suggestions["Subscriptions"]   = r(hSize<=2?45:65);
+  if(numKids>0) suggestions["Kids & Extracurricular"] = r(numKids*(isCA?165:180));
+
+  const totalSugg  = Object.values(suggestions).reduce((s,v)=>s+v,0);
+  const canAfford  = totalSugg <= discret;
+  const shortfall  = Math.max(0, totalSugg - discret);
+
+  // ── Cut suggestions — priority order if over budget ─────────────────
+  // 1. Subscriptions (easiest, most painless)
+  // 2. Entertainment
+  // 3. Coffee & Dining
+  // 4. Shopping
+  // 5. Personal Care
+  // 6. Groceries (reduce, don't eliminate)
+  const CUT_PRIORITY = [
+    "Subscriptions","Entertainment","Coffee & Dining","Shopping",
+    "Personal Care","Groceries","Clothing","Hobbies & Sports"
+  ];
+  const cutSuggestions = [];
+  if(!canAfford) {
+    let remaining = shortfall;
+    for(const cat of CUT_PRIORITY) {
+      if(remaining <= 0) break;
+      const current = suggestions[cat]||0;
+      if(!current) continue;
+      // How much can realistically be cut from this category?
+      const maxCut = cat==="Groceries" ? Math.floor(current*0.15)   // max 15% off groceries
+                   : cat==="Personal Care" ? Math.floor(current*0.3)
+                   : Math.floor(current*0.5); // up to 50% off wants
+      const cut = Math.min(remaining, maxCut);
+      if(cut >= 5) {
+        cutSuggestions.push({cat, current, suggested: r(current-cut), saving: cut});
+        remaining -= cut;
+      }
+    }
+  }
+
+  return {
+    suggestions, netMo, grossMo, fixedMo, billsMo, debtsMo,
+    savingsMo, savingsRate, goalsMo, discret, wantsPool,
+    hSize, numKids, hasPartner, totalSugg, canAfford, shortfall, cutSuggestions
+  };
+}
+
+// ─── BUDGET PLAN CARD ────────────────────────────────────────────────────────
+function BudgetPlanCard({data, setAppData}) {
+  const existingBudgets = data.budgets||{};
+  const hasBudgets = Object.keys(existingBudgets).length > 0;
+  const [open, setOpen] = useState(false);
+  const [dismissed, setDismissed] = useState(()=>{ try{return localStorage.getItem("flourish_budget_dismissed")==="1";}catch{return false;} });
+  const [editVals, setEditVals] = useState({});
+  const [accepted, setAccepted] = useState(false);
+  const [customCat, setCustomCat] = useState("");
+  const [showAddCat, setShowAddCat] = useState(false);
+
+  const { suggestions, netMo, discret, savingsMo, savingsRate, numKids, totalSugg } = useMemo(()=>generateBudgetSuggestions(data),[data]);
+
+  // Open panel: seed edit values from saved budgets or suggestions
+  const handleOpen = () => {
+    const seed = {};
+    // Start with all existing budgeted categories
+    Object.entries(existingBudgets).forEach(([cat,amt])=>{ seed[cat]=String(amt); });
+    // Add any suggested categories not yet budgeted
+    Object.entries(suggestions).forEach(([cat,amt])=>{ if(!seed[cat]) seed[cat]=String(amt); });
+    setEditVals(seed);
+    setOpen(true);
+    setAccepted(false);
+    setShowAddCat(false);
+    setCustomCat("");
+    // Reset dismissed when user actively opens the panel
+    setDismissed(false);
+    try{localStorage.removeItem("flourish_budget_dismissed");}catch{}
+  };
+
+  const handleAcceptAll = () => {
+    const newBudgets = {};
+    Object.entries(editVals).forEach(([cat,v])=>{
+      const n=parseFloat(v);
+      if(!isNaN(n)&&n>0) newBudgets[cat]=n;
+    });
+    if(setAppData) setAppData(prev=>({...prev,budgets:newBudgets}));
+    setAccepted(true);
+    setTimeout(()=>setOpen(false),1200);
+  };
+
+  const handleDismiss = () => {
+    setDismissed(true);
+    setOpen(false);
+    try{localStorage.setItem("flourish_budget_dismissed","1");}catch{}
+  };
+
+  const handleAddCustom = () => {
+    const cat = customCat.trim();
+    if(!cat) return;
+    setEditVals(prev=>({...prev,[cat]:"50"}));
+    setCustomCat("");
+    setShowAddCat(false);
+  };
+
+  const handleDeleteCat = (cat) => {
+    setEditVals(prev=>{ const n={...prev}; delete n[cat]; return n; });
+  };
+
+  const catColors = {"Groceries":C.green,"Coffee & Dining":C.orange,"Gas & Transport":C.blue,
+    "Shopping":C.pink,"Clothing":C.purple,"Subscriptions":C.teal,"Health":C.teal,
+    "Personal Care":C.gold,"Entertainment":C.pink,"Hobbies & Sports":C.blue,
+    "Kids & Extracurricular":C.green,"Kids & Activities":C.green,
+    "Travel":C.purple,"Home":C.orange,"Education":C.blue};
+  const catEmoji = {"Groceries":"🛒","Coffee & Dining":"☕","Gas & Transport":"🚗",
+    "Shopping":"🛍️","Clothing":"👗","Subscriptions":"📱","Health":"💊",
+    "Personal Care":"🧴","Entertainment":"🎬","Hobbies & Sports":"🎯",
+    "Kids & Extracurricular":"🧒","Kids & Activities":"🧒",
+    "Travel":"✈️","Home":"🏠","Education":"📚"};
+
+
+  // Current-month spending per budget category — excludes bill categories and CC payments
+  const catOverrides = (()=>{ try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}")}catch{return{}} })();
+  const now = new Date();
+  const monthTxns = (data.transactions||[]).filter(t=>{
+    try{const d=new Date(t.date+"T12:00:00");return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()&&t.amount>0;}catch{return false;}
+  });
+  const monthSpend = {};
+  monthTxns.forEach(t=>{
+    const cat=catOverrides[t.id]||t.cat;
+    if(!NON_SPEND_CATS.has(cat)&&!CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))){
+      monthSpend[cat]=(monthSpend[cat]||0)+t.amount;
+    }
+  });
+  const totalBudgeted = Object.values(existingBudgets).reduce((s,v)=>s+v,0);
+  const totalSpentThisMonth = Object.entries(existingBudgets).reduce((s,[cat])=>s+(monthSpend[cat]||0),0);
+  const budgetUsedPct = totalBudgeted>0 ? Math.min(100,Math.round(totalSpentThisMonth/totalBudgeted*100)) : 0;
+
+  // Compact "budget active" strip when not editing
+  if(hasBudgets&&!open) return (
+    <div style={{background:overBudgetCats.length>0?C.red+"15":C.green+"12",
+      border:`1px solid ${overBudgetCats.length>0?C.red:C.green}33`,
+      borderRadius:14,padding:"12px 14px",marginBottom:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:overBudgetCats.length>0?8:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:18}}>{overBudgetCats.length>0?"⚠️":"📊"}</span>
+          <div>
+            <div style={{color:overBudgetCats.length>0?C.redBright:C.greenBright,fontWeight:800,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+              {overBudgetCats.length>0?`Over budget in ${overBudgetCats.length} categor${overBudgetCats.length===1?"y":"ies"}`:"Budget Plan Active"}
+            </div>
+            <div style={{color:C.muted,fontSize:10}}>
+              ${Math.round(totalSpentThisMonth).toLocaleString()} / ${Math.round(totalBudgeted).toLocaleString()} this month ({budgetUsedPct}%)
+            </div>
+          </div>
+        </div>
+        <button onClick={handleOpen}
+          style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 10px",
+            color:C.muted,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Edit</button>
+      </div>
+      {/* Progress bar */}
+      <div style={{height:4,background:C.border,borderRadius:99,overflow:"hidden"}}>
+        <div style={{width:`${budgetUsedPct}%`,height:"100%",borderRadius:99,transition:"width .4s",
+          background:overBudgetCats.length>0?C.red:budgetUsedPct>80?C.orange:C.green}}/>
+      </div>
+      {overBudgetCats.length>0&&(
+        <div style={{color:C.muted,fontSize:10,marginTop:6}}>
+          {overBudgetCats.map(([cat,limit])=>`${catEmoji[cat]||""}${cat}: $${Math.round((monthSpend[cat]||0)-limit)} over`).join(" · ")}
+        </div>
+      )}
+    </div>
+  );
+
+  // Initial banner when no budgets set — respect dismissed flag
+  if(dismissed&&!hasBudgets&&!open) return null;
+  if(!open) return (
+    <div style={{background:`linear-gradient(135deg,${C.green}18 0%,${C.teal}12 100%)`,
+      borderRadius:16,padding:"14px 16px",marginBottom:8,border:`1px solid ${C.green}33`,
+      display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+      <div style={{flex:1}}>
+        <div style={{color:C.greenBright,fontWeight:800,fontSize:13,marginBottom:2}}>✨ Build Your Budget Plan</div>
+        <div style={{color:C.muted,fontSize:11,lineHeight:1.5}}>
+          We'll suggest spending limits for groceries, clothing, extracurriculars and more — based on your ${Math.round(netMo).toLocaleString()}/mo take-home.
+        </div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
+        <button onClick={handleOpen}
+          style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",
+            borderRadius:10,padding:"8px 14px",color:"#041810",fontWeight:800,fontSize:12,
+            cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>Build Plan</button>
+        <button onClick={handleDismiss}
+          style={{background:"none",border:"none",color:C.muted,fontSize:10,cursor:"pointer",
+            fontFamily:"inherit",padding:0}}>No thanks</button>
+      </div>
+    </div>
+  );
+
+  // ── Edit panel ──────────────────────────────────────────────────────────────
+  const totalEdited = Object.values(editVals).reduce((s,v)=>s+(parseFloat(v)||0),0);
+  const overDiscret = totalEdited > discret;
+
+  return (
+    <div style={{background:`linear-gradient(135deg,${C.green}0A 0%,${C.card} 100%)`,
+      border:`1px solid ${C.green}44`,borderRadius:16,padding:"14px",marginBottom:8}}>
+
+      {/* Header */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+        <div>
+          <div style={{color:C.greenBright,fontWeight:900,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            {accepted?"✅ Budget Plan Saved!":"📊 Your Budget Plan"}
+          </div>
+          <div style={{color:C.muted,fontSize:11,marginTop:2}}>
+            ~${Math.round(discret).toLocaleString()}/mo discretionary · adjust any amount · add categories
+          </div>
+        </div>
+        <button onClick={()=>setOpen(false)}
+          style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0,lineHeight:1}}>✕</button>
+      </div>
+
+      {/* Savings context strip */}
+      <div style={{background:C.cardAlt,borderRadius:10,padding:"8px 10px",marginBottom:10,
+        border:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:14}}>💰</span>
+          <div>
+            <div style={{color:C.greenBright,fontWeight:700,fontSize:11}}>Savings target included</div>
+            <div style={{color:C.muted,fontSize:10}}>${Math.round(savingsMo).toLocaleString()}/mo ({Math.round(savingsRate*100)}% of take-home) set aside before this budget</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Category rows */}
+      <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:10}}>
+        {Object.entries(editVals).map(([cat,val])=>{
+          const cc = catColors[cat]||C.muted;
+          const emoji = catEmoji[cat]||"📌";
+          const meta = BUDGET_CAT_META[cat];
+          const isSuggested = !!suggestions[cat];
+          return (
+            <div key={cat} style={{display:"flex",alignItems:"center",gap:8,
+              padding:"8px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
+              <span style={{fontSize:15,flexShrink:0}}>{emoji}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{cat}</div>
+                {meta?.why&&<div style={{color:C.muted,fontSize:9,marginTop:1}}>{meta.why}</div>}
+              </div>
+              <div style={{display:"flex",alignItems:"center",background:C.card,
+                border:`1px solid ${cc}55`,borderRadius:8,overflow:"hidden",width:90,flexShrink:0}}>
+                <span style={{color:C.muted,padding:"0 4px",fontSize:11}}>$</span>
+                <input type="number" value={val}
+                  onChange={e=>setEditVals(prev=>({...prev,[cat]:e.target.value}))}
+                  style={{width:50,background:"none",border:"none",padding:"6px 2px",color:C.cream,
+                    fontSize:12,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
+                <span style={{color:C.muted,padding:"0 3px",fontSize:9}}>/mo</span>
+              </div>
+              <button onClick={()=>handleDeleteCat(cat)}
+                style={{background:"none",border:"none",color:C.muted,cursor:"pointer",
+                  fontSize:14,padding:"2px",flexShrink:0,opacity:0.6,lineHeight:1}}
+                title="Remove category">×</button>
+            </div>
+          );
+        })}
+
+        {/* Add custom category */}
+        {showAddCat ? (
+          <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 10px",
+            background:C.cardAlt,borderRadius:10,border:`1px dashed ${C.green}55`}}>
+            <input value={customCat} onChange={e=>setCustomCat(e.target.value)}
+              placeholder="Category name (e.g. Gym, Art Classes)"
+              onKeyDown={e=>e.key==="Enter"&&handleAddCustom()}
+              style={{flex:1,background:"none",border:`1px solid ${C.border}`,borderRadius:8,
+                padding:"7px 10px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none"}}/>
+            <button onClick={handleAddCustom}
+              style={{background:C.green,border:"none",borderRadius:8,padding:"7px 10px",
+                color:"#041810",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Add</button>
+            <button onClick={()=>{setShowAddCat(false);setCustomCat("");}}
+              style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0}}>✕</button>
+          </div>
+        ) : (
+          <button onClick={()=>setShowAddCat(true)}
+            style={{background:"none",border:`1px dashed ${C.green}44`,borderRadius:10,
+              padding:"9px 10px",color:C.green,fontWeight:700,fontSize:12,
+              cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+            ＋ Add a category
+          </button>
+        )}
+      </div>
+
+      {/* Total vs discretionary */}
+      <div style={{padding:"9px 12px",background:overDiscret?C.red+"18":C.green+"12",
+        borderRadius:10,marginBottom:10,border:`1px solid ${overDiscret?C.red:C.green}33`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{color:C.muted,fontSize:11}}>Total budgeted</span>
+          <span style={{color:overDiscret?C.redBright:C.greenBright,fontWeight:800,fontSize:13}}>
+            ${Math.round(totalEdited).toLocaleString()} / mo
+          </span>
+        </div>
+        {overDiscret&&(
+          <div style={{color:C.redBright,fontSize:10,marginTop:3}}>
+            ⚠️ ${Math.round(totalEdited-discret).toLocaleString()} over your discretionary budget — consider trimming some categories
+          </div>
+        )}
+        {!overDiscret&&totalEdited>0&&(
+          <div style={{color:C.muted,fontSize:10,marginTop:3}}>
+            ${Math.round(discret-totalEdited).toLocaleString()} discretionary remaining unallocated
+          </div>
+        )}
+      </div>
+
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={handleAcceptAll}
+          style={{flex:1,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",
+            borderRadius:12,padding:"12px",color:"#041810",fontWeight:800,fontSize:13,
+            cursor:"pointer",fontFamily:"inherit"}}>
+          {accepted?"✅ Saved!":"✓ Save Budget Plan"}
+        </button>
+        <button onClick={()=>setOpen(false)}
+          style={{background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",
+            color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function SpendScreen({data, setAppData, setScreen}){
+  const isDesktop = window.innerWidth >= 960;
+  // ── ALL HOOKS FIRST — no non-hook code before the last hook (TDZ prevention) ──
   const [tab,setTab]=useState("txn");
   const [catFilter,setCatFilter]=useState("All");
   const [dismissed,setDismissed]=useState([]);
   const [period,setPeriod]=useState("month");
   const [accountFilter,setAccountFilter]=useState("All");
+  const [recatTxn,setRecatTxn]=useState(null);
+  const [markBillTxn,setMarkBillTxn]=useState(null);
+  const [billForm,setBillForm]=useState({name:"",amount:"",date:"1",type:"fixed",category:"Bills"});
+  const [arrearsPayTxn,setArrearsPayTxn]=useState(null);
+  const [applyAllPrompt, setApplyAllPrompt] = useState(null);
+  const [showAllBdCats, setShowAllBdCats] = useState(false);
+
+  // ── NON-HOOK DERIVED VALUES (after all hooks) ──────────────────────────────
   const isDemo=!data.bankConnected;
   const txns=data.transactions||[];
-  // Filter to current month for "this month" stats
   const now = new Date();
   const thisMonthTxns = txns.filter(t => {
     if(!t.date) return false;
     const d = new Date(t.date + "T12:00:00");
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
   });
-  const stats=computeStats(thisMonthTxns);
   const monthLabel = now.toLocaleString("en-CA",{month:"long",year:"numeric"});
-  // Declare getCat BEFORE cats — avoids Temporal Dead Zone error
-  const [recatTxn,setRecatTxn]=useState(null);
-  const [markBillTxn,setMarkBillTxn]=useState(null);
-  const [billForm,setBillForm]=useState({name:"",amount:"",date:"1"});
   const catOverrides = JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
   const getCat = (t) => catOverrides[t.id] || t.cat;
-  const recat = (txn, newCat) => {
-    const updated = {...catOverrides, [txn.id]: newCat};
-    localStorage.setItem("flourish_cat_overrides", JSON.stringify(updated));
+  const stats=computeStats(thisMonthTxns, catOverrides);
+
+  const recat = (txn, newCat, applyToAll=false) => {
+    const overrides = JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
+    if(applyToAll) {
+      const merchantKey = (txn.name||"").toLowerCase().trim();
+      const updated = {...overrides};
+      txns.forEach(t => {
+        if((t.name||"").toLowerCase().trim() === merchantKey) updated[t.id] = newCat;
+      });
+      localStorage.setItem("flourish_cat_overrides", JSON.stringify(updated));
+    } else {
+      const updated = {...overrides, [txn.id]: newCat};
+      localStorage.setItem("flourish_cat_overrides", JSON.stringify(updated));
+    }
+    // Auto-link: if this vendor matches a bill's name, store in vendorBillMap
+    const merchantKey = (txn.name||"").toLowerCase().trim();
+    if(merchantKey.length >= 3 && setAppData) {
+      const matchedBill = (data.bills||[]).find(b =>
+        merchantKey.includes((b.name||"").toLowerCase().trim().substring(0,5)) ||
+        (b.name||"").toLowerCase().trim().includes(merchantKey.substring(0,8))
+      );
+      if(matchedBill) {
+        setAppData(prev => ({
+          ...prev,
+          vendorBillMap: {...(prev.vendorBillMap||{}), [merchantKey]: matchedBill.name}
+        }));
+      }
+    }
     setRecatTxn(null);
+    setApplyAllPrompt(null);
   };
-  const cats=["All",...Array.from(new Set(txns.map(t=>getCat(t))))];
+
+  // When user picks a category, check if there are other transactions from same merchant
+  const recatWithSmartPrompt = (txn, newCat) => {
+    const merchantKey = (txn.name||"").toLowerCase().trim();
+    // Guard: empty name would match ALL unnamed transactions — skip prompt
+    if(!merchantKey) { recat(txn, newCat, false); return; }
+    const otherSameMerchant = txns.filter(t =>
+      t.id !== txn.id &&
+      (t.name||"").toLowerCase().trim() === merchantKey &&
+      merchantKey.length >= 3 && // require at least 3 chars to avoid over-matching
+      (catOverrides[t.id] || t.cat) !== newCat
+    );
+    if(otherSameMerchant.length > 0) {
+      setApplyAllPrompt({txn, newCat, count: otherSameMerchant.length + 1});
+    } else {
+      recat(txn, newCat, false);
+    }
+  };
+  const cats=["All",...Array.from(new Set(txns.map(t=>{
+    // Incoming transfers show as "Received" in the filter
+    if(getCat(t)==="Transfer" && t.amount<0) return "Received";
+    return getCat(t);
+  }))).filter(c=>c!=="Transfer"||txns.some(t=>getCat(t)==="Transfer"&&t.amount>0))];
   // displayTxns and EXCLUDE_CATS must be defined BEFORE filtered (TDZ prevention)
   const EXCLUDE_CATS = new Set(["Transfer","Income"]);
-  const displayTxns = period==="month" ? thisMonthTxns : txns;
+  // Period date helpers — placed after all hooks to avoid TDZ
+  const startOfPeriod = (() => {
+    const d = new Date();
+    if(period==="week")  { const s=new Date(d); s.setDate(d.getDate()-d.getDay()); s.setHours(0,0,0,0); return s; }
+    if(period==="month") { return new Date(d.getFullYear(),d.getMonth(),1); }
+    if(period==="last")  { return new Date(d.getFullYear(),d.getMonth()-1,1); }
+    if(period==="3mo")   { return new Date(d.getFullYear(),d.getMonth()-2,1); }
+    return null;
+  })();
+  const endOfPeriod = (() => {
+    const d = new Date();
+    if(period==="last") { return new Date(d.getFullYear(),d.getMonth(),0,23,59,59); }
+    return null;
+  })();
+  const displayTxns = (() => {
+    if(period==="week"||period==="last"||period==="3mo") {
+      return txns.filter(t => {
+        if(!t.date) return false;
+        const d = new Date(t.date+"T12:00:00");
+        return (!startOfPeriod || d >= startOfPeriod) && (!endOfPeriod || d <= endOfPeriod);
+      });
+    }
+    if(period==="month") return thisMonthTxns;
+    return txns; // "all" = last 90 days
+  })();
   // Account filter — map account_id to account name
   const accountMap = (data.accounts||[]).reduce((m,a)=>({...m,[a.id]:a}),{});
   const uniqueAccounts = [...new Set(txns.map(t=>t.account_id).filter(Boolean))];
@@ -4370,8 +6436,17 @@ function SpendScreen({data, setAppData}){
     type: accountMap[id]?.type || "account",
   }));
   const acctFiltered = accountFilter==="All" ? displayTxns : displayTxns.filter(t=>t.account_id===accountFilter);
-  const filtered=catFilter==="All"?acctFiltered.filter(t=>getCat(t)!=="Transfer"):acctFiltered.filter(t=>getCat(t)===catFilter);
-  const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))).reduce((a,t)=>a+t.amount,0);
+  const filtered=catFilter==="All"
+    ? acctFiltered.filter(t=>{
+        if(isCCPayment(t,data.debts||[])) return false; // CC payments are balance sheet events — hide from list
+        const cat=getCat(t);
+        if(cat==="Transfer") return t.amount<0; // show incoming (e-transfers in), hide outgoing
+        return true;
+      })
+    : catFilter==="Received"
+      ? acctFiltered.filter(t=>getCat(t)==="Transfer"&&t.amount<0)
+      : acctFiltered.filter(t=>getCat(t)===catFilter&&!isCCPayment(t,data.debts||[]));
+  const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCCPayment(t,data.debts||[])).reduce((a,t)=>a+t.amount,0);
   const totalIn=acctFiltered.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
 
   const cuts=[
@@ -4387,9 +6462,10 @@ function SpendScreen({data, setAppData}){
     if(!isDemo && txns.length === 0) return <EmptyState icon="💳" title="No transactions yet" body="Your transactions are loading from your bank. Check back in a moment — or pull to refresh." action="Refresh" onAction={()=>window.location.reload()} color={C.orange}/>;
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <ScreenHeader title="Transactions" subtitle={monthLabel} onBack={setScreen?()=>setScreen("home"):null} cta="Ask Coach" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
     {/* Mark as Bill modal */}
     {markBillTxn&&(
-      <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setMarkBillTxn(null)}>
+      <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setMarkBillTxn(null)}>
         <div style={{background:C.bg,borderRadius:"24px 24px 0 0",width:"100%",maxWidth:520,border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",padding:"0 0 env(safe-area-inset-bottom,16px)"}} onClick={e=>e.stopPropagation()}>
           <div style={{padding:"16px 20px 14px",borderBottom:`1px solid ${C.border}`}}>
             <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
@@ -4429,9 +6505,35 @@ function SpendScreen({data, setAppData}){
                 </select>
               </div>
             </div>
+            {/* Fixed / Variable toggle */}
+            <div style={{marginBottom:12}}>
+              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Bill Type</div>
+              <div style={{display:"flex",gap:8}}>
+                {[["fixed","📌 Fixed","Same every month"],["variable","🔄 Variable","Changes monthly"]].map(([val,label,hint])=>(
+                  <button key={val} onClick={()=>setBillForm(v=>({...v,type:val}))}
+                    style={{flex:1,background:billForm.type===val?C.teal+"22":C.card,border:`1px solid ${billForm.type===val?C.teal:C.border}`,
+                      borderRadius:10,padding:"9px 10px",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+                    <div style={{color:billForm.type===val?C.tealBright:C.cream,fontWeight:700,fontSize:12}}>{label}</div>
+                    <div style={{color:C.muted,fontSize:10,marginTop:2}}>{hint}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Reports-under category */}
+            <div style={{marginBottom:14}}>
+              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Reports under (in Budget)</div>
+              <select value={billForm.category||"Other Bills"} onChange={e=>setBillForm(v=>({...v,category:e.target.value}))}
+                style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",
+                  color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}>
+                {["Housing","Utilities","Phone & Internet","Insurance","Subscriptions","Transportation","Health","Education","Other Bills"].map(c=>(
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <div style={{color:C.muted,fontSize:10,marginTop:4}}>Keeps bills separate from your discretionary spending budget.</div>
+            </div>
             <div style={{background:C.teal+"12",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",marginBottom:16}}>
               <div style={{color:C.tealBright,fontSize:12,fontWeight:600}}>💡 This will also update your cash-flow forecast</div>
-              <div style={{color:C.muted,fontSize:11,marginTop:2}}>Your Plan screen will now include ${billForm.amount}/month on the {billForm.date}{([11,12,13].includes(parseInt(billForm.date))?"th":["st","nd","rd"][parseInt(billForm.date||0)%10-1]||"th")}.</div>
+              <div style={{color:C.muted,fontSize:11,marginTop:2}}>Your Plan screen will now include ${billForm.amount}/month on the {billForm.date ? billForm.date+"th" : ""}</div>
             </div>
             <div style={{display:"flex",gap:10}}>
               <button
@@ -4442,15 +6544,23 @@ function SpendScreen({data, setAppData}){
                     const billName = billForm.name.trim().toLowerCase();
                     const alreadyExists = (data.bills||[]).some(b=>b.name.trim().toLowerCase()===billName);
                     if(!alreadyExists){
-                      setAppData(prev=>({...prev,bills:[...(prev.bills||[]),{name:billForm.name.trim(),amount:billForm.amount,date:billForm.date}]}));
-                    } // end if(!alreadyExists)
-                    // Also recategorise the transaction as Bills
+                      const newBill = {name:billForm.name.trim(),amount:billForm.amount,date:billForm.date,
+                        type:billForm.type||"fixed",category:billForm.category||"Other Bills",
+                        vendorPattern:(markBillTxn?.name||"").toLowerCase().trim()};
+                      const merchantKey = (markBillTxn?.name||"").toLowerCase().trim();
+                      setAppData(prev=>({...prev,
+                        bills:[...(prev.bills||[]),newBill],
+                        vendorBillMap:{...(prev.vendorBillMap||{}),...(merchantKey?{[merchantKey]:newBill.name}:{})}}));
+                    }
+                    // Categorise transaction under bill's category (not generic "Bills")
+                    const billCat = billForm.category||"Other Bills";
                     const overrides=JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
-                    localStorage.setItem("flourish_cat_overrides",JSON.stringify({...overrides,[markBillTxn.id]:"Bills"}));
+                    localStorage.setItem("flourish_cat_overrides",JSON.stringify({...overrides,[markBillTxn.id]:billCat}));
                   }
-                  setMarkBillTxn(null);setBillForm({name:"",amount:"",date:"1"});
+                  setMarkBillTxn(null);setBillForm({name:"",amount:"",date:"1",type:"fixed",category:"Bills"});
                 }}
-                style={{flex:1,background:billForm.name&&billForm.amount?C.green:"rgba(255,255,255,0.08)",border:"none",borderRadius:12,padding:"13px",color:"#fff",fontWeight:800,fontSize:14,cursor:billForm.name&&billForm.amount?"pointer":"default",fontFamily:"inherit",opacity:!billForm.name||!billForm.amount?0.4:1}}>
+                style={{flex:1,background:billForm.name&&billForm.amount?C.green:"rgba(255,255,255,0.08)",border:"none",
+                  borderRadius:12,padding:"13px",color:billForm.name&&billForm.amount?"#041810":C.muted,fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
                 Add to Bills ✓
               </button>
               <button onClick={()=>setMarkBillTxn(null)}
@@ -4462,26 +6572,137 @@ function SpendScreen({data, setAppData}){
         </div>
       </div>
     )}
+    {/* ── Arrears payment modal ─────────────────────────────────────
+        User taps "Pay arrears →" on a transaction.
+        They pick which bill this payment applies to.
+        We deduct the transaction amount from that bill's arrears balance.
+    ────────────────────────────────────────────────────────────────── */}
+    {arrearsPayTxn&&(
+      <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setArrearsPayTxn(null)}>
+        <div style={{width:"100%",maxWidth:520,background:C.bg,borderRadius:"24px 24px 0 0",border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",padding:"0 0 env(safe-area-inset-bottom,16px)"}} onClick={e=>e.stopPropagation()}>
+          <div style={{padding:"16px 20px 14px",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
+            <div style={{color:C.cream,fontWeight:800,fontSize:16}}>Apply payment to arrears</div>
+            <div style={{color:C.muted,fontSize:12,marginTop:3}}>
+              ${(arrearsPayTxn.amount||0).toFixed(2)} from <strong style={{color:C.mutedHi}}>{arrearsPayTxn.name}</strong> — which bill does this pay down?
+            </div>
+          </div>
+          <div style={{padding:"14px 20px 20px",maxHeight:"60vh",overflowY:"auto"}}>
+            {(data.bills||[]).filter(b=>parseFloat(b.arrears||0)>0).length===0?(
+              <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"20px 0"}}>
+                No bills with arrears tracked yet.<br/>
+                <span style={{fontSize:11}}>Add an arrears balance in Your Bills first.</span>
+              </div>
+            ):(
+              (data.bills||[]).filter(b=>parseFloat(b.arrears||0)>0).map((b,i)=>{
+                const billIdx = (data.bills||[]).indexOf(b);
+                const arrears = parseFloat(b.arrears||0);
+                const payment = parseFloat(arrearsPayTxn.amount||0);
+                const newBalance = Math.max(0, arrears - payment);
+                return (
+                  <div key={i} style={{background:C.card,borderRadius:14,padding:"14px 16px",marginBottom:10,border:`1px solid ${C.gold}33`,cursor:"pointer"}}
+                    onClick={()=>{
+                      // Apply payment — reduce arrears by transaction amount
+                      setAppData(prev=>({
+                        ...prev,
+                        bills:(prev.bills||[]).map((bill,bi)=>
+                          bi===billIdx ? {...bill, arrears:String(newBalance.toFixed(2))} : bill
+                        )
+                      }));
+                      setArrearsPayTxn(null);
+                    }}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                      <div>
+                        <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{b.name}</div>
+                        <div style={{color:C.muted,fontSize:11,marginTop:2}}>${b.amount}/mo regular payment</div>
+                      </div>
+                      <div style={{textAlign:"right"}}>
+                        <div style={{color:C.goldBright,fontWeight:800,fontSize:13}}>Owes ${arrears.toFixed(2)}</div>
+                        <div style={{color:C.muted,fontSize:10,marginTop:2}}>→ ${newBalance.toFixed(2)} after this</div>
+                      </div>
+                    </div>
+                    {newBalance===0&&(
+                      <div style={{background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:10,padding:"6px 10px",color:C.greenBright,fontSize:11,fontWeight:700,textAlign:"center"}}>
+                        ✓ This clears the balance entirely
+                      </div>
+                    )}
+                    {newBalance>0&&(
+                      <div style={{background:C.gold+"11",borderRadius:10,padding:"6px 10px",color:C.goldBright,fontSize:11,textAlign:"center"}}>
+                        ${newBalance.toFixed(2)} still owing after this payment
+                      </div>
+                    )}
+                    <button style={{width:"100%",marginTop:10,background:`linear-gradient(135deg,${C.gold},${C.goldBright})`,border:"none",borderRadius:10,padding:"10px",color:"#000",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                      Apply ${payment.toFixed(2)} to {b.name} arrears ✓
+                    </button>
+                  </div>
+                );
+              })
+            )}
+            <button onClick={()=>setArrearsPayTxn(null)}
+              style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"11px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit",marginTop:4}}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    {/* ── Apply to all vendor modal ─────────────────────────────────── */}
+    {applyAllPrompt&&(
+      <div style={{position:"fixed",inset:0,zIndex:1001,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setApplyAllPrompt(null)}>
+        <div style={{width:"100%",maxWidth:520,background:C.bg,borderRadius:"24px 24px 0 0",border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",padding:"0 0 env(safe-area-inset-bottom,16px)"}} onClick={e=>e.stopPropagation()}>
+          <div style={{padding:"16px 20px 14px",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
+            <div style={{color:C.cream,fontWeight:800,fontSize:16}}>Apply to all?</div>
+            <div style={{color:C.muted,fontSize:13,marginTop:4,lineHeight:1.5}}>
+              Found <strong style={{color:C.mutedHi}}>{applyAllPrompt.count} transactions</strong> from <strong style={{color:C.mutedHi}}>{applyAllPrompt.txn.name}</strong>.
+            </div>
+          </div>
+          <div style={{padding:"14px 20px 20px",display:"flex",flexDirection:"column",gap:10}}>
+            <button onClick={()=>recat(applyAllPrompt.txn, applyAllPrompt.newCat, true)}
+              style={{background:`linear-gradient(135deg,${C.orange},${C.orangeBright})`,border:"none",borderRadius:14,padding:"14px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",textAlign:"center"}}>
+              Apply "{applyAllPrompt.newCat}" to all {applyAllPrompt.count} transactions ✓
+            </button>
+            <button onClick={()=>recat(applyAllPrompt.txn, applyAllPrompt.newCat, false)}
+              style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"12px",color:C.mutedHi,fontWeight:600,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              Just this one transaction
+            </button>
+            <button onClick={()=>setApplyAllPrompt(null)}
+              style={{background:"none",border:"none",padding:"8px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
     {/* Re-categorize bottom sheet */}
     {recatTxn&&(
-      <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={()=>setRecatTxn(null)}>
-        <div style={{background:C.card,borderRadius:"24px 24px 0 0",width:"100%",maxWidth:520,border:`1px solid ${C.border}`,boxShadow:"0 -12px 48px rgba(0,0,0,0.5)",display:"flex",flexDirection:"column",maxHeight:"80vh"}} onClick={e=>e.stopPropagation()}>
+      <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}}
+        onClick={e=>{if(e.target===e.currentTarget)setRecatTxn(null);}}>
+        <div style={{background:C.card,borderRadius:isDesktop?"20px":"24px 24px 0 0",width:"100%",maxWidth:520,border:`1px solid ${C.border}`,boxShadow:"0 8px 60px rgba(0,0,0,0.5)",display:"flex",flexDirection:"column",maxHeight:isDesktop?"80vh":"85vh"}}>
           {/* Fixed header */}
           <div style={{padding:"16px 20px 12px",flexShrink:0,borderBottom:`1px solid ${C.border}`}}>
-            <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
+            {!isDesktop&&<div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{color:C.cream,fontWeight:800,fontSize:15}}>Change Category</div>
                 <div style={{color:C.muted,fontSize:11,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:240}}>{recatTxn.name}</div>
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
-                {setAppData&&recatTxn.amount>0&&<button onClick={()=>{
+                {setAppData&&recatTxn.amount>0&&!isCCPayment(recatTxn,data.debts||[])&&<button onClick={()=>{
                   const day=recatTxn.date?new Date(recatTxn.date+"T12:00:00").getDate():new Date().getDate();
                   setBillForm({name:recatTxn.name,amount:(recatTxn.amount||0).toFixed(2),date:String(day)});
                   setMarkBillTxn(recatTxn);setRecatTxn(null);
                 }} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,borderRadius:99,padding:"6px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
                   + Add to Bills
                 </button>}
+                {/* Pay arrears button — shows if transaction amount matches a bill with arrears */}
+                {setAppData&&recatTxn.amount>0&&(data.bills||[]).some(b=>parseFloat(b.arrears||0)>0)&&(
+                  <button onClick={()=>{setArrearsPayTxn(recatTxn);setRecatTxn(null);}}
+                    style={{background:C.gold+"22",border:`1px solid ${C.gold}44`,color:C.goldBright,borderRadius:99,padding:"6px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                    Pay arrears →
+                  </button>
+                )}
                 <button onClick={()=>setRecatTxn(null)} style={{background:"none",border:"none",color:C.muted,fontSize:20,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>✕</button>
               </div>
             </div>
@@ -4490,13 +6711,13 @@ function SpendScreen({data, setAppData}){
           <div style={{overflowY:"auto",padding:"16px 20px",flex:1}}>
             <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
               {[...ALL_CATS, ...(JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]"))].map(cat=>(
-                <button key={cat} onClick={()=>recat(recatTxn,cat)} style={{background:getCat(recatTxn)===cat?C.orange+"33":C.cardAlt,border:`1px solid ${getCat(recatTxn)===cat?C.orange:C.border}`,color:getCat(recatTxn)===cat?C.orangeBright:C.muted,borderRadius:99,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",minHeight:36}}>
+                <button key={cat} onClick={()=>recatWithSmartPrompt(recatTxn,cat)} style={{background:getCat(recatTxn)===cat?C.orange+"33":C.cardAlt,border:`1px solid ${getCat(recatTxn)===cat?C.orange:C.border}`,color:getCat(recatTxn)===cat?C.orangeBright:C.muted,borderRadius:99,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",minHeight:36}}>
                   {cat}
                 </button>
               ))}
             </div>
             {/* Add custom category */}
-            <AddCustomCategory onAdd={(cat)=>recat(recatTxn,cat)}/>
+            <AddCustomCategory onAdd={(cat)=>recatWithSmartPrompt(recatTxn,cat)}/>
           </div>
           {/* Safe bottom padding for mobile */}
           <div style={{height:"env(safe-area-inset-bottom, 16px)",flexShrink:0}}/>
@@ -4511,7 +6732,9 @@ function SpendScreen({data, setAppData}){
       <div style={{textAlign:"right"}}>
         <div style={{color:C.red,fontWeight:800,fontSize:15}}>–${(totalSpent||0).toFixed(0)}</div>
         <div style={{color:C.green,fontSize:11}}>+${(totalIn||0).toFixed(0)} in</div>
-        <div style={{color:C.muted,fontSize:10,marginTop:2}}>{period==="month"?monthLabel:"Last 90 days"}</div>
+        <div style={{color:C.muted,fontSize:10,marginTop:2}}>
+          {period==="week"?"This week":period==="month"?monthLabel:period==="last"?"Last month":period==="3mo"?"Last 3 months":"Last 90 days"}
+        </div>
       </div>
     </div>
 
@@ -4522,83 +6745,148 @@ function SpendScreen({data, setAppData}){
       </button>)}
     </div>
     {tab==="txn"&&<>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-        <span style={{color:C.muted,fontSize:11}}>Period:</span>
-        {["month","all"].map(p=>(
-          <button key={p} onClick={()=>setPeriod(p)}
-            style={{background:period===p?C.orange+"28":"none",border:`1px solid ${period===p?C.orange+"66":C.border}`,color:period===p?C.orangeBright:C.muted,borderRadius:99,padding:"4px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
-            {p==="month"?monthLabel:"Last 90 days"}
-          </button>
-        ))}
+      {/* Filter row — dropdowns for account, category, period */}
+      <div style={{display:"grid",gridTemplateColumns:accountsWithNames.length>1?"1fr 1fr 1fr":"1fr 1fr",gap:8}}>
+        {accountsWithNames.length>1&&(
+          <div>
+            <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Account</div>
+            <select value={accountFilter} onChange={e=>{setAccountFilter(e.target.value);setCatFilter("All");}}
+              style={{width:"100%",background:C.card,border:`1px solid ${accountFilter!=="All"?C.blue:C.border}`,borderRadius:10,padding:"9px 10px",color:accountFilter!=="All"?C.blueBright:C.cream,fontSize:12,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
+              <option value="All">All Accounts</option>
+              {accountsWithNames.map(a=>{
+                const icon = a.type==="credit"||a.type==="credit card"?"💳":a.type==="savings"?"🏦":a.type==="investment"?"📈":"🏦";
+                return <option key={a.id} value={a.id}>{icon} {a.name}</option>;
+              })}
+            </select>
+          </div>
+        )}
+        <div>
+          <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Category</div>
+          <select value={catFilter} onChange={e=>setCatFilter(e.target.value)}
+            style={{width:"100%",background:C.card,border:`1px solid ${catFilter!=="All"?C.orange:C.border}`,borderRadius:10,padding:"9px 10px",color:catFilter!=="All"?C.orangeBright:C.cream,fontSize:12,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
+            {cats.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Period</div>
+          <select value={period} onChange={e=>setPeriod(e.target.value)}
+            style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px",color:C.cream,fontSize:12,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
+            <option value="week">This week</option>
+            <option value="month">{monthLabel}</option>
+            <option value="last">Last month</option>
+            <option value="3mo">Last 3 months</option>
+            <option value="all">Last 90 days</option>
+          </select>
+        </div>
       </div>
-      {/* Account filter */}
-      {accountsWithNames.length > 1 && (
-        <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2,scrollbarWidth:"none"}}>
-          {[{id:"All",name:"All Accounts",type:"all"},...accountsWithNames].map(acct=>{
-            const isActive = accountFilter===acct.id;
-            const typeIcon = acct.type==="credit"||acct.type==="credit card"?"💳":acct.type==="savings"?"🏦":acct.type==="investment"?"📈":"🏦";
-            return (
-              <button key={acct.id} onClick={()=>{setAccountFilter(acct.id);setCatFilter("All");}}
-                style={{background:isActive?C.blue+"28":"rgba(255,255,255,0.04)",border:`1px solid ${isActive?C.blue+"66":"rgba(255,255,255,0.08)"}`,color:isActive?C.blueBright:C.muted,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700,whiteSpace:"nowrap",fontFamily:"inherit",transition:"all .2s",flexShrink:0,display:"flex",alignItems:"center",gap:5}}>
-                {acct.id!=="All"&&<span>{typeIcon}</span>}
-                {acct.name}
-              </button>
-            );
-          })}
+      {filtered.length===0&&(
+        <div style={{background:C.card,borderRadius:18,padding:"28px 20px",textAlign:"center",border:`1px solid ${C.border}`}}>
+          {txns.length===0?(
+            <>
+              <div style={{fontSize:36,marginBottom:12}}>📂</div>
+              <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif",marginBottom:8}}>No transactions yet</div>
+              <div style={{color:C.muted,fontSize:13,lineHeight:1.6,maxWidth:260,margin:"0 auto"}}>
+                Connect your bank in Settings to import live transactions, or upload a bank statement.
+              </div>
+            </>
+          ):(
+            <>
+              <div style={{fontSize:32,marginBottom:10}}>🔍</div>
+              <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:6}}>No transactions match this filter</div>
+              <div style={{color:C.muted,fontSize:12}}>Try switching the category or time period above.</div>
+            </>
+          )}
         </div>
       )}
-      <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none"}}>
-        {cats.map(c=><button key={c} onClick={()=>setCatFilter(c)} style={{background:catFilter===c?C.orange+"28":"rgba(255,255,255,0.04)",border:`1px solid ${catFilter===c?C.orange+"66":"rgba(255,255,255,0.08)"}`,color:catFilter===c?C.orangeBright:C.muted,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700,whiteSpace:"nowrap",fontFamily:"inherit",transition:"all .2s",flexShrink:0}}>{c}</button>)}
-      </div>
-      {filtered.map(txn=>(
-        <div key={txn.id} style={{background:C.card,borderRadius:18,padding:"14px 16px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:13,transition:"all .2s",cursor:"default"}}
+      {filtered.map(txn=>{
+        const effCat = getCat(txn);
+        const { emoji: txnEmoji, color: txnDispColor } = getCatDisplay(effCat);
+        return (
+        <div key={txn.id} style={{background:C.card,borderRadius:18,padding:"14px 16px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12,cursor:"default",transition:"all .15s"}}
           onMouseEnter={e=>{e.currentTarget.style.borderColor=C.borderHi;e.currentTarget.style.background=C.isDark?C.cardAlt:C.surface;}}
           onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.card;}}>
-          <div style={{width:42,height:42,borderRadius:14,background:txn.color+"18",border:`1px solid ${txn.color}28`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon id={txnIcon(txn)} size={19} color={txn.color} strokeWidth={1.5}/></div>
+          <div style={{width:42,height:42,borderRadius:14,background:txnDispColor+"18",border:`1px solid ${txnDispColor}28`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>
+            {txn.logo&&<img src={txn.logo} alt="" style={{width:28,height:28,borderRadius:8,objectFit:"contain"}} onError={e=>{e.target.style.display="none";}}/>}
+            {!txn.logo&&<span>{txnEmoji}</span>}
+          </div>
           <div style={{flex:1,minWidth:0}}>
             <div style={{color:C.cream,fontWeight:600,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txn.name}</div>
             <div style={{display:"flex",gap:6,marginTop:3,alignItems:"center"}}>
-              <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.color+"18",border:`1px solid ${txn.color}33`,borderRadius:99,padding:"2px 8px",color:txn.color,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
-                {getCat(txn)} <span style={{opacity:0.6,fontSize:9}}>✎</span>
+              <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.amount<0?C.green+"18":txnDispColor+"18",border:`1px solid ${txn.amount<0?C.green:txnDispColor}33`,borderRadius:99,padding:"2px 8px",color:txn.amount<0?C.greenBright:txnDispColor,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
+                {txn.amount<0&&getCat(txn)==="Transfer"?"Received ↓ tap to label":getCat(txn)} <span style={{opacity:0.6,fontSize:9}}>✎</span>
               </button>
               <span style={{color:C.muted,fontSize:10}}>{txn.date}</span>
               {txn.account_id&&accountFilter==="All"&&accountMap[txn.account_id]&&(
-                <span style={{color:C.muted,fontSize:9,background:"rgba(255,255,255,0.04)",borderRadius:99,padding:"1px 7px",border:`1px solid ${C.border}`,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                <span style={{color:C.muted,fontSize:9,background:"rgba(255,255,255,0.04)",borderRadius:99,padding:"1px 7px",border:`1px solid ${C.border}`}}>
                   {accountMap[txn.account_id]?.name||"Bank"}
                 </span>
               )}
               {txn.pending&&<Chip label="Pending" color={C.gold} size={9}/>}
             </div>
           </div>
-          <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif",flexShrink:0}}>{txn.amount<0?"+":"–"}${Math.abs(txn.amount).toFixed(2)}</div>
+          <div style={{textAlign:"right",flexShrink:0}}>
+            <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
+              {txn.amount<0?"+":"–"}${Math.abs(txn.amount).toFixed(2)}
+            </div>
+            {txn.amount<0&&(isCashAdvance(txn)?<div style={{color:C.redBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>⚠️ CASH ADVANCE</div>:<div style={{color:C.greenBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>{getCat(txn)==="Transfer"?"RECEIVED":"INCOME"}</div>)}
+          </div>
         </div>
-      ))}
+        );
+      })}
     </>}
     {tab==="breakdown"&&<>
+      {(()=>{
+        // Breakdown uses the same period-filtered set as the Transactions tab
+        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&getCat(t)!=="Fees"&&!isCCPayment(t,data.debts||[]));
+        const bdIn   = acctFiltered.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
+        const bdTotal= bdTxns.reduce((s,t)=>s+t.amount,0);
+        const bdByCat= {};
+        bdTxns.forEach(t=>{const c=getCat(t);bdByCat[c]=(bdByCat[c]||0)+t.amount;});
+        const bdAllCats=Object.entries(bdByCat).sort((a,b)=>b[1]-a[1]);
+  const bdTopCats=showAllBdCats?bdAllCats:bdAllCats.slice(0,8);
+        const periodLabel = period==="week"?"This week":period==="month"?monthLabel:period==="last"?"Last month":period==="3mo"?"Last 3 months":"Last 90 days";
+        return (<>
       <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
           <div>
-            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Spent · {monthLabel}</div>
-            <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>{`$${(totalSpent||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</div>
+            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Spent · {periodLabel}</div>
+            <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>{`$${(bdTotal||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</div>
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
-            <div style={{color:C.muted,fontSize:10,marginBottom:2}}>{thisMonthTxns.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))).length} transactions</div>
-            <div style={{color:C.green,fontSize:11}}>+${(totalIn||0).toLocaleString("en-CA",{minimumFractionDigits:0})} in</div>
+            <div style={{color:C.muted,fontSize:10,marginBottom:2}}>{bdTxns.length} transactions</div>
+            <div style={{color:C.green,fontSize:11}}>+${(bdIn||0).toLocaleString("en-CA",{minimumFractionDigits:0})} in</div>
           </div>
         </div>
       </Card>
-      {stats.topCats.map(([cat,amt],i)=>{
+      {bdTopCats.length===0&&<div style={{background:C.card,borderRadius:16,padding:"24px 20px",textAlign:"center",border:`1px solid ${C.border}`}}>
+        <div style={{fontSize:32,marginBottom:8}}>📊</div>
+        <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:4}}>No spending data for this period</div>
+        <div style={{color:C.muted,fontSize:12}}>Try a broader time range above.</div>
+      </div>}
+      {/* Budget Plan Card — shown above category breakdown */}
+      {period==="month"&&<BudgetPlanCard data={data} setAppData={setAppData}/>}
+      {bdTopCats.map(([cat,amt],i)=>{
         const colors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
-        const catTxns=thisMonthTxns.filter(t=>getCat(t)===cat&&t.amount>0);
+        const catTxns=acctFiltered.filter(t=>getCat(t)===cat&&t.amount>0&&!isCCPayment(t,data.debts||[]));
         const budget = (data.budgets||{})[cat] || null;
         window.__flourishBills = data.bills||[];
-        return <ExpandableCatCard key={i} cat={cat} amt={amt} totalSpent={totalSpent} color={colors[i%6]} catTxns={catTxns}
+        return <ExpandableCatCard key={i} cat={cat} amt={amt} totalSpent={bdTotal} color={colors[i%6]} catTxns={catTxns}
           budget={budget} onSetBudget={(cat,val)=>{
             if(setAppData) setAppData(prev=>({...prev,budgets:{...(prev.budgets||{}),
               ...(val===null ? Object.fromEntries(Object.entries(prev.budgets||{}).filter(([k])=>k!==cat)) : {[cat]:val})
             }}));
           }}/>;
       })}
+      {bdAllCats.length>8&&(
+        <button onClick={()=>setShowAllBdCats(v=>!v)}
+          style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:12,
+            padding:"11px",color:C.muted,fontSize:12,fontWeight:700,cursor:"pointer",
+            fontFamily:"inherit",marginTop:2}}>
+          {showAllBdCats?"▲ Show less":`▼ Show ${bdAllCats.length-8} more categor${bdAllCats.length-8===1?"y":"ies"}`}
+        </button>
+      )}
+        </>);
+      })()}
     </>}
     {tab==="cuts"&&<>
       <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
@@ -4628,12 +6916,16 @@ function SpendScreen({data, setAppData}){
 
 
 // ─── GOALS ────────────────────────────────────────────────────────────────────
-function Goals({data,initialTab="sim",onUpgrade}){
+function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
   const [tab,setTab]=useState(initialTab);
   useEffect(()=>{ setTab(initialTab); },[initialTab]);
   const [selDebt,setSelDebt]=useState(0);
   const [extra,setExtra]=useState(50);
   const [method,setMethod]=useState("avalanche");
+  // Goals tab state — must be at top level (Rules of Hooks)
+  const [showForm, setShowForm] = useState(false);
+  const [editIdx, setEditIdx] = useState(null);
+  const [form, setForm] = useState({name:"",target:"",saved:"",monthly:"",notes:""});
   const debts=data.debts||[];
   const safeSelDebt=Math.min(selDebt,Math.max(0,debts.length-1));
   const debt=debts.length>0?debts[safeSelDebt]:{name:"Credit Card",balance:"3420",rate:"19.99",min:"68"};
@@ -4654,14 +6946,250 @@ function Goals({data,initialTab="sim",onUpgrade}){
       const netWorth=_allBal-totalDebt;
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{fontSize:22,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Goals & Wealth</div><div style={{background:CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue+"22":C.green+"22",border:`1px solid ${CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}33`,borderRadius:99,padding:"4px 12px",color:CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blueBright:C.greenBright,fontSize:11,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{CC[data?.profile?.country||"CA"]?.flag} {CC[data?.profile?.country||"CA"]?.currency}</div></div>
-    <div style={{display:"flex",gap:6}}>
-      {[["sim","Simulator"],["worth","Net Worth"],["retire","Retirement"],["forecast","Wealth"],["personality","Personality"],["tax","Tax Tips"],["learn","Learn"]].map(([key,lbl])=>(
-        <button key={key} onClick={()=>setTab(key)} style={{flex:1,background:tab===key?C.purple+"22":C.cardAlt,border:`1px solid ${tab===key?C.purple:C.border}`,color:tab===key?C.purpleBright:C.muted,borderRadius:10,padding:"8px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>{lbl}</button>
+    <ScreenHeader title="Goals & Wealth" onBack={setScreen?()=>setScreen("home"):null} cta={CC[data?.profile?.country||"CA"]?.flag+" "+CC[data?.profile?.country||"CA"]?.currency} ctaColor={CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}/>
+    <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
+      {[["goals","My Goals"],["sim","Debt Sim"],["worth","Net Worth"],["retire","Retirement"],["forecast","Wealth"],["budget","Budget"],["personality","Personality"],["tax","Tax Tips"],["learn","Learn"]].map(([key,lbl])=>(
+        <button key={key} onClick={()=>setTab(key)} style={{flexShrink:0,background:tab===key?C.purple+"22":C.cardAlt,border:`1px solid ${tab===key?C.purple:C.border}`,color:tab===key?C.purpleBright:C.muted,borderRadius:10,padding:"8px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>{lbl}</button>
       ))}
     </div>
+    {/* ── MY GOALS TAB ─────────────────────────────────────── */}
+    {tab==="goals"&&(()=>{
+      const goals = data.goals||[];
+      const GOAL_TYPES = [
+        {label:"Emergency Fund", icon:"🆘", color:C.orange},
+        {label:"RRSP",           icon:"🏦", color:C.teal},
+        {label:"TFSA",           icon:"💎", color:C.green},
+        {label:"Vacation",       icon:"✈️",  color:C.blue},
+        {label:"Down Payment",   icon:"🏠", color:C.purple},
+        {label:"Car",            icon:"🚗", color:C.gold},
+        {label:"Education",      icon:"🎓", color:C.teal},
+        {label:"Wedding",        icon:"💍", color:C.pink},
+        {label:"Home Reno",      icon:"🔨", color:C.orange},
+        {label:"Other",          icon:"🎯", color:C.muted},
+      ];
+
+      const openAdd = () => { setForm({name:"",target:"",saved:"",monthly:"",notes:""}); setEditIdx(null); setShowForm(true); };
+      const openEdit = (g,i) => { setForm({name:g.name||g.label||"",target:g.target||"",saved:g.saved||g.current||"",monthly:g.monthly||"",notes:g.notes||""}); setEditIdx(i); setShowForm(true); };
+      const saveGoal = () => {
+        if(!form.name||!form.target) return;
+        if(setAppData) setAppData(prev=>{
+          const goals = prev.goals||[];
+          if(editIdx!=null) {
+            return {...prev, goals: goals.map((g,i)=>i===editIdx?{...g,...form}:g)};
+          }
+          return {...prev, goals:[...goals,{...form,id:Date.now()}]};
+        });
+        setShowForm(false); setEditIdx(null);
+      };
+      const removeGoal = i => { if(setAppData) setAppData(prev=>({...prev,goals:(prev.goals||[]).filter((_,x)=>x!==i)})); };
+      const updateField = (i,field,val) => { if(setAppData) setAppData(prev=>({...prev,goals:(prev.goals||[]).map((g,x)=>x===i?{...g,[field]:val}:g)})); };
+
+      const toMonthlyIncome = (() => {
+        const toMo = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="monthly"?a:a*2.167; };
+        return (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
+      })();
+
+      return (
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          {/* Header row */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
+                {goals.length===0?"Set goals and track progress toward them."
+                  :`${goals.length} goal${goals.length===1?"":"s"} · $${goals.reduce((s,g)=>s+parseFloat(g.saved||g.current||0),0).toLocaleString()} saved so far`}
+              </div>
+            </div>
+            <button onClick={openAdd}
+              style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"8px 16px",color:"#fff",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:36}}>
+              + Add Goal
+            </button>
+          </div>
+
+          {/* Goal list */}
+          {goals.length===0&&!showForm&&(
+            <div style={{background:C.card,borderRadius:18,padding:"28px 20px",textAlign:"center",border:`1px solid ${C.border}`}}>
+              <div style={{fontSize:40,marginBottom:12}}>🎯</div>
+              <div style={{color:C.cream,fontWeight:800,fontSize:16,fontFamily:"'Playfair Display',serif",marginBottom:8}}>No goals set yet</div>
+              <div style={{color:C.muted,fontSize:13,marginBottom:16,lineHeight:1.6}}>Add your RRSP, emergency fund, vacation — anything you're saving toward. The app will track progress and show you how long it'll take.</div>
+              <button onClick={openAdd}
+                style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:12,padding:"10px 24px",color:C.purpleBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                Add your first goal →
+              </button>
+            </div>
+          )}
+
+          {goals.map((g,i)=>{
+            const target  = parseFloat(g.target||1);
+            const saved   = parseFloat(g.saved||g.current||0);
+            const monthly = parseFloat(g.monthly||0);
+            const pct     = Math.min(100, Math.round((saved/target)*100));
+            const remaining = Math.max(0, target-saved);
+            const moToGo  = monthly>0 ? Math.ceil(remaining/monthly) : null;
+            const goalType = GOAL_TYPES.find(t=>t.label.toLowerCase()===((g.name||"").toLowerCase())) || GOAL_TYPES[GOAL_TYPES.length-1];
+            const col = goalType.color;
+            return (
+              <div key={g.id||i} style={{background:C.card,borderRadius:18,border:`1px solid ${col}33`,overflow:"hidden",position:"relative"}}>
+                <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${col},${col}88)`}}/>
+                <div style={{padding:"14px 16px 12px"}}>
+                  {/* Top row */}
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                    <span style={{fontSize:22,flexShrink:0}}>{goalType.icon}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{color:C.cream,fontWeight:800,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.name||g.label||"Goal"}</div>
+                      {g.notes&&<div style={{color:C.muted,fontSize:11,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.notes}</div>}
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{color:col,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{pct}%</div>
+                      <div style={{color:C.muted,fontSize:9}}>complete</div>
+                    </div>
+                  </div>
+                  {/* Progress bar */}
+                  <div style={{background:C.border,borderRadius:99,height:8,overflow:"hidden",marginBottom:10}}>
+                    <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${col},${col}cc)`,borderRadius:99,transition:"width .5s ease"}}/>
+                  </div>
+                  {/* Stats row */}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
+                    {[
+                      ["Saved","saved", saved>0?`$${saved.toLocaleString()}`:"$0", C.greenBright],
+                      ["Target","target", `$${target.toLocaleString()}`, C.cream],
+                      ["Monthly","monthly", monthly>0?`$${monthly}/mo`:"Not set", monthly>0?col:C.muted],
+                    ].map(([lbl,field,display,color])=>(
+                      <div key={field} style={{background:C.cardAlt,borderRadius:10,padding:"8px 10px"}}>
+                        <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{lbl}</div>
+                        <div style={{display:"flex",alignItems:"center",background:C.bg,border:`1px solid ${C.border}`,borderRadius:7,overflow:"hidden"}}>
+                          {field!=="monthly"&&<span style={{color:C.muted,fontSize:10,padding:"0 3px 0 5px"}}>$</span>}
+                          <input value={g[field]||""} onChange={e=>updateField(i,field,e.target.value)}
+                            type="number" inputMode="decimal" placeholder="0"
+                            style={{flex:1,background:"none",border:"none",padding:"5px 4px 5px 0",color,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",width:0,fontWeight:700}}/>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Time estimate */}
+                  {remaining>0&&(
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                        {moToGo
+                          ? `$${remaining.toLocaleString()} to go · ~${moToGo} month${moToGo===1?"":"s"}`
+                          : `$${remaining.toLocaleString()} remaining · add monthly contribution to see timeline`}
+                      </div>
+                      <div style={{display:"flex",gap:6}}>
+                        <button onClick={()=>openEdit(g,i)}
+                          style={{background:col+"18",border:`1px solid ${col}33`,borderRadius:8,padding:"5px 10px",color:col,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:28}}>
+                          Edit
+                        </button>
+                        <button onClick={()=>removeGoal(i)}
+                          style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"5px 8px",minHeight:28,minWidth:28}}>✕</button>
+                      </div>
+                    </div>
+                  )}
+                  {remaining<=0&&(
+                    <div style={{background:C.green+"14",border:`1px solid ${C.green}33`,borderRadius:10,padding:"8px 12px",color:C.greenBright,fontWeight:700,fontSize:12,textAlign:"center"}}>
+                      🎉 Goal reached! Congratulations!
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Add / Edit form */}
+          {showForm&&(
+            <div style={{background:C.cardAlt,borderRadius:18,padding:"16px",border:`1px solid ${C.purple}44`}}>
+              <div style={{color:C.cream,fontWeight:800,fontSize:15,marginBottom:14}}>
+                {editIdx!=null?"Edit Goal":"New Goal"}
+              </div>
+              {/* Goal name — type selector */}
+              <div style={{marginBottom:10}}>
+                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Goal Type</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {GOAL_TYPES.map(t=>(
+                    <button key={t.label} onClick={()=>setForm(v=>({...v,name:t.label}))}
+                      style={{background:form.name===t.label?t.color+"33":"rgba(255,255,255,0.04)",border:`1px solid ${form.name===t.label?t.color+"66":C.border}`,borderRadius:10,padding:"7px 12px",color:form.name===t.label?t.color:C.muted,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:34}}>
+                      {t.icon} {t.label}
+                    </button>
+                  ))}
+                </div>
+                {/* Custom name override */}
+                <input value={GOAL_TYPES.find(t=>t.label===form.name)?"":(form.name||"")}
+                  onChange={e=>setForm(v=>({...v,name:e.target.value}))}
+                  placeholder="Or type a custom name…"
+                  style={{marginTop:8,width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
+              </div>
+              {/* Amounts */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}>
+                {[["Target $","target"],["Saved so far $","saved"],["Monthly $ contribution","monthly"]].map(([lbl,field])=>(
+                  <div key={field}>
+                    <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{lbl}</div>
+                    <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                      <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
+                      <input value={form[field]||""} onChange={e=>setForm(v=>({...v,[field]:e.target.value}))}
+                        type="number" inputMode="decimal" placeholder="0"
+                        style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:600}}/>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Notes */}
+              <div style={{marginBottom:14}}>
+                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Notes (optional)</div>
+                <input value={form.notes||""} onChange={e=>setForm(v=>({...v,notes:e.target.value}))}
+                  placeholder="e.g. RRSP at TD Bank, contributing $200/paycheque"
+                  style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
+              </div>
+              {/* Timeline preview */}
+              {form.target&&form.monthly&&parseFloat(form.monthly)>0&&(()=>{
+                const remaining = Math.max(0,parseFloat(form.target||0)-parseFloat(form.saved||0));
+                const months = Math.ceil(remaining/parseFloat(form.monthly));
+                const d = new Date(); d.setMonth(d.getMonth()+months);
+                return remaining>0?(
+                  <div style={{background:C.purple+"12",border:`1px solid ${C.purple}33`,borderRadius:10,padding:"8px 12px",marginBottom:14,color:C.purpleBright,fontSize:12,fontWeight:700,textAlign:"center"}}>
+                    📅 At ${parseFloat(form.monthly).toLocaleString()}/mo → reached {d.toLocaleDateString("en-CA",{month:"long",year:"numeric"})} (~{months} month{months===1?"":"s"})
+                  </div>
+                ):null;
+              })()}
+              {/* Buttons */}
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={saveGoal}
+                  disabled={!form.name||!form.target}
+                  style={{flex:1,background:form.name&&form.target?`linear-gradient(135deg,${C.purple},${C.purpleBright})`:"rgba(255,255,255,0.08)",border:"none",borderRadius:10,padding:"11px",color:form.name&&form.target?"#fff":C.muted,fontWeight:800,fontSize:13,cursor:form.name&&form.target?"pointer":"default",fontFamily:"'Plus Jakarta Sans',sans-serif",opacity:form.name&&form.target?1:0.5}}>
+                  {editIdx!=null?"Save Changes ✓":"Add Goal ✓"}
+                </button>
+                <button onClick={()=>{setShowForm(false);setEditIdx(null);}}
+                  style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 18px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Coach integration hint */}
+          {goals.length>0&&setScreen&&(
+            <div style={{background:C.purple+"08",border:`1px solid ${C.purple}22`,borderRadius:14,padding:"12px 16px",display:"flex",gap:10,alignItems:"center",cursor:"pointer"}}
+              onClick={()=>setScreen("coach")}>
+              <span style={{fontSize:18}}>🤖</span>
+              <div style={{flex:1}}>
+                <div style={{color:C.purpleBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Ask Coach about your goals</div>
+                <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>Your goals are shared with the AI Coach — ask it to suggest contributions or adjust timelines.</div>
+              </div>
+              <span style={{color:C.purpleBright,fontSize:16}}>→</span>
+            </div>
+          )}
+        </div>
+      );
+    })()}
+
     {tab==="sim"&&<>
       {noDebts&&<EmptyState icon="🎯" title="No debts tracked yet" body="Add debts during setup to simulate payoff strategies and see how much interest you can save." action="Add Debts in Settings" onAction={()=>window.dispatchEvent(new CustomEvent("flourish:settings"))} color={C.purple}/>}
+      {!noDebts&&debts.every(d=>!parseFloat(d.rate||0))&&(
+        <div style={{background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:14,padding:"12px 14px",marginBottom:12,display:"flex",gap:10,alignItems:"flex-start"}}>
+          <span style={{fontSize:16,flexShrink:0}}>⚡</span>
+          <div>
+            <div style={{color:C.goldBright,fontWeight:700,fontSize:13,marginBottom:2}}>Add interest rates to unlock the simulator</div>
+            <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.6}}>Your credit card rate is on your statement or card agreement — typically 19.99%–29.99%. Add it in Settings → Debts to see your exact debt-free date and total interest saved.</div>
+          </div>
+        </div>
+      )}
       {!noDebts&&debts.length>1&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{debts.map((d,i)=><button key={i} onClick={()=>setSelDebt(i)} style={{background:safeSelDebt===i?C.purple+"33":C.cardAlt,border:`1px solid ${selDebt===i?C.purple:C.border}`,color:safeSelDebt===i?C.purpleBright:C.muted,borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>{d.name}</button>)}</div>}
       {!noDebts&&<div style={{background:`linear-gradient(135deg,${C.purpleDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"20px 22px",border:`1px solid ${C.purple}44`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
@@ -4773,7 +7301,7 @@ function Goals({data,initialTab="sim",onUpgrade}){
 
     {tab==="tax"&&(()=>{
       const cfg=CC[data.profile?.country||"CA"];
-      const tips=cfg.taxTips;
+      const tips=getPersonalizedTaxCredits(data.profile);
       const highPriority=tips.filter(t=>t.priority==="high");
       const medPriority=tips.filter(t=>t.priority!=="high");
       const totalSavings=highPriority.length+" high-priority credits identified";
@@ -4892,11 +7420,111 @@ function Goals({data,initialTab="sim",onUpgrade}){
     {tab==="retire"&&(()=>{
       const cfg=CC[data.profile?.country||"CA"];
       const accts=cfg.retirementAccounts;
+      const isCA = (data.profile?.country||"CA")==="CA";
+      // Retirement account balances — stored in profile.retirement
+      const ret = data.profile?.retirement||{};
+      const updateRet = (field,val) => {
+        if(setAppData) setAppData(prev=>({...prev,profile:{...(prev.profile||{}),retirement:{...(prev.profile?.retirement||{}),[field]:val}}}));
+      };
       return <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={{background:C.blueDim,border:`1px solid ${C.blue}33`,borderRadius:16,padding:"14px 16px"}}>
           <div style={{color:C.blueBright,fontWeight:700,fontSize:13,marginBottom:4}}>{cfg.flag} Registered & Tax-Advantaged Accounts</div>
           <div style={{color:C.muted,fontSize:12,lineHeight:1.6}}>These accounts are legal ways to keep more of your money. Most people don't maximize them.</div>
         </div>
+
+        {/* ── My Balances & Contributions ─────────────────────── */}
+        <div style={{background:C.card,borderRadius:18,padding:"16px 18px",border:`1px solid ${C.teal}33`}}>
+          <div style={{color:C.tealBright,fontWeight:800,fontSize:14,fontFamily:"'Playfair Display',serif",marginBottom:14}}>
+            💼 My Current Balances & Contributions
+          </div>
+          {/* ── Balances row (2 col grid) */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+          {(isCA?[
+            ["rrspBalance","RRSP Balance","Current RRSP value"],
+            ["tfsaBalance","TFSA Balance","Current TFSA value"],
+          ]:[
+            ["401kBalance","401(k) Balance","Current 401(k) value"],
+            ["iraBalance","IRA / Roth IRA Balance","Current IRA value"],
+          ]).map(([field,label,hint])=>(
+            <div key={field}>
+              <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>
+              <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
+                <input value={ret[field]||""} onChange={e=>updateRet(field,e.target.value)}
+                  type="number" inputMode="decimal" placeholder="0" title={hint}
+                  style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:C.tealBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700}}/>
+              </div>
+              <div style={{color:C.muted,fontSize:9,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{hint}</div>
+            </div>
+          ))}
+          </div>
+          {/* ── Contributions with frequency selector */}
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {(isCA?[
+            ["rrspMonthly","rrspFreq","RRSP Contribution"],
+            ["tfsaMonthly","tfsaFreq","TFSA Contribution"],
+            ["pensionMonthly","pensionFreq","Pension / Other"],
+          ]:[
+            ["401kMonthly","401kFreq","401(k) Contribution"],
+            ["iraMonthly","iraFreq","IRA / Roth IRA Contribution"],
+            ["otherRetire","otherRetireFreq","Other Retirement"],
+          ]).map(([field,freqField,label])=>{
+            const freq = ret[freqField]||"monthly";
+            const toMo = (amt,f) => { const a=parseFloat(amt||0); return f==="weekly"?a*4.333:f==="biweekly"?a*2.167:f==="annually"?a/12:a; };
+            const mo = toMo(ret[field]||0, freq);
+            return (
+              <div key={field}>
+                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <div style={{flex:1,display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                    <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
+                    <input value={ret[field]||""} onChange={e=>updateRet(field,e.target.value)}
+                      type="number" inputMode="decimal" placeholder="0"
+                      style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:C.tealBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700}}/>
+                  </div>
+                  <select value={freq} onChange={e=>updateRet(freqField,e.target.value)}
+                    style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 8px",
+                      color:C.mutedHi,fontSize:11,fontFamily:"inherit",outline:"none",flexShrink:0,cursor:"pointer"}}>
+                    <option value="weekly">Weekly</option>
+                    <option value="biweekly">Bi-weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="annually">Annually</option>
+                  </select>
+                </div>
+                {ret[field]&&freq!=="monthly"&&(
+                  <div style={{color:C.teal,fontSize:9,marginTop:3,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                    = ${mo.toFixed(0)}/mo
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          </div>
+          {/* Projection summary */}
+          {(()=>{
+            const toMo=(amt,f)=>{const a=parseFloat(amt||0);return f==="weekly"?a*4.333:f==="biweekly"?a*2.167:f==="annually"?a/12:a;};
+            const bal = parseFloat(ret[isCA?"rrspBalance":"401kBalance"]||0) + parseFloat(ret[isCA?"tfsaBalance":"iraBalance"]||0);
+            const monthly = toMo(ret[isCA?"rrspMonthly":"401kMonthly"]||0, ret[isCA?"rrspFreq":"401kFreq"]||"monthly")
+                          + toMo(ret[isCA?"tfsaMonthly":"iraMonthly"]||0, ret[isCA?"tfsaFreq":"iraFreq"]||"monthly")
+                          + toMo(ret[isCA?"pensionMonthly":"otherRetire"]||0, ret[isCA?"pensionFreq":"otherRetireFreq"]||"monthly");
+            if(bal<=0&&monthly<=0) return null;
+            // Simple 30-year projection at 6% annual return
+            const r = 0.06/12;
+            const n = 30*12;
+            const fv = bal*Math.pow(1+r,n) + (monthly>0?monthly*((Math.pow(1+r,n)-1)/r):0);
+            return (
+              <div style={{marginTop:12,background:C.teal+"10",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px"}}>
+                <div style={{color:C.tealBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                  📈 At this rate, in 30 years: ~${(fv/1000).toFixed(0)}k
+                </div>
+                <div style={{color:C.muted,fontSize:10,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                  Assumes 6% avg annual return · {isCA?"RRSP + TFSA":"401(k) + IRA"} combined · ${bal.toLocaleString()} current + ${monthly}/mo
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+
         {accts.map((a,i)=>(
           <div key={i} style={{background:C.card,borderRadius:18,padding:"18px",border:`1px solid ${a.color}33`,position:"relative",overflow:"hidden"}}>
             <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${a.color},${a.color}88)`}}/>
@@ -4935,6 +7563,159 @@ function Goals({data,initialTab="sim",onUpgrade}){
       </div>;
     })()}
     {tab==="forecast"&&<WealthForecast data={data}/>}
+    {tab==="budget"&&(()=>{
+      const { suggestions, netMo, fixedMo, discret, savingsMo, savingsRate, grossMo } = generateBudgetSuggestions(data);
+      const budgets = data.budgets||{};
+      const hasBudgets = Object.keys(budgets).length > 0;
+      const isCA = (data.profile?.country||"CA")==="CA";
+
+      // Monthly savings needed for active goals
+      const activeGoals = (data.goals||[]).filter(g=>parseFloat(g.target||0)>parseFloat(g.saved||0));
+      const localGoalsMo = activeGoals.reduce((s,g)=>{
+        const remaining = parseFloat(g.target||0) - parseFloat(g.saved||0);
+        const mo = parseFloat(g.monthly||0);
+        return s + (mo>0 ? mo : remaining>0 ? Math.ceil(remaining/24) : 0);
+      },0);
+      // discret from generateBudgetSuggestions already accounts for goals globally,
+      // but inside Goals tab we recalc locally for display
+      const spendPool = Math.max(50, discret - localGoalsMo);
+
+      // Current month spending per category
+      const catOverrides = (()=>{try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");}catch{return {};}})();
+      const now = new Date();
+      const monthTxns = (data.transactions||[]).filter(t=>{
+        try{const d=new Date(t.date+"T12:00:00");return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()&&t.amount>0;}catch{return false;}
+      });
+      const monthSpend = {};
+      monthTxns.forEach(t=>{ const cat=catOverrides[t.id]||t.cat; monthSpend[cat]=(monthSpend[cat]||0)+t.amount; });
+
+      // Merge budgets + suggestions for display
+      const displayCats = {...suggestions};
+      Object.keys(budgets).forEach(k=>{ if(!displayCats[k]) displayCats[k]=budgets[k]; });
+
+      // Where to save suggestions — categories where actual > budget by >20%
+      const saveSuggestions = Object.entries(budgets).map(([cat,limit])=>{
+        const spent = monthSpend[cat]||0;
+        const pct = limit>0?spent/limit:0;
+        const saving = actuals[cat]||0;
+        if(pct>1.2&&saving>20) return {cat, spent, limit, over:spent-limit, potential:Math.round((saving-(limit*0.85))/5)*5};
+        return null;
+      }).filter(Boolean).sort((a,b)=>b.over-a.over).slice(0,3);
+
+      const catEmojis = {"Groceries":"🛒","Coffee & Dining":"☕","Gas & Transport":"🚗","Shopping":"🛍️","Clothing":"👗","Subscriptions":"📱","Health":"💊","Personal Care":"🧴","Entertainment":"🎬","Hobbies & Sports":"🎯","Kids & Extracurricular":"🧒","Travel":"✈️","Home":"🏠","Education":"📚"};
+      const catColors2 = {"Groceries":C.green,"Coffee & Dining":C.orange,"Gas & Transport":C.blue,"Shopping":C.pink,"Clothing":C.purple,"Subscriptions":C.teal,"Health":C.teal,"Personal Care":C.gold,"Entertainment":C.pink,"Hobbies & Sports":C.blue,"Kids & Extracurricular":C.green,"Travel":C.purple,"Home":C.orange,"Education":C.blue};
+
+      return (
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+
+          {/* Header math strip */}
+          <div style={{background:C.card,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}`}}>
+            <div style={{color:C.cream,fontWeight:800,fontSize:14,marginBottom:10,fontFamily:"'Playfair Display',serif"}}>📊 Your Budget Breakdown</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {[
+                ["Take-home", `$${Math.round(netMo).toLocaleString()}/mo`, C.green],
+                ["Fixed bills & debt", `−$${Math.round(fixedMo).toLocaleString()}/mo`, C.red],
+                ["Savings target", `−$${Math.round(savingsMo).toLocaleString()}/mo`, C.teal],
+                ...(localGoalsMo>0?[["Goal savings", `−$${Math.round(localGoalsMo).toLocaleString()}/mo`, C.purple]]:[]),
+                ["Available for spending", `$${Math.round(spendPool).toLocaleString()}/mo`, C.greenBright],
+              ].map(([label,val,color])=>(
+                <div key={label} style={{background:C.cardAlt,borderRadius:10,padding:"8px 10px",border:`1px solid ${C.border}`}}>
+                  <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1}}>{label}</div>
+                  <div style={{color,fontWeight:800,fontSize:13,marginTop:2}}>{val}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Active goal savings reminder */}
+          {localGoalsMo>0&&(
+            <div style={{background:C.purple+"18",border:`1px solid ${C.purple}33`,borderRadius:12,padding:"10px 14px"}}>
+              <div style={{color:C.purpleBright,fontWeight:700,fontSize:12,marginBottom:4}}>🎯 Saving for {activeGoals.length} goal{activeGoals.length>1?"s":""}</div>
+              <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                {activeGoals.map((g,i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{color:C.muted,fontSize:11}}>{g.name||"Goal"}</span>
+                    <span style={{color:C.purpleBright,fontSize:11,fontWeight:700}}>${parseFloat(g.monthly||Math.ceil((parseFloat(g.target||0)-parseFloat(g.saved||0))/24)).toFixed(0)}/mo</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Where to save suggestions */}
+          {saveSuggestions.length>0&&(
+            <div style={{background:C.orange+"12",border:`1px solid ${C.orange}33`,borderRadius:12,padding:"12px 14px"}}>
+              <div style={{color:C.orange,fontWeight:800,fontSize:12,marginBottom:8}}>💡 Where you could save</div>
+              {saveSuggestions.map(({cat,over,potential})=>(
+                <div key={cat} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                  <div>
+                    <span style={{color:C.cream,fontSize:12}}>{catEmojis[cat]||"📌"} {cat}</span>
+                    <span style={{color:C.redBright,fontSize:10,marginLeft:6}}>${Math.round(over)} over this month</span>
+                  </div>
+                  {potential>0&&<span style={{color:C.green,fontSize:11,fontWeight:700}}>Save ~${potential}/mo</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Per-category budget rows */}
+          <div style={{background:C.card,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{color:C.cream,fontWeight:700,fontSize:13}}>Monthly Category Budgets</div>
+              <button onClick={()=>{
+                const seed={};
+                Object.entries(budgets).forEach(([k,v])=>{seed[k]=String(v);});
+                Object.entries(displayCats).forEach(([k,v])=>{if(!seed[k])seed[k]=String(v);});
+                if(setAppData) setAppData(prev=>({...prev,_budgetEditOpen:true,_budgetEditSeed:seed}));
+              }} style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:8,padding:"5px 10px",color:C.greenBright,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                Edit
+              </button>
+            </div>
+            {!hasBudgets&&(
+              <div style={{textAlign:"center",padding:"16px 0",color:C.muted,fontSize:12}}>
+                No budget set yet. Go to <strong style={{color:C.green}}>Activity → This Month</strong> to build your budget plan, then come back here to track it.
+              </div>
+            )}
+            {Object.entries(budgets).map(([cat,limit])=>{
+              const spent = monthSpend[cat]||0;
+              const pct = limit>0?Math.min(100,Math.round(spent/limit*100)):0;
+              const over = spent>limit;
+              const color = catColors2[cat]||C.muted;
+              return (
+                <div key={cat} style={{marginBottom:12}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                    <span style={{color:C.cream,fontSize:12,fontWeight:600}}>{catEmojis[cat]||"📌"} {cat}</span>
+                    <span style={{color:over?C.redBright:C.muted,fontSize:11,fontWeight:over?700:400}}>
+                      ${Math.round(spent).toLocaleString()} / ${Math.round(limit).toLocaleString()}
+                      {over&&<span style={{color:C.redBright}}> ⚠️ ${Math.round(spent-limit)} over</span>}
+                    </span>
+                  </div>
+                  <div style={{height:6,background:C.border,borderRadius:99,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${pct}%`,borderRadius:99,transition:"width .4s",
+                      background:over?C.red:pct>80?C.orange:color}}/>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",marginTop:3}}>
+                    <span style={{color:C.muted,fontSize:9}}>{pct}% used</span>
+                    {!over&&<span style={{color:C.muted,fontSize:9}}>${Math.round(limit-spent)} remaining</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Savings rate note */}
+          <div style={{background:C.tealDim,border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",textAlign:"center"}}>
+            <div style={{color:C.tealBright,fontSize:11,fontWeight:700}}>
+              💰 {Math.round(savingsRate*100)}% savings target ({isCA?"RRSP/TFSA/Emergency":"401k/IRA/Emergency"}) = ${Math.round(savingsMo).toLocaleString()}/mo already reserved
+            </div>
+            <div style={{color:C.muted,fontSize:10,marginTop:3}}>
+              Budget in Activity → This Month to set or adjust your spending limits.
+            </div>
+          </div>
+
+        </div>
+      );
+    })()}
     {tab==="personality"&&<MoneyPersonality data={data}/>}
         {tab==="learn"&&(()=>{
       const cfg=CC[data.profile?.country||"CA"];
@@ -4961,9 +7742,8 @@ function Goals({data,initialTab="sim",onUpgrade}){
 
 
 // ─── FAMILY ───────────────────────────────────────────────────────────────────
-function Family({data,household,setHousehold}){
+function Family({data,household,setHousehold,setScreen}){
   const [tab,setTab]=useState("meeting");
-  const isCouple=data.profile.status!=="single";
   const [householdTab,setHouseholdTab]=useState("join");
   const [householdCode,setHouseholdCode]=useState("");
   const [started,setStarted]=useState(false);
@@ -4972,14 +7752,148 @@ function Family({data,household,setHousehold}){
   const [mood,setMood]=useState(null);
   const [done2,setDone2]=useState(false);
   const [expandedItem,setExpandedItem]=useState(null);
-  const [kidAge,setKidAge]=useState("8-12");
-  const [showChoreIntegrations,setShowChoreIntegrations]=useState(false);
-  const [chores,setChores]=useState([
-    {id:1,task:"Make bed",reward:.50,done:true},{id:2,task:"Set the table",reward:.50,done:false},
-    {id:3,task:"Take out garbage",reward:1.00,done:true},{id:4,task:"Vacuum living room",reward:2.00,done:false},
-    {id:5,task:"Wash dishes",reward:1.50,done:false},{id:6,task:"Tidy bedroom",reward:1.00,done:false},
-  ]);
-  const [customChore,setCustomChore]=useState({task:"",reward:""});
+  const [kids,setKids]=useState(()=>{
+    try{
+      const saved=JSON.parse(localStorage.getItem("flourish_kids")||"null")||[];
+      return saved.map(k=>({
+        jars:{spend:0,save:0,give:0},
+        goal:{name:"",amount:"",emoji:"🎯"},
+        theme:"pink",streak:0,lastReset:null,
+        requireApproval:false,...k,
+        chores:(k.chores||[]).map(c=>({freq:"weekly",approved:false,...c}))
+      }));
+    }catch{return[];}
+  });
+  const [activeKidId,setActiveKidId]=useState(()=>{
+    try{const k=JSON.parse(localStorage.getItem("flourish_kids")||"null")||[];return k[0]?.id||null;}catch{return null;}
+  });
+  const [showAddKid,setShowAddKid]=useState(false);
+  const [newKidName,setNewKidName]=useState("");
+  const [newKidAge,setNewKidAge]=useState("8-12");
+  const [newKidEmoji,setNewKidEmoji]=useState("🧒");
+  const [newChoreTask,setNewChoreTask]=useState("");
+  const [newChoreReward,setNewChoreReward]=useState("");
+  const [newChoreFreq,setNewChoreFreq]=useState("weekly");
+  const [copiedKidId,setCopiedKidId]=useState(null);
+  const [globalKidAge,setGlobalKidAge]=useState("8-12");
+  const [showPayday,setShowPayday]=useState(false);
+
+  const KID_THEMES={
+    pink:{name:"Pink",emoji:"🌸",primary:"#FF6B9D",bg:"#ff6b9d22",border:"#ff6b9d44"},
+    purple:{name:"Purple",emoji:"💜",primary:"#A855F7",bg:"#a855f722",border:"#a855f744"},
+    green:{name:"Green",emoji:"🌿",primary:"#22C55E",bg:"#22c55e22",border:"#22c55e44"},
+    blue:{name:"Blue",emoji:"🌊",primary:"#38BDF8",bg:"#38bdf822",border:"#38bdf844"},
+    orange:{name:"Orange",emoji:"🔥",primary:"#FB923C",bg:"#fb923c22",border:"#fb923c44"},
+    night:{name:"Night",emoji:"🌙",primary:"#818CF8",bg:"#818cf822",border:"#818cf844"},
+    sunshine:{name:"Sunshine",emoji:"☀️",primary:"#D97706",bg:"#d9770620",border:"#d9770640"},
+    candy:{name:"Candy",emoji:"🍬",primary:"#DB2777",bg:"#db277720",border:"#db277740"},
+    sky:{name:"Sky",emoji:"🌤️",primary:"#0284C7",bg:"#0284c720",border:"#0284c740"},
+    meadow:{name:"Meadow",emoji:"🌼",primary:"#15803D",bg:"#15803d20",border:"#15803d40"},
+    lavender:{name:"Lavender",emoji:"💐",primary:"#7C3AED",bg:"#7c3aed20",border:"#7c3aed40"},
+    peach:{name:"Peach",emoji:"🍑",primary:"#C2410C",bg:"#c2410c20",border:"#c2410c40"},
+  };
+
+  const saveKids=(updated)=>{
+    setKids(updated);
+    try{
+      localStorage.setItem("flourish_kids",JSON.stringify(updated));
+      // Clean up orphaned keys for removed kids
+      const codes=new Set(updated.map(k=>k.code));
+      Object.keys(localStorage).forEach(key=>{
+        const m=key.match(/^flourish_kid_(chores|data|theme)_(.+)$/);
+        if(m&&!codes.has(m[2]))localStorage.removeItem(key);
+      });
+    }catch{}
+  };
+  const syncKidToStorage=(kid)=>{
+    if(kid)try{
+      localStorage.setItem("flourish_kid_chores_"+kid.code,JSON.stringify(kid.chores||[]));
+      localStorage.setItem("flourish_kid_data_"+kid.code,JSON.stringify({
+        name:kid.name,emoji:kid.emoji,age:kid.age,theme:kid.theme||"pink",
+        jars:kid.jars||{spend:0,save:0,give:0},
+        goal:kid.goal||{name:"",amount:"",emoji:"🎯"},
+        streak:kid.streak||0,
+      }));
+    }catch{}
+  };
+  const updateKid=(kidId,patch)=>{
+    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,...patch}:k);
+    saveKids(updated);
+    const kid=updated.find(k=>String(k.id)===String(kidId));
+    syncKidToStorage(kid);
+  };
+  const addKid=()=>{
+    if(!newKidName.trim())return;
+    const code="KID"+Math.random().toString(36).substring(2,7).toUpperCase();
+    const kid={id:Date.now(),name:newKidName.trim(),age:newKidAge,emoji:newKidEmoji,code,
+      chores:[],jars:{spend:0,save:0,give:0},goal:{name:"",amount:"",emoji:"🎯"},
+      theme:"pink",streak:0,lastReset:null,requireApproval:false};
+    const updated=[...kids,kid];
+    saveKids(updated);
+    setActiveKidId(kid.id);
+    setNewKidName("");setNewKidAge("8-12");setNewKidEmoji("🧒");setShowAddKid(false);
+  };
+  const removeKid=(id)=>{
+    const kid=kids.find(k=>String(k.id)===String(id));
+    if(kid){
+      try{
+        localStorage.removeItem("flourish_kid_chores_"+kid.code);
+        localStorage.removeItem("flourish_kid_data_"+kid.code);
+        localStorage.removeItem("flourish_kid_theme_"+kid.code);
+      }catch{}
+    }
+    saveKids(kids.filter(k=>String(k.id)!==String(id)));
+  };
+  const addChoreToKid=(kidId)=>{
+    if(!newChoreTask.trim())return;
+    const chore={id:Date.now(),task:newChoreTask.trim(),reward:parseFloat(newChoreReward)||0.50,
+      done:false,freq:newChoreFreq,approved:false};
+    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,chores:[...(k.chores||[]),chore]}:k);
+    saveKids(updated);
+    setNewChoreTask("");setNewChoreReward("");setNewChoreFreq("weekly");
+    const kid=updated.find(k=>String(k.id)===String(kidId));
+    syncKidToStorage(kid);
+  };
+  const toggleKidChore=(kidId,choreId)=>{
+    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,chores:(k.chores||[]).map(c=>c.id===choreId?{...c,done:!c.done,approved:false}:c)}:k);
+    saveKids(updated);
+    const kid=updated.find(k=>String(k.id)===String(kidId));
+    syncKidToStorage(kid);
+  };
+  const approveKidChore=(kidId,choreId)=>{
+    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,chores:(k.chores||[]).map(c=>c.id===choreId?{...c,approved:true}:c)}:k);
+    saveKids(updated);
+  };
+  const removeKidChore=(kidId,choreId)=>{
+    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,chores:(k.chores||[]).filter(c=>c.id!==choreId)}:k);
+    saveKids(updated);
+  };
+  const paydayKid=(kidId)=>{
+    const kid=kids.find(k=>String(k.id)===String(kidId));
+    if(!kid)return;
+    const chores=kid.chores||[];
+    const req=kid.requireApproval;
+    const eligible=chores.filter(c=>c.done&&(!req||c.approved));
+    const total=eligible.reduce((a,c)=>a+(c.reward||0),0);
+    if(total<=0)return;
+    const split=kid.jarSplit||{spend:50,save:30,give:20};
+    const spend=Math.round(total*(split.spend/100)*100)/100;
+    const save=Math.round(total*(split.save/100)*100)/100;
+    const give=total-spend-save;
+    const prevJars=kid.jars||{spend:0,save:0,give:0};
+    const newJars={spend:(prevJars.spend||0)+spend,save:(prevJars.save||0)+save,give:(prevJars.give||0)+give};
+    const allDone=chores.every(c=>c.done&&(!req||c.approved));
+    const newStreak=allDone?(kid.streak||0)+1:(kid.streak||0);
+    const resetChores=chores.map(c=>({...c,done:false,approved:false}));
+    const updated=kids.map(k=>String(k.id)===String(kidId)?{...k,jars:newJars,streak:newStreak,chores:resetChores,lastReset:new Date().toISOString()}:k);
+    saveKids(updated);
+    const updatedKid=updated.find(k=>String(k.id)===String(kidId));
+    syncKidToStorage(updatedKid);
+  };
+  const activeKid=kids.find(k=>String(k.id)===String(activeKidId))||null;
+
+  // Derived — after all hooks
+  const isCouple=data.profile?.status!=="single";
 
   // Pull real metrics for meeting
   const _ss=SafeSpendEngine.calculate(data);
@@ -5028,6 +7942,12 @@ function Family({data,household,setHousehold}){
      metric:soonBills.length>0?`${soonBills.length} bill${soonBills.length>1?"s":""} coming · $${soonBills.reduce((a,b)=>a+parseFloat(b.amount||0),0).toFixed(0)} total`:"No bills due soon ✓",
      metricColor:soonBills.length>0?C.goldBright:C.greenBright,
      prompt:"Anything you forgot to budget for?"},
+    {id:"varbills",icon:"🔄",title:"Any variable bills to update?",desc:"Hydro, phone, internet — did any change this month?",
+     metric:(data.bills||[]).filter(b=>b.type==="variable").length>0
+       ?`${(data.bills||[]).filter(b=>b.type==="variable").length} variable bill${(data.bills||[]).filter(b=>b.type==="variable").length>1?"s":""} to review`
+       :"No variable bills tracked yet",
+     metricColor:C.tealBright,
+     prompt:"Update the amount for any bill that changed this month — your forecast will adjust automatically."},
     {id:"spend",icon:"💳",title:"How was your spending?",desc:"Honestly. No judgment.",
      metric:topCat?`Biggest spend: ${topCat[0]} · $${(topCat[1]||0).toFixed(0)}`:`Income: $${(monthlyIncome||0).toFixed(0)} · Bills: $${monthlyBills.toFixed(0)}`,
      metricColor:C.tealBright,
@@ -5051,35 +7971,10 @@ function Family({data,household,setHousehold}){
   ];
 
   const doneCount=Object.values(checks).filter(Boolean).length;
-  const earned=chores.filter(c=>c.done).reduce((a,c)=>a+c.reward,0);
-
-  const choreIntegrations=[
-    {name:"Skylight Calendar",icon:"🗓️",color:"#4A8FCC",desc:"Add chores as recurring tasks on your family's Skylight display.",url:"https://www.skylightframe.com",note:"Open Skylight app → Family Tasks → Add Task"},
-    {name:"Alexa Routines",icon:"🔵",color:"#00CAFF",desc:"Trigger chore reminders through Amazon Echo devices.",url:"https://alexa.amazon.com",note:"Alexa app → More → Routines → Create Routine"},
-    {name:"Cozi Family Organizer",icon:"📋",color:"#E85D26",desc:"Share chore lists across the whole family with Cozi.",url:"https://www.cozi.com",note:"Cozi app → To-Do Lists → Add family chore list"},
-    {name:"OurHome App",icon:"🏠",color:"#6B4FA0",desc:"Dedicated chore and reward tracking for families.",url:"https://ourhomeapp.com",note:"OurHome → Chores → Import or create tasks"},
-    {name:"Google Home",icon:"🏡",color:"#4285F4",desc:"Broadcast chore reminders on Google Nest speakers.",url:"https://home.google.com",note:"Google Home app → Routines → Add announcement"},
-  ];
-
-  const kidLessons={
-    "4-7":[
-      {emoji:"🪙",title:"Money is for trading",body:"When you want something at the store, you give money and get the thing. Money is just a trade ticket!",key:"Money is how we trade for things we want."},
-      {emoji:"🐷",title:"Saving means waiting",body:"If a toy costs $10 and you have $3, you need to save $7 more. Saving means keeping money safe until you have enough.",key:"Waiting for something makes it even better."},
-    ],
-    "8-12":[
-      {emoji:"🏦",title:"What banks do",body:"A bank keeps your money safe and pays you interest to use it. Like a super-safe piggy bank that rewards patience.",key:"Banks keep money safe AND pay you to use them."},
-      {emoji:"💳",title:"Credit cards are loans",body:"A credit card lets you buy now, pay later. If you don't pay it ALL back quickly, they charge you extra — that's how people get into trouble.",key:"Pay your credit card in full every month, always."},
-      {emoji:"📈",title:"Money can grow",body:"$100 at 7% becomes $386 in 20 years without doing anything. This is compound interest — money making more money.",key:"Start saving young. Time is the secret ingredient."},
-    ],
-    "13+":[
-      {emoji:"💰",title:"Budget like a boss",body:"50% needs, 30% wants, 20% savings. Without a budget, money just disappears. A budget is a plan for the life you actually want.",key:"A budget gives your money direction."},
-      {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet — and paying extra for the privilege.",key:"Debt is expensive. Use it wisely or not at all."},
-      {emoji:"📊",title:"Start investing at your first job",body:"$50/month at 7% starting at 16 = $245,000 at retirement. Starting at 30 = $68,000. Starting early nearly triples your outcome.",key:"Invest with your very first paycheck."},
-    ],
-  };
+  const earned=(activeKid?.chores||[]).filter(c=>c.done).reduce((a,c)=>a+(c.reward||0),0);
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <div><div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Family</div><div style={{color:C.muted,fontSize:12}}>Money is a team sport</div></div>
+    <ScreenHeader title="Family" subtitle="Money is a team sport" onBack={setScreen?()=>setScreen("home"):null}/>
     <div style={{display:"flex",gap:6}}>
       {[["meeting",isCouple?"Money Meeting":"Check-In"],["kids","Kids Zone"],["household","Household"]].map(([t,lbl])=>(
         <button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.purple+"22":C.cardAlt,border:`1px solid ${tab===t?C.purple:C.border}`,color:tab===t?C.purpleBright:C.muted,borderRadius:12,padding:"10px",cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit"}}>
@@ -5158,6 +8053,35 @@ function Family({data,household,setHousehold}){
                 </div>
               </div>;
             }
+        if(item.id==="varbills"){
+          const varBills=(data.bills||[]).filter(b=>b.type==="variable");
+          if(varBills.length===0) return <div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0"}}>
+            No variable bills set up yet. When adding a bill, mark it as Variable to track it here.
+          </div>;
+          return <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
+            {varBills.map((b,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:C.bg,borderRadius:10,border:`1px solid ${C.teal}33`}}>
+                <span style={{color:C.tealBright,fontSize:14,flexShrink:0}}>🔄</span>
+                <span style={{color:C.cream,fontSize:13,fontWeight:600,flex:1}}>{b.name}</span>
+                <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.teal}44`,borderRadius:8,overflow:"hidden"}}>
+                  <span style={{color:C.muted,padding:"0 5px 0 8px",fontSize:11}}>$</span>
+                  <input type="number" defaultValue={b.amount||""} placeholder={b.amount||"0"}
+                    onBlur={e=>{
+                      const val=parseFloat(e.target.value);
+                      if(!isNaN(val)&&val>0&&setAppData){
+                        setAppData(prev=>({...prev,bills:(prev.bills||[]).map((bill,idx)=>
+                          bill.name===b.name?{...bill,amount:String(val)}:bill
+                        )}))
+                      }
+                    }}
+                    style={{width:60,background:"none",border:"none",padding:"7px 2px",color:C.tealBright,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
+                  <span style={{color:C.muted,padding:"0 6px",fontSize:9}}>/mo</span>
+                </div>
+              </div>
+            ))}
+            <div style={{color:C.muted,fontSize:10,marginTop:2}}>Changes save immediately and update your forecast.</div>
+          </div>;
+        }
             if(item.id==="spend"){
               const cats=Object.entries(topSpend).sort((a,b)=>b[1]-a[1]).slice(0,5);
               const maxAmt=cats[0]?.[1]||1;
@@ -5313,84 +8237,379 @@ function Family({data,household,setHousehold}){
 
     {/* ── KIDS TAB ── */}
     {tab==="kids"&&<>
-      <div style={{display:"flex",gap:6}}>
-        {["4-7","8-12","13+"].map(age=><button key={age} onClick={()=>setKidAge(age)} style={{flex:1,background:kidAge===age?C.pink+"22":C.cardAlt,border:`1px solid ${kidAge===age?C.pink:C.border}`,color:kidAge===age?C.pinkBright:C.muted,borderRadius:10,padding:"9px 0",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
-          {age==="4-7"?"🐣 4–7":age==="8-12"?"🌱 8–12":"🌳 13+"}
-        </button>)}
-      </div>
-      {kidLessons[kidAge].map((l,i)=>(
-        <Card key={i} style={{border:`1px solid ${C.pink}22`}}>
-          <div style={{fontSize:30,marginBottom:8}}>{l.emoji}</div>
-          <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"Georgia,serif",marginBottom:8}}>{l.title}</div>
-          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65,marginBottom:10}}>{l.body}</div>
-          <Chip label={l.key} color={C.pink} size={12}/>
+      {/* Empty state */}
+      {kids.length===0&&!showAddKid&&(
+        <Card style={{textAlign:"center",padding:"32px 20px"}}>
+          <div style={{fontSize:48,marginBottom:12}}>👧</div>
+          <div style={{color:C.cream,fontWeight:800,fontSize:16,fontFamily:"'Playfair Display',Georgia,serif",marginBottom:8}}>Add your first child</div>
+          <div style={{color:C.muted,fontSize:13,lineHeight:1.6,marginBottom:20}}>Each child gets their own chore list, jar tracker, savings goal, and a shareable mini app — no access to your financial data.</div>
+          <button onClick={()=>setShowAddKid(true)} style={{background:`linear-gradient(135deg,${C.pink},#ff8cb8)`,border:"none",borderRadius:12,padding:"13px 28px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>+ Add Child</button>
         </Card>
-      ))}
-      <Card style={{background:`linear-gradient(135deg,${C.goldDim} 0%,${C.card} 100%)`,border:`1px solid ${C.gold}33`}}>
-        <div style={{color:C.gold,fontWeight:800,marginBottom:8}}>🫙 The 3 Jar Method</div>
-        <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>Split every dollar your child earns into 3 jars.</div>
-        <div style={{display:"flex",gap:8}}>
-          {[{name:"Spend",emoji:"🎮",color:C.orange,desc:"Fun now"},{name:"Save",emoji:"🏦",color:C.blue,desc:"Big goals"},{name:"Give",emoji:"❤️",color:C.pink,desc:"Others"}].map((j,i)=>(
-            <div key={i} style={{flex:1,background:j.color+"18",border:`1px solid ${j.color}33`,borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
-              <div style={{fontSize:22}}>{j.emoji}</div>
-              <div style={{color:j.color,fontWeight:700,fontSize:13,marginTop:4}}>{j.name}</div>
-              <div style={{color:C.muted,fontSize:10,marginTop:2}}>{j.desc}</div>
-            </div>
-          ))}
-        </div>
-      </Card>
+      )}
 
-      {/* Chore Chart */}
-      <Card>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <div style={{color:C.greenBright,fontWeight:700}}>🏡 Chore Chart</div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <div style={{color:C.greenBright,fontWeight:800}}>${(earned||0).toFixed(2)} earned</div>
-            <button onClick={()=>setShowChoreIntegrations(v=>!v)} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:8,padding:"4px 10px",color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer"}}>🔗 Connect app</button>
+      {/* Kid selector row */}
+      {kids.length>0&&(
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            {kids.map(k=>{
+              const t=KID_THEMES[k.theme||"pink"];
+              return(
+                <button key={k.id} onClick={()=>setActiveKidId(String(activeKidId)===String(k.id)?null:k.id)}
+                  style={{display:"flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:99,border:`2px solid ${String(activeKidId)===String(k.id)?t.primary:C.border}`,background:String(activeKidId)===String(k.id)?t.bg:C.cardAlt,color:String(activeKidId)===String(k.id)?t.primary:C.cream,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",transition:"all .2s",minHeight:44}}>
+                  <span style={{fontSize:20}}>{k.emoji}</span>
+                  <span>{k.name}</span>
+                  {(k.streak||0)>0&&<span style={{fontSize:11}}>🔥{k.streak}</span>}
+                  <span style={{fontSize:11,opacity:0.6}}>{String(activeKidId)===String(k.id)?"▲":"▼"}</span>
+                </button>
+              );
+            })}
+            <button onClick={()=>setShowAddKid(true)}
+              style={{display:"flex",alignItems:"center",gap:6,padding:"10px 18px",borderRadius:99,border:`2px solid ${C.pink}66`,background:C.pink+"14",color:C.pinkBright,fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>
+              + Add Child
+            </button>
           </div>
         </div>
-        <Bar v={earned} max={Math.max(chores.reduce((a,c)=>a+c.reward,0),0.01)} color={C.green} h={6}/>
-        <div style={{marginTop:12}}>
-          {chores.map(ch=>(
-            <div key={ch.id} onClick={()=>setChores(c=>c.map(x=>x.id===ch.id?{...x,done:!x.done}:x))} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
-              <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${ch.done?C.green:C.border}`,background:ch.done?C.green:"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s"}}>
-                {ch.done&&<span style={{color:C.bg,fontSize:12,fontWeight:900}}>✓</span>}
-              </div>
-              <span style={{flex:1,color:C.cream,fontSize:14,textDecoration:ch.done?"line-through":"none"}}>{ch.task}</span>
-              <span style={{color:C.gold,fontWeight:700}}>+${(ch.reward||0).toFixed(2)}</span>
-            </div>
-          ))}
-        </div>
-        {/* Add custom chore */}
-        <div style={{marginTop:12,display:"flex",gap:8,alignItems:"center"}}>
-          <input value={customChore.task} onChange={e=>setCustomChore(v=>({...v,task:e.target.value}))} placeholder="New chore…"
-            style={{flex:2,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
-          <input value={customChore.reward} onChange={e=>setCustomChore(v=>({...v,reward:e.target.value}))} placeholder="$" type="number"
-            style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
-          <button onClick={()=>{if(!customChore.task)return;setChores(c=>[...c,{id:Date.now(),task:customChore.task,reward:parseFloat(customChore.reward)||0.50,done:false}]);setCustomChore({task:"",reward:""}); }}
-            style={{background:C.green,border:"none",borderRadius:8,padding:"8px 12px",color:"#fff",fontWeight:700,cursor:"pointer",fontSize:13}}>+</button>
-        </div>
-      </Card>
+      )}
 
-      {/* Chore Integrations panel */}
-      {showChoreIntegrations&&<Card style={{border:`1px solid ${C.teal}44`,background:C.tealDim}}>
-        <div style={{color:C.tealBright,fontWeight:700,fontSize:14,marginBottom:4}}>🔗 Connect to Chore Apps</div>
-        <div style={{color:C.muted,fontSize:12,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish can't push directly to these apps yet — but here's exactly how to sync your chore list to each platform.</div>
-        {choreIntegrations.map((ci,i)=>(
-          <div key={i} style={{background:C.card,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${ci.color}22`}}>
-            <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:6}}>
-              <span style={{fontSize:20}}>{ci.icon}</span>
+      {/* Add child form */}
+      {showAddKid&&(
+        <Card style={{border:`1px solid ${C.pink}44`}}>
+          <div style={{color:C.pinkBright,fontWeight:800,fontSize:14,marginBottom:14}}>👧 Add a child</div>
+          <div style={{marginBottom:10}}>
+            <div style={{color:C.muted,fontSize:11,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Choose emoji</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {["🧒","👧","👦","🧒‍♀️","🧒‍♂️","👶","🧑","🌟","🦁","🐼","🦊","🐸"].map(e=>(
+                <button key={e} onClick={()=>setNewKidEmoji(e)} style={{fontSize:22,padding:"6px",borderRadius:8,border:`2px solid ${newKidEmoji===e?C.pink:"transparent"}`,background:newKidEmoji===e?C.pink+"22":"transparent",cursor:"pointer",minHeight:44}}>{e}</button>
+              ))}
+            </div>
+          </div>
+          <input value={newKidName} onChange={e=>setNewKidName(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&addKid()}
+            placeholder="Child's name"
+            style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 14px",color:C.cream,fontSize:14,fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"}}/>
+          <div style={{marginBottom:14}}>
+            <div style={{color:C.muted,fontSize:11,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Age group</div>
+            <div style={{display:"flex",gap:8}}>
+              {["4-7","8-12","13+"].map(a=>(
+                <button key={a} onClick={()=>setNewKidAge(a)} style={{flex:1,padding:"9px",borderRadius:10,border:`1.5px solid ${newKidAge===a?C.pink:C.border}`,background:newKidAge===a?C.pink+"22":C.cardAlt,color:newKidAge===a?C.pinkBright:C.muted,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>
+                  {a==="4-7"?"🐣 4–7":a==="8-12"?"🌱 8–12":"🌳 13+"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={addKid} style={{flex:1,background:newKidName.trim()?`linear-gradient(135deg,${C.pink},#ff8cb8)`:"rgba(255,107,157,0.3)",border:"none",borderRadius:10,padding:"12px",color:"#fff",fontWeight:800,fontSize:13,cursor:newKidName.trim()?"pointer":"default",fontFamily:"inherit",minHeight:44}}>
+              Add {newKidEmoji} {newKidName||"Child"}
+            </button>
+            <button onClick={()=>{setShowAddKid(false);setNewKidName("");}} style={{padding:"12px 16px",borderRadius:10,border:`1px solid ${C.border}`,background:"none",color:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>Cancel</button>
+          </div>
+        </Card>
+      )}
+
+      {/* Active kid full view */}
+      {activeKid&&(()=>{
+        const kidTheme=KID_THEMES[activeKid.theme||"pink"];
+        const kidUrl=`${window.location.origin}/kids?code=${activeKid.code}&n=${encodeURIComponent(activeKid.name)}&e=${encodeURIComponent(activeKid.emoji||"🌱")}&a=${encodeURIComponent(activeKid.age||"8-12")}&t=${encodeURIComponent(activeKid.theme||"pink")}`;
+        const kidChores=activeKid.chores||[];
+        const jars=activeKid.jars||{spend:0,save:0,give:0};
+        const goal=activeKid.goal||{name:"",amount:"",emoji:"🎯"};
+        const totalJars=(jars.spend||0)+(jars.save||0)+(jars.give||0);
+        const goalAmt=parseFloat(goal.amount)||0;
+        const goalPct=goalAmt>0?Math.min(100,Math.round(((jars.save||0)/goalAmt)*100)):0;
+        const req=activeKid.requireApproval;
+        const earned=kidChores.filter(c=>c.done&&(!req||c.approved)).reduce((a,c)=>a+(c.reward||0),0);
+        const pendingApproval=kidChores.filter(c=>c.done&&req&&!c.approved);
+        const FREQ_LABELS={daily:"Daily",few:"Few times/week",weekly:"Weekly",monthly:"Monthly"};
+
+        return(<>
+          {/* Kid header card */}
+          <Card style={{background:`linear-gradient(135deg,${kidTheme.bg},${C.card})`,border:`1.5px solid ${kidTheme.border}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:14}}>
+              <div style={{fontSize:44}}>{activeKid.emoji}</div>
               <div style={{flex:1}}>
-                <div style={{color:C.cream,fontWeight:700,fontSize:13}}>{ci.name}</div>
-                <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{ci.desc}</div>
+                <div style={{color:C.cream,fontWeight:900,fontSize:20,fontFamily:"'Playfair Display',Georgia,serif"}}>{activeKid.name}</div>
+                <div style={{display:"flex",gap:8,alignItems:"center",marginTop:4,flexWrap:"wrap"}}>
+                  <span style={{color:C.muted,fontSize:12}}>Ages {activeKid.age}</span>
+                  {(activeKid.streak||0)>0&&<span style={{background:"#ff8c4222",border:"1px solid #ff8c4244",borderRadius:99,padding:"2px 8px",color:"#FF8C42",fontSize:11,fontWeight:700}}>🔥 {activeKid.streak} week streak</span>}
+                  <span style={{color:C.muted,fontSize:12}}>${totalJars.toFixed(2)} total saved</span>
+                </div>
+              </div>
+              <button onClick={()=>{if(window.confirm(`Remove ${activeKid.name}?`)){removeKid(activeKid.id);setActiveKidId(kids.find(k=>String(k.id)!==String(activeKid.id))?.id||null);}}}
+                style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",color:C.muted,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Remove</button>
+            </div>
+
+            {/* Theme picker */}
+            <div style={{marginBottom:14}}>
+              <div style={{color:C.muted,fontSize:11,textTransform:"uppercase",letterSpacing:1.2,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>🎨 Colour Theme</div>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <select value={activeKid.theme||"pink"} onChange={e=>updateKid(activeKid.id,{theme:e.target.value})}
+                  style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.cream,fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:"pointer",outline:"none",appearance:"none",WebkitAppearance:"none"}}>
+                  {Object.entries(KID_THEMES).map(([key,t])=>(
+                    <option key={key} value={key}>{t.emoji} {t.name}</option>
+                  ))}
+                </select>
+                <div style={{width:28,height:28,borderRadius:99,background:KID_THEMES[activeKid.theme||"pink"]?.primary,flexShrink:0,boxShadow:`0 0 8px ${KID_THEMES[activeKid.theme||"pink"]?.primary}88`}}/>
               </div>
             </div>
-            <div style={{background:ci.color+"14",borderRadius:8,padding:"7px 10px",color:ci.color,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:8}}>📱 {ci.note}</div>
-            <a href={ci.url} target="_blank" rel="noopener noreferrer" style={{color:ci.color,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textDecoration:"none"}}>Open {ci.name} →</a>
+
+            {/* Share link */}
+            <div style={{background:C.bg,borderRadius:12,padding:"12px 14px"}}>
+              <div style={{color:kidTheme.primary,fontWeight:800,fontSize:13,marginBottom:6}}>📱 {activeKid.name}'s Flourish Link</div>
+              <div style={{fontSize:11,color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",wordBreak:"break-all",marginBottom:10}}>{kidUrl}</div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>{navigator.clipboard.writeText(kidUrl).then(()=>{setCopiedKidId(activeKid.id);setTimeout(()=>setCopiedKidId(null),2500);});}}
+                  style={{flex:1,background:copiedKidId===String(activeKid.id)?C.green:kidTheme.primary,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all .2s",minHeight:44}}>
+                  {copiedKidId===String(activeKid.id)?"✓ Copied!":"📋 Copy Link"}
+                </button>
+                <button onClick={()=>{if(navigator.share)navigator.share({title:`${activeKid.name}'s Flourish`,url:kidUrl}).catch(()=>{});}}
+                  style={{flex:1,background:C.cardAlt,border:`1.5px solid ${kidTheme.border}`,borderRadius:10,padding:"11px",color:kidTheme.primary,fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>
+                  🔗 Share
+                </button>
+              </div>
+            </div>
+          </Card>
+
+          {/* Jar balances */}
+          <Card style={{border:`1px solid ${C.gold}44`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{color:C.gold,fontWeight:800,fontSize:14}}>🫙 {activeKid.name}'s Jars</div>
+              <div style={{color:C.gold,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>${totalJars.toFixed(2)}</div>
+            </div>
+            <div style={{display:"flex",gap:8,marginBottom:12}}>
+              {(()=>{const split=activeKid.jarSplit||{spend:50,save:30,give:20};return [{key:"spend",name:"Spend",emoji:"🎮",color:C.orange,pct:split.spend},{key:"save",name:"Save",emoji:"🏦",color:C.blue,pct:split.save},{key:"give",name:"Give",emoji:"❤️",color:C.pink,pct:split.give}];})().map(j=>(
+                <div key={j.key} style={{flex:1,background:j.color+"18",border:`1px solid ${j.color}33`,borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
+                  <div style={{fontSize:22}}>{j.emoji}</div>
+                  <div style={{color:j.color,fontWeight:800,fontSize:16,marginTop:4,fontFamily:"'Playfair Display',serif"}}>${(jars[j.key]||0).toFixed(2)}</div>
+                  <div style={{color:j.color,fontWeight:700,fontSize:11,marginTop:2}}>{j.name}</div>
+                  <div style={{color:C.muted,fontSize:9,marginTop:1}}>{j.pct}%</div>
+                </div>
+              ))}
+            </div>
+            {/* Jar split editor */}
+            <div style={{background:C.cardAlt,borderRadius:12,padding:"12px 14px",marginBottom:12}}>
+              <div style={{color:C.purpleBright||C.tealBright,fontWeight:700,fontSize:13,marginBottom:8}}>🫙 Jar Percentages</div>
+              <div style={{color:C.muted,fontSize:11,marginBottom:10}}>How earnings split across Spend / Save / Give (must total 100%)</div>
+              {(()=>{
+                const split=activeKid.jarSplit||{spend:50,save:30,give:20};
+                const colors={spend:C.orange,save:C.blue,give:C.pink};
+                const total=split.spend+split.save+split.give;
+                return (
+                  <>
+                    {["spend","save","give"].map(key=>(
+                      <div key={key} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                        <div style={{width:44,color:colors[key],fontWeight:700,fontSize:12,textTransform:"capitalize"}}>{key}</div>
+                        <input type="range" min={0} max={100} value={split[key]}
+                          onChange={e=>{
+                            const val=parseInt(e.target.value)||0;
+                            const others=["spend","save","give"].filter(k=>k!==key);
+                            const remaining=100-val;
+                            const otherTotal=split[others[0]]+split[others[1]];
+                            let newSplit={...split,[key]:val};
+                            if(otherTotal>0){
+                              newSplit[others[0]]=Math.round(remaining*(split[others[0]]/otherTotal));
+                              newSplit[others[1]]=100-val-newSplit[others[0]];
+                            } else {
+                              newSplit[others[0]]=Math.floor(remaining/2);
+                              newSplit[others[1]]=remaining-newSplit[others[0]];
+                            }
+                            updateKid(activeKid.id,{jarSplit:newSplit});
+                          }}
+                          style={{flex:1,accentColor:colors[key]}}/>
+                        <div style={{width:34,textAlign:"right",color:total===100?colors[key]:C.red,fontWeight:700,fontSize:12}}>{split[key]}%</div>
+                      </div>
+                    ))}
+                    {total!==100&&<div style={{color:C.red,fontSize:11,marginTop:4}}>⚠ Must total 100% (currently {total}%)</div>}
+                  </>
+                );
+              })()}
+            </div>
+            {/* Savings goal */}
+            <div style={{background:C.cardAlt,borderRadius:12,padding:"12px 14px",marginBottom:12}}>
+              <div style={{color:C.tealBright,fontWeight:700,fontSize:13,marginBottom:8}}>🎯 Savings Goal</div>
+              {goal.name?(
+                <>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                    <span style={{color:C.cream,fontSize:13,fontWeight:600}}>{goal.emoji} {goal.name}</span>
+                    <span style={{color:C.tealBright,fontWeight:700,fontSize:13}}>{goalPct}%</span>
+                  </div>
+                  <div style={{height:8,background:C.bg,borderRadius:4,overflow:"hidden",marginBottom:6}}>
+                    <div style={{height:"100%",width:`${goalPct}%`,background:`linear-gradient(90deg,${C.teal},${C.tealBright})`,borderRadius:4,transition:"width .5s"}}/>
+                  </div>
+                  <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                    ${(jars.save||0).toFixed(2)} saved of ${goalAmt.toFixed(2)} goal
+                    {goalPct>=100&&<span style={{color:C.greenBright,fontWeight:700}}> 🎉 Goal reached!</span>}
+                  </div>
+                  <button onClick={()=>updateKid(activeKid.id,{goal:{name:"",amount:"",emoji:"🎯"}})}
+                    style={{marginTop:8,background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 10px",color:C.muted,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Change goal</button>
+                </>
+              ):(
+                <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                  <span style={{fontSize:18,cursor:"pointer"}} onClick={()=>{
+                    const emojis=["🎯","🎮","🚲","📚","🎸","⚽","🏊","🎨","✈️","🦄"];
+                    const curr=emojis.indexOf(goal.emoji||"🎯");
+                    updateKid(activeKid.id,{goal:{...goal,emoji:emojis[(curr+1)%emojis.length]||"🎯"}});
+                  }}>{goal.emoji||"🎯"}</span>
+                  <input value={goal.name||""} onChange={e=>updateKid(activeKid.id,{goal:{...goal,name:e.target.value}})}
+                    placeholder="Goal name (e.g. Nintendo game)"
+                    style={{flex:2,background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:12,fontFamily:"inherit"}}/>
+                  <input value={goal.amount||""} onChange={e=>updateKid(activeKid.id,{goal:{...goal,amount:e.target.value}})}
+                    placeholder="$" type="number"
+                    style={{width:60,background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:12,fontFamily:"inherit"}}/>
+                </div>
+              )}
+            </div>
+            {/* Payday button */}
+            {earned>0&&(
+              <button onClick={()=>{
+                  if(window.confirm(`Pay out $${earned.toFixed(2)} to ${activeKid.name}'s jars and reset chores?`)){
+                    paydayKid(activeKid.id);
+                  }
+                }}
+                style={{width:"100%",background:`linear-gradient(135deg,${C.gold},#f5cc6a)`,border:"none",borderRadius:12,padding:"14px",color:"#1a1000",fontWeight:900,fontSize:15,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>
+                💰 Payday! Pay out ${earned.toFixed(2)}
+              </button>
+            )}
+          </Card>
+
+          {/* Chore chart */}
+          <Card>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <div style={{color:C.greenBright,fontWeight:700,fontSize:14}}>🏡 {activeKid.name}'s Chores</div>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                {earned>0&&<div style={{color:C.gold,fontWeight:800,fontSize:13}}>${earned.toFixed(2)} earned</div>}
+              </div>
+            </div>
+
+            {/* Require approval toggle */}
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,padding:"8px 10px",background:C.cardAlt,borderRadius:10}}>
+              <span style={{color:C.muted,fontSize:12,flex:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Require parent approval before chores count</span>
+              <button onClick={()=>updateKid(activeKid.id,{requireApproval:!req})}
+                style={{width:44,height:24,borderRadius:99,border:"none",background:req?C.green:"rgba(255,255,255,0.12)",cursor:"pointer",position:"relative",transition:"all .2s",flexShrink:0}}>
+                <div style={{width:18,height:18,borderRadius:99,background:"#fff",position:"absolute",top:3,left:req?23:3,transition:"all .2s"}}/>
+              </button>
+            </div>
+
+            {/* Pending approval */}
+            {req&&pendingApproval.length>0&&(
+              <div style={{background:C.goldDim,border:`1px solid ${C.gold}44`,borderRadius:12,padding:"10px 14px",marginBottom:12}}>
+                <div style={{color:C.goldBright,fontWeight:700,fontSize:12,marginBottom:8}}>⏳ Waiting for your approval</div>
+                {pendingApproval.map(ch=>(
+                  <div key={ch.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                    <span style={{flex:1,color:C.cream,fontSize:13}}>{ch.task}</span>
+                    <span style={{color:C.gold,fontSize:12}}>+${(ch.reward||0).toFixed(2)}</span>
+                    <button onClick={()=>approveKidChore(activeKid.id,ch.id)}
+                      style={{background:C.green,border:"none",borderRadius:8,padding:"4px 10px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✓ Approve</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {kidChores.length===0&&(
+              <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"16px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>No chores yet — add some below!</div>
+            )}
+
+            {kidChores.map(ch=>(
+              <div key={ch.id} style={{display:"flex",gap:8,alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.border}`}}>
+                <div onClick={()=>toggleKidChore(activeKid.id,ch.id)} style={{width:26,height:26,borderRadius:8,border:`2px solid ${ch.done?C.green:C.border}`,background:ch.done?C.green:"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer",transition:"all .2s",minHeight:26}}>
+                  {ch.done&&<span style={{color:C.bg,fontSize:14,fontWeight:900}}>✓</span>}
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{color:ch.done?C.muted:C.cream,fontSize:13,textDecoration:ch.done?"line-through":"none"}}>{ch.task}</div>
+                  <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{FREQ_LABELS[ch.freq||"weekly"]}</div>
+                </div>
+                <span style={{color:C.gold,fontWeight:700,fontSize:12}}>+${(ch.reward||0).toFixed(2)}</span>
+                {ch.done&&req&&ch.approved&&<span style={{color:C.green,fontSize:11}}>✓ approved</span>}
+                <button onClick={()=>removeKidChore(activeKid.id,ch.id)} style={{background:"none",border:"none",color:C.muted,fontSize:18,cursor:"pointer",padding:"0 2px",lineHeight:1,minHeight:30}}>×</button>
+              </div>
+            ))}
+
+            {/* Add chore form */}
+            <div style={{marginTop:14}}>
+              <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
+                <input value={newChoreTask} onChange={e=>setNewChoreTask(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&addChoreToKid(activeKid.id)}
+                  placeholder="Add a chore…"
+                  style={{flex:3,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
+                <input value={newChoreReward} onChange={e=>setNewChoreReward(e.target.value)} placeholder="$" type="number"
+                  style={{width:56,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 8px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
+                <button onClick={()=>addChoreToKid(activeKid.id)}
+                  style={{background:C.green,border:"none",borderRadius:8,padding:"9px 14px",color:"#fff",fontWeight:800,cursor:"pointer",fontSize:14,minHeight:40}}>+</button>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                {[{v:"daily",l:"Daily"},{v:"few",l:"Few/week"},{v:"weekly",l:"Weekly"},{v:"monthly",l:"Monthly"}].map(f=>(
+                  <button key={f.v} onClick={()=>setNewChoreFreq(f.v)}
+                    style={{flex:1,padding:"7px 4px",borderRadius:8,border:`1.5px solid ${newChoreFreq===f.v?C.teal:C.border}`,background:newChoreFreq===f.v?C.teal+"22":C.cardAlt,color:newChoreFreq===f.v?C.tealBright:C.muted,fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>
+                    {f.l}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </Card>
+        </>);
+      })()}
+      {/* ── Always-visible: Age lessons + 3 Jars ── */}
+      {(()=>{
+        const kidName=activeKid?.name||"your child";
+        const lessonAge=activeKid?.age||globalKidAge;
+        const allLessons={
+          "4-7":[
+            {emoji:"🪙",title:"Money is for trading",body:"When you want something at the store, you give money and get the thing. Money is like a trade ticket!",activity:"Play store at home. Use toy coins to 'buy' snacks from a parent.",key:"Money is how we trade for things we want."},
+            {emoji:"🐷",title:"Saving means waiting",body:"If a toy costs $10 and you have $3, you need to save $7 more. Saving means keeping money safe until you have enough.",activity:"Put $1 in a piggy bank each day and count it every 3 days.",key:"Waiting for something makes it even better."},
+          ],
+          "8-12":[
+            {emoji:"🏦",title:"What banks do",body:"A bank keeps your money safe and pays you a little extra (interest) to use it while it's there. Like a super-safe piggy bank that rewards patience.",activity:"Ask a parent to open a youth savings account. Watch the interest appear.",key:"Banks keep money safe AND pay you to use them."},
+            {emoji:"💳",title:"Credit cards are loans",body:"A credit card lets you buy now, pay later. If you don't pay it ALL back quickly, they charge you extra. That's how people get into trouble.",activity:"If you borrowed $10 and had to pay back $11, would you? That's what a credit card charges.",key:"Pay your credit card in full every month, always."},
+            {emoji:"📈",title:"Money can grow",body:"$100 saved today at 7% becomes $386 in 20 years without doing anything extra. This is compound interest — money making more money.",activity:"Use an online compound interest calculator with a parent. Put in small numbers and watch.",key:"Start saving young. Time is the secret ingredient."},
+          ],
+          "13+":[
+            {emoji:"💰",title:"Budget like a boss",body:"50% needs, 30% wants, 20% savings. Without a budget, money just disappears. A budget isn't restriction — it's a plan for the life you actually want.",key:"A budget gives your money direction."},
+            {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet — and paying extra for the privilege. Use debt only for things that gain value.",key:"Debt is expensive. Use it wisely or not at all."},
+            {emoji:"📊",title:"Start investing at your first job",body:"$50/month invested at 7% starting at age 16 = $245,000 at retirement. The same $50 starting at 30 = $68,000. Starting early nearly triples your outcome.",key:"Invest with your very first paycheck."},
+          ],
+        };
+        return(<>
+          {/* 3 Jar Method */}
+          <Card style={{background:`linear-gradient(135deg,${C.goldDim} 0%,${C.card} 100%)`,border:`1px solid ${C.gold}33`}}>
+            <div style={{color:C.gold,fontWeight:800,marginBottom:8}}>🫙 The 3 Jar Method</div>
+            <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>Split every dollar {kidName} earns into 3 jars.</div>
+            <div style={{display:"flex",gap:8}}>
+              {[{name:"Spend",emoji:"🎮",color:C.orange,desc:"Fun now"},{name:"Save",emoji:"🏦",color:C.blue,desc:"Big goals"},{name:"Give",emoji:"❤️",color:C.pink,desc:"Others"}].map((j,i)=>(
+                <div key={i} style={{flex:1,background:j.color+"18",border:`1px solid ${j.color}33`,borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
+                  <div style={{fontSize:22}}>{j.emoji}</div>
+                  <div style={{color:j.color,fontWeight:700,fontSize:13,marginTop:4}}>{j.name}</div>
+                  <div style={{color:C.muted,fontSize:10,marginTop:2}}>{j.desc}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* Age-tiered lessons */}
+          <div style={{color:C.pinkBright,fontWeight:800,fontSize:14}}>📚 Money Lessons{activeKid?` for ${activeKid.name}`:""}</div>
+          <div style={{display:"flex",gap:6}}>
+            {["4-7","8-12","13+"].map(age=>(
+              <button key={age} onClick={()=>{
+                  if(activeKid) saveKids(kids.map(k=>k.id===activeKid.id?{...k,age}:k));
+                  else setGlobalKidAge(age);
+                }}
+                style={{flex:1,background:lessonAge===age?C.pink+"22":C.cardAlt,border:`1px solid ${lessonAge===age?C.pink:C.border}`,color:lessonAge===age?C.pinkBright:C.muted,borderRadius:10,padding:"9px 0",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
+                {age==="4-7"?"🐣 4–7":age==="8-12"?"🌱 8–12":"🌳 13+"}
+              </button>
+            ))}
           </div>
-        ))}
-        <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4,fontStyle:"italic"}}>Native 2-way sync is on the roadmap — vote for it in the app store review!</div>
-      </Card>}
+          {(allLessons[lessonAge]||[]).map((l,i)=>(
+            <Card key={i} style={{border:`1px solid ${C.pink}22`}}>
+              <div style={{fontSize:30,marginBottom:8}}>{l.emoji}</div>
+              <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',Georgia,serif",marginBottom:8}}>{l.title}</div>
+              <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65,marginBottom:l.activity?10:0}}>{l.body}</div>
+              {l.activity&&<div style={{background:C.teal+"18",border:`1px solid ${C.teal}44`,borderRadius:12,padding:"10px 14px",marginBottom:10}}>
+                <div style={{color:C.tealBright,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Try this activity</div>
+                <div style={{color:C.cream,fontSize:13}}>{l.activity}</div>
+              </div>}
+              <Chip label={l.key} color={C.pink} size={12}/>
+            </Card>
+          ))}
+        </>);
+      })()}
     </>}
 
     {/* ── HOUSEHOLD TAB ── */}
@@ -5489,6 +8708,8 @@ function Family({data,household,setHousehold}){
 
 // ─── WIDGET SCREEN ────────────────────────────────────────────────────────────
 function WidgetScreen({data,onBack}){
+  const [wSize,setWSize]=useState("medium");
+  const [wContent,setWContent]=useState({safe:true,balance:true,health:true,nextBill:true,streak:false,cashFlow:false});
   const _ss=SafeSpendEngine.calculate(data);
   const safe=_ss.safeAmount;
   const bal=_ss.balance;
@@ -5627,8 +8848,6 @@ function WidgetScreen({data,onBack}){
     </WShell>
   );
 
-  const [wSize,setWSize]=useState("medium");
-  const [wContent,setWContent]=useState({safe:true,balance:true,health:true,nextBill:true,streak:false,cashFlow:false});
   const toggleW=k=>setWContent(v=>({...v,[k]:!v[k]}));
   const sizes=[["small","Small"],["medium","Medium"],["large","Large"]];
 
@@ -5760,9 +8979,9 @@ function WidgetScreen({data,onBack}){
 // ─── SETTINGS SECTION INLINE CONTENT ─────────────────────────────────────────
 // ─── INLINE SETTINGS EDITORS ─────────────────────────────────────────────────
 function InlineDebtEditor({data, setAppData, color, navToScreen}){
-  const s = {background:C.card,borderRadius:"0 0 18px 18px",border:`1px solid ${color}33`,padding:"16px 18px",marginBottom:8,borderTop:`1px solid ${color}22`};
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({name:"",balance:"",rate:"",min:""});
+  const s = {background:C.card,borderRadius:"0 0 18px 18px",border:`1px solid ${color}33`,padding:"16px 18px",marginBottom:8,borderTop:`1px solid ${color}22`};
   const DEBT_TYPES = ["Credit Card","Line of Credit","Car Loan","Student Loan","OSAP","HELOC","Mortgage","Personal Loan","Buy Now Pay Later","Other"];
 
   const saveDebt = () => {
@@ -5776,12 +8995,27 @@ function InlineDebtEditor({data, setAppData, color, navToScreen}){
 
   return (
     <div style={s}>
-      {(data.debts||[]).length===0&&!adding&&<div style={{color:C.muted,fontSize:13,marginBottom:12}}>No debts tracked yet.</div>}
+      {(data.debts||[]).length===0&&!adding&&(
+        <div style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"14px 16px",marginBottom:12,textAlign:"center"}}>
+          <div style={{fontSize:22,marginBottom:6}}>💳</div>
+          <div style={{color:C.mutedHi,fontWeight:600,fontSize:13,marginBottom:4}}>No debts tracked yet</div>
+          <div style={{color:C.muted,fontSize:11,lineHeight:1.65}}>Connect your bank to auto-import credit cards, or tap + Add Debt below.</div>
+        </div>
+      )}
+      {(data.debts||[]).some(d=>d.fromBank)&&(
+        <div style={{background:C.green+"0A",border:`1px solid ${C.green}22`,borderRadius:10,padding:"8px 12px",marginBottom:8,display:"flex",gap:6,alignItems:"center"}}>
+          <span style={{fontSize:12}}>🏦</span>
+          <span style={{color:C.green,fontSize:11,fontWeight:600}}>Balances imported live from your bank</span>
+        </div>
+      )}
       {(data.debts||[]).map((d,i)=>(
         <div key={i} style={{background:C.cardAlt,borderRadius:12,padding:"10px 14px",marginBottom:8,border:`1px solid ${C.border}`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-            <div style={{color:C.cream,fontWeight:600,fontSize:13}}>{d.name}</div>
-            <button onClick={()=>removeDebt(i)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"2px 6px"}}>✕</button>
+            <div style={{display:"flex",alignItems:"center",gap:7}}>
+              <div style={{color:C.cream,fontWeight:600,fontSize:13}}>{d.name}</div>
+              {d.fromBank&&<span style={{fontSize:9,fontWeight:700,color:C.greenBright,background:C.green+"22",border:`1px solid ${C.green}33`,borderRadius:99,padding:"2px 7px",flexShrink:0}}>live</span>}
+            </div>
+            <button onClick={()=>removeDebt(i)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"4px 8px",minWidth:32,minHeight:32}}>✕</button>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
             {[["Balance","balance","$"],["Rate %","rate","%"],["Min/mo","min","$"]].map(([lbl,field,pre])=>(
@@ -5844,9 +9078,9 @@ function InlineDebtEditor({data, setAppData, color, navToScreen}){
 }
 
 function InlineGoalEditor({data, setAppData, color}){
-  const s = {background:C.card,borderRadius:"0 0 18px 18px",border:`1px solid ${color}33`,padding:"16px 18px",marginBottom:8,borderTop:`1px solid ${color}22`};
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({name:"",target:"",saved:""});
+  const s = {background:C.card,borderRadius:"0 0 18px 18px",border:`1px solid ${color}33`,padding:"16px 18px",marginBottom:8,borderTop:`1px solid ${color}22`};
   const GOAL_PRESETS = ["Emergency Fund","Vacation","Down Payment","Car","Wedding","Education","Home Renovation","New Baby","Other"];
 
   const saveGoal = () => {
@@ -5965,22 +9199,77 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
     </div>
   );
 
-  if(sectionKey==="accounts") return (
-    <div style={s}>
-      {(data.accounts||[]).length===0
-        ? <div style={{color:C.muted,fontSize:13,marginBottom:12}}>No bank accounts connected yet. Tap below to connect your bank.</div>
-        : (data.accounts||[]).map((a,i)=>(
-          <div key={i} style={{...row,borderBottom:i<(data.accounts.length-1)?`1px solid ${C.border}`:"none"}}>
-            <div><div style={{color:C.cream,fontSize:13,fontWeight:600}}>{a.name}</div><div style={{color:C.muted,fontSize:11}}>{a.type} · {a.institution}</div></div>
-            <span style={{color:a.balance>=0?C.greenBright:C.red,fontWeight:700,fontSize:13}}>{a.balance>=0?"$":"–$"}{Math.abs(a.balance||0).toFixed(2)}</span>
+  if(sectionKey==="accounts") {
+    const removeAccount = (accountId) => {
+      if(!setAppData) return;
+      setAppData(prev => {
+        const filtered = (prev.accounts||[]).filter(a => a.id !== accountId);
+        // Remove associated debts
+        const removedAcct = (prev.accounts||[]).find(a => a.id === accountId);
+        const debtsFiltered = removedAcct
+          ? (prev.debts||[]).filter(d => (d.name||"").toLowerCase() !== (removedAcct.name||"").toLowerCase())
+          : prev.debts;
+        // Remove transactions belonging to this account
+        const txnsFiltered = (prev.transactions||[]).filter(t => t.account_id !== accountId);
+        return {
+          ...prev,
+          accounts: filtered,
+          debts: debtsFiltered,
+          transactions: txnsFiltered,
+          bankConnected: filtered.some(a => a.institution !== "Manual"),
+        };
+      });
+    };
+
+    // Dedup by id for display (fixes existing duplicates on screen)
+    const seenDisplay = new Set();
+    const dedupedDisplay = (data.accounts||[]).filter(a => {
+      if (seenDisplay.has(a.id)) return false;
+      seenDisplay.add(a.id);
+      return true;
+    });
+    const hasDuplicates = dedupedDisplay.length < (data.accounts||[]).length;
+
+    return (
+      <div style={s}>
+        {hasDuplicates&&(
+          <div style={{background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:12,padding:"10px 14px",marginBottom:12,display:"flex",gap:10,alignItems:"center"}}>
+            <span style={{fontSize:16}}>⚠️</span>
+            <div style={{flex:1}}>
+              <div style={{color:C.goldBright,fontWeight:700,fontSize:12}}>Duplicate accounts detected</div>
+              <div style={{color:C.muted,fontSize:11,marginTop:1}}>The same accounts appear multiple times. Tap to fix.</div>
+            </div>
+            <button onClick={()=>setAppData(prev=>({...prev,accounts:dedupedDisplay}))}
+              style={{background:C.gold+"22",border:`1px solid ${C.gold}44`,borderRadius:8,padding:"6px 12px",color:C.goldBright,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0,whiteSpace:"nowrap"}}>
+              Fix now
+            </button>
           </div>
-        ))
-      }
-      <button onClick={onAddBank} style={{width:"100%",marginTop:12,background:color+"18",border:`1px solid ${color}44`,borderRadius:10,padding:"10px",color,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-        + Connect Another Bank
-      </button>
-    </div>
-  );
+        )}
+        {dedupedDisplay.length===0
+          ? <div style={{color:C.muted,fontSize:13,marginBottom:12}}>No bank accounts connected yet. Tap below to connect your bank.</div>
+          : dedupedDisplay.map((a,i)=>(
+            <div key={a.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 0",borderBottom:i<dedupedDisplay.length-1?`1px solid ${C.border}`:"none"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{color:C.cream,fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</div>
+                <div style={{color:C.muted,fontSize:11}}>{a.type} · {a.institution}</div>
+              </div>
+              <span style={{color:a.balance>=0?C.greenBright:C.red,fontWeight:700,fontSize:13,flexShrink:0}}>
+                {a.balance>=0?"$":"–$"}{Math.abs(a.balance||0).toFixed(2)}
+              </span>
+              <button onClick={()=>removeAccount(a.id)}
+                style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"4px 6px",minWidth:32,minHeight:36,flexShrink:0}}
+                title="Remove this account">
+                ✕
+              </button>
+            </div>
+          ))
+        }
+        <button onClick={onAddBank} style={{width:"100%",marginTop:12,background:color+"18",border:`1px solid ${color}44`,borderRadius:10,padding:"10px",color,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+          + Connect Another Bank
+        </button>
+      </div>
+    );
+  }
 
   if(sectionKey==="bills") {
     const updateBillAmt = (i,val) => { if(setAppData) setAppData(prev=>({...prev,bills:(prev.bills||[]).map((b,x)=>x===i?{...b,amount:val}:b)})); };
@@ -6283,16 +9572,48 @@ function DesktopSidebar({data,setScreen}){
 
 
 // ─── AI COACH ─────────────────────────────────────────────────────────────────
-function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}}){
-  const FREE_LIMIT=5;
-  const freeMsgsLeft=isPremium?Infinity:Math.max(0,FREE_LIMIT-coachMsgCount);
-  const [messages, setMessages] = useState([
-    {role:"assistant", content:"Hey! I'm your Flourish AI Coach 👋 I can see your spending patterns, balances, and financial data. What would you like to work on today?"}
-  ]);
+function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}, setScreen}){
+  // ── ALL HOOKS FIRST — constants moved below to prevent TDZ ───────────────
+  const [messages, setMessages] = useState(()=>{
+    try {
+      const saved = JSON.parse(localStorage.getItem("flourish_coach_history") || "null");
+      if (Array.isArray(saved) && saved.length > 0) return saved.slice(-40);
+    } catch {}
+    return [{role:"assistant", content:"Hey! I'm your Flourish AI Coach 👋 I can see your spending patterns, balances, and financial data. What would you like to work on today?"}];
+  });
+  const [sessionDate] = useState(()=>new Date().toLocaleDateString("en-CA",{month:"short",day:"numeric"}));
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const bottomRef = useRef(null);
+
+  // ── Constants and derived values (after all hooks) ────────────────────────
+  const FREE_LIMIT=5;
+  const STORAGE_KEY = "flourish_coach_history";
+  const WELCOME = {role:"assistant", content:"Hey! I'm your Flourish AI Coach 👋 I can see your spending patterns, balances, and financial data. What would you like to work on today?"};
+  const freeMsgsLeft=isPremium?Infinity:Math.max(0,FREE_LIMIT-coachMsgCount);
+
+  // Persist messages to localStorage whenever they change
+  // If the last saved message is from a different day, inject a date divider on load
+  useEffect(()=>{
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)||"null");
+      if (Array.isArray(saved) && saved.length > 0) {
+        const lastMsg = saved[saved.length-1];
+        if (lastMsg._date && lastMsg._date !== sessionDate) {
+          setMessages(prev => [
+            ...prev,
+            {role:"system", content:`— ${sessionDate} —`, _date:sessionDate}
+          ]);
+        }
+      }
+    } catch {}
+  // eslint-disable-next-line
+  },[]);
+
+  useEffect(()=>{
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-40))); } catch {}
+  },[messages]);
 
   useEffect(()=>{
     bottomRef.current?.scrollIntoView({behavior:"smooth"});
@@ -6311,20 +9632,59 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
       txns.filter(t=>t.amount>0 && t.cat!=="Income")
         .reduce((acc,t)=>{acc[t.cat]=(acc[t.cat]||0)+t.amount;return acc;},{})
     ).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`${k}: $${(v||0).toFixed(0)}`).join(", ");
-
+    const goals = (data.goals||[]).map(g=>`${g.name}: $${parseFloat(g.saved||0).toFixed(0)} saved of $${parseFloat(g.target||0).toFixed(0)} target${g.monthly?`, $${g.monthly}/mo contribution`:""}`).join("; ")||"none set";
+    const bills = (data.bills||[]).map(b=>`${b.name} $${b.amount}/mo${b.arrears?` (arrears: $${b.arrears})`:""}` ).join("; ")||"none tracked";
+    const debts = (data.debts||[]).map(d=>`${d.name} $${parseFloat(d.balance||0).toFixed(0)}${d.rate?` @ ${d.rate}%`:""}`).join("; ")||"none";
+    const ret = profile.retirement||{};
+    const retInfo = Object.entries(ret).filter(([,v])=>parseFloat(v)>0).map(([k,v])=>`${k}: $${v}`).join(", ")||"none entered";
+    const birthYear = parseInt(profile.birthYear||"0");
+    const age = birthYear>0 ? new Date().getFullYear()-birthYear : null;
+    const kidsArr = profile.kids||[];
+    const kidsInfo = kidsArr.length>0
+      ? kidsArr.map(k=>`${k.name||"Child"} (born ${k.birthYear||"?"}, age ${k.birthYear?new Date().getFullYear()-parseInt(k.birthYear):"?"})`).join(", ")
+      : profile.hasKids?"yes (ages unknown)":"none";
+    const empType = profile.employmentType||"employed";
+    const empLabel = {t4:"T4 Employee",w2:"W-2 Employee",selfemployed:"Self-Employed",incorporated:"Incorporated Business Owner",student:"Student",retired:"Retired"}[empType]||empType;
+    const isSelfEmp = empType==="selfemployed"||empType==="incorporated";
     return `You are a warm, expert personal finance coach for Flourish Money (${country==="CA"?"Canada":"USA"}).
-User financial snapshot:
-- Chequing balance: $${(balance||0).toFixed(2)}
-- Biweekly income: $${(income||0).toFixed(2)}
-- Recent spending total: $${(spending||0).toFixed(2)}
-- Top categories: ${topCats||"no data"}
+
+User profile:
+- Name: ${profile.name||"User"} | Age: ${age?`${age} (born ${birthYear})`:"not provided"}
+- Location: ${country==="CA"?"Canada":"United States"} — ${profile.province||"unknown"}
+- Status: ${profile.status||"single"}${profile.partnerName?` (partner: ${profile.partnerName})`:""}
+- Employment: ${empLabel} | Homeowner: ${profile.isHomeowner?"Yes":"No"}
+- Children: ${kidsInfo}
+
+Financial snapshot:
+- Balance: $${(balance||0).toFixed(2)} | Income (biweekly): $${(income||0).toFixed(2)}
+- Recent spending: $${(spending||0).toFixed(2)} | Top categories: ${topCats||"no data"}
 - Accounts: ${accounts.map(a=>`${a.name} (${a.type}) $${a.balance}`).join("; ")||"none linked"}
-- Country: ${country}
-Keep responses concise (3-5 sentences max), practical, and friendly. Use $ amounts when relevant. Never be preachy.
-CRITICAL RULES:
-- The balances and transactions shown are live from the user's bank via Plaid. NEVER suggest the data might be wrong, outdated, or inaccurate. NEVER recommend the user check their bank app instead — Flourish IS their financial view.
-- If a user says their balance looks wrong, acknowledge it and suggest they refresh their connection in Settings, but never imply Flourish's data is unreliable.
-- Never mention Plaid by name to users.`;
+- Bills: ${bills}
+- Debts: ${debts}
+- Savings goals: ${goals}
+- Retirement accounts: ${retInfo}${profile.rrspRoom?`
+- RRSP room: $${profile.rrspRoom}`:""}${profile.tfsaRoom?`
+- TFSA room: $${profile.tfsaRoom}`:""}
+
+Tax & advice context (use these to give accurate, personalised advice):
+${country==="CA"?`- Employment: ${isSelfEmp?"SELF-EMPLOYED — mention HST/GST ($30k threshold), quarterly installments, home office, business deductions, CRA My Account":"T4 EMPLOYEE — standard employment deductions, RRSP, union dues, home office if remote"}
+- ${age&&age>=65?"SENIOR 65+: Age Amount credit, pension income splitting (Form T1032), OAS ($727/mo), GIS if low income, medical expense credit, RRIF withdrawals":""}
+- ${age&&age<71?"RRSP contribution room matters — deadline to convert is age 71":"age 71+: RRIF required, minimum withdrawals apply"}
+- ${!profile.isHomeowner&&(!age||age<40)?"FIRST-TIME BUYER ELIGIBLE: FHSA ($8,000/yr deductible, tax-free growth), HBP (borrow up to $60k from RRSP — limit raised in Budget 2024), First Home Buyers Tax Credit ($1,500)":""}
+- ${profile.hasKids?`PARENT: CCB (2025: $7,997/yr under-6, $6,748/yr ages 6–17 — tax-free, income-tested), RESP+CESG (government adds 20% on first $2,500/yr = $500 free/child/yr), childcare deduction (lower-income spouse claims), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?"college-age child: consider RESP withdrawal strategy":""}`:""}
+- Province ${profile.province||"ON"}: apply correct provincial tax rates and credits`:
+`- Employment: ${isSelfEmp?"SELF-EMPLOYED — quarterly estimated taxes, Schedule C, SE tax deduction (50% of SE tax), home office Form 8829, retirement via SEP-IRA or Solo 401k":"W-2 EMPLOYEE — check withholding accuracy, max employer 401k match first"}
+- ${age&&age>=65?"SENIOR 65+: Social Security taxation (up to 85% taxable), RMDs start at 73, higher standard deduction ($1,950 extra single), OBBBA NEW $6,000 senior bonus deduction (2025–2028, phases out at $75k MAGI), QCD from IRA up to $108,000 (2025 indexed limit)":""}
+- ${age&&age>=73?"RMDs ARE REQUIRED — penalty is 25% of missed amount. Calculate and plan withdrawals carefully":""}
+- ${!profile.isHomeowner&&(!age||age<40)?"FIRST-TIME BUYER: mortgage interest deduction, property tax deduction, $10k IRA penalty-free withdrawal, check state programs":""}
+- ${profile.hasKids?`PARENT: Child Tax Credit ($2,200/child under 17 — OBBBA 2025), Dependent Care FSA ($5,000 pre-tax for 2025; rises to $7,500 for 2026 per OBBBA), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?"AOTC for college ($2,500/yr, 40% refundable)":""}`:""}
+- State ${profile.province||"unknown"}: ${profile.province==="TX"||profile.province==="FL"||profile.province==="WA"?"NO state income tax — higher effective savings rate possible":"state income tax applies — factor into net income calculations"}`}
+
+When user agrees to a specific goal or plan: FLOURISH_UPDATE:{"action":"update_goal","name":"<n>","target":<n>,"saved":<n>,"monthly":<n>}
+To add new goal: FLOURISH_UPDATE:{"action":"add_goal","name":"<n>","target":<n>,"saved":<n>,"monthly":<n>}
+
+Keep responses concise (3-5 sentences), practical, warm. Use $ amounts. Never be preachy.
+CRITICAL: Balances are live. NEVER tell user to check their bank app — Flourish IS their financial view. Never mention Plaid.`;
   };
 
   const send = async ()=>{
@@ -6355,10 +9715,36 @@ CRITICAL RULES:
       });
       if(!res.ok) throw new Error(`Server error ${res.status}`);
       const json = await res.json();
-      const reply = json.content?.[0]?.text || json.reply || "Sorry, I couldn't get a response. Try again.";
+      const rawReply = json.content?.[0]?.text || json.reply || "Sorry, I couldn't get a response. Try again.";
       onSend(); // only count on successful response
+
+      // Parse FLOURISH_UPDATE action from coach reply and apply to app data
+      let displayReply = rawReply;
+      const updateMatch = rawReply.match(/FLOURISH_UPDATE:(\{[^\n]+\})/);
+      if(updateMatch && setAppData) {
+        try {
+          const update = JSON.parse(updateMatch[1]);
+          displayReply = rawReply.replace(/\nFLOURISH_UPDATE:[^\n]+/, "").trim();
+          if(update.action==="add_goal") {
+            setAppData(prev=>({...prev, goals:[...(prev.goals||[]), {
+              id:Date.now(), name:update.name||"Goal",
+              target:String(update.target||0), saved:String(update.saved||0),
+              monthly:String(update.monthly||0),
+            }]}));
+          } else if(update.action==="update_goal") {
+            setAppData(prev=>({...prev, goals:(prev.goals||[]).map(g=>
+              (g.name||"").toLowerCase()===(update.name||"").toLowerCase()
+                ? {...g, ...(update.target?{target:String(update.target)}:{}),
+                        ...(update.saved!=null?{saved:String(update.saved)}:{}),
+                        ...(update.monthly?{monthly:String(update.monthly)}:{})}
+                : g
+            )}));
+          }
+        } catch(e) { /* malformed update — ignore */ }
+      }
+
       setMessages(prev=>{
-        const msgs = [...prev, {role:"assistant", content:reply}];
+        const msgs = [...prev, {role:"assistant", content:displayReply}];
         if(isBalanceQuestion) msgs.push({role:"assistant",content:"💡 If your balance doesn't match your bank app, I can help reconcile it. Upload your latest bank statement PDF or CSV in the **Transactions** screen — I'll compare the numbers and flag any discrepancies.",isSystem:true});
         return msgs;
       });
@@ -6384,6 +9770,7 @@ CRITICAL RULES:
       {/* Header */}
       <div style={{padding:"16px 20px 12px",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
+          {setScreen&&<button onClick={()=>setScreen("home")} style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,borderRadius:12,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,color:C.cream,fontSize:18}}>←</button>}
           <div style={{width:38,height:38,borderRadius:12,background:`linear-gradient(135deg,${C.purple}33,${C.purple}11)`,border:`1px solid ${C.purple}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
             <Icon id="sparkles" size={19} color={C.purpleBright} strokeWidth={1.5}/>
           </div>
@@ -6394,6 +9781,14 @@ CRITICAL RULES:
               {isOnline?"Live · Your real data":"Offline"}
             </div>
           </div>
+          <button onClick={()=>{
+            if(window.confirm("Clear chat history? This cannot be undone.")){
+              try{localStorage.removeItem(STORAGE_KEY);}catch{}
+              setMessages([WELCOME]);
+            }
+          }} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"6px 10px",color:C.muted,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:36,flexShrink:0}} title="Clear history">
+            🗑️
+          </button>
           {!isPremium&&<div onClick={onUpgrade} style={{background:freeMsgsLeft>0?C.purple+"22":C.red+"22",border:`1px solid ${freeMsgsLeft>0?C.purple+"44":C.red+"44"}`,borderRadius:10,padding:"5px 10px",cursor:"pointer",textAlign:"center"}}>
             <div style={{color:freeMsgsLeft>0?C.purpleBright:C.redBright,fontSize:12,fontWeight:800}}>{freeMsgsLeft}/{FREE_LIMIT}</div>
             <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>free left</div>
@@ -6405,20 +9800,27 @@ CRITICAL RULES:
       <div style={{flex:1,overflowY:"auto",padding:"16px 20px",display:"flex",flexDirection:"column",gap:12}}>
         {messages.map((m,i)=>(
           <div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start"}}>
-            <div style={{
-              maxWidth:"82%",
-              background:m.role==="user"
-                ?`linear-gradient(135deg,${C.purple},${C.purpleBright})`
-                :C.card,
-              color:m.role==="user"?"#fff":C.cream,
-              border:m.role==="user"?"none":`1px solid ${C.border}`,
-              borderRadius:m.role==="user"?"18px 18px 4px 18px":"18px 18px 18px 4px",
-              padding:"11px 15px",
-              fontSize:13,
-              lineHeight:1.65,
-              fontFamily:"inherit",
-              whiteSpace:"pre-wrap",
-            }}>{m.content}</div>
+            {m.role==="system"
+              ? <div style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"4px 0"}}>
+                  <div style={{flex:1,height:1,background:C.border}}/>
+                  <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,flexShrink:0}}>{m.content}</span>
+                  <div style={{flex:1,height:1,background:C.border}}/>
+                </div>
+              : <div style={{
+                  maxWidth:"82%",
+                  background:m.role==="user"
+                    ?`linear-gradient(135deg,${C.purple},${C.purpleBright})`
+                    :C.card,
+                  color:m.role==="user"?"#fff":C.cream,
+                  border:m.role==="user"?"none":`1px solid ${C.border}`,
+                  borderRadius:m.role==="user"?"18px 18px 4px 18px":"18px 18px 18px 4px",
+                  padding:"11px 15px",
+                  fontSize:13,
+                  lineHeight:1.65,
+                  fontFamily:"inherit",
+                  whiteSpace:"pre-wrap",
+                }}>{m.content}</div>
+            }
           </div>
         ))}
         {loading&&(
@@ -6481,7 +9883,7 @@ CRITICAL RULES:
 }
 
 // ─── CREDIT SCREEN ────────────────────────────────────────────────────────────
-function CreditScreen({data}){
+function CreditScreen({data,setScreen}){
   const profile = data.profile||{};
   const country = profile.country||"CA";
   const isCA = country==="CA";
@@ -6542,6 +9944,7 @@ function CreditScreen({data}){
 
   return(
     <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"20px 20px 80px",maxWidth:430,margin:"0 auto"}}>
+      <ScreenHeader title="Credit Score" subtitle="Estimated from your financial behaviour" onBack={setScreen?()=>setScreen("home"):null} cta="Ask Coach" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
       {/* Score gauge */}
       <div style={{background:C.card,borderRadius:20,padding:"24px 20px 20px",border:`1px solid ${C.border}`,marginBottom:16,textAlign:"center"}}>
         <div style={{color:C.muted,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Credit Score Estimate</div>
@@ -6618,15 +10021,93 @@ function CreditScreen({data}){
 }
 
 // ─── PRIVACY POLICY ───────────────────────────────────────────────────────────
+// ─── FEEDBACK MODAL ───────────────────────────────────────────────────────────
+function FeedbackModal({onClose}){
+  const [msg,setMsg]=useState("");
+  const [type,setType]=useState("bug");
+  const [sent,setSent]=useState(false);
+  const [sending,setSending]=useState(false);
+
+  const submit=async()=>{
+    if(!msg.trim()) return;
+    setSending(true);
+    try{
+      await fetch("https://formspree.io/f/xnnqoqkl",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","Accept":"application/json"},
+        body:JSON.stringify({type,message:msg,url:window.location.href})
+      });
+    }catch{}
+    setSent(true);
+    setSending(false);
+    setTimeout(onClose,1800);
+  };
+
+  const types=[["🐛","bug","Bug"],["💡","idea","Idea"],["👍","praise","Praise"],["❓","question","Question"]];
+
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",
+      display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"0 0 20px"}}
+      onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{width:"100%",maxWidth:430,background:C.surface,borderRadius:20,padding:"20px 20px 24px",
+        border:`1px solid ${C.border}`,animation:"slideUp .28s ease"}}>
+        {sent?(
+          <div style={{textAlign:"center",padding:"28px 0"}}>
+            <div style={{fontSize:40,marginBottom:10}}>🙏</div>
+            <div style={{color:C.greenBright,fontWeight:800,fontSize:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+              Thanks for your feedback!
+            </div>
+            <div style={{color:C.muted,fontSize:13,marginTop:6}}>It goes straight to Amanda.</div>
+          </div>
+        ):(
+          <>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                Beta Feedback
+              </div>
+              <button onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:20,cursor:"pointer",padding:0,lineHeight:1}}>✕</button>
+            </div>
+            {/* Type selector */}
+            <div style={{display:"flex",gap:6,marginBottom:14}}>
+              {types.map(([emoji,val,label])=>(
+                <button key={val} onClick={()=>setType(val)}
+                  style={{flex:1,background:type===val?C.green+"33":C.cardAlt,border:`1px solid ${type===val?C.green:C.border}`,
+                    borderRadius:10,padding:"8px 4px",color:type===val?C.greenBright:C.muted,
+                    fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                    display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                  <span style={{fontSize:16}}>{emoji}</span>{label}
+                </button>
+              ))}
+            </div>
+            <textarea value={msg} onChange={e=>setMsg(e.target.value)}
+              placeholder={type==="bug"?"What happened? What did you expect?":type==="idea"?"What would make Flourish better?":type==="praise"?"What do you love?":"What's your question?"}
+              rows={4}
+              style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,
+                padding:"12px 14px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",
+                outline:"none",resize:"none",lineHeight:1.6,boxSizing:"border-box"}}/>
+            <button onClick={submit} disabled={!msg.trim()||sending}
+              style={{width:"100%",background:msg.trim()&&!sending?`linear-gradient(135deg,${C.green},${C.greenBright})`:"rgba(255,255,255,0.06)",
+                border:"none",borderRadius:12,padding:"13px",color:msg.trim()&&!sending?"#041810":C.muted,
+                fontWeight:800,fontSize:13,cursor:msg.trim()&&!sending?"pointer":"default",
+                fontFamily:"inherit",marginTop:10}}>
+              {sending?"Sending…":"Send Feedback →"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PrivacyPolicy({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
   const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
-  const last="March 13, 2026";
+  const last="March 16, 2026";
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
-        <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.cream,cursor:"pointer",...s,fontSize:13}}>← Back</button>
+        <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 18px",minHeight:44,color:C.cream,cursor:"pointer",...s,fontSize:13,fontWeight:600}}>← Back</button>
         <div>
           <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream}}>Privacy Policy</div>
           <div style={{...s,fontSize:11,color:C.muted}}>Last updated {last}</div>
@@ -6672,7 +10153,10 @@ function PrivacyPolicy({onBack}){
       <div style={p}>We may update this Privacy Policy periodically. We will notify you of material changes via the App or by email. Continued use of the App after changes constitutes your acceptance of the updated policy.</div>
 
       <div style={h2}>10. Contact Us</div>
-      <div style={p}>GrowSmart Inc. / Flourish Money<br/>Email: <span style={{color:C.green}}>privacy@flourishmoney.app</span><br/>Website: flourishmoney.app</div>
+      <div style={p}>GrowSmart Inc. / Flourish Money<br/>Website: flourishmoney.app</div>
+      <a href="mailto:privacy@flourishmoney.app" style={{display:"inline-flex",alignItems:"center",gap:8,marginTop:12,background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:99,padding:"10px 18px",color:C.greenBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,textDecoration:"none",minHeight:44}}>
+        ✉️ privacy@flourishmoney.app
+      </a>
     </div>
   );
 }
@@ -6682,11 +10166,11 @@ function TermsOfService({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
   const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
-  const last="March 13, 2026";
+  const last="March 16, 2026";
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
-        <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.cream,cursor:"pointer",...s,fontSize:13}}>← Back</button>
+        <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 18px",minHeight:44,color:C.cream,cursor:"pointer",...s,fontSize:13,fontWeight:600}}>← Back</button>
         <div>
           <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream}}>Terms of Service</div>
           <div style={{...s,fontSize:11,color:C.muted}}>Last updated {last}</div>
@@ -6734,7 +10218,10 @@ function TermsOfService({onBack}){
       <div style={p}>We reserve the right to modify these Terms at any time. We will notify you of material changes via the App or email. Continued use of the App after changes constitutes your acceptance of the updated Terms.</div>
 
       <div style={h2}>13. Contact</div>
-      <div style={p}>GrowSmart Inc. / Flourish Money<br/>Email: <span style={{color:C.green}}>hello@flourishmoney.app</span><br/>Website: flourishmoney.app</div>
+      <div style={p}>GrowSmart Inc. / Flourish Money<br/>Website: flourishmoney.app</div>
+      <a href="mailto:hello@flourishmoney.app" style={{display:"inline-flex",alignItems:"center",gap:8,marginTop:12,background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:99,padding:"10px 18px",color:C.greenBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,textDecoration:"none",minHeight:44}}>
+        ✉️ hello@flourishmoney.app
+      </a>
     </div>
   );
 }
@@ -6769,7 +10256,7 @@ function Paywall({onClose,onUpgrade,country}){
   const [selected,setSelected]=useState("annual");
   const [promo,setPromo]=useState("");
   const [promoError,setPromoError]=useState("");
-  const PROMO_CODES=["FLOURISH2026","AMANDA","FOUNDER","GROWSMART","BETA100"];
+  const PROMO_CODES=["FLOURISH2026","FOUNDER","BETA100"];
   const isCA=country==="CA";
   const plans={
     annual:{label:"Annual",price:isCA?"$79.99/yr":"$59.99/yr",monthly:isCA?"$6.67/mo":"$5.00/mo",save:"Save 33%",badge:"Best Value"},
@@ -6866,12 +10353,106 @@ function Paywall({onClose,onUpgrade,country}){
   );
 }
 
+
+// ─── FIRST VISIT FOCUSED SCREEN ──────────────────────────────────────────────
+// Shown once, immediately after onboarding completes.
+// One number. One sentence. One button.
+// Dismissed permanently after user taps through.
+function FirstVisitScreen({data, onDismiss}) {
+  const [showBreakdown, setShowBreakdown] = useState(false);
+
+  const { safeAmount } = SafeSpendEngine.calculate(data);
+  const { monthlyIncome, monthlyBills } = FinancialCalcEngine.cashFlow(data);
+  const toMo = (amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="monthly"?a:a*2.167;};
+  const incomeAmt = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
+  const billsAmt = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
+  const safeFloor = incomeAmt * 0.15;
+  const bufferAmt = Math.max(0, incomeAmt - billsAmt - safeFloor);
+  const name = data.profile?.name || "there";
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 28px",textAlign:"center"}}>
+      {/* Ambient glow */}
+      <div style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:400,height:400,borderRadius:"50%",background:`radial-gradient(circle,${C.green}14 0%,transparent 65%)`,pointerEvents:"none"}}/>
+
+      <div style={{position:"relative",width:"100%",maxWidth:360}}>
+        {/* Welcome */}
+        <div style={{color:C.muted,fontSize:12,fontWeight:700,letterSpacing:2,textTransform:"uppercase",marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+          Welcome, {name}
+        </div>
+
+        {/* The Number */}
+        <div style={{marginBottom:8}}>
+          {incomeAmt > 0 ? (<>
+            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>You can safely spend</div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,lineHeight:1}}>
+              <span style={{fontSize:22,color:C.greenBright+"88",verticalAlign:"top",marginTop:12,display:"inline-block"}}>$</span>
+              <span style={{fontSize:88,color:C.greenBright,letterSpacing:-4,textShadow:`0 0 80px ${C.green}40`}}>
+                {Math.max(0,safeAmount).toFixed(0)}
+              </span>
+            </div>
+            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>today</div>
+          </>) : (
+            <div style={{marginTop:8}}>
+              <div style={{fontSize:64,marginBottom:12}}>🌱</div>
+              <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:C.greenBright,marginBottom:8}}>Flourish is ready</div>
+            </div>
+          )}
+        </div>
+
+        {/* One-line explanation */}
+        <div style={{color:C.mutedHi,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,marginBottom:32,maxWidth:280,margin:"0 auto 32px"}}>
+          {incomeAmt > 0
+            ? "After bills, savings buffer, and upcoming expenses"
+            : "Add your income in Settings to see your personalised safe-to-spend number."}
+        </div>
+
+        {/* Breakdown — progressive disclosure */}
+        {showBreakdown&&(
+          <div style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:18,padding:"16px 20px",marginBottom:24,textAlign:"left"}}>
+            <div style={{color:C.muted,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How this is calculated</div>
+            {[
+              ["💰","Monthly income", incomeAmt>0?`$${incomeAmt.toFixed(0)}`:"Not entered yet", incomeAmt>0?C.greenBright:C.muted],
+              ["📅","Bills this period",billsAmt>0?`−$${billsAmt.toFixed(0)}`:"None tracked",billsAmt>0?C.gold:C.muted],
+              ["🛡️","Safety buffer (15%)",incomeAmt>0?`−$${safeFloor.toFixed(0)}`:"—",C.teal],
+              ["✅","Available to spend",`$${Math.max(0,safeAmount).toFixed(0)}`,C.greenBright],
+            ].map(([icon,label,val,col],i,arr)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:i<arr.length-1?`1px solid ${C.border}22`:"none"}}>
+                <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{icon} {label}</span>
+                <span style={{color:col,fontWeight:700,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{val}</span>
+              </div>
+            ))}
+            {!data.bankConnected&&<div style={{marginTop:12,color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>📌 Connect your bank to make this number live and precise.</div>}
+          </div>
+        )}
+
+        {/* Primary CTA */}
+        {!showBreakdown?(
+          <button onClick={()=>setShowBreakdown(true)}
+            style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
+            See how this works →
+          </button>
+        ):(
+          <button onClick={onDismiss}
+            style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
+            Go to my dashboard →
+          </button>
+        )}
+
+        <button onClick={onDismiss} style={{background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"8px"}}>
+          Skip for now
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 const NAV=[
-  {id:"home",  icon:"home",     label:"Home"},
-  {id:"plan",  icon:"calendar", label:"Plan"},
-  {id:"spend", icon:"card",     label:"Transactions"},
-  {id:"coach", icon:"sparkles", label:"Coach"},
+  {id:"home",  icon:"home",     label:"Today"},
+  {id:"plan",  icon:"calendar", label:"Future"},
+  {id:"spend", icon:"card",     label:"Activity"},
+  {id:"coach", icon:"sparkles", label:"Guidance"},
   {id:"family",icon:"users",    label:"Family"},
 ];
 
@@ -6895,21 +10476,423 @@ function clearState() {
 
 
 // ── AUTH SCREEN ───────────────────────────────────────────────────────────────
+// ─── KIDS MINI SITE ──────────────────────────────────────────────────────────
+function KidsGoal({goal, jars, code, theme, primary, playSound}){
+  const goalEmojis=["🎯","🎮","🚲","📚","🎸","⚽","🏊","🎨","✈️","🦄","👟","🍕","🏆","🎪","🤖"];
+  const [editingGoal,setEditingGoal]=useState(false);
+  const [goalName,setGoalName]=useState(goal.name||"");
+  const [goalAmt2,setGoalAmt2]=useState(goal.amount||"");
+  const [goalEmoji2,setGoalEmoji2]=useState(goal.emoji||"🎯");
+
+  const getDisplayGoal=()=>{
+    let d=goal;
+    try{const local=JSON.parse(localStorage.getItem("flourish_kid_goal_"+code)||"null");if(local?.name)d=local;}catch{}
+    return d;
+  };
+  const [displayGoal,setDisplayGoal]=useState(getDisplayGoal);
+
+  const saveGoal=()=>{
+    if(!goalName||!goalAmt2)return;
+    const g={name:goalName,amount:goalAmt2,emoji:goalEmoji2};
+    try{
+      const all=JSON.parse(localStorage.getItem("flourish_kids")||"[]");
+      const updated=all.map(k=>k.code===code?{...k,goal:g}:k);
+      localStorage.setItem("flourish_kids",JSON.stringify(updated));
+      localStorage.setItem("flourish_kid_goal_"+code,JSON.stringify(g));
+    }catch{}
+    setDisplayGoal(g);
+    setEditingGoal(false);
+  };
+
+  const dAmt=parseFloat(displayGoal.amount)||0;
+  const dPct=dAmt>0?Math.min(100,Math.round(((jars.save||0)/dAmt)*100)):0;
+
+  return (
+    <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid ${theme.primaryBorder}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <div style={{color:primary,fontWeight:800,fontSize:14}}>🎯 My Goal</div>
+        <button onClick={()=>{setGoalName(displayGoal.name||"");setGoalAmt2(displayGoal.amount||"");setGoalEmoji2(displayGoal.emoji||"🎯");setEditingGoal(e=>!e);}}
+          style={{background:"none",border:`1px solid ${theme.primaryBorder}`,borderRadius:8,padding:"4px 10px",color:primary,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+          {editingGoal?"Cancel":displayGoal.name?"Change":"Set Goal"}
+        </button>
+      </div>
+      {editingGoal?(
+        <div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+            {goalEmojis.map(e=>(
+              <button key={e} onClick={()=>setGoalEmoji2(e)}
+                style={{background:goalEmoji2===e?theme.primaryDim:"none",border:`1px solid ${goalEmoji2===e?primary:theme.choreBorder}`,borderRadius:8,padding:"6px",fontSize:18,cursor:"pointer"}}>
+                {e}
+              </button>
+            ))}
+          </div>
+          <input value={goalName} onChange={e=>setGoalName(e.target.value)} placeholder="What are you saving for?"
+            style={{width:"100%",background:theme.cardAlt,border:`1px solid ${theme.choreBorder}`,borderRadius:10,padding:"10px 12px",color:theme.text,fontSize:13,fontFamily:"inherit",boxSizing:"border-box",marginBottom:8,outline:"none"}}/>
+          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
+            <span style={{color:primary,fontSize:15,fontWeight:700}}>$</span>
+            <input value={goalAmt2} onChange={e=>setGoalAmt2(e.target.value)} placeholder="Amount" type="number"
+              style={{flex:1,background:theme.cardAlt,border:`1px solid ${theme.choreBorder}`,borderRadius:10,padding:"10px 12px",color:theme.text,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+          </div>
+          <button onClick={saveGoal} disabled={!goalName||!goalAmt2}
+            style={{width:"100%",background:goalName&&goalAmt2?primary:"rgba(255,255,255,0.1)",border:"none",borderRadius:12,padding:"12px",color:goalName&&goalAmt2?theme.bg:"rgba(255,255,255,0.3)",fontWeight:800,fontSize:14,cursor:goalName&&goalAmt2?"pointer":"default",fontFamily:"inherit"}}>
+            Save Goal {goalEmoji2}
+          </button>
+        </div>
+      ):displayGoal.name&&dAmt>0?(
+        <>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{color:theme.text,fontSize:15,fontWeight:700}}>{displayGoal.emoji} {displayGoal.name}</span>
+            <span style={{color:primary,fontWeight:800,fontSize:16}}>{dPct}%</span>
+          </div>
+          <div style={{height:12,background:"rgba(255,255,255,0.06)",borderRadius:6,overflow:"hidden",marginBottom:8}}>
+            <div style={{height:"100%",width:`${dPct}%`,background:`linear-gradient(90deg,${theme.jar1},${theme.jar2})`,borderRadius:6,transition:"width .5s"}}/>
+          </div>
+          <div style={{color:theme.textMuted,fontSize:12}}>
+            ${(jars.save||0).toFixed(2)} saved · ${Math.max(0,dAmt-(jars.save||0)).toFixed(2)} to go
+            {dPct>=100&&<span style={{color:theme.jar1,fontWeight:700}}> 🎉 You did it!</span>}
+          </div>
+          {dPct>=100&&<div onClick={()=>playSound("goal")} style={{marginTop:10,background:theme.primaryDim,border:`1px solid ${theme.primaryBorder}`,borderRadius:12,padding:"12px",textAlign:"center",cursor:"pointer"}}>
+            <span style={{fontSize:26}}>🎉</span>
+            <div style={{color:primary,fontWeight:800,fontSize:13,marginTop:4}}>Goal reached! Tap to celebrate!</div>
+          </div>}
+        </>
+      ):(
+        <div style={{color:theme.textMuted,fontSize:13,textAlign:"center",padding:"8px 0"}}>Tap "Set Goal" to pick something to save for!</div>
+      )}
+    </div>
+  );
+}
+
+function KidsMiniSite(){
+  const params=new URLSearchParams(window.location.search);
+  const code=params.get("code")||"";
+
+  const kidData=(()=>{
+    try{
+      // Try localStorage first (same device as parent)
+      const all=JSON.parse(localStorage.getItem("flourish_kids")||"[]");
+      const k=all.find(k=>k.code===code);
+      if(k)return k;
+      const d=JSON.parse(localStorage.getItem("flourish_kid_data_"+code)||"null");
+      if(d)return d;
+      // Fall back to URL params (any device — data encoded in the share link)
+      const n=params.get("n");
+      if(n)return{
+        name:n,
+        emoji:params.get("e")||"🌱",
+        age:params.get("a")||"8-12",
+        theme:params.get("t")||"pink",
+        jars:{spend:0,save:0,give:0},
+        goal:{name:"",amount:"",emoji:"🎯"},
+        streak:0,
+      };
+      return null;
+    }catch{return null;}
+  })();
+
+  const THEMES={
+    // ── DARK ──
+    pink:{name:"Pink",emoji:"🌸",dark:true,primary:"#FF6B9D",primaryDim:"#FF6B9D22",primaryBorder:"rgba(255,107,157,0.3)",bg:"#0D0508",card:"#1A0A10",cardAlt:"#220D14",text:"#FFE8F0",textMuted:"#C4848A",header:"linear-gradient(135deg,#220D14,#0D0508)",chore:"rgba(255,107,157,0.08)",choreBorder:"rgba(255,107,157,0.15)",jar1:"#FF6B9D",jar2:"#FF94B8",jar3:"#FFB3C9"},
+    purple:{name:"Purple",emoji:"💜",dark:true,primary:"#A855F7",primaryDim:"#A855F722",primaryBorder:"rgba(168,85,247,0.3)",bg:"#07040D",card:"#110A1A",cardAlt:"#180F22",text:"#EDE0FF",textMuted:"#9B7AB5",header:"linear-gradient(135deg,#180F22,#07040D)",chore:"rgba(168,85,247,0.08)",choreBorder:"rgba(168,85,247,0.15)",jar1:"#A855F7",jar2:"#C084FC",jar3:"#D8A4FF"},
+    green:{name:"Green",emoji:"🌿",dark:true,primary:"#22C55E",primaryDim:"#22C55E22",primaryBorder:"rgba(34,197,94,0.3)",bg:"#030D06",card:"#081A0E",cardAlt:"#0D2214",text:"#DCFCE7",textMuted:"#6DAF7E",header:"linear-gradient(135deg,#0D2214,#030D06)",chore:"rgba(34,197,94,0.08)",choreBorder:"rgba(34,197,94,0.15)",jar1:"#22C55E",jar2:"#4ADE80",jar3:"#86EFAC"},
+    blue:{name:"Blue",emoji:"🌊",dark:true,primary:"#38BDF8",primaryDim:"#38BDF822",primaryBorder:"rgba(56,189,248,0.3)",bg:"#030810",card:"#071018",cardAlt:"#0A1620",text:"#E0F4FF",textMuted:"#6B9EB5",header:"linear-gradient(135deg,#0A1620,#030810)",chore:"rgba(56,189,248,0.08)",choreBorder:"rgba(56,189,248,0.15)",jar1:"#38BDF8",jar2:"#7DD3FC",jar3:"#BAE6FD"},
+    orange:{name:"Orange",emoji:"🔥",dark:true,primary:"#FB923C",primaryDim:"#FB923C22",primaryBorder:"rgba(251,146,60,0.3)",bg:"#0D0600",card:"#1A0E00",cardAlt:"#221400",text:"#FFF0E0",textMuted:"#C4956A",header:"linear-gradient(135deg,#221400,#0D0600)",chore:"rgba(251,146,60,0.08)",choreBorder:"rgba(251,146,60,0.15)",jar1:"#FB923C",jar2:"#FDBA74",jar3:"#FED7AA"},
+    night:{name:"Night",emoji:"🌙",dark:true,primary:"#818CF8",primaryDim:"#818CF822",primaryBorder:"rgba(129,140,248,0.3)",bg:"#020204",card:"#0C0C14",cardAlt:"#12121C",text:"#E8E8FF",textMuted:"#7070A0",header:"linear-gradient(135deg,#12121C,#020204)",chore:"rgba(129,140,248,0.08)",choreBorder:"rgba(129,140,248,0.15)",jar1:"#818CF8",jar2:"#A5B4FC",jar3:"#C7D2FE"},
+    // ── LIGHT ──
+    sunshine:{name:"Sunshine",emoji:"☀️",dark:false,primary:"#D97706",primaryDim:"#D9770618",primaryBorder:"rgba(217,119,6,0.3)",bg:"#FFFBEB",card:"#FEF3C7",cardAlt:"#FDE68A55",text:"#78350F",textMuted:"#92400E",header:"linear-gradient(135deg,#FDE68A,#FEF3C7)",chore:"rgba(217,119,6,0.08)",choreBorder:"rgba(217,119,6,0.25)",jar1:"#F59E0B",jar2:"#FBBF24",jar3:"#FCD34D"},
+    candy:{name:"Candy",emoji:"🍬",dark:false,primary:"#DB2777",primaryDim:"#DB277718",primaryBorder:"rgba(219,39,119,0.3)",bg:"#FFF0F6",card:"#FCE7F3",cardAlt:"#FBCFE855",text:"#831843",textMuted:"#9D174D",header:"linear-gradient(135deg,#FBCFE8,#FCE7F3)",chore:"rgba(219,39,119,0.08)",choreBorder:"rgba(219,39,119,0.25)",jar1:"#DB2777",jar2:"#EC4899",jar3:"#F472B6"},
+    sky:{name:"Sky",emoji:"🌤️",dark:false,primary:"#0284C7",primaryDim:"#0284C718",primaryBorder:"rgba(2,132,199,0.3)",bg:"#F0F9FF",card:"#E0F2FE",cardAlt:"#BAE6FD55",text:"#0C4A6E",textMuted:"#075985",header:"linear-gradient(135deg,#BAE6FD,#E0F2FE)",chore:"rgba(2,132,199,0.08)",choreBorder:"rgba(2,132,199,0.25)",jar1:"#0284C7",jar2:"#0EA5E9",jar3:"#38BDF8"},
+    meadow:{name:"Meadow",emoji:"🌼",dark:false,primary:"#15803D",primaryDim:"#15803D18",primaryBorder:"rgba(21,128,61,0.3)",bg:"#F0FDF4",card:"#DCFCE7",cardAlt:"#BBF7D055",text:"#14532D",textMuted:"#166534",header:"linear-gradient(135deg,#BBF7D0,#DCFCE7)",chore:"rgba(21,128,61,0.08)",choreBorder:"rgba(21,128,61,0.25)",jar1:"#15803D",jar2:"#16A34A",jar3:"#22C55E"},
+    lavender:{name:"Lavender",emoji:"💐",dark:false,primary:"#7C3AED",primaryDim:"#7C3AED18",primaryBorder:"rgba(124,58,237,0.3)",bg:"#F5F3FF",card:"#EDE9FE",cardAlt:"#DDD6FE55",text:"#3B0764",textMuted:"#5B21B6",header:"linear-gradient(135deg,#DDD6FE,#EDE9FE)",chore:"rgba(124,58,237,0.08)",choreBorder:"rgba(124,58,237,0.25)",jar1:"#7C3AED",jar2:"#8B5CF6",jar3:"#A78BFA"},
+    peach:{name:"Peach",emoji:"🍑",dark:false,primary:"#C2410C",primaryDim:"#C2410C18",primaryBorder:"rgba(194,65,12,0.3)",bg:"#FFF7ED",card:"#FFEDD5",cardAlt:"#FED7AA55",text:"#7C2D12",textMuted:"#9A3412",header:"linear-gradient(135deg,#FED7AA,#FFEDD5)",chore:"rgba(194,65,12,0.08)",choreBorder:"rgba(194,65,12,0.25)",jar1:"#C2410C",jar2:"#EA580C",jar3:"#F97316"},
+  };
+
+  const THEMES_KEYS=Object.keys(THEMES);
+
+  const [activeTheme,setActiveTheme]=useState(()=>{
+    try{
+      // URL param takes priority (fresh share link), then localStorage, then kidData, then pink
+      const urlTheme=params.get("t");
+      if(urlTheme&&THEMES_KEYS.includes(urlTheme))return urlTheme;
+      const stored=localStorage.getItem("flourish_kid_theme_"+code);
+      if(stored&&THEMES_KEYS.includes(stored))return stored;
+      if(kidData?.theme)return kidData.theme;
+      return"pink";
+    }catch{return"pink";}
+  });
+  const saveTheme=(t)=>{
+    setActiveTheme(t);
+    try{localStorage.setItem("flourish_kid_theme_"+code,t);}catch{}
+  };
+  const theme=THEMES[activeTheme]||THEMES.pink;
+  const primary=theme.primary;
+
+  const [kidAge,setKidAge]=useState(kidData?.age||"8-12");
+  const [chores,setChores]=useState(()=>{
+    try{
+      const saved=JSON.parse(localStorage.getItem("flourish_kid_chores_"+code)||"null");
+      if(saved)return saved;
+      return kidData?.chores||[];
+    }catch{return[];}
+  });
+
+  const jars=kidData?.jars||{spend:0,save:0,give:0};
+  const goal=kidData?.goal||{name:"",amount:"",emoji:"🎯"};
+  const streak=kidData?.streak||0;
+  const goalAmt=parseFloat(goal.amount)||0;
+  const goalPct=goalAmt>0?Math.min(100,Math.round(((jars.save||0)/goalAmt)*100)):0;
+  const totalJars=(jars.spend||0)+(jars.save||0)+(jars.give||0);
+  const earned=chores.filter(c=>c.done).reduce((a,c)=>a+(c.reward||0),0);
+  const total=chores.reduce((a,c)=>a+(c.reward||0),0);
+  const FREQ={daily:"Daily",few:"Few/week",weekly:"Weekly",monthly:"Monthly"};
+
+  // ── Sounds ──────────────────────────────────────────────────────────────────
+  const playSound=(type)=>{
+    try{
+      const ctx=new(window.AudioContext||window.webkitAudioContext)();
+      if(type==="chore"){
+        const freqs=[[523,0],[659,0.1],[784,0.2]];
+        freqs.forEach(([freq,t])=>{
+          const o=ctx.createOscillator(),g=ctx.createGain();
+          o.connect(g);g.connect(ctx.destination);
+          o.type="sine";o.frequency.value=freq;
+          g.gain.setValueAtTime(0.22,ctx.currentTime+t);
+          g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+t+0.28);
+          o.start(ctx.currentTime+t);o.stop(ctx.currentTime+t+0.3);
+        });
+      } else if(type==="complete"){
+        [523,659,784,1047,1319].forEach((freq,i)=>{
+          const o=ctx.createOscillator(),g=ctx.createGain();
+          o.connect(g);g.connect(ctx.destination);
+          o.type="triangle";o.frequency.value=freq;
+          g.gain.setValueAtTime(0.18,ctx.currentTime+i*0.09);
+          g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+i*0.09+0.55);
+          o.start(ctx.currentTime+i*0.09);o.stop(ctx.currentTime+i*0.09+0.6);
+        });
+      } else if(type==="goal"){
+        // Fanfare
+        const notes=[523,659,784,659,1047];
+        const times=[0,0.1,0.2,0.3,0.45];
+        notes.forEach((freq,i)=>{
+          const o=ctx.createOscillator(),g=ctx.createGain();
+          o.connect(g);g.connect(ctx.destination);
+          o.type="square";o.frequency.value=freq;
+          g.gain.setValueAtTime(0.15,ctx.currentTime+times[i]);
+          g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+times[i]+0.35);
+          o.start(ctx.currentTime+times[i]);o.stop(ctx.currentTime+times[i]+0.4);
+        });
+      }
+    }catch(e){}
+  };
+
+  const toggle=(id)=>{
+    const updated=chores.map(c=>c.id===id?{...c,done:!c.done}:c);
+    const wasUndone=chores.find(c=>c.id===id)?.done===false;
+    setChores(updated);
+    if(wasUndone){
+      const allNowDone=updated.filter(c=>c.reward>0).every(c=>c.done);
+      if(allNowDone) playSound("complete"); else playSound("chore");
+    }
+    try{localStorage.setItem("flourish_kid_chores_"+code,JSON.stringify(updated));}catch{}
+  };
+
+  const kidName=kidData?.name||"Your";
+  const kidEmoji=kidData?.emoji||"🌱";
+
+  const lessons={
+    "4-7":[
+      {emoji:"🪙",title:"Money is for trading",body:"When you want something at the store, you give money and get the thing. Money is like a trade ticket!",activity:"Play store at home. Use toy coins to 'buy' snacks from a parent.",key:"Money is how we trade for things we want."},
+      {emoji:"🐷",title:"Saving means waiting",body:"If a toy costs $10 and you have $3, you need to save $7 more. Saving means keeping money safe until you have enough.",activity:"Put $1 in a piggy bank each day and count it every 3 days.",key:"Waiting for something makes it even better."},
+    ],
+    "8-12":[
+      {emoji:"🏦",title:"What banks do",body:"A bank keeps your money safe and pays you a little extra called interest. Like a super-safe piggy bank that rewards you for saving.",key:"Banks keep money safe AND pay you to use them."},
+      {emoji:"💳",title:"Credit cards are loans",body:"A credit card lets you buy now and pay later. But if you don't pay it all back quickly, they charge you extra. That's how people get into trouble.",key:"Pay your credit card in full every month."},
+      {emoji:"📈",title:"Money can grow",body:"$100 at 7% interest becomes $386 in 20 years — without doing anything extra! This is compound interest — money making more money.",key:"Start saving young. Time is the secret ingredient."},
+    ],
+    "13+":[
+      {emoji:"💰",title:"Budget like a boss",body:"50% needs, 30% wants, 20% savings. Without a budget, money just disappears. A budget is a plan for the life you actually want.",key:"A budget gives your money direction."},
+      {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet — and paying extra for the privilege.",key:"Debt is expensive. Use it wisely or not at all."},
+      {emoji:"📊",title:"Start investing at your first job",body:"$50/month at 7% starting at 16 = $245,000 at retirement. Starting at 30 = only $68,000. Starting early nearly triples your outcome.",key:"Invest with your very first paycheck."},
+    ],
+  };
+
+  return(
+    <div style={{minHeight:"100dvh",background:theme.bg,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"0 0 80px",transition:"background .4s"}}>
+
+      {/* Header */}
+      <div style={{background:theme.header,padding:"28px 20px 16px",borderBottom:`1px solid ${theme.primaryBorder}`}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+          <div style={{width:48,height:48,borderRadius:14,background:theme.primaryDim,border:`1.5px solid ${theme.primaryBorder}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            <FlourishMarkKids size={32}/>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:theme.text,lineHeight:1}}>{kidData?.name?`${kidName}'s Flourish`:"Flourish Kids"}</div>
+            <div style={{color:theme.textMuted,fontSize:12,marginTop:2}}>Your money zone <span style={{color:primary}}>♥</span></div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{color:primary,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>${totalJars.toFixed(2)}</div>
+            <div style={{color:theme.textMuted,fontSize:10}}>total saved</div>
+          </div>
+        </div>
+        {streak>0&&(
+          <div style={{background:"rgba(255,140,66,0.15)",border:"1px solid rgba(255,140,66,0.3)",borderRadius:10,padding:"8px 14px",display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <span style={{fontSize:18}}>🔥</span>
+            <span style={{color:"#FF8C42",fontWeight:700,fontSize:13}}>{streak} week streak! Keep it going!</span>
+          </div>
+        )}
+        {/* Theme picker — visual swatch grid */}
+        <div style={{marginTop:10}}>
+          <span style={{color:theme.dark?"rgba(255,255,255,0.55)":"rgba(0,0,0,0.45)",fontSize:11,fontWeight:700,letterSpacing:0.8,textTransform:"uppercase",display:"block",marginBottom:8}}>🎨 Theme</span>
+          <div style={{display:"flex",gap:7,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
+            {Object.entries(THEMES).map(([key,t])=>(
+              <button key={key} onClick={()=>saveTheme(key)}
+                style={{flexShrink:0,width:54,padding:"8px 4px 6px",borderRadius:14,background:t.card,border:`2px solid ${activeTheme===key?t.primary:"transparent"}`,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,boxShadow:activeTheme===key?`0 0 14px ${t.primary}77`:"0 2px 6px rgba(0,0,0,0.25)",transition:"all .2s",outline:"none"}}>
+                <span style={{fontSize:18,lineHeight:1}}>{t.emoji}</span>
+                <span style={{fontSize:9,fontWeight:700,color:t.text,fontFamily:"inherit",lineHeight:1,textAlign:"center",letterSpacing:0.2}}>{t.name}</span>
+                <div style={{width:20,height:4,borderRadius:99,background:t.primary,marginTop:2}}/>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{padding:"16px 16px 0",display:"flex",flexDirection:"column",gap:14}}>
+
+        {/* Goal */}
+        <KidsGoal goal={goal} jars={jars} code={code} theme={theme} primary={primary} playSound={playSound}/>
+
+        {/* Jar balances */}
+        <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid rgba(255,255,255,0.08)`}}>
+          <div style={{color:primary,fontWeight:800,fontSize:14,marginBottom:12}}>🫙 My Jars</div>
+          <div style={{display:"flex",gap:10}}>
+            {(()=>{
+            const split=kidData?.jarSplit||{spend:50,save:30,give:20};
+            return [{key:"spend",name:"Spend",emoji:"🎮",color:theme.jar1,pct:split.spend+"%"},{key:"save",name:"Save",emoji:"🏦",color:theme.jar2,pct:split.save+"%"},{key:"give",name:"Give",emoji:"❤️",color:theme.jar3,pct:split.give+"%"}];
+          })().map(j=>(
+              <div key={j.key} style={{flex:1,background:j.color+"22",border:`1px solid ${j.color}44`,borderRadius:14,padding:"14px 8px",textAlign:"center"}}>
+                <div style={{fontSize:24,marginBottom:4}}>{j.emoji}</div>
+                <div style={{color:j.color,fontWeight:900,fontSize:17,fontFamily:"'Playfair Display',serif"}}>${(jars[j.key]||0).toFixed(2)}</div>
+                <div style={{color:theme.text,fontWeight:700,fontSize:11,marginTop:2}}>{j.name}</div>
+                <div style={{color:theme.textMuted,fontSize:9,marginTop:1}}>{j.pct}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Chore Chart */}
+        <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid ${theme.primaryBorder}`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <div style={{color:primary,fontWeight:800,fontSize:14}}>🏡 My Chores</div>
+            {total>0&&<div style={{color:theme.jar2,fontWeight:800,fontSize:14}}>${earned.toFixed(2)} earned</div>}
+          </div>
+          {total>0&&(
+            <div style={{height:8,background:"rgba(255,255,255,0.06)",borderRadius:4,overflow:"hidden",marginBottom:14}}>
+              <div style={{height:"100%",width:`${total>0?(earned/total)*100:0}%`,background:`linear-gradient(90deg,${theme.jar1},${theme.jar2})`,borderRadius:4,transition:"width .4s"}}/>
+            </div>
+          )}
+          {chores.length===0&&(
+            <div style={{color:theme.textMuted,fontSize:13,textAlign:"center",padding:"12px 0"}}>No chores yet — ask a parent to add some!</div>
+          )}
+          {chores.map(ch=>(
+            <div key={ch.id} onClick={()=>toggle(ch.id)} style={{display:"flex",gap:12,alignItems:"center",padding:"12px 0",borderBottom:`1px solid ${theme.chore}`,cursor:"pointer"}}>
+              <div style={{width:28,height:28,borderRadius:8,border:`2px solid ${ch.done?primary:"rgba(255,255,255,0.15)"}`,background:ch.done?primary:"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s"}}>
+                {ch.done&&<span style={{color:theme.bg,fontSize:14,fontWeight:900}}>✓</span>}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{color:ch.done?theme.textMuted:theme.text,fontSize:14,fontWeight:600,textDecoration:ch.done?"line-through":"none"}}>{ch.task}</div>
+                {ch.freq&&ch.freq!=="weekly"&&<div style={{color:theme.textMuted,fontSize:10}}>{FREQ[ch.freq]||ch.freq}</div>}
+              </div>
+              <span style={{color:theme.jar1,fontWeight:800,fontSize:13}}>+${(ch.reward||0).toFixed(2)}</span>
+            </div>
+          ))}
+          {chores.some(c=>c.done)&&earned===total&&total>0&&(
+            <div style={{marginTop:14,background:theme.primaryDim,borderRadius:12,padding:"14px",textAlign:"center",border:`1px solid ${theme.primaryBorder}`}}>
+              <div style={{fontSize:28,marginBottom:4}}>🎉</div>
+              <div style={{color:primary,fontWeight:800,fontSize:14}}>All done! Ask a parent for payday!</div>
+            </div>
+          )}
+        </div>
+
+        {/* Money Lessons */}
+        <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid ${theme.primaryBorder}`}}>
+          <div style={{color:primary,fontWeight:800,fontSize:14,marginBottom:12}}>📚 Money Lessons</div>
+          <div style={{display:"flex",gap:8,marginBottom:14}}>
+            {["4-7","8-12","13+"].map(age=>(
+              <button key={age} onClick={()=>setKidAge(age)}
+                style={{flex:1,background:kidAge===age?theme.primaryDim:theme.cardAlt,border:`1px solid ${kidAge===age?primary:theme.choreBorder}`,color:kidAge===age?primary:theme.textMuted,borderRadius:10,padding:"9px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",transition:"all .2s"}}>
+                {age==="4-7"?"🐣 4–7":age==="8-12"?"🌱 8–12":"🌳 13+"}
+              </button>
+            ))}
+          </div>
+          {(lessons[kidAge]||[]).map((l,i)=>(
+            <div key={i} style={{background:theme.cardAlt,borderRadius:14,padding:"16px",marginBottom:10,border:`1px solid ${theme.choreBorder}`}}>
+              <div style={{fontSize:26,marginBottom:8}}>{l.emoji}</div>
+              <div style={{color:theme.text,fontWeight:800,fontSize:14,marginBottom:8}}>{l.title}</div>
+              <div style={{color:theme.textMuted,fontSize:12,lineHeight:1.65,marginBottom:l.activity?10:0}}>{l.body}</div>
+              {l.activity&&<div style={{background:theme.primaryDim,border:`1px solid ${theme.primaryBorder}`,borderRadius:10,padding:"8px 12px",marginBottom:8}}>
+                <div style={{color:primary,fontSize:10,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Try this</div>
+                <div style={{color:theme.text,fontSize:12}}>{l.activity}</div>
+              </div>}
+              <div style={{background:theme.primaryDim,border:`1px solid ${theme.primaryBorder}`,borderRadius:8,padding:"6px 10px",color:primary,fontSize:11,fontWeight:600}}>💡 {l.key}</div>
+            </div>
+          ))}
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [betaCode, setBetaCode] = useState("");
   const [mfaCode, setMfaCode] = useState("");
   const [qrUrl, setQrUrl] = useState("");
   const [factorId, setFactorId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [showAuth, setShowAuth] = useState(false);
+
+  const BETA_CODES = ["BETA100","FLOURISH2026","FOUNDER"];
+  const BETA_CAP = 30;
 
   const handleSignup = async () => {
     setLoading(true); setError("");
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) { setError(error.message); setLoading(false); return; }
+    // Validate beta code
+    if(!BETA_CODES.includes(betaCode.trim().toUpperCase())) {
+      setError("Invalid beta code. Request one at hello@flourishmoney.app");
+      setLoading(false); return;
+    }
+    // Check beta cap server-side
+    try {
+      const res = await fetch("/api/beta", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"check"})
+      });
+      const cap = await res.json();
+      if(cap.allowed === false) {
+        setError(`Beta is full (${BETA_CAP}/${BETA_CAP} testers). Join the waitlist at hello@flourishmoney.app`);
+        setLoading(false); return;
+      }
+    } catch {
+      // If check fails, allow signup so an error doesn't block testers
+    }
+    const { error } = await supabase.auth.signUp({
+      email, password,
+      options:{ data:{ beta:true, signed_up:new Date().toISOString() } }
+    });
+    if (error) {
+      if(error.message?.toLowerCase().includes("user already registered")) {
+        setError("This email is already registered. Try logging in instead.");
+      } else {
+        setError(error.message);
+      }
+      setLoading(false); return;
+    }
     setSuccess("Check your email to confirm your account, then log in.");
     setMode("login"); setLoading(false);
   };
@@ -6959,7 +10942,7 @@ function AuthScreen({ onAuth }) {
   const inpStyle = {
     width: "100%", padding: "14px 16px", borderRadius: 14,
     background: "rgba(255,255,255,0.06)", border: "1.5px solid rgba(255,255,255,0.12)",
-    color: "#EDE9E2", fontSize: 15, fontFamily: "Plus Jakarta Sans,sans-serif",
+    color: "#EDE9E2", fontSize: 15, fontFamily: "'Plus Jakarta Sans',sans-serif",
     outline: "none", boxSizing: "border-box", marginBottom: 12
   };
 
@@ -6967,75 +10950,914 @@ function AuthScreen({ onAuth }) {
     width: "100%", padding: "15px", borderRadius: 14, border: "none",
     background: active ? "linear-gradient(135deg,#00D68F,#00B37A)" : "rgba(0,214,143,0.3)",
     color: "#021208", fontWeight: 800, fontSize: 15,
-    fontFamily: "Plus Jakarta Sans,sans-serif", cursor: active ? "pointer" : "not-allowed",
+    fontFamily: "'Plus Jakarta Sans',sans-serif", cursor: active ? "pointer" : "not-allowed",
     boxShadow: active ? "0 4px 20px rgba(0,214,143,0.4)" : "none"
   });
 
+  const goSignup = () => { setMode("signup"); setError(""); setSuccess(""); setShowAuth(true); };
+  const goLogin  = () => { setMode("login");  setError(""); setSuccess(""); setShowAuth(true); };
+
   return (
-    <div style={{ minHeight: "100dvh", background: "#050D09", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ width: "100%", maxWidth: 400, animation: "fadeUp .5s ease both" }}>
-        <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ marginBottom: 8, display: "flex", justifyContent: "center" }}><FlourishMark size={120}/></div>
-          <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "Plus Jakarta Sans,sans-serif", marginTop: 4 }}>Your financial coach</div>
-        </div>
-        <div style={{ background: "#0D1F12", borderRadius: 24, padding: 28, border: "1px solid rgba(255,255,255,0.08)" }}>
-          {mode === "mfa_setup" && (
-            <div>
-              <div style={{ fontFamily: "Playfair Display,serif", fontSize: 20, fontWeight: 900, color: "#EDE9E2", marginBottom: 6 }}>Set up 2-factor auth</div>
-              <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "Plus Jakarta Sans,sans-serif", marginBottom: 20, lineHeight: 1.6 }}>Scan this QR code with Google Authenticator, then enter the 6-digit code.</div>
-              {qrUrl && <img src={qrUrl} alt="MFA QR" style={{ width: "100%", borderRadius: 12, marginBottom: 16, background: "#fff", padding: 8 }} />}
-              <input style={{ ...inpStyle, letterSpacing: 6, textAlign: "center", fontSize: 22 }} placeholder="000000" value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g,""))} maxLength={6} />
-              {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
-              <button style={btnStyle(!loading && mfaCode.length === 6)} onClick={handleMFASetup} disabled={loading || mfaCode.length !== 6}>{loading ? "Verifying..." : "Verify & Continue"}</button>
+    <div style={{ minHeight: "100dvh", background: "#050D09", fontFamily: "'Plus Jakarta Sans',sans-serif", overflowX: "hidden" }}>
+
+      {!showAuth ? (
+
+        /* ───────────────── LANDING PAGE ───────────────── */
+        <div style={{ display: "flex", flexDirection: "column", minHeight: "100dvh" }}>
+
+          {/* Nav */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 24px", position: "sticky", top: 0, background: "rgba(5,13,9,0.92)", backdropFilter: "blur(12px)", zIndex: 10, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <FlourishMark size={32} />
+              <span style={{ color: "#EDE9E2", fontWeight: 800, fontSize: 16, letterSpacing: -0.3 }}>Flourish</span>
             </div>
-          )}
-          {mode === "mfa_verify" && (
-            <div>
-              <div style={{ fontFamily: "Playfair Display,serif", fontSize: 20, fontWeight: 900, color: "#EDE9E2", marginBottom: 6 }}>Enter your code</div>
-              <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "Plus Jakarta Sans,sans-serif", marginBottom: 20 }}>Open Google Authenticator and enter the 6-digit code for Flourish Money.</div>
-              <input style={{ ...inpStyle, letterSpacing: 6, textAlign: "center", fontSize: 22 }} placeholder="000000" value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g,""))} maxLength={6} />
-              {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
-              <button style={btnStyle(!loading && mfaCode.length === 6)} onClick={handleMFAVerify} disabled={loading || mfaCode.length !== 6}>{loading ? "Verifying..." : "Log In"}</button>
+            <button onClick={goLogin} style={{ background: "rgba(0,214,143,0.1)", border: "1px solid rgba(0,214,143,0.3)", color: "#00D68F", borderRadius: 99, padding: "9px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+              Log In
+            </button>
+          </div>
+
+          {/* Hero */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "52px 28px 40px", textAlign: "center" }}>
+
+            <div style={{ display: "inline-block", background: "rgba(0,214,143,0.1)", border: "1px solid rgba(0,214,143,0.25)", borderRadius: 99, padding: "6px 16px", fontSize: 12, fontWeight: 700, color: "#00D68F", letterSpacing: 0.5, marginBottom: 28 }}>
+              🇨🇦🇺🇸 Built for Canada & the US
             </div>
-          )}
-          {(mode === "login" || mode === "signup") && (
-            <div>
-              <div style={{ display: "flex", background: "rgba(255,255,255,0.05)", borderRadius: 12, padding: 3, marginBottom: 24 }}>
-                {["login","signup"].map(m => (
-                  <button key={m} onClick={() => { setMode(m); setError(""); setSuccess(""); }}
-                    style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", cursor: "pointer", fontFamily: "Plus Jakarta Sans,sans-serif", fontWeight: 700, fontSize: 13,
-                      background: mode === m ? "#00D68F" : "transparent", color: mode === m ? "#021208" : "#6B7A6E" }}>
-                    {m === "login" ? "Log In" : "Sign Up"}
-                  </button>
+            <div style={{ display: "inline-block", background: "rgba(240,196,66,0.1)", border: "1px solid rgba(240,196,66,0.25)", borderRadius: 99, padding: "6px 16px", fontSize: 12, fontWeight: 700, color: "#F0C442", letterSpacing: 0.5, marginBottom: 28, marginLeft: 8 }}>
+              🔒 Beta — limited spots
+            </div>
+
+            <h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: "clamp(30px,9vw,52px)", fontWeight: 900, color: "#EDE9E2", lineHeight: 1.1, marginBottom: 18, letterSpacing: -0.5, maxWidth: 560 }}>
+              Know before you spend.{" "}
+              <span style={{ color: "#00D68F", fontStyle: "italic" }}>Finally.</span>
+            </h1>
+
+            <p style={{ color: "#6B7A6E", fontSize: 16, lineHeight: 1.75, maxWidth: 380, marginBottom: 40 }}>
+              Finally know if you can afford it. One safe-to-spend number, calculated from your real accounts — updated every day.
+            </p>
+
+            {/* Hero product card */}
+            <div style={{ width: "100%", maxWidth: 340, background: "#0D1F12", border: "1px solid rgba(0,214,143,0.2)", borderRadius: 24, padding: "28px 24px", marginBottom: 36, boxShadow: "0 0 80px rgba(0,214,143,0.07)" }}>
+              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Safe to spend today</div>
+              <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 56, fontWeight: 900, color: "#00D68F", lineHeight: 1, marginBottom: 6 }}>$247</div>
+              <div style={{ color: "rgba(237,233,226,0.35)", fontSize: 12, marginBottom: 24 }}>After bills · After buffer · From your real balance</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {[["🏦  Chequing / Checking","$1,843.22"],["💳  Credit Card","−$612.00"],["📅  Upcoming bills","−$984.00"]].map(([label,amount]) => (
+                  <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "11px 14px", background: "rgba(255,255,255,0.03)", borderRadius: 12, fontSize: 13 }}>
+                    <span style={{ color: "#6B7A6E" }}>{label}</span>
+                    <span style={{ color: "#EDE9E2", fontWeight: 600 }}>{amount}</span>
+                  </div>
                 ))}
               </div>
-              {success && <div style={{ color: "#00D68F", fontSize: 13, marginBottom: 16, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10 }}>{success}</div>}
-              <input style={inpStyle} type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" name="email" />
-              <input style={{ ...inpStyle, marginBottom: 20 }} type="password" placeholder="Password (min 8 characters)" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" name="password" />
-              {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
-              <button style={btnStyle(!loading && email && password.length >= 8)} onClick={mode === "login" ? handleLogin : handleSignup} disabled={loading || !email || password.length < 8}>
-                {loading ? "..." : mode === "login" ? "Log In" : "Create Account"}
+            </div>
+
+            {/* Primary CTA */}
+            <button onClick={goSignup} style={{ width: "100%", maxWidth: 340, padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", marginBottom: 12, boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+              Know Before You Spend — Free
+            </button>
+            <div style={{ color: "#6B7A6E", fontSize: 12, marginBottom: 52 }}>No credit card · Connects RBC, TD, Chase, Wells Fargo + thousands more</div>
+
+            {/* Trust row */}
+            <div style={{ display: "flex", gap: 28, justifyContent: "center", flexWrap: "wrap", marginBottom: 64 }}>
+              {[["🔒","Bank-level security"],["🌎","CA & US accounts"],["⚡","Live in 60 seconds"]].map(([icon,label]) => (
+                <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, color: "#6B7A6E", fontSize: 12, fontWeight: 600 }}>
+                  <span>{icon}</span><span>{label}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Pain section */}
+            <div style={{ width: "100%", maxWidth: 560, marginBottom: 64, textAlign: "left" }}>
+              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Sound familiar?</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {[
+                  "You close the banking app the second it opens because the number stresses you out.",
+                  "You tap your card and genuinely don't know if it'll go through.",
+                  "You have accounts at 3 different banks and no idea what the real total is.",
+                  "You've tried budgeting apps before and quit within a week."
+                ].map((text) => (
+                  <div key={text} style={{ display: "flex", gap: 14, alignItems: "flex-start", padding: "14px 18px", background: "#0D1F12", borderRadius: 14, border: "1px solid rgba(255,255,255,0.05)" }}>
+                    <span style={{ color: "#00D68F", fontSize: 16, flexShrink: 0, marginTop: 1 }}>✓</span>
+                    <span style={{ color: "#6B7A6E", fontSize: 14, lineHeight: 1.6 }}>{text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* How it works */}
+            <div style={{ width: "100%", maxWidth: 560, marginBottom: 64 }}>
+              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>How it works</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {[
+                  ["1","Connect your banks","Plaid securely links RBC, TD, Chase, Wells Fargo and thousands more. Your login is never stored — Plaid is used by millions of financial apps worldwide."],
+                  ["2","See your real number","One safe-to-spend number calculated from your real balance, upcoming bills, and a protective buffer."],
+                  ["3","Know before you tap","Check it every morning. Stop guessing. Stop dreading. Just know."]
+                ].map(([num,title,body]) => (
+                  <div key={num} style={{ display: "flex", gap: 16, padding: "18px", background: "#0D1F12", borderRadius: 16, border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 99, background: "rgba(0,214,143,0.15)", border: "1px solid rgba(0,214,143,0.3)", color: "#00D68F", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{num}</div>
+                    <div>
+                      <div style={{ color: "#EDE9E2", fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{title}</div>
+                      <div style={{ color: "#6B7A6E", fontSize: 13, lineHeight: 1.65 }}>{body}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Features */}
+            <div style={{ width: "100%", maxWidth: 560, marginBottom: 64 }}>
+              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Everything in one place</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {[
+                  [<DollarSign size={20} color="#00D68F" strokeWidth={1.8}/>, "Safe-to-spend number", "One clear daily number that accounts for bills and buffer."],
+                  [<Sparkles size={20} color="#00D68F" strokeWidth={1.8}/>, "AI Financial Coach", "Ask anything. Get honest, personalised financial advice for Canada & the US."],
+                  [<CreditCard size={20} color="#00D68F" strokeWidth={1.8}/>, "All your accounts", "RBC, TD, Chase, Wells Fargo, and thousands more — all in one dashboard."],
+                  [<TrendingUp size={20} color="#00D68F" strokeWidth={1.8}/>, "Investment tracking", "Know exactly where you stand on RRSP, TFSA, 401k, and more."],
+                  [<Calendar size={20} color="#00D68F" strokeWidth={1.8}/>, "Bill forecasting", "See what's coming before it hits. Never be surprised."],
+                  [<Target size={20} color="#00D68F" strokeWidth={1.8}/>, "Goal tracking", "Set savings goals and watch them grow with 30-year projections."]
+                ].map(([icon,title,body]) => (
+                  <div key={title} style={{ padding: "16px", background: "#0D1F12", borderRadius: 16, border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ marginBottom: 10, display:"flex", alignItems:"center", justifyContent:"center", width:38, height:38, borderRadius:10, background:"rgba(0,214,143,0.1)", border:"1px solid rgba(0,214,143,0.2)" }}>{icon}</div>
+                    <div style={{ color: "#EDE9E2", fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{title}</div>
+                    <div style={{ color: "#6B7A6E", fontSize: 11, lineHeight: 1.6 }}>{body}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Pricing */}
+            <div style={{ width: "100%", maxWidth: 400, marginBottom: 64 }}>
+              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Simple pricing</div>
+              <div style={{ background: "#0D1F12", border: "1px solid rgba(0,214,143,0.25)", borderRadius: 24, padding: "32px 28px", textAlign: "center" }}>
+                <div style={{ color: "#6B7A6E", fontSize: 13, marginBottom: 8 }}>After free trial</div>
+                <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 48, fontWeight: 900, color: "#EDE9E2", lineHeight: 1, marginBottom: 4 }}>$14.99</div>
+                <div style={{ color: "#6B7A6E", fontSize: 13, marginBottom: 28 }}>per month · Cancel anytime</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28, textAlign: "left" }}>
+                  {["All accounts connected","Safe-to-spend number daily","AI Financial Coach","Investment & retirement tracking","Bill forecasting","Goal tracking with projections"].map(f => (
+                    <div key={f} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                      <span style={{ color: "#00D68F", fontSize: 14 }}>✓</span>
+                      <span style={{ color: "#EDE9E2", fontSize: 13 }}>{f}</span>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={goSignup} style={{ width: "100%", padding: "16px", borderRadius: 14, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 15, cursor: "pointer", boxShadow: "0 8px 32px rgba(0,214,143,0.3)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                  Start Free Trial
+                </button>
+                <div style={{ color: "#6B7A6E", fontSize: 11, marginTop: 12 }}>No credit card required</div>
+              </div>
+            </div>
+
+            {/* Bottom CTA */}
+            <div style={{ width: "100%", maxWidth: 400, textAlign: "center", marginBottom: 64 }}>
+              <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 26, fontWeight: 900, color: "#EDE9E2", lineHeight: 1.2, marginBottom: 16 }}>
+                Stop guessing.<br />
+                <span style={{ color: "#00D68F", fontStyle: "italic" }}>Start knowing.</span>
+              </div>
+              <button onClick={goSignup} style={{ width: "100%", padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 10 }}>
+                Know Before You Spend — Free
               </button>
-              {mode === "signup" && <div style={{ color: "#6B7A6E", fontSize: 11, textAlign: "center", marginTop: 14, lineHeight: 1.5 }}>By signing up you agree to our Terms of Service and Privacy Policy.</div>}
+              <div style={{ color: "#6B7A6E", fontSize: 12 }}>No credit card · Takes 60 seconds</div>
+            </div>
+
+          </div>
+
+          {/* Footer */}
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", padding: "20px 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+            <span style={{ color: "#6B7A6E", fontSize: 11 }}>© 2026 GrowSmart Inc. · Flourish Money</span>
+            <div style={{ display: "flex", gap: 24 }}>
+              {[["Privacy Policy","/privacy"],["Terms of Service","/terms"]].map(([label,href]) => (
+                <a key={label} href={href} style={{ color: "#6B7A6E", fontSize: 11, textDecoration: "none" }}>{label}</a>
+              ))}
+            </div>
+          </div>
+
+        </div>
+
+      ) : (
+
+        /* ───────────────── AUTH FORM ───────────────── */
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: 24 }}>
+          <div style={{ width: "100%", maxWidth: 400, animation: "fadeUp .5s ease both" }}>
+
+            <div style={{ textAlign: "center", marginBottom: 28 }}>
+              <button onClick={() => setShowAuth(false)}
+                style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, margin: "0 auto 16px", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                ← Back
+              </button>
+              <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><FlourishMark size={80} /></div>
+              <div style={{ color: "#6B7A6E", fontSize: 13, marginTop: 4 }}>
+                {mode === "signup" ? "Create your free account" : "Welcome back"}
+              </div>
+            </div>
+
+            <div style={{ background: "#0D1F12", borderRadius: 24, padding: 28, border: "1px solid rgba(255,255,255,0.08)" }}>
+
+              {mode === "mfa_setup" && (
+                <div>
+                  <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 20, fontWeight: 900, color: "#EDE9E2", marginBottom: 6 }}>Set up 2-factor auth</div>
+                  <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 20, lineHeight: 1.6 }}>Scan this QR code with Google Authenticator, then enter the 6-digit code.</div>
+                  {qrUrl && <img src={qrUrl} alt="MFA QR" style={{ width: "100%", borderRadius: 12, marginBottom: 16, background: "#fff", padding: 8 }} />}
+                  <input style={{ ...inpStyle, letterSpacing: 6, textAlign: "center", fontSize: 22 }} placeholder="000000" value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g,""))} maxLength={6} />
+                  {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
+                  <button style={btnStyle(!loading && mfaCode.length === 6)} onClick={handleMFASetup} disabled={loading || mfaCode.length !== 6}>{loading ? "Verifying..." : "Verify & Continue"}</button>
+                </div>
+              )}
+
+              {mode === "mfa_verify" && (
+                <div>
+                  <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 20, fontWeight: 900, color: "#EDE9E2", marginBottom: 6 }}>Enter your code</div>
+                  <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 20 }}>Open Google Authenticator and enter the 6-digit code for Flourish Money.</div>
+                  <input style={{ ...inpStyle, letterSpacing: 6, textAlign: "center", fontSize: 22 }} placeholder="000000" value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g,""))} maxLength={6} />
+                  {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
+                  <button style={btnStyle(!loading && mfaCode.length === 6)} onClick={handleMFAVerify} disabled={loading || mfaCode.length !== 6}>{loading ? "Verifying..." : "Log In"}</button>
+                </div>
+              )}
+
+              {(mode === "login" || mode === "signup") && (
+                <div>
+                  <div style={{ display: "flex", background: "rgba(255,255,255,0.05)", borderRadius: 12, padding: 3, marginBottom: 24 }}>
+                    {["login","signup"].map(m => (
+                      <button key={m} onClick={() => { setMode(m); setError(""); setSuccess(""); }}
+                        style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 700, fontSize: 13, background: mode === m ? "#00D68F" : "transparent", color: mode === m ? "#021208" : "#6B7A6E" }}>
+                        {m === "login" ? "Log In" : "Sign Up"}
+                      </button>
+                    ))}
+                  </div>
+                  {success && <div style={{ color: "#00D68F", fontSize: 13, marginBottom: 16, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10 }}>{success}</div>}
+                  <input style={inpStyle} type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" name="email" />
+                  <input style={{ ...inpStyle, marginBottom: mode==="signup"?12:20 }} type="password" placeholder="Password (min 8 characters)" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" name="password" />
+                  {mode==="signup"&&(
+                    <input style={{ ...inpStyle, marginBottom: 20, textTransform:"uppercase", letterSpacing:2 }} type="text" placeholder="Beta access code" value={betaCode} onChange={e => setBetaCode(e.target.value)} autoComplete="off" name="betacode" maxLength={20}/>
+                  )}
+                  {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
+                  <button style={btnStyle(!loading && email && password.length >= 8 && (mode==="login"||betaCode.trim().length>0))} onClick={mode === "login" ? handleLogin : handleSignup} disabled={loading || !email || password.length < 8 || (mode==="signup"&&!betaCode.trim())}>
+                    {loading ? "..." : mode === "login" ? "Log In" : "Create Account"}
+                  </button>
+                  {mode === "signup" && (
+                    <div style={{ color: "#6B7A6E", fontSize: 11, textAlign: "center", marginTop: 14, lineHeight: 1.5 }}>
+                      By signing up you agree to our{" "}
+                      <a href="/terms" style={{ color: "#00D68F", textDecoration: "none" }}>Terms of Service</a>
+                      {" "}and{" "}
+                      <a href="/privacy" style={{ color: "#00D68F", textDecoration: "none" }}>Privacy Policy</a>.
+                    </div>
+                  )}
+                </div>
+              )}
 
             </div>
-          )}
+          </div>
         </div>
-      </div>
+
+      )}
     </div>
   );
 }
+
+
+// ─── BUDGET SCREEN ─────────────────────────────────────────────────────────────
+function BudgetScreen({data, setAppData, setScreen}) {
+  const isDesktop = window.innerWidth >= 960;
+  const [editMode, setEditMode] = useState(false);
+  const [editVals, setEditVals] = useState({});
+  const [customCat, setCustomCat] = useState("");
+  const [showAddCat, setShowAddCat] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const {
+    suggestions, netMo, fixedMo, discret, savingsMo, savingsRate,
+    grossMo, goalsMo, canAfford, shortfall, cutSuggestions,
+    hSize, numKids, totalSugg
+  } = generateBudgetSuggestions(data);
+  const budgets = data.budgets || {};
+  const hasBudgets = Object.keys(budgets).length > 0;
+  const isCA = (data.profile?.country || "CA") === "CA";
+
+  // Month label
+  const now = new Date();
+  const monthLabel = now.toLocaleDateString("en", { month: "long", year: "numeric" });
+
+  // discret already accounts for goals (from generateBudgetSuggestions)
+  // Current month spending per category — excludes bill categories (tracked separately) and CC payments
+  const catOverrides = (() => { try { return JSON.parse(localStorage.getItem("flourish_cat_overrides") || "{}"); } catch { return {}; } })();
+  const monthTxns = (data.transactions || []).filter(t => {
+    try { const d = new Date(t.date + "T12:00:00"); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && t.amount > 0; } catch { return false; }
+  });
+  const monthSpend = {};
+  monthTxns.forEach(t => {
+    const cat = catOverrides[t.id] || t.cat;
+    // Only track discretionary categories — bills excluded to prevent double-counting
+    if(!NON_SPEND_CATS.has(cat) && !CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))) {
+      monthSpend[cat] = (monthSpend[cat] || 0) + t.amount;
+    }
+  });
+
+  const totalBudgeted = Object.values(budgets).reduce((s, v) => s + v, 0);
+  const totalSpentBudgeted = Object.entries(budgets).reduce((s, [cat]) => s + (monthSpend[cat] || 0), 0);
+  const overallPct = totalBudgeted > 0 ? Math.min(100, Math.round(totalSpentBudgeted / totalBudgeted * 100)) : 0;
+  const overBudgetCats = Object.entries(budgets).filter(([cat, limit]) => (monthSpend[cat] || 0) > limit);
+  const totalOver = overBudgetCats.reduce((s, [cat, limit]) => s + ((monthSpend[cat] || 0) - limit), 0);
+
+  // Where to save suggestions
+  // Where to save — categories over budget this month
+  const saveSuggestions = Object.entries(budgets).map(([cat, limit]) => {
+    const spent = monthSpend[cat] || 0;
+    const over = Math.round(spent - limit);
+    if (limit > 0 && over >= 5) return { cat, spent, limit, over };
+    return null;
+  }).filter(Boolean).sort((a, b) => b.over - a.over).slice(0, 3);
+
+  const catEmoji = { "Groceries": "🛒", "Coffee & Dining": "☕", "Gas & Transport": "🚗", "Shopping": "🛍️", "Clothing": "👗", "Subscriptions": "📱", "Health": "💊", "Personal Care": "🧴", "Entertainment": "🎬", "Hobbies & Sports": "🎯", "Kids & Extracurricular": "🧒", "Travel": "✈️", "Home": "🏠", "Education": "📚", "Fees": "🏦", "Services": "🔧", "Other": "📌" };
+  const catColor = { "Groceries": C.green, "Coffee & Dining": C.orange, "Gas & Transport": C.blue, "Shopping": C.pink, "Clothing": C.purple, "Subscriptions": C.teal, "Health": C.teal, "Personal Care": C.gold, "Entertainment": C.pink, "Hobbies & Sports": C.blue, "Kids & Extracurricular": C.green, "Travel": C.purple, "Home": C.orange, "Education": C.blue, "Fees": C.gold, "Services": C.blue, "Other": C.muted };
+
+  // Edit mode helpers
+  const openEdit = () => {
+    const seed = {};
+    // 1. Existing saved budgets — always preserved
+    Object.entries(budgets).forEach(([k, v]) => { seed[k] = String(v); });
+    // 2. Situation-based suggestions for categories not yet budgeted
+    Object.entries(suggestions).forEach(([k, v]) => { if (!seed[k]) seed[k] = String(v); });
+    // 3. Any custom categories that have actual spending this month — auto-appear in budget
+    const catOv = (()=>{ try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");} catch{return{};} })();
+    const customCats = JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]");
+    const now2 = new Date();
+    (data.transactions||[]).filter(t => {
+      if(t.amount <= 0 || !t.date) return false;
+      const d = new Date(t.date + "T12:00:00");
+      return d.getFullYear() === now2.getFullYear() && d.getMonth() === now2.getMonth();
+    }).forEach(t => {
+      const cat = catOv[t.id] || t.cat;
+      // Include if: it's a custom category OR it's any spend category not already seeded
+      if(!seed[cat] && !NON_SPEND_CATS.has(cat) && !BILL_CATS.has(cat)) {
+        seed[cat] = "50"; // default starting budget for new categories
+      }
+    });
+    // 4. Any custom categories ever created — even if no spend yet this month
+    customCats.forEach(cat => {
+      if(!seed[cat] && !NON_SPEND_CATS.has(cat) && !BILL_CATS.has(cat)) {
+        seed[cat] = "50";
+      }
+    });
+    setEditVals(seed);
+    setEditMode(true);
+    setSaved(false);
+    setShowAddCat(false);
+  };
+  const saveEdit = () => {
+    const nb = {};
+    Object.entries(editVals).forEach(([cat, v]) => {
+      const n = parseFloat(v);
+      if (!isNaN(n) && n > 0) nb[cat] = n;
+    });
+    if (setAppData) setAppData(prev => ({ ...prev, budgets: nb }));
+    setSaved(true);
+    setTimeout(() => { setEditMode(false); setSaved(false); }, 1000);
+  };
+  const deleteCat = cat => setEditVals(prev => { const n = { ...prev }; delete n[cat]; return n; });
+  const addCustom = () => {
+    const cat = customCat.trim();
+    if (!cat) return;
+    setEditVals(prev => ({ ...prev, [cat]: "50" }));
+    setCustomCat(""); setShowAddCat(false);
+  };
+
+  const totalEdited = Object.values(editVals).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+  const overDiscret = totalEdited > discret;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <ScreenHeader
+        title="Budget"
+        subtitle={monthLabel}
+        onBack={setScreen ? () => setScreen("home") : null}
+        cta={editMode ? (saved ? "✓ Saved!" : "Save Plan") : (hasBudgets ? "Edit Plan" : "Build Plan")}
+        onCta={editMode ? saveEdit : openEdit}
+        ctaColor={editMode ? C.green : C.purple}
+      />
+
+      {/* Money math strip */}
+      <div style={{ background: C.card, borderRadius: 18, padding: "14px 16px", border: `1px solid ${C.border}` }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {[
+            ["Take-home", `$${Math.round(netMo).toLocaleString()}/mo`, C.green, "💵"],
+            ["Fixed bills & debt", `−$${Math.round(fixedMo).toLocaleString()}/mo`, C.red, "🏠"],
+            ["Savings target", `−$${Math.round(savingsMo).toLocaleString()}/mo`, C.teal, "💰"],
+            ...(goalsMo > 0 ? [["Goal savings", `−$${Math.round(goalsMo).toLocaleString()}/mo`, C.purple, "🎯"]] : []),
+            ["Available to spend", `$${Math.round(discret).toLocaleString()}/mo`, C.greenBright, "✅"],
+          ].map(([label, val, color, emoji]) => (
+            <div key={label} style={{ background: C.cardAlt, borderRadius: 12, padding: "10px 12px", border: `1px solid ${C.border}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
+                <span style={{ fontSize: 12 }}>{emoji}</span>
+                <span style={{ color: C.muted, fontSize: 9, textTransform: "uppercase", letterSpacing: 1, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{label}</span>
+              </div>
+              <div style={{ color, fontWeight: 800, fontSize: 14, fontFamily: "'Playfair Display',serif" }}>{val}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── EDIT MODE ───────────────────────────────────────────────── */}
+      {/* ── SETUP MODE — 3-step plan builder ─────────────────── */}
+      {editMode && (
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+
+          {/* Step 1 — Fixed commitments (read-only, auto-filled) */}
+          <div style={{background:C.card,borderRadius:18,padding:"16px",border:`1px solid ${C.border}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+              <div style={{width:24,height:24,borderRadius:"50%",background:C.green,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,color:"#041810",flexShrink:0}}>1</div>
+              <div>
+                <div style={{color:C.cream,fontWeight:800,fontSize:14}}>Your fixed commitments</div>
+                <div style={{color:C.muted,fontSize:11,marginTop:1}}>These come out first — before anything else is planned</div>
+              </div>
+            </div>
+            {(data.bills||[]).length===0&&(data.debts||[]).length===0?(
+              <div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"10px 0"}}>
+                No bills or debts added yet. Add them in <strong style={{color:C.green}}>Settings → Bills</strong> to auto-fill this section.
+              </div>
+            ):(
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {(data.bills||[]).map((b,idx)=>(
+                <div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
+                  <div style={{display:"flex",alignItems:"center",gap:7,flex:1,minWidth:0}}>
+                    <span style={{fontSize:14}}>{b.type==="variable"?"🔄":"📌"}</span>
+                    <div style={{minWidth:0}}>
+                      <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{b.name}</div>
+                      {b.category&&<div style={{color:C.muted,fontSize:9}}>{b.category}</div>}
+                    </div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.teal}44`,borderRadius:8,overflow:"hidden",flexShrink:0}}>
+                    <span style={{color:C.muted,padding:"0 4px 0 8px",fontSize:11}}>$</span>
+                    <input type="number" defaultValue={parseFloat(b.amount||0).toFixed(0)}
+                      onBlur={e=>{
+                        const val=parseFloat(e.target.value);
+                        if(!isNaN(val)&&val>=0&&setAppData){
+                          setAppData(prev=>({...prev,bills:(prev.bills||[]).map((bill,bi)=>bi===idx?{...bill,amount:String(val)}:bill)}));
+                        }
+                      }}
+                      style={{width:56,background:"none",border:"none",padding:"6px 2px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
+                    <span style={{color:C.muted,padding:"0 6px",fontSize:9}}>/mo</span>
+                  </div>
+                </div>
+              ))}
+                {(data.debts||[]).map((d,i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:7}}>
+                      <span style={{fontSize:14}}>💳</span>
+                      <div>
+                        <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{d.name||"Debt"}</div>
+                        <div style={{color:C.muted,fontSize:9}}>minimum payment</div>
+                      </div>
+                    </div>
+                    <span style={{color:C.muted,fontWeight:700,fontSize:12}}>${parseFloat(d.min||0).toFixed(0)}/mo</span>
+                  </div>
+                ))}
+                <div style={{display:"flex",justifyContent:"space-between",padding:"6px 10px",borderTop:`1px solid ${C.border}`,marginTop:2}}>
+                  <span style={{color:C.muted,fontSize:11}}>Total fixed</span>
+                  <span style={{color:C.cream,fontWeight:800,fontSize:13}}>${Math.round(fixedMo).toLocaleString()}/mo</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Step 2 — Your spending plan (situation-based, all adjustable) */}
+          <div style={{background:C.card,borderRadius:18,padding:"16px",border:`1px solid ${C.green}33`}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+              <div style={{width:24,height:24,borderRadius:"50%",background:C.green,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,color:"#041810",flexShrink:0}}>2</div>
+              <div>
+                <div style={{color:C.cream,fontWeight:800,fontSize:14}}>Your spending plan</div>
+                <div style={{color:C.muted,fontSize:11,marginTop:1}}>Based on your household — adjust any amount</div>
+              </div>
+            </div>
+            <div style={{background:C.green+"10",borderRadius:10,padding:"8px 12px",marginBottom:12,border:`1px solid ${C.green}22`}}>
+              <div style={{color:C.greenBright,fontSize:11,fontWeight:700}}>
+                ${Math.round(discret).toLocaleString()}/mo available after bills + savings{goalsMo>0?` + goal savings`:""} 
+              </div>
+            </div>
+
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+              {Object.entries(editVals).map(([cat,val])=>{
+                const color = catColor[cat]||C.muted;
+                const emoji = catEmoji[cat]||"📌";
+                const isSugg = !!suggestions[cat];
+                return (
+                  <div key={cat} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
+                    <span style={{fontSize:15,flexShrink:0}}>{emoji}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{cat}</div>
+                      {isSugg&&<div style={{color:C.muted,fontSize:9,marginTop:1}}>Suggested for your household</div>}
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${color}55`,borderRadius:8,overflow:"hidden",flexShrink:0}}>
+                      <span style={{color:C.muted,padding:"0 4px 0 8px",fontSize:11}}>$</span>
+                      <input type="number" value={val}
+                        onChange={e=>setEditVals(prev=>({...prev,[cat]:e.target.value}))}
+                        style={{width:54,background:"none",border:"none",padding:"7px 2px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
+                      <span style={{color:C.muted,padding:"0 4px",fontSize:9}}>/mo</span>
+                    </div>
+                    <button onClick={()=>deleteCat(cat)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,padding:2,flexShrink:0,opacity:0.6,lineHeight:1}}>×</button>
+                  </div>
+                );
+              })}
+
+              {showAddCat?(
+                <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 10px",background:C.cardAlt,borderRadius:10,border:`1px dashed ${C.green}55`}}>
+                  <input value={customCat} onChange={e=>setCustomCat(e.target.value)}
+                    placeholder="Category (e.g. Gym, Art Classes)"
+                    onKeyDown={e=>e.key==="Enter"&&addCustom()}
+                    style={{flex:1,background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none"}}/>
+                  <button onClick={addCustom} style={{background:C.green,border:"none",borderRadius:8,padding:"7px 12px",color:"#041810",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Add</button>
+                  <button onClick={()=>{setShowAddCat(false);setCustomCat("");}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0}}>✕</button>
+                </div>
+              ):(
+                <button onClick={()=>setShowAddCat(true)} style={{background:"none",border:`1px dashed ${C.green}44`,borderRadius:10,padding:"9px 12px",color:C.green,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+                  ＋ Add a category
+                </button>
+              )}
+            </div>
+
+            {/* Running total */}
+            <div style={{padding:"10px 12px",background:totalEdited>discret?C.red+"18":C.green+"10",borderRadius:10,border:`1px solid ${totalEdited>discret?C.red:C.green}33`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{color:C.muted,fontSize:11}}>Total budgeted</span>
+                <span style={{color:totalEdited>discret?C.redBright:C.greenBright,fontWeight:800,fontSize:14}}>${Math.round(totalEdited).toLocaleString()}/mo</span>
+              </div>
+              {totalEdited>discret&&<div style={{color:C.muted,fontSize:10,marginTop:3}}>
+                ${Math.round(totalEdited-discret).toLocaleString()} over — see suggested cuts below
+              </div>}
+              {totalEdited<=discret&&totalEdited>0&&<div style={{color:C.muted,fontSize:10,marginTop:3}}>
+                ${Math.round(discret-totalEdited).toLocaleString()} unallocated — consider adding to savings
+              </div>}
+            </div>
+          </div>
+
+          {/* Step 3 — Affordability check */}
+          {totalEdited>discret&&(()=>{
+            // Generate live cut suggestions based on current editVals
+            const CUT_PRIORITY=["Subscriptions","Entertainment","Coffee & Dining","Shopping","Personal Care","Groceries","Clothing"];
+            const liveCuts=[];
+            let remaining=Math.round(totalEdited-discret);
+            for(const cat of CUT_PRIORITY){
+              if(remaining<=0) break;
+              const current=parseFloat(editVals[cat]||0);
+              if(!current) continue;
+              const maxCut=cat==="Groceries"?Math.floor(current*0.15):cat==="Personal Care"?Math.floor(current*0.3):Math.floor(current*0.5);
+              const cut=Math.min(remaining,maxCut);
+              if(cut>=5){liveCuts.push({cat,current,suggested:Math.max(10,Math.round((current-cut)/5)*5),saving:cut});remaining-=cut;}
+            }
+            return(
+              <div style={{background:C.red+"10",border:`1px solid ${C.red}33`,borderRadius:18,padding:"16px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                  <div style={{width:24,height:24,borderRadius:"50%",background:C.red,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,color:"#fff",flexShrink:0}}>3</div>
+                  <div>
+                    <div style={{color:C.redBright,fontWeight:800,fontSize:14}}>This doesn't quite fit</div>
+                    <div style={{color:C.muted,fontSize:11,marginTop:1}}>You're ${Math.round(totalEdited-discret).toLocaleString()} over — here's what to trim</div>
+                  </div>
+                </div>
+                {liveCuts.length>0?(
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {liveCuts.map(({cat,current,suggested,saving})=>(
+                      <div key={cat} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 12px",background:C.card,borderRadius:12,border:`1px solid ${C.border}`}}>
+                        <div>
+                          <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{catEmoji[cat]||"📌"} {cat}</div>
+                          <div style={{color:C.muted,fontSize:10,marginTop:1}}>${current} → ${suggested}/mo</div>
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{color:C.green,fontWeight:700,fontSize:13}}>−${saving}/mo</div>
+                          <button onClick={()=>setEditVals(prev=>({...prev,[cat]:String(suggested)}))}
+                            style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:6,padding:"3px 8px",color:C.greenBright,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginTop:3}}>
+                            Apply
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {remaining>0&&<div style={{color:C.muted,fontSize:10,textAlign:"center",padding:"4px"}}>
+                      ${remaining} still to cut — consider reducing more categories or removing one
+                    </div>}
+                  </div>
+                ):(
+                  <div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0"}}>
+                    Consider removing a category or reducing your savings rate temporarily.
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Save button */}
+          <button onClick={saveEdit} disabled={totalEdited>discret}
+            style={{width:"100%",background:totalEdited<=discret?`linear-gradient(135deg,${C.green},${C.greenBright})`:"rgba(255,255,255,0.06)",
+              border:"none",borderRadius:12,padding:"14px",color:totalEdited<=discret?"#041810":C.muted,
+              fontWeight:800,fontSize:14,cursor:totalEdited<=discret?"pointer":"not-allowed",fontFamily:"inherit",transition:"all .2s"}}>
+            {saved?"✅ Budget Plan Saved!":"✓ Save My Budget Plan"}
+          </button>
+          {totalEdited>discret&&<div style={{color:C.muted,fontSize:11,textAlign:"center",marginTop:-8}}>Apply the suggested cuts above to unlock saving</div>}
+
+        </div>
+      )}
+
+      {/* ── TRACK MODE ──────────────────────────────────────────────── */}
+
+      {/* ── TRACK MODE ──────────────────────────────────────────────── */}
+      {!editMode && (
+        <>
+          {/* No budgets set — inline build prompt */}
+          {!hasBudgets && (
+            <div style={{ background: `linear-gradient(135deg,${C.green}14 0%,${C.teal}0A 100%)`, border: `1px solid ${C.green}44`, borderRadius: 18, padding: "20px" }}>
+              <div style={{ textAlign: "center", marginBottom: 16 }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
+                <div style={{ fontFamily: "'Playfair Display',serif", color: C.cream, fontWeight: 900, fontSize: 20, marginBottom: 6 }}>Build Your Budget Plan</div>
+                <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6, maxWidth: 360, margin: "0 auto" }}>
+                  We analyze your income, bills, and spending to suggest how much to allocate to groceries, dining, clothing, and more — then track it in real time.
+                </div>
+              </div>
+              <div style={{ background: C.cardAlt, borderRadius: 12, padding: "12px 14px", marginBottom: 14, border: `1px solid ${C.border}` }}>
+                <div style={{ color: C.cream, fontWeight: 700, fontSize: 12, marginBottom: 8 }}>Based on your situation:</div>
+                {[
+                  [`💵 $${Math.round(netMo).toLocaleString()}/mo take-home`, C.green],
+                  [`🏠 $${Math.round(fixedMo).toLocaleString()}/mo in fixed bills`, C.muted],
+                  [`✅ $${Math.round(discret).toLocaleString()}/mo available for variable spending`, C.greenBright],
+                ].map(([txt, color]) => (
+                  <div key={txt} style={{ color, fontSize: 12, marginBottom: 4 }}>• {txt}</div>
+                ))}
+              </div>
+              <button onClick={openEdit} style={{ width: "100%", background: `linear-gradient(135deg,${C.green},${C.greenBright})`, border: "none", borderRadius: 12, padding: "14px", color: "#041810", fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+                ✨ Build My Budget Plan
+              </button>
+            </div>
+          )}
+
+          {/* Budget exists — tracking view */}
+          {hasBudgets && (
+            <>
+              {/* ── BILLS SECTION ─────────────────────────────── */}
+              {(()=>{
+                const allBills = data.bills||[];
+                if(allBills.length === 0) return null;
+
+                // Match transactions to bills via vendorBillMap
+                const vendorBillMap = data.vendorBillMap||{};
+                const catOverridesLocal = (()=>{try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");}catch{return {};}})();
+                const billsWithStatus = allBills.map(bill => {
+                  // Find a transaction this month that pays this bill
+                  const linkedTxn = monthTxns.find(t => {
+                    const vendor = (t.name||"").toLowerCase().trim();
+                    const billVendor = (bill.vendorPattern||bill.name||"").toLowerCase().trim();
+                    return vendorBillMap[vendor]?.toLowerCase() === bill.name.toLowerCase() ||
+                           (billVendor.length >= 4 && (vendor.includes(billVendor.substring(0,6)) || billVendor.includes(vendor.substring(0,6))));
+                  });
+                  const isVariable = bill.type === "variable";
+                  const expectedAmt = parseFloat(bill.amount||0);
+                  const actualAmt = linkedTxn ? Math.abs(parseFloat(linkedTxn.amount||0)) : null;
+                  return { ...bill, linkedTxn, isVariable, expectedAmt, actualAmt, paid: !!linkedTxn };
+                });
+
+                const paidCount = billsWithStatus.filter(b=>b.paid).length;
+                const totalBillsAmt = billsWithStatus.reduce((s,b)=>s+b.expectedAmt,0);
+                const variableBills = billsWithStatus.filter(b=>b.isVariable);
+
+                return (
+                  <div style={{background:C.card,borderRadius:18,padding:"16px 18px",border:`1px solid ${C.border}`,marginBottom:4}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                      <div>
+                        <div style={{color:C.cream,fontWeight:800,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Monthly Bills</div>
+                        <div style={{color:C.muted,fontSize:11,marginTop:2}}>{paidCount}/{billsWithStatus.length} paid · ${Math.round(totalBillsAmt).toLocaleString()}/mo</div>
+                      </div>
+                      {variableBills.length>0&&(
+                        <div style={{background:C.gold+"18",border:`1px solid ${C.gold}33`,borderRadius:8,padding:"4px 8px"}}>
+                          <span style={{color:C.goldBright,fontSize:10,fontWeight:700}}>🔄 {variableBills.length} variable</span>
+                        </div>
+                      )}
+                    </div>
+                    {billsWithStatus.map((bill,i)=>{
+                      const color = bill.paid ? C.green : C.muted;
+                      const amtDiff = bill.actualAmt !== null ? bill.actualAmt - bill.expectedAmt : null;
+                      return (
+                        <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:i<billsWithStatus.length-1?`1px solid ${C.border}`:"none"}}>
+                          <div style={{width:8,height:8,borderRadius:"50%",background:bill.paid?C.green:C.muted,flexShrink:0}}/>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{display:"flex",alignItems:"center",gap:6}}>
+                              <span style={{color:C.cream,fontSize:13,fontWeight:600}}>{bill.name}</span>
+                              {bill.isVariable&&<span style={{background:C.teal+"18",color:C.tealBright,fontSize:9,padding:"2px 5px",borderRadius:99,border:`1px solid ${C.teal}33`}}>variable</span>}
+                              {bill.category&&<span style={{color:C.muted,fontSize:10}}>{bill.category}</span>}
+                            </div>
+                            {bill.paid&&bill.linkedTxn&&(
+                              <div style={{color:C.muted,fontSize:10,marginTop:1}}>
+                                Paid {new Date(bill.linkedTxn.date+"T12:00:00").toLocaleDateString("en",{month:"short",day:"numeric"})}
+                                {amtDiff!==null&&Math.abs(amtDiff)>2&&(
+                                  <span style={{color:amtDiff>0?C.redBright:C.greenBright,marginLeft:6}}>
+                                    {amtDiff>0?`+$${Math.round(amtDiff)} more than usual`:`$${Math.round(Math.abs(amtDiff))} less than usual`}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {!bill.paid&&(
+                              <div style={{color:C.muted,fontSize:10,marginTop:1}}>No payment found this month</div>
+                            )}
+                          </div>
+                          <div style={{textAlign:"right",flexShrink:0}}>
+                            <div style={{color:bill.paid?C.green:C.cream,fontWeight:700,fontSize:13}}>
+                              {bill.actualAmt!==null?`$${Math.round(bill.actualAmt)}`:`$${Math.round(bill.expectedAmt)}`}
+                            </div>
+                            {bill.paid&&<div style={{color:C.greenBright,fontSize:9}}>✓ paid</div>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {/* Variable bill update prompt */}
+                    {variableBills.length>0&&(
+                      <div style={{marginTop:10,background:C.teal+"10",border:`1px solid ${C.teal}28`,borderRadius:10,padding:"10px 12px"}}>
+                        <div style={{color:C.tealBright,fontWeight:700,fontSize:11,marginBottom:6}}>🔄 Update variable bills</div>
+                        {variableBills.map((bill,i)=>(
+                          <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:i<variableBills.length-1?6:0}}>
+                            <span style={{color:C.muted,fontSize:12,flex:1}}>{bill.name}</span>
+                            <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.teal}44`,borderRadius:8,overflow:"hidden"}}>
+                              <span style={{color:C.muted,padding:"0 6px",fontSize:11}}>$</span>
+                              <input type="number" defaultValue={bill.actualAmt||bill.expectedAmt||""}
+                                placeholder={String(bill.expectedAmt||"")}
+                                onBlur={e=>{
+                                  const val = parseFloat(e.target.value);
+                                  if(!isNaN(val)&&val>0&&setAppData) {
+                                    setAppData(prev=>({...prev,bills:(prev.bills||[]).map((b,idx)=>
+                                      idx===i+allBills.indexOf(allBills.find(bb=>bb.name===bill.name))?{...b,amount:String(val)}:b
+                                    )}));
+                                  }
+                                }}
+                                style={{width:60,background:"none",border:"none",padding:"6px 4px",color:C.tealBright,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
+                              <span style={{color:C.muted,padding:"0 4px",fontSize:9}}>/mo</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:4,paddingLeft:2}}>Discretionary Spending</div>
+              {/* Overall month progress */}
+              <div style={{ background: C.card, borderRadius: 18, padding: "16px 18px", border: `1px solid ${overBudgetCats.length > 0 ? C.red + "44" : C.green + "33"}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                  <div>
+                    <div style={{ color: overBudgetCats.length > 0 ? C.redBright : C.greenBright, fontWeight: 800, fontSize: 15, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                      {overBudgetCats.length > 0 ? `⚠️ Over budget in ${overBudgetCats.length} categor${overBudgetCats.length === 1 ? "y" : "ies"}` : "📊 On track this month"}
+                    </div>
+                    <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>{monthLabel}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontFamily: "'Playfair Display',serif", fontWeight: 900, fontSize: 20, color: overBudgetCats.length > 0 ? C.redBright : C.cream }}>
+                      ${Math.round(totalSpentBudgeted).toLocaleString()}
+                    </div>
+                    <div style={{ color: C.muted, fontSize: 11 }}>of ${Math.round(totalBudgeted).toLocaleString()} budgeted</div>
+                  </div>
+                </div>
+                {/* Overall progress bar */}
+                <div style={{ height: 8, background: C.border, borderRadius: 99, overflow: "hidden", marginBottom: 6 }}>
+                  <div style={{ height: "100%", width: `${overallPct}%`, borderRadius: 99, transition: "width .5s ease", background: overBudgetCats.length > 0 ? C.red : overallPct > 80 ? C.orange : `linear-gradient(to right,${C.green},${C.greenBright})` }} />
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: C.muted, fontSize: 10 }}>{overallPct}% used</span>
+                  <span style={{ color: overBudgetCats.length > 0 ? C.redBright : C.muted, fontSize: 10 }}>
+                    {overBudgetCats.length > 0 ? `$${Math.round(totalOver)} over total` : `$${Math.round(totalBudgeted - totalSpentBudgeted)} remaining`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Where to save — only when over budget */}
+              {saveSuggestions.length > 0 && (
+                <div style={{ background: C.orange + "12", border: `1px solid ${C.orange}33`, borderRadius: 16, padding: "14px 16px" }}>
+                  <div style={{ color: C.orange, fontWeight: 800, fontSize: 13, marginBottom: 10 }}>💡 Where you could cut back</div>
+                  {saveSuggestions.map(({ cat, over, potential }) => (
+                    <div key={cat} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, paddingBottom: 8, borderBottom: `1px solid ${C.border}` }}>
+                      <div>
+                        <div style={{ color: C.cream, fontSize: 12, fontWeight: 600 }}>{catEmoji[cat] || "📌"} {cat}</div>
+                        <div style={{ color: C.redBright, fontSize: 10, marginTop: 2 }}>${Math.round(over)} over budget this month</div>
+                      </div>
+                      {potential > 0 && <div style={{ textAlign: "right" }}>
+                        <div style={{ color: C.green, fontSize: 12, fontWeight: 700 }}>Save ~${potential}</div>
+                        <div style={{ color: C.muted, fontSize: 9 }}>per month</div>
+                      </div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Goal savings reminder */}
+              {goalsMo > 0 && (
+                <div style={{ background: C.purple + "14", border: `1px solid ${C.purple}33`, borderRadius: 14, padding: "12px 14px" }}>
+                  <div style={{ color: C.purpleBright, fontWeight: 700, fontSize: 12, marginBottom: 6 }}>🎯 Saving toward {activeGoals.length} goal{activeGoals.length > 1 ? "s" : ""}</div>
+                  {activeGoals.map((g, i) => {
+                    const target = parseFloat(g.target || 0);
+                    const current = parseFloat(g.saved || 0);
+                    const mo = parseFloat(g.monthly || 0) || Math.ceil((target - current) / 24);
+                    const pct = target > 0 ? Math.min(100, Math.round(current / target * 100)) : 0;
+                    return (
+                      <div key={i} style={{ marginBottom: i < activeGoals.length - 1 ? 8 : 0 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                          <span style={{ color: C.cream, fontSize: 12, fontWeight: 600 }}>{g.name || "Goal"}</span>
+                          <span style={{ color: C.purpleBright, fontSize: 11, fontWeight: 700 }}>${Math.round(mo)}/mo · {pct}% saved</span>
+                        </div>
+                        <div style={{ height: 4, background: C.border, borderRadius: 99, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${pct}%`, background: C.purple, borderRadius: 99, transition: "width .4s" }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Per-category progress bars */}
+              <div style={{ background: C.card, borderRadius: 18, padding: "16px 18px", border: `1px solid ${C.border}` }}>
+                <div style={{ color: C.cream, fontWeight: 700, fontSize: 13, marginBottom: 14, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Category Breakdown</div>
+                {Object.entries(budgets).sort(([, a], [, b]) => {
+                  // Sort: over budget first, then by % used descending
+                  const aSpent = monthSpend[Object.keys(budgets).find(k => budgets[k] === a) || ""] || 0;
+                  const bSpent = monthSpend[Object.keys(budgets).find(k => budgets[k] === b) || ""] || 0;
+                  return (bSpent / b) - (aSpent / a);
+                }).map(([cat, limit]) => {
+                  const spent = monthSpend[cat] || 0;
+                  const pct = limit > 0 ? Math.min(100, Math.round(spent / limit * 100)) : 0;
+                  const over = spent > limit;
+                  const color = catColor[cat] || C.muted;
+                  const barColor = over ? C.red : pct > 80 ? C.orange : color;
+                  return (
+                    <div key={cat} style={{ marginBottom: 14 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                          <span style={{ fontSize: 15 }}>{catEmoji[cat] || "📌"}</span>
+                          <span style={{ color: C.cream, fontSize: 13, fontWeight: 600 }}>{cat}</span>
+                          {over && <span style={{ background: C.red + "22", color: C.redBright, fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 99, border: `1px solid ${C.red}44` }}>OVER</span>}
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <span style={{ color: over ? C.redBright : C.cream, fontWeight: 700, fontSize: 13 }}>${Math.round(spent).toLocaleString()}</span>
+                          <span style={{ color: C.muted, fontSize: 11 }}> / ${Math.round(limit).toLocaleString()}</span>
+                        </div>
+                      </div>
+                      <div style={{ height: 7, background: C.border, borderRadius: 99, overflow: "hidden", marginBottom: 3 }}>
+                        <div style={{ height: "100%", width: `${over ? 100 : pct}%`, borderRadius: 99, transition: "width .4s ease", background: over ? `linear-gradient(to right,${C.orange},${C.red})` : pct > 80 ? C.orange : `linear-gradient(to right,${color}88,${color})` }} />
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ color: C.muted, fontSize: 9 }}>{pct}% used</span>
+                        <span style={{ color: over ? C.redBright : C.muted, fontSize: 9 }}>
+                          {over ? `$${Math.round(spent - limit)} over` : `$${Math.round(limit - spent)} left`}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Categories spending but not budgeted */}
+              {(() => {
+                const unbudgeted = Object.entries(monthSpend).filter(([cat, amt]) => !budgets[cat] && amt > 20 && cat !== "Transfer" && cat !== "Income");
+                if (unbudgeted.length === 0) return null;
+                return (
+                  <div style={{ background: C.cardAlt, borderRadius: 14, padding: "12px 14px", border: `1px solid ${C.border}` }}>
+                    <div style={{ color: C.mutedHi, fontWeight: 700, fontSize: 12, marginBottom: 8 }}>📋 Spending outside your budget</div>
+                    {unbudgeted.sort((a, b) => b[1] - a[1]).slice(0, 5).map(([cat, amt]) => (
+                      <div key={cat} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                        <span style={{ color: C.muted, fontSize: 12 }}>{catEmoji[cat] || "📌"} {cat}</span>
+                        <span style={{ color: C.mutedHi, fontSize: 12, fontWeight: 600 }}>${Math.round(amt).toLocaleString()}</span>
+                      </div>
+                    ))}
+                    <button onClick={openEdit} style={{ marginTop: 6, background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                      + Add these to my budget
+                    </button>
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 
 export default function FlourishApp(){
   // ── Hydrate from localStorage on first render ──────────────────
   const saved = loadState();
   const [onboarded,setOnboarded]=useState(()=>saved?.onboarded||false);
+  const [firstVisitDone,setFirstVisitDone]=useState(()=>{
+    try{return localStorage.getItem("flourish_first_visit_done")==="1";}catch{return false;}
+  });
+  const dismissFirstVisit=()=>{
+    try{localStorage.setItem("flourish_first_visit_done","1");}catch{}
+    setFirstVisitDone(true);
+  };
   const [appData,setAppData]=useState(()=>saved?.appData||null);
-  const [screen,setScreen]=useState("home");
+  // Read URL path on load so /privacy and /terms work as direct links
+  const initialScreen = (() => {
+    const path = window.location.pathname.replace(/\/+$/,"").toLowerCase();
+    if (path === "/privacy") return "privacy";
+    if (path === "/terms")   return "terms";
+    if (path === "/kids")    return "kids";
+    return "home";
+  })();
+  const [screen,setScreen]=useState(initialScreen);
   const [user,setUser]=useState(null);
   const [authLoading,setAuthLoading]=useState(true);
   const [showNotifs,setShowNotifs]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
+  const [showFeedback,setShowFeedback]=useState(false);
+  const [tourStep,setTourStep]=useState(()=>{ try{return localStorage.getItem("flourish_tour_done")==="1"?null:0;}catch{return 0;} });
+  const dismissTour=()=>{ try{localStorage.setItem("flourish_tour_done","1");}catch{} setTourStep(null); };
   const [household,setHousehold]=useState(()=>saved?.household||null);
   const [isPremium,setIsPremium]=useState(()=>saved?.isPremium||false);
   const [showPaywall,setShowPaywall]=useState(false);
@@ -7152,8 +11974,35 @@ export default function FlourishApp(){
               balance:a.type==="credit"?-(a.balance.current||0):(a.balance.current??a.balance.available??0),
               institution:a.institution||"Bank",
             })));
-          if(freshAccounts.length > 0) {
-            setAppData(prev=>({...prev, accounts:freshAccounts}));
+          // Dedup by account id — multiple tokens from same bank cause duplicates
+          const seenIds = new Set();
+          const dedupedAccounts = freshAccounts.filter(a => {
+            if (seenIds.has(a.id)) return false;
+            seenIds.add(a.id);
+            return true;
+          });
+          if(dedupedAccounts.length > 0) {
+            setAppData(prev=>{
+              // Sync new credit card accounts into debts
+              const creditAccts = dedupedAccounts.filter(a =>
+                a.type === "credit" || a.type === "credit card" || a.subtype === "credit card" || a.type === "line of credit"
+              );
+              const existingDebtNames = new Set((prev.debts||[]).map(d => (d.name||"").toLowerCase()));
+              const newCCDebts = creditAccts
+                .filter(a => !existingDebtNames.has((a.name||"").toLowerCase()))
+                .map(a => ({
+                  name: a.name || "Credit Card",
+                  balance: Math.abs(a.balance||0).toFixed(2),
+                  rate: "", min: "", fromBank: true,
+                }));
+              return {
+                ...prev,
+                accounts: dedupedAccounts,
+                debts: newCCDebts.length > 0
+                  ? [...(prev.debts||[]).filter(d => d.name || d.balance), ...newCCDebts]
+                  : prev.debts,
+              };
+            });
           }
         } catch(e) { /* silent — cached balances still shown */ }
         // Auto-detect income and bills from combined data
@@ -7162,9 +12011,12 @@ export default function FlourishApp(){
         setAppData(prev=>({
           ...prev,
           transactions: allTxns,
-          incomes: detectedIncome && (!prev.incomes?.some(i=>i.amount))
-            ? [{id:1,label:detectedIncome.label,amount:String(detectedIncome.typical),freq:"monthly",type:"employment",isVariable:detectedIncome.isVariable,typicalAmount:String(detectedIncome.typical),lowAmount:String(detectedIncome.low),highAmount:String(detectedIncome.high),autoDetected:true}]
-            : prev.incomes,
+          incomes: (() => {
+            // Only auto-set income if user hasn't entered any real income yet
+            const hasRealIncome = (prev.incomes||[]).some(i => parseFloat(i.amount||0) > 0);
+            if (!detectedIncome || hasRealIncome) return prev.incomes;
+            return [{id:1,label:detectedIncome.label,amount:String(detectedIncome.typical),freq:"biweekly",type:"employment",isVariable:detectedIncome.isVariable,typicalAmount:String(detectedIncome.typical),lowAmount:String(detectedIncome.low),highAmount:String(detectedIncome.high),autoDetected:true}];
+          })(),
           bills: detectedBills?.length > 0 && (!prev.bills?.some(b=>b.name))
             ? detectedBills.map(b=>({name:b.name,amount:b.amount,date:b.date}))
             : prev.bills,
@@ -7249,7 +12101,30 @@ export default function FlourishApp(){
           institution: instName,
         }));
         const transactions = normaliseTxns(txnData.transactions||[]);
-        setAppData(d=>({...d, accounts, transactions, bankConnected:true }));
+        setAppData(d=>{
+          // Auto-add credit card accounts to debts — don't overwrite existing debt entries
+          const creditAccts = accounts.filter(a =>
+            a.type === "credit" || a.type === "credit card" ||
+            a.subtype === "credit card" || a.type === "line of credit"
+          );
+          const existingDebtNames = new Set((d.debts||[]).map(debt => (debt.name||"").toLowerCase()));
+          const newCCDebts = creditAccts
+            .filter(a => !existingDebtNames.has((a.name||"").toLowerCase()))
+            .map(a => ({
+              name: a.name || "Credit Card",
+              balance: Math.abs(a.balance || 0).toFixed(2),
+              rate: "",
+              min: "",
+              fromBank: true,
+            }));
+          return {
+            ...d,
+            accounts,
+            transactions,
+            bankConnected: true,
+            debts: [...(d.debts||[]).filter(d => d.name || d.balance), ...newCCDebts],
+          };
+        });
         setNeedsReconnect(false);
         setReconnectToken(null);
       })
@@ -7259,11 +12134,25 @@ export default function FlourishApp(){
   useEffect(()=>{ if(reconnectToken) openReconnectLink(); },[reconnectToken]); // eslint-disable-line
 
   // ── Background refresh — Plus only, fires 2s after bank data is ready ─────────
+  const [isRefreshing, setIsRefreshing] = useState(false);
   useEffect(()=>{
     if(!appData?.bankConnected) return;
-    const timer = setTimeout(()=>{ backgroundRefresh(isPremium, setAppData); }, 2000);
+    const timer = setTimeout(async ()=>{
+      const lastFetch = parseInt(localStorage.getItem("flourish_last_refresh")||"0");
+      const THIRTY_MIN = 30 * 60 * 1000;
+      // Only show shimmer if we're actually going to refresh
+      const willRefresh = appData?.bankConnected && isPremium && (Date.now()-lastFetch >= THIRTY_MIN);
+      if(willRefresh) setIsRefreshing(true);
+      await backgroundRefresh(isPremium, setAppData);
+      setIsRefreshing(false);
+    }, 2000);
     return ()=>clearTimeout(timer);
   },[appData?.bankConnected, isPremium]);
+
+  // ── Legal screens — always accessible, even before auth/onboarding ──
+  if(screen==="privacy")return <PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>;
+  if(screen==="terms")return <TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>;
+  if(screen==="kids")return <KidsMiniSite/>;
 
   // ── Auth gate ───────────────────────────────────────────────────
   if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
@@ -7272,7 +12161,9 @@ export default function FlourishApp(){
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} onClose={()=>setShowWhatIf(false)}/>;
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
-  if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}} onViewLegal={s=>setScreen(s)}/>;
+  if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
+  // First-visit focused screen — shown once after onboarding, dismissed permanently
+  if(!firstVisitDone&&appData)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}/>;
   if(showPaywall)return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;
 
   const unread = (() => {
@@ -7304,7 +12195,7 @@ export default function FlourishApp(){
     if(reconnectLoading) return;
     setReconnectLoading(true);
     const country = appData?.profile?.country || "CA";
-    callPlaid("create_link_token", { country })
+    callPlaid("create_link_token", { country, user_id: user?.id })
       .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
       .catch(()=>{ setReconnectLoading(false); alert("Could not start bank connection — please try again."); });
   };
@@ -7334,26 +12225,27 @@ export default function FlourishApp(){
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
     if(showSettings)return <Settings data={appData} setAppData={setAppData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}}/>;
-    if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/>;
-    if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData}/>;
-    if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData}/>;
-    if(screen==="coach"){const freeCoachAllowed=!isPremium&&coachMsgCount<5&&!trialExpired;const showCoach=isPremium||freeCoachAllowed;if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)}/>; if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="AI Coach" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>; return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;}
-    if(screen==="family")return <Family data={dataWithHousehold} household={household} setHousehold={setHousehold}/>;
-    if(screen==="goals")return <Goals data={dataWithHousehold} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab}/>;
-    if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
+    if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/>;
+    if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
+    if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
+  if(screen==="budget")return <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
+    if(screen==="coach"){const freeCoachAllowed=!isPremium&&coachMsgCount<5&&!trialExpired;const showCoach=isPremium||freeCoachAllowed;if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen}/>; if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="AI Coach" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>; return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;}
+    if(screen==="family")return <Family data={dataWithHousehold} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
+    if(screen==="goals")return <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen}/>;
+    if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
-    if(screen==="privacy")return <PrivacyPolicy onBack={()=>setScreen("home")}/>;
-    if(screen==="terms")return <TermsOfService onBack={()=>setScreen("home")}/>;
-    return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/>;
+    // privacy and terms handled before auth gate above
+    return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/>;
   };
 
   const ALL_NAV=[
-    {id:"home",  icon:"home",    label:"Home"},
-    {id:"plan",  icon:"calendar",label:"Plan"},
-    {id:"spend", icon:"card",    label:"Transactions"},
-    {id:"coach", icon:"sparkles",label:"Coach"},
+    {id:"home",  icon:"home",    label:"Today"},
+    {id:"plan",  icon:"calendar",label:"Future"},
+    {id:"spend", icon:"card",    label:"Activity"},
+    {id:"budget",icon:"chartUp", label:"Budget"},
+    {id:"coach", icon:"sparkles",label:"Guidance"},
     {id:"family",icon:"users",   label:"Family"},
-    {id:"goals", icon:"chartUp", label:"Goals"},
+    {id:"goals", icon:"target",  label:"Goals"},
   ];
 
   const globalStyles=`
@@ -7450,7 +12342,7 @@ input,button,select,textarea { font-family:inherit; }
         <div style={{padding:"20px 36px 16px",background:C.isDark?`${C.bg}F8`:`${C.bg}EE`,backdropFilter:"blur(12px)",position:"sticky",top:0,zIndex:20,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid ${C.border}`}}>
           <div>
             <div style={{color:C.cream,fontWeight:700,fontSize:18,fontFamily:"'Playfair Display',serif"}}>
-              {showNotifs?"Notifications":showSettings?"Settings":screen==="home"?"Dashboard":screen==="plan"?"Plan Ahead":screen==="spend"?"Spending":screen==="coach"?"AI Coach":screen==="family"?"Family":screen==="goals"||screen==="credit"?"Goals & Wealth":"Dashboard"}
+              {showNotifs?"Notifications":showSettings?"Settings":screen==="home"?"Today":screen==="plan"?"Future":screen==="spend"?"Activity":screen==="coach"?"Guidance":screen==="family"?"Family":screen==="goals"||screen==="credit"?"Goals & Wealth":"Today"}
             </div>
             <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{new Date().toLocaleDateString(CC[appData?.profile?.country||"CA"]?.locale||"en-CA",{weekday:"long",month:"long",day:"numeric"})}</div>
           </div>
@@ -7466,7 +12358,7 @@ input,button,select,textarea { font-family:inherit; }
         {/* Two-column for home, single for others */}
         {screen==="home"&&!showNotifs&&!showSettings?(
           <div style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:28,padding:"28px 36px 40px",overflowY:"auto",flex:1}}>
-            <div><Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={true} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab}/></div>
+            <div><Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={true} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/></div>
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
               <DesktopSidebar data={dataWithHousehold} setScreen={setScreen}/>
             </div>
@@ -7557,6 +12449,74 @@ input,button,select,textarea { font-family:inherit; }
           </div>
           </>
         )}
+
+        {/* ── FEEDBACK FLOATING BUTTON ──────────────────── */}
+        {!showNotifs&&!showSettings&&(
+          <button onClick={()=>setShowFeedback(true)}
+            style={{position:"fixed",bottom:84,right:16,zIndex:60,
+              background:`linear-gradient(135deg,${C.purple}CC,${C.purpleDim}CC)`,
+              backdropFilter:"blur(8px)",border:`1px solid ${C.purple}55`,
+              borderRadius:99,padding:"7px 13px",display:"flex",alignItems:"center",gap:5,
+              boxShadow:"0 4px 20px rgba(0,0,0,0.4)",cursor:"pointer",
+              color:C.purpleBright,fontSize:11,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            <span style={{fontSize:13}}>💬</span> Feedback
+          </button>
+        )}
+
+        {/* ── ONBOARDING TOUR ──────────────────────────── */}
+        {tourStep!==null&&onboarded&&!showNotifs&&!showSettings&&(()=>{
+          const TOUR=[
+            {screen:"home",   emoji:"🏠", title:"Today Screen",        body:"Your financial snapshot — safe-to-spend, balance, and daily insights. This is your home base."},
+            {screen:"spend",  emoji:"📊", title:"Activity & Budgets",   body:"See where your money goes, set budgets per category, and track trends over time."},
+            {screen:"coach",  emoji:"✨", title:"AI Financial Guidance", body:"Ask anything — tax tips, debt strategy, savings plans. Powered by your real data."},
+            {screen:"goals",  emoji:"🎯", title:"Goals & Credit",        body:"Set savings goals, track your debt payoff, and monitor your credit score health."},
+          ];
+          const step=TOUR[tourStep];
+          const isLast=tourStep===TOUR.length-1;
+          return(
+            <div style={{position:"fixed",inset:0,zIndex:200,pointerEvents:"none"}}>
+              <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.72)",pointerEvents:"auto"}}
+                onClick={()=>{if(isLast) dismissTour();}}/>
+              <div style={{position:"absolute",bottom:100,left:"50%",transform:"translateX(-50%)",
+                width:"calc(100% - 40px)",maxWidth:390,
+                background:C.surface,borderRadius:20,padding:"20px 20px 16px",
+                border:`1px solid ${C.green}44`,boxShadow:`0 8px 40px rgba(0,0,0,0.6)`,
+                pointerEvents:"auto",animation:"slideUp .3s ease",zIndex:201}}>
+                <div style={{display:"flex",gap:5,marginBottom:14,justifyContent:"center"}}>
+                  {TOUR.map((_,i)=>(
+                    <div key={i} style={{width:i===tourStep?20:6,height:6,borderRadius:99,transition:"width .3s",
+                      background:i<=tourStep?C.green:C.border}}/>
+                  ))}
+                </div>
+                <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:14}}>
+                  <div style={{fontSize:28,lineHeight:1,flexShrink:0}}>{step.emoji}</div>
+                  <div>
+                    <div style={{color:C.greenBright,fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>
+                      {step.title}
+                    </div>
+                    <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>{step.body}</div>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={dismissTour}
+                    style={{background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",
+                      color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",flex:"0 0 auto"}}>
+                    Skip Tour
+                  </button>
+                  <button onClick={()=>{ if(isLast){dismissTour();}else{setTourStep(t=>t+1);setScreen(TOUR[tourStep+1].screen);}}}
+                    style={{flex:1,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,
+                      border:"none",borderRadius:12,padding:"10px",color:"#041810",
+                      fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                    {isLast?"Done ✓":"Next →"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── FEEDBACK MODAL ──────────────────────────── */}
+        {showFeedback&&<FeedbackModal onClose={()=>setShowFeedback(false)}/>}
       </div>
     </div>
   );
