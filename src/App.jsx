@@ -3680,88 +3680,117 @@ function Onboarding({onComplete,onViewLegal,userId}){
       <div style={{color:C.muted,fontSize:14,marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
         {incomes[0]?.autoDetected
           ? "We detected your income from your transactions. Confirm or adjust below."
-          : "Add every source of income — employment, freelance, benefits, rental, your partner's pay. We map it all."}
+          : "Add every source — employment, freelance, benefits, rental, a partner's income. We map it all against your bills."}
       </div>
-      {incomes.map((inc,i)=>(
-        <div key={inc.id} style={{background:C.card,borderRadius:16,padding:"16px",border:`1px solid ${C.border}`,marginBottom:12}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{inc.label||`Income Source ${i+1}`}</div>
-              {inc.autoDetected&&<span style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px",color:C.greenBright,fontSize:10,fontWeight:700}}>Auto-detected ✓</span>}
-            </div>
-            {incomes.length>1&&<button onClick={()=>setIncomes(incomes.filter(x=>x.id!==inc.id))} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0}}>×</button>}
-          </div>
-          <div style={{marginBottom:10}}>
-            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Label</div>
-            <input value={inc.label} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,label:e.target.value}:x))}
-              placeholder="e.g. Full-time job, Freelance"
-              style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}}/>
-          </div>
-          {/* Variable income — auto flag or manual toggle */}
-          {/* Income amount — single field only. App calculates everything else. */}
-          {inc.autoDetected ? (
-            // Bank connected — show detected amount, allow adjustment
-            <div style={{marginBottom:10}}>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>
-                {inc.isVariable ? "Average Monthly Take-Home" : "Monthly Take-Home (detected)"}
+      {incomes.map((inc,i)=>{
+        const incTypeMeta = {
+          employment:{label:"Full-time Job",emoji:"💼"},
+          selfemployed:{label:"Self-Employed",emoji:"🧾"},
+          cpp:{label:"CPP / Pension",emoji:"🏛️"},
+          ei:{label:"EI Benefits",emoji:"📋"},
+          odsp:{label:"ODSP / Ontario Works",emoji:"♿"},
+          ccb:{label:"Canada Child Benefit",emoji:"👶"},
+          rental:{label:"Rental Income",emoji:"🏠"},
+          gig:{label:"Gig / Freelance",emoji:"🚗"},
+          other:{label:"Other",emoji:"➕"},
+          // US
+          salary:{label:"Salary",emoji:"💼"},
+          hourly:{label:"Hourly",emoji:"⏱️"},
+          ssi:{label:"SSI / Disability",emoji:"♿"},
+          snap:{label:"SNAP / Benefits",emoji:"📋"},
+          investment:{label:"Investment Income",emoji:"📈"},
+        };
+        const meta = incTypeMeta[inc.type] || {label:inc.type,emoji:"💰"};
+        const freqLabel = {weekly:"weekly",biweekly:"every 2 weeks",semimonthly:"twice/month",monthly:"monthly"}[inc.freq]||"";
+        const summaryAmt = parseFloat(inc.amount||inc.typicalAmount||0);
+        return (
+          <div key={inc.id} style={{background:C.card,borderRadius:18,border:`1px solid ${C.border}`,marginBottom:12,overflow:"hidden"}}>
+            {/* Card header */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px 0"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:20}}>{meta.emoji}</span>
+                <div>
+                  <div style={{color:C.cream,fontWeight:700,fontSize:14,lineHeight:1.2}}>{inc.label||meta.label||`Income ${i+1}`}</div>
+                  {summaryAmt>0&&<div style={{color:C.greenBright,fontSize:11,fontWeight:600,marginTop:1}}>${summaryAmt.toLocaleString()} {freqLabel}</div>}
+                </div>
+                {inc.autoDetected&&<span style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px",color:C.greenBright,fontSize:10,fontWeight:700,marginLeft:4}}>Auto ✓</span>}
+                {inc.isVariable&&<span style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:99,padding:"2px 8px",color:C.purpleBright||C.tealBright,fontSize:10,fontWeight:700}}>Variable</span>}
               </div>
-              <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.green}44`,borderRadius:10,overflow:"hidden"}}>
-                <span style={{color:C.muted,padding:"0 10px",fontSize:14}}>$</span>
-                <input value={inc.amount} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,amount:e.target.value,typicalAmount:e.target.value}:x))}
-                  type="number"
-                  style={{flex:1,background:"none",border:"none",padding:"10px 12px 10px 0",color:C.greenBright,fontSize:16,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
-                <span style={{color:C.green,fontSize:11,fontWeight:700,paddingRight:10}}>Auto ✓</span>
-              </div>
-              {inc.isVariable&&<div style={{color:C.muted,fontSize:11,marginTop:6}}>📊 Income varies — we detected your range and will use it for planning.</div>}
+              {incomes.length>1&&<button onClick={()=>setIncomes(incomes.filter(x=>x.id!==inc.id))}
+                style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:20,padding:"0 0 0 8px",lineHeight:1}}>×</button>}
             </div>
-          ) : (
-            // No bank — ask for last paycheque only
-            <div style={{marginBottom:10}}>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Your Last Paycheque (take-home)</div>
-              <div style={{display:"flex",gap:10}}>
-                <div style={{flex:1}}>
-                  <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
-                    <span style={{color:C.muted,padding:"0 10px",fontSize:14}}>$</span>
-                    <input value={inc.amount} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,amount:e.target.value}:x))}
+
+            <div style={{padding:"12px 16px 16px"}}>
+              {/* Step 1 — Income type chips */}
+              <div style={{marginBottom:12}}>
+                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:8}}>Income type</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {(CC[p.country]?.incomeTypes||CC.CA.incomeTypes).map(([val,lbl])=>(
+                    <button key={val} onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,type:val,label:x.label||(incTypeMeta[val]?.label||"")}:x))}
+                      style={{background:inc.type===val?C.green+"22":C.cardAlt,border:`1px solid ${inc.type===val?C.green:C.border}`,color:inc.type===val?C.greenBright:C.muted,borderRadius:99,padding:"6px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:inc.type===val?700:400,transition:"all .15s"}}>{lbl}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Step 2 — Label */}
+              <div style={{marginBottom:12}}>
+                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Label <span style={{color:C.border,textTransform:"none",letterSpacing:0}}>(optional — e.g. "Part-time at Tim's")</span></div>
+                <input value={inc.label} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,label:e.target.value}:x))}
+                  placeholder={meta.label}
+                  style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:14,fontFamily:"inherit",boxSizing:"border-box",outline:"none"}}/>
+              </div>
+
+              {/* Step 3 — Amount + Frequency (always shown for both paths) */}
+              <div style={{marginBottom:12}}>
+                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>
+                  {inc.isVariable ? "Typical paycheque (take-home)" : inc.autoDetected ? "Paycheque amount (take-home)" : "Paycheque amount (take-home)"}
+                </div>
+                <div style={{display:"flex",gap:10}}>
+                  {/* Amount */}
+                  <div style={{flex:1.2,display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${inc.autoDetected?C.green+"66":C.border}`,borderRadius:10,overflow:"hidden"}}>
+                    <span style={{color:C.muted,padding:"0 10px",fontSize:14,flexShrink:0}}>$</span>
+                    <input
+                      value={inc.amount}
+                      onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,amount:e.target.value,typicalAmount:e.target.value}:x))}
                       type="number" placeholder="e.g. 2100"
-                      style={{flex:1,background:"none",border:"none",padding:"10px 12px 10px 0",color:C.cream,fontSize:14,fontFamily:"inherit",outline:"none"}}/>
+                      style={{flex:1,background:"none",border:"none",padding:"11px 10px 11px 0",color:inc.autoDetected?C.greenBright:C.cream,fontSize:15,fontFamily:"inherit",outline:"none",fontWeight:inc.autoDetected?700:400}}/>
+                    {inc.autoDetected&&<span style={{color:C.green,fontSize:10,fontWeight:700,paddingRight:10,flexShrink:0}}>✓</span>}
+                  </div>
+                  {/* Frequency — always shown */}
+                  <div style={{flex:1}}>
+                    <select value={inc.freq} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,freq:e.target.value}:x))}
+                      style={{width:"100%",height:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 10px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}>
+                      <option value="weekly">Weekly</option>
+                      <option value="biweekly">Every 2 weeks</option>
+                      <option value="semimonthly">Twice a month</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
                   </div>
                 </div>
-                <div style={{flex:1}}>
-                  <select value={inc.freq} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,freq:e.target.value}:x))}
-                    style={{width:"100%",height:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}>
-                    <option value="weekly">Weekly</option>
-                    <option value="biweekly">Every 2 weeks</option>
-                    <option value="semimonthly">Twice a month</option>
-                    <option value="monthly">Monthly</option>
-                  </select>
-                </div>
               </div>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:10}}>
-                <div style={{color:C.muted,fontSize:11}}>Income varies month to month?</div>
+
+              {/* Step 4 — Variable toggle */}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:inc.isVariable?C.purple+"11":C.cardAlt,border:`1px solid ${inc.isVariable?C.purple+"44":C.border}`,borderRadius:12,padding:"10px 14px",transition:"all .2s"}}>
+                <div>
+                  <div style={{color:inc.isVariable?C.purpleBright||C.tealBright:C.mutedHi,fontSize:13,fontWeight:600}}>Variable income</div>
+                  <div style={{color:C.muted,fontSize:11,marginTop:1}}>{inc.isVariable?"Amount changes — we'll use your typical paycheque for planning":"Consistent amount every pay period"}</div>
+                </div>
                 <button onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,isVariable:!inc.isVariable}:x))}
-                  style={{width:44,height:24,borderRadius:99,background:inc.isVariable?C.green:C.cardAlt,border:`1px solid ${inc.isVariable?C.green:C.border}`,cursor:"pointer",position:"relative",transition:"all .2s",flexShrink:0}}>
-                  <div style={{position:"absolute",top:2,left:inc.isVariable?22:2,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"all .2s"}}/>
+                  style={{width:46,height:26,borderRadius:99,background:inc.isVariable?C.purple||C.teal:C.cardAlt,border:`1px solid ${inc.isVariable?C.purple||C.teal:C.border}`,cursor:"pointer",position:"relative",transition:"all .2s",flexShrink:0}}>
+                  <div style={{position:"absolute",top:3,left:inc.isVariable?23:3,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"all .2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
                 </button>
               </div>
-              {inc.isVariable&&<div style={{color:C.muted,fontSize:11,marginTop:6,lineHeight:1.5}}>💡 No problem — enter your typical paycheque. We'll use it for planning and adjust as we learn your patterns.</div>}
-            </div>
-          )}
-          <div>
-            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Type</div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              {(CC[p.country]?.incomeTypes||CC.CA.incomeTypes).map(([val,lbl])=>(
-                <button key={val} onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,type:val}:x))}
-                  style={{background:inc.type===val?C.green+"22":C.cardAlt,border:`1px solid ${inc.type===val?C.green:C.border}`,color:inc.type===val?C.greenBright:C.muted,borderRadius:99,padding:"5px 10px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{lbl}</button>
-              ))}
             </div>
           </div>
-        </div>
-      ))}
-      <button onClick={()=>setIncomes([...incomes,{id:Date.now(),label:"",amount:"",freq:"biweekly",type:"employment"}])}
-        style={{width:"100%",background:"none",border:`1px dashed ${C.green}`,borderRadius:14,padding:"12px",color:C.green,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginBottom:14,fontWeight:600}}>
-        + Add Another Income Source
+        );
+      })}
+
+      {/* Add income button — prominent */}
+      <button onClick={()=>setIncomes([...incomes,{id:Date.now(),label:"",amount:"",freq:"biweekly",type:"employment",isVariable:false}])}
+        style={{width:"100%",background:`linear-gradient(135deg,${C.green}18,${C.green}08)`,border:`1px solid ${C.green}66`,borderRadius:14,padding:"14px",color:C.greenBright,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginBottom:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+        <span style={{fontSize:18,lineHeight:1}}>＋</span> Add Another Income Source
       </button>
+
       <div style={{background:C.goldDim,border:`1px solid ${C.gold}44`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
         <div style={{color:C.goldBright,fontSize:13,lineHeight:1.6}}>💡 Include every source — even irregular ones. Flourish maps all income vs. bills to warn you <strong>before</strong> you hit zero.</div>
       </div>
