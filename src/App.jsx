@@ -1313,7 +1313,7 @@ function TimeMachine({data}) {
                           <span style={{width:6,height:6,borderRadius:"50%",background:C.muted,display:"inline-block"}}/>🛒 Est. daily spend
                           <span style={{color:C.muted,fontSize:9}}>(30d avg)</span>
                         </span>
-                        <span style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>−${(avgDaily*0.8).toFixed(0)}</span>
+                        <span style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>−${(avgDaily).toFixed(0)}</span>
                       </div>
                     )}
                     {/* Divider + balance result */}
@@ -1438,7 +1438,7 @@ function FinancialTimeline({data}) {
                     {ev.day>0&&(
                       <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
                         <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🛒 Est. daily spend</span>
-                        <span style={{color:C.muted,fontSize:12}}>−${(avgDaily*0.8).toFixed(0)}</span>
+                        <span style={{color:C.muted,fontSize:12}}>−${(avgDaily).toFixed(0)}</span>
                       </div>
                     )}
                     <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0 0"}}>
@@ -1472,9 +1472,13 @@ function WhatIfSimulator({data, onClose}) {
     "Buy a used car for $8,000",
   ];
 
-  const bal = parseFloat((data.accounts?.[0]?.balance || DEMO.balance).toString().replace(/,/g,""));
-  const monthlyIncome = ((data.incomes||[]).reduce((s,i)=>s+parseFloat(i.amount||0),0) || DEMO.income);
-  const totalDebt = (data.debts||[]).reduce((s,d) => s + parseFloat(d.balance||0), 0);
+  const _toMoSim = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a; };
+  const bal = (data.accounts||[])
+    .filter(a => ["checking","savings","depository"].includes((a.type||"").toLowerCase()))
+    .reduce((s,a) => s + parseFloat(a.balance||0), 0) || DEMO.balance;
+  const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0)
+    .reduce((s,i) => s + _toMoSim(i.amount,i.freq), 0) || DEMO.income;
+  const { liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
   const bills = (data.bills||[]).reduce((s,b) => s + parseFloat(b.amount||0), 0);
   const {score} = calcHealthScore(data);
 
@@ -1963,12 +1967,12 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
 function MoneyWrapped({data, onClose}) {
   const [slide, setSlide] = useState(0);
   const txns = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
-  const _toMoW = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:a; };
+  const _toMoW = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:freq==="monthly"?a:a*2.167; };
   const income = ((data.incomes||[]).reduce((s,i)=>s+_toMoW(i.amount,i.freq),0) || 4200) * 12;
   const totalSpent = txns.reduce((s,t)=>s+Math.abs(t.amount||0),0) || 0;
-  const totalDebt = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.balance||0),0);
+  const { netWorth: _wrappedNW } = FinancialCalcEngine.netWorth(data);
   const invBal = (data.accounts||[]).filter(a=>a.type==="investment").reduce((s,a)=>s+parseFloat(a.balance||0),0);
-  const bal = parseFloat((data.accounts?.[0]?.balance||0).toString().replace(/,/g,""));
+  const bal = (data.accounts||[]).filter(a=>["checking","savings","depository"].includes((a.type||"").toLowerCase())).reduce((s,a)=>s+parseFloat(a.balance||0),0);
 
   // Category analysis
   const cats = {};
@@ -1976,7 +1980,7 @@ function MoneyWrapped({data, onClose}) {
   const topCat = Object.entries(cats).sort((a,b)=>b[1]-a[1])[0] || ["Food","340"];
   const lowestCat = Object.entries(cats).sort((a,b)=>a[1]-b[1])[0] || ["Transport","45"];
   const biggestTxn = txns.sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount))[0];
-  const netWorthChange = Math.round(invBal + bal - totalDebt);
+  const netWorthChange = Math.round(_wrappedNW);
   const {score} = calcHealthScore(data);
   const year = new Date().getFullYear();
 
@@ -2135,7 +2139,7 @@ function EmptyState({icon, title, body, action, onAction, color}) {
 function FlourishMark({ size = 24, style = {} }) {
   return (
     <img
-      src="/flourish-adult-app-icon-180.png"
+      src="/flourish-adult-app-icon-180"
       width={size}
       height={size}
       alt="Flourish"
@@ -2146,7 +2150,7 @@ function FlourishMark({ size = 24, style = {} }) {
 function FlourishMarkKids({ size = 24, style = {} }) {
   return (
     <img
-      src="/flourish-kids-app-icon-180.png"
+      src="/flourish-kids-app-icon-180"
       width={size}
       height={size}
       alt="Flourish Kids"
@@ -2336,15 +2340,20 @@ const FinancialCalcEngine = {
     const assets = accounts
       .filter(a => ASSET_TYPES.has(a.type))
       .reduce((s,a) => s + Math.max(0, parseFloat(a.balance||0)), 0);
-    // Liabilities: credit card balances from accounts + any manually entered debts
-    const creditFromAccounts = accounts
-      .filter(a => a.type === "credit" || a.type === "credit card" || a.subtype === "credit card" || a.type === "line of credit")
+    // Liabilities: bank credit accounts + manual debts not duplicated in bank
+    const bankCreditAccounts = accounts.filter(a => {
+      const t = (a.type||"").toLowerCase(), s = (a.subtype||"").toLowerCase();
+      return t==="credit" || t==="credit card" || s==="credit card" || t==="line of credit";
+    });
+    const bankCreditLiabilities = bankCreditAccounts
       .reduce((s,a) => s + Math.abs(parseFloat(a.balance||0)), 0);
-    const manualDebts = debts.reduce((s,d) => s + parseFloat(d.balance||0), 0);
-    // Avoid double-counting: use max of manual debts vs credit accounts
-    // (user may have added credit cards both ways)
-    const liabilities = Math.max(creditFromAccounts, manualDebts);
-    return { assets, liabilities, netWorth: assets - liabilities };
+    // Deduplicate: exclude manual debts that are flagged fromBank or match a bank account name
+    const bankCreditNames = new Set(bankCreditAccounts.map(a => (a.name||"").trim().toLowerCase()));
+    const manualNonBankDebts = debts
+      .filter(d => !d.fromBank && !bankCreditNames.has((d.name||"").trim().toLowerCase()))
+      .reduce((s,d) => s + Math.max(0, parseFloat(d.balance||0)), 0);
+    const liabilities = bankCreditLiabilities + manualNonBankDebts;
+    return { assets, liabilities, netWorth: assets - liabilities, bankCreditLiabilities, manualNonBankDebts };
   },
 
   /** Monthly cash flow = income − bills − discretionary spend (no double-counting) */
@@ -2359,6 +2368,7 @@ const FinancialCalcEngine = {
     const txns = (data.transactions || []).filter(t => {
       if(t.amount <= 0) return false;
       if(!t.date) return false;
+      if(t.pending) return false; // pending txns not yet settled — exclude from spending
       const d = new Date(t.date + "T12:00:00");
       return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
     });
@@ -2381,8 +2391,8 @@ const FinancialCalcEngine = {
       return !NON_SPEND_CATS.has(cat) &&
              !BILL_CATS.has(cat) &&
              !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw));
-    }).reduce((s,t) => s + t.amount, 0) || monthlyIncome * 0.55;
-    // Total = bills + discretionary — both are real, never Math.max between them
+    }).reduce((s,t) => s + t.amount, 0);
+    // No fallback — zero spend is valid; fabricating spend for bank-connected users breaks cashFlow
     const totalExpenses = monthlyBills + monthlySpend;
     return { monthlyIncome, monthlyBills, monthlySpend, totalExpenses,
              cashFlow: monthlyIncome - totalExpenses };
@@ -2589,7 +2599,7 @@ generate(data, days = 90) {
     const isPayday = i > 0 && paydayDates.has(dateKey);
     const dayBills = bills.filter(b=>parseInt(b.date)===dayNum&&parseInt(b.date)>0);
     const inc      = (isPayday ? paycheque : 0) + getSecondary(dayNum);
-    const out      = dayBills.reduce((s,b)=>s+parseFloat(b.amount||0),0) + (i===0?0:avgDaily*0.8);
+    const out      = dayBills.reduce((s,b)=>s+parseFloat(b.amount||0),0) + (i===0?0:avgDaily);
     running = running + inc - out;
 
     const entry = { day:i, date:d, balance:running, income:inc, expenses:out,
@@ -2693,23 +2703,9 @@ const AutopilotEngine = {
     const today  = new Date();
     const todayNum = today.getDate();
 
-    // ── ADAPTIVE: Detect payday from income frequency data ───────────────────
-    const incomes = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
-    const freq = incomes[0]?.freq || "monthly";
-    let daysLeft;
-    if (freq === "biweekly") {
-      // Approximate: next biweekly is in 7–14 days
-      daysLeft = 14 - (todayNum % 14);
-    } else if (freq === "weekly") {
-      daysLeft = 7 - (todayNum % 7);
-    } else if (freq === "semimonthly") {
-      // Twice a month: 1st and 15th
-      daysLeft = todayNum < 15 ? (15 - todayNum) : (new Date(today.getFullYear(), today.getMonth()+1, 1) - today) / 86400000;
-    } else {
-      // Monthly: next 1st
-      daysLeft = Math.ceil((new Date(today.getFullYear(), today.getMonth()+1, 1) - today) / 86400000);
-    }
-    daysLeft = Math.max(1, daysLeft);
+    // ── ADAPTIVE: Derive payday from ForecastEngine (anchor-based, not modulo) ─
+    const nextPayday = forecast.find(f => f.day > 0 && f.isPayday);
+    const daysLeft   = Math.max(1, nextPayday ? nextPayday.day : 14);
 
     // ── ADAPTIVE: Base safeDaily, then adjust for behavior ───────────────────
     let safeDaily = daysLeft > 0 ? Math.floor(safeAmount / daysLeft) : safeAmount;
@@ -3443,18 +3439,20 @@ function Onboarding({onComplete,onViewLegal,userId}){
       <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:38,letterSpacing:-1,marginBottom:24,lineHeight:1,background:`linear-gradient(130deg,${C.cream} 30%,rgba(237,233,226,0.65) 100%)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>flourish</div>
 
       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,color:C.green,letterSpacing:3.5,textTransform:"uppercase",fontWeight:700,marginBottom:22,opacity:0.9}}>
-        Money coaching that grows with you
+        Stop guessing. Start knowing.
       </div>
 
       {/* Tagline */}
-      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.muted,fontSize:15,lineHeight:1.85,maxWidth:300,marginBottom:34}}>
-        Know exactly where you stand.<br/>
-        <span style={{color:C.cream,fontWeight:600}}>Before you spend. Not after.</span>
+      <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontSize:26,fontWeight:900,color:C.cream,lineHeight:1.2,maxWidth:300,marginBottom:8,letterSpacing:-0.5}}>
+        Know before<br/>you spend.
+      </div>
+      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.muted,fontSize:14,lineHeight:1.7,maxWidth:280,marginBottom:34}}>
+        One number. Updated daily. Based on your real accounts — not estimates.
       </div>
 
       {/* Feature pills */}
       <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center",marginBottom:36,maxWidth:340}}>
-        {[["","Overdraft warnings"],["","Cash flow forecast"],["","AI coaching"],["","Credit score"],["","Tax credits"],["","Family tools"]].map(([icon,text],i)=>(
+        {[["✓","Know before you spend"],["✓","Overdraft warnings"],["✓","Cash flow forecast"],["✓","AI coaching"],["✓","Tax tips & credits"],["✓","Family tools"]].map(([icon,text],i)=>(
           <div key={i} style={{background:C.isDark?"rgba(255,255,255,0.05)":C.surface,border:`1px solid ${C.border}`,borderRadius:99,padding:"7px 15px",color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:6,animation:`fadeUp 0.4s ease ${100+i*60}ms both`,backdropFilter:"blur(8px)"}}>
             <span style={{fontSize:14}}>{icon}</span>{text}
           </div>
@@ -3465,7 +3463,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
       <button onClick={()=>setStep(1)} style={{background:`linear-gradient(135deg,${C.green} 0%,${C.greenBright} 100%)`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:16,padding:"17px 44px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:`0 0 0 1px ${C.green}22, 0 10px 40px ${C.green}44, inset 0 1px 0 rgba(255,255,255,0.30)`,letterSpacing:0.3,transition:"all .25s cubic-bezier(.16,1,.3,1)"}}
         onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px) scale(1.02)";e.currentTarget.style.boxShadow=`0 0 0 1px ${C.green}33, 0 16px 52px ${C.green}55, inset 0 1px 0 rgba(255,255,255,0.30)`;}}
         onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0) scale(1)";e.currentTarget.style.boxShadow=`0 0 0 1px ${C.green}22, 0 10px 40px ${C.green}44, inset 0 1px 0 rgba(255,255,255,0.30)`;}}>
-        Build My Financial Plan →
+        See What I Can Spend Today →
       </button>
 
       {/* Demo mode — required for App Store review */}
@@ -4502,8 +4500,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const soonTotal   = _ss.upcomingBills;
   const today       = new Date().getDate();
   const monthlyIncome = FinancialCalcEngine.cashFlow(data).monthlyIncome;
-  const totalDebt=(data.debts||[]).reduce((a,d)=>a+parseFloat(d.balance||0),0);
-  const netWorth=bal+((data?.accounts||[]).filter(a=>a.type==="savings"||a.type==="investment").reduce((s,a)=>s+(a.balance||0),0))-totalDebt;
+  const { netWorth } = FinancialCalcEngine.netWorth(data);
   // Badge reads live from localStorage so it updates after Notifications marks-read
   const getUnreadCount = () => {
     try {
@@ -4616,6 +4613,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             border:`1px solid ${hasData?(overspend>0?C.red+"33":C.green+"30"):C.gold+"33"}`,
             borderRadius:16,padding:"14px 16px",cursor:"pointer"}}
             onClick={()=>setScreen("coach")}>
+            <div style={{color:C.muted,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📊 Estimate · Based on your setup — connect bank for real numbers</div>
             <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
               <span style={{fontSize:20,flexShrink:0}}>{hasData?(overspend>0?"⚠️":"💡"):"🔗"}</span>
               <div style={{flex:1}}>
@@ -5065,7 +5063,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         })()}
 
         {/* ── NET WORTH SPARKLINE — full width ──────────────────────────── */}
-        {isVisible('networth')&&<div style={{...anim(190),...tileStyle('networth'),...glass(C.teal),borderRadius:22,padding:"18px 20px 16px"}}>
+        {isVisible('networth')&&<div onClick={()=>{setScreen("goals");if(setGoalsTab)setGoalsTab("worth");}} style={{...anim(190),...tileStyle('networth'),...glass(C.teal),borderRadius:22,padding:"18px 20px 16px",cursor:"pointer"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
             <div>
               <div style={{...label11(C.muted),marginBottom:4}}>Net Worth Trend</div>
@@ -5657,12 +5655,12 @@ function PlanAhead({data, setAppData, setScreen}){
                 {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.muted,fontSize:11}}>Opening balance</span><span style={{color:C.muted,fontSize:11}}>${(prevBalance||0).toFixed(0)}</span></div>}
                 {day.income>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>💰 Paycheck</span><span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+${(day.income||0).toFixed(0)}</span></div>}
                 {day.bills.map((b,j)=><div key={j} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>📅 {b.name}</span><span style={{color:C.gold,fontWeight:700,fontSize:12}}>−${parseFloat(b.amount||0).toFixed(0)}</span></div>)}
-                {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>🛒 Est. daily spend <span style={{color:C.muted,fontSize:9}}>(30d avg)</span></span><span style={{color:C.muted,fontSize:12}}>−${(avgDailySpend*0.8).toFixed(0)}</span></div>}
+                {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>🛒 Est. daily spend <span style={{color:C.muted,fontSize:9}}>(30d avg)</span></span><span style={{color:C.muted,fontSize:12}}>−${(avgDailySpend).toFixed(0)}</span></div>}
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${C.border}`,paddingTop:8,marginTop:4}}>
                   <span style={{color:C.cream,fontWeight:700,fontSize:13}}>{isToday?"Current balance":"Projected balance"}</span>
                   <span style={{color:neg?C.redBright:low?C.goldBright:C.greenBright,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{neg?"−":""}${Math.abs(day.balance||0).toFixed(0)}</span>
                 </div>
-                {day.idx>0&&<div style={{marginTop:6,color:C.muted,fontSize:10,lineHeight:1.7}}>${(prevBalance||0).toFixed(0)}{day.income>0&&<span style={{color:C.green}}> +${(day.income||0).toFixed(0)}</span>}{billsTotal>0&&<span style={{color:C.gold}}> −${billsTotal.toFixed(0)} bills</span>}<span style={{color:C.muted}}> −${(avgDailySpend*0.8).toFixed(0)} spend</span><span style={{color:neg?C.redBright:C.greenBright}}> = ${(day.balance||0).toFixed(0)}</span></div>}
+                {day.idx>0&&<div style={{marginTop:6,color:C.muted,fontSize:10,lineHeight:1.7}}>${(prevBalance||0).toFixed(0)}{day.income>0&&<span style={{color:C.green}}> +${(day.income||0).toFixed(0)}</span>}{billsTotal>0&&<span style={{color:C.gold}}> −${billsTotal.toFixed(0)} bills</span>}<span style={{color:C.muted}}> −${(avgDailySpend).toFixed(0)} spend</span><span style={{color:neg?C.redBright:C.greenBright}}> = ${(day.balance||0).toFixed(0)}</span></div>}
               </div>
             )}
           </div>
@@ -6941,9 +6939,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
   const saved=base.months-curr.months,intSaved=base.interest-curr.interest;
   const toYM=(m)=>{if(m>=600)return"Never";const y=Math.floor(m/12),mo=m%12;return y>0?`${y}y ${mo}m`:`${mo}mo`;};
   const payoffDate=()=>{const d=new Date();d.setMonth(d.getMonth()+curr.months);return d.toLocaleDateString("en",{month:"long",year:"numeric"});};
-  const totalDebt=debts.reduce((a,d)=>a+parseFloat(d.balance||0),0);
-  const _allBal=(data?.accounts||[]).filter(a=>a.type!=="credit").reduce((s,a)=>s+(a.balance||0),0);
-      const netWorth=_allBal-totalDebt;
+  const { netWorth } = FinancialCalcEngine.netWorth(data);
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <ScreenHeader title="Goals & Wealth" onBack={setScreen?()=>setScreen("home"):null} cta={CC[data?.profile?.country||"CA"]?.flag+" "+CC[data?.profile?.country||"CA"]?.currency} ctaColor={CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}/>
@@ -7257,8 +7253,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       const checking=allAccts.filter(a=>a.type==="checking").reduce((s,a)=>s+(a.balance||0),0);
       const savings=allAccts.filter(a=>a.type==="savings").reduce((s,a)=>s+(a.balance||0),0);
       const totalAssets=checking+savings+totalInvested;
-      const totalDebt2=(data.debts||[]).reduce((a,d)=>a+parseFloat(d.balance||0),0);
-      const realNetWorth=totalAssets-totalDebt2;
+      const { netWorth: realNetWorth, bankCreditLiabilities, manualNonBankDebts } = FinancialCalcEngine.netWorth(data);
       const savLabel=country==="US"?"Savings / HYSA":"Savings / TFSA";
       const allItems=[
         {label:"Chequing / Checking",value:checking,type:"asset",color:C.green,icon:"🏦"},
@@ -8789,7 +8784,7 @@ function WidgetScreen({data,onBack}){
         :"linear-gradient(145deg,#051810,#090F18)",
         padding:"18px 20px",display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div style={{display:"flex",alignItems:"center",gap:7}}><FlourishMark size={20}/><span style={{color:"rgba(237,233,226,0.6)",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>flourish</span></div>
+          <FlourishMark size={24}/>
           <div style={{color:"rgba(237,233,226,0.4)",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{today}</div>
         </div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
@@ -8817,7 +8812,7 @@ function WidgetScreen({data,onBack}){
         :"linear-gradient(165deg,#051810,#080D18,#050810)",
         padding:"20px",display:"flex",flexDirection:"column",gap:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div style={{display:"flex",alignItems:"center",gap:7}}><FlourishMark size={20}/><span style={{color:"rgba(237,233,226,0.65)",fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>flourish</span></div>
+          <FlourishMark size={24}/>
           <div style={{background:`rgba(${overdraft?"255,79,106":"0,204,133"},0.15)`,borderRadius:99,padding:"3px 10px",display:"flex",alignItems:"center",gap:5}}>
             <div style={{width:5,height:5,borderRadius:"50%",background:heroColorBright}}/><span style={{color:heroColorBright,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{overdraft?"Overdraft risk":"Looking good"}</span>
           </div>
@@ -9625,8 +9620,9 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const accounts = data.accounts||[];
     const profile = data.profile||{};
     const country = profile.country||"CA";
-    const income = (data.incomes||[]).reduce((s,i)=>s+parseFloat(i.amount||0),0) || DEMO.income;
-    const balance = parseFloat((accounts[0]?.balance||DEMO.balance).toString().replace(/,/g,""));
+    const _toMoCtx=(amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a;};
+    const income = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0).reduce((s,i)=>s+_toMoCtx(i.amount,i.freq),0) || DEMO.income;
+    const balance = (accounts||[]).filter(a=>["checking","savings","depository"].includes((a.type||"").toLowerCase())).reduce((s,a)=>s+parseFloat(a.balance||0),0) || DEMO.balance;
     const spending = txns.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
     const topCats = Object.entries(
       txns.filter(t=>t.amount>0 && t.cat!=="Income")
@@ -10403,7 +10399,7 @@ function FirstVisitScreen({data, onDismiss}) {
         {/* One-line explanation */}
         <div style={{color:C.mutedHi,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,marginBottom:32,maxWidth:280,margin:"0 auto 32px"}}>
           {incomeAmt > 0
-            ? "After bills, savings buffer, and upcoming expenses"
+            ? "After your bills are covered and a buffer is set aside — this is yours, free and clear."
             : "Add your income in Settings to see your personalised safe-to-spend number."}
         </div>
 
@@ -10422,7 +10418,7 @@ function FirstVisitScreen({data, onDismiss}) {
                 <span style={{color:col,fontWeight:700,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{val}</span>
               </div>
             ))}
-            {!data.bankConnected&&<div style={{marginTop:12,color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>📌 Connect your bank to make this number live and precise.</div>}
+            {!data.bankConnected&&<div style={{marginTop:12,color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>📌 Connect your bank to make this number live and precise.</div>}<div style={{marginTop:8,color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,fontWeight:600}}>Unlike Mint or YNAB — we tell you what you <em>can</em> spend, not just what you already did.</div>
           </div>
         )}
 
@@ -10439,7 +10435,10 @@ function FirstVisitScreen({data, onDismiss}) {
           </button>
         )}
 
-        <button onClick={onDismiss} style={{background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"8px"}}>
+        <div style={{marginTop:4,color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,maxWidth:260,margin:"0 auto"}}>
+          Your number updates every day — check it each morning before you spend anything.
+        </div>
+        <button onClick={onDismiss} style={{background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"12px 8px 4px"}}>
           Skip for now
         </button>
       </div>
@@ -10450,7 +10449,7 @@ function FirstVisitScreen({data, onDismiss}) {
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 const NAV=[
   {id:"home",  icon:"home",     label:"Today"},
-  {id:"plan",  icon:"calendar", label:"Future"},
+  {id:"plan",  icon:"calendar", label:"Plan"},
   {id:"spend", icon:"card",     label:"Activity"},
   {id:"coach", icon:"sparkles", label:"Guidance"},
   {id:"family",icon:"users",    label:"Family"},
@@ -12240,7 +12239,7 @@ export default function FlourishApp(){
 
   const ALL_NAV=[
     {id:"home",  icon:"home",    label:"Today"},
-    {id:"plan",  icon:"calendar",label:"Future"},
+    {id:"plan",  icon:"calendar",label:"Plan"},
     {id:"spend", icon:"card",    label:"Activity"},
     {id:"budget",icon:"chartUp", label:"Budget"},
     {id:"coach", icon:"sparkles",label:"Guidance"},
@@ -12342,7 +12341,7 @@ input,button,select,textarea { font-family:inherit; }
         <div style={{padding:"20px 36px 16px",background:C.isDark?`${C.bg}F8`:`${C.bg}EE`,backdropFilter:"blur(12px)",position:"sticky",top:0,zIndex:20,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid ${C.border}`}}>
           <div>
             <div style={{color:C.cream,fontWeight:700,fontSize:18,fontFamily:"'Playfair Display',serif"}}>
-              {showNotifs?"Notifications":showSettings?"Settings":screen==="home"?"Today":screen==="plan"?"Future":screen==="spend"?"Activity":screen==="coach"?"Guidance":screen==="family"?"Family":screen==="goals"||screen==="credit"?"Goals & Wealth":"Today"}
+              {showNotifs?"Notifications":showSettings?"Settings":screen==="home"?"Today":screen==="plan"?"Plan":screen==="spend"?"Activity":screen==="coach"?"Guidance":screen==="family"?"Family":screen==="goals"||screen==="credit"?"Goals & Wealth":"Today"}
             </div>
             <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{new Date().toLocaleDateString(CC[appData?.profile?.country||"CA"]?.locale||"en-CA",{weekday:"long",month:"long",day:"numeric"})}</div>
           </div>
