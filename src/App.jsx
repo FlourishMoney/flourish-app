@@ -10477,6 +10477,92 @@ function clearState() {
 
 // ── AUTH SCREEN ───────────────────────────────────────────────────────────────
 // ─── KIDS MINI SITE ──────────────────────────────────────────────────────────
+function KidsGoal({goal, jars, code, theme, primary, playSound}){
+  const goalEmojis=["🎯","🎮","🚲","📚","🎸","⚽","🏊","🎨","✈️","🦄","👟","🍕","🏆","🎪","🤖"];
+  const [editingGoal,setEditingGoal]=useState(false);
+  const [goalName,setGoalName]=useState(goal.name||"");
+  const [goalAmt2,setGoalAmt2]=useState(goal.amount||"");
+  const [goalEmoji2,setGoalEmoji2]=useState(goal.emoji||"🎯");
+
+  const getDisplayGoal=()=>{
+    let d=goal;
+    try{const local=JSON.parse(localStorage.getItem("flourish_kid_goal_"+code)||"null");if(local?.name)d=local;}catch{}
+    return d;
+  };
+  const [displayGoal,setDisplayGoal]=useState(getDisplayGoal);
+
+  const saveGoal=()=>{
+    if(!goalName||!goalAmt2)return;
+    const g={name:goalName,amount:goalAmt2,emoji:goalEmoji2};
+    try{
+      const all=JSON.parse(localStorage.getItem("flourish_kids")||"[]");
+      const updated=all.map(k=>k.code===code?{...k,goal:g}:k);
+      localStorage.setItem("flourish_kids",JSON.stringify(updated));
+      localStorage.setItem("flourish_kid_goal_"+code,JSON.stringify(g));
+    }catch{}
+    setDisplayGoal(g);
+    setEditingGoal(false);
+  };
+
+  const dAmt=parseFloat(displayGoal.amount)||0;
+  const dPct=dAmt>0?Math.min(100,Math.round(((jars.save||0)/dAmt)*100)):0;
+
+  return (
+    <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid ${theme.primaryBorder}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <div style={{color:primary,fontWeight:800,fontSize:14}}>🎯 My Goal</div>
+        <button onClick={()=>{setGoalName(displayGoal.name||"");setGoalAmt2(displayGoal.amount||"");setGoalEmoji2(displayGoal.emoji||"🎯");setEditingGoal(e=>!e);}}
+          style={{background:"none",border:`1px solid ${theme.primaryBorder}`,borderRadius:8,padding:"4px 10px",color:primary,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+          {editingGoal?"Cancel":displayGoal.name?"Change":"Set Goal"}
+        </button>
+      </div>
+      {editingGoal?(
+        <div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+            {goalEmojis.map(e=>(
+              <button key={e} onClick={()=>setGoalEmoji2(e)}
+                style={{background:goalEmoji2===e?theme.primaryDim:"none",border:`1px solid ${goalEmoji2===e?primary:theme.choreBorder}`,borderRadius:8,padding:"6px",fontSize:18,cursor:"pointer"}}>
+                {e}
+              </button>
+            ))}
+          </div>
+          <input value={goalName} onChange={e=>setGoalName(e.target.value)} placeholder="What are you saving for?"
+            style={{width:"100%",background:theme.cardAlt,border:`1px solid ${theme.choreBorder}`,borderRadius:10,padding:"10px 12px",color:theme.text,fontSize:13,fontFamily:"inherit",boxSizing:"border-box",marginBottom:8,outline:"none"}}/>
+          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
+            <span style={{color:primary,fontSize:15,fontWeight:700}}>$</span>
+            <input value={goalAmt2} onChange={e=>setGoalAmt2(e.target.value)} placeholder="Amount" type="number"
+              style={{flex:1,background:theme.cardAlt,border:`1px solid ${theme.choreBorder}`,borderRadius:10,padding:"10px 12px",color:theme.text,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+          </div>
+          <button onClick={saveGoal} disabled={!goalName||!goalAmt2}
+            style={{width:"100%",background:goalName&&goalAmt2?primary:"rgba(255,255,255,0.1)",border:"none",borderRadius:12,padding:"12px",color:goalName&&goalAmt2?theme.bg:"rgba(255,255,255,0.3)",fontWeight:800,fontSize:14,cursor:goalName&&goalAmt2?"pointer":"default",fontFamily:"inherit"}}>
+            Save Goal {goalEmoji2}
+          </button>
+        </div>
+      ):displayGoal.name&&dAmt>0?(
+        <>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{color:theme.text,fontSize:15,fontWeight:700}}>{displayGoal.emoji} {displayGoal.name}</span>
+            <span style={{color:primary,fontWeight:800,fontSize:16}}>{dPct}%</span>
+          </div>
+          <div style={{height:12,background:"rgba(255,255,255,0.06)",borderRadius:6,overflow:"hidden",marginBottom:8}}>
+            <div style={{height:"100%",width:`${dPct}%`,background:`linear-gradient(90deg,${theme.jar1},${theme.jar2})`,borderRadius:6,transition:"width .5s"}}/>
+          </div>
+          <div style={{color:theme.textMuted,fontSize:12}}>
+            ${(jars.save||0).toFixed(2)} saved · ${Math.max(0,dAmt-(jars.save||0)).toFixed(2)} to go
+            {dPct>=100&&<span style={{color:theme.jar1,fontWeight:700}}> 🎉 You did it!</span>}
+          </div>
+          {dPct>=100&&<div onClick={()=>playSound("goal")} style={{marginTop:10,background:theme.primaryDim,border:`1px solid ${theme.primaryBorder}`,borderRadius:12,padding:"12px",textAlign:"center",cursor:"pointer"}}>
+            <span style={{fontSize:26}}>🎉</span>
+            <div style={{color:primary,fontWeight:800,fontSize:13,marginTop:4}}>Goal reached! Tap to celebrate!</div>
+          </div>}
+        </>
+      ):(
+        <div style={{color:theme.textMuted,fontSize:13,textAlign:"center",padding:"8px 0"}}>Tap "Set Goal" to pick something to save for!</div>
+      )}
+    </div>
+  );
+}
+
 function KidsMiniSite(){
   const params=new URLSearchParams(window.location.search);
   const code=params.get("code")||"";
@@ -10672,93 +10758,8 @@ function KidsMiniSite(){
 
       <div style={{padding:"16px 16px 0",display:"flex",flexDirection:"column",gap:14}}>
 
-        {/* Goal — always shown, kid can set or update */}
-        {(()=>{
-          const [editingGoal,setEditingGoal]=React.useState(false);
-          const [goalName,setGoalName]=React.useState(goal.name||"");
-          const [goalAmt2,setGoalAmt2]=React.useState(goal.amount||"");
-          const [goalEmoji2,setGoalEmoji2]=React.useState(goal.emoji||"🎯");
-          const goalEmojis=["🎯","🎮","🚲","📚","🎸","⚽","🏊","🎨","✈️","🦄","👟","🍕","🏆","🎪","🤖"];
-          const saveGoal=()=>{
-            if(!goalName||!goalAmt2)return;
-            try{
-              const all=JSON.parse(localStorage.getItem("flourish_kids")||"[]");
-              const updated=all.map(k=>String(k.id)===String(code||"")||k.code===code?{...k,goal:{name:goalName,amount:goalAmt2,emoji:goalEmoji2}}:k);
-              if(!updated.some(k=>k.code===code)){
-                // Store locally under this code
-                const stored=JSON.parse(localStorage.getItem("flourish_kid_goal_"+code)||"null")||{};
-                localStorage.setItem("flourish_kid_goal_"+code,JSON.stringify({name:goalName,amount:goalAmt2,emoji:goalEmoji2}));
-              } else {
-                localStorage.setItem("flourish_kids",JSON.stringify(updated));
-              }
-              localStorage.setItem("flourish_kid_goal_"+code,JSON.stringify({name:goalName,amount:goalAmt2,emoji:goalEmoji2}));
-            }catch{}
-            setEditingGoal(false);
-          };
-          // Read any locally saved goal override
-          let displayGoal=goal;
-          try{
-            const local=JSON.parse(localStorage.getItem("flourish_kid_goal_"+code)||"null");
-            if(local?.name)displayGoal=local;
-          }catch{}
-          const dAmt=parseFloat(displayGoal.amount)||0;
-          const dPct=dAmt>0?Math.min(100,Math.round(((jars.save||0)/dAmt)*100)):0;
-
-          return (
-            <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid ${theme.primaryBorder}`}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                <div style={{color:primary,fontWeight:800,fontSize:14}}>🎯 My Goal</div>
-                <button onClick={()=>{setGoalName(displayGoal.name||"");setGoalAmt2(displayGoal.amount||"");setGoalEmoji2(displayGoal.emoji||"🎯");setEditingGoal(e=>!e);}}
-                  style={{background:"none",border:`1px solid ${theme.primaryBorder}`,borderRadius:8,padding:"4px 10px",color:primary,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                  {editingGoal?"Cancel":displayGoal.name?"Change":"Set Goal"}
-                </button>
-              </div>
-              {editingGoal?(
-                <div>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-                    {goalEmojis.map(e=>(
-                      <button key={e} onClick={()=>setGoalEmoji2(e)}
-                        style={{background:goalEmoji2===e?theme.primaryDim:"none",border:`1px solid ${goalEmoji2===e?primary:theme.choreBorder}`,borderRadius:8,padding:"6px",fontSize:18,cursor:"pointer"}}>
-                        {e}
-                      </button>
-                    ))}
-                  </div>
-                  <input value={goalName} onChange={e=>setGoalName(e.target.value)} placeholder="What are you saving for?"
-                    style={{width:"100%",background:theme.cardAlt,border:`1px solid ${theme.choreBorder}`,borderRadius:10,padding:"10px 12px",color:theme.text,fontSize:13,fontFamily:"inherit",boxSizing:"border-box",marginBottom:8,outline:"none"}}/>
-                  <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
-                    <span style={{color:primary,fontSize:15,fontWeight:700}}>$</span>
-                    <input value={goalAmt2} onChange={e=>setGoalAmt2(e.target.value)} placeholder="Amount" type="number"
-                      style={{flex:1,background:theme.cardAlt,border:`1px solid ${theme.choreBorder}`,borderRadius:10,padding:"10px 12px",color:theme.text,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
-                  </div>
-                  <button onClick={saveGoal} disabled={!goalName||!goalAmt2}
-                    style={{width:"100%",background:goalName&&goalAmt2?primary:"rgba(255,255,255,0.1)",border:"none",borderRadius:12,padding:"12px",color:goalName&&goalAmt2?theme.bg:"rgba(255,255,255,0.3)",fontWeight:800,fontSize:14,cursor:goalName&&goalAmt2?"pointer":"default",fontFamily:"inherit"}}>
-                    Save Goal {goalEmoji2}
-                  </button>
-                </div>
-              ):displayGoal.name&&dAmt>0?(
-                <>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                    <span style={{color:theme.text,fontSize:15,fontWeight:700}}>{displayGoal.emoji} {displayGoal.name}</span>
-                    <span style={{color:primary,fontWeight:800,fontSize:16}}>{dPct}%</span>
-                  </div>
-                  <div style={{height:12,background:"rgba(255,255,255,0.06)",borderRadius:6,overflow:"hidden",marginBottom:8}}>
-                    <div style={{height:"100%",width:`${dPct}%`,background:`linear-gradient(90deg,${theme.jar1},${theme.jar2})`,borderRadius:6,transition:"width .5s"}}/>
-                  </div>
-                  <div style={{color:theme.textMuted,fontSize:12}}>
-                    ${(jars.save||0).toFixed(2)} saved · ${Math.max(0,dAmt-(jars.save||0)).toFixed(2)} to go
-                    {dPct>=100&&<span style={{color:theme.jar1,fontWeight:700}}> 🎉 You did it!</span>}
-                  </div>
-                  {dPct>=100&&<div onClick={()=>playSound("goal")} style={{marginTop:10,background:theme.primaryDim,border:`1px solid ${theme.primaryBorder}`,borderRadius:12,padding:"12px",textAlign:"center",cursor:"pointer"}}>
-                    <span style={{fontSize:26}}>🎉</span>
-                    <div style={{color:primary,fontWeight:800,fontSize:13,marginTop:4}}>Goal reached! Tap to celebrate!</div>
-                  </div>}
-                </>
-              ):(
-                <div style={{color:theme.textMuted,fontSize:13,textAlign:"center",padding:"8px 0"}}>Tap "Set Goal" to pick something to save for!</div>
-              )}
-            </div>
-          );
-        })()}
+        {/* Goal */}
+        <KidsGoal goal={goal} jars={jars} code={code} theme={theme} primary={primary} playSound={playSound}/>
 
         {/* Jar balances */}
         <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid rgba(255,255,255,0.08)`}}>
