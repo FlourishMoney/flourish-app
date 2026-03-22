@@ -4985,7 +4985,6 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           // Nothing urgent — tile stays silent
           return null;
         })()}
-        )}
 
         {/* ── NET WORTH SPARKLINE — full width ──────────────────────────── */}
         {isVisible('networth')&&<div style={{...anim(190),...tileStyle('networth'),...glass(C.teal),borderRadius:22,padding:"18px 20px 16px"}}>
@@ -5837,7 +5836,6 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
                 )}
               </>);
             })()}
-          }
         </div>
       )}
     </Card>
@@ -7680,7 +7678,7 @@ function Family({data,household,setHousehold,setScreen}){
     try{
       const saved=JSON.parse(localStorage.getItem("flourish_kids")||"null")||[];
       return saved.map(k=>({
-        chores:[],jars:{spend:0,save:0,give:0},
+        jars:{spend:0,save:0,give:0},
         goal:{name:"",amount:"",emoji:"🎯"},
         theme:"pink",streak:0,lastReset:null,
         requireApproval:false,...k,
