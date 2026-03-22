@@ -8,14 +8,14 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Flourish — Financial Coaching</title>
-    <link rel="icon" type="image/png" href="/favicon-kids.png" id="favicon" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon-kids.png" id="apple-touch-icon" />
+    <link rel="icon" type="image/png" href="/favicon.png" id="favicon" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" id="apple-touch-icon" />
     <script>
       // Swap to sparkly kids icons when on the /kids page
       (function() {
         if (window.location.pathname.startsWith('/kids')) {
-          document.getElementById('favicon').href = '/favicon.png';
-          document.getElementById('apple-touch-icon').href = '/apple-touch-icon.png';
+          document.getElementById('favicon').href = '/favicon-kids.png';
+          document.getElementById('apple-touch-icon').href = '/apple-touch-icon-kids.png';
           document.title = 'Flourish Kids';
         }
       })();
