@@ -2135,7 +2135,7 @@ function EmptyState({icon, title, body, action, onAction, color}) {
 function FlourishMark({ size = 24, style = {} }) {
   return (
     <img
-      src="/flourish-adult-app-icon-180.png"
+      src="/flourish-adult-app-icon-180"
       width={size}
       height={size}
       alt="Flourish"
@@ -2146,7 +2146,7 @@ function FlourishMark({ size = 24, style = {} }) {
 function FlourishMarkKids({ size = 24, style = {} }) {
   return (
     <img
-      src="/flourish-kids-app-icon-180.png"
+      src="/flourish-kids-app-icon-180"
       width={size}
       height={size}
       alt="Flourish Kids"
