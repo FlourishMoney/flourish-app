@@ -446,6 +446,38 @@ const CC_INSTITUTION_PATTERNS = [
   "telephone banking",
 ];
 
+// Internal transfer patterns — Interac e-Transfer, wire, own-account moves
+const INTERNAL_TRANSFER_PATTERNS = [
+  "interac e-transfer",
+  "interac etransfer",
+  "e-transfer",
+  "etransfer",
+  "wire transfer",
+  "online transfer",
+  "account transfer",
+  "transfer to savings",
+  "transfer from savings",
+  "transfer to chequing",
+  "transfer from chequing",
+  "transfer to checking",
+  "transfer from checking",
+  "internal transfer",
+  "own transfer",
+  "tfr to",
+  "tfr from",
+  "funds transfer",
+  "swift transfer",
+  "ach transfer",
+];
+
+function isInternalTransfer(txn) {
+  if(!txn) return false;
+  const name = (txn.name || "").toLowerCase();
+  const cat  = (txn.cat  || "").toLowerCase();
+  if(cat === "transfer") return true;
+  return INTERNAL_TRANSFER_PATTERNS.some(p => name.includes(p));
+}
+
 // Categories that represent fixed/variable bill commitments — NOT discretionary spending.
 // These are tracked via the Bills array and must be excluded from budget category suggestions
 // and discretionary spend calculations to prevent double-counting.
@@ -1319,7 +1351,7 @@ function TimeMachine({data}) {
                     {/* Divider + balance result */}
                     <div style={{borderTop:`1px solid ${C.border}`,marginTop:4,paddingTop:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                       <span style={{color:C.cream,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                        {ev.day===0?"Current balance":"Projected balance"}
+                        {ev.day===0?"Current balance":"Projected balance (est.)"}
                       </span>
                       <div style={{textAlign:"right"}}>
                         <span style={{color:isLow?C.redBright:baseBalance<0?C.redBright:C.greenBright,fontWeight:900,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
@@ -1820,8 +1852,11 @@ function WealthForecast({data}) {
         </div>
       ) : (
         <>
-          <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>
-            Based on ${startingBal.toLocaleString()} balance · ${Math.round(monthlyContrib).toLocaleString()}/mo contributions · 7% avg annual return
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+            <span style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:99,padding:"2px 8px",color:C.purpleBright,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.5}}>PROJECTED</span>
+            <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+              ${startingBal.toLocaleString()} balance · ${Math.round(monthlyContrib).toLocaleString()}/mo · 7% avg return
+            </span>
           </div>
           {/* Bars */}
           <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:18}}>
@@ -1834,7 +1869,10 @@ function WealthForecast({data}) {
                       <span style={{fontSize:14}}>{s.icon}</span>
                       <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{s.label}</span>
                     </div>
-                    <span style={{color:s.color,fontWeight:900,fontFamily:"'Playfair Display',serif",fontSize:18}}>{fmt(vals[i])}</span>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{background:C.purple+"18",border:`1px solid ${C.purple}33`,borderRadius:99,padding:"1px 6px",color:C.purpleBright,fontSize:8,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>PROJ.</span>
+                      <span style={{color:s.color,fontWeight:900,fontFamily:"'Playfair Display',serif",fontSize:18}}>{fmt(vals[i])}</span>
+                    </div>
                   </div>
                   <div style={{height:8,borderRadius:99,background:C.border,overflow:"hidden"}}>
                     <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(to right,${s.color}88,${s.color})`,borderRadius:99,transition:"width .5s ease"}}/>
@@ -2390,6 +2428,7 @@ const FinancialCalcEngine = {
       const cat = getEffCat(t);
       return !NON_SPEND_CATS.has(cat) &&
              !BILL_CATS.has(cat) &&
+             !isInternalTransfer(t) &&
              !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw));
     }).reduce((s,t) => s + t.amount, 0);
     // No fallback — zero spend is valid; fabricating spend for bank-connected users breaks cashFlow
@@ -2426,7 +2465,7 @@ const FinancialCalcEngine = {
     const txns = (data.transactions || []).filter(t =>
       t.amount > 0 &&
       !t.pending &&
-      t.cat !== "Transfer" &&
+      !isInternalTransfer(t) &&
       t.cat !== "Income" &&
       t.cat !== "Fees" &&
       !BILL_CATS.has(t.cat) && // exclude recurring bills already in upcomingBills
@@ -5671,7 +5710,7 @@ function PlanAhead({data, setAppData, setScreen}){
                 {day.bills.map((b,j)=><div key={j} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>📅 {b.name}</span><span style={{color:C.gold,fontWeight:700,fontSize:12}}>−${parseFloat(b.amount||0).toFixed(0)}</span></div>)}
                 {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>🛒 Est. daily spend <span style={{color:C.muted,fontSize:9}}>(30d avg)</span></span><span style={{color:C.muted,fontSize:12}}>−${(avgDailySpend).toFixed(0)}</span></div>}
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${C.border}`,paddingTop:8,marginTop:4}}>
-                  <span style={{color:C.cream,fontWeight:700,fontSize:13}}>{isToday?"Current balance":"Projected balance"}</span>
+                  <span style={{color:C.cream,fontWeight:700,fontSize:13}}>{isToday?"Current balance":"Projected balance (est.)"}</span>
                   <span style={{color:neg?C.redBright:low?C.goldBright:C.greenBright,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{neg?"−":""}${Math.abs(day.balance||0).toFixed(0)}</span>
                 </div>
                 {day.idx>0&&<div style={{marginTop:6,color:C.muted,fontSize:10,lineHeight:1.7}}>${(prevBalance||0).toFixed(0)}{day.income>0&&<span style={{color:C.green}}> +${(day.income||0).toFixed(0)}</span>}{billsTotal>0&&<span style={{color:C.gold}}> −${billsTotal.toFixed(0)} bills</span>}<span style={{color:C.muted}}> −${(avgDailySpend).toFixed(0)} spend</span><span style={{color:neg?C.redBright:C.greenBright}}> = ${(day.balance||0).toFixed(0)}</span></div>}
