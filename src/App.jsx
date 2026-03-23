@@ -2018,45 +2018,17 @@ function EmptyState({icon, title, body, action, onAction, color}) {
 }
 
 // ── FLOURISH LOGO MARK ────────────────────────────────────────────────────────
-function FlourishMark({ size = 24, style = {} }) {
+function FlourishMark({ size = 24, style = {}, kids = false }) {
   const r = size > 30 ? Math.round(size * 0.28) : Math.round(size * 0.22);
-  const id = `fl_${size}`;
+  const src = kids ? "/flourish-kids-app-icon-180.png" : "/flourish-adult-app-icon-180.png";
   return (
-    <svg width={size} height={size} viewBox="0 0 100 100" fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      style={{ flexShrink: 0, display: "block", borderRadius: r, ...style }}>
-      <defs>
-        <linearGradient id={`${id}a`} x1="50" y1="0" x2="50" y2="100" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#CDEB45"/>
-          <stop offset="100%" stopColor="#3BAF2A"/>
-        </linearGradient>
-        <linearGradient id={`${id}b`} x1="20" y1="20" x2="80" y2="80" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#A8D832" stopOpacity="0.9"/>
-          <stop offset="100%" stopColor="#2A8B1A" stopOpacity="0.95"/>
-        </linearGradient>
-        <linearGradient id={`${id}c`} x1="60" y1="30" x2="40" y2="80" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#1E7A10"/>
-          <stop offset="100%" stopColor="#145E0A"/>
-        </linearGradient>
-        <clipPath id={`${id}clip`}>
-          <rect x="8" y="8" width="84" height="84" rx="18" ry="18" transform="rotate(45 50 50)"/>
-        </clipPath>
-      </defs>
-      {/* Diamond background */}
-      <rect x="8" y="8" width="84" height="84" rx="18" ry="18"
-        transform="rotate(45 50 50)" fill={`url(#${id}a)`}/>
-      {/* Left petal - sweeps from top-left to bottom */}
-      <path d="M50 18 C50 18 15 35 15 62 C15 75 30 82 42 78 C55 74 58 60 50 45 Z"
-        fill={`url(#${id}b)`} opacity="0.88"/>
-      {/* Right petal - sweeps from top-right to bottom */}
-      <path d="M50 18 C50 18 85 35 85 62 C85 75 70 82 58 78 C45 74 42 60 50 45 Z"
-        fill={`url(#${id}b)`} opacity="0.72"/>
-      {/* Centre teardrop */}
-      <path d="M50 45 C50 45 44 58 44 68 C44 75 47 80 50 80 C53 80 56 75 56 68 C56 58 50 45 50 45 Z"
-        fill={`url(#${id}c)`}/>
-      {/* Highlight */}
-      <ellipse cx="38" cy="30" rx="10" ry="6" fill="white" opacity="0.18" transform="rotate(-30 38 30)"/>
-    </svg>
+    <img
+      src={src}
+      width={size}
+      height={size}
+      alt="Flourish"
+      style={{ flexShrink: 0, display: "block", borderRadius: r, objectFit: "cover", ...style }}
+    />
   );
 }
 function FlourishGlyph({ size = 24, style = {} }) {
