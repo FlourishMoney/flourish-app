@@ -5,7 +5,8 @@ import {
   Zap, Package, Film, Music, Pill, Shirt,
   TrendingUp, Shield, CheckCircle,
   Target, PiggyBank, DollarSign,
-  ShoppingBag, Flame, Star, Car, BarChart2
+  ShoppingBag, Flame, Star, Car, BarChart2,
+  Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -355,6 +356,39 @@ const CAT_ICON = {
 };
 function txnIcon(txn){return CAT_ICON[txn.cat]||"card";}
 
+// Maps a category name → { emoji, color hex } at render time.
+// Used so recategorizing a transaction immediately updates its icon & color
+// without needing to mutate the original txn object.
+const CAT_DISPLAY = {
+  "Groceries":            { emoji:"🛒", color:"#00CC85" },
+  "Coffee & Dining":      { emoji:"☕", color:"#FF8C42" },
+  "Gas & Transport":      { emoji:"🚗", color:"#4DA8FF" },
+  "Shopping":             { emoji:"🛍️", color:"#FF6B9D" },
+  "Clothing":             { emoji:"👗", color:"#9B7DFF" },
+  "Subscriptions":        { emoji:"📱", color:"#00C8E0" },
+  "Health":               { emoji:"💊", color:"#00C8E0" },
+  "Personal Care":        { emoji:"🧴", color:"#E8B84B" },
+  "Entertainment":        { emoji:"🎬", color:"#FF6B9D" },
+  "Hobbies & Sports":     { emoji:"🎯", color:"#4DA8FF" },
+  "Kids & Extracurricular":{ emoji:"🧒", color:"#00CC85" },
+  "Travel":               { emoji:"✈️", color:"#9B7DFF" },
+  "Home":                 { emoji:"🏠", color:"#FF8C42" },
+  "Education":            { emoji:"📚", color:"#4DA8FF" },
+  "Utilities":            { emoji:"⚡", color:"#E8B84B" },
+  "Bills":                { emoji:"📋", color:"#E8B84B" },
+  "Housing":              { emoji:"🏠", color:"#FF8C42" },
+  "Phone & Internet":     { emoji:"📡", color:"#00C8E0" },
+  "Insurance":            { emoji:"🛡️", color:"#4DA8FF" },
+  "Services":             { emoji:"⚙️", color:"#888888" },
+  "Transfer":             { emoji:"↔️", color:"#888888" },
+  "Income":               { emoji:"💰", color:"#00CC85" },
+  "Fees":                 { emoji:"🏦", color:"#888888" },
+  "Other":                { emoji:"📌", color:"#888888" },
+};
+function getCatDisplay(catName) {
+  return CAT_DISPLAY[catName] || { emoji:"📌", color:"#888888" };
+}
+
 const DEMO = {
   balance:     1_243.88,
   income:      1_847.50,
@@ -384,7 +418,76 @@ async function callPlaid(action, params={}) {
 // Plaid Personal Finance Category (PFC) primary values → Flourish display meta
 // Shared keyword list for detecting credit card payments in transactions.
 // Used by income detection, spending calc, and transparency panel — single source of truth.
-const CC_PAYMENT_KEYWORDS = ["payment","autopay","amex","visa","mastercard","credit card","card payment","minimum payment","balance payment"];
+// Compound phrases only — single words like "payment","visa","amex" are too broad
+// Real CC payments are caught by Transfer category. These catch non-Transfer settlements.
+const CC_PAYMENT_KEYWORDS = [
+  "credit card payment",
+  "card payment",
+  "minimum payment",
+  "balance payment",
+  "autopay",
+  "amex payment",
+  "visa payment",
+  "mastercard payment",
+  "credit card autopay",
+];
+
+// Canadian/US bank online payment names — catch BNS SCOTIAONLINE etc.
+// NOT "bill payment" — too broad, catches Enbridge/Hydro One
+const CC_INSTITUTION_PATTERNS = [
+  "scotiaonline",
+  "mb-credit card",
+  "credit card/loc",
+  "mb-visa",
+  "mb-mastercard",
+  "mb-amex",
+  "online bill pay",
+  "web payment",
+  "telephone banking",
+];
+
+// Internal transfer patterns — Interac e-Transfer, wire, own-account moves
+const INTERNAL_TRANSFER_PATTERNS = [
+  "interac e-transfer",
+  "interac etransfer",
+  "e-transfer",
+  "etransfer",
+  "wire transfer",
+  "online transfer",
+  "account transfer",
+  "transfer to savings",
+  "transfer from savings",
+  "transfer to chequing",
+  "transfer from chequing",
+  "transfer to checking",
+  "transfer from checking",
+  "internal transfer",
+  "own transfer",
+  "tfr to",
+  "tfr from",
+  "funds transfer",
+  "swift transfer",
+  "ach transfer",
+];
+
+function isInternalTransfer(txn) {
+  if(!txn) return false;
+  const name = (txn.name || "").toLowerCase();
+  const cat  = (txn.cat  || "").toLowerCase();
+  if(cat === "transfer") return true;
+  return INTERNAL_TRANSFER_PATTERNS.some(p => name.includes(p));
+}
+
+// Categories that represent fixed/variable bill commitments — NOT discretionary spending.
+// These are tracked via the Bills array and must be excluded from budget category suggestions
+// and discretionary spend calculations to prevent double-counting.
+const BILL_CATS = new Set([
+  "Utilities","Housing","Bills","Phone & Internet","Insurance",
+  "Other Bills","Rent","Mortgage","Transportation" // Transportation when it's a bill payment
+]);
+
+// Categories always excluded from spending breakdowns (non-expense flows)
+const NON_SPEND_CATS = new Set(["Transfer","Income","Fees"]);
 
 // ─── CC PAYMENT DETECTOR ──────────────────────────────────────────────────────
 // Identifies transactions that are credit card payments (not spending).
@@ -394,11 +497,15 @@ function isCCPayment(txn, debts=[]) {
   if(!txn || txn.amount <= 0) return false;
   const name = (txn.name || "").toLowerCase();
   const cat  = (txn.cat  || "").toUpperCase();
-  // Direct keyword match
+  // Compound keyword match (safe — no broad single words)
   if(CC_PAYMENT_KEYWORDS.some(kw => name.includes(kw))) return true;
-  // Transfer to credit card (Plaid categorises as Transfer)
+  // Institution-specific online banking payment names
+  if(CC_INSTITUTION_PATTERNS.some(p => name.includes(p))) return true;
+  // CC network name + payment verb — catches "MB-RBC ROYAL BANK MASTERCARD"
+  if((name.includes("mastercard") || name.includes("amex") || name.includes("visa")) &&
+     (name.includes("payment") || name.includes("/loc pay") || name.includes("credit card"))) return true;
+  // Transfer category + debt amount match (specific, not broad)
   if(cat === "TRANSFER" || cat.includes("TRANSFER")) {
-    // Additional signal: amount matches a known debt minimum or round payment
     if(debts.length > 0) {
       const matchesDet = debts.some(d => {
         const min = parseFloat(d.min||0);
@@ -408,10 +515,19 @@ function isCCPayment(txn, debts=[]) {
       });
       if(matchesDet) return true;
     }
-    // If it's a large transfer-out with no matching income pattern → likely CC payment
-    if(txn.amount >= 20 && cat.includes("TRANSFER")) return true;
+    // NOTE: round-amount heuristic removed — too aggressive, hid mortgage payments
   }
   return false;
+}
+
+function isCashAdvance(txn) {
+  if(!txn) return false; // both directions — CC charge and bank transfer
+  const name = (txn.name || "").toLowerCase();
+  return name.includes("cash advance") ||
+         name.includes("cash adv") ||
+         name.includes("atm advance") ||
+         name.includes("credit advance") ||
+         (name.includes("advance") && (name.includes("credit") || name.includes("card")));
 }
 
 // Returns CC payment transactions from a list, with the likely debt they paid
@@ -1229,13 +1345,13 @@ function TimeMachine({data}) {
                           <span style={{width:6,height:6,borderRadius:"50%",background:C.muted,display:"inline-block"}}/>🛒 Est. daily spend
                           <span style={{color:C.muted,fontSize:9}}>(30d avg)</span>
                         </span>
-                        <span style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>−${(avgDaily*0.8).toFixed(0)}</span>
+                        <span style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>−${(avgDaily).toFixed(0)}</span>
                       </div>
                     )}
                     {/* Divider + balance result */}
                     <div style={{borderTop:`1px solid ${C.border}`,marginTop:4,paddingTop:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                       <span style={{color:C.cream,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                        {ev.day===0?"Current balance":"Projected balance"}
+                        {ev.day===0?"Current balance":"Projected balance (est.)"}
                       </span>
                       <div style={{textAlign:"right"}}>
                         <span style={{color:isLow?C.redBright:baseBalance<0?C.redBright:C.greenBright,fontWeight:900,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
@@ -1354,7 +1470,7 @@ function FinancialTimeline({data}) {
                     {ev.day>0&&(
                       <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
                         <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🛒 Est. daily spend</span>
-                        <span style={{color:C.muted,fontSize:12}}>−${(avgDaily*0.8).toFixed(0)}</span>
+                        <span style={{color:C.muted,fontSize:12}}>−${(avgDaily).toFixed(0)}</span>
                       </div>
                     )}
                     <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0 0"}}>
@@ -1388,9 +1504,13 @@ function WhatIfSimulator({data, onClose}) {
     "Buy a used car for $8,000",
   ];
 
-  const bal = parseFloat((data.accounts?.[0]?.balance || DEMO.balance).toString().replace(/,/g,""));
-  const monthlyIncome = ((data.incomes||[]).reduce((s,i)=>s+parseFloat(i.amount||0),0) || DEMO.income);
-  const totalDebt = (data.debts||[]).reduce((s,d) => s + parseFloat(d.balance||0), 0);
+  const _toMoSim = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a; };
+  const bal = (data.accounts||[])
+    .filter(a => ["checking","savings","depository"].includes((a.type||"").toLowerCase()))
+    .reduce((s,a) => s + parseFloat(a.balance||0), 0) || DEMO.balance;
+  const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0)
+    .reduce((s,i) => s + _toMoSim(i.amount,i.freq), 0) || DEMO.income;
+  const { liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
   const bills = (data.bills||[]).reduce((s,b) => s + parseFloat(b.amount||0), 0);
   const {score} = calcHealthScore(data);
 
@@ -1519,67 +1639,90 @@ Respond ONLY with valid JSON (no markdown) like:
 // ── MONEY PERSONALITY ──────────────────────────────────────────────────────────
 function calcPersonality(txns, data) {
   const t = txns || [];
-  const neg = t.filter(x => x.amount > 0);  // expenses are positive
+  const neg = t.filter(x => x.amount > 0);  // expenses are positive in Plaid
   const total = neg.reduce((s,x) => s + Math.abs(x.amount), 0) || 1;
 
-  const food    = neg.filter(x=>["Food","Coffee","Dining"].includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
-  const shop    = neg.filter(x=>x.cat==="Shopping").reduce((s,x)=>s+Math.abs(x.amount),0);
-  const subs    = neg.filter(x=>x.cat==="Subscriptions").reduce((s,x)=>s+Math.abs(x.amount),0);
-  const ent     = neg.filter(x=>x.cat==="Entertainment").reduce((s,x)=>s+Math.abs(x.amount),0);
-  const income  = (data.incomes||[]).length;
+  // Real Plaid/Flourish category names
+  const FOOD_CATS  = ["Coffee & Dining","Groceries","Food & Drink","Food","Coffee","Dining"];
+  const SHOP_CATS  = ["Shopping","Clothing","Online Shopping"];
+  const SUB_CATS   = ["Subscriptions","Streaming"];
+  const ENT_CATS   = ["Entertainment","Recreation","Hobbies","Sports"];
+  const TRANS_CATS = ["Transport","Gas","Parking","Auto"];
+
+  const food  = neg.filter(x=>FOOD_CATS.includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
+  const shop  = neg.filter(x=>SHOP_CATS.includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
+  const subs  = neg.filter(x=>SUB_CATS.includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
+  const ent   = neg.filter(x=>ENT_CATS.includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
+  const trans = neg.filter(x=>TRANS_CATS.includes(x.cat)).reduce((s,x)=>s+Math.abs(x.amount),0);
+
+  // Builder score earned through REAL financial behaviour — not just income count
+  const ret = data.profile?.retirement || {};
+  const isCA = (data.profile?.country||"CA")==="CA";
+  const hasRetirementSavings = parseFloat(ret[isCA?"rrspBalance":"401kBalance"]||0)>0 || parseFloat(ret[isCA?"rrspMonthly":"401kMonthly"]||0)>0;
+  const hasGoals = (data.goals||[]).length > 0;
+  const accts = data.accounts||[];
+  const isOverdraft = accts.some(a=>a.type!=="credit"&&parseFloat(a.balance||0)<0);
+  const hasSavings = accts.some(a=>a.type==="savings"&&parseFloat(a.balance||0)>500);
+  const multiIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0).length > 1;
+  const builderScore = (hasRetirementSavings?0.3:0)+(hasGoals?0.15:0)+(hasSavings?0.15:0)+(multiIncome&&!isOverdraft?0.1:0)-(isOverdraft?0.4:0);
 
   const scores = {
     convenience: food/total,
     lifestyle:   (shop+ent)/total,
     digital:     subs/total,
-    builder:     income > 1 ? 0.8 : 0.3,
+    mobile:      trans/total,
+    builder:     Math.max(0, builderScore),
   };
   const top = Object.entries(scores).sort((a,b)=>b[1]-a[1])[0][0];
 
-  const personas = {
-    convenience: {
-      name:"The Convenience Spender", emoji:"🛍️",
-      color:C.orange,
-      traits:["High food delivery spend","Values time over money","Subscription-heavy lifestyle"],
-      insight:"Your biggest lever is replacing 3 deliveries/week with home cooking — saves ~$180/mo.",
-      shareText:"I'm a Convenience Spender 🛍️ on @flourishmoney"
-    },
-    lifestyle: {
-      name:"The Experience Collector", emoji:"✈️",
-      color:C.purple,
-      traits:["Prioritizes experiences","Shopping for quality","Social spending peaks"],
-      insight:"You spend richly on life. Automating $200/mo to savings before spending keeps goals on track.",
-      shareText:"I'm an Experience Collector ✈️ on @flourishmoney"
-    },
-    digital: {
-      name:"The Digital Native", emoji:"💻",
-      color:C.teal,
-      traits:["Heavy subscription stack","Tech-first spending","Optimizes with apps"],
-      insight:"You have ~$82/mo in subscriptions. Auditing unused ones could free up a full investment contribution.",
-      shareText:"I'm a Digital Native 💻 on @flourishmoney"
-    },
-    builder: {
-      name:"The Wealth Builder", emoji:"🏗️",
-      color:C.green,
-      traits:["Multiple income streams","Disciplined with spending","Goal-oriented mindset"],
-      insight:"You're already ahead — make sure your savings are in a high-interest account earning 4%+.",
-      shareText:"I'm a Wealth Builder 🏗️ on @flourishmoney"
-    }
-  };
-  return {...personas[top], scores, topKey:top};
+
+const personas = {
+  convenience: {
+    name:"The Convenience Spender", emoji:"🛍️", color:C.orange,
+    traits:["High food & delivery spend","Values time over money","Subscription-heavy"],
+    insight:"Replacing 3 food deliveries/week with home cooking saves ~$180/mo.",
+    shareText:"I'm a Convenience Spender 🛍️ on @flourishmoney"
+  },
+  lifestyle: {
+    name:"The Experience Collector", emoji:"✈️", color:C.purple,
+    traits:["Prioritizes experiences","Shopping for quality","Social spending peaks"],
+    insight:"You spend richly on life. Automating $200/mo to savings before spending keeps goals on track.",
+    shareText:"I'm an Experience Collector ✈️ on @flourishmoney"
+  },
+  digital: {
+    name:"The Digital Native", emoji:"💻", color:C.teal,
+    traits:["Heavy subscription stack","Tech-first spending","Optimizes with apps"],
+    insight:"Audit your subscriptions — cancelling unused ones often frees $50-100/mo instantly.",
+    shareText:"I'm a Digital Native 💻 on @flourishmoney"
+  },
+  mobile: {
+    name:"The Commuter", emoji:"🚗", color:C.gold,
+    traits:["High transport spend","Life on the go","Gas & parking costs add up"],
+    insight:"Transport is your biggest variable cost. Carpooling or transit 2x/week can save $150+/mo.",
+    shareText:"I'm a Commuter 🚗 on @flourishmoney"
+  },
+  builder: {
+    name:"The Wealth Builder", emoji:"🏗️", color:C.green,
+    traits:["Saving for retirement","Goal-oriented mindset","Building long-term wealth"],
+    insight:"You're building real wealth. Make sure your RRSP/TFSA are maximized each year.",
+    shareText:"I'm a Wealth Builder 🏗️ on @flourishmoney"
+  }
+};
+return {...personas[top], scores, topKey:top};
 }
 
 function MoneyPersonality({data}) {
-  const [revealed, setRevealed] = useState(false);
-  const txns = data.transactions || [];
-  const p = calcPersonality(txns, data);
-  const bars = [
-    {label:"Convenience", pct:Math.round(p.scores.convenience*100), color:C.orange},
-    {label:"Lifestyle",   pct:Math.round(p.scores.lifestyle*100),   color:C.purple},
-    {label:"Digital",     pct:Math.round(p.scores.digital*100),      color:C.teal},
-    {label:"Builder",     pct:Math.round(p.scores.builder*100),      color:C.green},
-  ];
-
+const [revealed, setRevealed] = useState(false);
+const txns = data.transactions || [];
+const hasEnoughData = txns.filter(x=>x.amount>0).length >= 5;
+const p = calcPersonality(txns, data);
+const bars = [
+  {label:"Convenience", pct:Math.round(p.scores.convenience*100), color:C.orange},
+  {label:"Lifestyle",   pct:Math.round(p.scores.lifestyle*100),   color:C.purple},
+  {label:"Digital",     pct:Math.round(p.scores.digital*100),     color:C.teal},
+  {label:"Commuter",    pct:Math.round(p.scores.mobile*100),      color:C.gold},
+  {label:"Builder",     pct:Math.round(p.scores.builder*100),     color:C.green},
+];
   return (
     <div style={{background:C.card,borderRadius:20,padding:"20px",border:`1.5px solid ${p.color}33`,position:"relative",overflow:"hidden"}}>
       <div style={{position:"absolute",top:-40,right:-40,width:140,height:140,borderRadius:"50%",background:`radial-gradient(circle,${p.color}12 0%,transparent 70%)`,pointerEvents:"none"}}/>
@@ -1590,7 +1733,13 @@ function MoneyPersonality({data}) {
         <span style={{background:p.color+"22",color:p.color,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"3px 8px",borderRadius:99,textTransform:"uppercase",letterSpacing:0.8}}>Your type</span>
       </div>
 
-      {!revealed ? (
+  {!hasEnoughData ? (
+    <div style={{textAlign:"center",padding:"24px 16px"}}>
+      <div style={{fontSize:36,marginBottom:10}}>🔍</div>
+      <div style={{color:C.cream,fontWeight:700,fontSize:13,marginBottom:8}}>Not enough data yet</div>
+      <div style={{color:C.muted,fontSize:12,lineHeight:1.7}}>Connect your bank and use the app for a few days — your money personality is calculated from your real spending patterns.</div>
+    </div>
+  ) : !revealed ? (
         <div style={{textAlign:"center",padding:"16px 0 8px"}}>
           <div style={{fontSize:48,marginBottom:10,filter:"blur(8px)",transition:"filter .3s"}}>?</div>
           <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:16}}>Based on your spending patterns</div>
@@ -1703,8 +1852,11 @@ function WealthForecast({data}) {
         </div>
       ) : (
         <>
-          <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>
-            Based on ${startingBal.toLocaleString()} balance · ${Math.round(monthlyContrib).toLocaleString()}/mo contributions · 7% avg annual return
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+            <span style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:99,padding:"2px 8px",color:C.purpleBright,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.5}}>PROJECTED</span>
+            <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+              ${startingBal.toLocaleString()} balance · ${Math.round(monthlyContrib).toLocaleString()}/mo · 7% avg return
+            </span>
           </div>
           {/* Bars */}
           <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:18}}>
@@ -1717,7 +1869,10 @@ function WealthForecast({data}) {
                       <span style={{fontSize:14}}>{s.icon}</span>
                       <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{s.label}</span>
                     </div>
-                    <span style={{color:s.color,fontWeight:900,fontFamily:"'Playfair Display',serif",fontSize:18}}>{fmt(vals[i])}</span>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{background:C.purple+"18",border:`1px solid ${C.purple}33`,borderRadius:99,padding:"1px 6px",color:C.purpleBright,fontSize:8,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>PROJ.</span>
+                      <span style={{color:s.color,fontWeight:900,fontFamily:"'Playfair Display',serif",fontSize:18}}>{fmt(vals[i])}</span>
+                    </div>
                   </div>
                   <div style={{height:8,borderRadius:99,background:C.border,overflow:"hidden"}}>
                     <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(to right,${s.color}88,${s.color})`,borderRadius:99,transition:"width .5s ease"}}/>
@@ -1751,6 +1906,7 @@ function WealthForecast({data}) {
       )}
     </div>
   );
+}
 
 // ── OPPORTUNITY DETECTION ──────────────────────────────────────────────────────
 function OpportunityDetector({data, setScreen, setGoalsTab}) {
@@ -1849,12 +2005,12 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
 function MoneyWrapped({data, onClose}) {
   const [slide, setSlide] = useState(0);
   const txns = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
-  const _toMoW = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:a; };
+  const _toMoW = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:freq==="monthly"?a:a*2.167; };
   const income = ((data.incomes||[]).reduce((s,i)=>s+_toMoW(i.amount,i.freq),0) || 4200) * 12;
   const totalSpent = txns.reduce((s,t)=>s+Math.abs(t.amount||0),0) || 0;
-  const totalDebt = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.balance||0),0);
+  const { netWorth: _wrappedNW } = FinancialCalcEngine.netWorth(data);
   const invBal = (data.accounts||[]).filter(a=>a.type==="investment").reduce((s,a)=>s+parseFloat(a.balance||0),0);
-  const bal = parseFloat((data.accounts?.[0]?.balance||0).toString().replace(/,/g,""));
+  const bal = (data.accounts||[]).filter(a=>["checking","savings","depository"].includes((a.type||"").toLowerCase())).reduce((s,a)=>s+parseFloat(a.balance||0),0);
 
   // Category analysis
   const cats = {};
@@ -1862,7 +2018,7 @@ function MoneyWrapped({data, onClose}) {
   const topCat = Object.entries(cats).sort((a,b)=>b[1]-a[1])[0] || ["Food","340"];
   const lowestCat = Object.entries(cats).sort((a,b)=>a[1]-b[1])[0] || ["Transport","45"];
   const biggestTxn = txns.sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount))[0];
-  const netWorthChange = Math.round(invBal + bal - totalDebt);
+  const netWorthChange = Math.round(_wrappedNW);
   const {score} = calcHealthScore(data);
   const year = new Date().getFullYear();
 
@@ -2018,16 +2174,25 @@ function EmptyState({icon, title, body, action, onAction, color}) {
 }
 
 // ── FLOURISH LOGO MARK ────────────────────────────────────────────────────────
-function FlourishMark({ size = 24, style = {}, kids = false }) {
-  const r = size > 30 ? Math.round(size * 0.28) : Math.round(size * 0.22);
-  const src = kids ? "/flourish-kids-app-icon-180.png" : "/flourish-adult-app-icon-180.png";
+function FlourishMark({ size = 24, style = {} }) {
   return (
     <img
-      src={src}
+      src="/flourish-adult-app-icon-180.png"
       width={size}
       height={size}
       alt="Flourish"
-      style={{ flexShrink: 0, display: "block", borderRadius: r, objectFit: "cover", ...style }}
+      style={{ flexShrink: 0, display: "block", borderRadius: size > 30 ? Math.round(size * 0.28) : Math.round(size * 0.22), objectFit: "cover", ...style }}
+    />
+  );
+}
+function FlourishMarkKids({ size = 24, style = {} }) {
+  return (
+    <img
+      src="/flourish-kids-app-icon-180.png"
+      width={size}
+      height={size}
+      alt="Flourish Kids"
+      style={{ flexShrink: 0, display: "block", borderRadius: size > 30 ? Math.round(size * 0.28) : Math.round(size * 0.22), objectFit: "cover", ...style }}
     />
   );
 }
@@ -2091,10 +2256,11 @@ function useWindowSize(){
 }
 
 function computeStats(txns, catOverrides={}) {
-  const SKIP_CATS = new Set(["Transfer","Income","Fees"]);
+  // Skip non-expense categories AND bill categories (bills are tracked separately)
+  const SKIP = new Set([...NON_SPEND_CATS, ...BILL_CATS]);
   // Use catOverrides so user-reassigned categories appear in breakdown
   const getC = (t) => catOverrides[t.id] || t.cat;
-  const sp = txns.filter(t=>t.amount>0 && !SKIP_CATS.has(getC(t)));
+  const sp = txns.filter(t=>t.amount>0 && !SKIP.has(getC(t)));
   const byCat={}, byDow={0:0,1:0,2:0,3:0,4:0,5:0,6:0};
   let coffee=0,coffeeCount=0,delivery=0,subs=0;
   sp.forEach(t=>{
@@ -2105,7 +2271,7 @@ function computeStats(txns, catOverrides={}) {
     if(t.name.toLowerCase().includes("uber eats")||t.name.toLowerCase().includes("doordash"))delivery+=t.amount;
     if(cat==="Subscriptions")subs+=t.amount;
   });
-  const totalSpent=sp.reduce((a,t)=>a+t.amount,0); // sp already excludes Transfer/Income via SKIP_CATS
+  const totalSpent=sp.reduce((a,t)=>a+t.amount,0); // excludes non-spend + bill categories
   const topCats=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,6);
   const days=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   const busiest=days[Object.entries(byDow).sort((a,b)=>b[1]-a[1])[0][0]];
@@ -2212,26 +2378,35 @@ const FinancialCalcEngine = {
     const assets = accounts
       .filter(a => ASSET_TYPES.has(a.type))
       .reduce((s,a) => s + Math.max(0, parseFloat(a.balance||0)), 0);
-    // Liabilities: credit card balances from accounts + any manually entered debts
-    const creditFromAccounts = accounts
-      .filter(a => a.type === "credit" || a.type === "credit card" || a.subtype === "credit card" || a.type === "line of credit")
+    // Liabilities: bank credit accounts + manual debts not duplicated in bank
+    const bankCreditAccounts = accounts.filter(a => {
+      const t = (a.type||"").toLowerCase(), s = (a.subtype||"").toLowerCase();
+      return t==="credit" || t==="credit card" || s==="credit card" || t==="line of credit";
+    });
+    const bankCreditLiabilities = bankCreditAccounts
       .reduce((s,a) => s + Math.abs(parseFloat(a.balance||0)), 0);
-    const manualDebts = debts.reduce((s,d) => s + parseFloat(d.balance||0), 0);
-    // Avoid double-counting: use max of manual debts vs credit accounts
-    // (user may have added credit cards both ways)
-    const liabilities = Math.max(creditFromAccounts, manualDebts);
-    return { assets, liabilities, netWorth: assets - liabilities };
+    // Deduplicate: exclude manual debts that are flagged fromBank or match a bank account name
+    const bankCreditNames = new Set(bankCreditAccounts.map(a => (a.name||"").trim().toLowerCase()));
+    const manualNonBankDebts = debts
+      .filter(d => !d.fromBank && !bankCreditNames.has((d.name||"").trim().toLowerCase()))
+      .reduce((s,d) => s + Math.max(0, parseFloat(d.balance||0)), 0);
+    const liabilities = bankCreditLiabilities + manualNonBankDebts;
+    return { assets, liabilities, netWorth: assets - liabilities, bankCreditLiabilities, manualNonBankDebts };
   },
 
-  /** Monthly cash flow = income − (bills + avg transaction spend) */
+  /** Monthly cash flow = income − bills − discretionary spend (no double-counting) */
   cashFlow(data) {
     const incomes = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
     const bills   = data.bills || [];
-    // Filter to current month only — 90 days of txns ≠ 1 month of spending
+    // catOverrides: ensures user-recategorized transactions affect cash flow correctly
+    const catOv = (()=>{ try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}")}catch{return{}} })();
+    const getEffCat = (t) => catOv[t.id] || t.cat;
+    // Filter to current month only
     const now = new Date();
     const txns = (data.transactions || []).filter(t => {
-      if(t.amount <= 0) return false; // expenses are positive
+      if(t.amount <= 0) return false;
       if(!t.date) return false;
+      if(t.pending) return false; // pending txns not yet settled — exclude from spending
       const d = new Date(t.date + "T12:00:00");
       return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
     });
@@ -2246,18 +2421,18 @@ const FinancialCalcEngine = {
       }
     };
     const monthlyIncome = incomes.reduce((s,i) => s + toMonthly(i.amount, i.freq), 0) || 4200;
-    const monthlyBills    = bills.reduce((s,b) => s + parseFloat(b.amount||0), 0);
-    // monthlySpend: this month's transactions excluding transfers, income, fees, and credit card payments
-    // Credit card payments must be excluded — they are not spending, they are liability settlement.
-    // If included, paying a $3,000 Amex bill would show as $3,000 of "spending" on top of the
-    // underlying purchases already counted.
-    const monthlySpend    = txns.filter(t =>
-      t.cat !== "Transfer" &&
-      t.cat !== "Income" &&
-      t.cat !== "Fees" &&
-      !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw))
-    ).reduce((s,t) => s + t.amount, 0) || monthlyIncome * 0.68;
-    const totalExpenses   = Math.max(monthlyBills, monthlySpend);
+    // Bills: committed expenses from bills array — source of truth
+    const monthlyBills  = bills.reduce((s,b) => s + parseFloat(b.amount||0), 0);
+    // Discretionary: excludes non-spend flows, bill categories (already in monthlyBills), CC payments
+    const monthlySpend  = txns.filter(t => {
+      const cat = getEffCat(t);
+      return !NON_SPEND_CATS.has(cat) &&
+             !BILL_CATS.has(cat) &&
+             !isInternalTransfer(t) &&
+             !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw));
+    }).reduce((s,t) => s + t.amount, 0);
+    // No fallback — zero spend is valid; fabricating spend for bank-connected users breaks cashFlow
+    const totalExpenses = monthlyBills + monthlySpend;
     return { monthlyIncome, monthlyBills, monthlySpend, totalExpenses,
              cashFlow: monthlyIncome - totalExpenses };
   },
@@ -2289,9 +2464,12 @@ const FinancialCalcEngine = {
   avgDailySpend(data) {
     const txns = (data.transactions || []).filter(t =>
       t.amount > 0 &&
-      t.cat !== "Transfer" &&
+      !t.pending &&
+      !isInternalTransfer(t) &&
       t.cat !== "Income" &&
-      t.cat !== "Fees"
+      t.cat !== "Fees" &&
+      !BILL_CATS.has(t.cat) && // exclude recurring bills already in upcomingBills
+      !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw))
     );
     if(txns.length === 0) return 0;
     const total = txns.reduce((s,t) => s + Math.abs(t.amount), 0);
@@ -2323,10 +2501,20 @@ const SafeSpendEngine = {
     // Bills due in the next 10 days — use real date arithmetic to handle month boundaries
     const todayDate = new Date();
     const in10Days  = new Date(todayDate); in10Days.setDate(todayDate.getDate() + 10);
+    // Detect bills already paid this month by matching transactions
+    const txnNames = (data.transactions||[])
+      .filter(t => { try { const d=new Date(t.date+"T12:00:00"); return d.getMonth()===todayDate.getMonth()&&d.getFullYear()===todayDate.getFullYear(); } catch{return false;} })
+      .map(t => (t.name||"").toLowerCase());
+    const isBillPaid = (bill) => {
+      const billName = (bill.vendorPattern||bill.name||"").toLowerCase().trim();
+      if(billName.length < 3) return false;
+      return txnNames.some(n => n.includes(billName.substring(0,Math.min(6,billName.length))) || billName.includes(n.substring(0,Math.min(6,n.length))));
+    };
     const upcomingBills = bills
       .filter(b => {
         const dueDay = parseInt(b.date);
         if(!dueDay) return false;
+        if(isBillPaid(b)) return false; // already paid this month — don't double-subtract
         // Build this month's due date
         const thisMonth = new Date(todayDate.getFullYear(), todayDate.getMonth(), dueDay);
         // Build next month's due date
@@ -2360,6 +2548,7 @@ const SafeSpendEngine = {
       soonBills: bills.filter(b => {
         const dueDay = parseInt(b.date);
         if(!dueDay) return false;
+        if(isBillPaid(b)) return false;
         const thisMonth = new Date(todayDate.getFullYear(), todayDate.getMonth(), dueDay);
         const nextMonth = new Date(todayDate.getFullYear(), todayDate.getMonth()+1, dueDay);
         return (thisMonth >= todayDate && thisMonth <= in10Days) ||
@@ -2373,90 +2562,112 @@ const SafeSpendEngine = {
 // Projects daily balance for 90 days with overdraft risk detection.
 
 const ForecastEngine = {
-  generate(data, days = 90) {
-    const { balance }       = SafeSpendEngine.calculate(data);
-    const { monthlyIncome } = FinancialCalcEngine.cashFlow(data);
-    const avgDaily          = FinancialCalcEngine.avgDailySpend(data);
-    const bills             = data.bills || [];
-    const today             = new Date();
-    const todayNum          = today.getDate();
+generate(data, days = 90) {
+  const { balance }  = SafeSpendEngine.calculate(data);
+  const avgDaily     = FinancialCalcEngine.avgDailySpend(data);
+  const bills        = data.bills || [];
+  const today        = new Date();
 
-    let running = balance;
-    const forecast = [];
-    const overdraftRisk = [];
-    const lowBalanceWarnings = [];
+  let running = balance;
+  const forecast          = [];
+  const overdraftRisk     = [];
+  const lowBalanceWarnings = [];
 
-    // Compute pay schedule — use primary income source for frequency,
-    // but calculate actual deposit amounts per income source correctly.
-    // This fixes the bug where monthlyIncome (full month) was shown instead
-    // of the actual deposit amount per paycheck.
-    const incomes = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0);
-    const primaryIncome = incomes[0];
-    const primaryFreq = primaryIncome?.freq || "biweekly";
-    // Per-paycheque amount for each income source
-    const perPaycheque = (inc) => {
-      const amt = parseFloat(inc.amount||0);
-      const f = inc.freq||"biweekly";
-      // amt is already the per-paycheque amount for most freq types
-      // EXCEPT monthly — convert to per-deposit
-      if(f==="monthly")     return amt;      // paid once per month
-      if(f==="semimonthly") return amt;      // paid twice per month
-      if(f==="biweekly")    return amt;      // already per paycheck
-      if(f==="weekly")      return amt;      // already per week
-      return amt;
-    };
-    // Primary income deposit amount
-    // If no income entered: paycheque=0, no simulated paydays (avoids phantom deposits)
-    const paycheque = primaryIncome ? perPaycheque(primaryIncome) : 0;
-    const hasRealIncome = incomes.length > 0;
-    // Secondary incomes on monthly schedule (e.g. CCB, rental income)
-    const secondaryMonthly = incomes.slice(1).filter(i=>i.freq==="monthly"||i.freq==="semimonthly");
-    const getIsPayday = (dayNum,i) => {
-      if(i===0) return false;
-      if(!hasRealIncome) return false; // no income entered → no simulated paydays
-      if(primaryFreq==="monthly")     return dayNum===1;
-      if(primaryFreq==="semimonthly") return dayNum===1||dayNum===15;
-      if(primaryFreq==="biweekly")    return i%14===0;
-      if(primaryFreq==="weekly")      return i%7===0;
-      return dayNum===1||dayNum===15;
-    };
-    const getSecondaryIncome = (dayNum) => {
-      // Monthly secondary incomes hit on the 1st
-      return secondaryMonthly.filter(i=>{
-        if(i.freq==="monthly") return dayNum===1;
-        if(i.freq==="semimonthly") return dayNum===1||dayNum===15;
-        return false;
-      }).reduce((s,i)=>s+perPaycheque(i),0);
-    };
+  const incomes       = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0);
+  const primaryIncome = incomes[0];
+  const primaryFreq   = primaryIncome?.freq || "biweekly";
+  // income.amount is the per-deposit amount for all freq types
+  const perDeposit    = (inc) => parseFloat(inc.amount||0);
+  const paycheque     = primaryIncome ? perDeposit(primaryIncome) : 0;
+  const hasIncome     = incomes.length > 0;
+  const secondaryMo   = incomes.slice(1).filter(i=>i.freq==="monthly"||i.freq==="semimonthly");
 
-    for (let i = 0; i <= days; i++) {
-      const d = new Date(today); d.setDate(todayNum + i);
-      const dayNum  = d.getDate();
-      const isPayday = getIsPayday(dayNum, i);
-      const dayBills = bills.filter(b => {
-        const bd = parseInt(b.date);
-        return bd === dayNum && bd > 0;
-      });
-      const inc  = (isPayday ? paycheque : 0) + getSecondaryIncome(dayNum);
-      // Day 0 = today: balance is already current, don't deduct spending again
-      // All other days: deduct daily spend regardless of payday (you still spend on paydays)
-      const dailySpend = i === 0 ? 0 : avgDaily * 0.8;
-      const out  = dayBills.reduce((s,b) => s + parseFloat(b.amount||0), 0) + dailySpend;
-      running = running + inc - out;
+  // ── Anchor-based payday projection ─────────────────────────────────────────
+  // Problem with old code: i%14===0 puts the first payday 14 days from today,
+  // completely ignoring that the next deposit might be 3 days away.
+  // Fix: find the last real deposit from transactions, project forward from that date.
+  const paydayDates = new Set(); // Set of "YYYY-MM-DD" strings that are paydays
+  if(hasIncome && primaryIncome) {
+    const txns      = data.transactions || [];
+    const incAmt    = parseFloat(primaryIncome.amount||0);
+    const incLabel  = (primaryIncome.label||"").toLowerCase();
+    const freqDays  = primaryFreq==="weekly" ? 7 : primaryFreq==="biweekly" ? 14 : null;
 
-      const entry = { day: i, date: d, balance: running, income: inc, expenses: out,
-                      isPayday, bills: dayBills };
-      forecast.push(entry);
-
-      if (running < 0)  overdraftRisk.push({ day: i, date: d, balance: running });
-      if (running < balance * 0.12 && running >= 0 && !isPayday)
-        lowBalanceWarnings.push({ day: i, date: d, balance: running });
+    // Find last deposit matching this income source (within 8% amount tolerance OR name match)
+    let anchor = null;
+    if(freqDays) {
+      const deposits = txns
+        .filter(t => {
+          if(t.amount >= 0) return false; // income is negative (money in)
+          const name = (t.name||"").toLowerCase();
+          const amtOk  = incAmt > 0 && Math.abs(Math.abs(t.amount)-incAmt)/incAmt < 0.08;
+          const nameOk = incLabel.length > 3 && name.includes(incLabel.substring(0,6));
+          const isInc  = t.cat==="Income" || name.includes("payroll") ||
+                         name.includes("direct deposit") || name.includes("deposit");
+          return (amtOk||nameOk) && isInc;
+        })
+        .map(t => new Date(t.date+"T12:00:00"))
+        .filter(d => !isNaN(d.getTime()))
+        .sort((a,b) => b-a);
+      anchor = deposits[0] || null;
     }
 
-    return { forecast, overdraftRisk, lowBalanceWarnings,
-             willGoNegative: overdraftRisk.length > 0,
-             firstNegativeDay: overdraftRisk[0] || null };
+    if(freqDays && anchor) {
+      // Advance from last deposit until we pass today, then keep projecting forward
+      let next = new Date(anchor);
+      next.setDate(next.getDate() + freqDays);
+      const horizon = new Date(today.getTime() + days*86400000);
+      while(next <= horizon) {
+        paydayDates.add(next.toISOString().substring(0,10));
+        next = new Date(next); next.setDate(next.getDate() + freqDays);
+      }
+    } else if(freqDays) {
+      // No anchor found — fallback: count forward from today at frequency
+      for(let k = freqDays; k <= days; k += freqDays) {
+        const d2 = new Date(today); d2.setDate(today.getDate()+k);
+        paydayDates.add(d2.toISOString().substring(0,10));
+      }
+    } else if(primaryFreq==="monthly") {
+      const payDay = primaryIncome.anchorDay || 1;
+      for(let k = 1; k <= days; k++) {
+        const d2 = new Date(today); d2.setDate(today.getDate()+k);
+        if(d2.getDate()===payDay) paydayDates.add(d2.toISOString().substring(0,10));
+      }
+    } else if(primaryFreq==="semimonthly") {
+      for(let k = 1; k <= days; k++) {
+        const d2 = new Date(today); d2.setDate(today.getDate()+k);
+        if(d2.getDate()===1||d2.getDate()===15) paydayDates.add(d2.toISOString().substring(0,10));
+      }
+    }
   }
+
+  const getSecondary = (dayNum) =>
+    secondaryMo.filter(i=>(i.freq==="monthly"?dayNum===1:(dayNum===1||dayNum===15)))
+               .reduce((s,i)=>s+perDeposit(i),0);
+
+  for(let i = 0; i <= days; i++) {
+    const d       = new Date(today); d.setDate(today.getDate()+i);
+    const dayNum  = d.getDate();
+    const dateKey = d.toISOString().substring(0,10);
+    const isPayday = i > 0 && paydayDates.has(dateKey);
+    const dayBills = bills.filter(b=>parseInt(b.date)===dayNum&&parseInt(b.date)>0);
+    const inc      = (isPayday ? paycheque : 0) + getSecondary(dayNum);
+    const out      = dayBills.reduce((s,b)=>s+parseFloat(b.amount||0),0) + (i===0?0:avgDaily);
+    running = running + inc - out;
+
+    const entry = { day:i, date:d, balance:running, income:inc, expenses:out,
+                    isPayday, bills:dayBills };
+    forecast.push(entry);
+
+    if(running < 0) overdraftRisk.push({ day:i, date:d, balance:running });
+    if(running < balance*0.12 && running >= 0 && !isPayday)
+      lowBalanceWarnings.push({ day:i, date:d, balance:running });
+  }
+
+  return { forecast, overdraftRisk, lowBalanceWarnings,
+           willGoNegative: overdraftRisk.length > 0,
+           firstNegativeDay: overdraftRisk[0] || null };
+}
 };
 
 // ── ENGINE 4: BEHAVIOR ANALYSIS ENGINE ────────────────────────────────────────
@@ -2545,23 +2756,9 @@ const AutopilotEngine = {
     const today  = new Date();
     const todayNum = today.getDate();
 
-    // ── ADAPTIVE: Detect payday from income frequency data ───────────────────
-    const incomes = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
-    const freq = incomes[0]?.freq || "monthly";
-    let daysLeft;
-    if (freq === "biweekly") {
-      // Approximate: next biweekly is in 7–14 days
-      daysLeft = 14 - (todayNum % 14);
-    } else if (freq === "weekly") {
-      daysLeft = 7 - (todayNum % 7);
-    } else if (freq === "semimonthly") {
-      // Twice a month: 1st and 15th
-      daysLeft = todayNum < 15 ? (15 - todayNum) : (new Date(today.getFullYear(), today.getMonth()+1, 1) - today) / 86400000;
-    } else {
-      // Monthly: next 1st
-      daysLeft = Math.ceil((new Date(today.getFullYear(), today.getMonth()+1, 1) - today) / 86400000);
-    }
-    daysLeft = Math.max(1, daysLeft);
+    // ── ADAPTIVE: Derive payday from ForecastEngine (anchor-based, not modulo) ─
+    const nextPayday = forecast.find(f => f.day > 0 && f.isPayday);
+    const daysLeft   = Math.max(1, nextPayday ? nextPayday.day : 14);
 
     // ── ADAPTIVE: Base safeDaily, then adjust for behavior ───────────────────
     let safeDaily = daysLeft > 0 ? Math.floor(safeAmount / daysLeft) : safeAmount;
@@ -2915,14 +3112,20 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
 
 // ─── DASHBOARD TILE REGISTRY ──────────────────────────────────────────────────
 const DASH_TILES = [
-  { id: 'networth',    label: 'Net Worth Trend',    icon: '📈' },
-  { id: 'decision',   label: 'Decision Engine',     icon: '🧠' },
-  { id: 'autopilot',  label: 'Autopilot',           icon: '✈️' },
-  { id: 'forecast',   label: 'Cash Flow Forecast',  icon: '📅' },
-  { id: 'opportunity',label: 'Opportunities',       icon: '💡' },
-  { id: 'health',     label: 'Health Score',        icon: '💚' },
-  { id: 'credit',     label: 'Credit Score',        icon: '💳' },
-  { id: 'quicknav',   label: 'Quick Navigation',    icon: '⚡' },
+  // Core sections — always on dashboard, user can hide or reorder
+  { id: 'hero',        label: 'Safe-to-Spend',       lucide:'dollar-sign',  alwaysVisible: true },
+  { id: 'bento',       label: 'Stats Row',            lucide:'bar-chart-2'  },
+  { id: 'healthrow',   label: 'Health & Streak',      lucide:'heart'        },
+  { id: 'action',      label: 'Action Alert',         lucide:'zap'          },
+  // Extended tiles
+  { id: 'networth',    label: 'Net Worth Trend',      lucide:'trending-up'  },
+  { id: 'forecast',    label: 'Cash Flow Forecast',   lucide:'calendar'     },
+  { id: 'decision',    label: 'Decision Engine',      lucide:'cpu'          },
+  { id: 'autopilot',   label: 'Autopilot',            lucide:'navigation'   },
+  { id: 'opportunity', label: 'Opportunities',        lucide:'star'         },
+  { id: 'health',      label: 'Health Score',         lucide:'shield'       },
+  { id: 'credit',      label: 'Credit Score',         lucide:'credit-card'  },
+  { id: 'quicknav',    label: 'Quick Navigation',     lucide:'grid'         },
 ];
 
 // ─── STATEMENT PARSING HELPERS ────────────────────────────────────────────────
@@ -2999,82 +3202,125 @@ ${rawText.slice(0, 7000)}`;
   return txns.map((t,i) => ({ id:`stmt_${i}`, date: t.date||'', name: t.name||'Transaction', amount: Number(t.amount)||0, category:'OTHER', pending:false })).filter(t=>t.date);
 }
 
+// ─── TILE ICON HELPER ────────────────────────────────────────────────────────
+function TileIcon({id, size=18, color}){
+  const props={size,color,strokeWidth:1.8};
+  switch(id){
+    case 'hero':        return <DollarSign {...props}/>;
+    case 'bento':       return <BarChart2 {...props}/>;
+    case 'healthrow':   return <Heart {...props}/>;
+    case 'action':      return <Zap {...props}/>;
+    case 'networth':    return <TrendingUp {...props}/>;
+    case 'forecast':    return <Calendar {...props}/>;
+    case 'decision':    return <Cpu {...props}/>;
+    case 'autopilot':   return <Navigation {...props}/>;
+    case 'opportunity': return <Star {...props}/>;
+    case 'health':      return <Shield {...props}/>;
+    case 'credit':      return <CreditCard {...props}/>;
+    case 'quicknav':    return <LayoutGrid {...props}/>;
+    default:            return <LayoutGrid {...props}/>;
+  }
+}
 // ─── DASH CUSTOMIZE SHEET ─────────────────────────────────────────────────────
 function DashCustomize({ layout, onChange, onClose }) {
+  const isDesktop = window.innerWidth >= 960;
   const [items, setItems] = useState(layout);
-  const [dragging, setDragging] = useState(null);
-  const [dragOver, setDragOver] = useState(null);
 
   const save = () => { onChange(items); onClose(); };
-  const toggle = (id) => setItems(prev => prev.map(t => t.id===id ? {...t, visible:!t.visible} : t));
-  const toggleLock = (id) => setItems(prev => prev.map(t => t.id===id ? {...t, locked:!t.locked} : t));
-  const onDragStart = (id) => setDragging(id);
-  const onDragEnter = (id) => {
-    if (!dragging || dragging === id) return;
-    // Don't move locked tiles
-    const dragItem = items.find(t=>t.id===dragging);
-    const targetItem = items.find(t=>t.id===id);
-    if(dragItem?.locked || targetItem?.locked) return;
-    setDragOver(id);
+
+  const toggle = (id) => {
+    const tile = DASH_TILES.find(t=>t.id===id);
+    if(tile?.alwaysVisible) return;
+    setItems(prev => prev.map(t => t.id===id ? {...t, visible:!t.visible} : t));
+  };
+
+  const moveUp = (id) => {
     setItems(prev => {
-      const from = prev.findIndex(t=>t.id===dragging);
-      const to   = prev.findIndex(t=>t.id===id);
+      const idx = prev.findIndex(t=>t.id===id);
+      if(idx <= 0) return prev;
+      let target = idx - 1;
+      while(target >= 0 && prev[target].locked) target--;
+      if(target < 0) return prev;
       const next = [...prev];
-      const [removed] = next.splice(from, 1);
-      next.splice(to, 0, removed);
+      [next[target], next[idx]] = [next[idx], next[target]];
       return next;
     });
   };
-  const onDragEnd = () => { setDragging(null); setDragOver(null); };
-  const meta = id => DASH_TILES.find(t=>t.id===id)||{label:id,icon:'□'};
+
+  const moveDown = (id) => {
+    setItems(prev => {
+      const idx = prev.findIndex(t=>t.id===id);
+      if(idx >= prev.length - 1) return prev;
+      let target = idx + 1;
+      while(target < prev.length && prev[target].locked) target++;
+      if(target >= prev.length) return prev;
+      const next = [...prev];
+      [next[target], next[idx]] = [next[idx], next[target]];
+      return next;
+    });
+  };
+
+  const meta = id => DASH_TILES.find(t=>t.id===id)||{label:id};
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:9000,display:'flex',alignItems:isDesktop?'center':'flex-end',justifyContent:'center',background:'rgba(0,0,0,0.55)',backdropFilter:'blur(4px)'}} onClick={onClose}>
-      <div style={{width:'100%',maxWidth:430,background:C.card,borderRadius:'24px 24px 0 0',maxHeight:'85vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 48px rgba(0,0,0,0.5)'}} onClick={e=>e.stopPropagation()}>
-        <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:'0 auto 20px'}}/>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
+    <div style={{position:'fixed',inset:0,zIndex:9000,display:'flex',alignItems:isDesktop?'center':'flex-end',justifyContent:'center',background:'rgba(0,0,0,0.6)',backdropFilter:'blur(6px)'}} onClick={onClose}>
+      <div style={{width:'100%',maxWidth:440,background:C.card,borderRadius:isDesktop?'24px':'24px 24px 0 0',maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 48px rgba(0,0,0,0.5)'}} onClick={e=>e.stopPropagation()}>
+        {!isDesktop&&<div style={{width:36,height:4,borderRadius:99,background:C.border,margin:'12px auto 0',flexShrink:0}}/>}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'20px 20px 0',flexShrink:0}}>
           <div style={{color:C.cream,fontWeight:800,fontSize:18,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Customize Dashboard</div>
-          <span style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Drag ☰ to reorder · tap 🔓 to lock</span>
+          <button onClick={onClose} style={{background:'none',border:'none',color:C.muted,fontSize:22,cursor:'pointer',padding:4,lineHeight:1,fontFamily:'inherit'}}>×</button>
         </div>
-        </div>
-        <div style={{overflowY:'auto',flex:1,paddingBottom:8}}>
-        {items.map(tile => {
-          const m = meta(tile.id);
-          return (
-            <div key={tile.id}
-              draggable={!tile.locked}
-              onDragStart={()=>!tile.locked&&onDragStart(tile.id)}
-              onDragEnter={()=>onDragEnter(tile.id)}
-              onDragEnd={onDragEnd}
-              style={{display:'flex',alignItems:'center',gap:12,padding:'12px 14px',borderRadius:14,marginBottom:8,
-                background: dragOver===tile.id ? C.green+'14' : tile.locked ? C.gold+'08' : C.cardAlt,
-                border:`1px solid ${tile.locked ? C.gold+'44' : tile.visible ? C.green+'33' : C.border}`,
-                cursor:tile.locked?'default':'grab',transition:'all .15s',opacity:tile.visible?1:0.5}}>
-              <span style={{fontSize:18,cursor:tile.locked?'default':'grab',color:tile.locked?C.gold:C.muted,userSelect:'none'}}>{tile.locked?'📌':'☰'}</span>
-              <span style={{fontSize:20}}>{m.icon}</span>
-              <div style={{flex:1,color:C.cream,fontWeight:600,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{m.label}</div>
-              <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                <button onClick={()=>toggleLock(tile.id)} title={tile.locked?"Unlock":"Lock position"}
-                  style={{background:tile.locked?C.gold+'22':'transparent',border:`1px solid ${tile.locked?C.gold+'55':C.border}`,borderRadius:10,width:44,height:44,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>
+        <div style={{color:C.muted,fontSize:12,padding:'4px 20px 14px',fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Use ↑↓ to reorder · toggle to show or hide</div>
+        <div style={{overflowY:'auto',flex:1,padding:'0 16px 8px'}}>
+          {items.map((tile, idx) => {
+            const m = meta(tile.id);
+            return (
+              <div key={tile.id} style={{display:'flex',alignItems:'center',gap:10,padding:'11px 12px',borderRadius:14,marginBottom:7,
+                background:tile.locked?C.gold+'0A':C.cardAlt,
+                border:`1px solid ${tile.locked?C.gold+'44':tile.visible!==false?C.green+'33':C.border}`,
+                opacity:tile.visible!==false?1:0.5,transition:'all .15s'}}>
+                <div style={{display:'flex',flexDirection:'column',gap:1,flexShrink:0}}>
+                  <button onClick={()=>!tile.locked&&moveUp(tile.id)}
+                    style={{background:'none',border:'none',color:idx===0||tile.locked?C.border:C.muted,cursor:idx===0||tile.locked?'default':'pointer',fontSize:13,lineHeight:1,padding:'3px 6px',borderRadius:6,transition:'color .15s',fontFamily:'inherit'}}>▲</button>
+                  <button onClick={()=>!tile.locked&&moveDown(tile.id)}
+                    style={{background:'none',border:'none',color:idx===items.length-1||tile.locked?C.border:C.muted,cursor:idx===items.length-1||tile.locked?'default':'pointer',fontSize:13,lineHeight:1,padding:'3px 6px',borderRadius:6,transition:'color .15s',fontFamily:'inherit'}}>▼</button>
+                </div>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:32,height:32,borderRadius:9,background:tile.visible!==false?C.green+'18':C.cardAlt,border:`1px solid ${tile.visible!==false?C.green+'33':C.border}`,flexShrink:0}}>
+                  <TileIcon id={tile.id} size={16} color={tile.visible!==false?C.greenBright:C.muted}/>
+                </div>
+                <div style={{flex:1,color:C.cream,fontWeight:600,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",display:'flex',alignItems:'center',gap:8,minWidth:0}}>
+                  <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.label}</span>
+                  {m.alwaysVisible&&<span style={{color:C.gold,fontSize:10,fontWeight:700,flexShrink:0}}>always on</span>}
+                  {tile.locked&&<span style={{color:C.gold,fontSize:10,fontWeight:700,flexShrink:0}}>pinned</span>}
+                </div>
+                <button onClick={()=>setItems(prev=>prev.map(t=>t.id===tile.id?{...t,locked:!t.locked}:t))}
+                  style={{background:'none',border:`1px solid ${tile.locked?C.gold+'55':C.border}`,borderRadius:8,width:36,height:36,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,flexShrink:0,color:tile.locked?C.gold:C.muted,transition:'all .15s'}}>
                   {tile.locked?'🔒':'🔓'}
                 </button>
-                <div onClick={()=>toggle(tile.id)}
-                  style={{width:40,height:22,borderRadius:99,background:tile.visible?C.green:'rgba(255,255,255,0.08)',border:`1px solid ${tile.visible?C.green:C.border}`,position:'relative',cursor:'pointer',transition:'background .2s',flexShrink:0}}>
-                  <div style={{position:'absolute',top:2,left:tile.visible?20:2,width:16,height:16,borderRadius:'50%',background:'white',transition:'left .2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}}/>
-                </div>
+                {!m.alwaysVisible&&(
+                  <div onClick={()=>toggle(tile.id)}
+                    style={{width:44,height:26,borderRadius:99,background:tile.visible!==false?C.green:'rgba(255,255,255,0.09)',border:`1px solid ${tile.visible!==false?C.green:C.border}`,position:'relative',cursor:'pointer',transition:'background .2s',flexShrink:0}}>
+                    <div style={{position:'absolute',top:3,left:tile.visible!==false?21:3,width:18,height:18,borderRadius:'50%',background:'white',transition:'left .2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}}/>
+                  </div>
+                )}
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
         </div>
-        <div style={{padding:'0 0 8px',flexShrink:0}}>
-        <button onClick={save} style={{width:'100%',background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:'none',borderRadius:14,padding:'14px',color:'#fff',fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer',marginTop:8}}>Save Layout</button>
-        <button onClick={()=>{setItems(DASH_TILES.map(t=>({id:t.id,visible:true})));}} style={{width:'100%',background:'none',border:'none',color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer',marginTop:8,padding:'6px'}}>Reset to default</button>
+        <div style={{padding:'12px 16px 20px',flexShrink:0,borderTop:`1px solid ${C.border}`,display:'flex',gap:10}}>
+          <button onClick={()=>setItems(DASH_TILES.map(t=>({id:t.id,visible:true,locked:false})))}
+            style={{flex:1,background:'none',border:`1px solid ${C.border}`,borderRadius:12,padding:'12px',color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer',fontWeight:600}}>
+            Reset
+          </button>
+          <button onClick={save}
+            style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:'none',borderRadius:12,padding:'12px',color:'#021208',fontWeight:800,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer'}}>
+            Save Layout
+          </button>
+        </div>
       </div>
     </div>
   );
 }
-
 // ─── ONBOARDING ───────────────────────────────────────────────────────────────
 function Onboarding({onComplete,onViewLegal,userId}){
   const [step,setStep]=useState(0);
@@ -3246,18 +3492,20 @@ function Onboarding({onComplete,onViewLegal,userId}){
       <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:38,letterSpacing:-1,marginBottom:24,lineHeight:1,background:`linear-gradient(130deg,${C.cream} 30%,rgba(237,233,226,0.65) 100%)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>flourish</div>
 
       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,color:C.green,letterSpacing:3.5,textTransform:"uppercase",fontWeight:700,marginBottom:22,opacity:0.9}}>
-        Money coaching that grows with you
+        Stop guessing. Start knowing.
       </div>
 
       {/* Tagline */}
-      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.muted,fontSize:15,lineHeight:1.85,maxWidth:300,marginBottom:34}}>
-        Know exactly where you stand.<br/>
-        <span style={{color:C.cream,fontWeight:600}}>Before you spend. Not after.</span>
+      <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontSize:26,fontWeight:900,color:C.cream,lineHeight:1.2,maxWidth:300,marginBottom:8,letterSpacing:-0.5}}>
+        Know before<br/>you spend.
+      </div>
+      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.muted,fontSize:14,lineHeight:1.7,maxWidth:280,marginBottom:34}}>
+        One number. Updated daily. Based on your real accounts — not estimates.
       </div>
 
       {/* Feature pills */}
       <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center",marginBottom:36,maxWidth:340}}>
-        {[["","Overdraft warnings"],["","Cash flow forecast"],["","AI coaching"],["","Credit score"],["","Tax credits"],["","Family tools"]].map(([icon,text],i)=>(
+        {[["✓","Know before you spend"],["✓","Overdraft warnings"],["✓","Cash flow forecast"],["✓","AI coaching"],["✓","Tax tips & credits"],["✓","Family tools"]].map(([icon,text],i)=>(
           <div key={i} style={{background:C.isDark?"rgba(255,255,255,0.05)":C.surface,border:`1px solid ${C.border}`,borderRadius:99,padding:"7px 15px",color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:6,animation:`fadeUp 0.4s ease ${100+i*60}ms both`,backdropFilter:"blur(8px)"}}>
             <span style={{fontSize:14}}>{icon}</span>{text}
           </div>
@@ -3268,7 +3516,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
       <button onClick={()=>setStep(1)} style={{background:`linear-gradient(135deg,${C.green} 0%,${C.greenBright} 100%)`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:16,padding:"17px 44px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:`0 0 0 1px ${C.green}22, 0 10px 40px ${C.green}44, inset 0 1px 0 rgba(255,255,255,0.30)`,letterSpacing:0.3,transition:"all .25s cubic-bezier(.16,1,.3,1)"}}
         onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px) scale(1.02)";e.currentTarget.style.boxShadow=`0 0 0 1px ${C.green}33, 0 16px 52px ${C.green}55, inset 0 1px 0 rgba(255,255,255,0.30)`;}}
         onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0) scale(1)";e.currentTarget.style.boxShadow=`0 0 0 1px ${C.green}22, 0 10px 40px ${C.green}44, inset 0 1px 0 rgba(255,255,255,0.30)`;}}>
-        Build My Financial Plan →
+        See What I Can Spend Today →
       </button>
 
       {/* Demo mode — required for App Store review */}
@@ -3532,88 +3780,117 @@ function Onboarding({onComplete,onViewLegal,userId}){
       <div style={{color:C.muted,fontSize:14,marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
         {incomes[0]?.autoDetected
           ? "We detected your income from your transactions. Confirm or adjust below."
-          : "Add every source of income — employment, freelance, benefits, rental, your partner's pay. We map it all."}
+          : "Add every source — employment, freelance, benefits, rental, a partner's income. We map it all against your bills."}
       </div>
-      {incomes.map((inc,i)=>(
-        <div key={inc.id} style={{background:C.card,borderRadius:16,padding:"16px",border:`1px solid ${C.border}`,marginBottom:12}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{inc.label||`Income Source ${i+1}`}</div>
-              {inc.autoDetected&&<span style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px",color:C.greenBright,fontSize:10,fontWeight:700}}>Auto-detected ✓</span>}
-            </div>
-            {incomes.length>1&&<button onClick={()=>setIncomes(incomes.filter(x=>x.id!==inc.id))} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0}}>×</button>}
-          </div>
-          <div style={{marginBottom:10}}>
-            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Label</div>
-            <input value={inc.label} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,label:e.target.value}:x))}
-              placeholder="e.g. Full-time job, Freelance"
-              style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}}/>
-          </div>
-          {/* Variable income — auto flag or manual toggle */}
-          {/* Income amount — single field only. App calculates everything else. */}
-          {inc.autoDetected ? (
-            // Bank connected — show detected amount, allow adjustment
-            <div style={{marginBottom:10}}>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>
-                {inc.isVariable ? "Average Monthly Take-Home" : "Monthly Take-Home (detected)"}
+      {incomes.map((inc,i)=>{
+        const incTypeMeta = {
+          employment:{label:"Full-time Job",emoji:"💼"},
+          selfemployed:{label:"Self-Employed",emoji:"🧾"},
+          cpp:{label:"CPP / Pension",emoji:"🏛️"},
+          ei:{label:"EI Benefits",emoji:"📋"},
+          odsp:{label:"ODSP / Ontario Works",emoji:"♿"},
+          ccb:{label:"Canada Child Benefit",emoji:"👶"},
+          rental:{label:"Rental Income",emoji:"🏠"},
+          gig:{label:"Gig / Freelance",emoji:"🚗"},
+          other:{label:"Other",emoji:"➕"},
+          // US
+          salary:{label:"Salary",emoji:"💼"},
+          hourly:{label:"Hourly",emoji:"⏱️"},
+          ssi:{label:"SSI / Disability",emoji:"♿"},
+          snap:{label:"SNAP / Benefits",emoji:"📋"},
+          investment:{label:"Investment Income",emoji:"📈"},
+        };
+        const meta = incTypeMeta[inc.type] || {label:inc.type,emoji:"💰"};
+        const freqLabel = {weekly:"weekly",biweekly:"every 2 weeks",semimonthly:"twice/month",monthly:"monthly"}[inc.freq]||"";
+        const summaryAmt = parseFloat(inc.amount||inc.typicalAmount||0);
+        return (
+          <div key={inc.id} style={{background:C.card,borderRadius:18,border:`1px solid ${C.border}`,marginBottom:12,overflow:"hidden"}}>
+            {/* Card header */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px 0"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:20}}>{meta.emoji}</span>
+                <div>
+                  <div style={{color:C.cream,fontWeight:700,fontSize:14,lineHeight:1.2}}>{inc.label||meta.label||`Income ${i+1}`}</div>
+                  {summaryAmt>0&&<div style={{color:C.greenBright,fontSize:11,fontWeight:600,marginTop:1}}>${summaryAmt.toLocaleString()} {freqLabel}</div>}
+                </div>
+                {inc.autoDetected&&<span style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px",color:C.greenBright,fontSize:10,fontWeight:700,marginLeft:4}}>Auto ✓</span>}
+                {inc.isVariable&&<span style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:99,padding:"2px 8px",color:C.purpleBright||C.tealBright,fontSize:10,fontWeight:700}}>Variable</span>}
               </div>
-              <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.green}44`,borderRadius:10,overflow:"hidden"}}>
-                <span style={{color:C.muted,padding:"0 10px",fontSize:14}}>$</span>
-                <input value={inc.amount} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,amount:e.target.value,typicalAmount:e.target.value}:x))}
-                  type="number"
-                  style={{flex:1,background:"none",border:"none",padding:"10px 12px 10px 0",color:C.greenBright,fontSize:16,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
-                <span style={{color:C.green,fontSize:11,fontWeight:700,paddingRight:10}}>Auto ✓</span>
-              </div>
-              {inc.isVariable&&<div style={{color:C.muted,fontSize:11,marginTop:6}}>📊 Income varies — we detected your range and will use it for planning.</div>}
+              {incomes.length>1&&<button onClick={()=>setIncomes(incomes.filter(x=>x.id!==inc.id))}
+                style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:20,padding:"0 0 0 8px",lineHeight:1}}>×</button>}
             </div>
-          ) : (
-            // No bank — ask for last paycheque only
-            <div style={{marginBottom:10}}>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Your Last Paycheque (take-home)</div>
-              <div style={{display:"flex",gap:10}}>
-                <div style={{flex:1}}>
-                  <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
-                    <span style={{color:C.muted,padding:"0 10px",fontSize:14}}>$</span>
-                    <input value={inc.amount} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,amount:e.target.value}:x))}
+
+            <div style={{padding:"12px 16px 16px"}}>
+              {/* Step 1 — Income type chips */}
+              <div style={{marginBottom:12}}>
+                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:8}}>Income type</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {(CC[p.country]?.incomeTypes||CC.CA.incomeTypes).map(([val,lbl])=>(
+                    <button key={val} onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,type:val,label:x.label||(incTypeMeta[val]?.label||"")}:x))}
+                      style={{background:inc.type===val?C.green+"22":C.cardAlt,border:`1px solid ${inc.type===val?C.green:C.border}`,color:inc.type===val?C.greenBright:C.muted,borderRadius:99,padding:"6px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:inc.type===val?700:400,transition:"all .15s"}}>{lbl}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Step 2 — Label */}
+              <div style={{marginBottom:12}}>
+                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Label <span style={{color:C.border,textTransform:"none",letterSpacing:0}}>(optional — e.g. "Part-time at Tim's")</span></div>
+                <input value={inc.label} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,label:e.target.value}:x))}
+                  placeholder={meta.label}
+                  style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:14,fontFamily:"inherit",boxSizing:"border-box",outline:"none"}}/>
+              </div>
+
+              {/* Step 3 — Amount + Frequency (always shown for both paths) */}
+              <div style={{marginBottom:12}}>
+                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>
+                  {inc.isVariable ? "Typical paycheque (take-home)" : inc.autoDetected ? "Paycheque amount (take-home)" : "Paycheque amount (take-home)"}
+                </div>
+                <div style={{display:"flex",gap:10}}>
+                  {/* Amount */}
+                  <div style={{flex:1.2,display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${inc.autoDetected?C.green+"66":C.border}`,borderRadius:10,overflow:"hidden"}}>
+                    <span style={{color:C.muted,padding:"0 10px",fontSize:14,flexShrink:0}}>$</span>
+                    <input
+                      value={inc.amount}
+                      onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,amount:e.target.value,typicalAmount:e.target.value}:x))}
                       type="number" placeholder="e.g. 2100"
-                      style={{flex:1,background:"none",border:"none",padding:"10px 12px 10px 0",color:C.cream,fontSize:14,fontFamily:"inherit",outline:"none"}}/>
+                      style={{flex:1,background:"none",border:"none",padding:"11px 10px 11px 0",color:inc.autoDetected?C.greenBright:C.cream,fontSize:15,fontFamily:"inherit",outline:"none",fontWeight:inc.autoDetected?700:400}}/>
+                    {inc.autoDetected&&<span style={{color:C.green,fontSize:10,fontWeight:700,paddingRight:10,flexShrink:0}}>✓</span>}
+                  </div>
+                  {/* Frequency — always shown */}
+                  <div style={{flex:1}}>
+                    <select value={inc.freq} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,freq:e.target.value}:x))}
+                      style={{width:"100%",height:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 10px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}>
+                      <option value="weekly">Weekly</option>
+                      <option value="biweekly">Every 2 weeks</option>
+                      <option value="semimonthly">Twice a month</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
                   </div>
                 </div>
-                <div style={{flex:1}}>
-                  <select value={inc.freq} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,freq:e.target.value}:x))}
-                    style={{width:"100%",height:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}>
-                    <option value="weekly">Weekly</option>
-                    <option value="biweekly">Every 2 weeks</option>
-                    <option value="semimonthly">Twice a month</option>
-                    <option value="monthly">Monthly</option>
-                  </select>
-                </div>
               </div>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:10}}>
-                <div style={{color:C.muted,fontSize:11}}>Income varies month to month?</div>
+
+              {/* Step 4 — Variable toggle */}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:inc.isVariable?C.purple+"11":C.cardAlt,border:`1px solid ${inc.isVariable?C.purple+"44":C.border}`,borderRadius:12,padding:"10px 14px",transition:"all .2s"}}>
+                <div>
+                  <div style={{color:inc.isVariable?C.purpleBright||C.tealBright:C.mutedHi,fontSize:13,fontWeight:600}}>Variable income</div>
+                  <div style={{color:C.muted,fontSize:11,marginTop:1}}>{inc.isVariable?"Amount changes — we'll use your typical paycheque for planning":"Consistent amount every pay period"}</div>
+                </div>
                 <button onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,isVariable:!inc.isVariable}:x))}
-                  style={{width:44,height:24,borderRadius:99,background:inc.isVariable?C.green:C.cardAlt,border:`1px solid ${inc.isVariable?C.green:C.border}`,cursor:"pointer",position:"relative",transition:"all .2s",flexShrink:0}}>
-                  <div style={{position:"absolute",top:2,left:inc.isVariable?22:2,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"all .2s"}}/>
+                  style={{width:46,height:26,borderRadius:99,background:inc.isVariable?C.purple||C.teal:C.cardAlt,border:`1px solid ${inc.isVariable?C.purple||C.teal:C.border}`,cursor:"pointer",position:"relative",transition:"all .2s",flexShrink:0}}>
+                  <div style={{position:"absolute",top:3,left:inc.isVariable?23:3,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"all .2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
                 </button>
               </div>
-              {inc.isVariable&&<div style={{color:C.muted,fontSize:11,marginTop:6,lineHeight:1.5}}>💡 No problem — enter your typical paycheque. We'll use it for planning and adjust as we learn your patterns.</div>}
-            </div>
-          )}
-          <div>
-            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Type</div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              {(CC[p.country]?.incomeTypes||CC.CA.incomeTypes).map(([val,lbl])=>(
-                <button key={val} onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,type:val}:x))}
-                  style={{background:inc.type===val?C.green+"22":C.cardAlt,border:`1px solid ${inc.type===val?C.green:C.border}`,color:inc.type===val?C.greenBright:C.muted,borderRadius:99,padding:"5px 10px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{lbl}</button>
-              ))}
             </div>
           </div>
-        </div>
-      ))}
-      <button onClick={()=>setIncomes([...incomes,{id:Date.now(),label:"",amount:"",freq:"biweekly",type:"employment"}])}
-        style={{width:"100%",background:"none",border:`1px dashed ${C.green}`,borderRadius:14,padding:"12px",color:C.green,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginBottom:14,fontWeight:600}}>
-        + Add Another Income Source
+        );
+      })}
+
+      {/* Add income button — prominent */}
+      <button onClick={()=>setIncomes([...incomes,{id:Date.now(),label:"",amount:"",freq:"biweekly",type:"employment",isVariable:false}])}
+        style={{width:"100%",background:`linear-gradient(135deg,${C.green}18,${C.green}08)`,border:`1px solid ${C.green}66`,borderRadius:14,padding:"14px",color:C.greenBright,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginBottom:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+        <span style={{fontSize:18,lineHeight:1}}>＋</span> Add Another Income Source
       </button>
+
       <div style={{background:C.goldDim,border:`1px solid ${C.gold}44`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
         <div style={{color:C.goldBright,fontSize:13,lineHeight:1.6}}>💡 Include every source — even irregular ones. Flourish maps all income vs. bills to warn you <strong>before</strong> you hit zero.</div>
       </div>
@@ -3630,6 +3907,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
       ):connAccts.some(a=>a.institution!=="Manual")?(
         <div style={{background:C.tealDim,border:`1px solid ${C.teal}33`,borderRadius:14,padding:"12px 16px",marginBottom:14}}>
           <div style={{color:C.tealBright,fontWeight:700,fontSize:13,marginBottom:2}}>✦ Bills will auto-detect</div>
+              <span style={{background:C.gold+"22",border:`1px solid ${C.gold}44`,borderRadius:99,padding:"2px 8px",color:C.goldBright,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"inline-block",marginTop:4}}>Manual · not yet matched to bank</span>
           <div style={{color:C.muted,fontSize:12}}>Your bank is connected. Recurring bills will be detected automatically once your transactions load. You can also add them manually below.</div>
         </div>
       ):(
@@ -4276,8 +4554,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const soonTotal   = _ss.upcomingBills;
   const today       = new Date().getDate();
   const monthlyIncome = FinancialCalcEngine.cashFlow(data).monthlyIncome;
-  const totalDebt=(data.debts||[]).reduce((a,d)=>a+parseFloat(d.balance||0),0);
-  const netWorth=bal+((data?.accounts||[]).filter(a=>a.type==="savings"||a.type==="investment").reduce((s,a)=>s+(a.balance||0),0))-totalDebt;
+  const { netWorth, liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
   // Badge reads live from localStorage so it updates after Notifications marks-read
   const getUnreadCount = () => {
     try {
@@ -4390,6 +4667,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             border:`1px solid ${hasData?(overspend>0?C.red+"33":C.green+"30"):C.gold+"33"}`,
             borderRadius:16,padding:"14px 16px",cursor:"pointer"}}
             onClick={()=>setScreen("coach")}>
+            <div style={{color:C.muted,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📊 Estimate · Based on your setup — connect bank for real numbers</div>
             <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
               <span style={{fontSize:20,flexShrink:0}}>{hasData?(overspend>0?"⚠️":"💡"):"🔗"}</span>
               <div style={{flex:1}}>
@@ -4434,6 +4712,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
 
         {/* ── HERO: Safe to Spend ── full width ─────────────────────────── */}
+        {isVisible('hero')&&(
         <div style={{...anim(60),cursor:"pointer",position:"relative",overflow:"hidden",borderRadius:28,
           background:overdraftImmediate
             ?(C.isDark?"linear-gradient(155deg,rgba(24,6,16,0.92) 0%,rgba(32,8,16,0.85) 45%,rgba(12,5,10,0.90) 100%)":"linear-gradient(155deg,rgba(255,240,244,0.96) 0%,rgba(255,232,238,0.94) 45%,rgba(244,241,235,0.96) 100%)")
@@ -4453,8 +4732,10 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           <div style={{position:"relative",padding:"24px 24px 20px"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
               <div style={{width:6,height:6,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 10px ${heroColor}`,animation:"pulse 2.5s ease-in-out infinite"}}/>
-              <span style={{color:heroColorBright+"99",fontSize:9,textTransform:"uppercase",letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Today's Safe Limit</span>
-              {data.bankConnected&&<span style={{color:heroColorBright+"55",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· live</span>}
+              <span style={{color:heroColorBright+"99",fontSize:9,textTransform:"uppercase",letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Spend up to this — stress-free</span>
+              {data.bankConnected
+                ? <span style={{color:heroColorBright+"55",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· live</span>
+                : <span style={{color:C.gold+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· estimated</span>}
             </div>
             <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.88,marginBottom:18,position:"relative",display:"inline-block"}}>
               <span style={{fontSize:24,color:heroColorBright+"77",verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
@@ -4499,17 +4780,28 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                   </div>
                 </div>
               );
-              // Proof: max 2 parts — balance + biggest deduction. Scannable, not a math lesson.
-              const balLabel = totalBalance!=null ? `$${totalBalance.toFixed(0)} balance` : `~$${(bal||0).toFixed(0)}`;
-              const bigDeduct = billsTotal > bufferAmt
-                ? (billsTotal > 0 ? `$${billsTotal.toFixed(0)} in bills` : null)
-                : (bufferAmt > 0 ? `$${bufferAmt.toFixed(0)} safety buffer` : null);
-              const proofLine = bigDeduct ? `${balLabel} · minus ${bigDeduct}` : balLabel;
+              // Full breakdown — 4 lines, tap-to-see or always visible
+              const avgSpend = FinancialCalcEngine.avgDailySpend(data);
+              const spendReserve = Math.round(avgSpend * 10);
+              const breakdownRows = [
+                {label: totalBalance!=null ? "In your accounts" : "Est. balance", value: `$${(totalBalance||bal||0).toFixed(0)}`, sign: "", color: heroColorBright+"99"},
+                ...(billsTotal>0 ? [{label:"Upcoming bills", value:`$${billsTotal.toFixed(0)}`, sign:"−", color:C.gold+"CC"}] : []),
+                ...(spendReserve>0 ? [{label:"Expected spending", value:`$${spendReserve.toFixed(0)}`, sign:"−", color:heroColorBright+"66"}] : []),
+                {label:"Buffer (15%)", value:`$${bufferAmt.toFixed(0)}`, sign:"−", color:heroColorBright+"44"},
+              ];
               return (
                 <div style={{marginBottom:14}}>
-                  <div style={{color:heroColorBright+"66",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2,lineHeight:1.5}}>
-                    {proofLine} → <strong style={{color:heroColorBright+"99"}}>${Math.max(0,safe).toFixed(0)} today</strong>
+                  {breakdownRows.map((r,i)=>(
+                    <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"2px 0"}}>
+                      <span style={{color:heroColorBright+"55",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign} {r.label}</span>
+                      <span style={{color:r.color,fontSize:10,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.value}</span>
+                    </div>
+                  ))}
+                  <div style={{borderTop:`1px solid ${heroColor}22`,marginTop:5,paddingTop:5,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{color:heroColorBright+"88",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>= Safe to spend</span>
+                    <span style={{color:heroColorBright,fontSize:13,fontWeight:900,fontFamily:"'Playfair Display',serif"}}>${Math.max(0,safe).toFixed(0)}</span>
                   </div>
+                  {!data.bankConnected&&<div style={{color:C.gold+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>📊 Estimated · Connect bank for real numbers</div>}
                 </div>
               );
             })()}
@@ -4677,8 +4969,10 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             </div>}
           </div>
         </div>
+        )}
 
         {/* ── BENTO ROW 1: 3 mini stat tiles inside 2-col span ──────────── */}
+        {isVisible('bento')&&(
         <div style={{...anim(110),display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
           {[
             {label:"Due Soon",value:`$${(soonTotal||0).toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
@@ -4698,8 +4992,10 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             </div>
           ))}
         </div>
+        )}
 
         {/* ── HEALTH + STREAK — 2-col row ─────────────────────────────────── */}
+        {isVisible('healthrow')&&(
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
         <div style={{...anim(140),...glass(scoreBase),borderRadius:24,padding:"18px 16px 16px",position:"relative",overflow:"hidden"}}>
           <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at 0% 100%,${scoreBase}18 0%,transparent 65%)`,pointerEvents:"none"}}/>
@@ -4724,7 +5020,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         </div>
 
         {/* ── STREAK + GOALS — right tile ───────────────────────────────── */}
-        <div style={{...anim(140),...glass(C.gold),borderRadius:24,padding:"18px 16px 16px",position:"relative",overflow:"hidden",cursor:"pointer"}} onClick={()=>setScreen("goals")}>
+        <div style={{...anim(140),...glass(C.gold),borderRadius:24,padding:"18px 16px 16px",position:"relative",overflow:"hidden",cursor:"pointer"}} onClick={()=>{if(setGoalsTab)setGoalsTab("goals");setScreen("goals");}}>
           <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at 100% 0%,${C.gold}14 0%,transparent 60%)`,pointerEvents:"none"}}/>
           <div style={{position:"relative"}}>
             <div style={{...label11(C.muted),marginBottom:10}}>Savings Streak</div>
@@ -4748,8 +5044,10 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           </div>
         </div>
 
-        </div>{/* end health+streak 2-col */}
+        </div>
+        )}
         {/* ── SINGLE VOICE: priority-filtered action tile ──────────────────
+        {isVisible('action')&&(
             Only ONE system speaks at a time. Priority order:
             0. Income not set / suspiciously high → data quality, affects everything
             1. Overdraft risk (from forecast)     → urgent, act now
@@ -4832,7 +5130,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         })()}
 
         {/* ── NET WORTH SPARKLINE — full width ──────────────────────────── */}
-        {isVisible('networth')&&<div style={{...anim(190),...tileStyle('networth'),...glass(C.teal),borderRadius:22,padding:"18px 20px 16px"}}>
+        {isVisible('networth')&&<div onClick={()=>{setScreen("goals");if(setGoalsTab)setGoalsTab("worth");}} style={{...anim(190),...tileStyle('networth'),...glass(C.teal),borderRadius:22,padding:"18px 20px 16px",cursor:"pointer"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
             <div>
               <div style={{...label11(C.muted),marginBottom:4}}>Net Worth Trend</div>
@@ -5424,12 +5722,12 @@ function PlanAhead({data, setAppData, setScreen}){
                 {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.muted,fontSize:11}}>Opening balance</span><span style={{color:C.muted,fontSize:11}}>${(prevBalance||0).toFixed(0)}</span></div>}
                 {day.income>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>💰 Paycheck</span><span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+${(day.income||0).toFixed(0)}</span></div>}
                 {day.bills.map((b,j)=><div key={j} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>📅 {b.name}</span><span style={{color:C.gold,fontWeight:700,fontSize:12}}>−${parseFloat(b.amount||0).toFixed(0)}</span></div>)}
-                {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>🛒 Est. daily spend <span style={{color:C.muted,fontSize:9}}>(30d avg)</span></span><span style={{color:C.muted,fontSize:12}}>−${(avgDailySpend*0.8).toFixed(0)}</span></div>}
+                {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>🛒 Est. daily spend <span style={{color:C.muted,fontSize:9}}>(30d avg)</span></span><span style={{color:C.muted,fontSize:12}}>−${(avgDailySpend).toFixed(0)}</span></div>}
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${C.border}`,paddingTop:8,marginTop:4}}>
-                  <span style={{color:C.cream,fontWeight:700,fontSize:13}}>{isToday?"Current balance":"Projected balance"}</span>
+                  <span style={{color:C.cream,fontWeight:700,fontSize:13}}>{isToday?"Current balance":"Projected balance (est.)"}</span>
                   <span style={{color:neg?C.redBright:low?C.goldBright:C.greenBright,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{neg?"−":""}${Math.abs(day.balance||0).toFixed(0)}</span>
                 </div>
-                {day.idx>0&&<div style={{marginTop:6,color:C.muted,fontSize:10,lineHeight:1.7}}>${(prevBalance||0).toFixed(0)}{day.income>0&&<span style={{color:C.green}}> +${(day.income||0).toFixed(0)}</span>}{billsTotal>0&&<span style={{color:C.gold}}> −${billsTotal.toFixed(0)} bills</span>}<span style={{color:C.muted}}> −${(avgDailySpend*0.8).toFixed(0)} spend</span><span style={{color:neg?C.redBright:C.greenBright}}> = ${(day.balance||0).toFixed(0)}</span></div>}
+                {day.idx>0&&<div style={{marginTop:6,color:C.muted,fontSize:10,lineHeight:1.7}}>${(prevBalance||0).toFixed(0)}{day.income>0&&<span style={{color:C.green}}> +${(day.income||0).toFixed(0)}</span>}{billsTotal>0&&<span style={{color:C.gold}}> −${billsTotal.toFixed(0)} bills</span>}<span style={{color:C.muted}}> −${(avgDailySpend).toFixed(0)} spend</span><span style={{color:neg?C.redBright:C.greenBright}}> = ${(day.balance||0).toFixed(0)}</span></div>}
               </div>
             )}
           </div>
@@ -5444,7 +5742,7 @@ function AddCustomCategory({onAdd}){
   const [show,setShow]=useState(false);
   const [val,setVal]=useState("");
   // Quick preset categories people commonly need
-  const QUICK_CATS = ["Business","Reimbursement","GrowSmart","Family","Medical","Gym","Pet","Gifts"];
+  const QUICK_CATS = ["Business","Reimbursement","Family","Medical","Gym","Pet","Gifts","Education"];
   const save=(name)=>{
     const n = (name||val).trim();
     if(!n) return;
@@ -5681,7 +5979,6 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
                 )}
               </>);
             })()}
-          }
         </div>
       )}
     </Card>
@@ -5708,75 +6005,109 @@ const BUDGET_CAT_META = {
 };
 
 function generateBudgetSuggestions(data) {
-  const profile  = data.profile || {};
-  const country  = profile.country || "CA";
-  const isCA     = country === "CA";
-  const _toMo    = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:a; };
-  const grossMo  = (data.incomes||[]).reduce((s,i)=>s+_toMo(i.amount,i.freq),0)||3000;
-  // Tax estimate — bracket-based approximation
-  const taxRate  = isCA
+  const profile   = data.profile || {};
+  const isCA      = (profile.country||"CA") === "CA";
+  const _toMo     = (amt,freq) => {
+    const a = parseFloat(amt||0);
+    return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a;
+  };
+
+  // ── Income ──────────────────────────────────────────────────────────
+  const grossMo   = (data.incomes||[]).reduce((s,i)=>s+_toMo(i.amount,i.freq),0)||0;
+  const taxRate   = isCA
     ? (grossMo>10000?0.35:grossMo>6000?0.30:grossMo>3500?0.25:0.18)
     : (grossMo>8000?0.30:grossMo>5000?0.24:grossMo>3000?0.20:0.15);
-  const netMo    = grossMo*(1-taxRate);
-  const billsMo  = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
-  const debtsMo  = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.min||0),0);
-  const fixedMo  = billsMo+debtsMo;
-  // Savings target: 15–20% of net. Lower earners: 10%. Use for display only.
+  const netMo     = Math.round(grossMo*(1-taxRate));
+
+  // ── Fixed commitments (auto-filled from bills + debt minimums) ──────
+  const billsMo   = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
+  const debtsMo   = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.min||0),0);
+  const fixedMo   = Math.round(billsMo+debtsMo);
+
+  // ── Savings ─────────────────────────────────────────────────────────
   const savingsRate = netMo < 2500 ? 0.10 : netMo < 5000 ? 0.15 : 0.20;
   const savingsMo   = Math.round(netMo * savingsRate);
-  // Discretionary = what's left after fixed bills and savings target
-  const discret  = Math.max(200, netMo - fixedMo - savingsMo);
+
+  // ── Goal savings ─────────────────────────────────────────────────────
+  const goalsMo   = (data.goals||[])
+    .filter(g=>parseFloat(g.target||0)>parseFloat(g.saved||0))
+    .reduce((s,g)=>{
+      const remaining = parseFloat(g.target||0)-parseFloat(g.saved||0);
+      const mo = parseFloat(g.monthly||0);
+      return s+(mo>0?mo:remaining>0?Math.ceil(remaining/24):0);
+    },0);
+
+  // ── Discretionary pool ──────────────────────────────────────────────
+  const discret   = Math.max(0, netMo - fixedMo - savingsMo - goalsMo);
+
+  // ── Household context ────────────────────────────────────────────────
   const hasPartner = profile.status==="couple"||profile.status==="cohabit";
-  const numKids  = (profile.kids||[]).length||(profile.hasKids?1:0);
-  const hSize    = 1+(hasPartner?1:0)+numKids;
-  // Build per-category actuals from last ~90 days of transactions
-  const IGNORE   = new Set(["Income","Transfer","Bills","Utilities"]);
-  const txns     = (data.transactions||[]).filter(t=>t.amount>0&&!IGNORE.has(t.cat));
-  const actuals  = {};
-  if(txns.length>0){
-    const dates = txns.map(t=>new Date((t.date||"2025-01-01")+"T12:00:00")).filter(d=>!isNaN(d.getTime()));
-    const oldestMs = dates.length ? Math.min(...dates.map(d=>d.getTime())) : Date.now()-90*86400000;
-    const months = Math.max(1,Math.min(3,(Date.now()-oldestMs)/(30*24*3600*1000)));
-    txns.forEach(t=>{ actuals[t.cat]=(actuals[t.cat]||0)+t.amount; });
-    Object.keys(actuals).forEach(k=>{ actuals[k]=actuals[k]/months; });
+  const numKids    = (profile.kids||[]).length||(profile.hasKids?1:0);
+  const hSize      = 1+(hasPartner?1:0)+numKids;
+
+  // ── Situation-based benchmarks — NEVER blended with history ──────────
+  // All amounts are reasonable targets for this household, scaled to discret pool.
+  // Priority: Needs first (Groceries, Transport, Health), then Wants.
+  const r = (v) => Math.max(10, Math.round(v/5)*5); // round to nearest $5
+
+  const suggestions = {};
+
+  // NEEDS — always included
+  suggestions["Groceries"]       = r((isCA?280:250)*hSize);
+  suggestions["Gas & Transport"] = r(isCA?(numKids?250:180):(numKids?220:160));
+  suggestions["Health"]          = r(Math.min((isCA?55:110)*hSize, isCA?200:400));
+
+  // WANTS — scaled to what's actually available after needs
+  const needsTotal = Object.values(suggestions).reduce((s,v)=>s+v,0);
+  const wantsPool  = Math.max(0, discret - needsTotal);
+
+  suggestions["Coffee & Dining"] = r(Math.max(60, wantsPool*(numKids?0.10:0.14)));
+  suggestions["Clothing"]        = r(Math.max(30, (isCA?55:50)*hSize*(numKids?1.2:1)));
+  suggestions["Personal Care"]   = r(hasPartner?90:55);
+  suggestions["Shopping"]        = r(Math.max(30, wantsPool*(hasPartner?0.09:0.07)));
+  suggestions["Entertainment"]   = r(Math.max(30, wantsPool*(numKids?0.05:0.08)));
+  suggestions["Subscriptions"]   = r(hSize<=2?45:65);
+  if(numKids>0) suggestions["Kids & Extracurricular"] = r(numKids*(isCA?165:180));
+
+  const totalSugg  = Object.values(suggestions).reduce((s,v)=>s+v,0);
+  const canAfford  = totalSugg <= discret;
+  const shortfall  = Math.max(0, totalSugg - discret);
+
+  // ── Cut suggestions — priority order if over budget ─────────────────
+  // 1. Subscriptions (easiest, most painless)
+  // 2. Entertainment
+  // 3. Coffee & Dining
+  // 4. Shopping
+  // 5. Personal Care
+  // 6. Groceries (reduce, don't eliminate)
+  const CUT_PRIORITY = [
+    "Subscriptions","Entertainment","Coffee & Dining","Shopping",
+    "Personal Care","Groceries","Clothing","Hobbies & Sports"
+  ];
+  const cutSuggestions = [];
+  if(!canAfford) {
+    let remaining = shortfall;
+    for(const cat of CUT_PRIORITY) {
+      if(remaining <= 0) break;
+      const current = suggestions[cat]||0;
+      if(!current) continue;
+      // How much can realistically be cut from this category?
+      const maxCut = cat==="Groceries" ? Math.floor(current*0.15)   // max 15% off groceries
+                   : cat==="Personal Care" ? Math.floor(current*0.3)
+                   : Math.floor(current*0.5); // up to 50% off wants
+      const cut = Math.min(remaining, maxCut);
+      if(cut >= 5) {
+        cutSuggestions.push({cat, current, suggested: r(current-cut), saving: cut});
+        remaining -= cut;
+      }
+    }
   }
-  // Blend: actual close → 55/45 mix; way over → actual+5%; way under → benchmark×0.85
-  const blendAmt = (benchmark, cat, tol=0.45) => {
-    const actual = actuals[cat]||0;
-    let v;
-    if(!actual)                          v = benchmark;
-    else if(actual > benchmark*(1+tol))  v = actual*1.05;
-    else if(actual < benchmark*(1-tol))  v = benchmark*0.85;
-    else                                 v = benchmark*0.55+actual*0.45;
-    return Math.max(10, Math.round(v/5)*5);
+
+  return {
+    suggestions, netMo, grossMo, fixedMo, billsMo, debtsMo,
+    savingsMo, savingsRate, goalsMo, discret, wantsPool,
+    hSize, numKids, hasPartner, totalSugg, canAfford, shortfall, cutSuggestions
   };
-  const sugg = {};
-  // ── Needs ──────────────────────────────────────────────────────
-  sugg["Groceries"]         = blendAmt((isCA?310:275)*hSize, "Groceries");
-  sugg["Gas & Transport"]   = blendAmt(isCA?(numKids>0?260:190):(numKids>0?230:170), "Gas & Transport");
-  sugg["Health"]            = blendAmt(Math.min(isCA?60*hSize:120*hSize, isCA?220:450), "Health");
-  // ── Wants ──────────────────────────────────────────────────────
-  sugg["Coffee & Dining"]   = blendAmt(Math.max(75, discret*(numKids>0?0.10:0.13)), "Coffee & Dining");
-  sugg["Shopping"]          = blendAmt(Math.max(50, discret*0.07*(hasPartner?1.3:1)), "Shopping");
-  sugg["Clothing"]          = blendAmt(Math.max(40, (isCA?65:60)*hSize*(numKids>0?1.3:1)), "Clothing");
-  sugg["Subscriptions"]     = blendAmt(hSize<=2?55:75, "Subscriptions", 0.9);
-  sugg["Personal Care"]     = blendAmt(hasPartner?110:65, "Personal Care");
-  sugg["Entertainment"]     = blendAmt(Math.max(40, discret*(numKids>0?0.05:0.07)), "Entertainment");
-  sugg["Hobbies & Sports"]  = blendAmt(Math.max(40, discret*(numKids>0?0.04:0.07)*(hasPartner?1.4:1)), "Hobbies & Sports");
-  if(numKids>0) sugg["Kids & Extracurricular"] = blendAmt(numKids*(isCA?185:205), "Kids & Extracurricular", 0.8);
-  // ── Any real actuals not yet covered ───────────────────────────
-  const covered = new Set(Object.keys(sugg));
-  Object.entries(actuals).forEach(([cat,amt])=>{
-    if(!covered.has(cat)&&amt>15) sugg[cat]=Math.round(amt*1.05/5)*5;
-  });
-  // Keep essentials always; others only if user has actual spending in them
-  const essential = new Set(["Groceries","Gas & Transport","Health","Clothing"]);
-  const filtered  = {};
-  Object.entries(sugg).forEach(([cat,amt])=>{
-    if(essential.has(cat)||actuals[cat]) filtered[cat]=amt;
-  });
-  const totalSugg = Object.values(filtered).reduce((s,v)=>s+v,0);
-  return { suggestions:filtered, netMo, fixedMo, discret, savingsMo, savingsRate, hSize, numKids, totalSugg };
 }
 
 // ─── BUDGET PLAN CARD ────────────────────────────────────────────────────────
@@ -5849,16 +6180,20 @@ function BudgetPlanCard({data, setAppData}) {
     "Kids & Extracurricular":"🧒","Kids & Activities":"🧒",
     "Travel":"✈️","Home":"🏠","Education":"📚"};
 
-  // Compute current-month spending vs budget for summary strip
-  // Apply catOverrides so recategorised transactions count correctly
-  const catOverrides = (() => { try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");}catch{return {};} })();
+
+  // Current-month spending per budget category — excludes bill categories and CC payments
+  const catOverrides = (()=>{ try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}")}catch{return{}} })();
   const now = new Date();
   const monthTxns = (data.transactions||[]).filter(t=>{
     try{const d=new Date(t.date+"T12:00:00");return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()&&t.amount>0;}catch{return false;}
   });
   const monthSpend = {};
-  monthTxns.forEach(t=>{ const cat=catOverrides[t.id]||t.cat; monthSpend[cat]=(monthSpend[cat]||0)+t.amount; });
-  const overBudgetCats = Object.entries(existingBudgets).filter(([cat,limit])=>(monthSpend[cat]||0)>limit);
+  monthTxns.forEach(t=>{
+    const cat=catOverrides[t.id]||t.cat;
+    if(!NON_SPEND_CATS.has(cat)&&!CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))){
+      monthSpend[cat]=(monthSpend[cat]||0)+t.amount;
+    }
+  });
   const totalBudgeted = Object.values(existingBudgets).reduce((s,v)=>s+v,0);
   const totalSpentThisMonth = Object.entries(existingBudgets).reduce((s,[cat])=>s+(monthSpend[cat]||0),0);
   const budgetUsedPct = totalBudgeted>0 ? Math.min(100,Math.round(totalSpentThisMonth/totalBudgeted*100)) : 0;
@@ -6049,6 +6384,7 @@ function BudgetPlanCard({data, setAppData}) {
 }
 
 function SpendScreen({data, setAppData, setScreen}){
+  const isDesktop = window.innerWidth >= 960;
   // ── ALL HOOKS FIRST — no non-hook code before the last hook (TDZ prevention) ──
   const [tab,setTab]=useState("txn");
   const [catFilter,setCatFilter]=useState("All");
@@ -6057,7 +6393,7 @@ function SpendScreen({data, setAppData, setScreen}){
   const [accountFilter,setAccountFilter]=useState("All");
   const [recatTxn,setRecatTxn]=useState(null);
   const [markBillTxn,setMarkBillTxn]=useState(null);
-  const [billForm,setBillForm]=useState({name:"",amount:"",date:"1"});
+  const [billForm,setBillForm]=useState({name:"",amount:"",date:"1",type:"fixed",category:"Bills"});
   const [arrearsPayTxn,setArrearsPayTxn]=useState(null);
   const [applyAllPrompt, setApplyAllPrompt] = useState(null);
   const [showAllBdCats, setShowAllBdCats] = useState(false);
@@ -6079,7 +6415,6 @@ function SpendScreen({data, setAppData, setScreen}){
   const recat = (txn, newCat, applyToAll=false) => {
     const overrides = JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
     if(applyToAll) {
-      // Apply to every transaction from the same merchant
       const merchantKey = (txn.name||"").toLowerCase().trim();
       const updated = {...overrides};
       txns.forEach(t => {
@@ -6089,6 +6424,20 @@ function SpendScreen({data, setAppData, setScreen}){
     } else {
       const updated = {...overrides, [txn.id]: newCat};
       localStorage.setItem("flourish_cat_overrides", JSON.stringify(updated));
+    }
+    // Auto-link: if this vendor matches a bill's name, store in vendorBillMap
+    const merchantKey = (txn.name||"").toLowerCase().trim();
+    if(merchantKey.length >= 3 && setAppData) {
+      const matchedBill = (data.bills||[]).find(b =>
+        merchantKey.includes((b.name||"").toLowerCase().trim().substring(0,5)) ||
+        (b.name||"").toLowerCase().trim().includes(merchantKey.substring(0,8))
+      );
+      if(matchedBill) {
+        setAppData(prev => ({
+          ...prev,
+          vendorBillMap: {...(prev.vendorBillMap||{}), [merchantKey]: matchedBill.name}
+        }));
+      }
     }
     setRecatTxn(null);
     setApplyAllPrompt(null);
@@ -6154,15 +6503,16 @@ function SpendScreen({data, setAppData, setScreen}){
   const acctFiltered = accountFilter==="All" ? displayTxns : displayTxns.filter(t=>t.account_id===accountFilter);
   const filtered=catFilter==="All"
     ? acctFiltered.filter(t=>{
+        if(isCCPayment(t,data.debts||[])) return false; // CC payments are balance sheet events — hide from list
         const cat=getCat(t);
-        if(cat==="Transfer") return t.amount<0; // show incoming transfers (e-transfers in), hide outgoing
+        if(cat==="Transfer") return t.amount<0; // show incoming (e-transfers in), hide outgoing
         return true;
       })
     : catFilter==="Received"
       ? acctFiltered.filter(t=>getCat(t)==="Transfer"&&t.amount<0)
-      : acctFiltered.filter(t=>getCat(t)===catFilter);
+      : acctFiltered.filter(t=>getCat(t)===catFilter&&!isCCPayment(t,data.debts||[]));
   const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCCPayment(t,data.debts||[])).reduce((a,t)=>a+t.amount,0);
-  const totalIn=acctFiltered.filter(t=>t.amount<0).reduce((a,t)=>a+Math.abs(t.amount),0);
+  const totalIn=acctFiltered.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
 
   const cuts=[
     stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee is adding up",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month totalling $${stats.coffee.toFixed(2)}. That's $${(stats.coffee*12).toFixed(0)}/year. Making coffee at home 4 days a week cuts this by 60%.`,saving:`$${Math.round(stats.coffee*0.6)}/mo`,effort:"Low",color:C.orange},
@@ -6220,9 +6570,35 @@ function SpendScreen({data, setAppData, setScreen}){
                 </select>
               </div>
             </div>
+            {/* Fixed / Variable toggle */}
+            <div style={{marginBottom:12}}>
+              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Bill Type</div>
+              <div style={{display:"flex",gap:8}}>
+                {[["fixed","📌 Fixed","Same every month"],["variable","🔄 Variable","Changes monthly"]].map(([val,label,hint])=>(
+                  <button key={val} onClick={()=>setBillForm(v=>({...v,type:val}))}
+                    style={{flex:1,background:billForm.type===val?C.teal+"22":C.card,border:`1px solid ${billForm.type===val?C.teal:C.border}`,
+                      borderRadius:10,padding:"9px 10px",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+                    <div style={{color:billForm.type===val?C.tealBright:C.cream,fontWeight:700,fontSize:12}}>{label}</div>
+                    <div style={{color:C.muted,fontSize:10,marginTop:2}}>{hint}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Reports-under category */}
+            <div style={{marginBottom:14}}>
+              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Reports under (in Budget)</div>
+              <select value={billForm.category||"Other Bills"} onChange={e=>setBillForm(v=>({...v,category:e.target.value}))}
+                style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",
+                  color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}>
+                {["Housing","Utilities","Phone & Internet","Insurance","Subscriptions","Transportation","Health","Education","Other Bills"].map(c=>(
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <div style={{color:C.muted,fontSize:10,marginTop:4}}>Keeps bills separate from your discretionary spending budget.</div>
+            </div>
             <div style={{background:C.teal+"12",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",marginBottom:16}}>
               <div style={{color:C.tealBright,fontSize:12,fontWeight:600}}>💡 This will also update your cash-flow forecast</div>
-              <div style={{color:C.muted,fontSize:11,marginTop:2}}>Your Plan screen will now include ${billForm.amount}/month on the {billForm.date}{([11,12,13].includes(parseInt(billForm.date))?"th":["st","nd","rd"][parseInt(billForm.date||0)%10-1]||"th")}.</div>
+              <div style={{color:C.muted,fontSize:11,marginTop:2}}>Your Plan screen will now include ${billForm.amount}/month on the {billForm.date ? billForm.date+"th" : ""}</div>
             </div>
             <div style={{display:"flex",gap:10}}>
               <button
@@ -6233,15 +6609,23 @@ function SpendScreen({data, setAppData, setScreen}){
                     const billName = billForm.name.trim().toLowerCase();
                     const alreadyExists = (data.bills||[]).some(b=>b.name.trim().toLowerCase()===billName);
                     if(!alreadyExists){
-                      setAppData(prev=>({...prev,bills:[...(prev.bills||[]),{name:billForm.name.trim(),amount:billForm.amount,date:billForm.date}]}));
-                    } // end if(!alreadyExists)
-                    // Also recategorise the transaction as Bills
+                      const newBill = {name:billForm.name.trim(),amount:billForm.amount,date:billForm.date,
+                        type:billForm.type||"fixed",category:billForm.category||"Other Bills",
+                        vendorPattern:(markBillTxn?.name||"").toLowerCase().trim()};
+                      const merchantKey = (markBillTxn?.name||"").toLowerCase().trim();
+                      setAppData(prev=>({...prev,
+                        bills:[...(prev.bills||[]),newBill],
+                        vendorBillMap:{...(prev.vendorBillMap||{}),...(merchantKey?{[merchantKey]:newBill.name}:{})}}));
+                    }
+                    // Categorise transaction under bill's category (not generic "Bills")
+                    const billCat = billForm.category||"Other Bills";
                     const overrides=JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
-                    localStorage.setItem("flourish_cat_overrides",JSON.stringify({...overrides,[markBillTxn.id]:"Bills"}));
+                    localStorage.setItem("flourish_cat_overrides",JSON.stringify({...overrides,[markBillTxn.id]:billCat}));
                   }
-                  setMarkBillTxn(null);setBillForm({name:"",amount:"",date:"1"});
+                  setMarkBillTxn(null);setBillForm({name:"",amount:"",date:"1",type:"fixed",category:"Bills"});
                 }}
-                style={{flex:1,background:billForm.name&&billForm.amount?C.green:"rgba(255,255,255,0.08)",border:"none",borderRadius:12,padding:"13px",color:"#fff",fontWeight:800,fontSize:14,cursor:billForm.name&&billForm.amount?"pointer":"default",fontFamily:"inherit",opacity:!billForm.name||!billForm.amount?0.4:1}}>
+                style={{flex:1,background:billForm.name&&billForm.amount?C.green:"rgba(255,255,255,0.08)",border:"none",
+                  borderRadius:12,padding:"13px",color:billForm.name&&billForm.amount?"#041810":C.muted,fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
                 Add to Bills ✓
               </button>
               <button onClick={()=>setMarkBillTxn(null)}
@@ -6370,7 +6754,7 @@ function SpendScreen({data, setAppData, setScreen}){
                 <div style={{color:C.muted,fontSize:11,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:240}}>{recatTxn.name}</div>
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
-                {setAppData&&recatTxn.amount>0&&<button onClick={()=>{
+                {setAppData&&recatTxn.amount>0&&!isCCPayment(recatTxn,data.debts||[])&&<button onClick={()=>{
                   const day=recatTxn.date?new Date(recatTxn.date+"T12:00:00").getDate():new Date().getDate();
                   setBillForm({name:recatTxn.name,amount:(recatTxn.amount||0).toFixed(2),date:String(day)});
                   setMarkBillTxn(recatTxn);setRecatTxn(null);
@@ -6479,20 +6863,26 @@ function SpendScreen({data, setAppData, setScreen}){
           )}
         </div>
       )}
-      {filtered.map(txn=>(
-        <div key={txn.id} style={{background:C.card,borderRadius:18,padding:"14px 16px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:13,transition:"all .2s",cursor:"default"}}
+      {filtered.map(txn=>{
+        const effCat = getCat(txn);
+        const { emoji: txnEmoji, color: txnDispColor } = getCatDisplay(effCat);
+        return (
+        <div key={txn.id} style={{background:C.card,borderRadius:18,padding:"14px 16px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12,cursor:"default",transition:"all .15s"}}
           onMouseEnter={e=>{e.currentTarget.style.borderColor=C.borderHi;e.currentTarget.style.background=C.isDark?C.cardAlt:C.surface;}}
           onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.card;}}>
-          <div style={{width:42,height:42,borderRadius:14,background:txn.color+"18",border:`1px solid ${txn.color}28`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon id={txnIcon(txn)} size={19} color={txn.color} strokeWidth={1.5}/></div>
+          <div style={{width:42,height:42,borderRadius:14,background:txnDispColor+"18",border:`1px solid ${txnDispColor}28`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>
+            {txn.logo&&<img src={txn.logo} alt="" style={{width:28,height:28,borderRadius:8,objectFit:"contain"}} onError={e=>{e.target.style.display="none";}}/>}
+            {!txn.logo&&<span>{txnEmoji}</span>}
+          </div>
           <div style={{flex:1,minWidth:0}}>
             <div style={{color:C.cream,fontWeight:600,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txn.name}</div>
             <div style={{display:"flex",gap:6,marginTop:3,alignItems:"center"}}>
-              <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.amount<0?C.green+"18":txn.color+"18",border:`1px solid ${txn.amount<0?C.green+"33":txn.color+"33"}`,borderRadius:99,padding:"2px 8px",color:txn.amount<0?C.greenBright:txn.color,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
+              <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.amount<0?C.green+"18":txnDispColor+"18",border:`1px solid ${txn.amount<0?C.green:txnDispColor}33`,borderRadius:99,padding:"2px 8px",color:txn.amount<0?C.greenBright:txnDispColor,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
                 {txn.amount<0&&getCat(txn)==="Transfer"?"Received ↓ tap to label":getCat(txn)} <span style={{opacity:0.6,fontSize:9}}>✎</span>
               </button>
               <span style={{color:C.muted,fontSize:10}}>{txn.date}</span>
               {txn.account_id&&accountFilter==="All"&&accountMap[txn.account_id]&&(
-                <span style={{color:C.muted,fontSize:9,background:"rgba(255,255,255,0.04)",borderRadius:99,padding:"1px 7px",border:`1px solid ${C.border}`,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                <span style={{color:C.muted,fontSize:9,background:"rgba(255,255,255,0.04)",borderRadius:99,padding:"1px 7px",border:`1px solid ${C.border}`}}>
                   {accountMap[txn.account_id]?.name||"Bank"}
                 </span>
               )}
@@ -6503,15 +6893,16 @@ function SpendScreen({data, setAppData, setScreen}){
             <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
               {txn.amount<0?"+":"–"}${Math.abs(txn.amount).toFixed(2)}
             </div>
-            {txn.amount<0&&<div style={{color:C.greenBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>received</div>}
+            {txn.amount<0&&(isCashAdvance(txn)?<div style={{color:C.redBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>⚠️ CASH ADVANCE</div>:<div style={{color:C.greenBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>{getCat(txn)==="Transfer"?"RECEIVED":"INCOME"}</div>)}
           </div>
         </div>
-      ))}
+        );
+      })}
     </>}
     {tab==="breakdown"&&<>
       {(()=>{
         // Breakdown uses the same period-filtered set as the Transactions tab
-        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCCPayment(t,data.debts||[]));
+        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&getCat(t)!=="Fees"&&!isCCPayment(t,data.debts||[]));
         const bdIn   = acctFiltered.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
         const bdTotal= bdTxns.reduce((s,t)=>s+t.amount,0);
         const bdByCat= {};
@@ -6615,14 +7006,12 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
   const saved=base.months-curr.months,intSaved=base.interest-curr.interest;
   const toYM=(m)=>{if(m>=600)return"Never";const y=Math.floor(m/12),mo=m%12;return y>0?`${y}y ${mo}m`:`${mo}mo`;};
   const payoffDate=()=>{const d=new Date();d.setMonth(d.getMonth()+curr.months);return d.toLocaleDateString("en",{month:"long",year:"numeric"});};
-  const totalDebt=debts.reduce((a,d)=>a+parseFloat(d.balance||0),0);
-  const _allBal=(data?.accounts||[]).filter(a=>a.type!=="credit").reduce((s,a)=>s+(a.balance||0),0);
-      const netWorth=_allBal-totalDebt;
+  const { netWorth, liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <ScreenHeader title="Goals & Wealth" onBack={setScreen?()=>setScreen("home"):null} cta={CC[data?.profile?.country||"CA"]?.flag+" "+CC[data?.profile?.country||"CA"]?.currency} ctaColor={CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}/>
     <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
-      {[["goals","My Goals"],["sim","Debt Sim"],["worth","Net Worth"],["retire","Retirement"],["forecast","Wealth"],["personality","Personality"],["tax","Tax Tips"],["learn","Learn"]].map(([key,lbl])=>(
+      {[["goals","My Goals"],["sim","Debt Sim"],["worth","Net Worth"],["retire","Retirement"],["forecast","Wealth"],["budget","Budget"],["personality","Personality"],["tax","Tax Tips"],["learn","Learn"]].map(([key,lbl])=>(
         <button key={key} onClick={()=>setTab(key)} style={{flexShrink:0,background:tab===key?C.purple+"22":C.cardAlt,border:`1px solid ${tab===key?C.purple:C.border}`,color:tab===key?C.purpleBright:C.muted,borderRadius:10,padding:"8px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>{lbl}</button>
       ))}
     </div>
@@ -6931,8 +7320,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       const checking=allAccts.filter(a=>a.type==="checking").reduce((s,a)=>s+(a.balance||0),0);
       const savings=allAccts.filter(a=>a.type==="savings").reduce((s,a)=>s+(a.balance||0),0);
       const totalAssets=checking+savings+totalInvested;
-      const totalDebt2=(data.debts||[]).reduce((a,d)=>a+parseFloat(d.balance||0),0);
-      const realNetWorth=totalAssets-totalDebt2;
+      const { netWorth: realNetWorth, bankCreditLiabilities, manualNonBankDebts } = FinancialCalcEngine.netWorth(data);
       const savLabel=country==="US"?"Savings / HYSA":"Savings / TFSA";
       const allItems=[
         {label:"Chequing / Checking",value:checking,type:"asset",color:C.green,icon:"🏦"},
@@ -6945,6 +7333,12 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Your Net Worth</div>
         <div style={{fontSize:44,fontWeight:900,color:C.tealBright,fontFamily:"'Playfair Display',serif",letterSpacing:-1}}>{realNetWorth>=0?"+":""}$<CountUp to={Math.abs(realNetWorth)} decimals={0}/></div>
         <div style={{color:C.muted,fontSize:12,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Assets minus liabilities · includes investments</div>
+        <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
+          {data.bankConnected
+            ? <span style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px",color:C.greenBright,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✓ Bank verified</span>
+            : <span style={{background:C.gold+"22",border:`1px solid ${C.gold}44`,borderRadius:99,padding:"2px 8px",color:C.goldBright,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📊 Estimated</span>}
+          {manualNonBankDebts>0&&<span style={{background:C.orange+"22",border:`1px solid ${C.orange}44`,borderRadius:99,padding:"2px 8px",color:C.orange,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Includes manual debt</span>}
+        </div>
         {totalInvested>0&&<div style={{marginTop:12,display:"flex",gap:10}}>
           <div style={{flex:1,background:C.purple+"15",borderRadius:12,padding:"10px 14px",border:`1px solid ${C.purple}22`}}>
             <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Invested</div>
@@ -7237,6 +7631,159 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       </div>;
     })()}
     {tab==="forecast"&&<WealthForecast data={data}/>}
+    {tab==="budget"&&(()=>{
+      const { suggestions, netMo, fixedMo, discret, savingsMo, savingsRate, grossMo } = generateBudgetSuggestions(data);
+      const budgets = data.budgets||{};
+      const hasBudgets = Object.keys(budgets).length > 0;
+      const isCA = (data.profile?.country||"CA")==="CA";
+
+      // Monthly savings needed for active goals
+      const activeGoals = (data.goals||[]).filter(g=>parseFloat(g.target||0)>parseFloat(g.saved||0));
+      const localGoalsMo = activeGoals.reduce((s,g)=>{
+        const remaining = parseFloat(g.target||0) - parseFloat(g.saved||0);
+        const mo = parseFloat(g.monthly||0);
+        return s + (mo>0 ? mo : remaining>0 ? Math.ceil(remaining/24) : 0);
+      },0);
+      // discret from generateBudgetSuggestions already accounts for goals globally,
+      // but inside Goals tab we recalc locally for display
+      const spendPool = Math.max(50, discret - localGoalsMo);
+
+      // Current month spending per category
+      const catOverrides = (()=>{try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");}catch{return {};}})();
+      const now = new Date();
+      const monthTxns = (data.transactions||[]).filter(t=>{
+        try{const d=new Date(t.date+"T12:00:00");return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()&&t.amount>0;}catch{return false;}
+      });
+      const monthSpend = {};
+      monthTxns.forEach(t=>{ const cat=catOverrides[t.id]||t.cat; monthSpend[cat]=(monthSpend[cat]||0)+t.amount; });
+
+      // Merge budgets + suggestions for display
+      const displayCats = {...suggestions};
+      Object.keys(budgets).forEach(k=>{ if(!displayCats[k]) displayCats[k]=budgets[k]; });
+
+      // Where to save suggestions — categories where actual > budget by >20%
+      const saveSuggestions = Object.entries(budgets).map(([cat,limit])=>{
+        const spent = monthSpend[cat]||0;
+        const pct = limit>0?spent/limit:0;
+        const saving = actuals[cat]||0;
+        if(pct>1.2&&saving>20) return {cat, spent, limit, over:spent-limit, potential:Math.round((saving-(limit*0.85))/5)*5};
+        return null;
+      }).filter(Boolean).sort((a,b)=>b.over-a.over).slice(0,3);
+
+      const catEmojis = {"Groceries":"🛒","Coffee & Dining":"☕","Gas & Transport":"🚗","Shopping":"🛍️","Clothing":"👗","Subscriptions":"📱","Health":"💊","Personal Care":"🧴","Entertainment":"🎬","Hobbies & Sports":"🎯","Kids & Extracurricular":"🧒","Travel":"✈️","Home":"🏠","Education":"📚"};
+      const catColors2 = {"Groceries":C.green,"Coffee & Dining":C.orange,"Gas & Transport":C.blue,"Shopping":C.pink,"Clothing":C.purple,"Subscriptions":C.teal,"Health":C.teal,"Personal Care":C.gold,"Entertainment":C.pink,"Hobbies & Sports":C.blue,"Kids & Extracurricular":C.green,"Travel":C.purple,"Home":C.orange,"Education":C.blue};
+
+      return (
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+
+          {/* Header math strip */}
+          <div style={{background:C.card,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}`}}>
+            <div style={{color:C.cream,fontWeight:800,fontSize:14,marginBottom:10,fontFamily:"'Playfair Display',serif"}}>📊 Your Budget Breakdown</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {[
+                ["Take-home", `$${Math.round(netMo).toLocaleString()}/mo`, C.green],
+                ["Fixed bills & debt", `−$${Math.round(fixedMo).toLocaleString()}/mo`, C.red],
+                ["Savings target", `−$${Math.round(savingsMo).toLocaleString()}/mo`, C.teal],
+                ...(localGoalsMo>0?[["Goal savings", `−$${Math.round(localGoalsMo).toLocaleString()}/mo`, C.purple]]:[]),
+                ["Available for spending", `$${Math.round(spendPool).toLocaleString()}/mo`, C.greenBright],
+              ].map(([label,val,color])=>(
+                <div key={label} style={{background:C.cardAlt,borderRadius:10,padding:"8px 10px",border:`1px solid ${C.border}`}}>
+                  <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1}}>{label}</div>
+                  <div style={{color,fontWeight:800,fontSize:13,marginTop:2}}>{val}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Active goal savings reminder */}
+          {localGoalsMo>0&&(
+            <div style={{background:C.purple+"18",border:`1px solid ${C.purple}33`,borderRadius:12,padding:"10px 14px"}}>
+              <div style={{color:C.purpleBright,fontWeight:700,fontSize:12,marginBottom:4}}>🎯 Saving for {activeGoals.length} goal{activeGoals.length>1?"s":""}</div>
+              <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                {activeGoals.map((g,i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{color:C.muted,fontSize:11}}>{g.name||"Goal"}</span>
+                    <span style={{color:C.purpleBright,fontSize:11,fontWeight:700}}>${parseFloat(g.monthly||Math.ceil((parseFloat(g.target||0)-parseFloat(g.saved||0))/24)).toFixed(0)}/mo</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Where to save suggestions */}
+          {saveSuggestions.length>0&&(
+            <div style={{background:C.orange+"12",border:`1px solid ${C.orange}33`,borderRadius:12,padding:"12px 14px"}}>
+              <div style={{color:C.orange,fontWeight:800,fontSize:12,marginBottom:8}}>💡 Where you could save</div>
+              {saveSuggestions.map(({cat,over,potential})=>(
+                <div key={cat} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                  <div>
+                    <span style={{color:C.cream,fontSize:12}}>{catEmojis[cat]||"📌"} {cat}</span>
+                    <span style={{color:C.redBright,fontSize:10,marginLeft:6}}>${Math.round(over)} over this month</span>
+                  </div>
+                  {potential>0&&<span style={{color:C.green,fontSize:11,fontWeight:700}}>Save ~${potential}/mo</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Per-category budget rows */}
+          <div style={{background:C.card,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{color:C.cream,fontWeight:700,fontSize:13}}>Monthly Category Budgets</div>
+              <button onClick={()=>{
+                const seed={};
+                Object.entries(budgets).forEach(([k,v])=>{seed[k]=String(v);});
+                Object.entries(displayCats).forEach(([k,v])=>{if(!seed[k])seed[k]=String(v);});
+                if(setAppData) setAppData(prev=>({...prev,_budgetEditOpen:true,_budgetEditSeed:seed}));
+              }} style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:8,padding:"5px 10px",color:C.greenBright,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                Edit
+              </button>
+            </div>
+            {!hasBudgets&&(
+              <div style={{textAlign:"center",padding:"16px 0",color:C.muted,fontSize:12}}>
+                No budget set yet. Go to <strong style={{color:C.green}}>Activity → This Month</strong> to build your budget plan, then come back here to track it.
+              </div>
+            )}
+            {Object.entries(budgets).map(([cat,limit])=>{
+              const spent = monthSpend[cat]||0;
+              const pct = limit>0?Math.min(100,Math.round(spent/limit*100)):0;
+              const over = spent>limit;
+              const color = catColors2[cat]||C.muted;
+              return (
+                <div key={cat} style={{marginBottom:12}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                    <span style={{color:C.cream,fontSize:12,fontWeight:600}}>{catEmojis[cat]||"📌"} {cat}</span>
+                    <span style={{color:over?C.redBright:C.muted,fontSize:11,fontWeight:over?700:400}}>
+                      ${Math.round(spent).toLocaleString()} / ${Math.round(limit).toLocaleString()}
+                      {over&&<span style={{color:C.redBright}}> ⚠️ ${Math.round(spent-limit)} over</span>}
+                    </span>
+                  </div>
+                  <div style={{height:6,background:C.border,borderRadius:99,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${pct}%`,borderRadius:99,transition:"width .4s",
+                      background:over?C.red:pct>80?C.orange:color}}/>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",marginTop:3}}>
+                    <span style={{color:C.muted,fontSize:9}}>{pct}% used</span>
+                    {!over&&<span style={{color:C.muted,fontSize:9}}>${Math.round(limit-spent)} remaining</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Savings rate note */}
+          <div style={{background:C.tealDim,border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",textAlign:"center"}}>
+            <div style={{color:C.tealBright,fontSize:11,fontWeight:700}}>
+              💰 {Math.round(savingsRate*100)}% savings target ({isCA?"RRSP/TFSA/Emergency":"401k/IRA/Emergency"}) = ${Math.round(savingsMo).toLocaleString()}/mo already reserved
+            </div>
+            <div style={{color:C.muted,fontSize:10,marginTop:3}}>
+              Budget in Activity → This Month to set or adjust your spending limits.
+            </div>
+          </div>
+
+        </div>
+      );
+    })()}
     {tab==="personality"&&<MoneyPersonality data={data}/>}
         {tab==="learn"&&(()=>{
       const cfg=CC[data.profile?.country||"CA"];
@@ -7277,7 +7824,7 @@ function Family({data,household,setHousehold,setScreen}){
     try{
       const saved=JSON.parse(localStorage.getItem("flourish_kids")||"null")||[];
       return saved.map(k=>({
-        chores:[],jars:{spend:0,save:0,give:0},
+        jars:{spend:0,save:0,give:0},
         goal:{name:"",amount:"",emoji:"🎯"},
         theme:"pink",streak:0,lastReset:null,
         requireApproval:false,...k,
@@ -7397,8 +7944,9 @@ function Family({data,household,setHousehold,setScreen}){
     const eligible=chores.filter(c=>c.done&&(!req||c.approved));
     const total=eligible.reduce((a,c)=>a+(c.reward||0),0);
     if(total<=0)return;
-    const spend=Math.round(total*0.50*100)/100;
-    const save=Math.round(total*0.30*100)/100;
+    const split=kid.jarSplit||{spend:50,save:30,give:20};
+    const spend=Math.round(total*(split.spend/100)*100)/100;
+    const save=Math.round(total*(split.save/100)*100)/100;
     const give=total-spend-save;
     const prevJars=kid.jars||{spend:0,save:0,give:0};
     const newJars={spend:(prevJars.spend||0)+spend,save:(prevJars.save||0)+save,give:(prevJars.give||0)+give};
@@ -7418,7 +7966,7 @@ function Family({data,household,setHousehold,setScreen}){
   // Pull real metrics for meeting
   const _ss=SafeSpendEngine.calculate(data);
   const {monthlyIncome,monthlyBills,cashFlow}=FinancialCalcEngine.cashFlow(data);
-  const totalDebt=(data.debts||[]).reduce((a,d)=>a+parseFloat(d.balance||0),0);
+  const { liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
   const SKIP_FAM = new Set(["Transfer","Income","Fees"]);
   const topSpend=(data.transactions||[])
     .filter(t=>t.amount>0 && !SKIP_FAM.has(t.cat))
@@ -7462,6 +8010,12 @@ function Family({data,household,setHousehold,setScreen}){
      metric:soonBills.length>0?`${soonBills.length} bill${soonBills.length>1?"s":""} coming · $${soonBills.reduce((a,b)=>a+parseFloat(b.amount||0),0).toFixed(0)} total`:"No bills due soon ✓",
      metricColor:soonBills.length>0?C.goldBright:C.greenBright,
      prompt:"Anything you forgot to budget for?"},
+    {id:"varbills",icon:"🔄",title:"Any variable bills to update?",desc:"Hydro, phone, internet — did any change this month?",
+     metric:(data.bills||[]).filter(b=>b.type==="variable").length>0
+       ?`${(data.bills||[]).filter(b=>b.type==="variable").length} variable bill${(data.bills||[]).filter(b=>b.type==="variable").length>1?"s":""} to review`
+       :"No variable bills tracked yet",
+     metricColor:C.tealBright,
+     prompt:"Update the amount for any bill that changed this month — your forecast will adjust automatically."},
     {id:"spend",icon:"💳",title:"How was your spending?",desc:"Honestly. No judgment.",
      metric:topCat?`Biggest spend: ${topCat[0]} · $${(topCat[1]||0).toFixed(0)}`:`Income: $${(monthlyIncome||0).toFixed(0)} · Bills: $${monthlyBills.toFixed(0)}`,
      metricColor:C.tealBright,
@@ -7567,6 +8121,35 @@ function Family({data,household,setHousehold,setScreen}){
                 </div>
               </div>;
             }
+        if(item.id==="varbills"){
+          const varBills=(data.bills||[]).filter(b=>b.type==="variable");
+          if(varBills.length===0) return <div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0"}}>
+            No variable bills set up yet. When adding a bill, mark it as Variable to track it here.
+          </div>;
+          return <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
+            {varBills.map((b,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:C.bg,borderRadius:10,border:`1px solid ${C.teal}33`}}>
+                <span style={{color:C.tealBright,fontSize:14,flexShrink:0}}>🔄</span>
+                <span style={{color:C.cream,fontSize:13,fontWeight:600,flex:1}}>{b.name}</span>
+                <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.teal}44`,borderRadius:8,overflow:"hidden"}}>
+                  <span style={{color:C.muted,padding:"0 5px 0 8px",fontSize:11}}>$</span>
+                  <input type="number" defaultValue={b.amount||""} placeholder={b.amount||"0"}
+                    onBlur={e=>{
+                      const val=parseFloat(e.target.value);
+                      if(!isNaN(val)&&val>0&&setAppData){
+                        setAppData(prev=>({...prev,bills:(prev.bills||[]).map((bill,idx)=>
+                          bill.name===b.name?{...bill,amount:String(val)}:bill
+                        )}))
+                      }
+                    }}
+                    style={{width:60,background:"none",border:"none",padding:"7px 2px",color:C.tealBright,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
+                  <span style={{color:C.muted,padding:"0 6px",fontSize:9}}>/mo</span>
+                </div>
+              </div>
+            ))}
+            <div style={{color:C.muted,fontSize:10,marginTop:2}}>Changes save immediately and update your forecast.</div>
+          </div>;
+        }
             if(item.id==="spend"){
               const cats=Object.entries(topSpend).sort((a,b)=>b[1]-a[1]).slice(0,5);
               const maxAmt=cats[0]?.[1]||1;
@@ -7861,7 +8444,7 @@ function Family({data,household,setHousehold,setScreen}){
               <div style={{color:C.gold,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>${totalJars.toFixed(2)}</div>
             </div>
             <div style={{display:"flex",gap:8,marginBottom:12}}>
-              {[{key:"spend",name:"Spend",emoji:"🎮",color:C.orange,pct:50},{key:"save",name:"Save",emoji:"🏦",color:C.blue,pct:30},{key:"give",name:"Give",emoji:"❤️",color:C.pink,pct:20}].map(j=>(
+              {(()=>{const split=activeKid.jarSplit||{spend:50,save:30,give:20};return [{key:"spend",name:"Spend",emoji:"🎮",color:C.orange,pct:split.spend},{key:"save",name:"Save",emoji:"🏦",color:C.blue,pct:split.save},{key:"give",name:"Give",emoji:"❤️",color:C.pink,pct:split.give}];})().map(j=>(
                 <div key={j.key} style={{flex:1,background:j.color+"18",border:`1px solid ${j.color}33`,borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
                   <div style={{fontSize:22}}>{j.emoji}</div>
                   <div style={{color:j.color,fontWeight:800,fontSize:16,marginTop:4,fontFamily:"'Playfair Display',serif"}}>${(jars[j.key]||0).toFixed(2)}</div>
@@ -7869,6 +8452,44 @@ function Family({data,household,setHousehold,setScreen}){
                   <div style={{color:C.muted,fontSize:9,marginTop:1}}>{j.pct}%</div>
                 </div>
               ))}
+            </div>
+            {/* Jar split editor */}
+            <div style={{background:C.cardAlt,borderRadius:12,padding:"12px 14px",marginBottom:12}}>
+              <div style={{color:C.purpleBright||C.tealBright,fontWeight:700,fontSize:13,marginBottom:8}}>🫙 Jar Percentages</div>
+              <div style={{color:C.muted,fontSize:11,marginBottom:10}}>How earnings split across Spend / Save / Give (must total 100%)</div>
+              {(()=>{
+                const split=activeKid.jarSplit||{spend:50,save:30,give:20};
+                const colors={spend:C.orange,save:C.blue,give:C.pink};
+                const total=split.spend+split.save+split.give;
+                return (
+                  <>
+                    {["spend","save","give"].map(key=>(
+                      <div key={key} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                        <div style={{width:44,color:colors[key],fontWeight:700,fontSize:12,textTransform:"capitalize"}}>{key}</div>
+                        <input type="range" min={0} max={100} value={split[key]}
+                          onChange={e=>{
+                            const val=parseInt(e.target.value)||0;
+                            const others=["spend","save","give"].filter(k=>k!==key);
+                            const remaining=100-val;
+                            const otherTotal=split[others[0]]+split[others[1]];
+                            let newSplit={...split,[key]:val};
+                            if(otherTotal>0){
+                              newSplit[others[0]]=Math.round(remaining*(split[others[0]]/otherTotal));
+                              newSplit[others[1]]=100-val-newSplit[others[0]];
+                            } else {
+                              newSplit[others[0]]=Math.floor(remaining/2);
+                              newSplit[others[1]]=remaining-newSplit[others[0]];
+                            }
+                            updateKid(activeKid.id,{jarSplit:newSplit});
+                          }}
+                          style={{flex:1,accentColor:colors[key]}}/>
+                        <div style={{width:34,textAlign:"right",color:total===100?colors[key]:C.red,fontWeight:700,fontSize:12}}>{split[key]}%</div>
+                      </div>
+                    ))}
+                    {total!==100&&<div style={{color:C.red,fontSize:11,marginTop:4}}>⚠ Must total 100% (currently {total}%)</div>}
+                  </>
+                );
+              })()}
             </div>
             {/* Savings goal */}
             <div style={{background:C.cardAlt,borderRadius:12,padding:"12px 14px",marginBottom:12}}>
@@ -8236,7 +8857,7 @@ function WidgetScreen({data,onBack}){
         :"linear-gradient(145deg,#051810,#090F18)",
         padding:"18px 20px",display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div style={{display:"flex",alignItems:"center",gap:7}}><FlourishMark size={20}/><span style={{color:"rgba(237,233,226,0.6)",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>flourish</span></div>
+          <FlourishMark size={24}/>
           <div style={{color:"rgba(237,233,226,0.4)",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{today}</div>
         </div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
@@ -8264,7 +8885,7 @@ function WidgetScreen({data,onBack}){
         :"linear-gradient(165deg,#051810,#080D18,#050810)",
         padding:"20px",display:"flex",flexDirection:"column",gap:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div style={{display:"flex",alignItems:"center",gap:7}}><FlourishMark size={20}/><span style={{color:"rgba(237,233,226,0.65)",fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>flourish</span></div>
+          <FlourishMark size={24}/>
           <div style={{background:`rgba(${overdraft?"255,79,106":"0,204,133"},0.15)`,borderRadius:99,padding:"3px 10px",display:"flex",alignItems:"center",gap:5}}>
             <div style={{width:5,height:5,borderRadius:"50%",background:heroColorBright}}/><span style={{color:heroColorBright,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{overdraft?"Overdraft risk":"Looking good"}</span>
           </div>
@@ -9072,8 +9693,9 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const accounts = data.accounts||[];
     const profile = data.profile||{};
     const country = profile.country||"CA";
-    const income = (data.incomes||[]).reduce((s,i)=>s+parseFloat(i.amount||0),0) || DEMO.income;
-    const balance = parseFloat((accounts[0]?.balance||DEMO.balance).toString().replace(/,/g,""));
+    const _toMoCtx=(amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a;};
+    const income = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0).reduce((s,i)=>s+_toMoCtx(i.amount,i.freq),0) || DEMO.income;
+    const balance = (accounts||[]).filter(a=>["checking","savings","depository"].includes((a.type||"").toLowerCase())).reduce((s,a)=>s+parseFloat(a.balance||0),0) || DEMO.balance;
     const spending = txns.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
     const topCats = Object.entries(
       txns.filter(t=>t.amount>0 && t.cat!=="Income")
@@ -9130,8 +9752,8 @@ ${country==="CA"?`- Employment: ${isSelfEmp?"SELF-EMPLOYED — mention HST/GST (
 When user agrees to a specific goal or plan: FLOURISH_UPDATE:{"action":"update_goal","name":"<n>","target":<n>,"saved":<n>,"monthly":<n>}
 To add new goal: FLOURISH_UPDATE:{"action":"add_goal","name":"<n>","target":<n>,"saved":<n>,"monthly":<n>}
 
-Keep responses concise (3-5 sentences), practical, warm. Use $ amounts. Never be preachy.
-CRITICAL: Balances are live. NEVER tell user to check their bank app — Flourish IS their financial view. Never mention Plaid.`;
+Be decisive, not educational. Lead with the action: what to do, how much, when. Give one clear next step — not three options. Use $ amounts. Skip the preamble. Never be preachy.
+CRITICAL: Balances are live. NEVER tell user to check their bank app — Flourish IS their financial view. Never mention Plaid. Max 4 sentences unless the user asks for detail.`;
   };
 
   const send = async ()=>{
@@ -9725,14 +10347,14 @@ function Paywall({onClose,onUpgrade,country}){
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}>
           <div style={{fontSize:20,fontWeight:800,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7}}><FlourishMark size={21}/><span>Flourish Plus</span></div>
-          <button onClick={onClose} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>✕ Maybe Later</button>
+          <button onClick={onClose} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Stay on free plan</button>
         </div>
 
         {/* Hero */}
         <div style={{textAlign:"center",marginBottom:28}}>
           <div style={{marginBottom:10,display:"flex",justifyContent:"center"}}><Icon id="sparkles" size={40} color={C.purpleBright} strokeWidth={1.3}/></div>
-          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:28,color:C.cream,marginBottom:8,lineHeight:1.2}}>Unlock your full financial picture</div>
-          <div style={{color:C.muted,fontSize:14,lineHeight:1.7}}>Everything in free, plus the tools that actually change your finances.</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:28,color:C.cream,marginBottom:8,lineHeight:1.2}}>You're leaving money on the table</div>
+          <div style={{color:C.muted,fontSize:14,lineHeight:1.7}}>Most people on free leave unclaimed credits, untracked debt, and zero coaching behind. Plus fixes all of that.</div>
         </div>
 
         {/* Plan selector */}
@@ -9831,14 +10453,14 @@ function FirstVisitScreen({data, onDismiss}) {
         {/* The Number */}
         <div style={{marginBottom:8}}>
           {incomeAmt > 0 ? (<>
-            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>You can safely spend</div>
+            <div style={{color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,fontWeight:700,letterSpacing:0.3}}>You're covered. Here's your breathing room.</div>
             <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,lineHeight:1}}>
               <span style={{fontSize:22,color:C.greenBright+"88",verticalAlign:"top",marginTop:12,display:"inline-block"}}>$</span>
               <span style={{fontSize:88,color:C.greenBright,letterSpacing:-4,textShadow:`0 0 80px ${C.green}40`}}>
                 {Math.max(0,safeAmount).toFixed(0)}
               </span>
             </div>
-            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>today</div>
+            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>to spend freely today</div>
           </>) : (
             <div style={{marginTop:8}}>
               <div style={{fontSize:64,marginBottom:12}}>🌱</div>
@@ -9850,7 +10472,7 @@ function FirstVisitScreen({data, onDismiss}) {
         {/* One-line explanation */}
         <div style={{color:C.mutedHi,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,marginBottom:32,maxWidth:280,margin:"0 auto 32px"}}>
           {incomeAmt > 0
-            ? "After bills, savings buffer, and upcoming expenses"
+            ? "Bills paid. Buffer set. Everything above this number is yours — no guilt, no stress."
             : "Add your income in Settings to see your personalised safe-to-spend number."}
         </div>
 
@@ -9869,7 +10491,7 @@ function FirstVisitScreen({data, onDismiss}) {
                 <span style={{color:col,fontWeight:700,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{val}</span>
               </div>
             ))}
-            {!data.bankConnected&&<div style={{marginTop:12,color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>📌 Connect your bank to make this number live and precise.</div>}
+            {!data.bankConnected&&<div style={{marginTop:12,color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>📌 Connect your bank to make this number live and precise.</div>}<div style={{marginTop:8,color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,fontWeight:600}}>Unlike Mint or YNAB — we tell you what you <em>can</em> spend, not just what you already did.</div>
           </div>
         )}
 
@@ -9877,16 +10499,19 @@ function FirstVisitScreen({data, onDismiss}) {
         {!showBreakdown?(
           <button onClick={()=>setShowBreakdown(true)}
             style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
-            See how this works →
+            How is this calculated? →
           </button>
         ):(
           <button onClick={onDismiss}
             style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
-            Go to my dashboard →
+            Take me to my dashboard →
           </button>
         )}
 
-        <button onClick={onDismiss} style={{background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"8px"}}>
+        <div style={{marginTop:4,color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,maxWidth:260,margin:"0 auto"}}>
+          Open Flourish before you spend — not after. That's the whole idea.
+        </div>
+        <button onClick={onDismiss} style={{background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"12px 8px 4px"}}>
           Skip for now
         </button>
       </div>
@@ -9897,7 +10522,7 @@ function FirstVisitScreen({data, onDismiss}) {
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 const NAV=[
   {id:"home",  icon:"home",     label:"Today"},
-  {id:"plan",  icon:"calendar", label:"Future"},
+  {id:"plan",  icon:"calendar", label:"Plan"},
   {id:"spend", icon:"card",     label:"Activity"},
   {id:"coach", icon:"sparkles", label:"Guidance"},
   {id:"family",icon:"users",    label:"Family"},
@@ -9924,6 +10549,92 @@ function clearState() {
 
 // ── AUTH SCREEN ───────────────────────────────────────────────────────────────
 // ─── KIDS MINI SITE ──────────────────────────────────────────────────────────
+function KidsGoal({goal, jars, code, theme, primary, playSound}){
+  const goalEmojis=["🎯","🎮","🚲","📚","🎸","⚽","🏊","🎨","✈️","🦄","👟","🍕","🏆","🎪","🤖"];
+  const [editingGoal,setEditingGoal]=useState(false);
+  const [goalName,setGoalName]=useState(goal.name||"");
+  const [goalAmt2,setGoalAmt2]=useState(goal.amount||"");
+  const [goalEmoji2,setGoalEmoji2]=useState(goal.emoji||"🎯");
+
+  const getDisplayGoal=()=>{
+    let d=goal;
+    try{const local=JSON.parse(localStorage.getItem("flourish_kid_goal_"+code)||"null");if(local?.name)d=local;}catch{}
+    return d;
+  };
+  const [displayGoal,setDisplayGoal]=useState(getDisplayGoal);
+
+  const saveGoal=()=>{
+    if(!goalName||!goalAmt2)return;
+    const g={name:goalName,amount:goalAmt2,emoji:goalEmoji2};
+    try{
+      const all=JSON.parse(localStorage.getItem("flourish_kids")||"[]");
+      const updated=all.map(k=>k.code===code?{...k,goal:g}:k);
+      localStorage.setItem("flourish_kids",JSON.stringify(updated));
+      localStorage.setItem("flourish_kid_goal_"+code,JSON.stringify(g));
+    }catch{}
+    setDisplayGoal(g);
+    setEditingGoal(false);
+  };
+
+  const dAmt=parseFloat(displayGoal.amount)||0;
+  const dPct=dAmt>0?Math.min(100,Math.round(((jars.save||0)/dAmt)*100)):0;
+
+  return (
+    <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid ${theme.primaryBorder}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <div style={{color:primary,fontWeight:800,fontSize:14}}>🎯 My Goal</div>
+        <button onClick={()=>{setGoalName(displayGoal.name||"");setGoalAmt2(displayGoal.amount||"");setGoalEmoji2(displayGoal.emoji||"🎯");setEditingGoal(e=>!e);}}
+          style={{background:"none",border:`1px solid ${theme.primaryBorder}`,borderRadius:8,padding:"4px 10px",color:primary,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+          {editingGoal?"Cancel":displayGoal.name?"Change":"Set Goal"}
+        </button>
+      </div>
+      {editingGoal?(
+        <div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+            {goalEmojis.map(e=>(
+              <button key={e} onClick={()=>setGoalEmoji2(e)}
+                style={{background:goalEmoji2===e?theme.primaryDim:"none",border:`1px solid ${goalEmoji2===e?primary:theme.choreBorder}`,borderRadius:8,padding:"6px",fontSize:18,cursor:"pointer"}}>
+                {e}
+              </button>
+            ))}
+          </div>
+          <input value={goalName} onChange={e=>setGoalName(e.target.value)} placeholder="What are you saving for?"
+            style={{width:"100%",background:theme.cardAlt,border:`1px solid ${theme.choreBorder}`,borderRadius:10,padding:"10px 12px",color:theme.text,fontSize:13,fontFamily:"inherit",boxSizing:"border-box",marginBottom:8,outline:"none"}}/>
+          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
+            <span style={{color:primary,fontSize:15,fontWeight:700}}>$</span>
+            <input value={goalAmt2} onChange={e=>setGoalAmt2(e.target.value)} placeholder="Amount" type="number"
+              style={{flex:1,background:theme.cardAlt,border:`1px solid ${theme.choreBorder}`,borderRadius:10,padding:"10px 12px",color:theme.text,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+          </div>
+          <button onClick={saveGoal} disabled={!goalName||!goalAmt2}
+            style={{width:"100%",background:goalName&&goalAmt2?primary:"rgba(255,255,255,0.1)",border:"none",borderRadius:12,padding:"12px",color:goalName&&goalAmt2?theme.bg:"rgba(255,255,255,0.3)",fontWeight:800,fontSize:14,cursor:goalName&&goalAmt2?"pointer":"default",fontFamily:"inherit"}}>
+            Save Goal {goalEmoji2}
+          </button>
+        </div>
+      ):displayGoal.name&&dAmt>0?(
+        <>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{color:theme.text,fontSize:15,fontWeight:700}}>{displayGoal.emoji} {displayGoal.name}</span>
+            <span style={{color:primary,fontWeight:800,fontSize:16}}>{dPct}%</span>
+          </div>
+          <div style={{height:12,background:"rgba(255,255,255,0.06)",borderRadius:6,overflow:"hidden",marginBottom:8}}>
+            <div style={{height:"100%",width:`${dPct}%`,background:`linear-gradient(90deg,${theme.jar1},${theme.jar2})`,borderRadius:6,transition:"width .5s"}}/>
+          </div>
+          <div style={{color:theme.textMuted,fontSize:12}}>
+            ${(jars.save||0).toFixed(2)} saved · ${Math.max(0,dAmt-(jars.save||0)).toFixed(2)} to go
+            {dPct>=100&&<span style={{color:theme.jar1,fontWeight:700}}> 🎉 You did it!</span>}
+          </div>
+          {dPct>=100&&<div onClick={()=>playSound("goal")} style={{marginTop:10,background:theme.primaryDim,border:`1px solid ${theme.primaryBorder}`,borderRadius:12,padding:"12px",textAlign:"center",cursor:"pointer"}}>
+            <span style={{fontSize:26}}>🎉</span>
+            <div style={{color:primary,fontWeight:800,fontSize:13,marginTop:4}}>Goal reached! Tap to celebrate!</div>
+          </div>}
+        </>
+      ):(
+        <div style={{color:theme.textMuted,fontSize:13,textAlign:"center",padding:"8px 0"}}>Tap "Set Goal" to pick something to save for!</div>
+      )}
+    </div>
+  );
+}
+
 function KidsMiniSite(){
   const params=new URLSearchParams(window.location.search);
   const code=params.get("code")||"";
@@ -10007,9 +10718,53 @@ function KidsMiniSite(){
   const total=chores.reduce((a,c)=>a+(c.reward||0),0);
   const FREQ={daily:"Daily",few:"Few/week",weekly:"Weekly",monthly:"Monthly"};
 
+  // ── Sounds ──────────────────────────────────────────────────────────────────
+  const playSound=(type)=>{
+    try{
+      const ctx=new(window.AudioContext||window.webkitAudioContext)();
+      if(type==="chore"){
+        const freqs=[[523,0],[659,0.1],[784,0.2]];
+        freqs.forEach(([freq,t])=>{
+          const o=ctx.createOscillator(),g=ctx.createGain();
+          o.connect(g);g.connect(ctx.destination);
+          o.type="sine";o.frequency.value=freq;
+          g.gain.setValueAtTime(0.22,ctx.currentTime+t);
+          g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+t+0.28);
+          o.start(ctx.currentTime+t);o.stop(ctx.currentTime+t+0.3);
+        });
+      } else if(type==="complete"){
+        [523,659,784,1047,1319].forEach((freq,i)=>{
+          const o=ctx.createOscillator(),g=ctx.createGain();
+          o.connect(g);g.connect(ctx.destination);
+          o.type="triangle";o.frequency.value=freq;
+          g.gain.setValueAtTime(0.18,ctx.currentTime+i*0.09);
+          g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+i*0.09+0.55);
+          o.start(ctx.currentTime+i*0.09);o.stop(ctx.currentTime+i*0.09+0.6);
+        });
+      } else if(type==="goal"){
+        // Fanfare
+        const notes=[523,659,784,659,1047];
+        const times=[0,0.1,0.2,0.3,0.45];
+        notes.forEach((freq,i)=>{
+          const o=ctx.createOscillator(),g=ctx.createGain();
+          o.connect(g);g.connect(ctx.destination);
+          o.type="square";o.frequency.value=freq;
+          g.gain.setValueAtTime(0.15,ctx.currentTime+times[i]);
+          g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+times[i]+0.35);
+          o.start(ctx.currentTime+times[i]);o.stop(ctx.currentTime+times[i]+0.4);
+        });
+      }
+    }catch(e){}
+  };
+
   const toggle=(id)=>{
     const updated=chores.map(c=>c.id===id?{...c,done:!c.done}:c);
+    const wasUndone=chores.find(c=>c.id===id)?.done===false;
     setChores(updated);
+    if(wasUndone){
+      const allNowDone=updated.filter(c=>c.reward>0).every(c=>c.done);
+      if(allNowDone) playSound("complete"); else playSound("chore");
+    }
     try{localStorage.setItem("flourish_kid_chores_"+code,JSON.stringify(updated));}catch{}
   };
 
@@ -10040,7 +10795,7 @@ function KidsMiniSite(){
       <div style={{background:theme.header,padding:"28px 20px 16px",borderBottom:`1px solid ${theme.primaryBorder}`}}>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
           <div style={{width:48,height:48,borderRadius:14,background:theme.primaryDim,border:`1.5px solid ${theme.primaryBorder}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-            <FlourishMark size={32}/>
+            <FlourishMarkKids size={32}/>
           </div>
           <div style={{flex:1}}>
             <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:theme.text,lineHeight:1}}>{kidData?.name?`${kidName}'s Flourish`:"Flourish Kids"}</div>
@@ -10057,51 +10812,35 @@ function KidsMiniSite(){
             <span style={{color:"#FF8C42",fontWeight:700,fontSize:13}}>{streak} week streak! Keep it going!</span>
           </div>
         )}
-        {/* Theme picker — compact dropdown */}
-        <div style={{marginTop:10,display:"flex",alignItems:"center",gap:10}}>
-          <span style={{color:theme.dark?"rgba(255,255,255,0.6)":"rgba(0,0,0,0.5)",fontSize:12,fontWeight:700,flexShrink:0}}>🎨 Theme</span>
-          <select value={activeTheme} onChange={e=>saveTheme(e.target.value)}
-            style={{flex:1,background:theme.dark?"rgba(255,255,255,0.08)":"rgba(0,0,0,0.06)",border:`1px solid ${theme.primaryBorder}`,borderRadius:10,padding:"9px 12px",color:theme.dark?theme.text:theme.text,fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:"pointer",outline:"none",appearance:"none",WebkitAppearance:"none"}}>
-            <optgroup label="── Dark ──">
-              {Object.entries(THEMES).filter(([,t])=>t.dark).map(([key,t])=>(
-                <option key={key} value={key}>{t.emoji} {t.name}</option>
-              ))}
-            </optgroup>
-            <optgroup label="── Light ──">
-              {Object.entries(THEMES).filter(([,t])=>!t.dark).map(([key,t])=>(
-                <option key={key} value={key}>{t.emoji} {t.name}</option>
-              ))}
-            </optgroup>
-          </select>
-          <div style={{width:28,height:28,borderRadius:99,background:primary,flexShrink:0,boxShadow:`0 0 10px ${primary}88`}}/>
+        {/* Theme picker — visual swatch grid */}
+        <div style={{marginTop:10}}>
+          <span style={{color:theme.dark?"rgba(255,255,255,0.55)":"rgba(0,0,0,0.45)",fontSize:11,fontWeight:700,letterSpacing:0.8,textTransform:"uppercase",display:"block",marginBottom:8}}>🎨 Theme</span>
+          <div style={{display:"flex",gap:7,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
+            {Object.entries(THEMES).map(([key,t])=>(
+              <button key={key} onClick={()=>saveTheme(key)}
+                style={{flexShrink:0,width:54,padding:"8px 4px 6px",borderRadius:14,background:t.card,border:`2px solid ${activeTheme===key?t.primary:"transparent"}`,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,boxShadow:activeTheme===key?`0 0 14px ${t.primary}77`:"0 2px 6px rgba(0,0,0,0.25)",transition:"all .2s",outline:"none"}}>
+                <span style={{fontSize:18,lineHeight:1}}>{t.emoji}</span>
+                <span style={{fontSize:9,fontWeight:700,color:t.text,fontFamily:"inherit",lineHeight:1,textAlign:"center",letterSpacing:0.2}}>{t.name}</span>
+                <div style={{width:20,height:4,borderRadius:99,background:t.primary,marginTop:2}}/>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       <div style={{padding:"16px 16px 0",display:"flex",flexDirection:"column",gap:14}}>
 
-        {/* Goal progress */}
-        {goal.name&&goalAmt>0&&(
-          <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid ${theme.primaryBorder}`}}>
-            <div style={{color:primary,fontWeight:800,fontSize:14,marginBottom:10}}>🎯 My Goal</div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-              <span style={{color:theme.text,fontSize:15,fontWeight:700}}>{goal.emoji} {goal.name}</span>
-              <span style={{color:primary,fontWeight:800,fontSize:16}}>{goalPct}%</span>
-            </div>
-            <div style={{height:12,background:"rgba(255,255,255,0.06)",borderRadius:6,overflow:"hidden",marginBottom:8}}>
-              <div style={{height:"100%",width:`${goalPct}%`,background:`linear-gradient(90deg,${theme.jar1},${theme.jar2})`,borderRadius:6,transition:"width .5s"}}/>
-            </div>
-            <div style={{color:theme.textMuted,fontSize:12}}>
-              ${(jars.save||0).toFixed(2)} saved · ${Math.max(0,goalAmt-(jars.save||0)).toFixed(2)} to go
-              {goalPct>=100&&<span style={{color:theme.jar1,fontWeight:700}}> 🎉 You did it!</span>}
-            </div>
-          </div>
-        )}
+        {/* Goal */}
+        <KidsGoal goal={goal} jars={jars} code={code} theme={theme} primary={primary} playSound={playSound}/>
 
         {/* Jar balances */}
         <div style={{background:theme.card,borderRadius:18,padding:"18px",border:`1px solid rgba(255,255,255,0.08)`}}>
           <div style={{color:primary,fontWeight:800,fontSize:14,marginBottom:12}}>🫙 My Jars</div>
           <div style={{display:"flex",gap:10}}>
-            {[{key:"spend",name:"Spend",emoji:"🎮",color:theme.jar1,pct:"50%"},{key:"save",name:"Save",emoji:"🏦",color:theme.jar2,pct:"30%"},{key:"give",name:"Give",emoji:"❤️",color:theme.jar3,pct:"20%"}].map(j=>(
+            {(()=>{
+            const split=kidData?.jarSplit||{spend:50,save:30,give:20};
+            return [{key:"spend",name:"Spend",emoji:"🎮",color:theme.jar1,pct:split.spend+"%"},{key:"save",name:"Save",emoji:"🏦",color:theme.jar2,pct:split.save+"%"},{key:"give",name:"Give",emoji:"❤️",color:theme.jar3,pct:split.give+"%"}];
+          })().map(j=>(
               <div key={j.key} style={{flex:1,background:j.color+"22",border:`1px solid ${j.color}44`,borderRadius:14,padding:"14px 8px",textAlign:"center"}}>
                 <div style={{fontSize:24,marginBottom:4}}>{j.emoji}</div>
                 <div style={{color:j.color,fontWeight:900,fontSize:17,fontFamily:"'Playfair Display',serif"}}>${(jars[j.key]||0).toFixed(2)}</div>
@@ -10401,15 +11140,15 @@ function AuthScreen({ onAuth }) {
               <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Everything in one place</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 {[
-                  ["💰","Safe-to-spend number","One clear daily number that accounts for bills and buffer."],
-                  ["🤖","AI Financial Coach","Ask anything. Get honest, personalised financial advice for Canada & the US."],
-                  ["🏦","All your accounts","RBC, TD, Chase, Wells Fargo, and thousands more — all in one dashboard."],
-                  ["📈","Investment tracking","Know exactly where you stand on RRSP, TFSA, 401k, and more."],
-                  ["📅","Bill forecasting","See what's coming before it hits. Never be surprised."],
-                  ["🎯","Goal tracking","Set savings goals and watch them grow with 30-year projections."]
+                  [<DollarSign size={20} color="#00D68F" strokeWidth={1.8}/>, "Safe-to-spend number", "One clear daily number that accounts for bills and buffer."],
+                  [<Sparkles size={20} color="#00D68F" strokeWidth={1.8}/>, "AI Financial Coach", "Ask anything. Get honest, personalised financial advice for Canada & the US."],
+                  [<CreditCard size={20} color="#00D68F" strokeWidth={1.8}/>, "All your accounts", "RBC, TD, Chase, Wells Fargo, and thousands more — all in one dashboard."],
+                  [<TrendingUp size={20} color="#00D68F" strokeWidth={1.8}/>, "Investment tracking", "Know exactly where you stand on RRSP, TFSA, 401k, and more."],
+                  [<Calendar size={20} color="#00D68F" strokeWidth={1.8}/>, "Bill forecasting", "See what's coming before it hits. Never be surprised."],
+                  [<Target size={20} color="#00D68F" strokeWidth={1.8}/>, "Goal tracking", "Set savings goals and watch them grow with 30-year projections."]
                 ].map(([icon,title,body]) => (
                   <div key={title} style={{ padding: "16px", background: "#0D1F12", borderRadius: 16, border: "1px solid rgba(255,255,255,0.06)" }}>
-                    <div style={{ fontSize: 22, marginBottom: 8 }}>{icon}</div>
+                    <div style={{ marginBottom: 10, display:"flex", alignItems:"center", justifyContent:"center", width:38, height:38, borderRadius:10, background:"rgba(0,214,143,0.1)", border:"1px solid rgba(0,214,143,0.2)" }}>{icon}</div>
                     <div style={{ color: "#EDE9E2", fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{title}</div>
                     <div style={{ color: "#6B7A6E", fontSize: 11, lineHeight: 1.6 }}>{body}</div>
                   </div>
@@ -10544,6 +11283,624 @@ function AuthScreen({ onAuth }) {
     </div>
   );
 }
+
+
+// ─── BUDGET SCREEN ─────────────────────────────────────────────────────────────
+function BudgetScreen({data, setAppData, setScreen}) {
+  const isDesktop = window.innerWidth >= 960;
+  const [editMode, setEditMode] = useState(false);
+  const [editVals, setEditVals] = useState({});
+  const [customCat, setCustomCat] = useState("");
+  const [showAddCat, setShowAddCat] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const {
+    suggestions, netMo, fixedMo, discret, savingsMo, savingsRate,
+    grossMo, goalsMo, canAfford, shortfall, cutSuggestions,
+    hSize, numKids, totalSugg
+  } = generateBudgetSuggestions(data);
+  const budgets = data.budgets || {};
+  const hasBudgets = Object.keys(budgets).length > 0;
+  const isCA = (data.profile?.country || "CA") === "CA";
+
+  // Month label
+  const now = new Date();
+  const monthLabel = now.toLocaleDateString("en", { month: "long", year: "numeric" });
+
+  // discret already accounts for goals (from generateBudgetSuggestions)
+  // Current month spending per category — excludes bill categories (tracked separately) and CC payments
+  const catOverrides = (() => { try { return JSON.parse(localStorage.getItem("flourish_cat_overrides") || "{}"); } catch { return {}; } })();
+  const monthTxns = (data.transactions || []).filter(t => {
+    try { const d = new Date(t.date + "T12:00:00"); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && t.amount > 0; } catch { return false; }
+  });
+  const monthSpend = {};
+  monthTxns.forEach(t => {
+    const cat = catOverrides[t.id] || t.cat;
+    // Only track discretionary categories — bills excluded to prevent double-counting
+    if(!NON_SPEND_CATS.has(cat) && !CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))) {
+      monthSpend[cat] = (monthSpend[cat] || 0) + t.amount;
+    }
+  });
+
+  const totalBudgeted = Object.values(budgets).reduce((s, v) => s + v, 0);
+  const totalSpentBudgeted = Object.entries(budgets).reduce((s, [cat]) => s + (monthSpend[cat] || 0), 0);
+  const overallPct = totalBudgeted > 0 ? Math.min(100, Math.round(totalSpentBudgeted / totalBudgeted * 100)) : 0;
+  const overBudgetCats = Object.entries(budgets).filter(([cat, limit]) => (monthSpend[cat] || 0) > limit);
+  const totalOver = overBudgetCats.reduce((s, [cat, limit]) => s + ((monthSpend[cat] || 0) - limit), 0);
+
+  // Where to save suggestions
+  // Where to save — categories over budget this month
+  const saveSuggestions = Object.entries(budgets).map(([cat, limit]) => {
+    const spent = monthSpend[cat] || 0;
+    const over = Math.round(spent - limit);
+    if (limit > 0 && over >= 5) return { cat, spent, limit, over };
+    return null;
+  }).filter(Boolean).sort((a, b) => b.over - a.over).slice(0, 3);
+
+  const catEmoji = { "Groceries": "🛒", "Coffee & Dining": "☕", "Gas & Transport": "🚗", "Shopping": "🛍️", "Clothing": "👗", "Subscriptions": "📱", "Health": "💊", "Personal Care": "🧴", "Entertainment": "🎬", "Hobbies & Sports": "🎯", "Kids & Extracurricular": "🧒", "Travel": "✈️", "Home": "🏠", "Education": "📚", "Fees": "🏦", "Services": "🔧", "Other": "📌" };
+  const catColor = { "Groceries": C.green, "Coffee & Dining": C.orange, "Gas & Transport": C.blue, "Shopping": C.pink, "Clothing": C.purple, "Subscriptions": C.teal, "Health": C.teal, "Personal Care": C.gold, "Entertainment": C.pink, "Hobbies & Sports": C.blue, "Kids & Extracurricular": C.green, "Travel": C.purple, "Home": C.orange, "Education": C.blue, "Fees": C.gold, "Services": C.blue, "Other": C.muted };
+
+  // Edit mode helpers
+  const openEdit = () => {
+    const seed = {};
+    // 1. Existing saved budgets — always preserved
+    Object.entries(budgets).forEach(([k, v]) => { seed[k] = String(v); });
+    // 2. Situation-based suggestions for categories not yet budgeted
+    Object.entries(suggestions).forEach(([k, v]) => { if (!seed[k]) seed[k] = String(v); });
+    // 3. Any custom categories that have actual spending this month — auto-appear in budget
+    const catOv = (()=>{ try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");} catch{return{};} })();
+    const customCats = JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]");
+    const now2 = new Date();
+    (data.transactions||[]).filter(t => {
+      if(t.amount <= 0 || !t.date) return false;
+      const d = new Date(t.date + "T12:00:00");
+      return d.getFullYear() === now2.getFullYear() && d.getMonth() === now2.getMonth();
+    }).forEach(t => {
+      const cat = catOv[t.id] || t.cat;
+      // Include if: it's a custom category OR it's any spend category not already seeded
+      if(!seed[cat] && !NON_SPEND_CATS.has(cat) && !BILL_CATS.has(cat)) {
+        seed[cat] = "50"; // default starting budget for new categories
+      }
+    });
+    // 4. Any custom categories ever created — even if no spend yet this month
+    customCats.forEach(cat => {
+      if(!seed[cat] && !NON_SPEND_CATS.has(cat) && !BILL_CATS.has(cat)) {
+        seed[cat] = "50";
+      }
+    });
+    setEditVals(seed);
+    setEditMode(true);
+    setSaved(false);
+    setShowAddCat(false);
+  };
+  const saveEdit = () => {
+    const nb = {};
+    Object.entries(editVals).forEach(([cat, v]) => {
+      const n = parseFloat(v);
+      if (!isNaN(n) && n > 0) nb[cat] = n;
+    });
+    if (setAppData) setAppData(prev => ({ ...prev, budgets: nb }));
+    setSaved(true);
+    setTimeout(() => { setEditMode(false); setSaved(false); }, 1000);
+  };
+  const deleteCat = cat => setEditVals(prev => { const n = { ...prev }; delete n[cat]; return n; });
+  const addCustom = () => {
+    const cat = customCat.trim();
+    if (!cat) return;
+    setEditVals(prev => ({ ...prev, [cat]: "50" }));
+    setCustomCat(""); setShowAddCat(false);
+  };
+
+  const totalEdited = Object.values(editVals).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+  const overDiscret = totalEdited > discret;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <ScreenHeader
+        title="Budget"
+        subtitle={monthLabel}
+        onBack={setScreen ? () => setScreen("home") : null}
+        cta={editMode ? (saved ? "✓ Saved!" : "Save Plan") : (hasBudgets ? "Edit Plan" : "Build Plan")}
+        onCta={editMode ? saveEdit : openEdit}
+        ctaColor={editMode ? C.green : C.purple}
+      />
+
+      {/* Money math strip */}
+      <div style={{ background: C.card, borderRadius: 18, padding: "14px 16px", border: `1px solid ${C.border}` }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {[
+            ["Take-home", `$${Math.round(netMo).toLocaleString()}/mo`, C.green, "💵"],
+            ["Fixed bills & debt", `−$${Math.round(fixedMo).toLocaleString()}/mo`, C.red, "🏠"],
+            ["Savings target", `−$${Math.round(savingsMo).toLocaleString()}/mo`, C.teal, "💰"],
+            ...(goalsMo > 0 ? [["Goal savings", `−$${Math.round(goalsMo).toLocaleString()}/mo`, C.purple, "🎯"]] : []),
+            ["Available to spend", `$${Math.round(discret).toLocaleString()}/mo`, C.greenBright, "✅"],
+          ].map(([label, val, color, emoji]) => (
+            <div key={label} style={{ background: C.cardAlt, borderRadius: 12, padding: "10px 12px", border: `1px solid ${C.border}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
+                <span style={{ fontSize: 12 }}>{emoji}</span>
+                <span style={{ color: C.muted, fontSize: 9, textTransform: "uppercase", letterSpacing: 1, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{label}</span>
+              </div>
+              <div style={{ color, fontWeight: 800, fontSize: 14, fontFamily: "'Playfair Display',serif" }}>{val}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── EDIT MODE ───────────────────────────────────────────────── */}
+      {/* ── SETUP MODE — 3-step plan builder ─────────────────── */}
+      {editMode && (
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+
+          {/* Step 1 — Fixed commitments (read-only, auto-filled) */}
+          <div style={{background:C.card,borderRadius:18,padding:"16px",border:`1px solid ${C.border}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+              <div style={{width:24,height:24,borderRadius:"50%",background:C.green,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,color:"#041810",flexShrink:0}}>1</div>
+              <div>
+                <div style={{color:C.cream,fontWeight:800,fontSize:14}}>Your fixed commitments</div>
+                <div style={{color:C.muted,fontSize:11,marginTop:1}}>These come out first — before anything else is planned</div>
+              </div>
+            </div>
+            {(data.bills||[]).length===0&&(data.debts||[]).length===0?(
+              <div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"10px 0"}}>
+                No bills or debts added yet. Add them in <strong style={{color:C.green}}>Settings → Bills</strong> to auto-fill this section.
+              </div>
+            ):(
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {(data.bills||[]).map((b,idx)=>(
+                <div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
+                  <div style={{display:"flex",alignItems:"center",gap:7,flex:1,minWidth:0}}>
+                    <span style={{fontSize:14}}>{b.type==="variable"?"🔄":"📌"}</span>
+                    <div style={{minWidth:0}}>
+                      <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{b.name}</div>
+                      {b.category&&<div style={{color:C.muted,fontSize:9}}>{b.category}</div>}
+                    </div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.teal}44`,borderRadius:8,overflow:"hidden",flexShrink:0}}>
+                    <span style={{color:C.muted,padding:"0 4px 0 8px",fontSize:11}}>$</span>
+                    <input type="number" defaultValue={parseFloat(b.amount||0).toFixed(0)}
+                      onBlur={e=>{
+                        const val=parseFloat(e.target.value);
+                        if(!isNaN(val)&&val>=0&&setAppData){
+                          setAppData(prev=>({...prev,bills:(prev.bills||[]).map((bill,bi)=>bi===idx?{...bill,amount:String(val)}:bill)}));
+                        }
+                      }}
+                      style={{width:56,background:"none",border:"none",padding:"6px 2px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
+                    <span style={{color:C.muted,padding:"0 6px",fontSize:9}}>/mo</span>
+                  </div>
+                </div>
+              ))}
+                {(data.debts||[]).map((d,i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:7}}>
+                      <span style={{fontSize:14}}>💳</span>
+                      <div>
+                        <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{d.name||"Debt"}</div>
+                        <div style={{color:C.muted,fontSize:9}}>minimum payment</div>
+                      </div>
+                    </div>
+                    <span style={{color:C.muted,fontWeight:700,fontSize:12}}>${parseFloat(d.min||0).toFixed(0)}/mo</span>
+                  </div>
+                ))}
+                <div style={{display:"flex",justifyContent:"space-between",padding:"6px 10px",borderTop:`1px solid ${C.border}`,marginTop:2}}>
+                  <span style={{color:C.muted,fontSize:11}}>Total fixed</span>
+                  <span style={{color:C.cream,fontWeight:800,fontSize:13}}>${Math.round(fixedMo).toLocaleString()}/mo</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Step 2 — Your spending plan (situation-based, all adjustable) */}
+          <div style={{background:C.card,borderRadius:18,padding:"16px",border:`1px solid ${C.green}33`}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+              <div style={{width:24,height:24,borderRadius:"50%",background:C.green,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,color:"#041810",flexShrink:0}}>2</div>
+              <div>
+                <div style={{color:C.cream,fontWeight:800,fontSize:14}}>Your spending plan</div>
+                <div style={{color:C.muted,fontSize:11,marginTop:1}}>Based on your household — adjust any amount</div>
+              </div>
+            </div>
+            <div style={{background:C.green+"10",borderRadius:10,padding:"8px 12px",marginBottom:12,border:`1px solid ${C.green}22`}}>
+              <div style={{color:C.greenBright,fontSize:11,fontWeight:700}}>
+                ${Math.round(discret).toLocaleString()}/mo available after bills + savings{goalsMo>0?` + goal savings`:""} 
+              </div>
+            </div>
+
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+              {Object.entries(editVals).map(([cat,val])=>{
+                const color = catColor[cat]||C.muted;
+                const emoji = catEmoji[cat]||"📌";
+                const isSugg = !!suggestions[cat];
+                return (
+                  <div key={cat} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
+                    <span style={{fontSize:15,flexShrink:0}}>{emoji}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{cat}</div>
+                      {isSugg&&<div style={{color:C.muted,fontSize:9,marginTop:1}}>Suggested for your household</div>}
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${color}55`,borderRadius:8,overflow:"hidden",flexShrink:0}}>
+                      <span style={{color:C.muted,padding:"0 4px 0 8px",fontSize:11}}>$</span>
+                      <input type="number" value={val}
+                        onChange={e=>setEditVals(prev=>({...prev,[cat]:e.target.value}))}
+                        style={{width:54,background:"none",border:"none",padding:"7px 2px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
+                      <span style={{color:C.muted,padding:"0 4px",fontSize:9}}>/mo</span>
+                    </div>
+                    <button onClick={()=>deleteCat(cat)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,padding:2,flexShrink:0,opacity:0.6,lineHeight:1}}>×</button>
+                  </div>
+                );
+              })}
+
+              {showAddCat?(
+                <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 10px",background:C.cardAlt,borderRadius:10,border:`1px dashed ${C.green}55`}}>
+                  <input value={customCat} onChange={e=>setCustomCat(e.target.value)}
+                    placeholder="Category (e.g. Gym, Art Classes)"
+                    onKeyDown={e=>e.key==="Enter"&&addCustom()}
+                    style={{flex:1,background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none"}}/>
+                  <button onClick={addCustom} style={{background:C.green,border:"none",borderRadius:8,padding:"7px 12px",color:"#041810",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Add</button>
+                  <button onClick={()=>{setShowAddCat(false);setCustomCat("");}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0}}>✕</button>
+                </div>
+              ):(
+                <button onClick={()=>setShowAddCat(true)} style={{background:"none",border:`1px dashed ${C.green}44`,borderRadius:10,padding:"9px 12px",color:C.green,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+                  ＋ Add a category
+                </button>
+              )}
+            </div>
+
+            {/* Running total */}
+            <div style={{padding:"10px 12px",background:totalEdited>discret?C.red+"18":C.green+"10",borderRadius:10,border:`1px solid ${totalEdited>discret?C.red:C.green}33`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{color:C.muted,fontSize:11}}>Total budgeted</span>
+                <span style={{color:totalEdited>discret?C.redBright:C.greenBright,fontWeight:800,fontSize:14}}>${Math.round(totalEdited).toLocaleString()}/mo</span>
+              </div>
+              {totalEdited>discret&&<div style={{color:C.muted,fontSize:10,marginTop:3}}>
+                ${Math.round(totalEdited-discret).toLocaleString()} over — see suggested cuts below
+              </div>}
+              {totalEdited<=discret&&totalEdited>0&&<div style={{color:C.muted,fontSize:10,marginTop:3}}>
+                ${Math.round(discret-totalEdited).toLocaleString()} unallocated — consider adding to savings
+              </div>}
+            </div>
+          </div>
+
+          {/* Step 3 — Affordability check */}
+          {totalEdited>discret&&(()=>{
+            // Generate live cut suggestions based on current editVals
+            const CUT_PRIORITY=["Subscriptions","Entertainment","Coffee & Dining","Shopping","Personal Care","Groceries","Clothing"];
+            const liveCuts=[];
+            let remaining=Math.round(totalEdited-discret);
+            for(const cat of CUT_PRIORITY){
+              if(remaining<=0) break;
+              const current=parseFloat(editVals[cat]||0);
+              if(!current) continue;
+              const maxCut=cat==="Groceries"?Math.floor(current*0.15):cat==="Personal Care"?Math.floor(current*0.3):Math.floor(current*0.5);
+              const cut=Math.min(remaining,maxCut);
+              if(cut>=5){liveCuts.push({cat,current,suggested:Math.max(10,Math.round((current-cut)/5)*5),saving:cut});remaining-=cut;}
+            }
+            return(
+              <div style={{background:C.red+"10",border:`1px solid ${C.red}33`,borderRadius:18,padding:"16px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                  <div style={{width:24,height:24,borderRadius:"50%",background:C.red,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,color:"#fff",flexShrink:0}}>3</div>
+                  <div>
+                    <div style={{color:C.redBright,fontWeight:800,fontSize:14}}>This doesn't quite fit</div>
+                    <div style={{color:C.muted,fontSize:11,marginTop:1}}>You're ${Math.round(totalEdited-discret).toLocaleString()} over — here's what to trim</div>
+                  </div>
+                </div>
+                {liveCuts.length>0?(
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {liveCuts.map(({cat,current,suggested,saving})=>(
+                      <div key={cat} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 12px",background:C.card,borderRadius:12,border:`1px solid ${C.border}`}}>
+                        <div>
+                          <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{catEmoji[cat]||"📌"} {cat}</div>
+                          <div style={{color:C.muted,fontSize:10,marginTop:1}}>${current} → ${suggested}/mo</div>
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{color:C.green,fontWeight:700,fontSize:13}}>−${saving}/mo</div>
+                          <button onClick={()=>setEditVals(prev=>({...prev,[cat]:String(suggested)}))}
+                            style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:6,padding:"3px 8px",color:C.greenBright,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginTop:3}}>
+                            Apply
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {remaining>0&&<div style={{color:C.muted,fontSize:10,textAlign:"center",padding:"4px"}}>
+                      ${remaining} still to cut — consider reducing more categories or removing one
+                    </div>}
+                  </div>
+                ):(
+                  <div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0"}}>
+                    Consider removing a category or reducing your savings rate temporarily.
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Save button */}
+          <button onClick={saveEdit} disabled={totalEdited>discret}
+            style={{width:"100%",background:totalEdited<=discret?`linear-gradient(135deg,${C.green},${C.greenBright})`:"rgba(255,255,255,0.06)",
+              border:"none",borderRadius:12,padding:"14px",color:totalEdited<=discret?"#041810":C.muted,
+              fontWeight:800,fontSize:14,cursor:totalEdited<=discret?"pointer":"not-allowed",fontFamily:"inherit",transition:"all .2s"}}>
+            {saved?"✅ Budget Plan Saved!":"✓ Save My Budget Plan"}
+          </button>
+          {totalEdited>discret&&<div style={{color:C.muted,fontSize:11,textAlign:"center",marginTop:-8}}>Apply the suggested cuts above to unlock saving</div>}
+
+        </div>
+      )}
+
+      {/* ── TRACK MODE ──────────────────────────────────────────────── */}
+
+      {/* ── TRACK MODE ──────────────────────────────────────────────── */}
+      {!editMode && (
+        <>
+          {/* No budgets set — inline build prompt */}
+          {!hasBudgets && (
+            <div style={{ background: `linear-gradient(135deg,${C.green}14 0%,${C.teal}0A 100%)`, border: `1px solid ${C.green}44`, borderRadius: 18, padding: "20px" }}>
+              <div style={{ textAlign: "center", marginBottom: 16 }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
+                <div style={{ fontFamily: "'Playfair Display',serif", color: C.cream, fontWeight: 900, fontSize: 20, marginBottom: 6 }}>Build Your Budget Plan</div>
+                <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6, maxWidth: 360, margin: "0 auto" }}>
+                  We analyze your income, bills, and spending to suggest how much to allocate to groceries, dining, clothing, and more — then track it in real time.
+                </div>
+              </div>
+              <div style={{ background: C.cardAlt, borderRadius: 12, padding: "12px 14px", marginBottom: 14, border: `1px solid ${C.border}` }}>
+                <div style={{ color: C.cream, fontWeight: 700, fontSize: 12, marginBottom: 8 }}>Based on your situation:</div>
+                {[
+                  [`💵 $${Math.round(netMo).toLocaleString()}/mo take-home`, C.green],
+                  [`🏠 $${Math.round(fixedMo).toLocaleString()}/mo in fixed bills`, C.muted],
+                  [`✅ $${Math.round(discret).toLocaleString()}/mo available for variable spending`, C.greenBright],
+                ].map(([txt, color]) => (
+                  <div key={txt} style={{ color, fontSize: 12, marginBottom: 4 }}>• {txt}</div>
+                ))}
+              </div>
+              <button onClick={openEdit} style={{ width: "100%", background: `linear-gradient(135deg,${C.green},${C.greenBright})`, border: "none", borderRadius: 12, padding: "14px", color: "#041810", fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+                ✨ Build My Budget Plan
+              </button>
+            </div>
+          )}
+
+          {/* Budget exists — tracking view */}
+          {hasBudgets && (
+            <>
+              {/* ── BILLS SECTION ─────────────────────────────── */}
+              {(()=>{
+                const allBills = data.bills||[];
+                if(allBills.length === 0) return null;
+
+                // Match transactions to bills via vendorBillMap
+                const vendorBillMap = data.vendorBillMap||{};
+                const catOverridesLocal = (()=>{try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");}catch{return {};}})();
+                const billsWithStatus = allBills.map(bill => {
+                  // Find a transaction this month that pays this bill
+                  const linkedTxn = monthTxns.find(t => {
+                    const vendor = (t.name||"").toLowerCase().trim();
+                    const billVendor = (bill.vendorPattern||bill.name||"").toLowerCase().trim();
+                    return vendorBillMap[vendor]?.toLowerCase() === bill.name.toLowerCase() ||
+                           (billVendor.length >= 4 && (vendor.includes(billVendor.substring(0,6)) || billVendor.includes(vendor.substring(0,6))));
+                  });
+                  const isVariable = bill.type === "variable";
+                  const expectedAmt = parseFloat(bill.amount||0);
+                  const actualAmt = linkedTxn ? Math.abs(parseFloat(linkedTxn.amount||0)) : null;
+                  return { ...bill, linkedTxn, isVariable, expectedAmt, actualAmt, paid: !!linkedTxn };
+                });
+
+                const paidCount = billsWithStatus.filter(b=>b.paid).length;
+                const totalBillsAmt = billsWithStatus.reduce((s,b)=>s+b.expectedAmt,0);
+                const variableBills = billsWithStatus.filter(b=>b.isVariable);
+
+                return (
+                  <div style={{background:C.card,borderRadius:18,padding:"16px 18px",border:`1px solid ${C.border}`,marginBottom:4}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                      <div>
+                        <div style={{color:C.cream,fontWeight:800,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Monthly Bills</div>
+                        <div style={{color:C.muted,fontSize:11,marginTop:2}}>{paidCount}/{billsWithStatus.length} paid · ${Math.round(totalBillsAmt).toLocaleString()}/mo</div>
+                      </div>
+                      {variableBills.length>0&&(
+                        <div style={{background:C.gold+"18",border:`1px solid ${C.gold}33`,borderRadius:8,padding:"4px 8px"}}>
+                          <span style={{color:C.goldBright,fontSize:10,fontWeight:700}}>🔄 {variableBills.length} variable</span>
+                        </div>
+                      )}
+                    </div>
+                    {billsWithStatus.map((bill,i)=>{
+                      const color = bill.paid ? C.green : C.muted;
+                      const amtDiff = bill.actualAmt !== null ? bill.actualAmt - bill.expectedAmt : null;
+                      return (
+                        <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:i<billsWithStatus.length-1?`1px solid ${C.border}`:"none"}}>
+                          <div style={{width:8,height:8,borderRadius:"50%",background:bill.paid?C.green:C.muted,flexShrink:0}}/>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{display:"flex",alignItems:"center",gap:6}}>
+                              <span style={{color:C.cream,fontSize:13,fontWeight:600}}>{bill.name}</span>
+                              {bill.isVariable&&<span style={{background:C.teal+"18",color:C.tealBright,fontSize:9,padding:"2px 5px",borderRadius:99,border:`1px solid ${C.teal}33`}}>variable</span>}
+                              {bill.category&&<span style={{color:C.muted,fontSize:10}}>{bill.category}</span>}
+                            </div>
+                            {bill.paid&&bill.linkedTxn&&(
+                              <div style={{color:C.muted,fontSize:10,marginTop:1}}>
+                                Paid {new Date(bill.linkedTxn.date+"T12:00:00").toLocaleDateString("en",{month:"short",day:"numeric"})}
+                                {amtDiff!==null&&Math.abs(amtDiff)>2&&(
+                                  <span style={{color:amtDiff>0?C.redBright:C.greenBright,marginLeft:6}}>
+                                    {amtDiff>0?`+$${Math.round(amtDiff)} more than usual`:`$${Math.round(Math.abs(amtDiff))} less than usual`}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {!bill.paid&&(
+                              <div style={{color:C.muted,fontSize:10,marginTop:1}}>No payment found this month</div>
+                            )}
+                          </div>
+                          <div style={{textAlign:"right",flexShrink:0}}>
+                            <div style={{color:bill.paid?C.green:C.cream,fontWeight:700,fontSize:13}}>
+                              {bill.actualAmt!==null?`$${Math.round(bill.actualAmt)}`:`$${Math.round(bill.expectedAmt)}`}
+                            </div>
+                            {bill.paid&&<div style={{color:C.greenBright,fontSize:9}}>✓ paid</div>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {/* Variable bill update prompt */}
+                    {variableBills.length>0&&(
+                      <div style={{marginTop:10,background:C.teal+"10",border:`1px solid ${C.teal}28`,borderRadius:10,padding:"10px 12px"}}>
+                        <div style={{color:C.tealBright,fontWeight:700,fontSize:11,marginBottom:6}}>🔄 Update variable bills</div>
+                        {variableBills.map((bill,i)=>(
+                          <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:i<variableBills.length-1?6:0}}>
+                            <span style={{color:C.muted,fontSize:12,flex:1}}>{bill.name}</span>
+                            <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.teal}44`,borderRadius:8,overflow:"hidden"}}>
+                              <span style={{color:C.muted,padding:"0 6px",fontSize:11}}>$</span>
+                              <input type="number" defaultValue={bill.actualAmt||bill.expectedAmt||""}
+                                placeholder={String(bill.expectedAmt||"")}
+                                onBlur={e=>{
+                                  const val = parseFloat(e.target.value);
+                                  if(!isNaN(val)&&val>0&&setAppData) {
+                                    setAppData(prev=>({...prev,bills:(prev.bills||[]).map((b,idx)=>
+                                      idx===i+allBills.indexOf(allBills.find(bb=>bb.name===bill.name))?{...b,amount:String(val)}:b
+                                    )}));
+                                  }
+                                }}
+                                style={{width:60,background:"none",border:"none",padding:"6px 4px",color:C.tealBright,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
+                              <span style={{color:C.muted,padding:"0 4px",fontSize:9}}>/mo</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:4,paddingLeft:2}}>Discretionary Spending</div>
+              {/* Overall month progress */}
+              <div style={{ background: C.card, borderRadius: 18, padding: "16px 18px", border: `1px solid ${overBudgetCats.length > 0 ? C.red + "44" : C.green + "33"}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                  <div>
+                    <div style={{ color: overBudgetCats.length > 0 ? C.redBright : C.greenBright, fontWeight: 800, fontSize: 15, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                      {overBudgetCats.length > 0 ? `⚠️ Over budget in ${overBudgetCats.length} categor${overBudgetCats.length === 1 ? "y" : "ies"}` : "📊 On track this month"}
+                    </div>
+                    <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>{monthLabel}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontFamily: "'Playfair Display',serif", fontWeight: 900, fontSize: 20, color: overBudgetCats.length > 0 ? C.redBright : C.cream }}>
+                      ${Math.round(totalSpentBudgeted).toLocaleString()}
+                    </div>
+                    <div style={{ color: C.muted, fontSize: 11 }}>of ${Math.round(totalBudgeted).toLocaleString()} budgeted</div>
+                  </div>
+                </div>
+                {/* Overall progress bar */}
+                <div style={{ height: 8, background: C.border, borderRadius: 99, overflow: "hidden", marginBottom: 6 }}>
+                  <div style={{ height: "100%", width: `${overallPct}%`, borderRadius: 99, transition: "width .5s ease", background: overBudgetCats.length > 0 ? C.red : overallPct > 80 ? C.orange : `linear-gradient(to right,${C.green},${C.greenBright})` }} />
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: C.muted, fontSize: 10 }}>{overallPct}% used</span>
+                  <span style={{ color: overBudgetCats.length > 0 ? C.redBright : C.muted, fontSize: 10 }}>
+                    {overBudgetCats.length > 0 ? `$${Math.round(totalOver)} over total` : `$${Math.round(totalBudgeted - totalSpentBudgeted)} remaining`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Where to save — only when over budget */}
+              {saveSuggestions.length > 0 && (
+                <div style={{ background: C.orange + "12", border: `1px solid ${C.orange}33`, borderRadius: 16, padding: "14px 16px" }}>
+                  <div style={{ color: C.orange, fontWeight: 800, fontSize: 13, marginBottom: 10 }}>💡 Where you could cut back</div>
+                  {saveSuggestions.map(({ cat, over, potential }) => (
+                    <div key={cat} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, paddingBottom: 8, borderBottom: `1px solid ${C.border}` }}>
+                      <div>
+                        <div style={{ color: C.cream, fontSize: 12, fontWeight: 600 }}>{catEmoji[cat] || "📌"} {cat}</div>
+                        <div style={{ color: C.redBright, fontSize: 10, marginTop: 2 }}>${Math.round(over)} over budget this month</div>
+                      </div>
+                      {potential > 0 && <div style={{ textAlign: "right" }}>
+                        <div style={{ color: C.green, fontSize: 12, fontWeight: 700 }}>Save ~${potential}</div>
+                        <div style={{ color: C.muted, fontSize: 9 }}>per month</div>
+                      </div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Goal savings reminder */}
+              {goalsMo > 0 && (
+                <div style={{ background: C.purple + "14", border: `1px solid ${C.purple}33`, borderRadius: 14, padding: "12px 14px" }}>
+                  <div style={{ color: C.purpleBright, fontWeight: 700, fontSize: 12, marginBottom: 6 }}>🎯 Saving toward {activeGoals.length} goal{activeGoals.length > 1 ? "s" : ""}</div>
+                  {activeGoals.map((g, i) => {
+                    const target = parseFloat(g.target || 0);
+                    const current = parseFloat(g.saved || 0);
+                    const mo = parseFloat(g.monthly || 0) || Math.ceil((target - current) / 24);
+                    const pct = target > 0 ? Math.min(100, Math.round(current / target * 100)) : 0;
+                    return (
+                      <div key={i} style={{ marginBottom: i < activeGoals.length - 1 ? 8 : 0 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                          <span style={{ color: C.cream, fontSize: 12, fontWeight: 600 }}>{g.name || "Goal"}</span>
+                          <span style={{ color: C.purpleBright, fontSize: 11, fontWeight: 700 }}>${Math.round(mo)}/mo · {pct}% saved</span>
+                        </div>
+                        <div style={{ height: 4, background: C.border, borderRadius: 99, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${pct}%`, background: C.purple, borderRadius: 99, transition: "width .4s" }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Per-category progress bars */}
+              <div style={{ background: C.card, borderRadius: 18, padding: "16px 18px", border: `1px solid ${C.border}` }}>
+                <div style={{ color: C.cream, fontWeight: 700, fontSize: 13, marginBottom: 14, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Category Breakdown</div>
+                {Object.entries(budgets).sort(([, a], [, b]) => {
+                  // Sort: over budget first, then by % used descending
+                  const aSpent = monthSpend[Object.keys(budgets).find(k => budgets[k] === a) || ""] || 0;
+                  const bSpent = monthSpend[Object.keys(budgets).find(k => budgets[k] === b) || ""] || 0;
+                  return (bSpent / b) - (aSpent / a);
+                }).map(([cat, limit]) => {
+                  const spent = monthSpend[cat] || 0;
+                  const pct = limit > 0 ? Math.min(100, Math.round(spent / limit * 100)) : 0;
+                  const over = spent > limit;
+                  const color = catColor[cat] || C.muted;
+                  const barColor = over ? C.red : pct > 80 ? C.orange : color;
+                  return (
+                    <div key={cat} style={{ marginBottom: 14 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                          <span style={{ fontSize: 15 }}>{catEmoji[cat] || "📌"}</span>
+                          <span style={{ color: C.cream, fontSize: 13, fontWeight: 600 }}>{cat}</span>
+                          {over && <span style={{ background: C.red + "22", color: C.redBright, fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 99, border: `1px solid ${C.red}44` }}>OVER</span>}
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <span style={{ color: over ? C.redBright : C.cream, fontWeight: 700, fontSize: 13 }}>${Math.round(spent).toLocaleString()}</span>
+                          <span style={{ color: C.muted, fontSize: 11 }}> / ${Math.round(limit).toLocaleString()}</span>
+                        </div>
+                      </div>
+                      <div style={{ height: 7, background: C.border, borderRadius: 99, overflow: "hidden", marginBottom: 3 }}>
+                        <div style={{ height: "100%", width: `${over ? 100 : pct}%`, borderRadius: 99, transition: "width .4s ease", background: over ? `linear-gradient(to right,${C.orange},${C.red})` : pct > 80 ? C.orange : `linear-gradient(to right,${color}88,${color})` }} />
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ color: C.muted, fontSize: 9 }}>{pct}% used</span>
+                        <span style={{ color: over ? C.redBright : C.muted, fontSize: 9 }}>
+                          {over ? `$${Math.round(spent - limit)} over` : `$${Math.round(limit - spent)} left`}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Categories spending but not budgeted */}
+              {(() => {
+                const unbudgeted = Object.entries(monthSpend).filter(([cat, amt]) => !budgets[cat] && amt > 20 && cat !== "Transfer" && cat !== "Income");
+                if (unbudgeted.length === 0) return null;
+                return (
+                  <div style={{ background: C.cardAlt, borderRadius: 14, padding: "12px 14px", border: `1px solid ${C.border}` }}>
+                    <div style={{ color: C.mutedHi, fontWeight: 700, fontSize: 12, marginBottom: 8 }}>📋 Spending outside your budget</div>
+                    {unbudgeted.sort((a, b) => b[1] - a[1]).slice(0, 5).map(([cat, amt]) => (
+                      <div key={cat} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                        <span style={{ color: C.muted, fontSize: 12 }}>{catEmoji[cat] || "📌"} {cat}</span>
+                        <span style={{ color: C.mutedHi, fontSize: 12, fontWeight: 600 }}>${Math.round(amt).toLocaleString()}</span>
+                      </div>
+                    ))}
+                    <button onClick={openEdit} style={{ marginTop: 6, background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                      + Add these to my budget
+                    </button>
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 
 export default function FlourishApp(){
   // ── Hydrate from localStorage on first render ──────────────────
@@ -10943,6 +12300,7 @@ export default function FlourishApp(){
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
+  if(screen==="budget")return <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="coach"){const freeCoachAllowed=!isPremium&&coachMsgCount<5&&!trialExpired;const showCoach=isPremium||freeCoachAllowed;if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen}/>; if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="AI Coach" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>; return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;}
     if(screen==="family")return <Family data={dataWithHousehold} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
     if(screen==="goals")return <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen}/>;
@@ -10954,11 +12312,12 @@ export default function FlourishApp(){
 
   const ALL_NAV=[
     {id:"home",  icon:"home",    label:"Today"},
-    {id:"plan",  icon:"calendar",label:"Future"},
+    {id:"plan",  icon:"calendar",label:"Plan"},
     {id:"spend", icon:"card",    label:"Activity"},
+    {id:"budget",icon:"chartUp", label:"Budget"},
     {id:"coach", icon:"sparkles",label:"Guidance"},
     {id:"family",icon:"users",   label:"Family"},
-    {id:"goals", icon:"chartUp", label:"Goals"},
+    {id:"goals", icon:"target",  label:"Goals"},
   ];
 
   const globalStyles=`
@@ -11055,7 +12414,7 @@ input,button,select,textarea { font-family:inherit; }
         <div style={{padding:"20px 36px 16px",background:C.isDark?`${C.bg}F8`:`${C.bg}EE`,backdropFilter:"blur(12px)",position:"sticky",top:0,zIndex:20,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid ${C.border}`}}>
           <div>
             <div style={{color:C.cream,fontWeight:700,fontSize:18,fontFamily:"'Playfair Display',serif"}}>
-              {showNotifs?"Notifications":showSettings?"Settings":screen==="home"?"Today":screen==="plan"?"Future":screen==="spend"?"Activity":screen==="coach"?"Guidance":screen==="family"?"Family":screen==="goals"||screen==="credit"?"Goals & Wealth":"Today"}
+              {showNotifs?"Notifications":showSettings?"Settings":screen==="home"?"Today":screen==="plan"?"Plan":screen==="spend"?"Activity":screen==="coach"?"Guidance":screen==="family"?"Family":screen==="goals"||screen==="credit"?"Goals & Wealth":"Today"}
             </div>
             <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{new Date().toLocaleDateString(CC[appData?.profile?.country||"CA"]?.locale||"en-CA",{weekday:"long",month:"long",day:"numeric"})}</div>
           </div>
