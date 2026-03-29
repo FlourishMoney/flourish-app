@@ -151,7 +151,8 @@ function getPersonalizedTaxCredits(profile) {
   const hasKids   = profile?.hasKids   || false;
   const status    = profile?.status    || "single";
   const isHomeowner = profile?.isHomeowner || false;
-  const empType   = profile?.employmentType || "t4";
+  const PRIMARY_EMP = ["t4","w2","selfemployed","incorporated","student","retired"];
+  const empType   = (lifeStages || []).find(s => PRIMARY_EMP.includes(s)) || "t4";
   const isSelfEmp = empType==="selfemployed"||empType==="incorporated";
   const birthYear = parseInt(profile?.birthYear||"0");
   const age       = birthYear>0 ? new Date().getFullYear()-birthYear : null;
@@ -3324,7 +3325,7 @@ function DashCustomize({ layout, onChange, onClose }) {
 // ─── ONBOARDING ───────────────────────────────────────────────────────────────
 function Onboarding({onComplete,onViewLegal,userId}){
   const [step,setStep]=useState(0);
-  const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false,lifeStages:["employed"],birthYear:"",kids:[],isHomeowner:false,employmentType:"t4",rrspRoom:"",tfsaRoom:"",retirementRoom:""});
+  const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false,lifeStages:["t4"],birthYear:"",kids:[],isHomeowner:false,rrspRoom:"",tfsaRoom:"",retirementRoom:""});
   const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment",isVariable:false}]);
   const [bills,setBills]=useState([{name:"",amount:"",date:""}]);
   const [debts,setDebts]=useState([{name:"",balance:"",rate:"",min:""}]);
@@ -3521,7 +3522,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
 
       {/* Demo mode — required for App Store review */}
       <button onClick={()=>onComplete({
-        profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true,lifeStages:["employed"]},
+        profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true,lifeStages:["t4"]},
         incomes:[{id:1,label:"Full-time Job",amount:"2840",freq:"biweekly",type:"employment"},{id:2,label:"Canada Child Benefit",amount:"560",freq:"monthly",type:"ccb"}],
         bills:[{name:"Rent",amount:"1650",date:"1"},{name:"Hydro",amount:"95",date:"11"},{name:"Phone",amount:"65",date:"15"},{name:"Netflix",amount:"18.99",date:"22"}],
         debts:[{name:"TD Visa",balance:"3420",rate:"19.99",min:"68"},{name:"Car Loan",balance:"8200",rate:"6.99",min:"280"}],
@@ -3609,28 +3610,14 @@ function Onboarding({onComplete,onViewLegal,userId}){
         )}
       </div>
 
-      {/* Employment type */}
+      {/* How do you earn income? — unified multi-select */}
       <div style={{marginBottom:14}}>
-        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:8,fontWeight:700}}>Employment type</div>
+        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:4,fontWeight:700}}>How do you earn income? <span style={{fontWeight:400}}>(select all that apply)</span></div>
         <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
           {(p.country==="CA"
-            ?[["🏢","t4","T4 Employee"],["🧾","selfemployed","Self-Employed"],["🏛️","incorporated","Incorporated"],["🎓","student","Student"],["🌅","retired","Retired"]]
-            :[["🏢","w2","W-2 Employee"],["🧾","selfemployed","Self-Employed / 1099"],["🏛️","incorporated","Business Owner"],["🎓","student","Student"],["🌅","retired","Retired"]]
-          ).map(([emoji,val,label])=>(
-            <button key={val} onClick={()=>setP({...p,employmentType:val})}
-              style={{background:p.employmentType===val?C.blue+"33":C.cardAlt,border:`1px solid ${p.employmentType===val?C.blue:C.border}`,color:p.employmentType===val?C.blueBright||"#4DA8FF":C.muted,borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
-              <span>{emoji}</span>{label}
-              {p.employmentType===val&&<span style={{fontSize:10}}>✓</span>}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Life stages */}
-      <div style={{marginBottom:14}}>
-        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:4,fontWeight:700}}>Which else applies? <span style={{fontWeight:400}}>(optional)</span></div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-          {[["🏠","homeoffice","Home Office"],["🌐","contractor","Contractor"],["💰","investor","Investor"],["➕","other","Other"]].map(([emoji,val,label])=>{
+            ?[["🏢","t4","T4 Employee"],["🧾","selfemployed","Self-Employed"],["🏛️","incorporated","Incorporated"],["🌐","contractor","Contractor"],["💰","investor","Investor"],["🏠","homeoffice","Home Office"],["🎓","student","Student"],["🌅","retired","Retired"],["➕","other","Other"]]
+            :[["🏢","w2","W-2 Employee"],["🧾","selfemployed","Self-Employed / 1099"],["🏛️","incorporated","Business Owner"],["🌐","contractor","Contractor / Gig"],["💰","investor","Investor"],["🏠","homeoffice","Home Office"],["🎓","student","Student"],["🌅","retired","Retired"],["➕","other","Other"]]
+          ).map(([emoji,val,label])=>{
             const selected=(p.lifeStages||[]).includes(val);
             return(
               <button key={val} onClick={()=>{const cur=p.lifeStages||[];const next=selected?cur.filter(v=>v!==val):[...cur,val];setP({...p,lifeStages:next});}}
@@ -3677,7 +3664,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
           </div>
         )}
 
-      <Btn label="Continue →" onClick={()=>setStep(2)} disabled={!p.name}/>
+      <Btn label="Continue →" onClick={()=>setStep(2)} disabled={!p.name||!(p.lifeStages||[]).length}/>
     </div>,
 
     // 2: Bank Connection
@@ -9712,8 +9699,9 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const kidsInfo = kidsArr.length>0
       ? kidsArr.map(k=>`${k.name||"Child"} (born ${k.birthYear||"?"}, age ${k.birthYear?new Date().getFullYear()-parseInt(k.birthYear):"?"})`).join(", ")
       : profile.hasKids?"yes (ages unknown)":"none";
-    const empType = profile.employmentType||"employed";
-    const empLabel = {t4:"T4 Employee",w2:"W-2 Employee",selfemployed:"Self-Employed",incorporated:"Incorporated Business Owner",student:"Student",retired:"Retired"}[empType]||empType;
+    const pLifeStages = Array.isArray(profile.lifeStages)?profile.lifeStages:(profile.lifeStages?[profile.lifeStages]:[]);
+    const empType = pLifeStages.find(s=>["t4","w2","selfemployed","incorporated","student","retired"].includes(s))||"t4";
+    const empLabel = {t4:"T4 Employee",w2:"W-2 Employee",selfemployed:"Self-Employed",incorporated:"Incorporated Business Owner",student:"Student",retired:"Retired",contractor:"Contractor",investor:"Investor",homeoffice:"Home Office",other:"Other"}[empType]||empType;
     const isSelfEmp = empType==="selfemployed"||empType==="incorporated";
     return `You are a warm, expert personal finance coach for Flourish Money (${country==="CA"?"Canada":"USA"}).
 
