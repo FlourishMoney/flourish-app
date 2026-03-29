@@ -4034,7 +4034,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
             <button onClick={()=>setStep(s=>s-1)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:14}}>← Back</button>
           </div>
         )}
-        {step>0&&step<7&&<div style={{display:"flex",gap:3,marginBottom:28}}>{Array.from({length:7}).map((_,i)=><div key={i} style={{height:3,borderRadius:99,flex:i===step-1?3:1,background:i<step?`linear-gradient(90deg,${C.green},${C.greenBright})`:C.border,transition:"all .45s cubic-bezier(.16,1,.3,1)",boxShadow:i<step?`0 0 8px ${C.green}44`:"none"}}/>)}</div>}
+        {step>0&&step<7&&<div style={{display:"flex",gap:3,marginBottom:28}}>{Array.from({length:6}).map((_,i)=><div key={i} style={{height:3,borderRadius:99,flex:i===step-1?3:1,background:i<step?`linear-gradient(90deg,${C.green},${C.greenBright})`:C.border,transition:"all .45s cubic-bezier(.16,1,.3,1)",boxShadow:i<step?`0 0 8px ${C.green}44`:"none"}}/>)}</div>}
         {screens[step]}
       </div>
     </div>
