@@ -151,16 +151,11 @@ function getPersonalizedTaxCredits(profile) {
   const hasKids   = profile?.hasKids   || false;
   const status    = profile?.status    || "single";
   const isHomeowner = profile?.isHomeowner || false;
-  const PRIMARY_TYPES = ["t4","w2","selfemployed","incorporated","student","retired"];
-  const empType   = (profile?.lifeStages||[]).find(s=>PRIMARY_TYPES.includes(s)) || "t4";
-  const isSelfEmp = (profile?.lifeStages||[]).some(s=>
-    s==="selfemployed"||s==="incorporated"||s==="contractor"
-  );
+  const isSelfEmp = hasStage("selfemployed","incorporated","contractor");
   const birthYear = parseInt(profile?.birthYear||"0");
   const age       = birthYear>0 ? new Date().getFullYear()-birthYear : null;
   const isSenior  = (age&&age>=65)||hasStage("senior","retired");
   const isStudent = hasStage("student");
-  const incomeTypes = (profile?.incomeTypes || []).map(t => t.toLowerCase());
   const cfg = CC[country] || CC.CA;
 
   // Start with base country tips, then add life-stage + province specific ones
