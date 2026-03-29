@@ -3325,7 +3325,7 @@ function DashCustomize({ layout, onChange, onClose }) {
 // ─── ONBOARDING ───────────────────────────────────────────────────────────────
 function Onboarding({onComplete,onViewLegal,userId}){
   const [step,setStep]=useState(0);
-  const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false,lifeStages:["t4"],birthYear:"",kids:[],isHomeowner:false,rrspRoom:"",tfsaRoom:"",retirementRoom:""});
+  const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false,lifeStages:["t4"],partnerLifeStages:[],birthYear:"",kids:[],isHomeowner:false,rrspRoom:"",tfsaRoom:"",retirementRoom:""});
   const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment",isVariable:false}]);
   const [bills,setBills]=useState([{name:"",amount:"",date:""}]);
   const [debts,setDebts]=useState([{name:"",balance:"",rate:"",min:""}]);
@@ -3522,7 +3522,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
 
       {/* Demo mode — required for App Store review */}
       <button onClick={()=>onComplete({
-        profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true,lifeStages:["t4"]},
+        profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true,lifeStages:["t4"],partnerLifeStages:["t4"]},
         incomes:[{id:1,label:"Full-time Job",amount:"2840",freq:"biweekly",type:"employment"},{id:2,label:"Canada Child Benefit",amount:"560",freq:"monthly",type:"ccb"}],
         bills:[{name:"Rent",amount:"1650",date:"1"},{name:"Hydro",amount:"95",date:"11"},{name:"Phone",amount:"65",date:"15"},{name:"Netflix",amount:"18.99",date:"22"}],
         debts:[{name:"TD Visa",balance:"3420",rate:"19.99",min:"68"},{name:"Car Loan",balance:"8200",rate:"6.99",min:"280"}],
@@ -3629,6 +3629,26 @@ function Onboarding({onComplete,onViewLegal,userId}){
         </div>
       </div>
 
+      {/* Partner's income — only when not single */}
+      {p.status!=="single"&&(
+      <div style={{marginBottom:14}}>
+        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:4,fontWeight:700}}>{p.partnerName||"Partner"}'s income <span style={{fontWeight:400}}>(select all that apply — optional)</span></div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+          {(p.country==="CA"
+            ?[["🏢","t4","T4 Employee"],["🧾","selfemployed","Self-Employed"],["🏛️","incorporated","Incorporated"],["🌐","contractor","Contractor"],["💰","investor","Investor"],["🏠","homeoffice","Home Office"],["🎓","student","Student"],["🌅","retired","Retired"],["➕","other","Other"]]
+            :[["🏢","w2","W-2 Employee"],["🧾","selfemployed","Self-Employed / 1099"],["🏛️","incorporated","Business Owner"],["🌐","contractor","Contractor / Gig"],["💰","investor","Investor"],["🏠","homeoffice","Home Office"],["🎓","student","Student"],["🌅","retired","Retired"],["➕","other","Other"]]
+          ).map(([emoji,val,label])=>{
+            const selected=(p.partnerLifeStages||[]).includes(val);
+            return(
+              <button key={val} onClick={()=>{const cur=p.partnerLifeStages||[];const next=selected?cur.filter(v=>v!==val):[...cur,val];setP({...p,partnerLifeStages:next});}}
+                style={{background:selected?C.green+"33":C.cardAlt,border:`1px solid ${selected?C.green:C.border}`,color:selected?C.greenBright:C.muted,borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
+                <span>{emoji}</span>{label}{selected&&<span style={{fontSize:10}}>✓</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      )}
 
         {/* RRSP / TFSA contribution room — CA only, optional */}
         {p.country==="CA"&&(
@@ -11893,6 +11913,11 @@ function BudgetScreen({data, setAppData, setScreen}) {
 export default function FlourishApp(){
   // ── Hydrate from localStorage on first render ──────────────────
   const saved = loadState();
+  // Migrate legacy "employed" lifeStage → "t4"
+  if (saved?.appData?.profile?.lifeStages) {
+    saved.appData.profile.lifeStages = saved.appData.profile.lifeStages
+      .map(s => s === "employed" ? "t4" : s);
+  }
   const [onboarded,setOnboarded]=useState(()=>saved?.onboarded||false);
   const [firstVisitDone,setFirstVisitDone]=useState(()=>{
     try{return localStorage.getItem("flourish_first_visit_done")==="1";}catch{return false;}
