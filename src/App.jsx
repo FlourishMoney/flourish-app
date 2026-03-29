@@ -144,20 +144,22 @@ const CC = {
 function getPersonalizedTaxCredits(profile) {
   const country   = profile?.country   || "CA";
   const province  = profile?.province  || "ON";
-  const rawLifeStage = profile?.lifeStages || profile?.lifeStage || "employed";
+  const rawLifeStage = profile?.lifeStages || profile?.lifeStage || ["t4"];
   const lifeStages = Array.isArray(rawLifeStage) ? rawLifeStage : [rawLifeStage];
   const hasStage = (...stages) => stages.some(s => lifeStages.includes(s));
-  const lifeStage = lifeStages[0] || "employed";
+  const lifeStage = lifeStages[0] || "t4";
   const hasKids   = profile?.hasKids   || false;
   const status    = profile?.status    || "single";
   const isHomeowner = profile?.isHomeowner || false;
-  const PRIMARY_EMP = ["t4","w2","selfemployed","incorporated","student","retired"];
-  const empType   = (lifeStages || []).find(s => PRIMARY_EMP.includes(s)) || "t4";
-  const isSelfEmp = empType==="selfemployed"||empType==="incorporated";
+  const PRIMARY_TYPES = ["t4","w2","selfemployed","incorporated","student","retired"];
+  const empType   = (profile?.lifeStages||[]).find(s=>PRIMARY_TYPES.includes(s)) || "t4";
+  const isSelfEmp = (profile?.lifeStages||[]).some(s=>
+    s==="selfemployed"||s==="incorporated"||s==="contractor"
+  );
   const birthYear = parseInt(profile?.birthYear||"0");
   const age       = birthYear>0 ? new Date().getFullYear()-birthYear : null;
   const isSenior  = (age&&age>=65)||hasStage("senior","retired");
-  const isStudent = hasStage("student")||empType==="student";
+  const isStudent = hasStage("student");
   const incomeTypes = (profile?.incomeTypes || []).map(t => t.toLowerCase());
   const cfg = CC[country] || CC.CA;
 
@@ -173,8 +175,8 @@ function getPersonalizedTaxCredits(profile) {
     if (t.includes("first home") && isHomeowner) return false;
     if (t.includes("resp") && !hasKids) return false;
     if (t.includes("student loan interest") && !isStudent) return false;
-    if (t.includes("home office") && isStudent && !hasStage("employed","selfemployed") && !isSelfEmp) return false;
-    if ((t.includes("working income") || t.includes("cwb")) && isSenior && !hasStage("employed","selfemployed") && !isSelfEmp) return false;
+    if (t.includes("home office") && isStudent && !hasStage("t4","w2","selfemployed","incorporated","contractor")) return false;
+    if ((t.includes("working income") || t.includes("cwb")) && isSenior && !hasStage("t4","w2","selfemployed","incorporated","contractor")) return false;
     // Self-employment tips — only for self-employed
     if ((t.includes("hst") || t.includes("gst registration") || t.includes("schedule c") || t.includes("quarterly estimated") || t.includes("sep-ira") || t.includes("solo 401")) && !isSelfEmp) return false;
     // Senior tips — only for seniors
@@ -249,7 +251,7 @@ function getPersonalizedTaxCredits(profile) {
   }
 
   // ── ADD: Self-employed additions ─────────────────────────────────────────
-  if (hasStage("selfemployed")) {
+  if (hasStage("selfemployed", "contractor")) {
     if (country === "CA") {
       tips.push(
         {title:"Business Expenses — What You Can Actually Claim",body:"Vehicle (business km %), phone (business %), internet, software, accounting fees, professional dues, advertising, and meals (50%). Every legitimate expense reduces your taxable income dollar for dollar.",savings:"Varies — often $3,000–$15,000",flag:"🇨🇦",priority:"high",action:"Track All Receipts"},
@@ -264,6 +266,24 @@ function getPersonalizedTaxCredits(profile) {
         {title:"SEP-IRA or Solo 401(k)",body:"Self-employed? You can contribute up to 25% of net self-employment income to a SEP-IRA (max $69,000 in 2024) — fully deductible. Solo 401(k) allows even higher contributions plus a Roth option.",savings:"Up to $69,000/yr",flag:"🇺🇸",priority:"high",action:"Open SEP-IRA or Solo 401k"}
       );
     }
+  }
+
+  // ── ADD: Partner self-employment tip for couples ─────────────────────────
+  const partnerStages = profile?.partnerLifeStages || [];
+  const partnerIsSelfEmp = partnerStages.some(s =>
+    s==="selfemployed"||s==="incorporated"||s==="contractor"
+  );
+  const isCouple = profile?.status === "couple" || profile?.status === "cohabit";
+
+  if (isCouple && partnerIsSelfEmp && country === "CA") {
+    tips.push({
+      title: "Spousal Income Splitting — Self-Employed",
+      body: "If your partner earns income through a business, paying them a reasonable salary or dividends can split income between tax brackets — potentially saving thousands. Requires legitimate work and documentation.",
+      savings: "Varies by bracket gap",
+      flag: "🇨🇦",
+      priority: "medium",
+      action: "Talk to an accountant"
+    });
   }
 
   // ── ADD: Province-specific credits for all users ───────────────────────────
