@@ -1055,7 +1055,7 @@ function AutopilotCard({data, setScreen}) {
 
   const lineItems = [
     plan.dailySpendLimit > 0 && {
-      icon:"💡", label:"Safe to spend today", amount:`$${plan.dailySpendLimit}`,
+      icon:"💡", label:"Safe to spend per day", amount:`$${plan.dailySpendLimit}`,
       color:C.green, detail:`for the next ${plan.daysLeft} day${plan.daysLeft!==1?"s":""}`,
     },
     plan.savingsTransfer > 0 && {
@@ -3508,20 +3508,20 @@ function Onboarding({onComplete,onViewLegal,userId}){
       <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:38,letterSpacing:-1,marginBottom:24,lineHeight:1,background:`linear-gradient(130deg,${C.cream} 30%,rgba(237,233,226,0.65) 100%)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>flourish</div>
 
       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,color:C.green,letterSpacing:3.5,textTransform:"uppercase",fontWeight:700,marginBottom:22,opacity:0.9}}>
-        Stop guessing. Start knowing.
+        Finally. Financial clarity.
       </div>
 
       {/* Tagline */}
       <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontSize:26,fontWeight:900,color:C.cream,lineHeight:1.2,maxWidth:300,marginBottom:8,letterSpacing:-0.5}}>
         Know before<br/>you spend.
       </div>
-      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.muted,fontSize:14,lineHeight:1.7,maxWidth:280,marginBottom:34}}>
-        One number. Updated daily. Based on your real accounts — not estimates.
+      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.mutedHi,fontSize:14,lineHeight:1.7,maxWidth:280,marginBottom:34}}>
+        One number — updated daily from your real accounts — tells you exactly what's safe to spend without missing a bill or touching your savings.
       </div>
 
       {/* Feature pills */}
       <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center",marginBottom:36,maxWidth:340}}>
-        {[["✓","Know before you spend"],["✓","Overdraft warnings"],["✓","Cash flow forecast"],["✓","AI coaching"],["✓","Tax tips & credits"],["✓","Family tools"]].map(([icon,text],i)=>(
+        {[["✓","Safe-to-spend number"],["✓","Bill collision alerts"],["✓","Overdraft warnings"],["✓","AI financial coach"],["✓","Tax tips & credits"],["✓","Built for families"]].map(([icon,text],i)=>(
           <div key={i} style={{background:C.isDark?"rgba(255,255,255,0.05)":C.surface,border:`1px solid ${C.border}`,borderRadius:99,padding:"7px 15px",color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:6,animation:`fadeUp 0.4s ease ${100+i*60}ms both`,backdropFilter:"blur(8px)"}}>
             <span style={{fontSize:14}}>{icon}</span>{text}
           </div>
@@ -3552,7 +3552,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
 
       {/* PIPEDA consent notice */}
       <div style={{marginTop:20,padding:"12px 16px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`,maxWidth:320,textAlign:"left"}}>
-        <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7}}>
+        <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7}}>
           By continuing you agree to our{" "}
           <button onClick={()=>onViewLegal&&onViewLegal("terms")} style={{background:"none",border:"none",padding:0,color:C.green,textDecoration:"none",fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Terms of Service</button>{" "}and{" "}
           <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,color:C.green,textDecoration:"none",fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Privacy Policy</button>
@@ -4754,7 +4754,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           <div style={{position:"relative",padding:"24px 24px 20px"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
               <div style={{width:6,height:6,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 10px ${heroColor}`,animation:"pulse 2.5s ease-in-out infinite"}}/>
-              <span style={{color:heroColorBright+"99",fontSize:9,textTransform:"uppercase",letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Spend up to this — stress-free</span>
+              <span style={{color:heroColorBright+"99",fontSize:9,textTransform:"uppercase",letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Safe to spend until next payday</span>
               {data.bankConnected
                 ? <span style={{color:heroColorBright+"55",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· live</span>
                 : <span style={{color:C.gold+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· estimated</span>}
@@ -4820,7 +4820,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                     </div>
                   ))}
                   <div style={{borderTop:`1px solid ${heroColor}22`,marginTop:5,paddingTop:5,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{color:heroColorBright+"88",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>= Safe to spend</span>
+                    <span style={{color:heroColorBright+"88",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>= Safe until next payday</span>
                     <span style={{color:heroColorBright,fontSize:13,fontWeight:900,fontFamily:"'Playfair Display',serif"}}>${Math.max(0,safe).toFixed(0)}</span>
                   </div>
                   {!data.bankConnected&&<div style={{color:C.gold+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>📊 Estimated · Connect bank for real numbers</div>}
@@ -9003,7 +9003,7 @@ function WidgetScreen({data,onBack}){
       <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:12}}>✦ Choose what to show</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
         {[
-          {key:"safe",label:"Safe to Spend",always:true},
+          {key:"safe",label:"Safe until payday",always:true},
           {key:"balance",label:"Account Balance"},
           {key:"health",label:"Health Score"},
           {key:"nextBill",label:"Next Bill Due"},
@@ -11101,7 +11101,7 @@ function AuthScreen({ onAuth }) {
 
             {/* Hero product card */}
             <div style={{ width: "100%", maxWidth: 340, background: "#0D1F12", border: "1px solid rgba(0,214,143,0.2)", borderRadius: 24, padding: "28px 24px", marginBottom: 36, boxShadow: "0 0 80px rgba(0,214,143,0.07)" }}>
-              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Safe to spend today</div>
+              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Safe to spend per day</div>
               <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 56, fontWeight: 900, color: "#00D68F", lineHeight: 1, marginBottom: 6 }}>$247</div>
               <div style={{ color: "rgba(237,233,226,0.35)", fontSize: 12, marginBottom: 24 }}>After bills · After buffer · From your real balance</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
