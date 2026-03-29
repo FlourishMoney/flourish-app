@@ -9734,17 +9734,22 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const kidsInfo = kidsArr.length>0
       ? kidsArr.map(k=>`${k.name||"Child"} (born ${k.birthYear||"?"}, age ${k.birthYear?new Date().getFullYear()-parseInt(k.birthYear):"?"})`).join(", ")
       : profile.hasKids?"yes (ages unknown)":"none";
-    const pLifeStages = Array.isArray(profile.lifeStages)?profile.lifeStages:(profile.lifeStages?[profile.lifeStages]:[]);
-    const empType = pLifeStages.find(s=>["t4","w2","selfemployed","incorporated","student","retired"].includes(s))||"t4";
-    const empLabel = {t4:"T4 Employee",w2:"W-2 Employee",selfemployed:"Self-Employed",incorporated:"Incorporated Business Owner",student:"Student",retired:"Retired",contractor:"Contractor",investor:"Investor",homeoffice:"Home Office",other:"Other"}[empType]||empType;
-    const isSelfEmp = empType==="selfemployed"||empType==="incorporated";
+    const PRIMARY_TYPES = ["t4","w2","selfemployed","incorporated","student","retired"];
+    const empType = (profile?.lifeStages||[]).find(s=>PRIMARY_TYPES.includes(s)) || "t4";
+    const empLabels = (profile?.lifeStages||[]).filter(s=>PRIMARY_TYPES.includes(s)).map(s=>({t4:"T4 Employee",w2:"W-2 Employee",selfemployed:"Self-Employed",incorporated:"Incorporated Business Owner",student:"Student",retired:"Retired"}[s]||s));
+    const empLabel = empLabels.join(" + ") || "T4 Employee";
+    const isSelfEmp = (profile?.lifeStages||[]).some(s=>s==="selfemployed"||s==="incorporated"||s==="contractor");
+    const partnerStages = profile?.partnerLifeStages || [];
+    const partnerEmpLabels = partnerStages.filter(s=>PRIMARY_TYPES.includes(s)).map(s=>({t4:"T4 Employee",w2:"W-2 Employee",selfemployed:"Self-Employed",incorporated:"Incorporated Business Owner",student:"Student",retired:"Retired"}[s]||s));
+    const partnerEmpLabel = partnerEmpLabels.join(" + ") || null;
+    const partnerIsSelfEmp = partnerStages.some(s=>s==="selfemployed"||s==="incorporated"||s==="contractor");
     return `You are a warm, expert personal finance coach for Flourish Money (${country==="CA"?"Canada":"USA"}).
 
 User profile:
 - Name: ${profile.name||"User"} | Age: ${age?`${age} (born ${birthYear})`:"not provided"}
 - Location: ${country==="CA"?"Canada":"United States"} — ${profile.province||"unknown"}
 - Status: ${profile.status||"single"}${profile.partnerName?` (partner: ${profile.partnerName})`:""}
-- Employment: ${empLabel} | Homeowner: ${profile.isHomeowner?"Yes":"No"}
+- Employment: ${empLabel}${partnerEmpLabel ? ` | Partner: ${partnerEmpLabel}` : ""} | Homeowner: ${profile.isHomeowner?"Yes":"No"}
 - Children: ${kidsInfo}
 
 Financial snapshot:
@@ -9760,12 +9765,14 @@ Financial snapshot:
 
 Tax & advice context (use these to give accurate, personalised advice):
 ${country==="CA"?`- Employment: ${isSelfEmp?"SELF-EMPLOYED — mention HST/GST ($30k threshold), quarterly installments, home office, business deductions, CRA My Account":"T4 EMPLOYEE — standard employment deductions, RRSP, union dues, home office if remote"}
+${partnerEmpLabel ? `- Partner employment: ${partnerIsSelfEmp ? "SELF-EMPLOYED PARTNER — consider income splitting, spousal RRSP contributions, household business deductions" : "EMPLOYED PARTNER — dual income household, spousal RRSP, household cash flow planning"}` : ""}
 - ${age&&age>=65?"SENIOR 65+: Age Amount credit, pension income splitting (Form T1032), OAS ($727/mo), GIS if low income, medical expense credit, RRIF withdrawals":""}
 - ${age&&age<71?"RRSP contribution room matters — deadline to convert is age 71":"age 71+: RRIF required, minimum withdrawals apply"}
 - ${!profile.isHomeowner&&(!age||age<40)?"FIRST-TIME BUYER ELIGIBLE: FHSA ($8,000/yr deductible, tax-free growth), HBP (borrow up to $60k from RRSP — limit raised in Budget 2024), First Home Buyers Tax Credit ($1,500)":""}
 - ${profile.hasKids?`PARENT: CCB (2025: $7,997/yr under-6, $6,748/yr ages 6–17 — tax-free, income-tested), RESP+CESG (government adds 20% on first $2,500/yr = $500 free/child/yr), childcare deduction (lower-income spouse claims), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?"college-age child: consider RESP withdrawal strategy":""}`:""}
 - Province ${profile.province||"ON"}: apply correct provincial tax rates and credits`:
 `- Employment: ${isSelfEmp?"SELF-EMPLOYED — quarterly estimated taxes, Schedule C, SE tax deduction (50% of SE tax), home office Form 8829, retirement via SEP-IRA or Solo 401k":"W-2 EMPLOYEE — check withholding accuracy, max employer 401k match first"}
+${partnerEmpLabel ? `- Partner employment: ${partnerIsSelfEmp ? "SELF-EMPLOYED PARTNER — consider income splitting, spousal RRSP contributions, household business deductions" : "EMPLOYED PARTNER — dual income household, spousal RRSP, household cash flow planning"}` : ""}
 - ${age&&age>=65?"SENIOR 65+: Social Security taxation (up to 85% taxable), RMDs start at 73, higher standard deduction ($1,950 extra single), OBBBA NEW $6,000 senior bonus deduction (2025–2028, phases out at $75k MAGI), QCD from IRA up to $108,000 (2025 indexed limit)":""}
 - ${age&&age>=73?"RMDs ARE REQUIRED — penalty is 25% of missed amount. Calculate and plan withdrawals carefully":""}
 - ${!profile.isHomeowner&&(!age||age<40)?"FIRST-TIME BUYER: mortgage interest deduction, property tax deduction, $10k IRA penalty-free withdrawal, check state programs":""}
