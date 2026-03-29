@@ -4588,8 +4588,12 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const spark=[-4200,-3800,-3100,-2600,-1900,netWorth];
   const sMin=Math.min(...spark),sMax=Math.max(...spark);
   const sN=spark.map(v=>90-((v-sMin)/(sMax-sMin)||0)*70);
+  // 7-day forecast — must be declared before heroColor which reads sevenDayOverdraft
+  const { overdraftRisk: sevenDayRisk, willGoNegative: sevenDayOverdraft } = ForecastEngine.generate(data, 7);
   const heroColor=overdraftImmediate?C.red:sevenDayOverdraft?C.gold:C.green;
   const heroColorBright=overdraftImmediate?C.redBright:sevenDayOverdraft?C.goldBright:C.greenBright;
+  // Combined overdraft signal: immediate (10-day window) OR imminent (7-day forecast)
+  const overdraft = overdraftImmediate || sevenDayOverdraft;
   const {score:healthScore,pillars}=calcHealthScore(data);
   const adjScore=Math.min(100,healthScore+(checkInBonus||0));
   const scoreColor=adjScore>=80?C.greenBright:adjScore>=65?C.tealBright:adjScore>=50?C.goldBright:adjScore>=35?C.orangeBright:C.redBright;
@@ -4601,10 +4605,6 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   // ── Generative priority logic ────────────────────────────────────────────────
   const urgentBill = soonBills.find(b=>parseInt(b.date)-today<=2);
   const isPayday   = today===15||today===1; // simple heuristic
-  // 7-day forecast — calculated once here, shared with priority filter tile
-  const { overdraftRisk: sevenDayRisk, willGoNegative: sevenDayOverdraft } = ForecastEngine.generate(data, 7);
-  // Combined overdraft signal: immediate (10-day window) OR imminent (7-day forecast)
-  const overdraft = overdraftImmediate || sevenDayOverdraft;
   // 14-day forecast — shared with "Can I afford this?" widget. No per-keystroke calls.
   const { forecast: afford14Forecast } = ForecastEngine.generate(data, 14);
   const nextPaydayDay = afford14Forecast.find(f => f.isPayday && f.day > 0)?.day || null;
