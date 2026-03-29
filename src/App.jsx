@@ -9746,6 +9746,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     return `You are a warm, expert personal finance coach for Flourish Money (${country==="CA"?"Canada":"USA"}).
 
 User profile:
+- Today's date: ${new Date().toLocaleDateString("en-CA", {year:"numeric",month:"long",day:"numeric"})}
 - Name: ${profile.name||"User"} | Age: ${age?`${age} (born ${birthYear})`:"not provided"}
 - Location: ${country==="CA"?"Canada":"United States"} — ${profile.province||"unknown"}
 - Status: ${profile.status||"single"}${profile.partnerName?` (partner: ${profile.partnerName})`:""}
@@ -9768,6 +9769,7 @@ ${country==="CA"?`- Employment: ${isSelfEmp?"SELF-EMPLOYED — mention HST/GST (
 ${partnerEmpLabel ? `- Partner employment: ${partnerIsSelfEmp ? "SELF-EMPLOYED PARTNER — consider income splitting, spousal RRSP contributions, household business deductions" : "EMPLOYED PARTNER — dual income household, spousal RRSP, household cash flow planning"}` : ""}
 - ${age&&age>=65?"SENIOR 65+: Age Amount credit, pension income splitting (Form T1032), OAS ($727/mo), GIS if low income, medical expense credit, RRIF withdrawals":""}
 - ${age&&age<71?"RRSP contribution room matters — deadline to convert is age 71":"age 71+: RRIF required, minimum withdrawals apply"}
+- RRSP deadline: ${new Date().getMonth() < 2 || (new Date().getMonth() === 2 && new Date().getDate() === 1) ? "RRSP deadline is March 1 — act now" : new Date().getMonth() <= 11 ? "RRSP deadline has passed for this tax year — focus on TFSA and current year planning" : ""}
 - ${!profile.isHomeowner&&(!age||age<40)?"FIRST-TIME BUYER ELIGIBLE: FHSA ($8,000/yr deductible, tax-free growth), HBP (borrow up to $60k from RRSP — limit raised in Budget 2024), First Home Buyers Tax Credit ($1,500)":""}
 - ${profile.hasKids?`PARENT: CCB (2025: $7,997/yr under-6, $6,748/yr ages 6–17 — tax-free, income-tested), RESP+CESG (government adds 20% on first $2,500/yr = $500 free/child/yr), childcare deduction (lower-income spouse claims), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?"college-age child: consider RESP withdrawal strategy":""}`:""}
 - Province ${profile.province||"ON"}: apply correct provincial tax rates and credits`:
