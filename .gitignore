@@ -4,3 +4,10 @@ dist/
 .env
 .DS_Store
 *.log
+
+# Local build / deploy artifacts (not for git)
+*.zip
+api/
+flourish-deploy/
+*.bak
+src/App.jsx.bak
