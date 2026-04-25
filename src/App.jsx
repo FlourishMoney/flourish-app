@@ -9759,7 +9759,7 @@ function DesktopSidebar({data,setScreen}){
 
 
 // ─── AI COACH ─────────────────────────────────────────────────────────────────
-function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}, setScreen}){
+function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}, setScreen, setAppData}){
   // ── ALL HOOKS FIRST — constants moved below to prevent TDZ ───────────────
   const [messages, setMessages] = useState(()=>{
     try {
@@ -12477,7 +12477,7 @@ export default function FlourishApp(){
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
   if(screen==="budget")return <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
-    if(screen==="coach"){const freeCoachAllowed=!isPremium&&coachMsgCount<5&&!trialExpired;const showCoach=isPremium||freeCoachAllowed;if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen}/>; if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="AI Coach" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>; return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;}
+    if(screen==="coach"){const freeCoachAllowed=!isPremium&&coachMsgCount<5&&!trialExpired;const showCoach=isPremium||freeCoachAllowed;if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen} setAppData={setAppData}/>; if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="AI Coach" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>; return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;}
     if(screen==="family")return <Family data={dataWithHousehold} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
     if(screen==="goals")return <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen}/>;
     if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
