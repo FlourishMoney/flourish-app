@@ -9950,7 +9950,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
       if(updateMatch && setAppData) {
         try {
           const update = JSON.parse(updateMatch[1]);
-          displayReply = rawReply.replace(/\nFLOURISH_UPDATE:[^\n]+/, "").trim();
+          displayReply = rawReply.replace(/\n?FLOURISH_UPDATE:[^\n]+\n?/, "").trim();
           if(update.action==="add_goal") {
             setAppData(prev=>({...prev, goals:[...(prev.goals||[]), {
               id:Date.now(), name:update.name||"Goal",
