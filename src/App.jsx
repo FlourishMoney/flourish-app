@@ -9775,7 +9775,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
   const bottomRef = useRef(null);
 
   // ── Constants and derived values (after all hooks) ────────────────────────
-  const FREE_LIMIT=5;
+  const FREE_LIMIT=FREE_TIER_LIMITS.coachMessagesPerDay;
   const STORAGE_KEY = "flourish_coach_history";
   const WELCOME = {role:"assistant", content:"Hey! I'm your Flourish AI Coach 👋 I can see your spending patterns, balances, and financial data. What would you like to work on today?"};
   const freeMsgsLeft=isPremium?Infinity:Math.max(0,FREE_LIMIT-coachMsgCount);
