@@ -9,6 +9,7 @@ import {
   Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
+import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach } from "./lib/financialCalculations.js";
 
 // ── Supabase client ────────────────────────────────────────────────────────────
 const supabase = createClient(
@@ -1537,11 +1538,60 @@ function WhatIfSimulator({data, onClose}) {
     setLoading(true);
     setResult(null);
 
-    const prompt = `You are a financial simulator. The user wants to know the impact of: "${qText}".
-Current financial data: Balance $${(bal||0).toFixed(0)}, Monthly income ~$${(monthlyIncome||0).toFixed(0)}, Total debt $${totalDebt.toFixed(0)}, Monthly bills $${bills.toFixed(0)}, Financial Health Score ${score}/100.
-Respond ONLY with valid JSON (no markdown) like:
-{"cashImpact":"safe"|"tight"|"risky","cashDetail":"1 sentence","debtImpact":"none"|"increases"|"decreases","debtDetail":"1 sentence","savingsDelay":"none"|"X weeks"|"X months","healthScoreDelta":-5,"healthDetail":"1 sentence","verdict":"Go for it"|"Proceed carefully"|"Think twice"|"Not recommended","verdictReason":"1 sentence","tip":"1 actionable alternative if risky, else empty string"}`;
+    // ── TRUST LAYER (Phase 1B): JS computes ALL scenario numbers ─────────
+    // Claude only writes the prose explanation fields. The numeric and
+    // verdict fields are computed deterministically by financialCalculations.js
+    // and frozen before Claude sees them. This guarantees no hallucinated
+    // figures can reach the user.
 
+    // Step 1: Parse the dollar amount out of the user's query
+    const amount = parseAmountFromQuery(qText);
+
+    // Step 2: Pull the additional inputs we need from the existing engines.
+    // safeToSpend is the same number Dashboard shows the user — keep them
+    // consistent so the simulator's "newSafeToSpend" matches user expectations.
+    const safeToSpend  = SafeSpendEngine.calculate(data).safeAmount || 0;
+    const dailySpend   = FinancialCalcEngine.avgDailySpend(data) || 0;
+    const cashFlowObj  = FinancialCalcEngine.cashFlow(data);
+    const monthlySurplus = cashFlowObj.cashFlow || 0;
+
+    // Step 3: Deterministic scenario math (no AI involved)
+    const impact  = simulatePurchaseImpact({
+      amount,
+      currentBalance:     bal,
+      currentSafeToSpend: safeToSpend,
+      avgDailySpend:      dailySpend,
+      monthlyIncome,
+      monthlySurplus,
+    });
+    const verdictObj = calculateScenarioVerdict({
+      cashImpact:       impact.cashImpact,
+      healthScoreDelta: impact.healthScoreDelta,
+      recoveryMonths:   impact.recoveryMonths,
+    });
+    const frozenSummary = summarizeScenarioForCoach(impact, verdictObj);
+
+    // Step 4: Format JS-computed values to match the UI contract.
+    // The UI expects savingsDelay as a string like "none" / "X weeks" / "X months".
+    const savingsDelayStr = impact.savingsDelayWeeks <= 0
+      ? "none"
+      : impact.savingsDelayWeeks < 8
+        ? `${impact.savingsDelayWeeks} weeks`
+        : `${Math.round(impact.savingsDelayWeeks / 4.333)} months`;
+
+    // Step 5: Ask Claude to write ONLY the prose explanation fields.
+    // We send the frozen numbers as context. Claude must not change them.
+    const prompt = `Write plain-language explanation text for a financial scenario the Flourish app already calculated. The user said: "${qText}".
+
+The app's calculated results (DO NOT CHANGE THESE NUMBERS — only explain them):
+${JSON.stringify(frozenSummary, null, 2)}
+
+Write a short, warm response. Return ONLY valid JSON (no markdown) with EXACTLY these fields:
+{"cashDetail":"1 sentence describing the cash impact","debtDetail":"1 sentence (use 'No direct debt change.' for cash purchases)","healthDetail":"1 sentence describing the score impact","verdictReason":"1 sentence justifying the verdict","tip":"1 sentence with an alternative if risky/tight, else empty string"}
+
+Rules: do not invent or quote any number not in the calculated results above. Do not include cashImpact, savingsDelay, healthScoreDelta, or verdict — those are already determined.`;
+
+    let prose = {};
     try {
       const r = await fetch("/api/coach", {
         method:"POST",
@@ -1551,10 +1601,34 @@ Respond ONLY with valid JSON (no markdown) like:
       const d = await r.json();
       const text = d.content?.[0]?.text || "{}";
       const clean = text.replace(/```json|```/g,"").trim();
-      setResult(JSON.parse(clean));
+      prose = JSON.parse(clean);
     } catch {
-      setResult({cashImpact:"tight",cashDetail:"Could reduce your safe-to-spend buffer significantly.",debtImpact:"none",debtDetail:"No direct debt change.",savingsDelay:"2 weeks",healthScoreDelta:-3,healthDetail:"Temporary dip in your financial health score.",verdict:"Proceed carefully",verdictReason:"Make sure you have enough buffer after this purchase.",tip:""});
+      // Network/parse failure: use neutral fallback prose. The numbers are
+      // still correct because they came from JS, not Claude.
+      prose = {
+        cashDetail:    "This purchase will reduce your safe-to-spend balance.",
+        debtDetail:    "No direct debt change.",
+        healthDetail:  "Your financial health score will be affected as shown.",
+        verdictReason: "Based on your current cash flow and buffer.",
+        tip:           "",
+      };
     }
+
+    // Step 6: Merge JS-computed numbers (source of truth) with Claude's prose
+    setResult({
+      // JS-computed (deterministic, never hallucinated):
+      cashImpact:       impact.cashImpact,
+      debtImpact:       "none",
+      savingsDelay:     savingsDelayStr,
+      healthScoreDelta: impact.healthScoreDelta,
+      verdict:          verdictObj.verdict,
+      // Claude-written explanations:
+      cashDetail:    prose.cashDetail    || "This purchase will reduce your safe-to-spend balance.",
+      debtDetail:    prose.debtDetail    || "No direct debt change.",
+      healthDetail:  prose.healthDetail  || "Your financial health score will be affected as shown.",
+      verdictReason: prose.verdictReason || "Based on your current cash flow and buffer.",
+      tip:           prose.tip           || "",
+    });
     setLoading(false);
   };
 
