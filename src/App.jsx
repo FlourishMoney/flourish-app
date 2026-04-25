@@ -4844,7 +4844,21 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const [affordInput, setAffordInput] = useState("");
   const [affordResult, setAffordResult] = useState(null);
   const [affordFocused, setAffordFocused] = useState(false);
+  const [dashTab, setDashTab] = useState(()=>{
+    try {
+      const stored = localStorage.getItem("flourish_dash_tab");
+      if (stored === "today" || stored === "decisions") return stored;
+      // First-visit users (no grandfather flag set) land on Decisions to discover the simulator.
+      // Returning/grandfathered users default to Today.
+      const isNewUser = localStorage.getItem("flourish_account_existed_pre_paywall") !== "1";
+      return isNewUser ? "decisions" : "today";
+    } catch { return "today"; }
+  });
   useEffect(()=>{const t=setTimeout(()=>setMounted(true),60);return()=>clearTimeout(t);},[]);
+  // Persist tab choice across sessions
+  useEffect(()=>{
+    try { localStorage.setItem("flourish_dash_tab", dashTab); } catch {}
+  }, [dashTab]);
   useEffect(()=>{
     if(data.bankConnected) {
       const { netWorth: nw } = FinancialCalcEngine.netWorth(data);
@@ -4965,6 +4979,25 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             <div style={{position:"absolute",top:-3,right:-3,width:16,height:16,borderRadius:"50%",background:C.red,animation:"ringPulse 1.5s ease-out infinite"}}/>
           </>}
         </button>
+      </div>
+
+      {/* ── Phase 3a: Today / Decisions tab bar ─────────────────────────── */}
+      <div style={{display:"flex",gap:6,marginBottom:14,padding:4,background:C.cardAlt,borderRadius:14,border:`1px solid ${C.border}`}}>
+        {[
+          {id:"today",     label:"Today"},
+          {id:"decisions", label:"Decisions"},
+        ].map(t=>(
+          <button key={t.id} onClick={()=>setDashTab(t.id)} style={{
+            flex:1,padding:"10px 8px",fontSize:13,fontWeight:700,
+            background: dashTab===t.id ? C.green+"22" : "transparent",
+            border:     dashTab===t.id ? `1px solid ${C.green}44` : "1px solid transparent",
+            borderRadius:10,
+            color:      dashTab===t.id ? C.greenBright : C.muted,
+            cursor:"pointer",
+            fontFamily:"'Plus Jakarta Sans',sans-serif",
+            transition:"all .15s",
+          }}>{t.label}</button>
+        ))}
       </div>
 
       {/* ── Pre-bank estimated insight — replaces generic "sample data" banner ── */}
