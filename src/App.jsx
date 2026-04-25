@@ -9816,6 +9816,18 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const income = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0).reduce((s,i)=>s+_toMoCtx(i.amount,i.freq),0) || DEMO.income;
     const balance = (accounts||[]).filter(a=>["checking","savings","depository"].includes((a.type||"").toLowerCase())).reduce((s,a)=>s+parseFloat(a.balance||0),0) || DEMO.balance;
     const spending = txns.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
+
+    // ── PHASE 1C: pre-computed engine values for affordability reasoning ──
+    // The Coach must see these so it can answer "can I afford X" honestly.
+    // Without safeToSpend, the Coach treats any purchase < raw balance as fine.
+    const _safeSpend  = SafeSpendEngine.calculate(data);
+    const _cashFlow   = FinancialCalcEngine.cashFlow(data);
+    const _avgDaily   = FinancialCalcEngine.avgDailySpend(data) || 0;
+    const _efMonths   = FinancialCalcEngine.emergencyFundMonths(data) || 0;
+    const _safeToSpend     = _safeSpend.safeAmount || 0;
+    const _upcomingBills   = _safeSpend.upcomingBills || 0;
+    const _monthlySurplus  = _cashFlow.cashFlow || 0;
+    const _monthlyExpenses = _cashFlow.totalExpenses || 0;
     const topCats = Object.entries(
       txns.filter(t=>t.amount>0 && t.cat!=="Income")
         .reduce((acc,t)=>{acc[t.cat]=(acc[t.cat]||0)+t.amount;return acc;},{})
@@ -9852,6 +9864,11 @@ User profile:
 
 Financial snapshot:
 - Balance: $${(balance||0).toFixed(2)} | Income (biweekly): $${(income||0).toFixed(2)}
+- Safe-to-spend RIGHT NOW: $${_safeToSpend.toFixed(2)} (this is the truthful "can-I-afford" number — balance minus upcoming bills, minimum debt payments, safety buffer, savings allocation)
+- Upcoming bills (next ~14 days): $${_upcomingBills.toFixed(2)}
+- Monthly surplus (income − expenses): $${_monthlySurplus.toFixed(2)} | Monthly expenses: $${_monthlyExpenses.toFixed(2)}
+- Avg daily discretionary spend: $${_avgDaily.toFixed(2)}
+- Emergency fund coverage: ${_efMonths.toFixed(1)} months of expenses
 - Recent spending: $${(spending||0).toFixed(2)} | Top categories: ${topCats||"no data"}
 - Accounts: ${accounts.map(a=>`${a.name} (${a.type}) $${a.balance}`).join("; ")||"none linked"}
 - Bills: ${bills}
@@ -9883,6 +9900,12 @@ To add new goal: FLOURISH_UPDATE:{"action":"add_goal","name":"<n>","target":<n>,
 
 Be decisive, not educational. Lead with the action: what to do, how much, when. Give one clear next step — not three options. Use $ amounts. Skip the preamble. Never be preachy.
 CRITICAL: Balances are live. NEVER tell user to check their bank app — Flourish IS their financial view. Never mention Plaid. Max 4 sentences unless the user asks for detail.
+
+AFFORDABILITY RULE (Phase 1C):
+- "Can I afford X?" / "Buy a $X Y" / "Should I buy X?" questions are AFFORDABILITY questions, not savings-goal questions.
+- Compare the purchase amount to "Safe-to-spend RIGHT NOW" above. If purchase ≤ safe-to-spend, say it's affordable and state the new safe-to-spend after. If purchase > safe-to-spend, say it isn't affordable right now and explain by exactly how much the user is short.
+- Do NOT default to "let's set this up as a savings goal" unless the user explicitly asks to save toward something.
+- Do NOT recommend buying something that exceeds safe-to-spend.
 
 STRICT NUMBER POLICY (non-negotiable trust rule):
 - Only cite dollar amounts, percentages, interest rates, dates, or timelines that appear in the "Financial snapshot" or "Tax & advice context" blocks above, or that the user typed in their message.
