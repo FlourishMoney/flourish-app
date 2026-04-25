@@ -1196,10 +1196,6 @@ function AutopilotCard({data, setScreen}) {
 
 // ── FINANCIAL TIME MACHINE (Timeline + What-If overlay) ───────────────────────
 function TimeMachine({data}) {
-  const [whatIfAmount, setWhatIfAmount] = useState(0);
-  const [whatIfLabel, setWhatIfLabel] = useState("");
-  const [inputVal, setInputVal] = useState("");
-  const [activePreset, setActivePreset] = useState(null);
   const [expanded, setExpanded] = useState(false);
   const [expandedDay, setExpandedDay] = useState(null); // day index that is drilled into
 
@@ -1211,31 +1207,8 @@ function TimeMachine({data}) {
   const events = forecast.filter(f => f.isPayday || f.bills.length > 0 || f.day === 0 || f.day === 30);
   const displayed = expanded ? events : events.slice(0, 5);
 
-  // What-if overlay: deduct the amount from every day after today
-  const overlayBalance = (f) => {
-    if (whatIfAmount <= 0) return null;
-    return f.day > 0 ? f.balance - whatIfAmount : f.balance;
-  };
 
-  const presets = [
-    {label:"$500 vacation", amount:500},
-    {label:"$900 laptop",   amount:900},
-    {label:"$300/mo invest", amount:300},
-    {label:"$1,200 car repair", amount:1200},
-  ];
 
-  const applyWhatIf = (label, amount) => {
-    setWhatIfLabel(label); setWhatIfAmount(amount);
-    setInputVal(label); setActivePreset(label);
-  };
-  const clearWhatIf = () => {
-    setWhatIfAmount(0); setWhatIfLabel(""); setInputVal(""); setActivePreset(null);
-  };
-
-  const parseInput = (v) => {
-    const m = v.match(/\$?([\d,]+)/);
-    return m ? parseFloat(m[1].replace(/,/g,"")) : 0;
-  };
 
   return (
     <div>
@@ -1248,30 +1221,6 @@ function TimeMachine({data}) {
         </button>
       </div>
 
-      {/* What-if input */}
-      <div style={{background:"rgba(255,255,255,0.04)",borderRadius:16,padding:"12px 14px",border:`1px solid ${whatIfAmount>0?C.purple+"55":C.border}`,marginBottom:12,transition:"border-color .2s"}}>
-        <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>
-          {whatIfAmount > 0 ? `Showing impact of ${whatIfLabel}` : "What if I…"}
-        </div>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
-          {presets.map(p=>(
-            <button key={p.label} onClick={()=>applyWhatIf(p.label, p.amount)} style={{background:activePreset===p.label?C.purple+"33":C.surface,border:`1px solid ${activePreset===p.label?C.purple+"66":C.border}`,color:activePreset===p.label?C.purpleBright:C.muted,borderRadius:99,padding:"5px 10px",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer",transition:"all .15s"}}>{p.label}</button>
-          ))}
-        </div>
-        <div style={{display:"flex",gap:7}}>
-          <input
-            value={inputVal}
-            onChange={e=>setInputVal(e.target.value)}
-            onKeyDown={e=>{if(e.key==="Enter"&&inputVal){const amt=parseInput(inputVal);if(amt>0)applyWhatIf(inputVal,amt);}}}
-            placeholder="Type e.g. $650 TV…"
-            style={{flex:1,padding:"9px 12px",borderRadius:11,border:`1px solid ${C.border}`,background:C.surface,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,outline:"none"}}
-          />
-          {whatIfAmount > 0
-            ? <button onClick={clearWhatIf} style={{background:C.red+"22",border:`1px solid ${C.red}44`,color:C.redBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:11,padding:"9px 12px",borderRadius:11,cursor:"pointer",whiteSpace:"nowrap"}}>Clear ✕</button>
-            : <button onClick={()=>{const amt=parseInput(inputVal);if(amt>0)applyWhatIf(inputVal,amt);}} style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,color:C.purpleBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:11,padding:"9px 12px",borderRadius:11,cursor:"pointer",whiteSpace:"nowrap"}}>Apply →</button>
-          }
-        </div>
-      </div>
 
       {/* Timeline */}
       <div style={{position:"relative"}}>
@@ -1279,12 +1228,9 @@ function TimeMachine({data}) {
         <div style={{display:"flex",flexDirection:"column",gap:0}}>
           {displayed.map((ev, idx) => {
             const baseBalance = ev.balance;
-            const overlayBal = overlayBalance(ev);
             const isLow = baseBalance < safeFloor;
-            const overlayLow = overlayBal !== null && overlayBal < safeFloor;
             const dotColor = ev.day===0 ? C.green : ev.isPayday ? C.greenBright : ev.bills.length>0 ? C.gold : isLow ? C.red : C.border;
             const balColor = isLow ? C.redBright : ev.isPayday ? C.greenBright : C.mutedHi;
-            const overlaydiff = overlayBal !== null ? overlayBal - baseBalance : 0;
 
             const isDrilled = expandedDay === ev.day;
             const avgDaily = FinancialCalcEngine.avgDailySpend(data);
@@ -1311,14 +1257,6 @@ function TimeMachine({data}) {
                       </div>
                       <div style={{textAlign:"right",flexShrink:0,minWidth:80}}>
                         <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${(baseBalance||0).toFixed(0)}`}</div>
-                        {overlayBal !== null && (
-                          <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:11,color:overlayLow?C.redBright:C.purpleBright,marginTop:2}}>
-                            → ${(overlayBal||0).toFixed(0)}
-                            <span style={{color:overlaydiff<0?C.redBright:C.greenBright,fontSize:9,marginLeft:3}}>
-                              ({overlaydiff>0?"+":""}{(overlaydiff||0).toFixed(0)})
-                            </span>
-                          </div>
-                        )}
                         <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
                       </div>
                     </div>
@@ -1394,20 +1332,6 @@ function TimeMachine({data}) {
             );
           })}
         </div>
-        {whatIfAmount > 0 && (
-          <div style={{background:C.purple+"10",border:`1px solid ${C.purple}22`,borderRadius:12,padding:"10px 14px",marginTop:4,display:"flex",gap:8,alignItems:"flex-start"}}>
-            <span style={{fontSize:14,flexShrink:0}}>🔮</span>
-            <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>
-              <strong style={{color:C.purpleBright}}>{whatIfLabel}</strong> would reduce your balance by <strong style={{color:C.purpleBright}}>${whatIfAmount}</strong> immediately.
-              {(() => {
-                const firstDanger = events.find(e => e.day > 0 && (e.balance - whatIfAmount) < safeFloor);
-                return firstDanger
-                  ? <> Your balance would drop below safe levels on <strong style={{color:C.redBright}}>{firstDanger.date.toLocaleDateString("en-CA",{month:"short",day:"numeric"})}</strong>.</>
-                  : <> <strong style={{color:C.greenBright}}>Your timeline stays safe</strong> — you can afford this.</>
-              })()}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
