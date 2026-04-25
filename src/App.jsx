@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach } from "./lib/financialCalculations.js";
+import { getPlan, isPremiumOrFounder, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan } from "./lib/usageLimits.js";
 
 // ── Supabase client ────────────────────────────────────────────────────────────
 const supabase = createClient(
@@ -1534,6 +1535,28 @@ function WhatIfSimulator({data, onClose}) {
   const simulate = async (q) => {
     const qText = q || inputVal;
     if (!qText.trim()) return;
+
+    // ── PAYWALL GATE (Phase 2) ───────────────────────────────────────────
+    // Free tier: 3 simulations/day. Premium and beta_founder: unlimited.
+    // Soft gate — show a clear message in the result card instead of an alert.
+    if (!canRunSimulation()) {
+      setQuery(qText);
+      setResult({
+        cashImpact: "tight",
+        cashDetail: `You've used all ${FREE_TIER_LIMITS.simulationsPerDay} simulations for today. Upgrade to Flourish Plus for unlimited What-If scenarios, or come back tomorrow.`,
+        debtImpact: "none",
+        debtDetail: "",
+        savingsDelay: "none",
+        healthScoreDelta: 0,
+        healthDetail: "",
+        verdict: "Upgrade to continue",
+        verdictReason: "Daily simulation limit reached on the free plan.",
+        tip: "",
+      });
+      return;
+    }
+    recordSimulationUse();
+
     setQuery(qText);
     setLoading(true);
     setResult(null);
@@ -12079,11 +12102,25 @@ export default function FlourishApp(){
   const trialDaysUsed=Math.floor((Date.now()-trialStart.getTime())/(1000*60*60*24));
   const trialDaysLeft=Math.max(0,14-trialDaysUsed);
   const trialExpired=trialDaysUsed>=14&&!isPremium;
-  // ── AI Coach free message count ──────────────────────────────
-  const [coachMsgCount,setCoachMsgCount]=useState(()=>{
-    try{return parseInt(localStorage.getItem("flourish_coach_msgs")||"0");}catch{return 0;}
-  });
-  const bumpCoachMsg=()=>setCoachMsgCount(n=>{const v=n+1;try{localStorage.setItem("flourish_coach_msgs",String(v));}catch{}return v;});
+  // ── AI Coach free message count (now backed by usageLimits.js) ─────────────
+  // The new library uses a daily-resetting counter and respects plan tiers
+  // (free / premium / beta_founder). On first boot after Phase 2 ships, we
+  // also run the grandfather check so existing users get beta_founder status.
+  const [coachMsgCount,setCoachMsgCount]=useState(()=>getCoachMessagesRemaining()===Infinity?0:(FREE_TIER_LIMITS.coachMessagesPerDay-getCoachMessagesRemaining()));
+  const bumpCoachMsg=()=>{
+    recordCoachUse();
+    setCoachMsgCount(c=>c+1);
+  };
+
+  // Run grandfather + new-account marking once on boot. Idempotent — safe to run
+  // on every render of the top-level component, but useEffect with [] is cleaner.
+  useEffect(()=>{
+    applyGrandfatherIfEligible();
+    markAccountIfNew();
+    // Sync the legacy isPremium boolean with the new plan tier so UI badges
+    // (e.g. {freeMsgsLeft}/{FREE_LIMIT}) reflect grandfathered beta_founder users.
+    if (isPremiumOrFounder()) setIsPremium(true);
+  },[]);
   const [checkInBonus,setCheckInBonus]=useState(()=>saved?.checkInBonus||0);
   const [showCheckIn,setShowCheckIn]=useState(false);
   const [showWhatIf,setShowWhatIf]=useState(false);
@@ -12352,7 +12389,7 @@ export default function FlourishApp(){
   if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
   if(!firstVisitDone&&appData)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}/>;
-  if(showPaywall)return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;
+  if(showPaywall)return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setPlan("premium");setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;
 
   const unread = (() => {
     try {
