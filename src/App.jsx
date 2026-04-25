@@ -1510,11 +1510,11 @@ function FinancialTimeline({data}) {
 }
 
 // ── WHAT IF SIMULATOR ──────────────────────────────────────────────────────────
-function WhatIfSimulator({data, onClose}) {
+function WhatIfSimulator({data, onClose, initialQuery, initialType}) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
-  const [inputVal, setInputVal] = useState("");
+  const [inputVal, setInputVal] = useState(initialQuery || "");
   const presets = [
     {label: "Buy a $800 laptop",        type: "purchase"},
     {label: "Take a $1,200 vacation",   type: "purchase"},
@@ -1750,6 +1750,14 @@ Rules: do not invent or quote any number not in the calculated results above. Do
     });
     setLoading(false);
   };
+
+  // Auto-run if a pre-filled query was passed in (from Decisions hero, etc.)
+  useEffect(() => {
+    if (initialQuery && initialQuery.trim()) {
+      simulate(initialQuery, initialType || undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Phase 1D: scenario-aware verdict styling. Maps each verdict (across all 3 scenario types) to a color/bg/emoji.
   const _verdictMeta = (v) => {
@@ -4854,6 +4862,8 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
       return isNewUser ? "decisions" : "today";
     } catch { return "today"; }
   });
+  // Phase 3c: input value for the Decisions tab hero
+  const [dashHeroInput, setDashHeroInput] = useState("");
   useEffect(()=>{const t=setTimeout(()=>setMounted(true),60);return()=>clearTimeout(t);},[]);
   // Persist tab choice across sessions
   useEffect(()=>{
@@ -5650,25 +5660,89 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
 
       {/* Phase 3b: Decisions tab content guard */}
       {dashTab === "decisions" && (<>
-        {/* DECISIONS — Quick Nav (filtered to decision tools only) */}
-        <div style={{...anim(0),display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          {[
-            {label:"What If?",icon:"sparkles",screen:null,color:C.teal,sub:"Simulate any decision",hero:true,whatIf:true},
-            {label:"AI Coach",icon:"sparkles",screen:"coach",color:C.green,sub:"Ask anything · powered by Claude"},
-            {label:"2-Week Forecast",icon:"calendar",screen:"plan",color:C.teal,sub:"Cash flow ahead"},
-            {label:"Debt Simulator",icon:"trendUp",screen:"goals",tab:"sim",color:C.purple,sub:"Drag to freedom date"},
-          ].filter(a => a.whatIf ? !!onWhatIf : true).map((a,i)=>(
-            <button key={a.label} onClick={()=>a.whatIf?onWhatIf():(a.tab&&setGoalsTab&&setGoalsTab(a.tab),setScreen(a.screen))}
-              style={{...glass(a.color,a.hero?C.teal+"44":a.color+"1A"),borderRadius:20,padding:"18px 16px",cursor:"pointer",textAlign:"left",fontFamily:"inherit",transition:"all .25s",position:"relative",overflow:"hidden"}}
-              onMouseEnter={e=>{e.currentTarget.style.borderColor=a.color+"66";e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 14px 40px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06)`;}}
-              onMouseLeave={e=>{e.currentTarget.style.borderColor=a.hero?C.teal+"44":a.color+"1A";e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04)";}}>
-              <div style={{position:"absolute",top:-20,right:-20,width:80,height:80,borderRadius:"50%",background:`radial-gradient(circle,${a.color}14 0%,transparent 70%)`,pointerEvents:"none"}}/>
-              {a.hero&&<div style={{position:"absolute",top:10,right:12,background:a.color,color:"#fff",fontSize:8,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"3px 7px",borderRadius:99,letterSpacing:0.5}}>✦</div>}
-              <div style={{marginBottom:8,fontSize:22}}>{typeof a.icon==="string"&&a.icon.length<=2?a.icon:<Icon id={typeof a.icon==="string"&&a.icon.length>2?a.icon:"sparkles"} size={22} color={a.hero?a.color:a.color} strokeWidth={1.6}/>}</div>
-              <div style={{color:a.hero?a.color:a.color,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:3}}>{a.label}</div>
-              <div style={{color:C.mutedHi,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{a.sub}</div>
-            </button>
-          ))}
+        {/* DECISIONS — Hero: "What money decision are you working on?" (Phase 3c) */}
+        <div style={{...anim(0),...glass(C.teal),borderRadius:22,padding:"22px 20px"}}>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.cream,marginBottom:4}}>What money decision are you working on?</div>
+          <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:14}}>Type a scenario or pick a quick action below.</div>
+
+          {/* Free-form input */}
+          <div style={{display:"flex",gap:8,marginBottom:14}}>
+            <input
+              type="text"
+              maxLength={120}
+              placeholder="e.g. Buy a $800 laptop"
+              value={dashHeroInput}
+              onChange={e=>setDashHeroInput(e.target.value)}
+              onKeyDown={e=>{
+                if(e.key==="Enter" && dashHeroInput.trim() && onWhatIf){
+                  onWhatIf(dashHeroInput.trim());
+                  setDashHeroInput("");
+                }
+              }}
+              style={{
+                flex:1,
+                background:C.card,
+                border:`1px solid ${C.border}`,
+                borderRadius:14,
+                padding:"12px 14px",
+                fontSize:14,
+                fontFamily:"'Plus Jakarta Sans',sans-serif",
+                color:C.cream,
+                outline:"none",
+              }}
+            />
+            <button
+              onClick={()=>{
+                if(dashHeroInput.trim() && onWhatIf){
+                  onWhatIf(dashHeroInput.trim());
+                  setDashHeroInput("");
+                }
+              }}
+              disabled={!dashHeroInput.trim()}
+              style={{
+                background: dashHeroInput.trim() ? C.green : C.cardAlt,
+                border:"none",
+                borderRadius:14,
+                padding:"0 18px",
+                color: dashHeroInput.trim() ? "#fff" : C.muted,
+                fontWeight:700,
+                fontSize:13,
+                fontFamily:"'Plus Jakarta Sans',sans-serif",
+                cursor: dashHeroInput.trim() ? "pointer" : "default",
+                transition:"all .15s",
+              }}
+            >Run →</button>
+          </div>
+
+          {/* Quick chips */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            {[
+              {label:"💸 Buy something",   action:()=>onWhatIf && onWhatIf("Buy a $", "purchase"), color:C.teal},
+              {label:"💳 Pay off debt",     action:()=>onWhatIf && onWhatIf("Pay off my credit card", "debt"), color:C.purple},
+              {label:"📈 Invest monthly",   action:()=>onWhatIf && onWhatIf("Invest $300/month", "invest"), color:C.green},
+              {label:"🤔 Ask the Coach",    action:()=>setScreen && setScreen("coach"), color:C.gold},
+            ].map((chip,i)=>(
+              <button
+                key={i}
+                onClick={chip.action}
+                style={{
+                  background:C.card,
+                  border:`1px solid ${chip.color}33`,
+                  borderRadius:14,
+                  padding:"12px 14px",
+                  cursor:"pointer",
+                  textAlign:"left",
+                  fontFamily:"'Plus Jakarta Sans',sans-serif",
+                  fontSize:13,
+                  fontWeight:600,
+                  color:C.cream,
+                  transition:"all .15s",
+                }}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=chip.color+"66";e.currentTarget.style.transform="translateY(-1px)";}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor=chip.color+"33";e.currentTarget.style.transform="translateY(0)";}}
+              >{chip.label}</button>
+            ))}
+          </div>
         </div>
 
         {/* DECISIONS — Time Machine forecast */}
@@ -12384,6 +12458,8 @@ export default function FlourishApp(){
   const [checkInBonus,setCheckInBonus]=useState(()=>saved?.checkInBonus||0);
   const [showCheckIn,setShowCheckIn]=useState(false);
   const [showWhatIf,setShowWhatIf]=useState(false);
+  const [whatIfQuery, setWhatIfQuery] = useState("");
+  const [whatIfType, setWhatIfType] = useState(null);
   const [showWrapped,setShowWrapped]=useState(false);
   const [isOnline,setIsOnline]=useState(()=>navigator.onLine);
   const [dashLayout,setDashLayout]=useState(()=>{
@@ -12644,7 +12720,7 @@ export default function FlourishApp(){
   if(!user)return <AuthScreen onAuth={u=>setUser(u)}/>;
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
-  if(showWhatIf)return <WhatIfSimulator data={appData||{}} onClose={()=>setShowWhatIf(false)}/>;
+  if(showWhatIf)return <WhatIfSimulator data={appData||{}} initialQuery={whatIfQuery} initialType={whatIfType} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);}}/>;
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
   if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
@@ -12710,7 +12786,7 @@ export default function FlourishApp(){
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
     if(showSettings)return <Settings data={appData} setAppData={setAppData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}}/>;
-    if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/>;
+    if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
   if(screen==="budget")return <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
@@ -12720,7 +12796,7 @@ export default function FlourishApp(){
     if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     // privacy and terms handled before auth gate above
-    return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/>;
+    return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/>;
   };
 
   const ALL_NAV=[
@@ -12843,7 +12919,7 @@ input,button,select,textarea { font-family:inherit; }
         {/* Two-column for home, single for others */}
         {screen==="home"&&!showNotifs&&!showSettings?(
           <div style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:28,padding:"28px 36px 40px",overflowY:"auto",flex:1}}>
-            <div><Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={true} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={()=>setShowWhatIf(true)} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/></div>
+            <div><Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={true} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/></div>
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
               <DesktopSidebar data={dataWithHousehold} setScreen={setScreen}/>
             </div>
