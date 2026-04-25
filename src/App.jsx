@@ -1516,10 +1516,12 @@ function WhatIfSimulator({data, onClose}) {
   const [result, setResult] = useState(null);
   const [inputVal, setInputVal] = useState("");
   const presets = [
-    "Buy a $800 laptop",
-    "Take a $1,200 vacation",
-    "Get a $600 phone",
-    "Buy a used car for $8,000",
+    {label: "Buy a $800 laptop",        type: "purchase"},
+    {label: "Take a $1,200 vacation",   type: "purchase"},
+    {label: "Get a $600 phone",         type: "purchase"},
+    {label: "Pay off my credit card",   type: "debt"},
+    {label: "Invest $300/month",        type: "invest"},
+    {label: "Buy a used car for $8,000",type: "purchase"},
   ];
 
   const _toMoSim = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a; };
@@ -1532,7 +1534,7 @@ function WhatIfSimulator({data, onClose}) {
   const bills = (data.bills||[]).reduce((s,b) => s + parseFloat(b.amount||0), 0);
   const {score} = calcHealthScore(data);
 
-  const simulate = async (q) => {
+  const simulate = async (q, typeOverride) => {
     const qText = q || inputVal;
     if (!qText.trim()) return;
 
@@ -1564,7 +1566,7 @@ function WhatIfSimulator({data, onClose}) {
     // ── PHASE 1D: scenario routing ───────────────────────────────────────
     // Detect whether this is a purchase, debt-payoff, or investment scenario.
     // Tagged presets pass scenarioType directly; free-form input uses detectScenarioType.
-    const scenarioType = detectScenarioType(qText);
+    const scenarioType = typeOverride || detectScenarioType(qText);
 
     // ── DEBT PAYOFF SCENARIO ─────────────────────────────────────────────
     if (scenarioType === "debt") {
@@ -1794,7 +1796,7 @@ Rules: do not invent or quote any number not in the calculated results above. Do
           <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:8}}>Quick scenarios</div>
           <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
             {presets.map(p=>(
-              <button key={p} onClick={()=>simulate(p)} style={{background:query===p?C.greenDim:C.cardAlt,border:`1px solid ${query===p?C.green+"55":C.border}`,color:query===p?C.green:C.mutedHi,borderRadius:99,padding:"6px 12px",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer",transition:"all .15s"}}>{p}</button>
+              <button key={p.label} onClick={()=>simulate(p.label, p.type)} style={{background:query===p.label?C.greenDim:C.cardAlt,border:`1px solid ${query===p.label?C.green+"55":C.border}`,color:query===p.label?C.green:C.mutedHi,borderRadius:99,padding:"6px 12px",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer",transition:"all .15s"}}>{p.label}</button>
             ))}
           </div>
         </div>
