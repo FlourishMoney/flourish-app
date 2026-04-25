@@ -12,6 +12,8 @@ import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach } from "./lib/financialCalculations.js";
 import { getPlan, isPremiumOrFounder, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan } from "./lib/usageLimits.js";
 
+const FLOURISH_BETA_CODES = ["BETA100","FLOURISH2026","FOUNDER"];
+
 // ── Supabase client ────────────────────────────────────────────────────────────
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -1517,8 +1519,6 @@ function WhatIfSimulator({data, onClose}) {
     "Buy a $800 laptop",
     "Take a $1,200 vacation",
     "Get a $600 phone",
-    "Pay off my credit card",
-    "Invest $300/month",
     "Buy a used car for $8,000",
   ];
 
@@ -10495,7 +10495,7 @@ function Paywall({onClose,onUpgrade,onPromoUpgrade,country}){
   const [selected,setSelected]=useState("annual");
   const [promo,setPromo]=useState("");
   const [promoError,setPromoError]=useState("");
-  const PROMO_CODES=["FLOURISH2026","FOUNDER","BETA100"];
+  const PROMO_CODES = FLOURISH_BETA_CODES;
   const isCA=country==="CA";
   const plans={
     annual:{label:"Annual",price:isCA?"$79.99/yr":"$59.99/yr",monthly:isCA?"$6.67/mo":"$5.00/mo",save:"Save 33%",badge:"Best Value"},
@@ -11098,7 +11098,7 @@ function AuthScreen({ onAuth }) {
   const [success, setSuccess] = useState("");
   const [showAuth, setShowAuth] = useState(false);
 
-  const BETA_CODES = ["BETA100","FLOURISH2026","FOUNDER"];
+  const BETA_CODES = FLOURISH_BETA_CODES;
   const BETA_CAP = 30;
 
   const handleSignup = async () => {
