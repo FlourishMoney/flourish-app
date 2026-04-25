@@ -10478,7 +10478,7 @@ function PremiumGate({feature,desc,onUpgrade}){
 }
 
 // ─── PAYWALL ──────────────────────────────────────────────────────────────────
-function Paywall({onClose,onUpgrade,country}){
+function Paywall({onClose,onUpgrade,onPromoUpgrade,country}){
   const [selected,setSelected]=useState("annual");
   const [promo,setPromo]=useState("");
   const [promoError,setPromoError]=useState("");
@@ -10551,7 +10551,7 @@ function Paywall({onClose,onUpgrade,country}){
           />
           <button
             onClick={()=>{
-              if(PROMO_CODES.includes(promo.trim())){onUpgrade();}
+              if(PROMO_CODES.includes(promo.trim())){onPromoUpgrade();}
               else{setPromoError("Invalid code");}
             }}
             style={{background:C.purple+"22",border:`1.5px solid ${C.purple}44`,borderRadius:12,padding:"11px 16px",color:C.purpleBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",whiteSpace:"nowrap"}}
@@ -12412,7 +12412,7 @@ export default function FlourishApp(){
   if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
   if(!firstVisitDone&&appData)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}/>;
-  if(showPaywall)return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setPlan("premium");setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;
+  if(showPaywall)return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setPlan("premium");setIsPremium(true);setShowPaywall(false);}} onPromoUpgrade={()=>{applyBetaCodeFounderUpgrade();setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;
 
   const unread = (() => {
     try {
