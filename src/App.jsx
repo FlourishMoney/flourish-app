@@ -1641,7 +1641,7 @@ function WhatIfSimulator({data, onClose}) {
         thirtyYr:      { value: result.finalValue, growth: result.totalGrowth },
         yearByYear:    result.yearByYear,
         verdict: "Long-term winner",
-        verdictReason: `Investing $${monthlyContribution}/month at 7% for 30 years grows to $${result.finalValue.toLocaleString()}, with $${result.totalGrowth.toLocaleString()} of that being pure growth.`,
+        verdictReason: `Investing $${monthlyContribution}/month at 7% for 30 years grows to $${Math.round(result.finalValue).toLocaleString()}, with $${Math.round(result.totalGrowth).toLocaleString()} of that being pure growth.`,
       });
       setLoading(false);
       return;
@@ -1827,7 +1827,7 @@ Rules: do not invent or quote any number not in the calculated results above. Do
           <div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeUp 0.3s ease both"}}>
             {/* Verdict */}
             <div style={{background:verdictBg,border:`2px solid ${verdictColor}33`,borderRadius:20,padding:"18px 20px",textAlign:"center"}}>
-              <div style={{fontSize:36,marginBottom:6}}>{result.verdict==="Go for it"?"🟢":result.verdict==="Proceed carefully"?"🟡":result.verdict==="Think twice"?"🟠":"🔴"}</div>
+              <div style={{fontSize:36,marginBottom:6}}>{_verdictMeta(result.verdict).emoji}</div>
               <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:verdictColor,marginBottom:6}}>{result.verdict}</div>
               <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>{result.verdictReason}</div>
             </div>
@@ -1896,15 +1896,15 @@ Rules: do not invent or quote any number not in the calculated results above. Do
                 {/* Hero number — moderate 30y */}
                 <div style={{background:C.greenDim,border:`1px solid ${C.greenBright}`,borderRadius:16,padding:"18px 16px",textAlign:"center"}}>
                   <div style={{color:C.greenBright,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:6}}>${result.monthlyContribution}/mo · 30y · 7%</div>
-                  <div style={{fontFamily:"'Playfair Display',serif",fontSize:32,fontWeight:900,color:C.greenBright,lineHeight:1}}>${result.thirtyYr.value.toLocaleString()}</div>
-                  <div style={{color:C.muted,fontSize:11,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${result.thirtyYr.growth.toLocaleString()} of growth on top of contributions</div>
+                  <div style={{fontFamily:"'Playfair Display',serif",fontSize:32,fontWeight:900,color:C.greenBright,lineHeight:1}}>${Math.round(result.thirtyYr.value).toLocaleString()}</div>
+                  <div style={{color:C.muted,fontSize:11,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${Math.round(result.thirtyYr.growth).toLocaleString()} of growth on top of contributions</div>
                 </div>
                 {/* Timeline comparison */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
                   {[
-                    {label:"10 years", val: result.tenYr.value},
-                    {label:"20 years", val: result.twentyYr.value},
-                    {label:"30 years", val: result.thirtyYr.value},
+                    {label:"10 years", val: Math.round(result.tenYr.value)},
+                    {label:"20 years", val: Math.round(result.twentyYr.value)},
+                    {label:"30 years", val: Math.round(result.thirtyYr.value)},
                   ].map((t,i)=>(
                     <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"10px 8px",textAlign:"center"}}>
                       <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>{t.label}</div>
@@ -1915,9 +1915,9 @@ Rules: do not invent or quote any number not in the calculated results above. Do
                 {/* Risk-tolerance comparison */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
                   {[
-                    {label:"5% conservative",  val: result.conservative30.value, color: C.muted},
-                    {label:"7% moderate",      val: result.moderate30.value,     color: C.cream},
-                    {label:"9% aggressive",    val: result.aggressive30.value,   color: C.greenBright},
+                    {label:"5% conservative",  val: Math.round(result.conservative30.value), color: C.muted},
+                    {label:"7% moderate",      val: Math.round(result.moderate30.value),     color: C.cream},
+                    {label:"9% aggressive",    val: Math.round(result.aggressive30.value),   color: C.greenBright},
                   ].map((r,i)=>(
                     <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"10px 8px",textAlign:"center"}}>
                       <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>{r.label}</div>
