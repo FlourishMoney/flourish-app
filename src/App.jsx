@@ -1195,12 +1195,14 @@ function AutopilotCard({data, setScreen}) {
 }
 
 // ── FINANCIAL TIME MACHINE (Timeline + What-If overlay) ───────────────────────
-function TimeMachine({data}) {
+function TimeMachine({data, activeScenario = null}) {
   const [expanded, setExpanded] = useState(false);
   const [expandedDay, setExpandedDay] = useState(null); // day index that is drilled into
 
   // Single source of truth: ForecastEngine (uses real income schedule, not mocked payday)
-  const { forecast } = ForecastEngine.generate(data, 30);
+  const { forecast } = ForecastEngine.generate(data, 30, activeScenario);
+  // Baseline forecast (without scenario) for comparison overlay
+  const { forecast: baselineForecast } = activeScenario ? ForecastEngine.generate(data, 30) : { forecast: null };
   const safeFloor = SafeSpendEngine.calculate(data).balance * 0.12;
 
   // Filter to meaningful events
@@ -1221,6 +1223,14 @@ function TimeMachine({data}) {
         </button>
       </div>
 
+      {activeScenario && (
+        <div style={{background:C.teal+"15",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",marginBottom:12,display:"flex",gap:8,alignItems:"center"}}>
+          <span style={{fontSize:14}}>🔮</span>
+          <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
+            Showing impact of: <strong style={{color:C.teal}}>{activeScenario.type === "purchase" ? `$${activeScenario.amount} purchase` : activeScenario.type === "debt" ? `+$${activeScenario.extraPayment}/mo on debt` : `$${activeScenario.monthlyContribution}/mo invested`}</strong>
+          </div>
+        </div>
+      )}
 
       {/* Timeline */}
       <div style={{position:"relative"}}>
@@ -1257,6 +1267,9 @@ function TimeMachine({data}) {
                       </div>
                       <div style={{textAlign:"right",flexShrink:0,minWidth:80}}>
                         <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${(baseBalance||0).toFixed(0)}`}</div>
+                        {activeScenario && baselineForecast && baselineForecast[ev.day] && Math.round(baselineForecast[ev.day].balance) !== Math.round(baseBalance) && (
+                          <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1,textDecoration:"line-through",opacity:0.6}}>${baselineForecast[ev.day].balance.toFixed(0)}</div>
+                        )}
                         <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
                       </div>
                     </div>
@@ -1434,7 +1447,7 @@ function FinancialTimeline({data}) {
 }
 
 // ── WHAT IF SIMULATOR ──────────────────────────────────────────────────────────
-function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun}) {
+function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onScenarioChange}) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -1491,6 +1504,18 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun}) {
     // Detect whether this is a purchase, debt-payoff, or investment scenario.
     // Tagged presets pass scenarioType directly; free-form input uses detectScenarioType.
     const scenarioType = typeOverride || detectScenarioType(qText);
+
+    // ── PHASE 3d-B: lift scenario inputs to App so TimeMachine can render impact
+    if (onScenarioChange) {
+      const _amt = parseAmountFromQuery(qText);
+      if (scenarioType === "purchase" && _amt > 0) {
+        onScenarioChange({ type: "purchase", amount: _amt });
+      } else if (scenarioType === "debt") {
+        onScenarioChange({ type: "debt", extraPayment: (_amt > 0 && _amt < 5000) ? _amt : 100 });
+      } else if (scenarioType === "invest") {
+        onScenarioChange({ type: "invest", monthlyContribution: _amt > 0 ? _amt : 200 });
+      }
+    }
 
     // ── DEBT PAYOFF SCENARIO ─────────────────────────────────────────────
     if (scenarioType === "debt") {
@@ -2805,7 +2830,7 @@ const SafeSpendEngine = {
 // Projects daily balance for 90 days with overdraft risk detection.
 
 const ForecastEngine = {
-generate(data, days = 90) {
+generate(data, days = 90, scenario = null) {
   const { balance }  = SafeSpendEngine.calculate(data);
   const avgDaily     = FinancialCalcEngine.avgDailySpend(data);
   const bills        = data.bills || [];
@@ -2896,7 +2921,14 @@ generate(data, days = 90) {
     const dayBills = bills.filter(b=>parseInt(b.date)===dayNum&&parseInt(b.date)>0);
     const inc      = (isPayday ? paycheque : 0) + getSecondary(dayNum);
     const out      = dayBills.reduce((s,b)=>s+parseFloat(b.amount||0),0) + (i===0?0:avgDaily);
-    running = running + inc - out;
+    // Phase 3d-B: apply active scenario impact (purchase day-1, debt/invest monthly on the 1st, never day 0)
+    let scenarioOut = 0;
+    if (scenario && i > 0) {
+      if (scenario.type === "purchase" && i === 1)         scenarioOut += scenario.amount;
+      if (scenario.type === "debt"     && dayNum === 1)    scenarioOut += scenario.extraPayment;
+      if (scenario.type === "invest"   && dayNum === 1)    scenarioOut += scenario.monthlyContribution;
+    }
+    running = running + inc - out - scenarioOut;
 
     const entry = { day:i, date:d, balance:running, income:inc, expenses:out,
                     isPayday, bills:dayBills };
@@ -4768,7 +4800,7 @@ function DataTransparencyPanel({data, onClose}) {
   );
 }
 
-function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false}){
+function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null}){
   const [mounted,setMounted]=useState(false);
   const [expandedTile,setExpandedTile]=useState(null);
   const [showCustomize,setShowCustomize]=useState(false);
@@ -5672,7 +5704,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
 
         {/* DECISIONS — Time Machine forecast */}
         <div style={{...anim(60),...glass(C.green),borderRadius:22,padding:"18px 18px 14px"}}>
-          <TimeMachine data={data}/>
+          <TimeMachine data={data} activeScenario={activeScenario}/>
         </div>
 
         {/* DECISIONS — Decision engine */}
@@ -12386,6 +12418,8 @@ export default function FlourishApp(){
   const [whatIfQuery, setWhatIfQuery] = useState("");
   const [whatIfType, setWhatIfType] = useState(null);
   const [whatIfAutoRun, setWhatIfAutoRun] = useState(false);
+  // Phase 3d-B: scenario lifted from WhatIfSimulator so TimeMachine can render its impact
+  const [activeScenario, setActiveScenario] = useState(null);
   const [showWrapped,setShowWrapped]=useState(false);
   const [isOnline,setIsOnline]=useState(()=>navigator.onLine);
   const [dashLayout,setDashLayout]=useState(()=>{
@@ -12646,7 +12680,7 @@ export default function FlourishApp(){
   if(!user)return <AuthScreen onAuth={u=>setUser(u)}/>;
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
-  if(showWhatIf)return <WhatIfSimulator data={appData||{}} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
+  if(showWhatIf)return <WhatIfSimulator data={appData||{}} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);setActiveScenario(null);}}/>;
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
   if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
@@ -12712,7 +12746,7 @@ export default function FlourishApp(){
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
     if(showSettings)return <Settings data={appData} setAppData={setAppData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}}/>;
-    if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/>;
+    if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
   if(screen==="budget")return <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
@@ -12722,7 +12756,7 @@ export default function FlourishApp(){
     if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     // privacy and terms handled before auth gate above
-    return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/>;
+    return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario}/>;
   };
 
   const ALL_NAV=[
@@ -12845,7 +12879,7 @@ input,button,select,textarea { font-family:inherit; }
         {/* Two-column for home, single for others */}
         {screen==="home"&&!showNotifs&&!showSettings?(
           <div style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:28,padding:"28px 36px 40px",overflowY:"auto",flex:1}}>
-            <div><Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={true} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing}/></div>
+            <div><Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={true} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario}/></div>
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
               <DesktopSidebar data={dataWithHousehold} setScreen={setScreen}/>
             </div>
