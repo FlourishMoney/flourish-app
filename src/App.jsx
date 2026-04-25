@@ -1561,6 +1561,91 @@ function WhatIfSimulator({data, onClose}) {
     setLoading(true);
     setResult(null);
 
+    // ── PHASE 1D: scenario routing ───────────────────────────────────────
+    // Detect whether this is a purchase, debt-payoff, or investment scenario.
+    // Tagged presets pass scenarioType directly; free-form input uses detectScenarioType.
+    const scenarioType = detectScenarioType(qText);
+
+    // ── DEBT PAYOFF SCENARIO ─────────────────────────────────────────────
+    if (scenarioType === "debt") {
+      const debts = (data.debts || []).filter(d => parseFloat(d.balance || 0) > 0);
+      if (debts.length === 0) {
+        setResult({
+          scenarioType: "debt",
+          verdict: "No debts tracked",
+          verdictReason: "Add a debt in your Plan to use this scenario.",
+          headline: "Add a debt to get started",
+          subhead: "Flourish needs to know your balance, APR, and minimum payment to model payoff scenarios.",
+        });
+        setLoading(false);
+        return;
+      }
+      // Default to highest-APR debt
+      const targetDebt = [...debts].sort((a,b) => parseFloat(b.rate||0) - parseFloat(a.rate||0))[0];
+      const balance = parseFloat(targetDebt.balance || 0);
+      const apr = parseFloat(targetDebt.rate || 20);
+      const currentPayment = parseFloat(targetDebt.min || Math.max(25, balance * 0.02));
+      // Default extra payment from query (or $100/mo if none specified)
+      const parsedAmount = parseAmountFromQuery(qText);
+      const extraPayment = parsedAmount > 0 && parsedAmount < currentPayment * 5 ? parsedAmount : 100;
+      const result = simulateDebtPayoffBoost({ balance, apr, currentPayment, extraPayment });
+      setResult({
+        scenarioType: "debt",
+        debtName: targetDebt.name || "Credit Card",
+        debtBalance: balance,
+        debtApr: apr,
+        currentPayment,
+        extraPayment,
+        baselineMonths: result.baseline.monthsToPayoff,
+        baselineInterest: result.baseline.totalInterest,
+        boostedMonths: result.boosted.monthsToPayoff,
+        boostedInterest: result.boosted.totalInterest,
+        monthsSaved: result.monthsSaved,
+        interestSaved: result.interestSaved,
+        verdict: result.monthsSaved > 0 ? "Worth doing" : "No change",
+        verdictReason: result.monthsSaved > 0
+          ? `Adding $${extraPayment}/mo clears your ${targetDebt.name || "credit card"} ${result.monthsSaved} months sooner and saves $${result.interestSaved} in interest.`
+          : "Your current payment is already optimal for this debt.",
+        availableDebts: debts.map(d => ({ name: d.name, balance: d.balance, rate: d.rate })),
+      });
+      setLoading(false);
+      return;
+    }
+
+    // ── INVESTMENT SCENARIO ──────────────────────────────────────────────
+    if (scenarioType === "invest") {
+      const monthlyContribution = parseAmountFromQuery(qText) || 200;
+      const annualReturnPct = 7;  // moderate default
+      const years = 30;            // long-horizon default
+      const initialPrincipal = 0;
+      const result = simulateInvestmentGrowth({
+        monthlyContribution, annualReturnPct, years, initialPrincipal,
+      });
+      // Also compute conservative and aggressive for the toggle UI
+      const conservative = simulateInvestmentGrowth({ monthlyContribution, annualReturnPct: 5, years, initialPrincipal });
+      const aggressive   = simulateInvestmentGrowth({ monthlyContribution, annualReturnPct: 9, years, initialPrincipal });
+      const tenYr        = simulateInvestmentGrowth({ monthlyContribution, annualReturnPct, years: 10, initialPrincipal });
+      const twentyYr     = simulateInvestmentGrowth({ monthlyContribution, annualReturnPct, years: 20, initialPrincipal });
+      setResult({
+        scenarioType: "invest",
+        monthlyContribution,
+        defaultRate: annualReturnPct,
+        defaultYears: years,
+        moderate30:    { value: result.finalValue, contributed: result.totalContributed, growth: result.totalGrowth },
+        conservative30:{ value: conservative.finalValue, growth: conservative.totalGrowth },
+        aggressive30:  { value: aggressive.finalValue, growth: aggressive.totalGrowth },
+        tenYr:         { value: tenYr.finalValue, growth: tenYr.totalGrowth },
+        twentyYr:      { value: twentyYr.finalValue, growth: twentyYr.totalGrowth },
+        thirtyYr:      { value: result.finalValue, growth: result.totalGrowth },
+        yearByYear:    result.yearByYear,
+        verdict: "Long-term winner",
+        verdictReason: `Investing $${monthlyContribution}/month at 7% for 30 years grows to $${result.finalValue.toLocaleString()}, with $${result.totalGrowth.toLocaleString()} of that being pure growth.`,
+      });
+      setLoading(false);
+      return;
+    }
+
+    // ── PURCHASE SCENARIO (default — existing Phase 1B path) ─────────────
     // ── TRUST LAYER (Phase 1B): JS computes ALL scenario numbers ─────────
     // Claude only writes the prose explanation fields. The numeric and
     // verdict fields are computed deterministically by financialCalculations.js
@@ -1647,6 +1732,7 @@ Rules: do not invent or quote any number not in the calculated results above. Do
 
     // Step 6: Merge JS-computed numbers (source of truth) with Claude's prose
     setResult({
+      scenarioType: "purchase",
       // JS-computed (deterministic, never hallucinated):
       cashImpact:       impact.cashImpact,
       debtImpact:       "none",
@@ -1663,8 +1749,27 @@ Rules: do not invent or quote any number not in the calculated results above. Do
     setLoading(false);
   };
 
-  const verdictColor = result ? (result.verdict==="Go for it"?C.greenBright:result.verdict==="Proceed carefully"?C.goldBright:result.verdict==="Think twice"?C.orangeBright:C.redBright) : C.muted;
-  const verdictBg = result ? (result.verdict==="Go for it"?C.greenDim:result.verdict==="Proceed carefully"?C.goldDim:result.verdict==="Think twice"?C.orangeDim:C.redDim) : C.surface;
+  // Phase 1D: scenario-aware verdict styling. Maps each verdict (across all 3 scenario types) to a color/bg/emoji.
+  const _verdictMeta = (v) => {
+    switch (v) {
+      // Purchase verdicts
+      case "Go for it":           return { color: C.greenBright,  bg: C.greenDim,  emoji: "🟢" };
+      case "Proceed carefully":   return { color: C.goldBright,   bg: C.goldDim,   emoji: "🟡" };
+      case "Think twice":         return { color: C.orangeBright, bg: C.orangeDim, emoji: "🟠" };
+      case "Not recommended":     return { color: C.redBright,    bg: C.redDim,    emoji: "🔴" };
+      // Debt verdicts
+      case "Worth doing":         return { color: C.greenBright,  bg: C.greenDim,  emoji: "✨" };
+      case "No change":           return { color: C.muted,        bg: C.surface,   emoji: "➖" };
+      case "No debts tracked":    return { color: C.muted,        bg: C.surface,   emoji: "📋" };
+      // Invest verdict
+      case "Long-term winner":    return { color: C.greenBright,  bg: C.greenDim,  emoji: "📈" };
+      // Paywall
+      case "Upgrade to continue": return { color: C.purple,       bg: C.purpleDim || C.surface, emoji: "🔒" };
+      default:                    return { color: C.redBright,    bg: C.redDim,    emoji: "🔴" };
+    }
+  };
+  const verdictColor = result ? _verdictMeta(result.verdict).color : C.muted;
+  const verdictBg    = result ? _verdictMeta(result.verdict).bg    : C.surface;
   // "days" delays are minor (yellow ~), "weeks" are notable (yellow ~), "months" are major (red ✗).
   // "none"/"safe"/"decreases" stay green ✓. "tight"/"increases" stay yellow ~. "risky" stays red ✗.
   const _isDayDelay   = (v) => typeof v === "string" && /\bdays?\b/.test(v);
@@ -1725,24 +1830,101 @@ Rules: do not invent or quote any number not in the calculated results above. Do
               <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>{result.verdictReason}</div>
             </div>
 
-            {/* Impact grid */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              {[
-                {label:"Cash Impact",    val:result.cashImpact,    detail:result.cashDetail,    icon:"💵"},
-                {label:"Debt Impact",    val:result.debtImpact,    detail:result.debtDetail,    icon:"💳"},
-                {label:"Savings Delay",  val:result.savingsDelay,  detail:"Impact on savings goals", icon:"🐷"},
-                {label:"Health Score",   val:result.healthScoreDelta>=0?`+${result.healthScoreDelta}`:String(result.healthScoreDelta), detail:result.healthDetail, icon:"💚"},
-              ].map((item,i)=>(
-                <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px 14px 12px"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
-                    <span style={{fontSize:16}}>{item.icon}</span>
-                    <span style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{item.label}</span>
+            {/* Impact area — adapts to scenarioType (Phase 1D-C) */}
+            {result.scenarioType === "purchase" && (
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                {[
+                  {label:"Cash Impact",    val:result.cashImpact,    detail:result.cashDetail,    icon:"💵"},
+                  {label:"Debt Impact",    val:result.debtImpact,    detail:result.debtDetail,    icon:"💳"},
+                  {label:"Savings Delay",  val:result.savingsDelay,  detail:"Impact on savings goals", icon:"🐷"},
+                  {label:"Health Score",   val:result.healthScoreDelta>=0?`+${result.healthScoreDelta}`:String(result.healthScoreDelta), detail:result.healthDetail, icon:"💚"},
+                ].map((item,i)=>(
+                  <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px 14px 12px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+                      <span style={{fontSize:16}}>{item.icon}</span>
+                      <span style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{item.label}</span>
+                    </div>
+                    <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,color:i===3?(result.healthScoreDelta>=0?C.greenBright:C.redBright):impactColor(item.val),marginBottom:4}}>{i===3?(result.healthScoreDelta>=0?`+${result.healthScoreDelta}`:`${result.healthScoreDelta}`)+" pts":impactIcon(item.val)+" "+item.val}</div>
+                    <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{item.detail}</div>
                   </div>
-                  <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,color:i===3?(result.healthScoreDelta>=0?C.greenBright:C.redBright):impactColor(item.val),marginBottom:4}}>{i===3?(result.healthScoreDelta>=0?`+${result.healthScoreDelta}`:`${result.healthScoreDelta}`)+" pts":impactIcon(item.val)+" "+item.val}</div>
-                  <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{item.detail}</div>
+                ))}
+              </div>
+            )}
+
+            {result.scenarioType === "debt" && result.debtName && (
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {/* Header: which debt */}
+                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"12px 14px"}}>
+                  <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>Applied to</div>
+                  <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,color:C.cream}}>{result.debtName}</div>
+                  <div style={{color:C.muted,fontSize:11,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${result.debtBalance.toFixed(2)} @ {result.debtApr}% APR · ${result.currentPayment.toFixed(0)}/mo current payment</div>
                 </div>
-              ))}
-            </div>
+                {/* Before / After comparison */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px"}}>
+                    <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:6}}>Current pace</div>
+                    <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream,lineHeight:1.1}}>{Number.isFinite(result.baselineMonths) ? `${result.baselineMonths} mo` : "Never"}</div>
+                    <div style={{color:C.muted,fontSize:11,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${Number.isFinite(result.baselineInterest) ? result.baselineInterest.toFixed(0) : "∞"} interest</div>
+                  </div>
+                  <div style={{background:C.greenDim,border:`1px solid ${C.greenBright}`,borderRadius:16,padding:"14px"}}>
+                    <div style={{color:C.greenBright,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:6}}>+ ${result.extraPayment}/mo</div>
+                    <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.greenBright,lineHeight:1.1}}>{result.boostedMonths} mo</div>
+                    <div style={{color:C.greenBright,fontSize:11,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${result.boostedInterest.toFixed(0)} interest</div>
+                  </div>
+                </div>
+                {/* Savings highlight */}
+                {result.monthsSaved > 0 && (
+                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"12px 14px",textAlign:"center"}}>
+                    <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,color:C.greenBright}}>You'd save ${result.interestSaved} in interest</div>
+                    <div style={{color:C.muted,fontSize:11,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>and clear it {result.monthsSaved} months sooner</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {result.scenarioType === "debt" && !result.debtName && (
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"24px 18px",textAlign:"center"}}>
+                <div style={{fontFamily:"'Playfair Display',serif",fontSize:18,fontWeight:900,color:C.cream,marginBottom:6}}>{result.headline}</div>
+                <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{result.subhead}</div>
+              </div>
+            )}
+
+            {result.scenarioType === "invest" && (
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {/* Hero number — moderate 30y */}
+                <div style={{background:C.greenDim,border:`1px solid ${C.greenBright}`,borderRadius:16,padding:"18px 16px",textAlign:"center"}}>
+                  <div style={{color:C.greenBright,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:6}}>${result.monthlyContribution}/mo · 30y · 7%</div>
+                  <div style={{fontFamily:"'Playfair Display',serif",fontSize:32,fontWeight:900,color:C.greenBright,lineHeight:1}}>${result.thirtyYr.value.toLocaleString()}</div>
+                  <div style={{color:C.muted,fontSize:11,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${result.thirtyYr.growth.toLocaleString()} of growth on top of contributions</div>
+                </div>
+                {/* Timeline comparison */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+                  {[
+                    {label:"10 years", val: result.tenYr.value},
+                    {label:"20 years", val: result.twentyYr.value},
+                    {label:"30 years", val: result.thirtyYr.value},
+                  ].map((t,i)=>(
+                    <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"10px 8px",textAlign:"center"}}>
+                      <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>{t.label}</div>
+                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:13,color:C.cream}}>${t.val.toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Risk-tolerance comparison */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+                  {[
+                    {label:"5% conservative",  val: result.conservative30.value, color: C.muted},
+                    {label:"7% moderate",      val: result.moderate30.value,     color: C.cream},
+                    {label:"9% aggressive",    val: result.aggressive30.value,   color: C.greenBright},
+                  ].map((r,i)=>(
+                    <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"10px 8px",textAlign:"center"}}>
+                      <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>{r.label}</div>
+                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:13,color:r.color}}>${r.val.toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Tip */}
             {result.tip && (
