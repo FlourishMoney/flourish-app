@@ -9,7 +9,7 @@ import {
   Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
-import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach } from "./lib/financialCalculations.js";
+import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType } from "./lib/financialCalculations.js";
 import { getPlan, isPremiumOrFounder, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan } from "./lib/usageLimits.js";
 
 const FLOURISH_BETA_CODES = ["BETA100","FLOURISH2026","FOUNDER"];

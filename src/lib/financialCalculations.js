@@ -285,6 +285,40 @@ function _monthsFromNow(months) {
   return `${y}-${m}-${dd}`;
 }
 
+// ── 9. detectScenarioType ────────────────────────────────────────────────────
+// Inspects free-form user input to decide which simulator path to run:
+//   "purchase" — default: any one-time spend ("Buy a $800 laptop")
+//   "debt"     — pay off / pay down debt ("Pay off my credit card", "$200 extra on Amex")
+//   "invest"   — recurring investment ("Invest $300/month", "$500/mo into TFSA")
+//
+// Caller may override by passing a tagged preset's type directly to simulate().
+// This function is used only for free-form input where no tag is available.
+//
+// Detection rules (priority top to bottom — first match wins):
+//   1. Investment markers: "/month" or "per month" or "monthly" + investing verb
+//   2. Debt markers: "pay off" / "payoff" / "pay down" / "extra on" / "credit card"
+//   3. Default: "purchase"
+//
+// This is intentionally conservative. False positives on debt/invest are worse
+// than false negatives — a missed scenario falls back to the safe purchase path.
+
+export function detectScenarioType(text) {
+  if (!text || typeof text !== "string") return "purchase";
+  const t = text.toLowerCase();
+
+  // Investment: must have a recurring marker AND an investing verb
+  const recurring  = /\b(\/\s*month|per\s+month|monthly|\/mo\b)/i.test(t);
+  const investVerb = /\b(invest|contribut|put\s+\$?\d|deposit|save\s+\$?\d+\s*\/?\s*mo)/i.test(t);
+  if (recurring && investVerb) return "invest";
+
+  // Debt payoff
+  const debtVerb = /\b(pay\s*off|payoff|pay\s*down|extra\s+on)\b/.test(t);
+  const debtNoun = /\b(credit\s*card|debt|loan|mortgage|amex|visa|mastercard|line\s+of\s+credit|loc)\b/.test(t);
+  if (debtVerb || debtNoun) return "debt";
+
+  return "purchase";
+}
+
 // -----------------------------------------------------------------------------
 // STRIPE / PREMIUM NOTE
 //   These functions are plan-agnostic. Usage limits live in usageLimits.js
