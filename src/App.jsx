@@ -1595,12 +1595,20 @@ function WhatIfSimulator({data, onClose}) {
     const frozenSummary = summarizeScenarioForCoach(impact, verdictObj);
 
     // Step 4: Format JS-computed values to match the UI contract.
-    // The UI expects savingsDelay as a string like "none" / "X weeks" / "X months".
-    const savingsDelayStr = impact.savingsDelayWeeks <= 0
-      ? "none"
-      : impact.savingsDelayWeeks < 8
-        ? `${impact.savingsDelayWeeks} weeks`
-        : `${Math.round(impact.savingsDelayWeeks / 4.333)} months`;
+    // Granularity: "none" only for true zero-day delay. "X days" for 1-6 days.
+    // "1 week" / "X weeks" for 1-7 weeks (plural-aware). "X months" for 8+ weeks.
+    const _days = impact.savingsDelayDays;
+    let savingsDelayStr;
+    if (_days <= 0) {
+      savingsDelayStr = "none";
+    } else if (_days < 7) {
+      savingsDelayStr = _days === 1 ? "1 day" : `${_days} days`;
+    } else if (impact.savingsDelayWeeks < 8) {
+      savingsDelayStr = impact.savingsDelayWeeks === 1 ? "1 week" : `${impact.savingsDelayWeeks} weeks`;
+    } else {
+      const _months = Math.round(impact.savingsDelayWeeks / 4.333);
+      savingsDelayStr = _months === 1 ? "1 month" : `${_months} months`;
+    }
 
     // Step 5: Ask Claude to write ONLY the prose explanation fields.
     // We send the frozen numbers as context. Claude must not change them.
@@ -1657,8 +1665,13 @@ Rules: do not invent or quote any number not in the calculated results above. Do
 
   const verdictColor = result ? (result.verdict==="Go for it"?C.greenBright:result.verdict==="Proceed carefully"?C.goldBright:result.verdict==="Think twice"?C.orangeBright:C.redBright) : C.muted;
   const verdictBg = result ? (result.verdict==="Go for it"?C.greenDim:result.verdict==="Proceed carefully"?C.goldDim:result.verdict==="Think twice"?C.orangeDim:C.redDim) : C.surface;
-  const impactIcon = (v) => v==="safe"||v==="none"||v==="decreases"?"✓":v==="tight"||v==="increases"?"~":"✗";
-  const impactColor = (v) => v==="safe"||v==="none"||v==="decreases"?C.greenBright:v==="tight"||v==="increases"?C.goldBright:C.redBright;
+  // "days" delays are minor (yellow ~), "weeks" are notable (yellow ~), "months" are major (red ✗).
+  // "none"/"safe"/"decreases" stay green ✓. "tight"/"increases" stay yellow ~. "risky" stays red ✗.
+  const _isDayDelay   = (v) => typeof v === "string" && /\bdays?\b/.test(v);
+  const _isWeekDelay  = (v) => typeof v === "string" && /\bweeks?\b/.test(v);
+  const _isMonthDelay = (v) => typeof v === "string" && /\bmonths?\b/.test(v);
+  const impactIcon  = (v) => v==="safe"||v==="none"||v==="decreases" ? "✓" : v==="tight"||v==="increases"||_isDayDelay(v)||_isWeekDelay(v) ? "~" : "✗";
+  const impactColor = (v) => v==="safe"||v==="none"||v==="decreases" ? C.greenBright : v==="tight"||v==="increases"||_isDayDelay(v)||_isWeekDelay(v) ? C.goldBright : C.redBright;
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)",zIndex:999,display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
