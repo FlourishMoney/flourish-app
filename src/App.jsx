@@ -5000,6 +5000,9 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         ))}
       </div>
 
+      {/* Phase 3b: Today tab content guard */}
+      {dashTab === "today" && (<>
+
       {/* ── Pre-bank estimated insight — replaces generic "sample data" banner ── */}
       {(!data.transactions||data.transactions.length===0)&&(()=>{
         // Calculate a real estimate from their onboarding data
@@ -5515,11 +5518,6 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           </div>
         </div>}
 
-        {/* ── DECISION ENGINE ───────────────────────────────────────────── */}
-        {isVisible('decision')&&<div style={{...anim(210),...tileStyle('decision'),background:C.isDark?"rgba(155,125,255,0.04)":"rgba(155,125,255,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.purple}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden"}}>
-          <DecisionEngine data={data} safe={safe} bal={bal} monthlyIncome={monthlyIncome} soonBills={soonBills} todayDate={today} setScreen={setScreen}/>
-        </div>}
-
         {/* ── OVER-BUDGET NUDGE (dashboard) ─────────────────────────────── */}
         {(()=>{
           const budgets = data.budgets||{};
@@ -5559,16 +5557,6 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         {/* ── AUTOPILOT ─────────────────────────────────────────────────── */}
         {isVisible('autopilot')&&<div style={{...anim(225),...tileStyle('autopilot'),background:C.isDark?"rgba(77,168,255,0.04)":"rgba(77,168,255,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.blue}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden"}}>
           <AutopilotCard data={data} setScreen={setScreen}/>
-        </div>}
-
-        {/* ── TIME MACHINE — forecast graph ─────────────────────────────── */}
-        {isVisible('forecast')&&<div style={{...anim(240),...tileStyle('forecast'),...glass(C.green),borderRadius:22,padding:"18px 18px 14px"}}>
-          <TimeMachine data={data}/>
-        </div>}
-
-        {/* ── OPPORTUNITY DETECTOR ─────────────────────────────────────── */}
-        {isVisible('opportunity')&&<div style={{...anim(255),...tileStyle('opportunity'),background:C.isDark?"rgba(232,184,75,0.04)":"rgba(232,184,75,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.gold}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden"}}>
-          <OpportunityDetector data={data} setScreen={setScreen} setGoalsTab={setGoalsTab}/>
         </div>}
 
         {/* ── HEALTH SCORE PILLARS: progressive disclosure ───────────────── */}
@@ -5645,27 +5633,6 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           </div>
         )}
 
-        {/* ── QUICK NAV BENTO ───────────────────────────────────────────── */}
-        {isVisible('quicknav')&&<div style={{...anim(320),...tileStyle('quicknav'),display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          {[
-            {label:"2-Week Forecast",icon:"calendar",screen:"plan",color:C.teal,sub:"Cash flow ahead"},
-            {label:"Debt Simulator",icon:"trendUp",screen:"goals",tab:"sim",color:C.purple,sub:"Drag to freedom date"},
-            {label:"AI Coach",icon:"sparkles",screen:"coach",color:C.green,sub:"Ask anything · powered by Claude",hero:true},
-            {label:data.profile.status==="single"?"Solo Check-In":"Money Meeting",icon:data.profile.status==="single"?"🧘":"💑",screen:"family",color:C.pink,sub:"Weekly ritual"},
-          ].concat(onWhatIf?[{label:"What If?",icon:"sparkles",screen:null,color:C.teal,sub:"Simulate any decision",whatIf:true}]:[]).map((a,i)=>(
-            <button key={a.label} onClick={()=>a.whatIf?onWhatIf():(a.tab&&setGoalsTab&&setGoalsTab(a.tab),setScreen(a.screen))}
-              style={{...glass(a.color,a.hero?C.green+"44":a.color+"1A"),borderRadius:20,padding:"18px 16px",cursor:"pointer",textAlign:"left",fontFamily:"inherit",transition:"all .25s",position:"relative",overflow:"hidden"}}
-              onMouseEnter={e=>{e.currentTarget.style.borderColor=a.color+"66";e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 14px 40px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06)`;}}
-              onMouseLeave={e=>{e.currentTarget.style.borderColor=a.hero?C.green+"44":a.color+"1A";e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04)";}}>
-              <div style={{position:"absolute",top:-20,right:-20,width:80,height:80,borderRadius:"50%",background:`radial-gradient(circle,${a.color}14 0%,transparent 70%)`,pointerEvents:"none"}}/>
-              {a.hero&&<div style={{position:"absolute",top:10,right:12,background:C.green,color:"#fff",fontSize:8,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"3px 7px",borderRadius:99,letterSpacing:0.5}}>✦ AI</div>}
-              <div style={{marginBottom:8,fontSize:22}}>{typeof a.icon==="string"&&a.icon.length<=2?a.icon:<Icon id={typeof a.icon==="string"&&a.icon.length>2?a.icon:"sparkles"} size={22} color={a.hero?C.green:a.color} strokeWidth={1.6}/>}</div>
-              <div style={{color:a.hero?C.green:a.color,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:3}}>{a.label}</div>
-              <div style={{color:C.mutedHi,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{a.sub}</div>
-            </button>
-          ))}
-        </div>}
-
         {/* ── URGENT ALERT ──────────────────────────────────────────────── */}
         {INIT_NOTIFS.filter(n=>!n.read&&n.type==="urgent").slice(0,1).map(n=>(
           <div key={n.id} style={{...anim(340),...glass(C.red,C.red+"33"),borderRadius:18,padding:"14px 16px",display:"flex",gap:12,alignItems:"flex-start",cursor:"pointer"}} onClick={()=>setShowNotifs(true)}>
@@ -5679,6 +5646,46 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         ))}
 
       </div>{/* end bento grid */}
+      </>)}
+
+      {/* Phase 3b: Decisions tab content guard */}
+      {dashTab === "decisions" && (<>
+        {/* DECISIONS — Quick Nav (filtered to decision tools only) */}
+        <div style={{...anim(0),display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          {[
+            {label:"What If?",icon:"sparkles",screen:null,color:C.teal,sub:"Simulate any decision",hero:true,whatIf:true},
+            {label:"AI Coach",icon:"sparkles",screen:"coach",color:C.green,sub:"Ask anything · powered by Claude"},
+            {label:"2-Week Forecast",icon:"calendar",screen:"plan",color:C.teal,sub:"Cash flow ahead"},
+            {label:"Debt Simulator",icon:"trendUp",screen:"goals",tab:"sim",color:C.purple,sub:"Drag to freedom date"},
+          ].filter(a => a.whatIf ? !!onWhatIf : true).map((a,i)=>(
+            <button key={a.label} onClick={()=>a.whatIf?onWhatIf():(a.tab&&setGoalsTab&&setGoalsTab(a.tab),setScreen(a.screen))}
+              style={{...glass(a.color,a.hero?C.teal+"44":a.color+"1A"),borderRadius:20,padding:"18px 16px",cursor:"pointer",textAlign:"left",fontFamily:"inherit",transition:"all .25s",position:"relative",overflow:"hidden"}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=a.color+"66";e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 14px 40px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06)`;}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=a.hero?C.teal+"44":a.color+"1A";e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04)";}}>
+              <div style={{position:"absolute",top:-20,right:-20,width:80,height:80,borderRadius:"50%",background:`radial-gradient(circle,${a.color}14 0%,transparent 70%)`,pointerEvents:"none"}}/>
+              {a.hero&&<div style={{position:"absolute",top:10,right:12,background:a.color,color:"#fff",fontSize:8,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"3px 7px",borderRadius:99,letterSpacing:0.5}}>✦</div>}
+              <div style={{marginBottom:8,fontSize:22}}>{typeof a.icon==="string"&&a.icon.length<=2?a.icon:<Icon id={typeof a.icon==="string"&&a.icon.length>2?a.icon:"sparkles"} size={22} color={a.hero?a.color:a.color} strokeWidth={1.6}/>}</div>
+              <div style={{color:a.hero?a.color:a.color,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:3}}>{a.label}</div>
+              <div style={{color:C.mutedHi,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{a.sub}</div>
+            </button>
+          ))}
+        </div>
+
+        {/* DECISIONS — Time Machine forecast */}
+        <div style={{...anim(60),...glass(C.green),borderRadius:22,padding:"18px 18px 14px"}}>
+          <TimeMachine data={data}/>
+        </div>
+
+        {/* DECISIONS — Decision engine */}
+        <div style={{...anim(120),background:C.isDark?"rgba(155,125,255,0.04)":"rgba(155,125,255,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.purple}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden"}}>
+          <DecisionEngine data={data} safe={safe} bal={bal} monthlyIncome={monthlyIncome} soonBills={soonBills} todayDate={today} setScreen={setScreen}/>
+        </div>
+
+        {/* DECISIONS — Opportunity detector */}
+        <div style={{...anim(180),background:C.isDark?"rgba(232,184,75,0.04)":"rgba(232,184,75,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.gold}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden"}}>
+          <OpportunityDetector data={data} setScreen={setScreen} setGoalsTab={setGoalsTab}/>
+        </div>
+      </>)}
     </div>
   );
 }
