@@ -1450,7 +1450,7 @@ function FinancialTimeline({data}) {
 }
 
 // ── WHAT IF SIMULATOR ──────────────────────────────────────────────────────────
-function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onScenarioChange}) {
+function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onScenarioChange, onUpgrade}) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -1791,6 +1791,21 @@ Rules: do not invent or quote any number not in the calculated results above. Do
               <div style={{fontSize:36,marginBottom:6}}>{_verdictMeta(result.verdict).emoji}</div>
               <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:verdictColor,marginBottom:6}}>{result.verdict}</div>
               <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>{result.verdictReason}</div>
+              {result.verdict === "Upgrade to continue" && onUpgrade && (
+                <button onClick={onUpgrade} style={{
+                  marginTop:14,
+                  background: verdictColor,
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 12,
+                  padding: "10px 20px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  fontFamily: "'Plus Jakarta Sans',sans-serif",
+                  cursor: "pointer",
+                  transition: "all .15s",
+                }}>Unlock unlimited simulations →</button>
+              )}
             </div>
 
             {/* Impact area — adapts to scenarioType (Phase 1D-C) */}
@@ -12683,7 +12698,7 @@ export default function FlourishApp(){
   if(!user)return <AuthScreen onAuth={u=>setUser(u)}/>;
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
-  if(showWhatIf)return <WhatIfSimulator data={appData||{}} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
+  if(showWhatIf)return <WhatIfSimulator data={appData||{}} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={()=>setShowPaywall(true)} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
   if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
