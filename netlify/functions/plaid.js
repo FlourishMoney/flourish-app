@@ -140,8 +140,8 @@ exports.handler = async (event) => {
 
     // 3. get_accounts
     if (action === "get_accounts") {
-      const { access_token } = body;
-      if (!access_token) return e400("access_token required");
+      const { access_token, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
+      if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
       const data = await plaid("/accounts/get", { access_token });
       return ok({
         accounts: data.accounts.map(a => ({
@@ -162,8 +162,9 @@ exports.handler = async (event) => {
 
     // 4. get_transactions
     if (action === "get_transactions") {
-      const { access_token, days = 90 } = body;
-      if (!access_token) return e400("access_token required");
+      const { days = 90 } = body;
+      const { access_token, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
+      if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
 
       const cappedDays = Math.min(Math.max(1, days), 730);
       const endDate    = new Date().toISOString().split("T")[0];
@@ -179,8 +180,8 @@ exports.handler = async (event) => {
 
     // 5. get_investments
     if (action === "get_investments") {
-      const { access_token } = body;
-      if (!access_token) return e400("access_token required");
+      const { access_token, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
+      if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
       try {
         const data = await plaid("/investments/holdings/get", { access_token });
         const securities = data.securities || [];
@@ -218,8 +219,8 @@ exports.handler = async (event) => {
 
     // 6. get_liabilities
     if (action === "get_liabilities") {
-      const { access_token } = body;
-      if (!access_token) return e400("access_token required");
+      const { access_token, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
+      if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
       try {
         const data = await plaid("/liabilities/get", { access_token });
         const l = data.liabilities || {};
@@ -253,8 +254,8 @@ exports.handler = async (event) => {
 
     // 7. remove_item
     if (action === "remove_item") {
-      const { access_token } = body;
-      if (!access_token) return e400("access_token required");
+      const { access_token, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
+      if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
       await plaid("/item/remove", { access_token });
       return ok({ removed: true });
     }
@@ -476,6 +477,35 @@ exports.handler = async (event) => {
 // helpers
 function ok(data) { return { statusCode: 200, headers: CORS, body: JSON.stringify(data) }; }
 function e400(msg) { return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: msg }) }; }
+
+// Phase D1-F-A: resolve access_token from one of two sources, in priority:
+//   1. Legacy: access_token directly in body (backward compat — removed in D1-F-C)
+//   2. New: item_id in body + Authorization JWT → look up access_token from plaid_items
+// Returns { access_token, error, statusCode }. On success: { access_token, error: null }.
+// On failure: { access_token: null, error: <reason>, statusCode: 400 | 401 }.
+async function resolveAccessToken(event, body) {
+  if (body.access_token) {
+    return { access_token: body.access_token, error: null };
+  }
+  if (body.item_id) {
+    const { user_id, error: authError } = await getUserFromRequest(event);
+    if (!user_id) {
+      return { access_token: null, error: authError || "unauthorized", statusCode: 401 };
+    }
+    const admin = getAdminClient();
+    const { data, error } = await admin
+      .from("plaid_items")
+      .select("access_token")
+      .eq("user_id", user_id)
+      .eq("item_id", body.item_id)
+      .single();
+    if (error || !data) {
+      return { access_token: null, error: "item not found for this user", statusCode: 400 };
+    }
+    return { access_token: data.access_token, error: null };
+  }
+  return { access_token: null, error: "access_token or item_id required", statusCode: 400 };
+}
 
 // /transactions/sync — cursor-based, handles updates/removes
 async function syncTransactions(access_token, startDate, endDate) {
