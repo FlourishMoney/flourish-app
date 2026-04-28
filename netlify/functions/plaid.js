@@ -184,15 +184,21 @@ exports.handler = async (event) => {
         const securities = data.securities || [];
         const secMap = {};
         securities.forEach(s => { secMap[s.security_id] = s; });
+        // Phase B3: build account map so each holding can carry its underlying
+        // account's subtype (RRSP, TFSA, 401k, etc.) — this is what the user
+        // actually cares about, not the security's type.
+        const acctMap = {};
+        (data.accounts || []).forEach(a => { acctMap[a.account_id] = a; });
 
         const holdings = (data.holdings || []).map(h => {
           const s = secMap[h.security_id] || {};
           return {
+            account_id:      h.account_id,
+            account_subtype: acctMap[h.account_id]?.subtype || null,
             id:       h.account_id + "_" + h.security_id,
             name:     s.name || "Unknown",
             ticker:   s.ticker_symbol || null,
             type:     s.type || "other",
-            subtype:  accountSubtype(s.type),
             quantity: h.quantity,
             price:    s.close_price || 0,
             value:    h.institution_value || 0,

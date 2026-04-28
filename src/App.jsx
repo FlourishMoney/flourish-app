@@ -12352,6 +12352,21 @@ export default function FlourishApp(){
             setAppData(prev => ({ ...prev, liabilities: merged }));
           }
         } catch(e) { /* silent — institution may not support liabilities */ }
+        // Phase B3: fetch investment holdings per token, merge across banks
+        try {
+          const invResults = await Promise.allSettled(
+            allTok.map(t => callPlaid("get_investments",{access_token:t.token}))
+          );
+          const allHoldings = [];
+          invResults.forEach(r => {
+            if (r.status === "fulfilled" && r.value && Array.isArray(r.value.holdings)) {
+              allHoldings.push(...r.value.holdings);
+            }
+          });
+          if (allHoldings.length > 0) {
+            setAppData(prev => ({ ...prev, investments: allHoldings }));
+          }
+        } catch(e) { /* silent — institution may not support investments */ }
         } catch(e) { /* silent — cached balances still shown */ }
         // Auto-detect income and bills from combined data
         const detectedIncome = detectIncomeFromTxns(allTxns);
