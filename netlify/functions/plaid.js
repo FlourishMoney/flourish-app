@@ -13,6 +13,8 @@
 
 "use strict";
 
+const { getUserFromRequest, getAdminClient } = require("./_lib/auth");
+
 const PLAID_BASE = {
   sandbox:     "https://sandbox.plaid.com",
   development: "https://development.plaid.com",
@@ -313,6 +315,87 @@ exports.handler = async (event) => {
       }
 
       return ok({ enriched: enrichedAll });
+    }
+
+    // 9. store_item — auth-required: persist a Plaid Item for the authenticated user
+    // Body: { access_token, item_id, institution_id?, institution_name? }
+    if (action === "store_item") {
+      const { user_id, error: authError } = await getUserFromRequest(event);
+      if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
+      const { access_token, item_id, institution_id, institution_name } = body;
+      if (!access_token || !item_id) return e400("access_token and item_id required");
+      const admin = getAdminClient();
+      const { data, error } = await admin
+        .from("plaid_items")
+        .upsert({
+          user_id,
+          item_id,
+          access_token,
+          institution_id: institution_id || null,
+          institution_name: institution_name || null,
+          status: "active",
+        }, { onConflict: "user_id,item_id" })
+        .select("id, item_id, institution_name, status, created_at")
+        .single();
+      if (error) {
+        console.error("[plaid_items upsert]", error.message);
+        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: error.message }) };
+      }
+      return ok({ item: data });
+    }
+
+    // 10. list_items — auth-required: return all items for the authenticated user
+    // (does NOT return access_token to client — only metadata)
+    if (action === "list_items") {
+      const { user_id, error: authError } = await getUserFromRequest(event);
+      if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
+      const admin = getAdminClient();
+      const { data, error } = await admin
+        .from("plaid_items")
+        .select("id, item_id, institution_id, institution_name, status, created_at, updated_at")
+        .eq("user_id", user_id)
+        .order("created_at", { ascending: true });
+      if (error) {
+        console.error("[plaid_items list]", error.message);
+        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: error.message }) };
+      }
+      return ok({ items: data || [] });
+    }
+
+    // 11. delete_item — auth-required: revoke an item from Plaid + delete row
+    // Body: { item_id }
+    if (action === "delete_item") {
+      const { user_id, error: authError } = await getUserFromRequest(event);
+      if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
+      const { item_id } = body;
+      if (!item_id) return e400("item_id required");
+      const admin = getAdminClient();
+      // Look up the access_token first so we can revoke from Plaid
+      const { data: row, error: fetchErr } = await admin
+        .from("plaid_items")
+        .select("access_token")
+        .eq("user_id", user_id)
+        .eq("item_id", item_id)
+        .single();
+      if (fetchErr || !row) {
+        return e400("item not found for this user");
+      }
+      // Revoke from Plaid (best-effort — proceed with row delete even if this fails)
+      try {
+        await plaid("/item/remove", { access_token: row.access_token });
+      } catch (revErr) {
+        console.warn("[item/remove failed]", revErr.message);
+      }
+      // Delete row
+      const { error: delErr } = await admin
+        .from("plaid_items")
+        .delete()
+        .eq("user_id", user_id)
+        .eq("item_id", item_id);
+      if (delErr) {
+        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: delErr.message }) };
+      }
+      return ok({ removed: true });
     }
 
     return e400(`Unknown action: ${action}`);
