@@ -12302,8 +12302,9 @@ export default function FlourishApp(){
             .flatMap(r=>r.value.accounts.map(a=>({
               id:a.id,
               name:a.name,
-              type:a.subtype||a.type,
-              balance:a.type==="credit"?-(a.balance.current||0):(a.balance.current??a.balance.available??0),
+              type:a.type,
+              subtype:a.subtype||null,
+              balance:(a.type==="credit"||a.type==="loan")?-(a.balance.current||0):(a.balance.current??a.balance.available??0),
               institution:a.institution||"Bank",
             })));
           // Dedup by account id — multiple tokens from same bank cause duplicates
@@ -12316,9 +12317,7 @@ export default function FlourishApp(){
           if(dedupedAccounts.length > 0) {
             setAppData(prev=>{
               // Sync new credit card accounts into debts
-              const creditAccts = dedupedAccounts.filter(a =>
-                a.type === "credit" || a.type === "credit card" || a.subtype === "credit card" || a.type === "line of credit"
-              );
+              const creditAccts = dedupedAccounts.filter(a => isCreditLiability(a));
               const existingDebtNames = new Set((prev.debts||[]).map(d => (d.name||"").toLowerCase()));
               const newCCDebts = creditAccts
                 .filter(a => !existingDebtNames.has((a.name||"").toLowerCase()))
@@ -12336,6 +12335,23 @@ export default function FlourishApp(){
               };
             });
           }
+        // Phase B2: fetch liabilities (APRs, payment data) per token, merge across banks
+        try {
+          const liabResults = await Promise.allSettled(
+            allTok.map(t => callPlaid("get_liabilities",{access_token:t.token}))
+          );
+          const merged = { credit: [], mortgage: [], student: [] };
+          liabResults.forEach(r => {
+            if (r.status === "fulfilled" && r.value) {
+              if (Array.isArray(r.value.credit))   merged.credit.push(...r.value.credit);
+              if (Array.isArray(r.value.mortgage)) merged.mortgage.push(...r.value.mortgage);
+              if (Array.isArray(r.value.student))  merged.student.push(...r.value.student);
+            }
+          });
+          if (merged.credit.length || merged.mortgage.length || merged.student.length) {
+            setAppData(prev => ({ ...prev, liabilities: merged }));
+          }
+        } catch(e) { /* silent — institution may not support liabilities */ }
         } catch(e) { /* silent — cached balances still shown */ }
         // Auto-detect income and bills from combined data
         const detectedIncome = detectIncomeFromTxns(allTxns);
@@ -12428,9 +12444,10 @@ export default function FlourishApp(){
         const accounts = acctData.accounts.map(a=>({
           id:a.id,
           name:`${instName} ••${a.mask||"????"}`,
-          type:a.subtype||a.type,
-          balance: a.type==="credit"?-(a.balance.current||0):(a.balance.current??a.balance.available??0),
-          institution: instName,
+          type:a.type,
+          subtype:a.subtype||null,
+          balance:(a.type==="credit"||a.type==="loan")?-(a.balance.current||0):(a.balance.current??a.balance.available??0),
+          institution:instName,
         }));
         const transactions = normaliseTxns(txnData.transactions||[]);
         setAppData(d=>{

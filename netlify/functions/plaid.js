@@ -217,6 +217,7 @@ exports.handler = async (event) => {
         const l = data.liabilities || {};
         return ok({
           credit: (l.credit || []).map(c => ({
+            account_id: c.account_id,
             name:       c.name,
             balance:    c.last_statement_balance || 0,
             limit:      c.credit_limit || null,
@@ -224,12 +225,14 @@ exports.handler = async (event) => {
             minPayment: c.minimum_payment_amount || 0,
           })),
           mortgage: (l.mortgage || []).map(m => ({
+            account_id:     m.account_id,
             name:           m.name,
             balance:        m.outstanding_principal_balance || 0,
             interestRate:   m.interest_rate?.percentage || null,
             monthlyPayment: m.next_monthly_payment || 0,
           })),
           student: (l.student || []).map(s => ({
+            account_id:   s.account_id,
             name:         s.name,
             balance:      (s.outstanding_interest_amount || 0) + (s.outstanding_principal_balance || 0),
             interestRate: s.interest_rate_percentage || null,
