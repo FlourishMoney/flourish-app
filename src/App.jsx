@@ -3415,6 +3415,7 @@ const DASH_TILES = [
   { id: 'action',      label: 'Action Alert',         lucide:'zap'          },
   // Extended tiles
   { id: 'networth',    label: 'Net Worth Trend',      lucide:'trending-up'  },
+  { id: 'investments', label: 'Investment Portfolio', lucide:'trending-up'  },
   { id: 'forecast',    label: 'Cash Flow Forecast',   lucide:'calendar'     },
   { id: 'decision',    label: 'Decision Engine',      lucide:'cpu'          },
   { id: 'autopilot',   label: 'Autopilot',            lucide:'navigation'   },
@@ -5299,6 +5300,68 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             ))}
           </div>
         </div>}
+
+        {/* ── INVESTMENT PORTFOLIO ─── (Phase B5-B) */}
+        {isVisible('investments') && (data.investments?.length > 0) && (() => {
+          const country = data.profile?.country || "CA";
+          const totalInvested = data.investments.reduce((s,h) => s + (h.value||0), 0);
+          const holdingsCount = data.investments.length;
+
+          // Shelter bucketing (country-aware)
+          const bucketOf = (sub) => {
+            const s = (sub || "").toLowerCase();
+            if (country === "US") {
+              if (s === "401k") return "401(k)";
+              if (s === "ira" || s === "roth") return "IRA";
+              if (s === "529" || s === "hsa") return "Other";
+              return "Non-registered"; // brokerage, "", null, etc.
+            }
+            // CA default
+            if (s === "rrsp") return "RRSP";
+            if (s === "tfsa") return "TFSA";
+            if (s === "fhsa") return "FHSA";
+            return "Non-registered"; // brokerage, resp, rrif, lira, "", null, etc.
+          };
+          const buckets = data.investments.reduce((acc, h) => {
+            const b = bucketOf(h.account_subtype);
+            acc[b] = (acc[b] || 0) + (h.value || 0);
+            return acc;
+          }, {});
+          const bucketOrder = country === "US"
+            ? ["401(k)", "IRA", "Other", "Non-registered"]
+            : ["RRSP", "TFSA", "FHSA", "Non-registered"];
+
+          return (
+            <div style={{...anim(195), ...tileStyle('investments'), ...glass(C.teal), borderRadius:22, padding:"18px 20px 16px", cursor:"pointer"}}
+              onClick={() => { setScreen("goals"); if(setGoalsTab) setGoalsTab("worth"); }}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+                <div>
+                  <div style={{...label11(C.muted), marginBottom:4}}>Investment Portfolio</div>
+                  <div style={{color:C.tealBright, fontWeight:900, fontSize:26, fontFamily:"'Playfair Display',Georgia,serif", lineHeight:1, letterSpacing:-1}}>
+                    <span style={{fontSize:14,verticalAlign:"super",marginRight:1}}>$</span>
+                    <CountUp to={Math.round(totalInvested)} decimals={0}/>
+                  </div>
+                </div>
+                <div style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:99,padding:"4px 10px",fontSize:10,fontWeight:700,color:C.tealBright,fontFamily:"'Plus Jakarta Sans',sans-serif",whiteSpace:"nowrap"}}>
+                  {holdingsCount} holding{holdingsCount===1?"":"s"}
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                {bucketOrder.map(label => {
+                  const val = buckets[label] || 0;
+                  const pct = totalInvested > 0 ? Math.round((val/totalInvested)*100) : 0;
+                  return (
+                    <div key={label} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"10px 12px"}}>
+                      <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>{label}</div>
+                      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,color:val>0?C.cream:C.muted}}>${Math.round(val).toLocaleString()}</div>
+                      <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{pct}%</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── OVER-BUDGET NUDGE (dashboard) ─────────────────────────────── */}
         {(()=>{
