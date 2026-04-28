@@ -501,6 +501,28 @@ async function migrateLocalStorageTokensToSupabase() {
   }
 }
 
+// Phase D1-F-B: fetch the current Supabase JWT for authenticated server calls.
+async function getJwt() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token || null;
+  } catch { return null; }
+}
+
+// Phase D1-F-B: fetch the user's connected Plaid items (metadata only — no access_tokens).
+// Used by multi-bank fan-out sites to drive get_transactions/accounts/etc. via item_id + JWT.
+async function getUserItems() {
+  const jwt = await getJwt();
+  if (!jwt) return [];
+  try {
+    const resp = await callPlaid("list_items", {}, { jwt });
+    return resp.items || [];
+  } catch (err) {
+    console.warn("[getUserItems] failed", err.message);
+    return [];
+  }
+}
+
 // Plaid Personal Finance Category (PFC) primary values → Flourish display meta
 // Shared keyword list for detecting credit card payments in transactions.
 // Used by income detection, spending calc, and transparency panel — single source of truth.
@@ -4368,20 +4390,31 @@ function NetWorthSparkline({history, color}){
 // ─── BACKGROUND REFRESH (Plus only, 30-min rate limit) ───────────────────────
 async function backgroundRefresh(isPremium, setAppData) {
   if(!isPremium) return;
-  const accessToken = localStorage.getItem("flourish_plaid_token");
-  if(!accessToken) return;
   const lastFetch = parseInt(localStorage.getItem("flourish_last_refresh")||"0");
   const THIRTY_MIN = 30 * 60 * 1000;
   if(Date.now() - lastFetch < THIRTY_MIN) return;
+  // Phase D1-F-B: multi-bank refresh via list_items + item_id (server-side token lookup)
+  const jwt = await getJwt();
+  if(!jwt) return;
+  const items = await getUserItems();
+  if(items.length === 0) return;
   try {
-    const [acctData, txnData] = await Promise.all([
-      callPlaid("get_accounts", { access_token: accessToken }),
-      callPlaid("get_transactions", { access_token: accessToken, days: 90 }),
+    // Fan out: fetch accounts + transactions for each item in parallel
+    const [acctResults, txnResults] = await Promise.all([
+      Promise.allSettled(items.map(it => callPlaid("get_accounts", { item_id: it.item_id }, { jwt }))),
+      Promise.allSettled(items.map(it => callPlaid("get_transactions", { item_id: it.item_id, days: 90 }, { jwt }))),
     ]);
-    const normalisedTxns = normaliseTxns(txnData.transactions||[]);
-    const enrichedTxns = await enrichTxns(normalisedTxns, [], acctData.accounts, callPlaid);
+    const allAccounts = acctResults
+      .filter(r => r.status === "fulfilled")
+      .flatMap(r => r.value.accounts || []);
+    const allRawTxns = txnResults
+      .filter(r => r.status === "fulfilled")
+      .flatMap(r => r.value.transactions || []);
+    if(allAccounts.length === 0) return;
+    const normalisedTxns = normaliseTxns(allRawTxns);
+    const enrichedTxns = await enrichTxns(normalisedTxns, [], allAccounts, callPlaid);
     setAppData(prev => {
-      const freshAccounts = acctData.accounts.map(a => ({
+      const freshAccounts = allAccounts.map(a => ({
         id: a.id,
         name: a.name,
         type: a.type,
@@ -12421,16 +12454,17 @@ export default function FlourishApp(){
   useEffect(()=>{
     if(!onboarded || !appData?.bankConnected) return;
     if(appData?.transactions?.length > 0) return; // already have transactions
-    const tokens = JSON.parse(localStorage.getItem("flourish_plaid_tokens")||"[]");
-    const legacyToken = localStorage.getItem("flourish_plaid_token");
-    const allTokens = tokens.length > 0 ? tokens : (legacyToken ? [{id:"bank_0",token:legacyToken,institution:"Your Bank"}] : []);
-    if(allTokens.length === 0) return;
     // Small delay so dashboard renders first
     const timer = setTimeout(async()=>{
       try {
+        // Phase D1-F-B: fetch JWT + Supabase-backed items once; reuse across all fan-outs
+        const jwt = await getJwt();
+        if(!jwt) return;
+        const items = await getUserItems();
+        if(items.length === 0) return;
         // Fetch transactions from ALL connected banks in parallel
         const results = await Promise.allSettled(
-          allTokens.map(t => callPlaid("get_transactions",{access_token:t.token,days:90}))
+          items.map(it => callPlaid("get_transactions",{item_id:it.item_id,days:90}, {jwt}))
         );
         const allTxns = results
           .filter(r => r.status === "fulfilled")
@@ -12441,11 +12475,8 @@ export default function FlourishApp(){
         const enrichedAllTxns = await enrichTxns(allTxns, appData?.transactions || [], appData?.accounts || [], callPlaid);
         // Also refresh account balances with real-time data now that we have time
         try {
-          const tokens2 = JSON.parse(localStorage.getItem("flourish_plaid_tokens")||"[]");
-          const legacyToken2 = localStorage.getItem("flourish_plaid_token");
-          const allTok = tokens2.length > 0 ? tokens2 : (legacyToken2 ? [{id:"b0",token:legacyToken2}] : []);
           const balResults = await Promise.allSettled(
-            allTok.map(t => callPlaid("get_accounts",{access_token:t.token}))
+            items.map(it => callPlaid("get_accounts",{item_id:it.item_id}, {jwt}))
           );
           const freshAccounts = balResults
             .filter(r=>r.status==="fulfilled")
@@ -12485,10 +12516,10 @@ export default function FlourishApp(){
               };
             });
           }
-        // Phase B2: fetch liabilities (APRs, payment data) per token, merge across banks
+        // Phase B2: fetch liabilities (APRs, payment data) per item, merge across banks
         try {
           const liabResults = await Promise.allSettled(
-            allTok.map(t => callPlaid("get_liabilities",{access_token:t.token}))
+            items.map(it => callPlaid("get_liabilities",{item_id:it.item_id}, {jwt}))
           );
           const merged = { credit: [], mortgage: [], student: [] };
           liabResults.forEach(r => {
@@ -12502,10 +12533,10 @@ export default function FlourishApp(){
             setAppData(prev => ({ ...prev, liabilities: merged }));
           }
         } catch(e) { /* silent — institution may not support liabilities */ }
-        // Phase B3: fetch investment holdings per token, merge across banks
+        // Phase B3: fetch investment holdings per item, merge across banks
         try {
           const invResults = await Promise.allSettled(
-            allTok.map(t => callPlaid("get_investments",{access_token:t.token}))
+            items.map(it => callPlaid("get_investments",{item_id:it.item_id}, {jwt}))
           );
           const allHoldings = [];
           invResults.forEach(r => {
