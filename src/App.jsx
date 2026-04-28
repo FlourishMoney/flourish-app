@@ -9,7 +9,7 @@ import {
   Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
-import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers } from "./lib/financialCalculations.js";
+import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns } from "./lib/financialCalculations.js";
 import { getPlan, isPremiumOrFounder, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan } from "./lib/usageLimits.js";
 
 const FLOURISH_BETA_CODES = ["BETA100","FLOURISH2026","FOUNDER"];
@@ -4307,6 +4307,7 @@ async function backgroundRefresh(isPremium, setAppData) {
       callPlaid("get_transactions", { access_token: accessToken, days: 90 }),
     ]);
     const normalisedTxns = normaliseTxns(txnData.transactions||[]);
+    const enrichedTxns = await enrichTxns(normalisedTxns, [], acctData.accounts, callPlaid);
     setAppData(prev => {
       const freshAccounts = acctData.accounts.map(a => ({
         id: a.id,
@@ -4332,8 +4333,8 @@ async function backgroundRefresh(isPremium, setAppData) {
       return {
         ...prev,
         accounts: freshAccounts,
-        transactions: normalisedTxns.length > 0
-          ? markTransfers(normalisedTxns, t => isInternalTransfer(t) || isCCPayment(t, prev.debts || []), isCashAdvance)
+        transactions: enrichedTxns.length > 0
+          ? markTransfers(enrichedTxns, t => isInternalTransfer(t) || isCCPayment(t, prev.debts || []), isCashAdvance)
           : prev.transactions,
         debts: newCCDebts.length > 0
           ? [...(prev.debts||[]).filter(d => d.name || d.balance), ...newCCDebts]
@@ -12358,6 +12359,7 @@ export default function FlourishApp(){
         // Sort combined transactions by date
         allTxns.sort((a,b) => a.date < b.date ? 1 : -1);
         if(allTxns.length === 0) return;
+        const enrichedAllTxns = await enrichTxns(allTxns, appData?.transactions || [], appData?.accounts || [], callPlaid);
         // Also refresh account balances with real-time data now that we have time
         try {
           const tokens2 = JSON.parse(localStorage.getItem("flourish_plaid_tokens")||"[]");
@@ -12438,11 +12440,11 @@ export default function FlourishApp(){
         } catch(e) { /* silent — institution may not support investments */ }
         } catch(e) { /* silent — cached balances still shown */ }
         // Auto-detect income and bills from combined data
-        const detectedIncome = detectIncomeFromTxns(allTxns);
-        const detectedBills = detectRecurringBills(allTxns);
+        const detectedIncome = detectIncomeFromTxns(enrichedAllTxns);
+        const detectedBills = detectRecurringBills(enrichedAllTxns);
         setAppData(prev=>({
           ...prev,
-          transactions: markTransfers(allTxns, t => isInternalTransfer(t) || isCCPayment(t, prev.debts || []), isCashAdvance),
+          transactions: markTransfers(enrichedAllTxns, t => isInternalTransfer(t) || isCCPayment(t, prev.debts || []), isCashAdvance),
           incomes: (() => {
             // Only auto-set income if user hasn't entered any real income yet
             const hasRealIncome = (prev.incomes||[]).some(i => parseFloat(i.amount||0) > 0);
@@ -12523,7 +12525,7 @@ export default function FlourishApp(){
           callPlaid("get_transactions",{ access_token: ex.access_token, days: 90 }),
         ]);
       })
-      .then(([acctData, txnData])=>{
+      .then(async ([acctData, txnData])=>{
         const instName = metadata?.institution?.name||"Your Bank";
         const accounts = acctData.accounts.map(a=>({
           id:a.id,
@@ -12534,6 +12536,7 @@ export default function FlourishApp(){
           institution:instName,
         }));
         const transactions = normaliseTxns(txnData.transactions||[]);
+        const enrichedReconnectTxns = await enrichTxns(transactions, [], accounts, callPlaid);
         setAppData(d=>{
           // Auto-add credit card accounts to debts — don't overwrite existing debt entries
           const creditAccts = accounts.filter(a =>
@@ -12553,7 +12556,7 @@ export default function FlourishApp(){
           return {
             ...d,
             accounts,
-            transactions: markTransfers(transactions, t => isInternalTransfer(t) || isCCPayment(t, d.debts || []), isCashAdvance),
+            transactions: markTransfers(enrichedReconnectTxns, t => isInternalTransfer(t) || isCCPayment(t, d.debts || []), isCashAdvance),
             bankConnected: true,
             debts: [...(d.debts||[]).filter(d => d.name || d.balance), ...newCCDebts],
           };

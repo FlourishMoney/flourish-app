@@ -549,6 +549,84 @@ export function markTransfers(txns, keywordIsTransferFn, isCashAdvanceFn) {
   return result;
 }
 
+// ── 12. enrichTxns (Phase C1) ───────────────────────────────────────────────
+// Wraps Plaid's /transactions/enrich endpoint. Cleans up transaction names,
+// returns merchant logos and refined categories. Billed per transaction.
+//
+// Inputs:
+//   newTxns      — array of normalized transactions just fetched
+//   existingTxns — array of previously-enriched txns (for dedup)
+//   accounts     — array of account objects (to filter Plaid-backed only)
+//   callPlaidFn  — function(action, body) => Promise — the existing callPlaid helper
+//
+// Output:
+//   Promise<array> — same length and order as newTxns, with enrichments merged.
+//   Each returned txn has: ...all original fields, plus enriched: true,
+//                          and if available: logo (url), name (cleaner), category metadata.
+//
+// Logic:
+//   1. Identify which txns to enrich: from Plaid-backed accounts, not pending,
+//      not already enriched. Skip everything else (manual, demo, statement uploads).
+//   2. If nothing to enrich, return newTxns unchanged.
+//   3. Call backend enrich_transactions with the eligible txns.
+//   4. Merge enriched fields by id back into newTxns. Stamp `enriched: true` on
+//      every enriched txn so future enrichTxns calls skip it.
+//   5. On any error: return newTxns unchanged. Enrichment is non-critical —
+//      the txns still display fine without it.
+
+export async function enrichTxns(newTxns, existingTxns, accounts, callPlaidFn) {
+  if (!Array.isArray(newTxns) || newTxns.length === 0) return newTxns || [];
+  if (!callPlaidFn) return newTxns;
+
+  // Build set of Plaid-backed account ids (skip Manual, Statement uploads, etc.)
+  const plaidAccountIds = new Set(
+    (accounts || [])
+      .filter(a => a.institution !== "Manual" && a.institution !== "Statement")
+      .map(a => a.id)
+  );
+
+  // Build set of already-enriched txn ids from existing data
+  const alreadyEnriched = new Set(
+    (existingTxns || []).filter(t => t.enriched).map(t => t.id)
+  );
+
+  // Eligible txns: Plaid-backed account, not pending, not already enriched
+  const eligible = newTxns.filter(t =>
+    plaidAccountIds.has(t.account_id) &&
+    !t.pending &&
+    !alreadyEnriched.has(t.id)
+  );
+
+  if (eligible.length === 0) return newTxns;
+
+  try {
+    const resp = await callPlaidFn("enrich_transactions", { transactions: eligible });
+    const enrichedById = new Map();
+    (resp.enriched || []).forEach(e => enrichedById.set(e.id, e));
+
+    // Merge enriched fields back into newTxns by id
+    return newTxns.map(t => {
+      const e = enrichedById.get(t.id);
+      if (!e) return t; // not enriched (manual, pending, or no enrichment returned)
+      return {
+        ...t,
+        name: e.name || t.name,
+        logo: e.logo || t.logo,
+        // Keep original cat for now (user overrides via getEffCat take precedence).
+        // Enrich category metadata stored separately for future use.
+        enriched: true,
+        enrichCategory: e.category_primary || null,
+        enrichCategoryDetailed: e.category_detailed || null,
+        enrichLocation: e.location_city ? `${e.location_city}, ${e.location_region || ""}`.trim() : null,
+      };
+    });
+  } catch (err) {
+    // Non-critical: enrichment failed, return original txns
+    console.warn("Enrich call failed:", err?.message || err);
+    return newTxns;
+  }
+}
+
 // -----------------------------------------------------------------------------
 // STRIPE / PREMIUM NOTE
 //   These functions are plan-agnostic. Usage limits live in usageLimits.js

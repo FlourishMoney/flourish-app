@@ -257,6 +257,64 @@ exports.handler = async (event) => {
       return ok({ removed: true });
     }
 
+    // 8. enrich_transactions
+    if (action === "enrich_transactions") {
+      // Phase C1: Plaid Enrich. Cleans transaction names, returns merchant logos
+      // and refined categories. Billed per transaction (~$0.002 each).
+      //
+      // Input shape: { transactions: [{id, name, amount, currency, account_id, ...}, ...] }
+      // Plaid endpoint accepts max 100 txns per request — we chunk internally.
+      // Returns: { enriched: [{id, name, logo, mcc, category, ...}, ...] } — a flat array
+      //          where each entry is keyed by `id` so the frontend can merge by id.
+      const { transactions } = body;
+      if (!Array.isArray(transactions) || transactions.length === 0) {
+        return ok({ enriched: [] });
+      }
+
+      // Chunk into max-100 batches
+      const chunks = [];
+      for (let i = 0; i < transactions.length; i += 100) {
+        chunks.push(transactions.slice(i, i + 100));
+      }
+
+      const enrichedAll = [];
+      for (const chunk of chunks) {
+        // Build Enrich's required input shape per txn
+        const enrichInput = chunk.map(t => ({
+          id: String(t.id),
+          description: String(t.name || ""),
+          amount: Math.abs(Number(t.amount) || 0),
+          direction: (Number(t.amount) || 0) > 0 ? "OUTFLOW" : "INFLOW",
+          iso_currency_code: t.currency || "CAD",
+        }));
+
+        try {
+          const resp = await plaid("/transactions/enrich", {
+            account_type: "depository", // Plaid wants this hint; safe default for personal-finance use
+            transactions: enrichInput,
+          });
+          const enrichedChunk = (resp.enriched_transactions || []).map(et => ({
+            id: et.id,
+            name: et.enrichments?.merchant_name || et.description || null,
+            logo: et.enrichments?.logo_url || null,
+            website: et.enrichments?.website || null,
+            category_primary: et.enrichments?.personal_finance_category?.primary || null,
+            category_detailed: et.enrichments?.personal_finance_category?.detailed || null,
+            category_icon: et.enrichments?.personal_finance_category_icon_url || null,
+            payment_channel: et.enrichments?.payment_channel || null,
+            location_city: et.enrichments?.location?.city || null,
+            location_region: et.enrichments?.location?.region || null,
+          }));
+          enrichedAll.push(...enrichedChunk);
+        } catch (err) {
+          // Per-chunk failure — log and continue. Don't fail the whole request.
+          console.warn("Enrich chunk failed:", err?.message || err);
+        }
+      }
+
+      return ok({ enriched: enrichedAll });
+    }
+
     return e400(`Unknown action: ${action}`);
 
   } catch (err) {
