@@ -416,10 +416,14 @@ const DEMO = {
 };
 
 // ─── PLAID API HELPERS ────────────────────────────────────────────────────────
-async function callPlaid(action, params={}) {
+async function callPlaid(action, params={}, options={}) {
+  const headers = { "Content-Type": "application/json" };
+  if (options.jwt) {
+    headers["Authorization"] = `Bearer ${options.jwt}`;
+  }
   const res = await fetch("/api/plaid", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ action, ...params }),
   });
   const data = await res.json();
@@ -433,6 +437,26 @@ async function callPlaid(action, params={}) {
     throw err;
   }
   return data;
+}
+
+// Phase D1: persist Plaid Item to Supabase via authenticated server call.
+// Silent failure during migration window — falls back to localStorage path.
+// After D1-F removes the localStorage path, success becomes mandatory.
+async function storePlaidItemServerSide({access_token, item_id, institution_name}) {
+  if (!access_token || !item_id) return;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      console.warn("[storePlaidItem] no session — skipping server-side persist");
+      return;
+    }
+    await callPlaid("store_item", {
+      access_token, item_id, institution_name: institution_name || "Your Bank",
+    }, { jwt: session.access_token });
+    console.log("[storePlaidItem] stored", item_id);
+  } catch (err) {
+    console.warn("[storePlaidItem] failed (non-fatal)", err.message);
+  }
 }
 
 // Plaid Personal Finance Category (PFC) primary values → Flourish display meta
@@ -3688,6 +3712,12 @@ function Onboarding({onComplete,onViewLegal,userId}){
         const filtered = existing.filter(b => (b.institution||"").toLowerCase() !== instName.toLowerCase());
         const updated = [...filtered, {id:bankId, token:ex.access_token, institution:instName}];
         localStorage.setItem("flourish_plaid_tokens", JSON.stringify(updated));
+        // Phase D1-D: also persist server-side (parallel path during migration)
+        await storePlaidItemServerSide({
+          access_token: ex.access_token,
+          item_id: ex.item_id,
+          institution_name: instName,
+        });
         // Keep legacy key for backwards compatibility
         localStorage.setItem("flourish_plaid_token", ex.access_token);
       }catch{}
@@ -12509,7 +12539,7 @@ export default function FlourishApp(){
   // ── Plaid reconnect success handler (must be before early returns — Rules of Hooks) ──
   const onReconnectSuccess = useCallback((publicToken, metadata)=>{
     callPlaid("exchange_token",{ public_token: publicToken, institution_name: metadata?.institution?.name||"Your Bank" })
-      .then(ex=>{
+      .then(async ex=>{
         try{
         // Multi-bank: save to array
         const existing = JSON.parse(localStorage.getItem("flourish_plaid_tokens")||"[]");
@@ -12519,7 +12549,12 @@ export default function FlourishApp(){
         // Keep legacy key for backwards compatibility
         localStorage.setItem("flourish_plaid_token", ex.access_token);
       }catch{}
-        setPlaidAccessToken(ex.access_token);
+        // Phase D1-D: persist server-side (parallel path during migration)
+        await storePlaidItemServerSide({
+          access_token: ex.access_token,
+          item_id: ex.item_id,
+          institution_name: ex.institution_name || "Your Bank",
+        });
         return Promise.all([
           callPlaid("get_accounts",{ access_token: ex.access_token }),
           callPlaid("get_transactions",{ access_token: ex.access_token, days: 90 }),
@@ -12642,7 +12677,9 @@ export default function FlourishApp(){
     if(!plaidAccessToken) return;
     try{ await callPlaid("remove_item",{ access_token: plaidAccessToken }); }catch(e){ console.warn("remove_item:", e.message); }
     try{ localStorage.removeItem("flourish_plaid_token"); }catch{}
-    setPlaidAccessToken(null);
+    // Phase D1-D: removed an undefined-setter reference here (latent bug). The token is now
+    // derived from plaidTokens state at line 12260; localStorage clear above + Supabase delete
+    // in D1-G handle persistence.
     setNeedsReconnect(false);
     setAppData(d=>({...d, accounts:[{id:"m1",name:"Chequing",type:"checking",balance:0,institution:"Manual"}], transactions: d.transactions||[], bankConnected:false }));
   };
