@@ -9,7 +9,7 @@ import {
   Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
-import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount } from "./lib/financialCalculations.js";
+import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator } from "./lib/financialCalculations.js";
 import { getPlan, isPremiumOrFounder, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan } from "./lib/usageLimits.js";
 
 const FLOURISH_BETA_CODES = ["BETA100","FLOURISH2026","FOUNDER"];
@@ -1522,7 +1522,8 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
 
     // ── DEBT PAYOFF SCENARIO ─────────────────────────────────────────────
     if (scenarioType === "debt") {
-      const debts = (data.debts || []).filter(d => parseFloat(d.balance || 0) > 0);
+      // Phase B4: unified debt list — Plaid liabilities (authoritative) + non-bank manual debts
+      const debts = buildDebtListForSimulator(data.debts, data.liabilities);
       if (debts.length === 0) {
         setResult({
           scenarioType: "debt",
@@ -1535,10 +1536,10 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
         return;
       }
       // Default to highest-APR debt
-      const targetDebt = [...debts].sort((a,b) => parseFloat(b.rate||0) - parseFloat(a.rate||0))[0];
-      const balance = parseFloat(targetDebt.balance || 0);
-      const apr = parseFloat(targetDebt.rate || 20);
-      const currentPayment = parseFloat(targetDebt.min || Math.max(25, balance * 0.02));
+      const targetDebt = [...debts].sort((a,b) => b.rate - a.rate)[0];
+      const balance = targetDebt.balance;
+      const apr = targetDebt.rate;
+      const currentPayment = targetDebt.min;
       // Default extra payment from query (or $100/mo if none specified)
       const parsedAmount = parseAmountFromQuery(qText);
       const extraPayment = parsedAmount > 0 && parsedAmount < currentPayment * 5 ? parsedAmount : 100;

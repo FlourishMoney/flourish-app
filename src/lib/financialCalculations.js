@@ -380,6 +380,69 @@ export function isInvestmentAccount(a) {
   return false;
 }
 
+// ── 10. buildDebtListForSimulator (Phase B4) ────────────────────────────────
+// Combines Plaid Liabilities (authoritative APR + payment data) with manual
+// debts (user-entered IOUs / unconnected accounts) into a unified list the
+// simulator can consume. Plaid wins for any debt that has a connected source.
+//
+// Inputs:
+//   manualDebts  — array from data.debts (shape: {name, balance, rate, min, fromBank?})
+//   liabilities  — object from appData.liabilities ({credit:[], mortgage:[], student:[]})
+//
+// Output:
+//   Array of normalized debt objects ready for sort-by-APR + simulate.
+//   Each entry: {name, balance:number, rate:number, min:number, source:string, account_id?:string}
+//
+// Logic:
+//   1. Map all liabilities.credit entries (Plaid-authoritative)
+//   2. Add manual debts that are NOT fromBank:true (user-entered standalones)
+//   3. Skip fromBank:true manual debts entirely when liabilities are present —
+//      Plaid is the source of truth for those. If liabilities is missing/empty,
+//      fall back to using manual debts as-is.
+
+export function buildDebtListForSimulator(manualDebts, liabilities) {
+  const manual = Array.isArray(manualDebts) ? manualDebts : [];
+  const plaidCredit = liabilities && Array.isArray(liabilities.credit) ? liabilities.credit : [];
+
+  // No Plaid liabilities → use manual debts unchanged (back-compat for users without bank-connected liabilities)
+  if (plaidCredit.length === 0) {
+    return manual
+      .filter(d => parseFloat(d.balance || 0) > 0)
+      .map(d => ({
+        name: d.name || "Debt",
+        balance: parseFloat(d.balance || 0),
+        rate: parseFloat(d.rate || 0) || 20, // fallback 20% APR if user left blank
+        min: parseFloat(d.min || 0) || Math.max(25, parseFloat(d.balance || 0) * 0.02),
+        source: "manual",
+      }));
+  }
+
+  // Plaid liabilities present → build authoritative list
+  const plaidEntries = plaidCredit
+    .filter(c => (c.balance || 0) > 0)
+    .map(c => ({
+      name: c.name || "Credit Card",
+      balance: c.balance || 0,
+      rate: c.apr || 20, // Plaid sometimes returns null APR; fallback 20%
+      min: c.minPayment || Math.max(25, (c.balance || 0) * 0.02),
+      source: "plaid_liability",
+      account_id: c.account_id,
+    }));
+
+  // Add manual debts that are NOT fromBank (user-entered standalones — IOUs, unconnected cards, etc.)
+  const manualStandalones = manual
+    .filter(d => !d.fromBank && parseFloat(d.balance || 0) > 0)
+    .map(d => ({
+      name: d.name || "Debt",
+      balance: parseFloat(d.balance || 0),
+      rate: parseFloat(d.rate || 0) || 20,
+      min: parseFloat(d.min || 0) || Math.max(25, parseFloat(d.balance || 0) * 0.02),
+      source: "manual",
+    }));
+
+  return [...plaidEntries, ...manualStandalones];
+}
+
 // -----------------------------------------------------------------------------
 // STRIPE / PREMIUM NOTE
 //   These functions are plan-agnostic. Usage limits live in usageLimits.js
