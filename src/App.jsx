@@ -459,6 +459,48 @@ async function storePlaidItemServerSide({access_token, item_id, institution_name
   }
 }
 
+// Phase D1-E: one-time migration of existing localStorage tokens to Supabase.
+// Idempotent on the server side (upsert by user_id+item_id), so safe to re-run.
+// Marks completion in localStorage to skip on subsequent sessions.
+async function migrateLocalStorageTokensToSupabase() {
+  if (localStorage.getItem("flourish_d1e_migrated") === "1") return;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return; // user not authenticated yet — try next session
+
+    // Defensive merge of legacy single-token + multi-bank array
+    const arr = (() => {
+      try { return JSON.parse(localStorage.getItem("flourish_plaid_tokens") || "null"); }
+      catch { return null; }
+    })();
+    const legacy = localStorage.getItem("flourish_plaid_token");
+    const merged = [];
+    if (Array.isArray(arr)) {
+      for (const e of arr) if (e?.token) merged.push({ token: e.token, institution_name: e.institution || "Your Bank" });
+    }
+    if (legacy && !merged.some(m => m.token === legacy)) {
+      merged.push({ token: legacy, institution_name: "Your Bank" });
+    }
+
+    if (merged.length === 0) {
+      // No tokens to migrate — mark done and exit
+      localStorage.setItem("flourish_d1e_migrated", "1");
+      return;
+    }
+
+    const resp = await callPlaid("migrate_items", { tokens: merged }, { jwt: session.access_token });
+    const successes = resp.successes || [];
+    const failures = resp.failures || [];
+    console.log(`[d1e] migrated ${successes.length} tokens, ${failures.length} failures`);
+    // Mark done regardless — failures are recorded server-side as status:active rows that
+    // failed /item/get, OR they're tokens that revoked at the bank. User will re-link if needed.
+    localStorage.setItem("flourish_d1e_migrated", "1");
+  } catch (err) {
+    // Transient failure — don't set flag, retry next session
+    console.warn("[d1e] migration failed (will retry next session)", err.message);
+  }
+}
+
 // Plaid Personal Finance Category (PFC) primary values → Flourish display meta
 // Shared keyword list for detecting credit card payments in transactions.
 // Used by income detection, spending calc, and transparency panel — single source of truth.
@@ -12357,6 +12399,13 @@ export default function FlourishApp(){
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // Phase D1-E: one-time migration of localStorage Plaid tokens to Supabase.
+  // Runs after auth confirms. Skips if already done. Non-blocking.
+  useEffect(() => {
+    if (!user) return;
+    migrateLocalStorageTokensToSupabase();
+  }, [user]);
 
   // ── Persist state changes to localStorage ──────────────────────
   // Persist plaid tokens array

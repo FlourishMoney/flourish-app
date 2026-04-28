@@ -398,6 +398,58 @@ exports.handler = async (event) => {
       return ok({ removed: true });
     }
 
+    // 12. migrate_items — auth-required: bulk-migrate localStorage tokens to Supabase
+    // Body: { tokens: [{token, institution_name}, ...] }
+    // For each token: call /item/get to derive item_id, upsert plaid_items row.
+    // Returns: { successes: [{token, item_id}], failures: [{token, error}] }
+    if (action === "migrate_items") {
+      const { user_id, error: authError } = await getUserFromRequest(event);
+      if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
+      const { tokens } = body;
+      if (!Array.isArray(tokens) || tokens.length === 0) {
+        return ok({ successes: [], failures: [] });
+      }
+      const admin = getAdminClient();
+      const successes = [];
+      const failures = [];
+      for (const t of tokens) {
+        if (!t?.token) {
+          failures.push({ token: null, error: "missing token" });
+          continue;
+        }
+        try {
+          // Derive item_id + institution_id from Plaid
+          const itemResp = await plaid("/item/get", { access_token: t.token });
+          const item_id = itemResp.item?.item_id;
+          const institution_id = itemResp.item?.institution_id || null;
+          if (!item_id) {
+            failures.push({ token: t.token, error: "no item_id returned" });
+            continue;
+          }
+          // Upsert (idempotent — re-running migration is safe)
+          const { error: upsertErr } = await admin
+            .from("plaid_items")
+            .upsert({
+              user_id,
+              item_id,
+              access_token: t.token,
+              institution_id,
+              institution_name: t.institution_name || "Your Bank",
+              status: "active",
+            }, { onConflict: "user_id,item_id" });
+          if (upsertErr) {
+            failures.push({ token: t.token, error: upsertErr.message });
+            continue;
+          }
+          successes.push({ token: t.token, item_id });
+        } catch (err) {
+          // Plaid /item/get failed (revoked token, login required, network, etc.)
+          failures.push({ token: t.token, error: err.message || "plaid error", error_code: err.errorCode || null });
+        }
+      }
+      return ok({ successes, failures });
+    }
+
     return e400(`Unknown action: ${action}`);
 
   } catch (err) {
