@@ -319,6 +319,67 @@ export function detectScenarioType(text) {
   return "purchase";
 }
 
+// ── 9. Account-type classification helpers (Phase B1) ────────────────────────
+// Plaid returns a 2-level type taxonomy: top-level `type` ("depository",
+// "credit", "loan", "investment") and granular `subtype` ("checking", "savings",
+// "credit card", "rrsp", "tfsa", "401k", etc.). These helpers centralise the
+// classification logic so consumers never have to know the dichotomy.
+//
+// Each helper accepts an account object and returns true/false.
+// All checks are case-insensitive and null-safe.
+
+function _accountKey(a) {
+  return {
+    type:    String(a?.type || "").toLowerCase(),
+    subtype: String(a?.subtype || "").toLowerCase(),
+  };
+}
+
+// Cash: anything that contributes to spendable balance (safe-to-spend math).
+// Top-level depository = checking, savings, money market, CD, prepaid, paypal.
+export function isCashAccount(a) {
+  const { type, subtype } = _accountKey(a);
+  if (type === "depository") return true;
+  // Backward-compat: pre-B1 data may have type === "checking" / "savings" directly.
+  if (type === "checking" || type === "savings") return true;
+  return false;
+}
+
+export function isCheckingAccount(a) {
+  const { type, subtype } = _accountKey(a);
+  if (type === "depository" && subtype === "checking") return true;
+  if (type === "checking") return true; // back-compat
+  return false;
+}
+
+export function isSavingsAccount(a) {
+  const { type, subtype } = _accountKey(a);
+  if (type === "depository" && subtype === "savings") return true;
+  if (type === "savings") return true; // back-compat
+  return false;
+}
+
+// Credit liabilities: credit cards, lines of credit, PayPal credit, etc.
+// These should be treated as negative-balance items in net-worth math.
+export function isCreditLiability(a) {
+  const { type, subtype } = _accountKey(a);
+  if (type === "credit") return true;
+  if (subtype === "credit card" || subtype === "line of credit") return true;
+  // Loans (mortgage, student, auto, personal) are also liabilities.
+  if (type === "loan") return true;
+  return false;
+}
+
+// Investment accounts: brokerages, retirement accounts (RRSP, TFSA, 401k, IRA).
+export function isInvestmentAccount(a) {
+  const { type, subtype } = _accountKey(a);
+  if (type === "investment") return true;
+  if (type === "brokerage") return true;
+  // Some Plaid responses put retirement subtypes under depository — guard against:
+  if (["rrsp","tfsa","fhsa","resp","rrif","lira","401k","ira","roth","529","hsa"].includes(subtype)) return true;
+  return false;
+}
+
 // -----------------------------------------------------------------------------
 // STRIPE / PREMIUM NOTE
 //   These functions are plan-agnostic. Usage limits live in usageLimits.js

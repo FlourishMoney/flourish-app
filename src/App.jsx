@@ -9,7 +9,7 @@ import {
   Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
-import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType } from "./lib/financialCalculations.js";
+import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount } from "./lib/financialCalculations.js";
 import { getPlan, isPremiumOrFounder, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan } from "./lib/usageLimits.js";
 
 const FLOURISH_BETA_CODES = ["BETA100","FLOURISH2026","FOUNDER"];
@@ -1466,7 +1466,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
 
   const _toMoSim = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a; };
   const bal = (data.accounts||[])
-    .filter(a => ["checking","savings","depository"].includes((a.type||"").toLowerCase()))
+    .filter(a => isCashAccount(a))
     .reduce((s,a) => s + parseFloat(a.balance||0), 0) || DEMO.balance;
   const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0)
     .reduce((s,i) => s + _toMoSim(i.amount,i.freq), 0) || DEMO.income;
@@ -1948,7 +1948,7 @@ function calcPersonality(txns, data) {
   const hasGoals = (data.goals||[]).length > 0;
   const accts = data.accounts||[];
   const isOverdraft = accts.some(a=>a.type!=="credit"&&parseFloat(a.balance||0)<0);
-  const hasSavings = accts.some(a=>a.type==="savings"&&parseFloat(a.balance||0)>500);
+  const hasSavings = accts.some(a=>isSavingsAccount(a)&&parseFloat(a.balance||0)>500);
   const multiIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0).length > 1;
   const builderScore = (hasRetirementSavings?0.3:0)+(hasGoals?0.15:0)+(hasSavings?0.15:0)+(multiIncome&&!isOverdraft?0.1:0)-(isOverdraft?0.4:0);
 
@@ -2245,7 +2245,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
   }
 
   // Low-yield savings
-  const savingsAcct = (data.accounts||[]).find(a => a.type==="savings");
+  const savingsAcct = (data.accounts||[]).find(a => isSavingsAccount(a));
   if (savingsAcct) {
     const bal = parseFloat(savingsAcct.balance||0);
     if (bal > 500) opportunities.push({
@@ -2295,8 +2295,8 @@ function MoneyWrapped({data, onClose}) {
   const income = ((data.incomes||[]).reduce((s,i)=>s+_toMoW(i.amount,i.freq),0) || 4200) * 12;
   const totalSpent = txns.reduce((s,t)=>s+Math.abs(t.amount||0),0) || 0;
   const { netWorth: _wrappedNW } = FinancialCalcEngine.netWorth(data);
-  const invBal = (data.accounts||[]).filter(a=>a.type==="investment").reduce((s,a)=>s+parseFloat(a.balance||0),0);
-  const bal = (data.accounts||[]).filter(a=>["checking","savings","depository"].includes((a.type||"").toLowerCase())).reduce((s,a)=>s+parseFloat(a.balance||0),0);
+  const invBal = (data.accounts||[]).filter(a=>isInvestmentAccount(a)).reduce((s,a)=>s+parseFloat(a.balance||0),0);
+  const bal = (data.accounts||[]).filter(a=>isCashAccount(a)).reduce((s,a)=>s+parseFloat(a.balance||0),0);
 
   // Category analysis
   const cats = {};
@@ -2658,11 +2658,10 @@ const FinancialCalcEngine = {
   netWorth(data) {
     const accounts = data.accounts || [];
     const debts    = data.debts    || [];
-    // Assets: only positive-balance accounts (checking, savings, investment)
+    // Assets: only positive-balance accounts (cash + investment)
     // Credit accounts have negative balances and are already captured in liabilities
-    const ASSET_TYPES = new Set(["checking","savings","depository","investment","brokerage"]);
     const assets = accounts
-      .filter(a => ASSET_TYPES.has(a.type))
+      .filter(a => isCashAccount(a) || isInvestmentAccount(a))
       .reduce((s,a) => s + Math.max(0, parseFloat(a.balance||0)), 0);
     // Liabilities: bank credit accounts + manual debts not duplicated in bank
     const bankCreditAccounts = accounts.filter(a => {
@@ -2780,7 +2779,7 @@ const SafeSpendEngine = {
     const debts    = data.debts    || [];
 
     const balance  = accounts
-      .filter(a => ["checking","savings","depository"].includes(a.type))
+      .filter(a => isCashAccount(a))
       .reduce((s,a) => s + parseFloat(a.balance||0), 0) ||
       0;
 
@@ -3694,8 +3693,9 @@ function Onboarding({onComplete,onViewLegal,userId}){
       const mappedAccounts = acctData.accounts.map(a=>({
         id:a.id,
         name:`${ex.institution_name} ••${a.mask||"????"}`,
-        type:a.subtype||a.type,
-        balance:a.type==="credit"?-(a.balance.current||0):(a.balance.current??a.balance.available??0),
+        type:a.type,
+        subtype:a.subtype||null,
+        balance:(a.type==="credit"||a.type==="loan")?-(a.balance.current||0):(a.balance.current??a.balance.available??0),
         institution:ex.institution_name,
       }));
 
@@ -4149,7 +4149,7 @@ function buildLiveNotifs(data) {
   const bills = data?.bills || [];
   const accounts = data?.accounts || [];
   const debts = data?.debts || [];
-  const balance = accounts.filter(a=>a.type==="checking"||a.type==="savings").reduce((s,a)=>s+(a.balance||0),0);
+  const balance = accounts.filter(a=>isCashAccount(a)).reduce((s,a)=>s+(a.balance||0),0);
 
   // Bill due soon notifications (real bills only)
   bills.filter(b=>b.name&&b.amount).forEach((b,i) => {
@@ -4306,8 +4306,9 @@ async function backgroundRefresh(isPremium, setAppData) {
       const freshAccounts = acctData.accounts.map(a => ({
         id: a.id,
         name: a.name,
-        type: a.subtype||a.type,
-        balance: a.type==="credit" ? -(a.balance.current||0) : (a.balance.current??a.balance.available??0),
+        type: a.type,
+        subtype: a.subtype||null,
+        balance: (a.type==="credit"||a.type==="loan") ? -(a.balance.current||0) : (a.balance.current??a.balance.available??0),
         institution: prev.accounts?.find(p=>p.id===a.id)?.institution||"Bank",
       }));
       // Sync new credit card accounts into debts on background refresh
@@ -4894,8 +4895,8 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             {/* ── Inline math proof — one line, no tap required ── */}
             {(()=>{
               const accts = data.accounts||[];
-              const chequing = accts.filter(a=>a.type==="checking"||a.type==="depository").reduce((s,a)=>s+(a.balance||0),0);
-              const savings  = accts.filter(a=>a.type==="savings").reduce((s,a)=>s+(a.balance||0),0);
+              const chequing = accts.filter(a=>isCheckingAccount(a)).reduce((s,a)=>s+(a.balance||0),0);
+              const savings  = accts.filter(a=>isSavingsAccount(a)).reduce((s,a)=>s+(a.balance||0),0);
               const totalBalance = data.bankConnected ? (chequing||savings||bal)||0 : null;
               const billsTotal  = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
               const bufferAmt   = monthlyIncome * 0.15;
@@ -7016,7 +7017,7 @@ function SpendScreen({data, setAppData, setScreen}){
               style={{width:"100%",background:C.card,border:`1px solid ${accountFilter!=="All"?C.blue:C.border}`,borderRadius:10,padding:"9px 10px",color:accountFilter!=="All"?C.blueBright:C.cream,fontSize:12,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
               <option value="All">All Accounts</option>
               {accountsWithNames.map(a=>{
-                const icon = a.type==="credit"||a.type==="credit card"?"💳":a.type==="savings"?"🏦":a.type==="investment"?"📈":"🏦";
+                const icon = isCreditLiability(a)?"💳":isSavingsAccount(a)?"🏦":isInvestmentAccount(a)?"📈":"🏦";
                 return <option key={a.id} value={a.id}>{icon} {a.name}</option>;
               })}
             </select>
@@ -7514,8 +7515,8 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       const investments=allAccts.filter(a=>a.type==="investment");
       const totalInvested=investments.reduce((s,a)=>s+(a.balance||0),0);
       const totalGain=investments.reduce((s,a)=>s+(a.gain||0),0);
-      const checking=allAccts.filter(a=>a.type==="checking").reduce((s,a)=>s+(a.balance||0),0);
-      const savings=allAccts.filter(a=>a.type==="savings").reduce((s,a)=>s+(a.balance||0),0);
+      const checking=allAccts.filter(a=>isCheckingAccount(a)).reduce((s,a)=>s+(a.balance||0),0);
+      const savings=allAccts.filter(a=>isSavingsAccount(a)).reduce((s,a)=>s+(a.balance||0),0);
       const totalAssets=checking+savings+totalInvested;
       const { netWorth: realNetWorth, bankCreditLiabilities, manualNonBankDebts } = FinancialCalcEngine.netWorth(data);
       const savLabel=country==="US"?"Savings / HYSA":"Savings / TFSA";
@@ -9892,7 +9893,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const country = profile.country||"CA";
     const _toMoCtx=(amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a;};
     const income = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0).reduce((s,i)=>s+_toMoCtx(i.amount,i.freq),0) || DEMO.income;
-    const balance = (accounts||[]).filter(a=>["checking","savings","depository"].includes((a.type||"").toLowerCase())).reduce((s,a)=>s+parseFloat(a.balance||0),0) || DEMO.balance;
+    const balance = (accounts||[]).filter(a=>isCashAccount(a)).reduce((s,a)=>s+parseFloat(a.balance||0),0) || DEMO.balance;
     const spending = txns.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
 
     // ── PHASE 1C: pre-computed engine values for affordability reasoning ──
