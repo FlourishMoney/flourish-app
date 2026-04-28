@@ -3769,72 +3769,16 @@ function Onboarding({onComplete,onViewLegal,userId}){
   const banks=(CC[p.country]?.banks||CC.CA.banks);
 
   const screens=[
-    // 0: Welcome
-    <div style={{minHeight:"70vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"20px 0",position:"relative"}}>
-      {/* Background decorative rings */}
-      <div style={{position:"absolute",top:"42%",left:"50%",transform:"translate(-50%,-50%)",width:340,height:340,borderRadius:"50%",border:`1px solid ${C.green}12`,pointerEvents:"none"}}/>
-      <div style={{position:"absolute",top:"42%",left:"50%",transform:"translate(-50%,-50%)",width:250,height:250,borderRadius:"50%",border:`1px solid ${C.green}1C`,pointerEvents:"none"}}/>
-      <div style={{position:"absolute",top:"42%",left:"50%",transform:"translate(-50%,-50%)",width:170,height:170,borderRadius:"50%",border:`1px solid ${C.green}2B`,pointerEvents:"none"}}/>
-      {/* Ambient glow */}
-      <div style={{position:"absolute",top:"42%",left:"50%",transform:"translate(-50%,-60%)",width:300,height:300,borderRadius:"50%",background:`radial-gradient(circle,${C.green}15 0%,transparent 70%)`,pointerEvents:"none",animation:"breathe 7s ease-in-out infinite"}}/>
-
-      {/* Logo mark */}
-      <div style={{position:"relative",marginBottom:16,animation:"logoFloat 5s ease-in-out infinite"}}>
-        <div style={{width:96,height:96,borderRadius:30,background:C.isDark?"linear-gradient(145deg,rgba(0,204,133,0.14) 0%,rgba(0,204,133,0.06) 100%)":"linear-gradient(145deg,rgba(0,147,95,0.10) 0%,rgba(0,147,95,0.04) 100%)",border:`1.5px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",boxShadow:"0 0 0 1px rgba(255,255,255,0.04), 0 12px 48px rgba(0,204,133,0.18), 0 4px 16px rgba(0,0,0,0.30)",backdropFilter:"blur(12px)"}}><FlourishMark size={56} style={{borderRadius:16}}/></div>
-      </div>
-      <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:38,letterSpacing:-1,marginBottom:24,lineHeight:1,background:`linear-gradient(130deg,${C.cream} 30%,rgba(237,233,226,0.65) 100%)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>flourish</div>
-
-      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,color:C.green,letterSpacing:3.5,textTransform:"uppercase",fontWeight:700,marginBottom:22,opacity:0.9}}>
-        Finally. Financial clarity.
-      </div>
-
-      {/* Tagline */}
-      <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontSize:26,fontWeight:900,color:C.cream,lineHeight:1.2,maxWidth:300,marginBottom:8,letterSpacing:-0.5}}>
-        Know before<br/>you spend.
-      </div>
-      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.mutedHi,fontSize:14,lineHeight:1.7,maxWidth:280,marginBottom:34}}>
-        One number — updated daily from your real accounts — tells you exactly what's safe to spend without missing a bill or touching your savings.
-      </div>
-
-      {/* Feature pills */}
-      <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center",marginBottom:36,maxWidth:340}}>
-        {[["✓","Safe-to-spend number"],["✓","Bill collision alerts"],["✓","Overdraft warnings"],["✓","AI financial coach"],["✓","Tax tips & credits"],["✓","Built for families"]].map(([icon,text],i)=>(
-          <div key={i} style={{background:C.isDark?"rgba(255,255,255,0.05)":C.surface,border:`1px solid ${C.border}`,borderRadius:99,padding:"7px 15px",color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:6,animation:`fadeUp 0.4s ease ${100+i*60}ms both`,backdropFilter:"blur(8px)"}}>
-            <span style={{fontSize:14}}>{icon}</span>{text}
-          </div>
-        ))}
-      </div>
-
-      {/* CTA */}
-      <button onClick={()=>setStep(1)} style={{background:`linear-gradient(135deg,${C.green} 0%,${C.greenBright} 100%)`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:16,padding:"17px 44px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:`0 0 0 1px ${C.green}22, 0 10px 40px ${C.green}44, inset 0 1px 0 rgba(255,255,255,0.30)`,letterSpacing:0.3,transition:"all .25s cubic-bezier(.16,1,.3,1)"}}
-        onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px) scale(1.02)";e.currentTarget.style.boxShadow=`0 0 0 1px ${C.green}33, 0 16px 52px ${C.green}55, inset 0 1px 0 rgba(255,255,255,0.30)`;}}
-        onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0) scale(1)";e.currentTarget.style.boxShadow=`0 0 0 1px ${C.green}22, 0 10px 40px ${C.green}44, inset 0 1px 0 rgba(255,255,255,0.30)`;}}>
-        See What I Can Spend Today →
-      </button>
-
-      {/* Demo mode — required for App Store review */}
-      <button onClick={()=>onComplete({
-        profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true,lifeStages:["t4"],partnerLifeStages:["t4"]},
-        incomes:[{id:1,label:"Full-time Job",amount:"2840",freq:"biweekly",type:"employment"},{id:2,label:"Canada Child Benefit",amount:"560",freq:"monthly",type:"ccb"}],
-        bills:[{name:"Rent",amount:"1650",date:"1"},{name:"Hydro",amount:"95",date:"11"},{name:"Phone",amount:"65",date:"15"},{name:"Netflix",amount:"18.99",date:"22"}],
-        debts:[{name:"TD Visa",balance:"3420",rate:"19.99",min:"68"},{name:"Car Loan",balance:"8200",rate:"6.99",min:"280"}],
-        accounts:MOCK_ACCOUNTS,transactions:MOCK_TXN,bankConnected:true,
-      })} style={{marginTop:12,background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px 28px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer",fontWeight:600,transition:"all .2s"}}
-        onMouseEnter={e=>{e.currentTarget.style.borderColor=C.borderHi;e.currentTarget.style.color=C.cream;}}
-        onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.muted;}}>
-        👀 Try Demo (no account needed)
-      </button>
-
-      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:14}}>Free to start · Canada & USA · No credit card</div>
-
-      {/* PIPEDA consent notice */}
-      <div style={{marginTop:20,padding:"12px 16px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`,maxWidth:320,textAlign:"left"}}>
-        <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7}}>
-          By continuing you agree to our{" "}
-          <button onClick={()=>onViewLegal&&onViewLegal("terms")} style={{background:"none",border:"none",padding:0,color:C.green,textDecoration:"none",fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Terms of Service</button>{" "}and{" "}
-          <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,color:C.green,textDecoration:"none",fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Privacy Policy</button>
-          , and consent to the collection and processing of your financial data in accordance with PIPEDA (Canada) and applicable US privacy laws.
-        </div>
+    // 0: Welcome (slim — Phase 3e-A trim)
+    <div style={{minHeight:"60vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"20px 0"}}>
+      <FlourishMark size={56} style={{borderRadius:16,marginBottom:14}}/>
+      <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:30,letterSpacing:-0.5,marginBottom:12,lineHeight:1,color:C.cream}}>flourish</div>
+      <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.mutedHi,fontSize:14,lineHeight:1.6,maxWidth:300,marginBottom:30}}>Know what's safe to spend, every day.</div>
+      <button onClick={()=>setStep(1)} style={{background:"linear-gradient(135deg,"+C.green+" 0%,"+C.greenBright+" 100%)",color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:"0 8px 32px "+C.green+"33, inset 0 1px 0 rgba(255,255,255,0.30)",letterSpacing:0.3,transition:"all .2s"}}>Get Started →</button>
+      <button onClick={()=>onComplete({profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true,lifeStages:["t4"],partnerLifeStages:["t4"]},incomes:[{id:1,label:"Full-time Job",amount:"2840",freq:"biweekly",type:"employment"},{id:2,label:"Canada Child Benefit",amount:"560",freq:"monthly",type:"ccb"}],bills:[{name:"Rent",amount:"1650",date:"1"},{name:"Hydro",amount:"95",date:"11"},{name:"Phone",amount:"65",date:"15"},{name:"Netflix",amount:"18.99",date:"22"}],debts:[{name:"TD Visa",balance:"3420",rate:"19.99",min:"68"},{name:"Car Loan",balance:"8200",rate:"6.99",min:"280"}],accounts:MOCK_ACCOUNTS,transactions:MOCK_TXN,bankConnected:true})} style={{marginTop:10,background:"none",border:"1px solid "+C.border,borderRadius:99,padding:"9px 22px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer",fontWeight:600}}>👀 Try Demo (no account needed)</button>
+      <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:12}}>Free to start · Canada & USA · No credit card</div>
+      <div style={{marginTop:18,padding:"10px 14px",background:C.card,borderRadius:12,border:"1px solid "+C.border,maxWidth:320,textAlign:"left"}}>
+        <div style={{color:C.mutedHi,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>By continuing you agree to our <button onClick={()=>onViewLegal&&onViewLegal("terms")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Terms</button> and <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Privacy Policy</button>, and consent to data processing per PIPEDA (CA) and US privacy laws.</div>
       </div>
     </div>,
 
@@ -4301,27 +4245,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
       {!p.creditKnown&&<div style={{background:C.cardAlt,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}`,marginBottom:16}}>
         <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>No problem. Flourish will estimate your score range from your debt utilization and payment patterns once you're connected. You can add it later in Settings.</div>
       </div>}
-      <Btn label="Continue →" onClick={()=>setStep(7)}/>
-    </div>,
-    <div style={{textAlign:"center"}}>
-      <div style={{fontSize:68,marginBottom:16,filter:"drop-shadow(0 0 20px #3CB54A44)"}}>🎉</div>
-      <div style={{fontSize:30,fontWeight:900,color:C.greenBright,fontFamily:"Georgia,serif",marginBottom:10}}>You're all set{p.name?`, ${p.name}`:""}!</div>
-      <div style={{color:C.mutedHi,fontSize:15,lineHeight:1.7,marginBottom:22}}>Here's what Flourish has ready:</div>
-      {[
-        ["check",`${connAccts.length} account${connAccts.length!==1?"s":""} connected`],
-        ["📅",`${bills.filter(b=>b.name&&b.amount).length} bills in your 2-week forecast`],
-        ["📉",debts.filter(d=>d.name&&d.balance).length>0?"Debt payoff simulator built — drag to see your date":"No debt tracked — incredible!"],
-        ["💳",p.creditKnown?`Credit score ${p.creditScore} tracked — coaching personalised`:"Credit score estimated from your data"],
-        ["🧠",connAccts.some(a=>a.institution!=="Manual")?"AI coach ready — transactions loading in background":"AI coach ready to analyze your data"],
-        ["🔔","Overdraft alerts and coach notifications on"],
-        [p.status==="single"?"🧘":"💑",p.status==="single"?"Weekly solo check-in ready":"Couples money meeting ready"],
-        [p.hasKids?"👧":"🎓",p.hasKids?"Kids Zone unlocked":"Money School unlocked"],
-      ].map(([icon,text],i)=>(
-        <div key={i} style={{background:`linear-gradient(135deg,${C.greenDim} 0%,${C.cardAlt} 100%)`,borderRadius:16,padding:"13px 16px",display:"flex",gap:12,alignItems:"center",border:`1px solid rgba(0,204,133,0.18)`,marginBottom:8,textAlign:"left",animation:`fadeUp 0.4s cubic-bezier(.16,1,.3,1) ${i*60}ms both`}}>
-          <div style={{width:28,height:28,borderRadius:99,background:C.greenDim,border:`1px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon id="check" size={14} color={C.greenBright} strokeWidth={2.5}/></div><span style={{color:C.cream,fontSize:14,flex:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{text}</span>
-        </div>
-      ))}
-      <div style={{marginTop:20}}><Btn label="Open My Dashboard →" onClick={finish}/></div>
+      <Btn label="Open My Dashboard →" onClick={finish}/>
     </div>,
   ];
 
