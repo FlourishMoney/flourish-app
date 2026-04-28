@@ -9,7 +9,7 @@ import {
   Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
-import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator } from "./lib/financialCalculations.js";
+import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers } from "./lib/financialCalculations.js";
 import { getPlan, isPremiumOrFounder, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan } from "./lib/usageLimits.js";
 
 const FLOURISH_BETA_CODES = ["BETA100","FLOURISH2026","FOUNDER"];
@@ -4332,7 +4332,9 @@ async function backgroundRefresh(isPremium, setAppData) {
       return {
         ...prev,
         accounts: freshAccounts,
-        transactions: normalisedTxns.length > 0 ? normalisedTxns : prev.transactions,
+        transactions: normalisedTxns.length > 0
+          ? markTransfers(normalisedTxns, t => isInternalTransfer(t) || isCCPayment(t, prev.debts || []), isCashAdvance)
+          : prev.transactions,
         debts: newCCDebts.length > 0
           ? [...(prev.debts||[]).filter(d => d.name || d.balance), ...newCCDebts]
           : prev.debts,
@@ -9961,7 +9963,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const _toMoCtx=(amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a;};
     const income = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0).reduce((s,i)=>s+_toMoCtx(i.amount,i.freq),0) || DEMO.income;
     const balance = (accounts||[]).filter(a=>isCashAccount(a)).reduce((s,a)=>s+parseFloat(a.balance||0),0) || DEMO.balance;
-    const spending = txns.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
+    const spending = txns.filter(t=>t.amount>0 && !t.isTransfer).reduce((s,t)=>s+t.amount,0);
 
     // ── PHASE 1C: pre-computed engine values for affordability reasoning ──
     // The Coach must see these so it can answer "can I afford X" honestly.
@@ -12440,7 +12442,7 @@ export default function FlourishApp(){
         const detectedBills = detectRecurringBills(allTxns);
         setAppData(prev=>({
           ...prev,
-          transactions: allTxns,
+          transactions: markTransfers(allTxns, t => isInternalTransfer(t) || isCCPayment(t, prev.debts || []), isCashAdvance),
           incomes: (() => {
             // Only auto-set income if user hasn't entered any real income yet
             const hasRealIncome = (prev.incomes||[]).some(i => parseFloat(i.amount||0) > 0);
@@ -12551,7 +12553,7 @@ export default function FlourishApp(){
           return {
             ...d,
             accounts,
-            transactions,
+            transactions: markTransfers(transactions, t => isInternalTransfer(t) || isCCPayment(t, d.debts || []), isCashAdvance),
             bankConnected: true,
             debts: [...(d.debts||[]).filter(d => d.name || d.balance), ...newCCDebts],
           };
@@ -12592,7 +12594,7 @@ export default function FlourishApp(){
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={()=>setShowPaywall(true)} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
-  if(!onboarded)return <Onboarding onComplete={d=>{setAppData(d);setOnboarded(true);}} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
+  if(!onboarded)return <Onboarding onComplete={d=>{setAppData({...d, transactions: markTransfers(d.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, d.debts || []), isCashAdvance)});setOnboarded(true);}} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
   if(!firstVisitDone&&appData)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}/>;
   if(showPaywall)return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setPlan("premium");setIsPremium(true);setShowPaywall(false);}} onPromoUpgrade={()=>{applyBetaCodeFounderUpgrade();setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;

@@ -443,6 +443,112 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
   return [...plaidEntries, ...manualStandalones];
 }
 
+// ── 11. markTransfers (Phase B6-A) ──────────────────────────────────────────
+// Cross-account transfer detection: pairs transactions across the user's own
+// connected accounts. When the same amount appears at two of the user's
+// accounts within ±2 days with opposite signs, it's a transfer (e.g., a credit
+// card payment from checking).
+//
+// This complements existing keyword/category detection (isInternalTransfer,
+// isCCPayment in App.jsx). Either signal flags isTransfer:true.
+//
+// Inputs:
+//   txns — array of normalized transactions, each with {id, date, amount,
+//          account_id, name, cat, ...}
+//   keywordIsTransferFn — optional function (txn) => boolean. If provided,
+//          its result is OR'd with the cross-account match. Pass in App.jsx's
+//          isInternalTransfer to compose with existing keyword detection.
+//   isCashAdvanceFn — optional function (txn) => boolean. If provided, txns
+//          flagged as cash advances are excluded from cross-account matching
+//          (they look like transfers but functionally aren't).
+//
+// Output:
+//   New array (does not mutate input). Each txn gets:
+//     isTransfer:      boolean    — true if either keyword OR cross-account match
+//     transferPairId?: string     — shared id between two paired txns (for cross-account only)
+//
+// Algorithm:
+//   1. Group all positive (outflow) txns and all negative (inflow) txns by amount.
+//   2. For each outflow, find an inflow at a DIFFERENT account_id within ±2 days
+//      whose amount is the exact opposite (within $0.01).
+//   3. Skip outflows/inflows already matched (one counterpart only).
+//   4. Skip cash advances if isCashAdvanceFn is provided and returns true.
+//   5. Mark both as isTransfer:true and assign a shared transferPairId.
+//   6. After cross-account pass, run keywordIsTransferFn on every remaining
+//      txn to catch single-sided transfers (e.g., transfer to disconnected account).
+
+export function markTransfers(txns, keywordIsTransferFn, isCashAdvanceFn) {
+  if (!Array.isArray(txns) || txns.length === 0) return [];
+
+  // Defensive copy with isTransfer flag initialized
+  const result = txns.map(t => ({ ...t, isTransfer: false }));
+
+  // Track matched indices to prevent double-pairing
+  const matched = new Set();
+
+  // Pre-filter: skip cash advances entirely from cross-account matching
+  const isAdvance = (idx) => {
+    const t = result[idx];
+    return isCashAdvanceFn && isCashAdvanceFn(t);
+  };
+
+  // Build amount-keyed buckets for fast lookup
+  // Use absolute amount (rounded to 2 decimals) as key
+  const keyOf = (amt) => Math.round(Math.abs(amt) * 100) / 100;
+
+  // Index inflows by amount: amount → [{idx, txn}, ...]
+  const inflowsByAmount = new Map();
+  result.forEach((t, idx) => {
+    if (t.amount < 0 && !isAdvance(idx)) {
+      const k = keyOf(t.amount);
+      if (!inflowsByAmount.has(k)) inflowsByAmount.set(k, []);
+      inflowsByAmount.get(k).push({ idx, txn: t });
+    }
+  });
+
+  // For each outflow, look for a matching inflow at different account_id within ±2 days
+  result.forEach((outflow, outIdx) => {
+    if (outflow.amount <= 0 || matched.has(outIdx) || isAdvance(outIdx)) return;
+    const k = keyOf(outflow.amount);
+    const candidates = inflowsByAmount.get(k);
+    if (!candidates) return;
+
+    const outDate = new Date(outflow.date + "T12:00:00");
+    if (isNaN(outDate.getTime())) return;
+
+    for (const { idx: inIdx, txn: inflow } of candidates) {
+      if (matched.has(inIdx)) continue;
+      if (inflow.account_id === outflow.account_id) continue; // must be different accounts
+      if (!inflow.date) continue;
+      const inDate = new Date(inflow.date + "T12:00:00");
+      if (isNaN(inDate.getTime())) continue;
+      const dayDiff = Math.abs((outDate - inDate) / (1000 * 60 * 60 * 24));
+      if (dayDiff > 2) continue;
+
+      // Match found — mark both
+      const pairId = `${outflow.id || outIdx}+${inflow.id || inIdx}`;
+      result[outIdx].isTransfer = true;
+      result[outIdx].transferPairId = pairId;
+      result[inIdx].isTransfer = true;
+      result[inIdx].transferPairId = pairId;
+      matched.add(outIdx);
+      matched.add(inIdx);
+      break; // one pair per outflow
+    }
+  });
+
+  // Apply keyword detection for any txn not yet flagged
+  if (keywordIsTransferFn) {
+    result.forEach(t => {
+      if (!t.isTransfer && keywordIsTransferFn(t)) {
+        t.isTransfer = true;
+      }
+    });
+  }
+
+  return result;
+}
+
 // -----------------------------------------------------------------------------
 // STRIPE / PREMIUM NOTE
 //   These functions are plan-agnostic. Usage limits live in usageLimits.js
