@@ -1572,7 +1572,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
       const monthlyContribution = parseAmountFromQuery(qText) || 200;
       const annualReturnPct = 7;  // moderate default
       const years = 30;            // long-horizon default
-      const initialPrincipal = 0;
+      const initialPrincipal = (data.investments || []).reduce((s, h) => s + (h.value || 0), 0);
       const result = simulateInvestmentGrowth({
         monthlyContribution, annualReturnPct, years, initialPrincipal,
       });
@@ -1584,6 +1584,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
       setResult({
         scenarioType: "invest",
         monthlyContribution,
+        initialPrincipal: Math.round(initialPrincipal),
         defaultRate: annualReturnPct,
         defaultYears: years,
         moderate30:    { value: result.finalValue, contributed: result.totalContributed, growth: result.totalGrowth },
@@ -1594,7 +1595,9 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
         thirtyYr:      { value: result.finalValue, growth: result.totalGrowth },
         yearByYear:    result.yearByYear,
         verdict: "Long-term winner",
-        verdictReason: `Investing $${monthlyContribution}/month at 7% for 30 years grows to $${Math.round(result.finalValue).toLocaleString()}, with $${Math.round(result.totalGrowth).toLocaleString()} of that being pure growth.`,
+        verdictReason: initialPrincipal > 0
+          ? `Adding $${monthlyContribution}/month at 7% for 30 years takes your portfolio from $${Math.round(initialPrincipal).toLocaleString()} today to $${Math.round(result.finalValue).toLocaleString()}, with $${Math.round(result.totalGrowth).toLocaleString()} of that being growth.`
+          : `Investing $${monthlyContribution}/month at 7% for 30 years grows to $${Math.round(result.finalValue).toLocaleString()}, with $${Math.round(result.totalGrowth).toLocaleString()} of that being pure growth.`,
       });
       setLoading(false);
       return;
