@@ -1,71 +1,116 @@
 /**
- * Flourish Money — Plaid Webhook Receiver
- * netlify/functions/plaid-webhook.js
+ * Flourish Money — Plaid Webhook Receiver (Phase D1-G)
  *
- * Receives push events from Plaid and logs them.
- * No Plaid SDK required — this function only receives, never initiates.
- *
- * Register this URL in your Plaid dashboard:
- *   https://flourishmoney.app/.netlify/functions/plaid-webhook
+ * Verifies Plaid signature, updates plaid_items table by item_id.
+ * Always returns 200 — even on signature failure (avoids amplifying attacks
+ * via Plaid's retry policy). Failures are logged with a distinct prefix.
  */
 
 "use strict";
+
+const { verifyPlaidWebhook } = require("./_lib/webhook-verify");
+const { getAdminClient } = require("./_lib/auth");
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
 
+  // Verify webhook signature
+  const verification = await verifyPlaidWebhook(event);
+  if (!verification.verified) {
+    console.warn(`[webhook] SIGNATURE FAILED — reason: ${verification.reason}`);
+    return { statusCode: 200, body: JSON.stringify({ received: false }) };
+  }
+
   let body;
   try {
     body = JSON.parse(event.body || "{}");
   } catch {
-    return { statusCode: 400, body: "Invalid JSON" };
+    console.warn("[webhook] invalid JSON body");
+    return { statusCode: 200, body: JSON.stringify({ received: false }) };
   }
 
   const { webhook_type, webhook_code, item_id, error } = body;
+  console.log(`[webhook] verified ${webhook_type}:${webhook_code} item=${item_id}`);
 
-  console.log(`[Plaid Webhook] ${webhook_type}:${webhook_code} — item_id: ${item_id}`);
+  if (!item_id) {
+    console.warn("[webhook] no item_id in body");
+    return { statusCode: 200, body: JSON.stringify({ received: true }) };
+  }
 
-  switch (`${webhook_type}:${webhook_code}`) {
+  const admin = getAdminClient();
+  const eventKey = `${webhook_type}:${webhook_code}`;
+  let updates = null;
 
-    // Bank connection is about to expire — user needs to re-authenticate
-    case "ITEM:PENDING_EXPIRATION":
-      console.log(`[Webhook] Item ${item_id} pending expiration — user re-auth needed`);
-      // Future: look up user by item_id in Supabase and trigger notification
-      break;
-
-    // Bank connection has errored (wrong password, MFA, revoked access)
-    case "ITEM:ERROR":
-      console.log(`[Webhook] Item ${item_id} error: ${error?.error_code}`);
-      // Future: flag item in Supabase so reconnect banner shows on next app open
-      break;
-
-    // New transactions available to fetch
+  switch (eventKey) {
     case "TRANSACTIONS:SYNC_UPDATES_AVAILABLE":
-      console.log(`[Webhook] New transactions available for item ${item_id}`);
-      // Future: trigger background sync and update Supabase cache
+    case "TRANSACTIONS:DEFAULT_UPDATE":
+      updates = { transactions_pending: true };
       break;
 
     case "TRANSACTIONS:HISTORICAL_UPDATE":
-      console.log(`[Webhook] Historical backfill complete for item ${item_id}`);
-      break;
-
     case "TRANSACTIONS:INITIAL_UPDATE":
-      console.log(`[Webhook] Initial transactions ready for item ${item_id}`);
+      updates = { transactions_pending: true };
       break;
 
-    // User removed access via their bank's portal
+    case "TRANSACTIONS:RECURRING_TRANSACTIONS_UPDATE":
+      updates = { transactions_pending: true };
+      break;
+
+    case "HOLDINGS:DEFAULT_UPDATE":
+      updates = { holdings_pending: true };
+      break;
+
+    case "INVESTMENTS_TRANSACTIONS:DEFAULT_UPDATE":
+    case "INVESTMENTS_TRANSACTIONS:HISTORICAL_UPDATE":
+      updates = { holdings_pending: true };
+      break;
+
+    case "LIABILITIES:DEFAULT_UPDATE":
+      updates = { liabilities_pending: true };
+      break;
+
+    case "ITEM:PENDING_EXPIRATION":
+      updates = { status: "pending_expiration" };
+      break;
+
+    case "ITEM:ERROR":
+      updates = { status: "error", last_error: error || null };
+      break;
+
     case "ITEM:USER_PERMISSION_REVOKED":
-      console.log(`[Webhook] User revoked access for item ${item_id}`);
-      // Future: remove item from Supabase, show reconnect state in app
+    case "ITEM:USER_ACCOUNT_REVOKED":
+      updates = { status: "revoked" };
+      break;
+
+    case "ITEM:LOGIN_REPAIRED":
+      updates = { status: "active", last_error: null };
+      break;
+
+    case "ITEM:NEW_ACCOUNTS_AVAILABLE":
+      updates = { new_accounts_available: true };
+      break;
+
+    case "ITEM:WEBHOOK_UPDATE_ACKNOWLEDGED":
+      console.log(`[webhook] webhook URL change acknowledged for ${item_id}`);
       break;
 
     default:
-      console.log(`[Webhook] Unhandled event: ${webhook_type}:${webhook_code}`);
+      console.log(`[webhook] unhandled event ${eventKey}`);
+      break;
   }
 
-  // Always return 200 — Plaid retries if it doesn't receive 200
+  if (updates) {
+    const { error: updateErr } = await admin
+      .from("plaid_items")
+      .update(updates)
+      .eq("item_id", item_id);
+    if (updateErr) {
+      console.error(`[webhook] update failed for ${item_id}:`, updateErr.message);
+    }
+  }
+
   return {
     statusCode: 200,
     headers: { "Content-Type": "application/json" },
