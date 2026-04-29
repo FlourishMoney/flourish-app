@@ -1763,6 +1763,10 @@ Rules: do not invent or quote any number not in the calculated results above. Do
 
     let prose = {};
     try {
+      // Phase D3: AI opt-out — skip the prose enhancement; existing catch provides neutral fallback
+      if (typeof window !== "undefined" && window.localStorage?.getItem("flourish_ai_coach_enabled") === "0") {
+        throw new Error("AI disabled");
+      }
       const r = await fetch("/api/coach", {
         method:"POST",
         headers:{"Content-Type":"application/json"},
@@ -3389,6 +3393,10 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
     const {score} = calcHealthScore(data);
     const prompt = `You are a warm financial coach. The user just completed their weekly money check-in. Their current Financial Health Score is ${score}/100. Their money mood this week: ${moods.find(m=>m.val===mood)?.label||"Neutral"}. Biggest spending surprise: ${surprise||"none"}. Financial win: ${win||"none"}. Recent transactions: ${txns}. Give ONE specific, encouraging action they can take this week to improve their Financial Health Score by 2-5 points. Keep it to 2 sentences max. Be warm and concrete.`;
     try {
+      // Phase D3: AI opt-out — skip the AI tip; existing catch provides neutral fallback
+      if (typeof window !== "undefined" && window.localStorage?.getItem("flourish_ai_coach_enabled") === "0") {
+        throw new Error("AI disabled");
+      }
       const r = await fetch("/api/coach", {
         method:"POST",
         headers:{"Content-Type":"application/json"},
@@ -3576,6 +3584,10 @@ async function extractPdfText(file) {
 }
 
 async function parseStatementWithAI(rawText) {
+  // Phase D3: AI opt-out — refuse statement parsing if user disabled AI
+  if (typeof window !== "undefined" && window.localStorage?.getItem("flourish_ai_coach_enabled") === "0") {
+    throw new Error("AI features are disabled. Re-enable in Settings → Privacy & AI to parse statements, or upload a CSV instead.");
+  }
   const prompt = `You are a bank statement parser. Extract every transaction from the text below.
 Return ONLY a valid JSON array — no markdown, no explanation — with this shape:
 [{"date":"YYYY-MM-DD","name":"Merchant or description","amount":12.34}]
@@ -9782,7 +9794,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
   return null;
 }
 
-function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,bankConnected,needsReconnect,reconnectLoading,onReconnect}){
+function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled}){
   const [notifToggles,setNotifToggles]=useState({overdraft:true,bills:true,coach:true,meeting:false,patterns:true});
   const [activeSection,setActiveSection]=useState(null);
   const handleShare=()=>{
@@ -9818,6 +9830,20 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         </div>
         <span style={{color:C.muted,fontSize:18}}>›</span>
       </button>
+    </div>
+    {/* ── Privacy & AI (Phase D3) ────────────────────────────── */}
+    <div style={{background:C.card,borderRadius:18,padding:"16px 18px",border:`1px solid ${C.border}`,marginBottom:14}}>
+      <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:10}}>Privacy & AI</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{flex:1}}>
+          <div style={{color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:2}}>AI Coach enabled</div>
+          <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>Chat, simulator explanations, weekly tips. Turning off keeps your data on-device.</div>
+        </div>
+        <Toggle on={aiCoachEnabled} onChange={(v)=>{
+          try { localStorage.setItem("flourish_ai_coach_enabled", v ? "1" : "0"); } catch {}
+          setAiCoachEnabled(v);
+        }} />
+      </div>
     </div>
     <button onClick={handleShare} style={{background:"linear-gradient(135deg,#0D3320 0%,#0A2518 100%)",borderRadius:18,padding:"20px 22px",border:"1px solid rgba(0,204,133,0.25)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"inherit",width:"100%",marginBottom:10,boxShadow:"0 4px 24px rgba(0,204,133,0.12)"}}>
       <div style={{display:"flex",alignItems:"center",gap:14}}>
@@ -10933,6 +10959,59 @@ function FirstVisitScreen({data, onDismiss}) {
         <button onClick={onDismiss} style={{background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"12px 8px 4px"}}>
           Skip for now
         </button>
+      </div>
+    </div>
+  );
+}
+
+// Phase D3: AI disclosure screen (Apple 5.1.2(i) compliance — first-time gate before AI features)
+function AIDisclosureScreen({onAccept, onDecline}){
+  return (
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
+      <div style={{maxWidth:480,width:"100%"}}>
+        <div style={{textAlign:"center",marginBottom:24}}>
+          <div style={{fontSize:48,marginBottom:8}}>🤖</div>
+          <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:24,color:C.cream,marginBottom:6}}>About AI in Flourish</div>
+          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Quick heads-up before you use AI features.</div>
+        </div>
+
+        <div style={{background:C.card,borderRadius:18,padding:"18px 20px",border:`1px solid ${C.border}`,marginBottom:14}}>
+          <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>What we send to Anthropic (our AI provider)</div>
+          <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your financial summary (balance, income, bills, debts), transaction descriptions, and the messages you send. <strong style={{color:C.cream}}>We never send your name, email, account credentials, or full account numbers.</strong></div>
+        </div>
+
+        <div style={{background:C.card,borderRadius:18,padding:"18px 20px",border:`1px solid ${C.border}`,marginBottom:14}}>
+          <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>What we send to Plaid for transaction cleanup</div>
+          <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Plaid Enrich receives transaction descriptions to return clean merchant names, logos, and categories.</div>
+        </div>
+
+        <div style={{background:C.card,borderRadius:18,padding:"18px 20px",border:`1px solid ${C.border}`,marginBottom:14}}>
+          <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>Where AI is used</div>
+          <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>The AI Coach chat, the What-If Simulator's plain-language explanations, your weekly check-in tip, and statement-upload parsing. The actual financial calculations are done in JavaScript on your device — AI only writes the explanations.</div>
+        </div>
+
+        <div style={{background:C.card,borderRadius:18,padding:"18px 20px",border:`1px solid ${C.border}`,marginBottom:20}}>
+          <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>Your control</div>
+          <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Anthropic does not train AI models on your data. You can disable AI features anytime in <strong style={{color:C.cream}}>Settings → Privacy & AI</strong>.</div>
+        </div>
+
+        <button onClick={onAccept} style={{width:"100%",background:`linear-gradient(135deg,${C.green} 0%,${C.greenBright} 100%)`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",marginBottom:10}}>I Understand — Use AI Features</button>
+        <button onClick={onDecline} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer"}}>Not now</button>
+      </div>
+    </div>
+  );
+}
+
+// Phase D3: shown when user has opted out of AI features in Settings
+function AIDisabledNotice({onOpenSettings, onClose}){
+  return (
+    <div style={{minHeight:"60vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
+      <div style={{maxWidth:380,textAlign:"center"}}>
+        <div style={{fontSize:42,marginBottom:12}}>🤖</div>
+        <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:22,color:C.cream,marginBottom:8}}>AI features are off</div>
+        <div style={{color:C.muted,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:20}}>You've turned off AI in Settings. Enable it to chat with the Coach and use AI explanations.</div>
+        <button onClick={onOpenSettings} style={{background:C.green,color:"#fff",border:"none",borderRadius:99,padding:"11px 24px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer",marginRight:8}}>Open Settings</button>
+        <button onClick={onClose} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px 18px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer"}}>Back</button>
       </div>
     </div>
   );
@@ -12337,6 +12416,18 @@ export default function FlourishApp(){
     try{localStorage.setItem("flourish_first_visit_done","1");}catch{}
     setFirstVisitDone(true);
   };
+
+  // Phase D3: AI disclosure + opt-out (Apple 5.1.2(i) compliance)
+  const [aiDisclosureSeen, setAiDisclosureSeen] = useState(()=>{
+    try { return localStorage.getItem("flourish_ai_disclosure_seen") === "1"; } catch { return false; }
+  });
+  const [aiCoachEnabled, setAiCoachEnabled] = useState(()=>{
+    try { return localStorage.getItem("flourish_ai_coach_enabled") !== "0"; } catch { return true; }
+  });
+  const acceptAIDisclosure = ()=>{
+    try { localStorage.setItem("flourish_ai_disclosure_seen", "1"); } catch {}
+    setAiDisclosureSeen(true);
+  };
   const [appData,setAppData]=useState(()=>saved?.appData||null);
   // Read URL path on load so /privacy and /terms work as direct links
   const initialScreen = (() => {
@@ -12803,12 +12894,21 @@ export default function FlourishApp(){
 
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <Settings data={appData} setAppData={setAppData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}}/>;
+    if(showSettings)return <Settings data={appData} setAppData={setAppData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled}/>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
   if(screen==="budget")return <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
-    if(screen==="coach"){const freeCoachAllowed=!isPremium&&coachMsgCount<5&&!trialExpired;const showCoach=isPremium||freeCoachAllowed;if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen} setAppData={setAppData}/>; if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="AI Coach" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>; return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;}
+    if(screen==="coach"){
+      // Phase D3: AI gates — opt-out check first, then first-time disclosure
+      if(!aiCoachEnabled) return <AIDisabledNotice onOpenSettings={()=>setShowSettings(true)} onClose={()=>setScreen("home")}/>;
+      if(!aiDisclosureSeen) return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={()=>setScreen("home")}/>;
+      const freeCoachAllowed=!isPremium&&coachMsgCount<5&&!trialExpired;
+      const showCoach=isPremium||freeCoachAllowed;
+      if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen} setAppData={setAppData}/>;
+      if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="AI Coach" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>;
+      return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;
+    }
     if(screen==="family")return <Family data={dataWithHousehold} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
     if(screen==="goals")return <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen}/>;
     if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
