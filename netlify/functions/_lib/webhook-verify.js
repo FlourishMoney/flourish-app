@@ -1,6 +1,12 @@
 "use strict";
 
-const { jwtVerify, importJWK } = require("jose");
+// jose v6+ is ESM-only; Netlify's Node CommonJS runtime requires dynamic import
+let _josePromise = null;
+function getJose() {
+  if (!_josePromise) _josePromise = import("jose");
+  return _josePromise;
+}
+
 const crypto = require("crypto");
 
 const PLAID_BASE = {
@@ -33,6 +39,7 @@ async function fetchPlaidKey(kid) {
 
 async function getKey(kid) {
   if (keyCache.has(kid)) return keyCache.get(kid);
+  const { importJWK } = await getJose();
   const jwk = await fetchPlaidKey(kid);
   const key = await importJWK(jwk, "ES256");
   keyCache.set(kid, key);
@@ -57,6 +64,7 @@ async function verifyPlaidWebhook(event) {
     const key = await getKey(kid);
 
     // Verify signature
+    const { jwtVerify } = await getJose();
     const { payload } = await jwtVerify(header, key, {
       algorithms: ["ES256"],
     });
