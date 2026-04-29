@@ -478,33 +478,30 @@ exports.handler = async (event) => {
 function ok(data) { return { statusCode: 200, headers: CORS, body: JSON.stringify(data) }; }
 function e400(msg) { return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: msg }) }; }
 
-// Phase D1-F-A: resolve access_token from one of two sources, in priority:
-//   1. Legacy: access_token directly in body (backward compat — removed in D1-F-C)
-//   2. New: item_id in body + Authorization JWT → look up access_token from plaid_items
+// Phase D1-F-C: resolve access_token from item_id + Authorization JWT.
+// (Legacy direct access_token-in-body path removed — frontend now stores tokens
+// server-side via store_item and references them by item_id.)
 // Returns { access_token, error, statusCode }. On success: { access_token, error: null }.
 // On failure: { access_token: null, error: <reason>, statusCode: 400 | 401 }.
 async function resolveAccessToken(event, body) {
-  if (body.access_token) {
-    return { access_token: body.access_token, error: null };
+  if (!body.item_id) {
+    return { access_token: null, error: "item_id required", statusCode: 400 };
   }
-  if (body.item_id) {
-    const { user_id, error: authError } = await getUserFromRequest(event);
-    if (!user_id) {
-      return { access_token: null, error: authError || "unauthorized", statusCode: 401 };
-    }
-    const admin = getAdminClient();
-    const { data, error } = await admin
-      .from("plaid_items")
-      .select("access_token")
-      .eq("user_id", user_id)
-      .eq("item_id", body.item_id)
-      .single();
-    if (error || !data) {
-      return { access_token: null, error: "item not found for this user", statusCode: 400 };
-    }
-    return { access_token: data.access_token, error: null };
+  const { user_id, error: authError } = await getUserFromRequest(event);
+  if (!user_id) {
+    return { access_token: null, error: authError || "unauthorized", statusCode: 401 };
   }
-  return { access_token: null, error: "access_token or item_id required", statusCode: 400 };
+  const admin = getAdminClient();
+  const { data, error } = await admin
+    .from("plaid_items")
+    .select("access_token")
+    .eq("user_id", user_id)
+    .eq("item_id", body.item_id)
+    .single();
+  if (error || !data) {
+    return { access_token: null, error: "item not found for this user", statusCode: 400 };
+  }
+  return { access_token: data.access_token, error: null };
 }
 
 // /transactions/sync — cursor-based, handles updates/removes

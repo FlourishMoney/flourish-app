@@ -3782,11 +3782,11 @@ function Onboarding({onComplete,onViewLegal,userId}){
           item_id: ex.item_id,
           institution_name: instName,
         });
-        // Keep legacy key for backwards compatibility
-        localStorage.setItem("flourish_plaid_token", ex.access_token);
       }catch{}
-      // Fetch accounts only — fast (~1s). Transactions load silently on dashboard.
-      const acctData = await callPlaid("get_accounts",{access_token:ex.access_token});
+      // Phase D1-F-C: fetch accounts via item_id + JWT (server-side token lookup).
+      // Transactions load silently on dashboard.
+      const jwt = await getJwt();
+      const acctData = await callPlaid("get_accounts",{item_id:ex.item_id}, {jwt});
       clearInterval(progTimer);setBankProg(100);
 
       const mappedAccounts = acctData.accounts.map(a=>({
@@ -12626,8 +12626,6 @@ export default function FlourishApp(){
         const bankId = "bank_" + Date.now();
         const updated = [...existing, {id:bankId,token:ex.access_token,institution:ex.institution_name||"Your Bank"}];
         localStorage.setItem("flourish_plaid_tokens", JSON.stringify(updated));
-        // Keep legacy key for backwards compatibility
-        localStorage.setItem("flourish_plaid_token", ex.access_token);
       }catch{}
         // Phase D1-D: persist server-side (parallel path during migration)
         await storePlaidItemServerSide({
@@ -12635,9 +12633,11 @@ export default function FlourishApp(){
           item_id: ex.item_id,
           institution_name: ex.institution_name || "Your Bank",
         });
+        // Phase D1-F-C: fetch accounts + transactions via item_id + JWT
+        const jwt = await getJwt();
         return Promise.all([
-          callPlaid("get_accounts",{ access_token: ex.access_token }),
-          callPlaid("get_transactions",{ access_token: ex.access_token, days: 90 }),
+          callPlaid("get_accounts",{ item_id: ex.item_id }, {jwt}),
+          callPlaid("get_transactions",{ item_id: ex.item_id, days: 90 }, {jwt}),
         ]);
       })
       .then(async ([acctData, txnData])=>{
@@ -12752,26 +12752,32 @@ export default function FlourishApp(){
   };
 
 
-  // ── Plaid Offboarding — remove Item from Plaid when user disconnects ───────
+  // ── Plaid Offboarding — Phase D1-F-C: revoke ALL items via delete_item ────
+  // delete_item handles both Plaid /item/remove + plaid_items row delete in one call.
   const disconnectBank = async ()=>{
-    if(!plaidAccessToken) return;
-    try{ await callPlaid("remove_item",{ access_token: plaidAccessToken }); }catch(e){ console.warn("remove_item:", e.message); }
-    try{ localStorage.removeItem("flourish_plaid_token"); }catch{}
-    // Phase D1-D: removed an undefined-setter reference here (latent bug). The token is now
-    // derived from plaidTokens state at line 12260; localStorage clear above + Supabase delete
-    // in D1-G handle persistence.
+    const jwt = await getJwt();
+    if(!jwt) return;
+    const items = await getUserItems();
+    for (const it of items) {
+      try { await callPlaid("delete_item", { item_id: it.item_id }, { jwt }); }
+      catch(e) { console.warn("delete_item:", e.message); }
+    }
     setNeedsReconnect(false);
     setAppData(d=>({...d, accounts:[{id:"m1",name:"Chequing",type:"checking",balance:0,institution:"Manual"}], transactions: d.transactions||[], bankConnected:false }));
   };
 
   const deleteAllData = async ()=>{
     if(!window.confirm("Delete all your data? This cannot be undone.")) return;
-    // Plaid offboarding: revoke access token before wiping local data
-    if(plaidAccessToken){
-      try{ await callPlaid("remove_item",{ access_token: plaidAccessToken }); }catch{}
+    // Phase D1-F-C: revoke ALL items before wiping local data
+    const jwt = await getJwt();
+    if(jwt) {
+      const items = await getUserItems();
+      for (const it of items) {
+        try { await callPlaid("delete_item", { item_id: it.item_id }, { jwt }); }
+        catch {}
+      }
     }
     clearState();
-    try{ localStorage.removeItem("flourish_plaid_token"); }catch{}
     window.location.reload();
   };
 
