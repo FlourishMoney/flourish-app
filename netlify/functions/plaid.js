@@ -122,13 +122,35 @@ exports.handler = async (event) => {
     // 1. create_link_token
     if (action === "create_link_token") {
       const country = body.country === "US" ? "US" : "CA";
-      const isUpdate = !!body.access_token;
       const WEBHOOK_URL = "https://flourishmoney.app/.netlify/functions/plaid-webhook";
+
+      // Phase D5: resolve update-mode access_token from server-side plaid_items via item_id+JWT.
+      // Legacy access_token-in-body path retained for backward compat (will be removed later).
+      let updateAccessToken = null;
+      if (body.access_token) {
+        updateAccessToken = body.access_token;
+      } else if (body.item_id) {
+        const { user_id, error: authError } = await getUserFromRequest(event);
+        if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
+        const admin = getAdminClient();
+        const { data, error } = await admin
+          .from("plaid_items")
+          .select("access_token")
+          .eq("user_id", user_id)
+          .eq("item_id", body.item_id)
+          .single();
+        if (error || !data) {
+          return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "item not found for this user" }) };
+        }
+        updateAccessToken = data.access_token;
+      }
+
+      const isUpdate = !!updateAccessToken;
       const linkBody = isUpdate
         ? {
             user:         { client_user_id: body.user_id || "flourish-user" },
             client_name:  "Flourish Money",
-            access_token: body.access_token,
+            access_token: updateAccessToken,
             webhook:      WEBHOOK_URL,
             language:     "en",
           }

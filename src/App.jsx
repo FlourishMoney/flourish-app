@@ -12463,8 +12463,9 @@ export default function FlourishApp(){
       return [];
     }catch{return [];}
   });
-  // Keep legacy plaidAccessToken for reconnect compatibility
-  const plaidAccessToken = plaidTokens[0]?.token || null;
+  // Phase D5: plaidAccessToken derived const removed — last consumer (handleReconnectBank)
+  // now uses item_id + JWT. plaidTokens state still hydrates from localStorage for the
+  // Settings UI bank list (D1-G+ follow-up will migrate that to getUserItems()).
   const [needsReconnect,setNeedsReconnect]=useState(false);
   const [reconnectToken,setReconnectToken]=useState(null);
   const [reconnectLoading,setReconnectLoading]=useState(false);
@@ -12833,15 +12834,35 @@ export default function FlourishApp(){
   const handleReset = () => { clearState(); window.location.reload(); };
 
   // ── Plaid Update Mode (re-auth expired bank sessions) ─────────
-  const handleReconnectBank = ()=>{
-    // UPDATE MODE: reconnect existing expired item
+  // Phase D5: identifies the broken item server-side via getUserItems() + JWT,
+  // then sends item_id (NOT raw access_token) to create_link_token. Falls back
+  // to a fresh-link flow if no items exist.
+  const handleReconnectBank = async ()=>{
     if(reconnectLoading) return;
     setReconnectLoading(true);
-    const country = appData?.profile?.country || "CA";
-    const payload = plaidAccessToken ? { access_token: plaidAccessToken } : { country };
-    callPlaid("create_link_token", payload)
-      .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
-      .catch(()=>{ setReconnectLoading(false); alert("Could not reconnect — please try again."); });
+    try {
+      const country = appData?.profile?.country || "CA";
+      const jwt = await getJwt();
+      let payload = { country, user_id: user?.id };
+      let useAuth = false;
+      if (jwt) {
+        const items = await getUserItems();
+        // Pick the item that triggered reconnect: prefer status==="error" or "pending_expiration"
+        const broken = items.find(it => it.status === "error" || it.status === "pending_expiration");
+        const target = broken || items[0];
+        if (target?.item_id) {
+          payload = { item_id: target.item_id, country };
+          useAuth = true;
+        }
+      }
+      const opts = useAuth ? { jwt } : undefined;
+      const d = await callPlaid("create_link_token", payload, opts);
+      setReconnectToken(d.link_token);
+    } catch {
+      alert("Could not reconnect — please try again.");
+    } finally {
+      setReconnectLoading(false);
+    }
   };
 
   const handleAddNewBank = ()=>{
