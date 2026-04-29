@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns } from "./lib/financialCalculations.js";
-import { getPlan, isPremiumOrFounder, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
+import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 
 const FLOURISH_BETA_CODES = ["BETA100","FLOURISH2026","FOUNDER"];
 
@@ -12504,6 +12504,7 @@ export default function FlourishApp(){
   // also run the grandfather check so existing users get beta_founder status.
   const [coachMsgCount,setCoachMsgCount]=useState(()=>getCoachMessagesRemaining()===Infinity?0:(FREE_TIER_LIMITS.coachMessagesPerDay-getCoachMessagesRemaining()));
   const bumpCoachMsg=()=>{
+    if (isUnlimited()) return; // Phase D10: don't count messages for trial/premium/founder users
     recordCoachUse();
     setCoachMsgCount(c=>c+1);
   };
@@ -12939,8 +12940,8 @@ export default function FlourishApp(){
       // Phase D7: gate via library (handles trial unlimited + post-trial daily caps + tiers)
       const freeCoachAllowed = canUseCoach();
       const showCoach = isPremium || freeCoachAllowed;
-      if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen} setAppData={setAppData}/>;
-      if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="AI Coach" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>;
+      if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium || isTrialActive()} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen} setAppData={setAppData}/>;
+      // Phase D10: removed stale 5-message gate (D7 dropped FREE_TIER_LIMITS.coachMessagesPerDay to 1; line below handles all gated cases).
       return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;
     }
     if(screen==="family")return <Family data={dataWithHousehold} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
