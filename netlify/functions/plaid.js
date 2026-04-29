@@ -21,12 +21,23 @@ const PLAID_BASE = {
   production:  "https://production.plaid.com",
 };
 
-const CORS = {
-  "Access-Control-Allow-Origin":  "*",
-  "Access-Control-Allow-Headers": "Content-Type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Content-Type":                 "application/json",
-};
+// Phase D2: origin-aware CORS — locks to known origins, falls back to production.
+const ALLOWED_ORIGINS = new Set([
+  "https://flourishmoney.app",
+  "http://localhost:5173",
+  "http://localhost:8888",
+]);
+
+function corsHeadersFor(event) {
+  const origin = event.headers?.origin || event.headers?.Origin || "";
+  const allowed = ALLOWED_ORIGINS.has(origin) ? origin : "https://flourishmoney.app";
+  return {
+    "Access-Control-Allow-Origin":  allowed,
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type":                 "application/json",
+  };
+}
 
 // Plaid REST wrapper — 8s timeout so we never exceed Netlify's 10s limit
 async function plaid(endpoint, body) {
@@ -81,6 +92,11 @@ function accountSubtype(subtype) {
 }
 
 exports.handler = async (event) => {
+  // Phase D2: per-request CORS (origin-aware). Inner references can keep using CORS.
+  const CORS = corsHeadersFor(event);
+  const ok = (data) => ({ statusCode: 200, headers: CORS, body: JSON.stringify(data) });
+  const e400 = (msg) => ({ statusCode: 400, headers: CORS, body: JSON.stringify({ error: msg }) });
+
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 200, headers: CORS, body: "" };
   }
@@ -451,6 +467,55 @@ exports.handler = async (event) => {
       return ok({ successes, failures });
     }
 
+    // 13. delete_account — auth-required: full account wipe
+    // Revokes all Plaid items, deletes plaid_items rows, deletes Supabase auth user.
+    // Best-effort on Plaid revocation: failures are logged but don't block account deletion.
+    if (action === "delete_account") {
+      const { user_id, error: authError } = await getUserFromRequest(event);
+      if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
+      const admin = getAdminClient();
+      const errors = [];
+
+      // 1. Load all plaid_items rows for the user (need access_tokens for /item/remove)
+      const { data: items, error: loadErr } = await admin
+        .from("plaid_items")
+        .select("item_id, access_token")
+        .eq("user_id", user_id);
+
+      if (loadErr) {
+        errors.push({ step: "load_items", error: loadErr.message });
+      }
+
+      // 2. Revoke each Plaid item (best-effort)
+      for (const it of (items || [])) {
+        try {
+          await plaid("/item/remove", { access_token: it.access_token });
+        } catch (revErr) {
+          errors.push({ step: "plaid_remove", item_id: it.item_id, error: revErr.message });
+          console.warn(`[delete_account] /item/remove failed for ${it.item_id}:`, revErr.message);
+        }
+      }
+
+      // 3. Delete plaid_items rows
+      const { error: delErr } = await admin
+        .from("plaid_items")
+        .delete()
+        .eq("user_id", user_id);
+      if (delErr) {
+        errors.push({ step: "delete_rows", error: delErr.message });
+      }
+
+      // 4. Delete the Supabase auth user (service-role only)
+      const { error: authDelErr } = await admin.auth.admin.deleteUser(user_id);
+      if (authDelErr) {
+        errors.push({ step: "auth_delete", error: authDelErr.message });
+        console.error(`[delete_account] auth.admin.deleteUser failed for ${user_id}:`, authDelErr.message);
+      }
+
+      const partial = errors.length > 0;
+      return ok({ deleted: true, partial, errors });
+    }
+
     return e400(`Unknown action: ${action}`);
 
   } catch (err) {
@@ -474,9 +539,8 @@ exports.handler = async (event) => {
   }
 };
 
-// helpers
-function ok(data) { return { statusCode: 200, headers: CORS, body: JSON.stringify(data) }; }
-function e400(msg) { return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: msg }) }; }
+// Phase D2: ok() and e400() now live inside the handler (above) so they share
+// the per-request CORS headers via closure.
 
 // Phase D1-F-C: resolve access_token from item_id + Authorization JWT.
 // (Legacy direct access_token-in-body path removed — frontend now stores tokens

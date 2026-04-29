@@ -15,12 +15,23 @@
 
 const BETA_CAP = 30;
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Content-Type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Content-Type": "application/json",
-};
+// Phase D2: origin-aware CORS — locks to known origins, falls back to production.
+const ALLOWED_ORIGINS = new Set([
+  "https://flourishmoney.app",
+  "http://localhost:5173",
+  "http://localhost:8888",
+]);
+
+function corsHeadersFor(event) {
+  const origin = event.headers?.origin || event.headers?.Origin || "";
+  const allowed = ALLOWED_ORIGINS.has(origin) ? origin : "https://flourishmoney.app";
+  return {
+    "Access-Control-Allow-Origin":  allowed,
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type":                 "application/json",
+  };
+}
 
 async function getUserCount(supabaseUrl, secretKey) {
   const res = await fetch(`${supabaseUrl}/auth/v1/admin/users?page=1&per_page=1`, {
@@ -36,6 +47,9 @@ async function getUserCount(supabaseUrl, secretKey) {
 }
 
 exports.handler = async (event) => {
+  // Phase D2: per-request CORS (origin-aware). Inner references can keep using CORS.
+  const CORS = corsHeadersFor(event);
+
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 200, headers: CORS, body: "" };
   }

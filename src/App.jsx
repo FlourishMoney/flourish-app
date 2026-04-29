@@ -509,6 +509,14 @@ async function getJwt() {
   } catch { return null; }
 }
 
+// Phase D2: merge two arrays of {id, ...} by id; fresh entries win.
+function mergeById(existing, fresh) {
+  const safeExisting = Array.isArray(existing) ? existing : [];
+  const safeFresh = Array.isArray(fresh) ? fresh : [];
+  const freshIds = new Set(safeFresh.map(x => x?.id).filter(Boolean));
+  return [...safeExisting.filter(x => x?.id && !freshIds.has(x.id)), ...safeFresh];
+}
+
 // Phase D1-F-B: fetch the user's connected Plaid items (metadata only — no access_tokens).
 // Used by multi-bank fan-out sites to drive get_transactions/accounts/etc. via item_id + JWT.
 async function getUserItems() {
@@ -12670,10 +12678,11 @@ export default function FlourishApp(){
             }));
           return {
             ...d,
-            accounts,
-            transactions: markTransfers(enrichedReconnectTxns, t => isInternalTransfer(t) || isCCPayment(t, d.debts || []), isCashAdvance),
+            // Phase D2: merge by id so existing banks aren't replaced when adding another
+            accounts: mergeById(d.accounts, accounts),
+            transactions: mergeById(d.transactions, markTransfers(enrichedReconnectTxns, t => isInternalTransfer(t) || isCCPayment(t, d.debts || []), isCashAdvance)),
             bankConnected: true,
-            debts: [...(d.debts||[]).filter(d => d.name || d.balance), ...newCCDebts],
+            debts: [...(d.debts||[]).filter(deb => deb.name || deb.balance), ...newCCDebts],
           };
         });
         setNeedsReconnect(false);
@@ -12767,17 +12776,28 @@ export default function FlourishApp(){
   };
 
   const deleteAllData = async ()=>{
-    if(!window.confirm("Delete all your data? This cannot be undone.")) return;
-    // Phase D1-F-C: revoke ALL items before wiping local data
-    const jwt = await getJwt();
-    if(jwt) {
-      const items = await getUserItems();
-      for (const it of items) {
-        try { await callPlaid("delete_item", { item_id: it.item_id }, { jwt }); }
-        catch {}
+    if(!window.confirm("Delete your account and all data? This cannot be undone.")) return;
+    try {
+      const jwt = await getJwt();
+      if (jwt) {
+        // Phase D2: backend handles full wipe — revoke all Plaid items + delete plaid_items rows + delete Supabase auth user
+        const resp = await callPlaid("delete_account", {}, { jwt });
+        if (resp?.partial) {
+          console.warn("[deleteAllData] partial failures:", resp.errors);
+        }
       }
+      // Sign out (clears Supabase session)
+      try { await supabase.auth.signOut(); } catch {}
+    } catch (err) {
+      console.error("[deleteAllData] backend call failed", err.message);
     }
-    clearState();
+
+    // Sweep all flourish_* localStorage keys
+    try {
+      const keys = Object.keys(localStorage).filter(k => k.startsWith("flourish_"));
+      keys.forEach(k => localStorage.removeItem(k));
+    } catch {}
+
     window.location.reload();
   };
 
