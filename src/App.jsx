@@ -462,6 +462,10 @@ async function storePlaidItemServerSide({access_token, item_id, institution_name
 // Phase D1-E: one-time migration of existing localStorage tokens to Supabase.
 // Idempotent on the server side (upsert by user_id+item_id), so safe to re-run.
 // Marks completion in localStorage to skip on subsequent sessions.
+//
+// Phase D6 note: this is the LAST consumer of localStorage["flourish_plaid_token*"]
+// keys. Once we're confident every beta user has set flourish_d1e_migrated=1,
+// this function and its call site can be retired and the legacy keys deleted.
 async function migrateLocalStorageTokensToSupabase() {
   if (localStorage.getItem("flourish_d1e_migrated") === "1") return;
   try {
@@ -3786,17 +3790,10 @@ function Onboarding({onComplete,onViewLegal,userId}){
         public_token:publicToken,
         institution_name:metadata?.institution?.name||"Your Bank",
       });
-      // Persist access_token so we can re-launch update mode if session expires
+      // Phase D6: Supabase via storePlaidItemServerSide is now the source of truth.
+      // localStorage token cache removed (Settings UI reads from getUserItems instead).
       try{
-        // Multi-bank: save to array
-        const existing = JSON.parse(localStorage.getItem("flourish_plaid_tokens")||"[]");
         const instName = ex.institution_name||"Your Bank";
-        // Replace existing token for this institution (prevents duplicate entries)
-        const bankId = "bank_" + Date.now();
-        const filtered = existing.filter(b => (b.institution||"").toLowerCase() !== instName.toLowerCase());
-        const updated = [...filtered, {id:bankId, token:ex.access_token, institution:instName}];
-        localStorage.setItem("flourish_plaid_tokens", JSON.stringify(updated));
-        // Phase D1-D: also persist server-side (parallel path during migration)
         await storePlaidItemServerSide({
           access_token: ex.access_token,
           item_id: ex.item_id,
@@ -9797,6 +9794,19 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
 function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled}){
   const [notifToggles,setNotifToggles]=useState({overdraft:true,bills:true,coach:true,meeting:false,patterns:true});
   const [activeSection,setActiveSection]=useState(null);
+
+  // Phase D6: bank list driven by Supabase plaid_items via getUserItems
+  const [bankItems, setBankItems] = useState(null);
+  const [bankRefreshKey, setBankRefreshKey] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const fetched = await getUserItems();
+      if (!cancelled) setBankItems(fetched || []);
+    })();
+    return () => { cancelled = true; };
+  }, [bankRefreshKey]);
+
   const handleShare=()=>{
     const url="https://flourishmoney.app";
     const text="I've been using Flourish to track my spending and it actually tells me exactly how much I can spend today. Worth checking out.";
@@ -9920,29 +9930,31 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     {(bankConnected || true)&&(
       <div style={{marginTop:10,padding:"14px 16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
         <div style={{color:C.cream,fontWeight:700,fontSize:13,marginBottom:8}}>Connected Banks</div>
-        {/* Show each connected bank */}
-        {(()=>{
-          const tokens = JSON.parse(localStorage.getItem("flourish_plaid_tokens")||"[]");
-          const legacy = localStorage.getItem("flourish_plaid_token");
-          const banks = tokens.length > 0 ? tokens : (legacy ? [{id:"bank_0",token:legacy,institution:"Your Bank"}] : []);
-          return banks.map((b,i)=>(
-            <div key={b.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i<banks.length-1?`1px solid ${C.border}`:"none"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <div style={{width:28,height:28,borderRadius:8,background:C.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>🏦</div>
-                <div style={{color:C.cream,fontSize:13,fontWeight:600}}>{b.institution}</div>
-              </div>
-              <button onClick={()=>{
-                if(!window.confirm(`Disconnect ${b.institution}?`)) return;
-                const updated = banks.filter(x=>x.id!==b.id);
-                localStorage.setItem("flourish_plaid_tokens", JSON.stringify(updated));
-                if(updated.length===0){localStorage.removeItem("flourish_plaid_token");onDisconnectBank();}
-                else{ localStorage.setItem("flourish_plaid_token", updated[0].token); window.location.reload(); }
-              }} style={{background:"none",border:`1px solid ${C.orange}44`,borderRadius:8,padding:"4px 10px",color:C.orange,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
-                Disconnect
-              </button>
+        {/* Phase D6: bank list driven by Supabase plaid_items via getUserItems */}
+        {bankItems === null ? (
+          <div style={{color:C.muted,fontSize:12,padding:"8px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Loading banks…</div>
+        ) : bankItems.length === 0 ? (
+          <div style={{color:C.muted,fontSize:12,padding:"8px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>No banks connected yet.</div>
+        ) : bankItems.map((b, i) => (
+          <div key={b.id || b.item_id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom: i < bankItems.length - 1 ? `1px solid ${C.border}` : "none"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{width:28,height:28,borderRadius:8,background:C.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>🏦</div>
+              <div style={{color:C.cream,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.institution_name || "Your Bank"}</div>
             </div>
-          ));
-        })()}
+            <button onClick={async () => {
+              if (!window.confirm(`Disconnect ${b.institution_name || "this bank"}?`)) return;
+              const jwt = await getJwt();
+              if (!jwt) { alert("Please sign in again."); return; }
+              try {
+                await callPlaid("delete_item", { item_id: b.item_id }, { jwt });
+              } catch (e) {
+                console.warn("[settings] delete_item failed:", e.message);
+              }
+              setBankRefreshKey(k => k + 1);
+              if (bankItems.length === 1) onDisconnectBank?.();
+            }} style={{background:"none",border:`1px solid ${C.orange}44`,borderRadius:8,padding:"4px 10px",color:C.orange,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Disconnect</button>
+          </div>
+        ))}
         <button onClick={onAddBank} style={{width:"100%",marginTop:12,background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:10,padding:"10px",color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
           + Connect Another Bank
         </button>
@@ -12452,20 +12464,10 @@ export default function FlourishApp(){
   const [isPremium,setIsPremium]=useState(()=>saved?.isPremium||false);
   const [showPaywall,setShowPaywall]=useState(false);
   // ── Plaid reconnect state ─────────────────────────────────────
-  // Multi-bank: store array of {id, token, institution}
-  const [plaidTokens,setPlaidTokens]=useState(()=>{
-    try{
-      // Migrate legacy single token
-      const legacy = localStorage.getItem("flourish_plaid_token");
-      const arr = JSON.parse(localStorage.getItem("flourish_plaid_tokens")||"null");
-      if(arr) return arr;
-      if(legacy) return [{id:"bank_0",token:legacy,institution:"Your Bank"}];
-      return [];
-    }catch{return [];}
-  });
-  // Phase D5: plaidAccessToken derived const removed — last consumer (handleReconnectBank)
-  // now uses item_id + JWT. plaidTokens state still hydrates from localStorage for the
-  // Settings UI bank list (D1-G+ follow-up will migrate that to getUserItems()).
+  // Phase D6: the legacy multi-bank token state was retired. Plaid items live in
+  // Supabase plaid_items; Settings UI fetches via getUserItems(). The D1-E migration
+  // runner (above) is the only remaining consumer of the legacy localStorage keys,
+  // and only at one-time migration of existing beta users to Supabase.
   const [needsReconnect,setNeedsReconnect]=useState(false);
   const [reconnectToken,setReconnectToken]=useState(null);
   const [reconnectLoading,setReconnectLoading]=useState(false);
@@ -12544,11 +12546,6 @@ export default function FlourishApp(){
   }, [user]);
 
   // ── Persist state changes to localStorage ──────────────────────
-  // Persist plaid tokens array
-  useEffect(()=>{
-    try{ localStorage.setItem("flourish_plaid_tokens", JSON.stringify(plaidTokens)); }catch{}
-  },[plaidTokens]);
-
   useEffect(()=>{ saveState({onboarded,appData,household,isPremium,checkInBonus}); },
     [onboarded,appData,household,isPremium,checkInBonus]);
 
@@ -12723,14 +12720,8 @@ export default function FlourishApp(){
   const onReconnectSuccess = useCallback((publicToken, metadata)=>{
     callPlaid("exchange_token",{ public_token: publicToken, institution_name: metadata?.institution?.name||"Your Bank" })
       .then(async ex=>{
-        try{
-        // Multi-bank: save to array
-        const existing = JSON.parse(localStorage.getItem("flourish_plaid_tokens")||"[]");
-        const bankId = "bank_" + Date.now();
-        const updated = [...existing, {id:bankId,token:ex.access_token,institution:ex.institution_name||"Your Bank"}];
-        localStorage.setItem("flourish_plaid_tokens", JSON.stringify(updated));
-      }catch{}
-        // Phase D1-D: persist server-side (parallel path during migration)
+        // Phase D6: Supabase via storePlaidItemServerSide is now the source of truth.
+        // localStorage token cache removed (Settings UI reads from getUserItems instead).
         await storePlaidItemServerSide({
           access_token: ex.access_token,
           item_id: ex.item_id,
