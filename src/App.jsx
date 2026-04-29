@@ -2207,7 +2207,7 @@ function WealthForecast({data}) {
   // Current balances from retirement tab
   const rrspBal   = parseFloat(ret[isCA?"rrspBalance":"401kBalance"]||0);
   const tfsaBal   = parseFloat(ret[isCA?"tfsaBalance":"iraBalance"]||0);
-  const invBal    = (data.accounts||[]).filter(a=>a.type==="investment").reduce((s,a)=>s+parseFloat(a.balance||0),0);
+  const invBal    = (data.accounts||[]).filter(a=>isInvestmentAccount(a)).reduce((s,a)=>s+parseFloat(a.balance||0),0);
   const startingBal = rrspBal + tfsaBal + invBal;
 
   // Monthly contributions using frequency
@@ -3233,7 +3233,7 @@ const AutopilotEngine = {
     let savingsTarget = "Emergency Fund";
     if (mode !== "high" && surplus > monthlyIncome * 0.12) {
       const efMonths = typeof FinancialCalcEngine.emergencyFundMonths === 'function' ? FinancialCalcEngine.emergencyFundMonths(data) : 0;
-      const invAcct  = (data.accounts||[]).find(a => a.type === "investment");
+      const invAcct  = (data.accounts||[]).find(a => isInvestmentAccount(a));
       savingsTarget  = efMonths < 3 ? "Emergency Fund" : invAcct ? "TFSA / Investment" : "Savings";
       // Adaptive: reduce savings amount if spending is volatile
       const volatilityFactor = spendingStability > 0.7 ? 1.0 : 0.7;
@@ -3330,8 +3330,8 @@ function calcHealthScore(data) {
   const ssScore = Math.round(spendingStability * 15);
 
   // ⑤ Investments — 10 pts
-  const hasInv = accounts.some(a => a.type === "investment");
-  const invBal = accounts.filter(a => a.type === "investment").reduce((s,a) => s + parseFloat(a.balance||0), 0);
+  const hasInv = accounts.some(a => isInvestmentAccount(a));
+  const invBal = accounts.filter(a => isInvestmentAccount(a)).reduce((s,a) => s + parseFloat(a.balance||0), 0);
   const ivScore = hasInv ? Math.min(10, 5 + Math.round(Math.min(5, invBal / (monthlyIncome * 3)))) : 0;
 
   // ⑥ Credit Health — 10 pts
@@ -4865,7 +4865,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const streakColor=streak>=7?C.goldBright:streak>=4?C.greenBright:streak>=2?C.tealBright:C.muted;
 
   // ── Net worth invest ─────────────────────────────────────────────────────────
-  const invAccts=(data.accounts||[]).filter(a=>a.type==="investment");
+  const invAccts=(data.accounts||[]).filter(a=>isInvestmentAccount(a));
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -7724,7 +7724,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
     {tab==="worth"&&(()=>{
       const country=data.profile?.country||"CA";
       const allAccts=data.accounts||[];
-      const investments=allAccts.filter(a=>a.type==="investment");
+      const investments=allAccts.filter(a=>isInvestmentAccount(a));
       const totalInvested=investments.reduce((s,a)=>s+(a.balance||0),0);
       const totalGain=investments.reduce((s,a)=>s+(a.gain||0),0);
       const checking=allAccts.filter(a=>isCheckingAccount(a)).reduce((s,a)=>s+(a.balance||0),0);
@@ -10004,7 +10004,7 @@ function DesktopSidebar({data,setScreen}){
   const txns=data.transactions||[];
   const today=new Date().getDate();
   const soonBills=(data.bills||[]).filter(b=>{const d=parseInt(b.date);return d>=today&&d<=today+10;});
-  const investments=(data.accounts||[]).filter(a=>a.type==="investment");
+  const investments=(data.accounts||[]).filter(a=>isInvestmentAccount(a));
   const totalInvested=investments.reduce((a,i)=>a+(i.balance||0),0);
   const totalGain=investments.reduce((a,i)=>a+(i.gain||0),0);
 

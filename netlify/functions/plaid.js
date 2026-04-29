@@ -74,23 +74,6 @@ async function plaid(endpoint, body) {
   return data;
 }
 
-// Map Plaid account subtypes to display labels
-function accountSubtype(subtype) {
-  const map = {
-    rrsp:  "RRSP",
-    tfsa:  "TFSA",
-    fhsa:  "FHSA",
-    resp:  "RESP",
-    rrif:  "RRIF",
-    lira:  "LIRA",
-    "401k": "401(k)",
-    roth:  "Roth IRA",
-    hsa:   "HSA",
-    "529": "529 Plan",
-  };
-  return map[subtype?.toLowerCase()] || subtype || "Investment";
-}
-
 exports.handler = async (event) => {
   // Phase D2: per-request CORS (origin-aware). Inner references can keep using CORS.
   const CORS = corsHeadersFor(event);
@@ -124,12 +107,9 @@ exports.handler = async (event) => {
       const country = body.country === "US" ? "US" : "CA";
       const WEBHOOK_URL = "https://flourishmoney.app/.netlify/functions/plaid-webhook";
 
-      // Phase D5: resolve update-mode access_token from server-side plaid_items via item_id+JWT.
-      // Legacy access_token-in-body path retained for backward compat (will be removed later).
+      // Phase D11: legacy raw-token-in-body path removed. Update-mode now requires item_id + JWT.
       let updateAccessToken = null;
-      if (body.access_token) {
-        updateAccessToken = body.access_token;
-      } else if (body.item_id) {
+      if (body.item_id) {
         const { user_id, error: authError } = await getUserFromRequest(event);
         if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
         const admin = getAdminClient();
