@@ -319,6 +319,19 @@ export function detectScenarioType(text) {
   return "purchase";
 }
 
+// Phase D8: Detect lump-sum vs recurring investment.
+// Returns true if user's text contains lump-sum markers (one-time deposit intent).
+// False means "interpret amount as monthly contribution" (default).
+export function detectLumpSum(text) {
+  if (!text || typeof text !== "string") return false;
+  const t = text.toLowerCase();
+  // If text contains recurring markers (/mo, monthly, per month, /month), it's NOT a lump sum
+  // even if it also contains "today" or similar — recurring intent wins.
+  const recurring = /\b(\/\s*month|per\s+month|monthly|\/mo\b)/i.test(t);
+  if (recurring) return false;
+  return /\b(today|right\s+now|lump\s*sum|one[\s-]*time|all\s+at\s+once|put\s+in\s+\$?\d|deposit\s+\$?\d)\b/i.test(t);
+}
+
 // ── 9. Account-type classification helpers (Phase B1) ────────────────────────
 // Plaid returns a 2-level type taxonomy: top-level `type` ("depository",
 // "credit", "loan", "investment") and granular `subtype` ("checking", "savings",

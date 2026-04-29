@@ -9,7 +9,7 @@ import {
   Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
-import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns } from "./lib/financialCalculations.js";
+import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns } from "./lib/financialCalculations.js";
 import { getPlan, isPremiumOrFounder, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 
 const FLOURISH_BETA_CODES = ["BETA100","FLOURISH2026","FOUNDER"];
@@ -1669,10 +1669,22 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
 
     // ── INVESTMENT SCENARIO ──────────────────────────────────────────────
     if (scenarioType === "invest") {
-      const monthlyContribution = parseAmountFromQuery(qText) || 200;
+      // Phase D8: distinguish lump-sum deposit from recurring contribution.
+      // "Invest $50000 today" → 50000 is principal, no monthly contribution.
+      // "Invest $300/month"   → 300 is monthly, principal is current portfolio.
+      const parsedAmount = parseAmountFromQuery(qText);
+      const isLumpSum = detectLumpSum(qText);
+      const portfolioValue = (data.investments || []).reduce((s, h) => s + (h.value || 0), 0);
+      let monthlyContribution, initialPrincipal;
+      if (isLumpSum && parsedAmount > 0) {
+        monthlyContribution = 0;
+        initialPrincipal = parsedAmount + portfolioValue;
+      } else {
+        monthlyContribution = parsedAmount || 200;
+        initialPrincipal = portfolioValue;
+      }
       const annualReturnPct = 7;  // moderate default
       const years = 30;            // long-horizon default
-      const initialPrincipal = (data.investments || []).reduce((s, h) => s + (h.value || 0), 0);
       const result = simulateInvestmentGrowth({
         monthlyContribution, annualReturnPct, years, initialPrincipal,
       });
@@ -1695,9 +1707,11 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
         thirtyYr:      { value: result.finalValue, growth: result.totalGrowth },
         yearByYear:    result.yearByYear,
         verdict: "Long-term winner",
-        verdictReason: initialPrincipal > 0
-          ? `Adding $${monthlyContribution}/month at 7% for 30 years takes your portfolio from $${Math.round(initialPrincipal).toLocaleString()} today to $${Math.round(result.finalValue).toLocaleString()}, with $${Math.round(result.totalGrowth).toLocaleString()} of that being growth.`
-          : `Investing $${monthlyContribution}/month at 7% for 30 years grows to $${Math.round(result.finalValue).toLocaleString()}, with $${Math.round(result.totalGrowth).toLocaleString()} of that being pure growth.`,
+        verdictReason: isLumpSum && parsedAmount > 0
+          ? `Depositing $${Math.round(parsedAmount).toLocaleString()} today and letting it compound at 7% for 30 years grows to $${Math.round(result.finalValue).toLocaleString()}.`
+          : initialPrincipal > 0
+            ? `Adding $${monthlyContribution}/month at 7% for 30 years takes your portfolio from $${Math.round(initialPrincipal).toLocaleString()} today to $${Math.round(result.finalValue).toLocaleString()}, with $${Math.round(result.totalGrowth).toLocaleString()} of that being growth.`
+            : `Investing $${monthlyContribution}/month at 7% for 30 years grows to $${Math.round(result.finalValue).toLocaleString()}, with $${Math.round(result.totalGrowth).toLocaleString()} of that being pure growth.`,
       });
       setLoading(false);
       return;
