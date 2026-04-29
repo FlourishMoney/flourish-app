@@ -79,6 +79,22 @@ const CC = {
     creditBureaus:["Equifax (Borrowell — free)","TransUnion (Credit Karma — free)"],
     emergencyMonths:3,
     healthcareNote:"Healthcare is covered — emergency fund is for income disruption, not medical bills.",
+    // Phase D12: provinces + territories. Code is the canonical Canada Post abbreviation.
+    regions: [
+      { code: "AB", name: "Alberta" },
+      { code: "BC", name: "British Columbia" },
+      { code: "MB", name: "Manitoba" },
+      { code: "NB", name: "New Brunswick" },
+      { code: "NL", name: "Newfoundland and Labrador" },
+      { code: "NS", name: "Nova Scotia" },
+      { code: "NT", name: "Northwest Territories" },
+      { code: "NU", name: "Nunavut" },
+      { code: "ON", name: "Ontario" },
+      { code: "PE", name: "Prince Edward Island" },
+      { code: "QC", name: "Quebec" },
+      { code: "SK", name: "Saskatchewan" },
+      { code: "YT", name: "Yukon" },
+    ],
   },
   US:{
     currency:"USD", symbol:"$", flag:"🇺🇸", name:"United States",
@@ -138,6 +154,35 @@ const CC = {
     creditBureaus:["Equifax","Experian","TransUnion — all three count for FICO"],
     emergencyMonths:6,
     healthcareNote:"Medical emergencies are the #1 cause of US bankruptcy. 6 months of expenses is the minimum.",
+    // Phase D12: 50 states + DC. Code is the canonical USPS 2-letter abbreviation.
+    regions: [
+      { code: "AL", name: "Alabama" }, { code: "AK", name: "Alaska" },
+      { code: "AZ", name: "Arizona" }, { code: "AR", name: "Arkansas" },
+      { code: "CA", name: "California" }, { code: "CO", name: "Colorado" },
+      { code: "CT", name: "Connecticut" }, { code: "DE", name: "Delaware" },
+      { code: "DC", name: "District of Columbia" },
+      { code: "FL", name: "Florida" }, { code: "GA", name: "Georgia" },
+      { code: "HI", name: "Hawaii" }, { code: "ID", name: "Idaho" },
+      { code: "IL", name: "Illinois" }, { code: "IN", name: "Indiana" },
+      { code: "IA", name: "Iowa" }, { code: "KS", name: "Kansas" },
+      { code: "KY", name: "Kentucky" }, { code: "LA", name: "Louisiana" },
+      { code: "ME", name: "Maine" }, { code: "MD", name: "Maryland" },
+      { code: "MA", name: "Massachusetts" }, { code: "MI", name: "Michigan" },
+      { code: "MN", name: "Minnesota" }, { code: "MS", name: "Mississippi" },
+      { code: "MO", name: "Missouri" }, { code: "MT", name: "Montana" },
+      { code: "NE", name: "Nebraska" }, { code: "NV", name: "Nevada" },
+      { code: "NH", name: "New Hampshire" }, { code: "NJ", name: "New Jersey" },
+      { code: "NM", name: "New Mexico" }, { code: "NY", name: "New York" },
+      { code: "NC", name: "North Carolina" }, { code: "ND", name: "North Dakota" },
+      { code: "OH", name: "Ohio" }, { code: "OK", name: "Oklahoma" },
+      { code: "OR", name: "Oregon" }, { code: "PA", name: "Pennsylvania" },
+      { code: "RI", name: "Rhode Island" }, { code: "SC", name: "South Carolina" },
+      { code: "SD", name: "South Dakota" }, { code: "TN", name: "Tennessee" },
+      { code: "TX", name: "Texas" }, { code: "UT", name: "Utah" },
+      { code: "VT", name: "Vermont" }, { code: "VA", name: "Virginia" },
+      { code: "WA", name: "Washington" }, { code: "WV", name: "West Virginia" },
+      { code: "WI", name: "Wisconsin" }, { code: "WY", name: "Wyoming" },
+    ],
   },
 };
 
@@ -200,7 +245,7 @@ function getPersonalizedTaxCredits(profile) {
       if (province === "SK") {
         tips.push({title:"Saskatchewan Graduate Retention Program",body:"Graduate and work in Saskatchewan to receive up to $20,000 in provincial tax credits over 7 years. One of the most generous graduate incentives in Canada.",savings:"Up to $20,000",flag:"🏙️ SK",priority:"high",action:"Apply After Graduation"});
       }
-      if (province === "NB" || province === "NS" || province === "PEI" || province === "NL") {
+      if (province === "NB" || province === "NS" || province === "PE" || province === "PEI" || province === "NL") {
         tips.push({title:"Atlantic Graduate Tax Credit",body:"Atlantic provinces offer graduate tax credits to encourage graduates to stay and work in the region. Specific amounts vary by province — check your provincial tax return.",savings:"Varies by province",flag:"🏙️ Atlantic",priority:"medium",action:"Check Provincial Return"});
       }
     }
@@ -3753,6 +3798,8 @@ function DashCustomize({ layout, onChange, onClose }) {
 // ─── ONBOARDING ───────────────────────────────────────────────────────────────
 function Onboarding({onComplete,onViewLegal,userId}){
   const [step,setStep]=useState(0);
+  // profile.province holds CA province code when country=CA, US state code when country=US.
+  // Defaults: ON for CA, CA (California) for US.
   const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false,lifeStages:["t4"],partnerLifeStages:[],birthYear:"",kids:[],isHomeowner:false,rrspRoom:"",tfsaRoom:"",retirementRoom:""});
   const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment",isVariable:false}]);
   const [bills,setBills]=useState([{name:"",amount:"",date:""}]);
@@ -3918,12 +3965,13 @@ function Onboarding({onComplete,onViewLegal,userId}){
       </div>
     </div>,
 
-    // 1: Profile (slim — Phase 3e-B trim)
+    // 1: Profile (Phase 3e-B trim + D12 region picker)
     <div>
       <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",marginBottom:6}}>About you</div>
-      <div style={{color:C.muted,fontSize:13,lineHeight:1.5,marginBottom:20}}>Just two things to get started — you can flesh out your profile later in Settings.</div>
+      <div style={{color:C.muted,fontSize:13,lineHeight:1.5,marginBottom:20}}>A quick few things to get started — you can flesh out your profile later in Settings.</div>
       <Inp label="Your name" value={p.name} onChange={v=>setP({...p,name:v})} placeholder="First name"/>
       <Sel label="Country" value={p.country} onChange={v=>setP({...p,country:v,province:v==="CA"?"ON":"CA"})} options={[{value:"CA",label:"🇨🇦 Canada"},{value:"US",label:"🇺🇸 United States"}]}/>
+      <Sel label={p.country==="CA" ? "Province" : "State"} value={p.province} onChange={v=>setP({...p,province:v})} options={(CC[p.country]?.regions || []).map(r => ({ value: r.code, label: r.name }))}/>
       <Btn label="Continue →" onClick={()=>setStep(2)} disabled={!p.name}/>
     </div>,
 
@@ -9656,9 +9704,24 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
           style={{background:"none",border:"none",borderBottom:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,textAlign:"right",outline:"none",fontFamily:"inherit",padding:"2px 4px",width:140}}/>
       </div>
       <div style={row}><span style={lbl}>Country</span>
-        <select defaultValue={data.profile?.country||"CA"} onChange={e=>updateProfile("country",e.target.value)}
+        <select defaultValue={data.profile?.country||"CA"} onChange={e=>{
+          // Phase D12: reset province to a sensible default when country changes
+          // so Canadian "ON" doesn't persist for users switching to US (or vice versa).
+          const newCountry = e.target.value;
+          const defaultProvince = newCountry === "CA" ? "ON" : "CA";
+          if(setAppData) setAppData(prev=>({...prev, profile:{...prev.profile, country:newCountry, province:defaultProvince}}));
+        }}
           style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
           <option value="CA">🇨🇦 Canada</option><option value="US">🇺🇸 United States</option>
+        </select>
+      </div>
+      {/* Phase D12: Province/State picker. Controlled value so it updates on country change. */}
+      <div style={row}><span style={lbl}>{(data.profile?.country||"CA")==="CA" ? "Province" : "State"}</span>
+        <select value={data.profile?.province||"ON"} onChange={e=>updateProfile("province",e.target.value)}
+          style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit",maxWidth:180}}>
+          {(CC[data.profile?.country||"CA"]?.regions||[]).map(r=>(
+            <option key={r.code} value={r.code}>{r.name}</option>
+          ))}
         </select>
       </div>
       <div style={row}><span style={lbl}>Status</span>
