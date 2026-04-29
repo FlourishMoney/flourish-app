@@ -10617,7 +10617,7 @@ function PrivacyPolicy({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
   const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
-  const last="March 16, 2026";
+  const last="April 28, 2026";
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
@@ -10633,7 +10633,7 @@ function PrivacyPolicy({onBack}){
       </div>
 
       <div style={h2}>1. Information We Collect</div>
-      <div style={p}><strong style={{color:C.cream}}>Information you provide directly:</strong> First name, country and province/state, relationship status, income sources, account balances, bills, debts, savings goals, and financial transactions you enter manually or via bank connection (Plaid). We also collect an email address and password when you create an account.</div>
+      <div style={p}><strong style={{color:C.cream}}>Information you provide directly:</strong> First name, country and province/state, relationship status, income sources, account balances, bills, debts, savings goals, and financial transactions you enter manually or via bank connections (Plaid; one or more institutions). We also collect an email address and password when you create an account.</div>
       <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Information collected automatically:</strong> Device type, operating system, app version, usage patterns (screens viewed, features used), and crash reports. We do not collect your IP address for tracking purposes.</div>
       <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Bank connection data (Plaid):</strong> If you connect your bank, Plaid Inc. retrieves account balances and transaction history on our behalf. We receive read-only access to this data. We do not store your banking credentials. Plaid's privacy policy applies to that connection.</div>
 
@@ -10648,11 +10648,14 @@ function PrivacyPolicy({onBack}){
 
       <div style={h2}>5. Data Storage & Security</div>
       <div style={p}>Your data is stored on your device (locally via localStorage) and, if you create an account, in our secure cloud database provided by Supabase (hosted in data centres compliant with SOC 2 Type II). Data transmitted between your device and our servers is encrypted using TLS 1.2+. AI coaching queries are processed by Anthropic's API and are subject to Anthropic's data-handling policies — no conversation history is stored server-side by Flourish.</div>
+      <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Important:</strong> financial calculations (balances, safe-to-spend, debt payoff projections, investment growth) are computed in JavaScript on your device. Anthropic only generates plain-language explanations of numbers we calculate ourselves. Anthropic does not train AI models on data sent through their API.</div>
 
       <div style={h2}>6. Data Sharing</div>
       <div style={p}>We share data with the following service providers solely to operate the App:</div>
       <div style={{...p,marginTop:8,paddingLeft:16}}>• <strong style={{color:C.cream}}>Anthropic</strong> — AI coaching responses (transaction summaries sent as context)</div>
-      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Plaid</strong> — Bank account connectivity (if you choose to connect)</div>
+      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Plaid</strong> — bank account connectivity and transaction history</div>
+      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Plaid Enrich</strong> — transaction description cleanup (sends merchant text to receive cleaner names, logos, and category labels)</div>
+      <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Anthropic Statement Parser</strong> — when you upload a bank statement (CSV/PDF), the document text is sent to Anthropic to extract transactions</div>
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Supabase</strong> — Account authentication and encrypted cloud data storage</div>
       <div style={{...p,paddingLeft:16}}>• <strong style={{color:C.cream}}>Netlify</strong> — App hosting and serverless function processing</div>
       <div style={{...p,marginTop:8}}>We do not share your data with advertisers, data brokers, or any other third parties.</div>
@@ -10680,7 +10683,7 @@ function TermsOfService({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
   const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
-  const last="March 16, 2026";
+  const last="April 28, 2026";
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
@@ -10705,7 +10708,7 @@ function TermsOfService({onBack}){
       <div style={{...p,background:`${C.gold}11`,borderRadius:12,padding:"12px 14px",border:`1px solid ${C.gold}33`}}>⚠️ <strong style={{color:C.goldBright}}>Important:</strong> Flourish Money is an educational financial tool, not a licensed financial advisor. The AI Coach, insights, scores, and all content in the App are for informational purposes only and do not constitute financial, investment, tax, or legal advice. Always consult a qualified financial professional before making significant financial decisions.</div>
 
       <div style={h2}>4. Account Registration</div>
-      <div style={p}>You may use Flourish Money with a guest account (data stored locally) or create a registered account with your email and password. You are responsible for maintaining the confidentiality of your account credentials and for all activity that occurs under your account. You must notify us immediately at hello@flourishmoney.app of any unauthorized use.</div>
+      <div style={p}>Flourish Money requires a registered account. You sign up using an email and password, and verify your account using two-factor authentication (TOTP). Authentication is handled through Supabase. You may delete your account and all associated data at any time from Settings. You are responsible for maintaining the confidentiality of your account credentials and for all activity that occurs under your account. You must notify us immediately at hello@flourishmoney.app of any unauthorized use.</div>
 
       <div style={h2}>5. Bank Connectivity (Plaid)</div>
       <div style={p}>If you choose to connect your bank accounts, you authorize us to use Plaid Inc. to access your financial institution on your behalf. This access is read-only; we cannot initiate transactions. Your banking credentials are never shared with or stored by Flourish Money. By connecting your bank, you also agree to Plaid's End User Privacy Policy.</div>
@@ -10992,7 +10995,7 @@ function AIDisclosureScreen({onAccept, onDecline}){
 
         <div style={{background:C.card,borderRadius:18,padding:"18px 20px",border:`1px solid ${C.border}`,marginBottom:20}}>
           <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>Your control</div>
-          <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Anthropic does not train AI models on your data. You can disable AI features anytime in <strong style={{color:C.cream}}>Settings → Privacy & AI</strong>.</div>
+          <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Anthropic does not train AI models on your data. You can disable AI features anytime in <strong style={{color:C.cream}}>Settings → Privacy & AI</strong>. Read the <a href="/privacy" style={{color:C.greenBright,textDecoration:"underline"}}>full Privacy Policy</a> for details.</div>
         </div>
 
         <button onClick={onAccept} style={{width:"100%",background:`linear-gradient(135deg,${C.green} 0%,${C.greenBright} 100%)`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",marginBottom:10}}>I Understand — Use AI Features</button>
