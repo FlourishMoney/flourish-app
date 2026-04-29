@@ -1640,13 +1640,19 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
       const balance = targetDebt.balance;
       const apr = targetDebt.rate;
       const currentPayment = targetDebt.min;
+      // Phase D9: natural-language label for the debt's type (used in fallback copy)
+      const debtTypeLabel = targetDebt.debtType === "mortgage" ? "mortgage"
+        : targetDebt.debtType === "student" ? "student loan"
+        : targetDebt.debtType === "credit_card" ? "credit card"
+        : "debt";
       // Default extra payment from query (or $100/mo if none specified)
       const parsedAmount = parseAmountFromQuery(qText);
       const extraPayment = parsedAmount > 0 && parsedAmount < currentPayment * 5 ? parsedAmount : 100;
       const result = simulateDebtPayoffBoost({ balance, apr, currentPayment, extraPayment });
       setResult({
         scenarioType: "debt",
-        debtName: targetDebt.name || "Credit Card",
+        debtName: targetDebt.name || debtTypeLabel.replace(/\b\w/g, c => c.toUpperCase()),
+        debtType: targetDebt.debtType,
         debtBalance: balance,
         debtApr: apr,
         currentPayment,
@@ -1659,9 +1665,9 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
         interestSaved: result.interestSaved,
         verdict: result.monthsSaved > 0 ? "Worth doing" : "No change",
         verdictReason: result.monthsSaved > 0
-          ? `Adding $${extraPayment}/mo clears your ${targetDebt.name || "credit card"} ${result.monthsSaved} months sooner and saves $${result.interestSaved} in interest.`
+          ? `Adding $${extraPayment}/mo clears your ${targetDebt.name || debtTypeLabel} ${result.monthsSaved} months sooner and saves $${result.interestSaved} in interest.`
           : "Your current payment is already optimal for this debt.",
-        availableDebts: debts.map(d => ({ name: d.name, balance: d.balance, rate: d.rate })),
+        availableDebts: debts.map(d => ({ name: d.name, balance: d.balance, rate: d.rate, debtType: d.debtType })),
       });
       setLoading(false);
       return;

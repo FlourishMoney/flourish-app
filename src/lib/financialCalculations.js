@@ -393,10 +393,14 @@ export function isInvestmentAccount(a) {
   return false;
 }
 
-// ── 10. buildDebtListForSimulator (Phase B4) ────────────────────────────────
+// ── 10. buildDebtListForSimulator (Phase B4 + D9) ───────────────────────────
 // Combines Plaid Liabilities (authoritative APR + payment data) with manual
 // debts (user-entered IOUs / unconnected accounts) into a unified list the
 // simulator can consume. Plaid wins for any debt that has a connected source.
+//
+// Phase D9: now also handles liabilities.mortgage and liabilities.student.
+// Each entry carries a `debtType` field so the UI can label it correctly:
+//   "credit_card" | "mortgage" | "student" | "manual"
 //
 // Inputs:
 //   manualDebts  — array from data.debts (shape: {name, balance, rate, min, fromBank?})
@@ -404,21 +408,25 @@ export function isInvestmentAccount(a) {
 //
 // Output:
 //   Array of normalized debt objects ready for sort-by-APR + simulate.
-//   Each entry: {name, balance:number, rate:number, min:number, source:string, account_id?:string}
+//   Each entry: {name, balance:number, rate:number, min:number,
+//                source:string, debtType:string, account_id?:string}
 //
 // Logic:
-//   1. Map all liabilities.credit entries (Plaid-authoritative)
+//   1. Map all liabilities.credit / .mortgage / .student entries (Plaid-authoritative)
 //   2. Add manual debts that are NOT fromBank:true (user-entered standalones)
-//   3. Skip fromBank:true manual debts entirely when liabilities are present —
+//   3. Skip fromBank:true manual debts entirely when ANY Plaid liabilities are present —
 //      Plaid is the source of truth for those. If liabilities is missing/empty,
 //      fall back to using manual debts as-is.
 
 export function buildDebtListForSimulator(manualDebts, liabilities) {
   const manual = Array.isArray(manualDebts) ? manualDebts : [];
-  const plaidCredit = liabilities && Array.isArray(liabilities.credit) ? liabilities.credit : [];
+  const plaidCredit   = liabilities && Array.isArray(liabilities.credit)   ? liabilities.credit   : [];
+  const plaidMortgage = liabilities && Array.isArray(liabilities.mortgage) ? liabilities.mortgage : [];
+  const plaidStudent  = liabilities && Array.isArray(liabilities.student)  ? liabilities.student  : [];
+  const hasAnyPlaid = (plaidCredit.length + plaidMortgage.length + plaidStudent.length) > 0;
 
   // No Plaid liabilities → use manual debts unchanged (back-compat for users without bank-connected liabilities)
-  if (plaidCredit.length === 0) {
+  if (!hasAnyPlaid) {
     return manual
       .filter(d => parseFloat(d.balance || 0) > 0)
       .map(d => ({
@@ -427,11 +435,12 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
         rate: parseFloat(d.rate || 0) || 20, // fallback 20% APR if user left blank
         min: parseFloat(d.min || 0) || Math.max(25, parseFloat(d.balance || 0) * 0.02),
         source: "manual",
+        debtType: "manual",
       }));
   }
 
-  // Plaid liabilities present → build authoritative list
-  const plaidEntries = plaidCredit
+  // Plaid liabilities present → build authoritative list across all 3 categories
+  const creditEntries = plaidCredit
     .filter(c => (c.balance || 0) > 0)
     .map(c => ({
       name: c.name || "Credit Card",
@@ -439,7 +448,32 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
       rate: c.apr || 20, // Plaid sometimes returns null APR; fallback 20%
       min: c.minPayment || Math.max(25, (c.balance || 0) * 0.02),
       source: "plaid_liability",
+      debtType: "credit_card",
       account_id: c.account_id,
+    }));
+
+  const mortgageEntries = plaidMortgage
+    .filter(m => (m.balance || 0) > 0)
+    .map(m => ({
+      name: m.name || "Mortgage",
+      balance: m.balance || 0,
+      rate: m.interestRate || 5, // mortgages typically 3-6%; fallback 5%
+      min: m.monthlyPayment || Math.max(25, (m.balance || 0) * 0.005), // 0.5%/mo as last-resort default
+      source: "plaid_liability",
+      debtType: "mortgage",
+      account_id: m.account_id,
+    }));
+
+  const studentEntries = plaidStudent
+    .filter(s => (s.balance || 0) > 0)
+    .map(s => ({
+      name: s.name || "Student Loan",
+      balance: s.balance || 0,
+      rate: s.interestRate || 6, // student loans typically 5-7%; fallback 6%
+      min: Math.max(25, (s.balance || 0) * 0.01), // Plaid student liabilities don't return min payment; default 1% of balance
+      source: "plaid_liability",
+      debtType: "student",
+      account_id: s.account_id,
     }));
 
   // Add manual debts that are NOT fromBank (user-entered standalones — IOUs, unconnected cards, etc.)
@@ -451,9 +485,10 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
       rate: parseFloat(d.rate || 0) || 20,
       min: parseFloat(d.min || 0) || Math.max(25, parseFloat(d.balance || 0) * 0.02),
       source: "manual",
+      debtType: "manual",
     }));
 
-  return [...plaidEntries, ...manualStandalones];
+  return [...creditEntries, ...mortgageEntries, ...studentEntries, ...manualStandalones];
 }
 
 // ── 11. markTransfers (Phase B6-A) ──────────────────────────────────────────
