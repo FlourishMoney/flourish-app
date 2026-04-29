@@ -34,9 +34,12 @@ const COACH_USAGE_KEY = "flourish_coach_usage";
 const SIM_USAGE_KEY   = "flourish_sim_usage";
 
 export const FREE_TIER_LIMITS = {
-  coachMessagesPerDay: 5,
-  simulationsPerDay:   3,
+  coachMessagesPerDay: 1,
+  simulationsPerDay:   1,
 };
+
+// Phase D7: 14-day trial window for new signups (unlimited Coach + sim).
+export const TRIAL_DURATION_DAYS = 14;
 
 // ── Plan tier ────────────────────────────────────────────────────────────────
 // STRIPE_INTEGRATION_POINT: when Stripe is wired, getPlan() should resolve
@@ -46,7 +49,7 @@ export const FREE_TIER_LIMITS = {
 export function getPlan() {
   try {
     const stored = localStorage.getItem(PLAN_KEY);
-    if (stored === "premium" || stored === "beta_founder" || stored === "free") {
+    if (stored === "premium" || stored === "beta_founder" || stored === "free" || stored === "trial") {
       return stored;
     }
   } catch {}
@@ -54,7 +57,7 @@ export function getPlan() {
 }
 
 export function setPlan(plan) {
-  if (plan !== "free" && plan !== "premium" && plan !== "beta_founder") {
+  if (plan !== "free" && plan !== "premium" && plan !== "beta_founder" && plan !== "trial") {
     return false;
   }
   try { localStorage.setItem(PLAN_KEY, plan); } catch {}
@@ -102,7 +105,7 @@ export function getCoachMessagesUsedToday() {
 }
 
 export function getCoachMessagesRemaining() {
-  if (isPremiumOrFounder()) return Infinity;
+  if (isUnlimited()) return Infinity;
   return Math.max(0, FREE_TIER_LIMITS.coachMessagesPerDay - getCoachMessagesUsedToday());
 }
 
@@ -111,7 +114,7 @@ export function canUseCoach() {
 }
 
 export function recordCoachUse() {
-  if (isPremiumOrFounder()) return; // don't bother counting for unlimited tiers
+  if (isUnlimited()) return; // don't bother counting for unlimited tiers
   _writeCounter(COACH_USAGE_KEY, getCoachMessagesUsedToday() + 1);
 }
 
@@ -121,7 +124,7 @@ export function getSimulationsUsedToday() {
 }
 
 export function getSimulationsRemaining() {
-  if (isPremiumOrFounder()) return Infinity;
+  if (isUnlimited()) return Infinity;
   return Math.max(0, FREE_TIER_LIMITS.simulationsPerDay - getSimulationsUsedToday());
 }
 
@@ -130,7 +133,7 @@ export function canRunSimulation() {
 }
 
 export function recordSimulationUse() {
-  if (isPremiumOrFounder()) return;
+  if (isUnlimited()) return;
   _writeCounter(SIM_USAGE_KEY, getSimulationsUsedToday() + 1);
 }
 
@@ -192,6 +195,66 @@ export function markAccountIfNew() {
 export function applyBetaCodeFounderUpgrade() {
   setPlan("beta_founder");
   try { localStorage.setItem(PRE_PAYWALL_FLAG, "1"); } catch {}
+}
+
+// ── Phase D7: Trial state helpers ────────────────────────────────────────────
+// New users start a 14-day "trial" plan with unlimited Coach + sim. After 14
+// days, plan auto-transitions to "free" with the harder daily caps.
+//
+// Existing free-tier users (those with the legacy "flourish_trial_start" key
+// already set) do NOT retroactively get a trial — they stay on "free".
+
+export function getTrialStartedAt() {
+  try {
+    const v = localStorage.getItem("flourish_trial_started_at");
+    return v ? new Date(v) : null;
+  } catch { return null; }
+}
+
+export function getTrialDaysLeft() {
+  const start = getTrialStartedAt();
+  if (!start) return null;
+  const daysUsed = Math.floor((Date.now() - start.getTime()) / (1000 * 60 * 60 * 24));
+  return Math.max(0, TRIAL_DURATION_DAYS - daysUsed);
+}
+
+export function isTrialActive() {
+  if (getPlan() !== "trial") return false;
+  const left = getTrialDaysLeft();
+  return left !== null && left > 0;
+}
+
+// Returns true if user has unlimited access (premium, beta_founder, or active trial)
+export function isUnlimited() {
+  return isPremiumOrFounder() || isTrialActive();
+}
+
+// Start a trial for new users only.
+// Skips if: user already has a plan other than "free", trial already started, OR
+// user has the legacy "flourish_trial_start" key (existing free user, not new).
+export function startTrialIfEligible() {
+  try {
+    if (getPlan() !== "free") return false;
+    if (localStorage.getItem("flourish_trial_started_at")) return false;
+    if (localStorage.getItem("flourish_trial_start")) return false; // legacy: existing user
+    const now = new Date().toISOString();
+    localStorage.setItem("flourish_trial_started_at", now);
+    setPlan("trial");
+    return true;
+  } catch { return false; }
+}
+
+// Auto-transition expired trials to free.
+export function expireTrialIfNeeded() {
+  try {
+    if (getPlan() !== "trial") return false;
+    const left = getTrialDaysLeft();
+    if (left === 0) {
+      setPlan("free");
+      return true;
+    }
+    return false;
+  } catch { return false; }
 }
 
 // -----------------------------------------------------------------------------

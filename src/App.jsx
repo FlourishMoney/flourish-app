@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns } from "./lib/financialCalculations.js";
-import { getPlan, isPremiumOrFounder, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan } from "./lib/usageLimits.js";
+import { getPlan, isPremiumOrFounder, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 
 const FLOURISH_BETA_CODES = ["BETA100","FLOURISH2026","FOUNDER"];
 
@@ -12471,19 +12471,13 @@ export default function FlourishApp(){
   const [needsReconnect,setNeedsReconnect]=useState(false);
   const [reconnectToken,setReconnectToken]=useState(null);
   const [reconnectLoading,setReconnectLoading]=useState(false);
-  // ── Trial timer ──────────────────────────────────────────────
-  const [trialStart]=useState(()=>{
-    try{
-      const s=localStorage.getItem("flourish_trial_start");
-      if(s)return new Date(s);
-      const now=new Date().toISOString();
-      localStorage.setItem("flourish_trial_start",now);
-      return new Date(now);
-    }catch{return new Date();}
-  });
-  const trialDaysUsed=Math.floor((Date.now()-trialStart.getTime())/(1000*60*60*24));
-  const trialDaysLeft=Math.max(0,14-trialDaysUsed);
-  const trialExpired=trialDaysUsed>=14&&!isPremium;
+  // ── Trial timer (Phase D7: library-driven, single source of truth) ─────────
+  // trialDaysLeft: number 0..14 (during active trial), or null if user is not on trial
+  // trialActive:   true while plan === "trial" and days remain
+  // trialExpired:  true ONLY for users whose trial ENDED (not for users who never had one)
+  const trialDaysLeft = getTrialDaysLeft();
+  const trialActive = isTrialActive();
+  const trialExpired = !trialActive && getPlan() === "free" && !!localStorage.getItem("flourish_trial_started_at");
   // ── AI Coach free message count (now backed by usageLimits.js) ─────────────
   // The new library uses a daily-resetting counter and respects plan tiers
   // (free / premium / beta_founder). On first boot after Phase 2 ships, we
@@ -12499,6 +12493,10 @@ export default function FlourishApp(){
   useEffect(()=>{
     applyGrandfatherIfEligible();
     markAccountIfNew();
+    // Phase D7: trial lifecycle — start fresh trials for brand-new users,
+    // and auto-transition expired trials to "free".
+    startTrialIfEligible();
+    expireTrialIfNeeded();
     // Sync the legacy isPremium boolean with the new plan tier so UI badges
     // (e.g. {freeMsgsLeft}/{FREE_LIMIT}) reflect grandfathered beta_founder users.
     if (isPremiumOrFounder()) setIsPremium(true);
@@ -12918,8 +12916,9 @@ export default function FlourishApp(){
       // Phase D3: AI gates — opt-out check first, then first-time disclosure
       if(!aiCoachEnabled) return <AIDisabledNotice onOpenSettings={()=>setShowSettings(true)} onClose={()=>setScreen("home")}/>;
       if(!aiDisclosureSeen) return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={()=>setScreen("home")}/>;
-      const freeCoachAllowed=!isPremium&&coachMsgCount<5&&!trialExpired;
-      const showCoach=isPremium||freeCoachAllowed;
+      // Phase D7: gate via library (handles trial unlimited + post-trial daily caps + tiers)
+      const freeCoachAllowed = canUseCoach();
+      const showCoach = isPremium || freeCoachAllowed;
       if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen} setAppData={setAppData}/>;
       if(!isPremium&&coachMsgCount>=5)return <PremiumGate feature="AI Coach" desc={`You've used your 5 free messages. Upgrade to Flourish Plus for unlimited coaching.`} onUpgrade={()=>setShowPaywall(true)}/>;
       return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;
@@ -12999,8 +12998,8 @@ input,button,select,textarea { font-family:inherit; }
 
         {/* Sidebar footer */}
         <div style={{padding:"16px 12px",borderTop:`1px solid ${C.border}`}}>
-          {/* Trial status in sidebar */}
-          {!isPremium&&(
+          {/* Trial status in sidebar — Phase D7: only render for users on trial or post-trial */}
+          {!isPremium&&(trialActive||trialExpired)&&(
             <div onClick={()=>setShowPaywall(true)} style={{background:trialExpired?"#180800":trialDaysLeft<=2?C.orange+"18":C.purple+"18",border:`1px solid ${trialExpired?C.red+"44":trialDaysLeft<=2?C.orange+"44":C.purple+"33"}`,borderRadius:12,padding:"10px 14px",marginBottom:8,cursor:"pointer",transition:"all .18s"}}>
               <div style={{color:trialExpired?C.redBright:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>
                 {trialExpired?"Trial ended 🔒":trialDaysLeft===0?"Trial ends today ⚠️":`${trialDaysLeft} day${trialDaysLeft===1?"":"s"} left`}
@@ -13084,8 +13083,8 @@ input,button,select,textarea { font-family:inherit; }
             <span style={{color:C.goldBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700}}>Offline — AI features paused. Your data is saved.</span>
           </div>
         )}
-        {/* ── TRIAL BANNER ─────────────────────────── */}
-        {!isPremium&&!trialExpired&&trialDaysLeft<=7&&(
+        {/* ── TRIAL BANNER ─── Phase D7: only render for users on an active trial ── */}
+        {!isPremium&&trialActive&&trialDaysLeft<=7&&(
           <div style={{background:trialDaysLeft<=2?"#1A0800":`linear-gradient(90deg,${C.purple}22,${C.purpleDim})`,borderBottom:`1px solid ${trialDaysLeft<=2?C.orange+"55":C.purple+"44"}`,padding:"8px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
             <span style={{fontSize:13}}>{trialDaysLeft<=2?"⚠️":"✨"}</span>
             <span style={{color:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700,flex:1}}>
