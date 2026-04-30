@@ -11524,6 +11524,12 @@ function AuthScreen({ onAuth }) {
   const [success, setSuccess] = useState("");
   const [showAuth, setShowAuth] = useState(false);
 
+  // Phase E1: waitlist email capture (replaces public signup CTAs).
+  const [waitlistSource, setWaitlistSource] = useState("unknown");
+  const [waitlistEmail, setWaitlistEmail] = useState("");
+  const [waitlistCountry, setWaitlistCountry] = useState("CA");
+  const [waitlistStatus, setWaitlistStatus] = useState(null); // null | "submitting" | "success" | "error" | "already"
+
   const BETA_CODES = FLOURISH_BETA_CODES;
   const BETA_CAP = 30;
 
@@ -11624,6 +11630,51 @@ function AuthScreen({ onAuth }) {
 
   const goSignup = () => { setMode("signup"); setError(""); setSuccess(""); setShowAuth(true); };
   const goLogin  = () => { setMode("login");  setError(""); setSuccess(""); setShowAuth(true); };
+  // Phase E1: waitlist entry — captures source for analytics
+  const goWaitlist = (source = "unknown") => {
+    setMode("waitlist");
+    setWaitlistSource(source);
+    setWaitlistStatus(null);
+    setWaitlistEmail("");
+    setError(""); setSuccess("");
+    setShowAuth(true);
+  };
+
+  const handleWaitlistSubmit = async () => {
+    if (!waitlistEmail.trim()) return;
+    setWaitlistStatus("submitting");
+
+    // Capture UTM params from URL
+    const params = new URLSearchParams(window.location.search);
+    const metadata = {};
+    ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"].forEach(k => {
+      const v = params.get(k);
+      if (v) metadata[k] = v;
+    });
+    if (document.referrer) metadata.referrer = document.referrer;
+
+    try {
+      const res = await fetch("/api/beta", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "join_waitlist",
+          email: waitlistEmail,
+          country: waitlistCountry,
+          source: waitlistSource,
+          metadata,
+        }),
+      });
+      const data = await res.json();
+      if (data.joined) {
+        setWaitlistStatus(data.alreadyJoined ? "already" : "success");
+      } else {
+        setWaitlistStatus("error");
+      }
+    } catch {
+      setWaitlistStatus("error");
+    }
+  };
 
   return (
     <div style={{ minHeight: "100dvh", background: "#050D09", fontFamily: "'Plus Jakarta Sans',sans-serif", overflowX: "hidden" }}>
@@ -11679,8 +11730,8 @@ function AuthScreen({ onAuth }) {
             </div>
 
             {/* Primary CTA */}
-            <button onClick={goSignup} style={{ width: "100%", maxWidth: 340, padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", marginBottom: 12, boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-              Know Before You Spend — Free
+            <button onClick={() => goWaitlist("hero")} style={{ width: "100%", maxWidth: 340, padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", marginBottom: 12, boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+              Get Early Access
             </button>
             <div style={{ color: "#6B7A6E", fontSize: 12, marginBottom: 52 }}>No credit card · Connects RBC, TD, Chase, Wells Fargo + thousands more</div>
 
@@ -11756,7 +11807,7 @@ function AuthScreen({ onAuth }) {
             <div style={{ width: "100%", maxWidth: 400, marginBottom: 64 }}>
               <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Simple pricing</div>
               <div style={{ background: "#0D1F12", border: "1px solid rgba(0,214,143,0.25)", borderRadius: 24, padding: "32px 28px", textAlign: "center" }}>
-                <div style={{ color: "#6B7A6E", fontSize: 13, marginBottom: 8 }}>After free trial</div>
+                <div style={{ color: "#6B7A6E", fontSize: 13, marginBottom: 8 }}>After early access begins</div>
                 <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 48, fontWeight: 900, color: "#EDE9E2", lineHeight: 1, marginBottom: 4 }}>$14.99</div>
                 <div style={{ color: "#6B7A6E", fontSize: 13, marginBottom: 28 }}>per month · Cancel anytime</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28, textAlign: "left" }}>
@@ -11767,8 +11818,8 @@ function AuthScreen({ onAuth }) {
                     </div>
                   ))}
                 </div>
-                <button onClick={goSignup} style={{ width: "100%", padding: "16px", borderRadius: 14, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 15, cursor: "pointer", boxShadow: "0 8px 32px rgba(0,214,143,0.3)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                  Start Free Trial
+                <button onClick={() => goWaitlist("pricing")} style={{ width: "100%", padding: "16px", borderRadius: 14, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 15, cursor: "pointer", boxShadow: "0 8px 32px rgba(0,214,143,0.3)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                  Get Early Access
                 </button>
                 <div style={{ color: "#6B7A6E", fontSize: 11, marginTop: 12 }}>No credit card required</div>
               </div>
@@ -11780,8 +11831,8 @@ function AuthScreen({ onAuth }) {
                 Stop guessing.<br />
                 <span style={{ color: "#00D68F", fontStyle: "italic" }}>Start knowing.</span>
               </div>
-              <button onClick={goSignup} style={{ width: "100%", padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 10 }}>
-                Know Before You Spend — Free
+              <button onClick={() => goWaitlist("bottom_cta")} style={{ width: "100%", padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 10 }}>
+                Get Early Access
               </button>
               <div style={{ color: "#6B7A6E", fontSize: 12 }}>No credit card · Takes 60 seconds</div>
             </div>
@@ -11813,11 +11864,57 @@ function AuthScreen({ onAuth }) {
               </button>
               <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><FlourishMark size={80} /></div>
               <div style={{ color: "#6B7A6E", fontSize: 13, marginTop: 4 }}>
-                {mode === "signup" ? "Create your free account" : "Welcome back"}
+                {mode === "waitlist" ? "Get early access" : mode === "signup" ? "Create your free account" : "Welcome back"}
               </div>
             </div>
 
             <div style={{ background: "#0D1F12", borderRadius: 24, padding: 28, border: "1px solid rgba(255,255,255,0.08)" }}>
+
+              {/* Phase E1: waitlist mode — email-only public signup; beta-code holders use the "I have an invite code" link to switch to signup */}
+              {mode === "waitlist" && (
+                <div>
+                  {(waitlistStatus === "success" || waitlistStatus === "already") ? (
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 42, marginBottom: 12 }}>{waitlistStatus === "already" ? "👋" : "🎉"}</div>
+                      <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 22, fontWeight: 900, color: "#EDE9E2", marginBottom: 10 }}>
+                        {waitlistStatus === "already" ? "You're already on the list" : "You're on the list"}
+                      </div>
+                      <div style={{ color: "#6B7A6E", fontSize: 13, lineHeight: 1.65, marginBottom: 24, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                        {waitlistStatus === "already"
+                          ? "We've got your email — we'll be in touch when your spot opens."
+                          : "We'll email you the moment your spot opens. No spam, no marketing — just your invite."}
+                      </div>
+                      <button onClick={() => setShowAuth(false)}
+                        style={{ background: "none", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 99, padding: "10px 22px", color: "#EDE9E2", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                        Back to home
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 20, fontWeight: 900, color: "#EDE9E2", marginBottom: 6 }}>Get early access</div>
+                      <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 20, lineHeight: 1.6 }}>Drop your email — we'll let you know the moment a spot opens.</div>
+                      <input style={{ ...inpStyle, marginBottom: 14 }} type="email" placeholder="you@example.com" value={waitlistEmail} onChange={e => setWaitlistEmail(e.target.value)} autoComplete="email" name="email" />
+                      <select value={waitlistCountry} onChange={e => setWaitlistCountry(e.target.value)}
+                        style={{ ...inpStyle, marginBottom: 20, cursor: "pointer" }}>
+                        <option value="CA">🇨🇦 Canada</option>
+                        <option value="US">🇺🇸 United States</option>
+                      </select>
+                      {waitlistStatus === "error" && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>Something went wrong — please try again.</div>}
+                      <button style={btnStyle(waitlistStatus !== "submitting" && waitlistEmail.trim().length > 0)}
+                        onClick={handleWaitlistSubmit}
+                        disabled={waitlistStatus === "submitting" || !waitlistEmail.trim()}>
+                        {waitlistStatus === "submitting" ? "..." : "Join the Waitlist"}
+                      </button>
+                      <div style={{ textAlign: "center", marginTop: 18 }}>
+                        <button onClick={() => { setMode("signup"); setError(""); setSuccess(""); }}
+                          style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
+                          I have an invite code
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {mode === "mfa_setup" && (
                 <div>

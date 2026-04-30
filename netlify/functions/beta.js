@@ -68,10 +68,70 @@ exports.handler = async (event) => {
   }
 
   let action = "count";
+  let body = {};
   try {
-    const body = JSON.parse(event.body || "{}");
+    body = JSON.parse(event.body || "{}");
     action = body.action || "count";
   } catch {}
+
+  // Phase E1: waitlist email capture (replaces public signup CTAs).
+  if (action === "join_waitlist") {
+    const { email, country, source, metadata } = body;
+
+    // Basic email validation
+    if (!email || typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return {
+        statusCode: 400, headers: CORS,
+        body: JSON.stringify({ error: "Valid email required" }),
+      };
+    }
+
+    // Use service role to insert (bypasses RLS)
+    const insertRes = await fetch(`${supabaseUrl}/rest/v1/waitlist`, {
+      method: "POST",
+      headers: {
+        "apikey": secretKey,
+        "Authorization": `Bearer ${secretKey}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+      },
+      body: JSON.stringify({
+        email: email.trim().toLowerCase(),
+        country: country || null,
+        source: source || null,
+        metadata: metadata || {},
+      }),
+    });
+
+    if (insertRes.status === 409) {
+      // Unique violation — already on waitlist
+      return {
+        statusCode: 200, headers: CORS,
+        body: JSON.stringify({ joined: true, alreadyJoined: true }),
+      };
+    }
+
+    if (!insertRes.ok) {
+      const errText = await insertRes.text();
+      // Check for Postgres unique violation in error body
+      if (errText.includes("duplicate key") || errText.includes("23505")) {
+        return {
+          statusCode: 200, headers: CORS,
+          body: JSON.stringify({ joined: true, alreadyJoined: true }),
+        };
+      }
+      console.error("[waitlist] insert failed:", errText);
+      return {
+        statusCode: 500, headers: CORS,
+        body: JSON.stringify({ error: "Failed to join waitlist" }),
+      };
+    }
+
+    return {
+      statusCode: 200, headers: CORS,
+      body: JSON.stringify({ joined: true, alreadyJoined: false }),
+    };
+  }
 
   try {
     const count = await getUserCount(supabaseUrl, secretKey);
