@@ -12,6 +12,14 @@ import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns } from "./lib/financialCalculations.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 
+// Capacitor iOS platform detection — true only when running as a native iOS app via Capacitor.
+// Returns false on web/dev. Used to gate iOS-specific behavior: iOS launches free during v1
+// (no Apple IAP yet — full StoreKit integration coming in v1.1).
+const isCapacitorIOS = () => {
+  try { return typeof window !== "undefined" && window.Capacitor?.getPlatform?.() === "ios"; }
+  catch { return false; }
+};
+
 const FLOURISH_BETA_CODES = ["BETA100","FLOURISH2026","FOUNDER"];
 
 // ── Supabase client ────────────────────────────────────────────────────────────
@@ -3827,6 +3835,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
   const [bankStage,setBankStage]=useState("select");
   const [bankProg,setBankProg]=useState(0);
   const [bankError,setBankError]=useState(null);
+  const [bankConsent,setBankConsent]=useState(false);
   const [connAccts,setConnAccts]=useState([]);
   const [plaidTxns,setPlaidTxns]=useState([]);
   const [linkToken,setLinkToken]=useState(null);
@@ -3908,6 +3917,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
   const {openPlaidLink,plaidReady,plaidSdkError}=usePlaidLinkSDK(linkToken,onPlaidSuccess);
   const isLinkReady = plaidReady && !linkTokenLoading;
   const initError   = plaidSdkError ? "Plaid SDK failed to load — try refreshing the page." : null;
+  const canConnect = isLinkReady && !initError && bankConsent;
 
   const [stmtStatus, setStmtStatus] = useState(null); // null | 'parsing' | 'done' | 'error'
   const [stmtMsg, setStmtMsg] = useState('');
@@ -3988,6 +3998,17 @@ function Onboarding({onComplete,onViewLegal,userId}){
           ))}
         </div>
 
+        {/* App-level bank-data consent (Apple 5.1.1/5.1.2) — separate from Plaid Link's own consent */}
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
+          <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            Flourish reads your balances, transactions, and account details on a <strong style={{color:C.cream}}>read-only</strong> basis — we can never move your money. We keep that data only while you use Flourish, and you can disconnect any bank any time from <strong style={{color:C.cream}}>Settings → Connected Accounts</strong>. Delete your account and all your bank data is permanently erased with it. Full details are in our <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit",textDecoration:"underline"}}>Privacy Policy</button>.
+          </div>
+          <label style={{display:"flex",gap:10,alignItems:"flex-start",marginTop:12,cursor:"pointer"}}>
+            <input type="checkbox" checked={bankConsent} onChange={e=>setBankConsent(e.target.checked)} style={{marginTop:1,width:16,height:16,accentColor:C.teal,cursor:"pointer",flexShrink:0}}/>
+            <span style={{color:C.cream,fontSize:12,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>I understand Flourish has read-only access to my bank data and I can revoke it any time from Settings.</span>
+          </label>
+        </div>
+
         {/* Error state with retry */}
         {(bankError||initError)&&(
           <div style={{background:"#ff444422",border:"1px solid #ff444466",borderRadius:12,padding:"12px 16px",marginBottom:12}}>
@@ -3998,9 +4019,9 @@ function Onboarding({onComplete,onViewLegal,userId}){
 
         {/* Main CTA button */}
         <button
-          onClick={isLinkReady?openPlaidLink:undefined}
-          disabled={!isLinkReady||!!initError}
-          style={{width:"100%",background:isLinkReady&&!initError?`linear-gradient(135deg,${C.teal},${C.tealBright})`:"rgba(255,255,255,0.06)",border:isLinkReady&&!initError?"none":`1px solid ${C.border}`,borderRadius:14,padding:"15px 18px",color:"white",fontSize:15,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:10,cursor:isLinkReady&&!initError?"pointer":"default",fontFamily:"inherit",marginBottom:10,transition:"all .3s",opacity:isLinkReady&&!initError?1:0.55}}>
+          onClick={canConnect?openPlaidLink:undefined}
+          disabled={!canConnect}
+          style={{width:"100%",background:canConnect?`linear-gradient(135deg,${C.teal},${C.tealBright})`:"rgba(255,255,255,0.06)",border:canConnect?"none":`1px solid ${C.border}`,borderRadius:14,padding:"15px 18px",color:"white",fontSize:15,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:10,cursor:canConnect?"pointer":"default",fontFamily:"inherit",marginBottom:10,transition:"all .3s",opacity:canConnect?1:0.55}}>
           {linkTokenLoading?(
             <><span style={{width:18,height:18,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"white",display:"inline-block",animation:"pulse 0.8s linear infinite"}}/><span>Connecting to Plaid…</span></>
           ):(
@@ -11701,8 +11722,8 @@ function AuthScreen({ onAuth }) {
             <div style={{ display: "inline-block", background: "rgba(0,214,143,0.1)", border: "1px solid rgba(0,214,143,0.25)", borderRadius: 99, padding: "6px 16px", fontSize: 12, fontWeight: 700, color: "#00D68F", letterSpacing: 0.5, marginBottom: 28 }}>
               🇨🇦🇺🇸 Built for Canada & the US
             </div>
-            <div style={{ display: "inline-block", background: "rgba(240,196,66,0.1)", border: "1px solid rgba(240,196,66,0.25)", borderRadius: 99, padding: "6px 16px", fontSize: 12, fontWeight: 700, color: "#F0C442", letterSpacing: 0.5, marginBottom: 28, marginLeft: 8 }}>
-              🔒 Beta — limited spots
+            <div style={{ display: "inline-block", background: "rgba(77,168,255,0.10)", border: "1px solid rgba(77,168,255,0.30)", borderRadius: 99, padding: "6px 16px", fontSize: 12, fontWeight: 700, color: "#4DA8FF", letterSpacing: 0.5, marginBottom: 28, marginLeft: 8 }}>
+              📱 iOS App Store · launching this month
             </div>
 
             <h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: "clamp(30px,9vw,52px)", fontWeight: 900, color: "#EDE9E2", lineHeight: 1.1, marginBottom: 18, letterSpacing: -0.5, maxWidth: 560 }}>
@@ -11711,14 +11732,14 @@ function AuthScreen({ onAuth }) {
             </h1>
 
             <p style={{ color: "#6B7A6E", fontSize: 16, lineHeight: 1.75, maxWidth: 380, marginBottom: 40 }}>
-              Finally know if you can afford it. One safe-to-spend number, calculated from your real accounts — updated every day.
+              Flourish gives you one simple safe-to-spend number, calculated from your accounts, bills, credit cards, and buffer — updated every day.
             </p>
 
             {/* Hero product card */}
             <div style={{ width: "100%", maxWidth: 340, background: "#0D1F12", border: "1px solid rgba(0,214,143,0.2)", borderRadius: 24, padding: "28px 24px", marginBottom: 36, boxShadow: "0 0 80px rgba(0,214,143,0.07)" }}>
               <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Safe to spend per day</div>
               <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 56, fontWeight: 900, color: "#00D68F", lineHeight: 1, marginBottom: 6 }}>$247</div>
-              <div style={{ color: "rgba(237,233,226,0.35)", fontSize: 12, marginBottom: 24 }}>After bills · After buffer · From your real balance</div>
+              <div style={{ color: "rgba(237,233,226,0.50)", fontSize: 12, marginBottom: 24, fontStyle: "italic" }}>Example shown — after bills, credit cards, and your buffer</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {[["🏦  Chequing / Checking","$1,843.22"],["💳  Credit Card","−$612.00"],["📅  Upcoming bills","−$984.00"]].map(([label,amount]) => (
                   <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "11px 14px", background: "rgba(255,255,255,0.03)", borderRadius: 12, fontSize: 13 }}>
@@ -11733,7 +11754,7 @@ function AuthScreen({ onAuth }) {
             <button onClick={() => goWaitlist("hero")} style={{ width: "100%", maxWidth: 340, padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", marginBottom: 12, boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
               Get Early Access
             </button>
-            <div style={{ color: "#6B7A6E", fontSize: 12, marginBottom: 52 }}>No credit card · Connects RBC, TD, Chase, Wells Fargo + thousands more</div>
+            <div style={{ color: "#6B7A6E", fontSize: 12, marginBottom: 52, maxWidth: 340, textAlign: "center", lineHeight: 1.6 }}>Drop your email — we'll let you know the moment Flourish hits the App Store.</div>
 
             {/* Trust row */}
             <div style={{ display: "flex", gap: 28, justifyContent: "center", flexWrap: "wrap", marginBottom: 64 }}>
@@ -11807,7 +11828,7 @@ function AuthScreen({ onAuth }) {
             <div style={{ width: "100%", maxWidth: 400, marginBottom: 64 }}>
               <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Simple pricing</div>
               <div style={{ background: "#0D1F12", border: "1px solid rgba(0,214,143,0.25)", borderRadius: 24, padding: "32px 28px", textAlign: "center" }}>
-                <div style={{ color: "#6B7A6E", fontSize: 13, marginBottom: 8 }}>After early access begins</div>
+                <div style={{ color: "#6B7A6E", fontSize: 13, marginBottom: 8 }}>When we launch on iOS</div>
                 <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 48, fontWeight: 900, color: "#EDE9E2", lineHeight: 1, marginBottom: 4 }}>$14.99</div>
                 <div style={{ color: "#6B7A6E", fontSize: 13, marginBottom: 28 }}>per month · Cancel anytime</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28, textAlign: "left" }}>
@@ -11834,7 +11855,7 @@ function AuthScreen({ onAuth }) {
               <button onClick={() => goWaitlist("bottom_cta")} style={{ width: "100%", padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 10 }}>
                 Get Early Access
               </button>
-              <div style={{ color: "#6B7A6E", fontSize: 12 }}>No credit card · Takes 60 seconds</div>
+              <div style={{ color: "#6B7A6E", fontSize: 12 }}>iOS App Store · Coming this month</div>
             </div>
 
           </div>
@@ -11881,8 +11902,8 @@ function AuthScreen({ onAuth }) {
                       </div>
                       <div style={{ color: "#6B7A6E", fontSize: 13, lineHeight: 1.65, marginBottom: 24, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
                         {waitlistStatus === "already"
-                          ? "We've got your email — we'll be in touch when your spot opens."
-                          : "We'll email you the moment your spot opens. No spam, no marketing — just your invite."}
+                          ? "We've got your email — we'll tell you the moment Flourish launches on the App Store."
+                          : "We'll email you the moment Flourish hits the App Store. No spam, no marketing — just the launch news."}
                       </div>
                       <button onClick={() => setShowAuth(false)}
                         style={{ background: "none", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 99, padding: "10px 22px", color: "#EDE9E2", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
@@ -11892,7 +11913,7 @@ function AuthScreen({ onAuth }) {
                   ) : (
                     <div>
                       <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 20, fontWeight: 900, color: "#EDE9E2", marginBottom: 6 }}>Get early access</div>
-                      <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 20, lineHeight: 1.6 }}>Drop your email — we'll let you know the moment a spot opens.</div>
+                      <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 20, lineHeight: 1.6 }}>Drop your email — we'll let you know the moment Flourish hits the App Store.</div>
                       <input style={{ ...inpStyle, marginBottom: 14 }} type="email" placeholder="you@example.com" value={waitlistEmail} onChange={e => setWaitlistEmail(e.target.value)} autoComplete="email" name="email" />
                       <select value={waitlistCountry} onChange={e => setWaitlistCountry(e.target.value)}
                         style={{ ...inpStyle, marginBottom: 20, cursor: "pointer" }}>
@@ -11903,7 +11924,7 @@ function AuthScreen({ onAuth }) {
                       <button style={btnStyle(waitlistStatus !== "submitting" && waitlistEmail.trim().length > 0)}
                         onClick={handleWaitlistSubmit}
                         disabled={waitlistStatus === "submitting" || !waitlistEmail.trim()}>
-                        {waitlistStatus === "submitting" ? "..." : "Join the Waitlist"}
+                        {waitlistStatus === "submitting" ? "..." : "Notify Me at Launch"}
                       </button>
                       <div style={{ textAlign: "center", marginTop: 18 }}>
                         <button onClick={() => { setMode("signup"); setError(""); setSuccess(""); }}
@@ -12641,7 +12662,7 @@ export default function FlourishApp(){
   const [tourStep,setTourStep]=useState(()=>{ try{return localStorage.getItem("flourish_tour_done")==="1"?null:0;}catch{return 0;} });
   const dismissTour=()=>{ try{localStorage.setItem("flourish_tour_done","1");}catch{} setTourStep(null); };
   const [household,setHousehold]=useState(()=>saved?.household||null);
-  const [isPremium,setIsPremium]=useState(()=>saved?.isPremium||false);
+  const [isPremium,setIsPremium]=useState(()=>isCapacitorIOS()||saved?.isPremium||false);
   const [showPaywall,setShowPaywall]=useState(false);
   // ── Plaid reconnect state ─────────────────────────────────────
   // Phase D6: the legacy multi-bank token state was retired. Plaid items live in
@@ -12983,13 +13004,16 @@ export default function FlourishApp(){
   if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
   if(!user)return <AuthScreen onAuth={u=>setUser(u)}/>;
 
+  // ── AI disclosure gate (Apple 5.1.2(i)) — must precede onboarding + all AI features ──
+  if(!aiDisclosureSeen)return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={()=>setUser(null)}/>;
+
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={()=>setShowPaywall(true)} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
   if(!onboarded)return <Onboarding onComplete={d=>{setAppData({...d, transactions: markTransfers(d.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, d.debts || []), isCashAdvance)});setOnboarded(true);}} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
   if(!firstVisitDone&&appData)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}/>;
-  if(showPaywall)return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setPlan("premium");setIsPremium(true);setShowPaywall(false);}} onPromoUpgrade={()=>{applyBetaCodeFounderUpgrade();setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;
+  if(showPaywall && !isCapacitorIOS())return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setPlan("premium");setIsPremium(true);setShowPaywall(false);}} onPromoUpgrade={()=>{applyBetaCodeFounderUpgrade();setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;
 
   const unread = (() => {
     try {
