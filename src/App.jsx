@@ -20,7 +20,7 @@ const isCapacitorIOS = () => {
   catch { return false; }
 };
 
-const FLOURISH_BETA_CODES = ["BETA100","FLOURISH2026","FOUNDER"];
+const FLOURISH_BETA_CODES = ["BETA100","FLOURISH2026","FOUNDER","APPLE_REVIEW_2026"];
 
 // ── Supabase client ────────────────────────────────────────────────────────────
 const supabase = createClient(
@@ -2796,13 +2796,14 @@ function Btn({label,onClick,color=C.green,outline,small,disabled,full=true,icon}
     {icon&&<span>{icon}</span>}{label}
   </button>;
 }
-function Inp({label,value,onChange,type="text",prefix,placeholder,note,sm}){
+function Inp({label,value,onChange,type="text",prefix,placeholder,note,sm,inputMode}){
   const [focused,setFocused]=useState(false);
+  const _inputMode = inputMode || (type === "number" ? "decimal" : undefined);
   return <div style={{marginBottom:sm?10:16}}>
     {label&&<div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,marginBottom:6,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>}
     <div style={{display:"flex",alignItems:"center",background:C.isDark?`rgba(255,255,255,${focused?0.07:0.04})`:focused?C.surface:C.cardAlt,border:`1.5px solid ${focused?C.green+"77":C.border}`,borderRadius:16,overflow:"hidden",transition:"all .2s cubic-bezier(.16,1,.3,1)",boxShadow:focused?`0 0 0 3px ${C.green}18`:""}}>
       {prefix&&<div style={{padding:"0 14px",color:focused?C.mutedHi:C.muted,fontSize:14,borderRight:`1px solid ${C.border}`,transition:"color .2s"}}>{prefix}</div>}
-      <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
+      <input type={type} inputMode={_inputMode} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
         onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
         style={{flex:1,background:"none",border:"none",outline:"none",color:C.cream,fontSize:sm?13:15,padding:sm?"10px 13px":"13px 15px",fontFamily:"inherit"}}/>
     </div>
@@ -4168,7 +4169,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
                     <input
                       value={inc.amount}
                       onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,amount:e.target.value,typicalAmount:e.target.value}:x))}
-                      type="number" placeholder="e.g. 2100"
+                      type="number" inputMode="decimal" placeholder="e.g. 2100"
                       style={{flex:1,background:"none",border:"none",padding:"11px 10px 11px 0",color:inc.autoDetected?C.greenBright:C.cream,fontSize:15,fontFamily:"inherit",outline:"none",fontWeight:inc.autoDetected?700:400}}/>
                     {inc.autoDetected&&<span style={{color:C.green,fontSize:10,fontWeight:700,paddingRight:10,flexShrink:0}}>✓</span>}
                   </div>
@@ -4240,7 +4241,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
               <Inp label="Bill Name" value={b.name} onChange={v=>upBill(i,"name",v)} placeholder="Netflix, Hydro, Rent…" sm/>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <Inp label="Amount $" value={b.amount} onChange={v=>upBill(i,"amount",v)} type="number" sm/>
-                <Inp label="Day Due" value={b.date} onChange={v=>upBill(i,"date",v)} type="number" placeholder="1–28" sm/>
+                <Inp label="Day Due" value={b.date} onChange={v=>upBill(i,"date",v)} type="number" inputMode="numeric" placeholder="1–28" sm/>
               </div>
             </div>
             {bills.length>1&&<button onClick={()=>rmBill(i)} style={{background:C.redDim,border:"none",color:C.red,borderRadius:8,padding:"6px 10px",cursor:"pointer",alignSelf:"flex-start",marginTop:18}}>✕</button>}
@@ -4324,7 +4325,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
 
   return (
     <div style={{background:C.bg,minHeight:"100vh",display:"flex",justifyContent:"center",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"background .4s"}}>
-      <div style={{width:"100%",maxWidth:430,padding:"28px 20px 60px"}}>
+      <div style={{width:"100%",maxWidth:430,padding:"max(28px, env(safe-area-inset-top)) 20px 60px"}}>
         {step>0&&step<7&&(
           <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",marginBottom:24}}>
             <button onClick={()=>setStep(s=>s-1)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:14}}>← Back</button>
@@ -5959,7 +5960,7 @@ function BillManager({data, setAppData, onClose}){
                   <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Monthly Amount</div>
                   <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.green}`,borderRadius:10,overflow:"hidden"}}>
                     <span style={{color:C.muted,padding:"0 8px",fontSize:13}}>$</span>
-                    <input value={amount} onChange={e=>setAmount(e.target.value)} type="number" placeholder="0.00" autoFocus
+                    <input value={amount} onChange={e=>setAmount(e.target.value)} type="number" inputMode="decimal" placeholder="0.00" autoFocus
                       style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:C.cream,fontSize:14,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
                   </div>
                 </div>
@@ -6145,7 +6146,7 @@ function PlanAhead({data, setAppData, setScreen}){
               style={{width:44,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px",color:C.cream,fontSize:18,textAlign:"center",fontFamily:"inherit"}}/>
             <input value={newProvider.name} onChange={e=>setNewProvider(v=>({...v,name:e.target.value}))} placeholder="e.g. Gym, Netflix, Internet"
               style={{flex:2,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
-            <input value={newProvider.amount} onChange={e=>setNewProvider(v=>({...v,amount:e.target.value}))} placeholder="$/mo" type="number"
+            <input value={newProvider.amount} onChange={e=>setNewProvider(v=>({...v,amount:e.target.value}))} placeholder="$/mo" type="number" inputMode="decimal"
               style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
           </div>
           <div style={{display:"flex",gap:8}}>
@@ -6406,7 +6407,7 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
                 <span style={{color:C.muted,fontSize:12,flexShrink:0}}>Monthly budget:</span>
                 <div style={{display:"flex",alignItems:"center",flex:1,background:C.card,border:`1px solid ${color}`,borderRadius:8,overflow:"hidden"}}>
                   <span style={{color:C.muted,padding:"0 6px",fontSize:12}}>$</span>
-                  <input value={budgetVal} onChange={e=>setBudgetVal(e.target.value)} type="number" placeholder="0"
+                  <input value={budgetVal} onChange={e=>setBudgetVal(e.target.value)} type="number" inputMode="decimal" placeholder="0"
                     autoFocus onKeyDown={e=>e.key==="Enter"&&saveBudget()}
                     style={{flex:1,background:"none",border:"none",padding:"6px 4px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
                 </div>
@@ -6787,7 +6788,7 @@ function BudgetPlanCard({data, setAppData}) {
               <div style={{display:"flex",alignItems:"center",background:C.card,
                 border:`1px solid ${cc}55`,borderRadius:8,overflow:"hidden",width:90,flexShrink:0}}>
                 <span style={{color:C.muted,padding:"0 4px",fontSize:11}}>$</span>
-                <input type="number" value={val}
+                <input type="number" inputMode="decimal" value={val}
                   onChange={e=>setEditVals(prev=>({...prev,[cat]:e.target.value}))}
                   style={{width:50,background:"none",border:"none",padding:"6px 2px",color:C.cream,
                     fontSize:12,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
@@ -7037,7 +7038,7 @@ function SpendScreen({data, setAppData, setScreen}){
                 <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Monthly Amount</div>
                 <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.green}`,borderRadius:10,overflow:"hidden"}}>
                   <span style={{color:C.muted,padding:"0 10px",fontSize:14}}>$</span>
-                  <input value={billForm.amount} onChange={e=>setBillForm(v=>({...v,amount:e.target.value}))} type="number"
+                  <input value={billForm.amount} onChange={e=>setBillForm(v=>({...v,amount:e.target.value}))} type="number" inputMode="decimal"
                     style={{flex:1,background:"none",border:"none",padding:"10px 10px 10px 0",color:C.cream,fontSize:14,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
                 </div>
               </div>
@@ -8612,7 +8613,7 @@ function Family({data,household,setHousehold,setScreen}){
                 <span style={{color:C.cream,fontSize:13,fontWeight:600,flex:1}}>{b.name}</span>
                 <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.teal}44`,borderRadius:8,overflow:"hidden"}}>
                   <span style={{color:C.muted,padding:"0 5px 0 8px",fontSize:11}}>$</span>
-                  <input type="number" defaultValue={b.amount||""} placeholder={b.amount||"0"}
+                  <input type="number" inputMode="decimal" defaultValue={b.amount||""} placeholder={b.amount||"0"}
                     onBlur={e=>{
                       const val=parseFloat(e.target.value);
                       if(!isNaN(val)&&val>0&&setAppData){
@@ -9000,7 +9001,7 @@ function Family({data,household,setHousehold,setScreen}){
                     placeholder="Goal name (e.g. Nintendo game)"
                     style={{flex:2,background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:12,fontFamily:"inherit"}}/>
                   <input value={goal.amount||""} onChange={e=>updateKid(activeKid.id,{goal:{...goal,amount:e.target.value}})}
-                    placeholder="$" type="number"
+                    placeholder="$" type="number" inputMode="decimal"
                     style={{width:60,background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:12,fontFamily:"inherit"}}/>
                 </div>
               )}
@@ -9077,7 +9078,7 @@ function Family({data,household,setHousehold,setScreen}){
                   onKeyDown={e=>e.key==="Enter"&&addChoreToKid(activeKid.id)}
                   placeholder="Add a chore…"
                   style={{flex:3,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
-                <input value={newChoreReward} onChange={e=>setNewChoreReward(e.target.value)} placeholder="$" type="number"
+                <input value={newChoreReward} onChange={e=>setNewChoreReward(e.target.value)} placeholder="$" type="number" inputMode="decimal"
                   style={{width:56,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 8px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
                 <button onClick={()=>addChoreToKid(activeKid.id)}
                   style={{background:C.green,border:"none",borderRadius:8,padding:"9px 14px",color:"#fff",fontWeight:800,cursor:"pointer",fontSize:14,minHeight:40}}>+</button>
@@ -9570,7 +9571,7 @@ function InlineDebtEditor({data, setAppData, color, navToScreen}){
                 <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",marginBottom:3}}>{lbl}</div>
                 <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
                   <span style={{color:C.muted,fontSize:11,padding:"0 4px"}}>{pre}</span>
-                  <input value={d[field]||""} onChange={e=>updateDebt(i,field,e.target.value)} type="number"
+                  <input value={d[field]||""} onChange={e=>updateDebt(i,field,e.target.value)} type="number" inputMode="decimal"
                     style={{flex:1,background:"none",border:"none",padding:"6px 4px 6px 0",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none",width:0,minWidth:0}}/>
                 </div>
               </div>
@@ -9591,7 +9592,7 @@ function InlineDebtEditor({data, setAppData, color, navToScreen}){
                 <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",marginBottom:4}}>{lbl}</div>
                 <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
                   <span style={{color:C.muted,fontSize:11,padding:"0 5px"}}>{pre}</span>
-                  <input value={form[field]} onChange={e=>setForm(v=>({...v,[field]:e.target.value}))} type="number" placeholder="0"
+                  <input value={form[field]} onChange={e=>setForm(v=>({...v,[field]:e.target.value}))} type="number" inputMode="decimal" placeholder="0"
                     style={{flex:1,background:"none",border:"none",padding:"7px 4px 7px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,minWidth:0}}/>
                 </div>
               </div>
@@ -9655,7 +9656,7 @@ function InlineGoalEditor({data, setAppData, color}){
                   <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",marginBottom:3}}>{lbl}</div>
                   <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
                     <span style={{color:C.muted,fontSize:11,padding:"0 5px"}}>$</span>
-                    <input value={g[field]||""} onChange={e=>setAppData(prev=>({...prev,goals:(prev.goals||[]).map((x,j)=>j===i?{...x,[field]:e.target.value}:x)}))} type="number"
+                    <input value={g[field]||""} onChange={e=>setAppData(prev=>({...prev,goals:(prev.goals||[]).map((x,j)=>j===i?{...x,[field]:e.target.value}:x)}))} type="number" inputMode="decimal"
                       style={{flex:1,background:"none",border:"none",padding:"6px 4px 6px 0",color:field==="saved"?C.greenBright:C.cream,fontSize:12,fontFamily:"inherit",outline:"none",fontWeight:field==="saved"?700:400,width:0,minWidth:0}}/>
                   </div>
                 </div>
@@ -9681,7 +9682,7 @@ function InlineGoalEditor({data, setAppData, color}){
                 <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",marginBottom:4}}>{lbl}</div>
                 <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
                   <span style={{color:C.muted,fontSize:11,padding:"0 5px"}}>$</span>
-                  <input value={form[field]} onChange={e=>setForm(v=>({...v,[field]:e.target.value}))} type="number" placeholder="0"
+                  <input value={form[field]} onChange={e=>setForm(v=>({...v,[field]:e.target.value}))} type="number" inputMode="decimal" placeholder="0"
                     style={{flex:1,background:"none",border:"none",padding:"7px 4px 7px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,minWidth:0}}/>
                 </div>
               </div>
@@ -9849,7 +9850,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
               </div>
               <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",width:78,flexShrink:0}}>
                 <span style={{color:C.muted,fontSize:11,padding:"0 4px",flexShrink:0}}>$</span>
-                <input value={b.amount} onChange={e=>updateBillAmt(i,e.target.value)} type="number"
+                <input value={b.amount} onChange={e=>updateBillAmt(i,e.target.value)} type="number" inputMode="decimal"
                   style={{flex:1,background:"none",border:"none",padding:"5px 4px 5px 0",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none",width:0,fontWeight:600}}/>
               </div>
               <button onClick={()=>removeBillS(i)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:13,padding:"4px",flexShrink:0,minWidth:24,minHeight:24}}>✕</button>
@@ -11086,7 +11087,7 @@ function FirstVisitScreen({data, onDismiss}) {
 // Phase D3: AI disclosure screen (Apple 5.1.2(i) compliance — first-time gate before AI features)
 function AIDisclosureScreen({onAccept, onDecline}){
   return (
-    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"max(24px, env(safe-area-inset-top)) 24px 24px"}}>
       <div style={{maxWidth:480,width:"100%"}}>
         <div style={{textAlign:"center",marginBottom:24}}>
           <div style={{fontSize:48,marginBottom:8}}>🤖</div>
@@ -11219,7 +11220,7 @@ function KidsGoal({goal, jars, code, theme, primary, playSound}){
             style={{width:"100%",background:theme.cardAlt,border:`1px solid ${theme.choreBorder}`,borderRadius:10,padding:"10px 12px",color:theme.text,fontSize:13,fontFamily:"inherit",boxSizing:"border-box",marginBottom:8,outline:"none"}}/>
           <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
             <span style={{color:primary,fontSize:15,fontWeight:700}}>$</span>
-            <input value={goalAmt2} onChange={e=>setGoalAmt2(e.target.value)} placeholder="Amount" type="number"
+            <input value={goalAmt2} onChange={e=>setGoalAmt2(e.target.value)} placeholder="Amount" type="number" inputMode="decimal"
               style={{flex:1,background:theme.cardAlt,border:`1px solid ${theme.choreBorder}`,borderRadius:10,padding:"10px 12px",color:theme.text,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
           </div>
           <button onClick={saveGoal} disabled={!goalName||!goalAmt2}
@@ -11698,7 +11699,7 @@ function AuthScreen({ onAuth }) {
   };
 
   return (
-    <div style={{ minHeight: "100dvh", background: "#050D09", fontFamily: "'Plus Jakarta Sans',sans-serif", overflowX: "hidden" }}>
+    <div style={{ minHeight: "100dvh", background: "#050D09", fontFamily: "'Plus Jakarta Sans',sans-serif", overflowX: "hidden", paddingTop: "env(safe-area-inset-top)" }}>
 
       {!showAuth ? (
 
@@ -12171,7 +12172,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
                   </div>
                   <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.teal}44`,borderRadius:8,overflow:"hidden",flexShrink:0}}>
                     <span style={{color:C.muted,padding:"0 4px 0 8px",fontSize:11}}>$</span>
-                    <input type="number" defaultValue={parseFloat(b.amount||0).toFixed(0)}
+                    <input type="number" inputMode="decimal" defaultValue={parseFloat(b.amount||0).toFixed(0)}
                       onBlur={e=>{
                         const val=parseFloat(e.target.value);
                         if(!isNaN(val)&&val>=0&&setAppData){
@@ -12232,7 +12233,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
                     </div>
                     <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${color}55`,borderRadius:8,overflow:"hidden",flexShrink:0}}>
                       <span style={{color:C.muted,padding:"0 4px 0 8px",fontSize:11}}>$</span>
-                      <input type="number" value={val}
+                      <input type="number" inputMode="decimal" value={val}
                         onChange={e=>setEditVals(prev=>({...prev,[cat]:e.target.value}))}
                         style={{width:54,background:"none",border:"none",padding:"7px 2px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
                       <span style={{color:C.muted,padding:"0 4px",fontSize:9}}>/mo</span>
@@ -12455,7 +12456,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
                             <span style={{color:C.muted,fontSize:12,flex:1}}>{bill.name}</span>
                             <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.teal}44`,borderRadius:8,overflow:"hidden"}}>
                               <span style={{color:C.muted,padding:"0 6px",fontSize:11}}>$</span>
-                              <input type="number" defaultValue={bill.actualAmt||bill.expectedAmt||""}
+                              <input type="number" inputMode="decimal" defaultValue={bill.actualAmt||bill.expectedAmt||""}
                                 placeholder={String(bill.expectedAmt||"")}
                                 onBlur={e=>{
                                   const val = parseFloat(e.target.value);
@@ -13309,7 +13310,7 @@ input,button,select,textarea { font-family:inherit; }
             </button>
           </div>
         )}
-        <div style={{padding:"14px 20px 12px",background:C.isDark?"rgba(5,8,16,0.90)":"rgba(244,241,235,0.92)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",position:"sticky",top:0,zIndex:30,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 1px 0 rgba(255,255,255,0.025)"}}>
+        <div style={{padding:"max(14px, env(safe-area-inset-top)) 20px 12px",background:C.isDark?"rgba(5,8,16,0.90)":"rgba(244,241,235,0.92)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",position:"sticky",top:0,zIndex:30,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 1px 0 rgba(255,255,255,0.025)"}}>
           <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{display:"flex",alignItems:"center",gap:9,background:"none",border:"none",cursor:"pointer",padding:0}}>
             <FlourishMark size={24} style={{borderRadius:7}}/>
             <span style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:19,color:C.cream,letterSpacing:-0.5,background:`linear-gradient(130deg,${C.cream} 40%,rgba(237,233,226,0.7) 100%)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>flourish</span>
@@ -13326,7 +13327,7 @@ input,button,select,textarea { font-family:inherit; }
         {!showNotifs&&!showSettings&&(
           <>
           {/* Floating pill nav */}
-          <div style={{position:"fixed",bottom:16,left:"50%",transform:"translateX(-50%)",zIndex:50,width:"calc(100% - 40px)",maxWidth:390}}>
+          <div style={{position:"fixed",bottom:"max(16px, env(safe-area-inset-bottom))",left:"50%",transform:"translateX(-50%)",zIndex:50,width:"calc(100% - 40px)",maxWidth:390}}>
             <div style={{background:C.isDark?"rgba(10,16,24,0.94)":"rgba(253,252,250,0.95)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",borderRadius:30,border:`1px solid ${C.border}`,boxShadow:"0 12px 48px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.02), inset 0 1px 0 rgba(255,255,255,0.06)",padding:"8px 8px",display:"flex",justifyContent:"space-around"}}>
             {ALL_NAV.map(n=>{
               const active=(screen===n.id||(n.id==="goals"&&screen==="credit"))&&!showNotifs&&!showSettings;
