@@ -946,11 +946,27 @@ function usePlaidLinkSDK(linkToken, onSuccess) {
 
   useEffect(() => {
     if (window.Plaid) { setSdkReady(true); return; }
-    const script = document.createElement("script");
-    script.src = "https://cdn.plaid.com/link/v2/stable/link-initialize.js";
-    script.onload  = () => setSdkReady(true);
-    script.onerror = () => setSdkError(true);
-    document.head.appendChild(script);
+    const SRC = "https://cdn.plaid.com/link/v2/stable/link-initialize.js";
+    // Dedupe: another usePlaidLinkSDK instance may have already injected the script.
+    let script = document.querySelector(`script[src="${SRC}"]`);
+    const onLoad  = () => setSdkReady(true);
+    const onError = () => setSdkError(true);
+    if (script) {
+      // Script already injected by sibling hook. Attach listeners; if it's already loaded, fire immediately.
+      script.addEventListener("load", onLoad);
+      script.addEventListener("error", onError);
+      if (window.Plaid) setSdkReady(true);
+    } else {
+      script = document.createElement("script");
+      script.src = SRC;
+      script.addEventListener("load", onLoad);
+      script.addEventListener("error", onError);
+      document.head.appendChild(script);
+    }
+    return () => {
+      script.removeEventListener("load", onLoad);
+      script.removeEventListener("error", onError);
+    };
   }, []);
 
   const openPlaidLink = useCallback(() => {
