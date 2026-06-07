@@ -9897,6 +9897,40 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     if(navigator.share){navigator.share({title:"Flourish Money",text,url}).catch(()=>{});}
     else{navigator.clipboard?.writeText(url).then(()=>alert("Link copied! Share it with a friend 🌱")).catch(()=>window.open(url,"_blank"));}
   };
+
+  // Data portability (PIPEDA / Quebec Law 25) + user-owned backup: download
+  // everything the user has entered as a timestamped JSON file. Client-side blob
+  // download — works on web; Capacitor iOS (WKWebView) will need a Share/Filesystem
+  // follow-up since a blob <a download> often won't trigger a save there.
+  const exportMyData = () => {
+    try {
+      const _ls = (k, fb) => { try { return JSON.parse(localStorage.getItem(k) || fb); } catch { return JSON.parse(fb); } };
+      const payload = {
+        _meta: { app: "Flourish Money", schema: 1, exportedAt: new Date().toISOString(),
+                 note: "Your Flourish data, exported for your records / portability." },
+        profile: data.profile || null,
+        incomes: data.incomes || [],
+        bills: data.bills || [],
+        debts: data.debts || [],
+        goals: data.goals || [],
+        budgets: data.budgets || {},
+        accounts: data.accounts || [],
+        transactions: data.transactions || [],
+        household: data.household || null,
+        customCategories: _ls("flourish_custom_cats", "[]"),
+        categoryOverrides: _ls("flourish_cat_overrides", "{}"),
+        coachHistory: _ls("flourish_coach_history", "null"),
+      };
+      const d = new Date();
+      const stamp = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `flourish-export-${stamp}.json`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch { alert("Could not export your data — please try again."); }
+  };
   return <div style={{color:C.cream}}>
     <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:20}}>
       <button onClick={onClose} style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.05)",border:`1px solid ${C.border}`,color:C.mutedHi,borderRadius:12,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .2s",letterSpacing:0.2}}>← Back</button>
@@ -10044,6 +10078,12 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         </button>
       </div>
     )}
+    {/* ── Export your data ─────────────────────────────────────── */}
+    <div style={{marginTop:10,padding:"16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
+      <div style={{color:C.cream,fontWeight:700,marginBottom:4}}>Your Data</div>
+      <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>Download everything you've entered — profile, goals, budgets, debts, accounts, and history — as a JSON file. Yours to keep, back up, or take elsewhere.</div>
+      <Btn label="⬇ Export my data (JSON)" onClick={exportMyData} color={C.green} small/>
+    </div>
     {/* ── Delete all data ──────────────────────────────────────── */}
     <div style={{marginTop:10,padding:"16px",background:C.redDim,borderRadius:16,border:`1px solid ${C.red}33`}}>
       <div style={{color:C.red,fontWeight:700,marginBottom:4}}>Delete All Data</div>
