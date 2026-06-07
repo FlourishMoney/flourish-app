@@ -9875,7 +9875,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
   return null;
 }
 
-function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled}){
+function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled}){
   const [notifToggles,setNotifToggles]=useState({overdraft:true,bills:true,coach:true,meeting:false,patterns:true});
   const [activeSection,setActiveSection]=useState(null);
 
@@ -10078,6 +10078,12 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         </button>
       </div>
     )}
+    {/* ── Sign out ─────────────────────────────────────────────── */}
+    <div style={{marginTop:10,padding:"16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
+      <div style={{color:C.cream,fontWeight:700,marginBottom:4}}>Sign Out</div>
+      <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>End your session on this device. Your data stays saved for when you sign back in.</div>
+      <Btn label="Sign Out" onClick={onSignOut} color={C.mutedHi} outline small/>
+    </div>
     {/* ── Export your data ─────────────────────────────────────── */}
     <div style={{marginTop:10,padding:"16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
       <div style={{color:C.cream,fontWeight:700,marginBottom:4}}>Your Data</div>
@@ -10086,9 +10092,9 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     </div>
     {/* ── Delete all data ──────────────────────────────────────── */}
     <div style={{marginTop:10,padding:"16px",background:C.redDim,borderRadius:16,border:`1px solid ${C.red}33`}}>
-      <div style={{color:C.red,fontWeight:700,marginBottom:4}}>Delete All Data</div>
-      <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>Permanently removes all data from Flourish and revokes any bank connections. This cannot be undone.</div>
-      <Btn label="Delete My Data" onClick={onDeleteData||onReset} color={C.red} small/>
+      <div style={{color:C.red,fontWeight:700,marginBottom:4}}>Delete Account</div>
+      <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>Permanently deletes your Flourish account and all associated data from our servers, and revokes any bank connections. This cannot be undone.</div>
+      <Btn label="Delete Account" onClick={onDeleteData||onReset} color={C.red} small/>
     </div>
     {onReset&&(
       <button onClick={()=>{if(window.confirm("Reset app and go back to setup?"))onReset();}} style={{width:"100%",marginTop:8,background:"none",border:`1px solid ${C.border}`,borderRadius:14,padding:"11px",fontFamily:"inherit",fontWeight:600,color:C.muted,cursor:"pointer",fontSize:12}}>
@@ -13115,34 +13121,66 @@ export default function FlourishApp(){
   };
 
   const deleteAllData = async ()=>{
-    if(!window.confirm("Delete your account and all data? This cannot be undone.")) return;
-    try {
-      const jwt = await getJwt();
-      if (jwt) {
-        // Phase D2: backend handles full wipe — revoke all Plaid items + delete plaid_items rows + delete Supabase auth user
-        const resp = await callPlaid("delete_account", {}, { jwt });
-        if (resp?.partial) {
-          console.warn("[deleteAllData] partial failures:", resp.errors);
-        }
-      }
-      // Sign out (clears Supabase session)
-      try { await supabase.auth.signOut(); } catch {}
-    } catch (err) {
-      console.error("[deleteAllData] backend call failed", err.message);
+    if(!window.confirm("Delete your account? This permanently erases your account and all associated data from our servers. This cannot be undone.")) return;
+
+    // Tier 2.7: FAIL CLOSED. Only sign out + wipe local data once the backend confirms
+    // the account was actually deleted. Any failure leaves the session + local data intact
+    // and surfaces the error to the user (Apple 5.1.1(v) — delete must actually delete).
+    const jwt = await getJwt();
+    if (!jwt) {
+      alert("You need to be signed in to delete your account. Please sign in and try again.");
+      return;
     }
 
-    // Sweep all flourish_* localStorage keys
+    // Phase D2: backend revokes all Plaid items + deletes plaid_items rows + deletes the Supabase auth user.
+    let resp;
     try {
-      const keys = Object.keys(localStorage).filter(k => k.startsWith("flourish_"));
-      keys.forEach(k => localStorage.removeItem(k));
-    } catch {}
+      resp = await callPlaid("delete_account", {}, { jwt });
+    } catch (err) {
+      console.error("[deleteAllData] backend wipe failed:", err?.message);
+      alert("We couldn't delete your account right now: " + (err?.message || "network error") + ".\n\nYour account and data are unchanged. Please try again, or contact privacy@flourishmoney.app.");
+      return; // FAIL CLOSED — keep session + local data
+    }
 
+    // 2a: fail closed on any step that means the account/data was NOT removed. plaid_remove
+    // is documented best-effort (a transient Plaid hiccup must not trap a user in an account
+    // they can't delete), so it is non-blocking — logged, not fatal.
+    const errs = Array.isArray(resp?.errors) ? resp.errors : [];
+    const criticalErrors = errs.filter(e => e && e.step !== "plaid_remove");
+    if (criticalErrors.length) {
+      console.error("[deleteAllData] account NOT fully deleted:", criticalErrors);
+      alert("Your account could not be fully deleted, so nothing was changed. Please try again, or contact privacy@flourishmoney.app.");
+      return; // FAIL CLOSED
+    }
+    if (errs.length) {
+      // account IS deleted; only best-effort Plaid bank revocation was incomplete
+      console.warn("[deleteAllData] account deleted; bank revocation incomplete:", errs);
+    }
+
+    // Confirmed deleted server-side — now sign out + sweep ALL flourish_* keys + reload.
+    try { await supabase.auth.signOut(); } catch {}
+    try {
+      Object.keys(localStorage).filter(k => k.startsWith("flourish_")).forEach(k => localStorage.removeItem(k));
+    } catch {}
+    window.location.reload();
+  };
+
+  // Tier 2.8: explicit Sign Out (Apple requires logout in finance apps; protects shared/
+  // family devices). Mirrors deletion's local sweep BUT keeps the appData blob (STORAGE_KEY)
+  // so re-login restores the user's data — Option A. Fast-follow: stamp appData with user_id
+  // + clear-on-mismatch at login to close shared-device exposure without data loss.
+  const signOut = async ()=>{
+    if(!window.confirm("Sign out on this device? Your data stays saved for when you sign back in.")) return;
+    try { await supabase.auth.signOut(); } catch {}
+    try {
+      Object.keys(localStorage).filter(k => k.startsWith("flourish_") && k !== STORAGE_KEY).forEach(k => localStorage.removeItem(k));
+    } catch {}
     window.location.reload();
   };
 
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <Settings data={appData} setAppData={setAppData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled}/>;
+    if(showSettings)return <Settings data={appData} setAppData={setAppData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled}/>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
