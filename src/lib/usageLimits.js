@@ -137,39 +137,28 @@ export function recordSimulationUse() {
   _writeCounter(SIM_USAGE_KEY, getSimulationsUsedToday() + 1);
 }
 
-// ── Beta founder grandfathering ──────────────────────────────────────────────
-// Idempotent: safe to call on every app load. If the user is already on a
-// non-free plan, nothing changes. If they're on "free" but had an account
-// before the cutoff, they get upgraded to "beta_founder" once.
+// ── Beta founder grandfathering — DISABLED (Tier 1.5, 2026-06-06) ─────────────
+// This previously auto-upgraded any "free" user to PERMANENT "beta_founder" when
+// localStorage held flourish_account_existed_pre_paywall==="1", flourish_coach_msgs,
+// or flourish_coach_history. Because the AI Coach writes flourish_coach_history on
+// first use, effectively EVERY user who opened the Coach became unlimited once their
+// trial expired — a 100% paywall bypass.
 //
-// "Had an account before" is detected via:
-//   1. localStorage flag "flourish_account_existed_pre_paywall" set to "1"
-//   2. OR: a pre-existing localStorage key from before this update
-//      (we check for either "flourish_coach_msgs" or "flourish_coach_history"
-//      — anyone who used the Coach before today has at least one of these set)
-//
-// STRIPE_INTEGRATION_POINT: once Stripe + Supabase plan rows are live, this
-// grandfather check should run server-side at signup based on account creation
-// date, not client-side via localStorage.
+// applyGrandfatherIfEligible() is now a NO-OP. Genuine grandfathered testers will be
+// re-flagged authoritatively by the planned server-side profiles/plan table
+// (account-creation-date check) — the only trustworthy signal, since localStorage is
+// client-controlled. This stops all new/repeat grandfathering; it does NOT strip a
+// "beta_founder" value already in a user's localStorage (the server table reconciles
+// those). The constants below remain — markAccountIfNew / applyBetaCodeFounderUpgrade
+// still use them.
 
 const PRE_PAYWALL_FLAG  = "flourish_account_existed_pre_paywall";
 const LEGACY_COACH_KEY     = "flourish_coach_msgs";
 const LEGACY_COACH_HISTORY = "flourish_coach_history";
 
 export function applyGrandfatherIfEligible() {
-  try {
-    if (getPlan() !== "free") return false; // already on a non-free plan
-
-    const hasPreFlag       = localStorage.getItem(PRE_PAYWALL_FLAG) === "1";
-    const hasLegacyCoach   = localStorage.getItem(LEGACY_COACH_KEY) !== null;
-    const hasLegacyHistory = localStorage.getItem(LEGACY_COACH_HISTORY) !== null;
-
-    if (hasPreFlag || hasLegacyCoach || hasLegacyHistory) {
-      setPlan("beta_founder");
-      localStorage.setItem(PRE_PAYWALL_FLAG, "1"); // ensure flag persists
-      return true;
-    }
-  } catch {}
+  // Intentionally a no-op — see the block above. Real founders are re-flagged
+  // server-side; never auto-promote from client-controlled localStorage.
   return false;
 }
 
