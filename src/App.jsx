@@ -1969,6 +1969,10 @@ Rules: do not invent or quote any number not in the calculated results above. Do
         {/* Result */}
         {result && !loading && (
           <div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeUp 0.3s ease both"}}>
+            {/* Tier 2.9: persistent AI disclosure (Apple 5.1.2(i)) — top of result, before AI prose */}
+            <div style={{color:C.muted,fontSize:10,fontStyle:"italic",lineHeight:1.5,textAlign:"center",padding:"0 4px"}}>
+              Educational guidance only. Not financial, tax, or investment advice. Verify with a professional or official sources (CRA/IRS) before making decisions. AI can make mistakes.
+            </div>
             {/* Verdict */}
             <div style={{background:verdictBg,border:`2px solid ${verdictColor}33`,borderRadius:20,padding:"18px 20px",textAlign:"center"}}>
               <div style={{fontSize:36,marginBottom:6}}>{_verdictMeta(result.verdict).emoji}</div>
@@ -10456,6 +10460,13 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
             <div style={{color:freeMsgsLeft>0?C.purpleBright:C.redBright,fontSize:12,fontWeight:800}}>{freeMsgsLeft}/{FREE_LIMIT}</div>
             <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>free left</div>
           </div>}
+        </div>
+      </div>
+
+      {/* Tier 2.9: persistent AI disclosure (Apple 5.1.2(i)) — inline, non-dismissible */}
+      <div style={{padding:"8px 20px",borderBottom:`1px solid ${C.border}`,background:C.cardAlt,flexShrink:0}}>
+        <div style={{color:C.muted,fontSize:10,fontStyle:"italic",lineHeight:1.5,textAlign:"center"}}>
+          Educational guidance only. Not financial, tax, or investment advice. Verify with a professional or official sources (CRA/IRS) before making decisions. AI can make mistakes.
         </div>
       </div>
 
