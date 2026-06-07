@@ -3883,7 +3883,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
         name:`${ex.institution_name} ••${a.mask||"????"}`,
         type:a.type,
         subtype:a.subtype||null,
-        balance:(a.type==="credit"||a.type==="loan")?-(a.balance.current||0):(a.balance.current??a.balance.available??0),
+        balance:(a.type==="credit"||a.type==="loan")?-(a.balance?.current||0):(a.balance?.current??a.balance?.available??0),
         institution:ex.institution_name,
       }));
 
@@ -4521,7 +4521,7 @@ async function backgroundRefresh(isPremium, setAppData) {
         name: a.name,
         type: a.type,
         subtype: a.subtype||null,
-        balance: (a.type==="credit"||a.type==="loan") ? -(a.balance.current||0) : (a.balance.current??a.balance.available??0),
+        balance: (a.type==="credit"||a.type==="loan") ? -(a.balance?.current||0) : (a.balance?.current??a.balance?.available??0),
         institution: prev.accounts?.find(p=>p.id===a.id)?.institution||"Bank",
       }));
       // Sync new credit card accounts into debts on background refresh
@@ -11162,7 +11162,7 @@ function saveState(patch) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({...cur, ...patch}));
   } catch {}
 }
-function clearState() {
+export function clearState() {
   try { localStorage.removeItem(STORAGE_KEY); } catch {}
 }
 
@@ -12797,7 +12797,7 @@ export default function FlourishApp(){
               name:a.name,
               type:a.type,
               subtype:a.subtype||null,
-              balance:(a.type==="credit"||a.type==="loan")?-(a.balance.current||0):(a.balance.current??a.balance.available??0),
+              balance:(a.type==="credit"||a.type==="loan")?-(a.balance?.current||0):(a.balance?.current??a.balance?.available??0),
               institution:a.institution||"Bank",
             })));
           // Dedup by account id — multiple tokens from same bank cause duplicates
@@ -12947,7 +12947,7 @@ export default function FlourishApp(){
           name:`${instName} ••${a.mask||"????"}`,
           type:a.type,
           subtype:a.subtype||null,
-          balance:(a.type==="credit"||a.type==="loan")?-(a.balance.current||0):(a.balance.current??a.balance.available??0),
+          balance:(a.type==="credit"||a.type==="loan")?-(a.balance?.current||0):(a.balance?.current??a.balance?.available??0),
           institution:instName,
         }));
         const transactions = normaliseTxns(txnData.transactions||[]);

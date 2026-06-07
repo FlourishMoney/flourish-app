@@ -204,10 +204,10 @@ exports.handler = async (event) => {
           subtype: a.subtype,
           mask:    a.mask,
           balance: {
-            available: a.balances.available,
-            current:   a.balances.current,
-            limit:     a.balances.limit,
-            currency:  a.balances.iso_currency_code || "CAD",
+            available: a.balances?.available ?? null,
+            current:   a.balances?.current ?? null,
+            limit:     a.balances?.limit ?? null,
+            currency:  a.balances?.iso_currency_code || "CAD",
           },
         })),
       });
