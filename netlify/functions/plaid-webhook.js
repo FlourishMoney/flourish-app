@@ -40,6 +40,26 @@ exports.handler = async (event) => {
   }
 
   const admin = getAdminClient();
+
+  // Tier 1.4: resolve the item owner BEFORE any mutation. Scoping every update by
+  // user_id (plus the DB unique constraint on item_id) closes the cross-tenant
+  // flag-flip exploit — a forged or sandbox-colliding item_id can't touch another
+  // user's row.
+  const { data: ownerRow, error: lookupErr } = await admin
+    .from("plaid_items")
+    .select("user_id")
+    .eq("item_id", item_id)
+    .maybeSingle();
+  if (lookupErr) {
+    console.error(`[webhook] owner lookup failed for ${item_id}:`, lookupErr.message);
+    return { statusCode: 500, body: JSON.stringify({ received: false }) };
+  }
+  if (!ownerRow) {
+    console.warn(`[webhook] unknown item_id ${String(item_id).slice(0, 8)} — ack & skip`);
+    return { statusCode: 200, body: JSON.stringify({ received: true }) };
+  }
+  const ownerUserId = ownerRow.user_id;
+
   const eventKey = `${webhook_type}:${webhook_code}`;
   let updates = null;
 
@@ -105,9 +125,11 @@ exports.handler = async (event) => {
     const { error: updateErr } = await admin
       .from("plaid_items")
       .update(updates)
-      .eq("item_id", item_id);
+      .eq("item_id", item_id)
+      .eq("user_id", ownerUserId);
     if (updateErr) {
       console.error(`[webhook] update failed for ${item_id}:`, updateErr.message);
+      return { statusCode: 500, body: JSON.stringify({ received: false }) };
     }
   }
 
