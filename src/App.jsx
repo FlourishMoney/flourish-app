@@ -1860,9 +1860,10 @@ Rules: do not invent or quote any number not in the calculated results above. Do
       if (typeof window !== "undefined" && window.localStorage?.getItem("flourish_ai_coach_enabled") === "0") {
         throw new Error("AI disabled");
       }
+      const _jwt = await getJwt();
       const r = await fetch("/api/coach", {
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers:{"Content-Type":"application/json", Authorization:`Bearer ${_jwt}`},
         body: JSON.stringify({ type:"simulator", payload:{ prompt } })
       });
       const d = await r.json();
@@ -3491,9 +3492,10 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
       if (typeof window !== "undefined" && window.localStorage?.getItem("flourish_ai_coach_enabled") === "0") {
         throw new Error("AI disabled");
       }
+      const _jwt = await getJwt();
       const r = await fetch("/api/coach", {
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers:{"Content-Type":"application/json", Authorization:`Bearer ${_jwt}`},
         body: JSON.stringify({ type:"checkin", payload:{ prompt } })
       });
       const d = await r.json();
@@ -3690,8 +3692,9 @@ Skip header rows, balance summaries, and non-transaction lines.
 
 STATEMENT TEXT:
 ${rawText.slice(0, 7000)}`;
+  const _jwt = await getJwt();
   const r = await fetch('/api/coach', {
-    method:'POST', headers:{'Content-Type':'application/json'},
+    method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${_jwt}`},
     body: JSON.stringify({ type:'simulator', payload:{ prompt } })
   });
   const d = await r.json();
@@ -10349,17 +10352,24 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
     setMessages(newMessages);
     setLoading(true);
     try {
+      const _jwt = await getJwt();
       const res = await fetch("/api/coach", {
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers:{"Content-Type":"application/json", Authorization:`Bearer ${_jwt}`},
         body: JSON.stringify({
           type: "chat",
           payload: {
-            system: buildContext(),
+            context: buildContext(),
             messages: newMessages.map(m=>({role:m.role, content:m.content})),
           },
         }),
       });
+      if(res.status === 429){
+        const j = await res.json().catch(()=>({}));
+        setMessages(prev=>[...prev, {role:"assistant", isSystem:true, content: j.message || "You've hit today's Coach message limit. It resets tomorrow."}]);
+        setLoading(false);
+        return;
+      }
       if(!res.ok) throw new Error(`Server error ${res.status}`);
       const json = await res.json();
       const rawReply = json.content?.[0]?.text || json.reply || "Sorry, I couldn't get a response. Try again.";
