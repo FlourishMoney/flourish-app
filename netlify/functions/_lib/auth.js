@@ -40,11 +40,13 @@ async function getUserFromRequest(event) {
     const admin = getAdminClient();
     const { data, error } = await admin.auth.getUser(token);
     if (error || !data?.user) {
-      return { user_id: null, error: error?.message || "invalid token" };
+      if (error) console.error("[auth] getUser failed:", error.message);
+      return { user_id: null, error: "invalid or expired token" };
     }
     return { user_id: data.user.id, error: null };
   } catch (err) {
-    return { user_id: null, error: err.message };
+    console.error("[auth] getUser threw:", err.message);
+    return { user_id: null, error: "authentication error" };
   }
 }
 

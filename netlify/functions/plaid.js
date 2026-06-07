@@ -92,14 +92,14 @@ exports.handler = async (event) => {
   catch { return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Invalid JSON" }) }; }
 
   if (!process.env.PLAID_CLIENT_ID || !process.env.PLAID_SECRET) {
+    console.error("[Plaid] missing PLAID_CLIENT_ID / PLAID_SECRET env vars");
     return {
       statusCode: 500, headers: CORS,
-      body: JSON.stringify({ error: "Plaid credentials not set. Add PLAID_CLIENT_ID + PLAID_SECRET in Netlify env vars." }),
+      body: JSON.stringify({ error: "Service temporarily unavailable." }),
     };
   }
 
   const { action } = body;
-  console.log("[Plaid debug] ENV:", process.env.PLAID_ENV, "| ACTION:", action, "| CLIENT_ID length:", (process.env.PLAID_CLIENT_ID||"").length, "| SECRET length:", (process.env.PLAID_SECRET||"").length);
 
   try {
     // 1. create_link_token — auth-required (Tier 1.3). Every mint (new or
@@ -402,7 +402,7 @@ exports.handler = async (event) => {
         .order("created_at", { ascending: true });
       if (error) {
         console.error("[plaid_items list]", error.message);
-        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: error.message }) };
+        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Failed to load accounts." }) };
       }
       return ok({ items: data || [] });
     }
@@ -438,7 +438,8 @@ exports.handler = async (event) => {
         .eq("user_id", user_id)
         .eq("item_id", item_id);
       if (delErr) {
-        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: delErr.message }) };
+        console.error("[delete_item]", delErr.message);
+        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Failed to disconnect bank." }) };
       }
       return ok({ removed: true });
     }
@@ -483,13 +484,15 @@ exports.handler = async (event) => {
               status: "active",
             }, { onConflict: "user_id,item_id" });
           if (upsertErr) {
-            failures.push({ error: upsertErr.message });
+            console.error("[migrate_items upsert]", upsertErr.message);
+            failures.push({ error: "Could not save this bank." });
             continue;
           }
           successes.push({ item_id });
         } catch (err) {
           // Plaid /item/get failed (revoked token, login required, network, etc.)
-          failures.push({ error: err.message || "plaid error", error_code: err.errorCode || null });
+          console.error("[migrate_items item/get]", err.errorCode || "", err.message);
+          failures.push({ error: "Could not migrate this bank.", error_code: err.errorCode || null });
         }
       }
       return ok({ successes, failures });
@@ -511,7 +514,8 @@ exports.handler = async (event) => {
         .eq("user_id", user_id);
 
       if (loadErr) {
-        errors.push({ step: "load_items", error: loadErr.message });
+        console.error("[delete_account] load_items:", loadErr.message);
+        errors.push({ step: "load_items" });
       }
 
       // 2. Revoke each Plaid item (best-effort)
@@ -519,8 +523,8 @@ exports.handler = async (event) => {
         try {
           await plaid("/item/remove", { access_token: it.access_token });
         } catch (revErr) {
-          errors.push({ step: "plaid_remove", item_id: it.item_id, error: revErr.message });
           console.warn(`[delete_account] /item/remove failed for ${it.item_id}:`, revErr.message);
+          errors.push({ step: "plaid_remove", item_id: it.item_id });
         }
       }
 
@@ -530,14 +534,15 @@ exports.handler = async (event) => {
         .delete()
         .eq("user_id", user_id);
       if (delErr) {
-        errors.push({ step: "delete_rows", error: delErr.message });
+        console.error("[delete_account] delete_rows:", delErr.message);
+        errors.push({ step: "delete_rows" });
       }
 
       // 4. Delete the Supabase auth user (service-role only)
       const { error: authDelErr } = await admin.auth.admin.deleteUser(user_id);
       if (authDelErr) {
-        errors.push({ step: "auth_delete", error: authDelErr.message });
         console.error(`[delete_account] auth.admin.deleteUser failed for ${user_id}:`, authDelErr.message);
+        errors.push({ step: "auth_delete" });
       }
 
       const partial = errors.length > 0;
@@ -559,7 +564,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 500, headers: CORS,
       body: JSON.stringify({
-        error:      err.message || "Plaid error",
+        error:      "Internal error.",
         error_code: err.plaid?.error_code || null,
         error_type: err.plaid?.error_type || null,
       }),

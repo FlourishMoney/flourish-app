@@ -41,6 +41,26 @@ exports.handler = async (event) => {
 
   const admin = getAdminClient();
 
+  // Tier 3.17: replay dedupe. verification.jti is SHA-256 of the signed header, so an
+  // exact replay of a valid webhook collides on the primary key. Fail OPEN on any
+  // non-conflict error — a DB hiccup must not drop legitimate webhooks.
+  if (verification.jti) {
+    const { error: seenErr } = await admin
+      .from("webhook_seen")
+      .insert({ jti: verification.jti });
+    if (seenErr) {
+      if (seenErr.code === "23505") {
+        console.warn(`[webhook] replay detected jti=${verification.jti.slice(0, 8)} — ack & skip`);
+        return { statusCode: 200, body: JSON.stringify({ received: true, duplicate: true }) };
+      }
+      console.error("[webhook] dedupe insert failed (continuing):", seenErr.message);
+    }
+    // Opportunistic cleanup — keep the table bounded to ~the replay window (best-effort).
+    admin.from("webhook_seen").delete()
+      .lt("seen_at", new Date(Date.now() - 15 * 60 * 1000).toISOString())
+      .then(() => {}, () => {});
+  }
+
   // Tier 1.4: resolve the item owner BEFORE any mutation. Scoping every update by
   // user_id (plus the DB unique constraint on item_id) closes the cross-tenant
   // flag-flip exploit — a forged or sandbox-colliding item_id can't touch another

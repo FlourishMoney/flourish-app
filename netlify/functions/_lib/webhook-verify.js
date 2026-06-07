@@ -69,22 +69,29 @@ async function verifyPlaidWebhook(event) {
       algorithms: ["ES256"],
     });
 
-    // Anti-replay: iat must be within 5 minutes
+    // Anti-replay: iat must be within ±5 minutes. Symmetric window rejects both stale
+    // AND future-dated tokens — a future iat would otherwise sail past a one-sided check.
     const nowSec = Math.floor(Date.now() / 1000);
-    if (!payload.iat || nowSec - payload.iat > 300) {
-      return { verified: false, reason: "JWT too old (replay protection)" };
+    if (!payload.iat || Math.abs(nowSec - payload.iat) > 300) {
+      return { verified: false, reason: "JWT iat outside replay window" };
     }
 
-    // Body integrity: request_body_sha256 must match SHA-256(rawBody)
+    // Body integrity: request_body_sha256 must match SHA-256(rawBody). Constant-time
+    // compare so we don't leak the expected hash byte-by-byte via response timing.
     const rawBody = event.isBase64Encoded
       ? Buffer.from(event.body || "", "base64").toString("utf8")
       : (event.body || "");
     const bodyHash = crypto.createHash("sha256").update(rawBody).digest("hex");
-    if (payload.request_body_sha256 !== bodyHash) {
+    const expected = Buffer.from(String(payload.request_body_sha256 || ""), "utf8");
+    const actual = Buffer.from(bodyHash, "utf8");
+    if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
       return { verified: false, reason: "body hash mismatch" };
     }
 
-    return { verified: true };
+    // jti for replay dedupe: SHA-256 of the full signed header uniquely identifies this
+    // exact delivery (computed only after the signature verifies, so it's authentic).
+    const jti = crypto.createHash("sha256").update(header).digest("hex");
+    return { verified: true, jti };
   } catch (err) {
     return { verified: false, reason: err.message || "verification error" };
   }
