@@ -9,7 +9,7 @@ import {
   Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
-import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns } from "./lib/financialCalculations.js";
+import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns, toMonthly } from "./lib/financialCalculations.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 
 // Capacitor iOS platform detection — true only when running as a native iOS app via Capacitor.
@@ -1068,8 +1068,8 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
   const today = todayDate || new Date().getDate();
   const paydayGuess = today < 15 ? 15 : 1;
   const daysToPayday = paydayGuess >= today ? paydayGuess - today : (31 - today + paydayGuess);
-  const _toMo = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:a; };
-  const incomeAmt = (data.incomes||[]).reduce((s,i)=>s+_toMo(i.amount,i.freq),0) || DEMO.income;
+  const _toMo = toMonthly; // Bug 1: canonical converter (handles annually)
+  const incomeAmt = (data.incomes||[]).reduce((s,i)=>s+_toMo(i.amount,i.freq),0); // Bug 5: no fake income fallback
 
   // Decision Engine calculations
   const daysLeft = daysToPayday > 0 ? daysToPayday : 14;
@@ -1618,12 +1618,12 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
     {label: "Buy a used car for $8,000",type: "purchase"},
   ];
 
-  const _toMoSim = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a; };
+  const _toMoSim = toMonthly; // Bug 1: canonical converter
   const bal = (data.accounts||[])
     .filter(a => isCashAccount(a))
     .reduce((s,a) => s + parseFloat(a.balance||0), 0) || DEMO.balance;
   const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0)
-    .reduce((s,i) => s + _toMoSim(i.amount,i.freq), 0) || DEMO.income;
+    .reduce((s,i) => s + _toMoSim(i.amount,i.freq), 0); // Bug 5: no fake income fallback
   const { liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
   const bills = (data.bills||[]).reduce((s,b) => s + parseFloat(b.amount||0), 0);
   const {score} = calcHealthScore(data);
@@ -2474,8 +2474,8 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
 function MoneyWrapped({data, onClose}) {
   const [slide, setSlide] = useState(0);
   const txns = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
-  const _toMoW = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:freq==="monthly"?a:a*2.167; };
-  const income = ((data.incomes||[]).reduce((s,i)=>s+_toMoW(i.amount,i.freq),0) || 4200) * 12;
+  const _toMoW = toMonthly; // Bug 1: canonical converter
+  const income = ((data.incomes||[]).reduce((s,i)=>s+_toMoW(i.amount,i.freq),0)) * 12; // Bug 5: no fake income fallback
   const totalSpent = txns.reduce((s,t)=>s+Math.abs(t.amount||0),0) || 0;
   const { netWorth: _wrappedNW } = FinancialCalcEngine.netWorth(data);
   const invBal = (data.accounts||[]).filter(a=>isInvestmentAccount(a)).reduce((s,a)=>s+parseFloat(a.balance||0),0);
@@ -2879,17 +2879,9 @@ const FinancialCalcEngine = {
       const d = new Date(t.date + "T12:00:00");
       return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
     });
-    const toMonthly = (amt, freq) => {
-      const a = parseFloat(amt||0);
-      switch(freq) {
-        case "weekly":      return a * 4.333;
-        case "biweekly":    return a * 2.167;
-        case "semimonthly": return a * 2;
-        case "monthly":     return a;
-        default:            return a * 2.167;
-      }
-    };
-    const monthlyIncome = incomes.reduce((s,i) => s + toMonthly(i.amount, i.freq), 0) || 4200;
+    // Bug 1: use the canonical toMonthly import (handles annually).
+    // Bug 5: no invented income fallback — 0 when none entered (ratio calcs guard >0).
+    const monthlyIncome = incomes.reduce((s,i) => s + toMonthly(i.amount, i.freq), 0);
     // Bills: committed expenses from bills array — source of truth
     const monthlyBills  = bills.reduce((s,b) => s + parseFloat(b.amount||0), 0);
     // Discretionary: excludes non-spend flows, bill categories (already in monthlyBills), CC payments
@@ -2971,13 +2963,21 @@ const SafeSpendEngine = {
     const todayDate = new Date();
     const in10Days  = new Date(todayDate); in10Days.setDate(todayDate.getDate() + 10);
     // Detect bills already paid this month by matching transactions
-    const txnNames = (data.transactions||[])
+    const _normName = s => (s||"").toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim();
+    const txnList = (data.transactions||[])
       .filter(t => { try { const d=new Date(t.date+"T12:00:00"); return d.getMonth()===todayDate.getMonth()&&d.getFullYear()===todayDate.getFullYear(); } catch{return false;} })
-      .map(t => (t.name||"").toLowerCase());
+      .map(t => ({ name: _normName(t.name), amount: Math.abs(parseFloat(t.amount||0)) }));
+    // Bug 3: match on full normalized-name containment AND amount tolerance (±5% / ±$2),
+    // so loose prefixes ("Rent"↔"Rentals", "Bell"↔"Bell Media") no longer false-positive.
     const isBillPaid = (bill) => {
-      const billName = (bill.vendorPattern||bill.name||"").toLowerCase().trim();
+      const billName = _normName(bill.vendorPattern||bill.name);
+      const billAmt  = parseFloat(bill.amount||0);
       if(billName.length < 3) return false;
-      return txnNames.some(n => n.includes(billName.substring(0,Math.min(6,billName.length))) || billName.includes(n.substring(0,Math.min(6,n.length))));
+      return txnList.some(t => {
+        const nameMatch = t.name && (t.name.includes(billName) || billName.includes(t.name));
+        const amtMatch  = billAmt > 0 ? Math.abs(t.amount - billAmt) <= Math.max(2, billAmt*0.05) : true;
+        return nameMatch && amtMatch;
+      });
     };
     const upcomingBills = bills
       .filter(b => {
@@ -3055,6 +3055,8 @@ generate(data, days = 90, scenario = null) {
   // Problem with old code: i%14===0 puts the first payday 14 days from today,
   // completely ignoring that the next deposit might be 3 days away.
   // Fix: find the last real deposit from transactions, project forward from that date.
+  // Bug 2: key paydays by LOCAL calendar date (not UTC toISOString) so NA users' paydays land on the right forecast day.
+  const localYMD = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
   const paydayDates = new Set(); // Set of "YYYY-MM-DD" strings that are paydays
   if(hasIncome && primaryIncome) {
     const txns      = data.transactions || [];
@@ -3087,25 +3089,25 @@ generate(data, days = 90, scenario = null) {
       next.setDate(next.getDate() + freqDays);
       const horizon = new Date(today.getTime() + days*86400000);
       while(next <= horizon) {
-        paydayDates.add(next.toISOString().substring(0,10));
+        paydayDates.add(localYMD(next));
         next = new Date(next); next.setDate(next.getDate() + freqDays);
       }
     } else if(freqDays) {
       // No anchor found — fallback: count forward from today at frequency
       for(let k = freqDays; k <= days; k += freqDays) {
         const d2 = new Date(today); d2.setDate(today.getDate()+k);
-        paydayDates.add(d2.toISOString().substring(0,10));
+        paydayDates.add(localYMD(d2));
       }
     } else if(primaryFreq==="monthly") {
       const payDay = primaryIncome.anchorDay || 1;
       for(let k = 1; k <= days; k++) {
         const d2 = new Date(today); d2.setDate(today.getDate()+k);
-        if(d2.getDate()===payDay) paydayDates.add(d2.toISOString().substring(0,10));
+        if(d2.getDate()===payDay) paydayDates.add(localYMD(d2));
       }
     } else if(primaryFreq==="semimonthly") {
       for(let k = 1; k <= days; k++) {
         const d2 = new Date(today); d2.setDate(today.getDate()+k);
-        if(d2.getDate()===1||d2.getDate()===15) paydayDates.add(d2.toISOString().substring(0,10));
+        if(d2.getDate()===1||d2.getDate()===15) paydayDates.add(localYMD(d2));
       }
     }
   }
@@ -3117,7 +3119,7 @@ generate(data, days = 90, scenario = null) {
   for(let i = 0; i <= days; i++) {
     const d       = new Date(today); d.setDate(today.getDate()+i);
     const dayNum  = d.getDate();
-    const dateKey = d.toISOString().substring(0,10);
+    const dateKey = localYMD(d);
     const isPayday = i > 0 && paydayDates.has(dateKey);
     const dayBills = bills.filter(b=>parseInt(b.date)===dayNum&&parseInt(b.date)>0);
     const inc      = (isPayday ? paycheque : 0) + getSecondary(dayNum);
@@ -4569,23 +4571,14 @@ function DataTransparencyPanel({data, onClose}) {
   const now       = new Date();
 
   // Income inputs
-  const toMonthly = (amt, freq) => {
-    const a = parseFloat(amt||0);
-    switch(freq) {
-      case "weekly":      return a * 4.333;
-      case "biweekly":    return a * 2.167;
-      case "semimonthly": return a * 2;
-      case "monthly":     return a;
-      default:            return a * 2.167;
-    }
-  };
+  // Bug 1: canonical toMonthly import (handles annually).
   const incomeRows = incomes.map(i => ({
     label: i.label || i.type || "Income",
     entered: parseFloat(i.amount||0),
     freq: i.freq || "biweekly",
     monthly: toMonthly(i.amount, i.freq),
   }));
-  const totalMonthlyIncome = incomeRows.reduce((s,r) => s+r.monthly, 0) || 4200;
+  const totalMonthlyIncome = incomeRows.reduce((s,r) => s+r.monthly, 0); // Bug 5: no fake income fallback
 
   // Spending audit — this month
   const thisMonthTxns = txns.filter(t => {
@@ -4999,7 +4992,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
       {/* ── Pre-bank estimated insight — replaces generic "sample data" banner ── */}
       {(!data.transactions||data.transactions.length===0)&&(()=>{
         // Calculate a real estimate from their onboarding data
-        const toMo = (amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="monthly"?a:a*2.167;};
+        const toMo = toMonthly; // Bug 1: canonical converter
         const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
         const monthlyBills = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
         const safetyBuffer = monthlyIncome * 0.15;
@@ -5109,12 +5102,8 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             })()}
             {/* ── Inline math proof — one line, no tap required ── */}
             {(()=>{
-              const accts = data.accounts||[];
-              const chequing = accts.filter(a=>isCheckingAccount(a)).reduce((s,a)=>s+(a.balance||0),0);
-              const savings  = accts.filter(a=>isSavingsAccount(a)).reduce((s,a)=>s+(a.balance||0),0);
-              const totalBalance = data.bankConnected ? (chequing||savings||bal)||0 : null;
-              const billsTotal  = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
-              const bufferAmt   = monthlyIncome * 0.15;
+              // Bug 6: breakdown rows come straight from SafeSpendEngine so they SUM to the headline.
+              const _ss = SafeSpendEngine.calculate(data);
               // Overdraft: show a focused warning instead of the math
               if (overdraft) return (
                 <div style={{marginBottom:14}}>
@@ -5125,14 +5114,12 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                   </div>
                 </div>
               );
-              // Full breakdown — 4 lines, tap-to-see or always visible
-              const avgSpend = FinancialCalcEngine.avgDailySpend(data);
-              const spendReserve = Math.round(avgSpend * 10);
               const breakdownRows = [
-                {label: totalBalance!=null ? "In your accounts" : "Est. balance", value: `$${(totalBalance||bal||0).toFixed(0)}`, sign: "", color: heroColorBright+"99"},
-                ...(billsTotal>0 ? [{label:"Upcoming bills", value:`$${billsTotal.toFixed(0)}`, sign:"−", color:C.gold+"CC"}] : []),
-                ...(spendReserve>0 ? [{label:"Expected spending", value:`$${spendReserve.toFixed(0)}`, sign:"−", color:heroColorBright+"66"}] : []),
-                {label:"Buffer (15%)", value:`$${bufferAmt.toFixed(0)}`, sign:"−", color:heroColorBright+"44"},
+                {label:"In your accounts", value:`$${(_ss.balance||0).toFixed(0)}`, sign:"", color:heroColorBright+"99"},
+                ...(_ss.upcomingBills>0 ? [{label:"Upcoming bills", value:`$${_ss.upcomingBills.toFixed(0)}`, sign:"−", color:C.gold+"CC"}] : []),
+                ...(_ss.debtPayments>0 ? [{label:"Min. debt payments", value:`$${_ss.debtPayments.toFixed(0)}`, sign:"−", color:C.gold+"CC"}] : []),
+                ...(_ss.safetyBuf>0 ? [{label:"Spending buffer", value:`$${_ss.safetyBuf.toFixed(0)}`, sign:"−", color:heroColorBright+"66"}] : []),
+                ...(_ss.savingsAlloc>0 ? [{label:"Savings set aside", value:`$${_ss.savingsAlloc.toFixed(0)}`, sign:"−", color:heroColorBright+"44"}] : []),
               ];
               return (
                 <div style={{marginBottom:14}}>
@@ -5406,7 +5393,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
 
           // Priority 0 — income data quality (affects every calculation)
           const incomeCheck = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0);
-          const toMoCheck = (amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="monthly"?a:a*2.167;};
+          const toMoCheck = toMonthly; // Bug 1: canonical converter
           const totalMoCheck = incomeCheck.reduce((s,i)=>s+toMoCheck(i.amount,i.freq),0);
           const incomeUsingDefault = incomeCheck.length === 0;
           const incomeSuspicious = totalMoCheck > 25000;
@@ -6482,10 +6469,7 @@ const BUDGET_CAT_META = {
 function generateBudgetSuggestions(data) {
   const profile   = data.profile || {};
   const isCA      = (profile.country||"CA") === "CA";
-  const _toMo     = (amt,freq) => {
-    const a = parseFloat(amt||0);
-    return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a;
-  };
+  const _toMo     = toMonthly; // Bug 1: canonical converter
 
   // ── Income ──────────────────────────────────────────────────────────
   const grossMo   = (data.incomes||[]).reduce((s,i)=>s+_toMo(i.amount,i.freq),0)||0;
@@ -7523,7 +7507,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       const updateField = (i,field,val) => { if(setAppData) setAppData(prev=>({...prev,goals:(prev.goals||[]).map((g,x)=>x===i?{...g,[field]:val}:g)})); };
 
       const toMonthlyIncome = (() => {
-        const toMo = (amt,freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="monthly"?a:a*2.167; };
+        const toMo = toMonthly; // Bug 1: canonical converter
         return (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
       })();
 
@@ -8013,7 +7997,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
             ["otherRetire","otherRetireFreq","Other Retirement"],
           ]).map(([field,freqField,label])=>{
             const freq = ret[freqField]||"monthly";
-            const toMo = (amt,f) => { const a=parseFloat(amt||0); return f==="weekly"?a*4.333:f==="biweekly"?a*2.167:f==="annually"?a/12:a; };
+            const toMo = toMonthly; // Bug 1: canonical converter
             const mo = toMo(ret[field]||0, freq);
             return (
               <div key={field}>
@@ -8045,7 +8029,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
           </div>
           {/* Projection summary */}
           {(()=>{
-            const toMo=(amt,f)=>{const a=parseFloat(amt||0);return f==="weekly"?a*4.333:f==="biweekly"?a*2.167:f==="annually"?a/12:a;};
+            const toMo = toMonthly; // Bug 1: canonical converter
             const bal = parseFloat(ret[isCA?"rrspBalance":"401kBalance"]||0) + parseFloat(ret[isCA?"tfsaBalance":"iraBalance"]||0);
             const monthly = toMo(ret[isCA?"rrspMonthly":"401kMonthly"]||0, ret[isCA?"rrspFreq":"401kFreq"]||"monthly")
                           + toMo(ret[isCA?"tfsaMonthly":"iraMonthly"]||0, ret[isCA?"tfsaFreq":"iraFreq"]||"monthly")
@@ -10212,8 +10196,8 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const accounts = data.accounts||[];
     const profile = data.profile||{};
     const country = profile.country||"CA";
-    const _toMoCtx=(amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a;};
-    const income = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0).reduce((s,i)=>s+_toMoCtx(i.amount,i.freq),0) || DEMO.income;
+    const _toMoCtx = toMonthly; // Bug 1: canonical converter
+    const income = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0).reduce((s,i)=>s+_toMoCtx(i.amount,i.freq),0); // Bug 5: no fake income fallback
     const balance = (accounts||[]).filter(a=>isCashAccount(a)).reduce((s,a)=>s+parseFloat(a.balance||0),0) || DEMO.balance;
     const spending = txns.filter(t=>t.amount>0 && !t.isTransfer).reduce((s,t)=>s+t.amount,0);
 
@@ -10263,7 +10247,7 @@ User profile:
 - Children: ${kidsInfo}
 
 Financial snapshot:
-- Balance: $${(balance||0).toFixed(2)} | Income (biweekly): $${(income||0).toFixed(2)}
+- Balance: $${(balance||0).toFixed(2)} | Income (monthly): $${income>0?income.toFixed(2):"0.00 — not provided; ask before income-dependent advice"}
 - Safe-to-spend RIGHT NOW: $${_safeToSpend.toFixed(2)} (this is the truthful "can-I-afford" number — balance minus upcoming bills, minimum debt payments, safety buffer, savings allocation)
 - Upcoming bills (next ~14 days): $${_upcomingBills.toFixed(2)}
 - Monthly surplus (income − expenses): $${_monthlySurplus.toFixed(2)} | Monthly expenses: $${_monthlyExpenses.toFixed(2)}
@@ -10532,8 +10516,8 @@ function CreditScreen({data,setScreen}){
       action="Connect Bank" onAction={()=>window.dispatchEvent(new CustomEvent("flourish:settings"))} color={C.blue}/>
   );
   // Monthly income using frequency-aware conversion (same as FinancialCalcEngine)
-  const toMonthlyC = (amt, freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="monthly"?a:a*2.167; };
-  const income = (data.incomes||[]).reduce((s,i)=>s+toMonthlyC(i.amount,i.freq),0) || (DEMO.income*2.167);
+  const toMonthlyC = toMonthly; // Bug 1: canonical converter
+  const income = (data.incomes||[]).reduce((s,i)=>s+toMonthlyC(i.amount,i.freq),0); // Bug 5: no fake income fallback
   const spending = txns.filter(t=>t.amount>0&&t.cat!=="Income"&&t.cat!=="Transfer"&&t.cat!=="Fees").reduce((s,t)=>s+t.amount,0);
   const utilization = Math.min(1, spending / Math.max(income, 1));
   const baseScore = isCA ? 720 : 718;
@@ -10999,7 +10983,7 @@ function FirstVisitScreen({data, onDismiss}) {
 
   const { safeAmount } = SafeSpendEngine.calculate(data);
   const { monthlyIncome, monthlyBills } = FinancialCalcEngine.cashFlow(data);
-  const toMo = (amt,freq)=>{const a=parseFloat(amt||0);return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="monthly"?a:a*2.167;};
+  const toMo = toMonthly; // Bug 1: canonical converter
   const incomeAmt = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
   const billsAmt = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
   const safeFloor = incomeAmt * 0.15;

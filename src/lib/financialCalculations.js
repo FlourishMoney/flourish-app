@@ -622,6 +622,20 @@ export function markTransfers(txns, keywordIsTransferFn, isCashAdvanceFn) {
 //   5. On any error: return newTxns unchanged. Enrichment is non-critical —
 //      the txns still display fine without it.
 
+// Canonical income frequency → monthly converter (Tier 4 bug 1). Single source of
+// truth; handles `annually` (a/12). Unknown freq is treated as monthly (a).
+export function toMonthly(amount, frequency) {
+  const a = parseFloat(amount || 0) || 0;
+  switch (frequency) {
+    case "weekly":      return a * 4.333; // 52/12
+    case "biweekly":    return a * 2.167; // 26/12
+    case "semimonthly": return a * 2;     // 24/12
+    case "annually":    return a / 12;
+    case "monthly":
+    default:            return a;
+  }
+}
+
 export async function enrichTxns(newTxns, existingTxns, accounts, callPlaidFn, jwt) {
   if (!Array.isArray(newTxns) || newTxns.length === 0) return newTxns || [];
   if (!callPlaidFn) return newTxns;
