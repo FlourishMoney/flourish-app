@@ -1635,7 +1635,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
     // ── PAYWALL GATE (Phase 2) ───────────────────────────────────────────
     // Free tier: 3 simulations/day. Premium and beta_founder: unlimited.
     // Soft gate — show a clear message in the result card instead of an alert.
-    if (!canRunSimulation()) {
+    if (!isCapacitorIOS() && !canRunSimulation()) {
       setQuery(qText);
       setResult({
         cashImpact: "tight",
@@ -5673,7 +5673,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         })()}
 
         {/* ── PREMIUM UPGRADE ───────────────────────────────────────────── */}
-        {!data.isPremium&&onUpgrade&&(
+        {!data.isPremium&&!isCapacitorIOS()&&onUpgrade&&(
           <div onClick={onUpgrade} style={{...anim(300),...glass(C.purple,C.purple+"33"),borderRadius:20,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}
             onMouseEnter={e=>e.currentTarget.style.borderColor=C.purple+"55"}
             onMouseLeave={e=>e.currentTarget.style.borderColor=C.purple+"22"}>
@@ -10836,7 +10836,7 @@ function TermsOfService({onBack}){
       <div style={p}>You agree not to: use the App for any unlawful purpose; attempt to reverse-engineer, decompile, or hack the App; use the App to process another person's financial data without their consent; resell or sublicense the App; or interfere with the security or integrity of the App or its infrastructure.</div>
 
       <div style={h2}>7. Subscription & Billing</div>
-      <div style={p}><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</div>
+      <div style={p}>{isCapacitorIOS() ? "Flourish is currently provided free of charge on iOS." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
 
       <div style={h2}>8. Intellectual Property</div>
       <div style={p}>The App, including its design, logo, code, AI systems, and content, is the exclusive property of GrowSmart Inc. and is protected by copyright, trademark, and other intellectual property laws. You receive a limited, non-exclusive, non-transferable licence to use the App for personal, non-commercial purposes.</div>
@@ -11827,7 +11827,8 @@ function AuthScreen({ onAuth }) {
               </div>
             </div>
 
-            {/* Pricing */}
+            {/* Pricing — hidden on iOS (no IAP; don't surface a subscription price) */}
+            {!isCapacitorIOS() && (
             <div style={{ width: "100%", maxWidth: 400, marginBottom: 64 }}>
               <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Simple pricing</div>
               <div style={{ background: "#0D1F12", border: "1px solid rgba(0,214,143,0.25)", borderRadius: 24, padding: "32px 28px", textAlign: "center" }}>
@@ -11848,6 +11849,7 @@ function AuthScreen({ onAuth }) {
                 <div style={{ color: "#6B7A6E", fontSize: 11, marginTop: 12 }}>No credit card required</div>
               </div>
             </div>
+            )}
 
             {/* Bottom CTA */}
             <div style={{ width: "100%", maxWidth: 400, textAlign: "center", marginBottom: 64 }}>
@@ -12667,6 +12669,9 @@ export default function FlourishApp(){
   const [household,setHousehold]=useState(()=>saved?.household||null);
   const [isPremium,setIsPremium]=useState(()=>isCapacitorIOS()||saved?.isPremium||false);
   const [showPaywall,setShowPaywall]=useState(false);
+  // Tier 2: iOS Capacitor build is free — no paywall, no upgrade/trial/Plus/price UI.
+  // Distinct from isPremium (a real paid subscriber); used to hide/inert those surfaces.
+  const iosFreeUnlock = isCapacitorIOS();
   // ── Plaid reconnect state ─────────────────────────────────────
   // Phase D6: the legacy multi-bank token state was retired. Plaid items live in
   // Supabase plaid_items; Settings UI fetches via getUserItems(). The D1-E migration
@@ -12700,8 +12705,12 @@ export default function FlourishApp(){
     markAccountIfNew();
     // Phase D7: trial lifecycle — start fresh trials for brand-new users,
     // and auto-transition expired trials to "free".
-    startTrialIfEligible();
-    expireTrialIfNeeded();
+    // Tier 2: skip entirely on iOS — the app is free there, and a started/expired
+    // trial surfaces upgrade dead-ends Apple rejects (3.1.1 / 2.3.1).
+    if (!iosFreeUnlock) {
+      startTrialIfEligible();
+      expireTrialIfNeeded();
+    }
     // Sync the legacy isPremium boolean with the new plan tier so UI badges
     // (e.g. {freeMsgsLeft}/{FREE_LIMIT}) reflect grandfathered beta_founder users.
     if (isPremiumOrFounder()) setIsPremium(true);
@@ -13201,7 +13210,7 @@ input,button,select,textarea { font-family:inherit; }
         {/* Sidebar footer */}
         <div style={{padding:"16px 12px",borderTop:`1px solid ${C.border}`}}>
           {/* Trial status in sidebar — Phase D7: only render for users on trial or post-trial */}
-          {!isPremium&&(trialActive||trialExpired)&&(
+          {!isPremium&&!iosFreeUnlock&&(trialActive||trialExpired)&&(
             <div onClick={()=>setShowPaywall(true)} style={{background:trialExpired?"#180800":trialDaysLeft<=2?C.orange+"18":C.purple+"18",border:`1px solid ${trialExpired?C.red+"44":trialDaysLeft<=2?C.orange+"44":C.purple+"33"}`,borderRadius:12,padding:"10px 14px",marginBottom:8,cursor:"pointer",transition:"all .18s"}}>
               <div style={{color:trialExpired?C.redBright:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>
                 {trialExpired?"Trial ended 🔒":trialDaysLeft===0?"Trial ends today ⚠️":`${trialDaysLeft} day${trialDaysLeft===1?"":"s"} left`}
@@ -13218,7 +13227,7 @@ input,button,select,textarea { font-family:inherit; }
               <div>
                 <div style={{color:C.cream,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{appData.profile?.name||"User"}</div>
                 {household&&<div style={{color:C.green,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🏠 Household connected</div>}
-                {isPremium&&<div style={{color:C.goldBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ Flourish Plus</div>}
+                {isPremium&&!iosFreeUnlock&&<div style={{color:C.goldBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ Flourish Plus</div>}
               </div>
             </div>
           </div>}
@@ -13286,7 +13295,7 @@ input,button,select,textarea { font-family:inherit; }
           </div>
         )}
         {/* ── TRIAL BANNER ─── Phase D7: only render for users on an active trial ── */}
-        {!isPremium&&trialActive&&trialDaysLeft<=7&&(
+        {!isPremium&&!iosFreeUnlock&&trialActive&&trialDaysLeft<=7&&(
           <div style={{background:trialDaysLeft<=2?"#1A0800":`linear-gradient(90deg,${C.purple}22,${C.purpleDim})`,borderBottom:`1px solid ${trialDaysLeft<=2?C.orange+"55":C.purple+"44"}`,padding:"8px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
             <span style={{fontSize:13}}>{trialDaysLeft<=2?"⚠️":"✨"}</span>
             <span style={{color:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700,flex:1}}>
@@ -13297,7 +13306,7 @@ input,button,select,textarea { font-family:inherit; }
             </button>
           </div>
         )}
-        {trialExpired&&(
+        {!iosFreeUnlock&&trialExpired&&(
           <div style={{background:"#180800",borderBottom:`2px solid ${C.red}55`,padding:"10px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
             <span style={{fontSize:13}}>🔒</span>
             <span style={{color:C.redBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700,flex:1}}>Your free trial has ended</span>
