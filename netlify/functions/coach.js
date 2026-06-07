@@ -9,7 +9,17 @@
 //       (e.g. newBalance, monthsToPayoff, finalValue)
 // If the user asks for a number not in either source, Claude must decline and
 // suggest running a What-If simulation instead of guessing.
+//
+// ── AUTH + ABUSE CEILING (Tier 1.1) ──────────────────────────────────────────
+// Every request requires a valid Supabase JWT (Authorization: Bearer <token>).
+// `chat` requests are counted per-user-per-day via the coach_usage table and
+// capped at CHAT_DAILY_CEILING (abuse ceiling; plan-aware free=1/day is a
+// fast-follow once a server-side plan table exists). Clients may no longer send
+// a `system` prompt — they send `payload.context` (data only), which the server
+// embeds inside a server-controlled prompt + TRUST_RULES.
 // -----------------------------------------------------------------------------
+
+const { getUserFromRequest, getAdminClient } = require("./_lib/auth");
 
 const TRUST_RULES = `
 STRICT NUMBER POLICY (non-negotiable):
@@ -17,6 +27,14 @@ STRICT NUMBER POLICY (non-negotiable):
 - Only cite numbers that (a) appear in the context above, or (b) are returned by a Flourish calculation function and passed to you explicitly.
 - If the user asks for a specific figure you do not have, do not guess. Reply: "I can run a What-If simulation for that — want to try one?"
 - Reference tax constants (CCB, FHSA, Child Tax Credit, etc.) that are stated in the context are safe to cite. Do not round, adjust, or extrapolate them.`;
+
+// Path B abuse ceiling: max `chat` messages per user per day. Generous on purpose
+// — this is a cost/DoS backstop, not the product limit. Plan-aware free=1/day
+// will layer on once a server plan source (profiles table) exists.
+const CHAT_DAILY_CEILING = 50;
+
+// Reject absurdly large bodies (cheap DoS guard; real coach messages are a few KB).
+const MAX_BODY_BYTES = 100000;
 
 // Phase D2: origin-aware CORS — locks to known origins, falls back to production.
 const ALLOWED_ORIGINS = new Set([
@@ -46,6 +64,17 @@ exports.handler = async (event) => {
     return { statusCode: 405, headers: corsHeaders, body: JSON.stringify({ error: "Method not allowed" }) };
   }
 
+  // ── Auth gate (mirror plaid.js) ────────────────────────────────────────────
+  const { user_id, error: authError } = await getUserFromRequest(event);
+  if (!user_id) {
+    return { statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: authError || "unauthorized" }) };
+  }
+
+  // ── Body size guard ────────────────────────────────────────────────────────
+  if ((event.body || "").length > MAX_BODY_BYTES) {
+    return { statusCode: 413, headers: corsHeaders, body: JSON.stringify({ error: "Request too large" }) };
+  }
+
   let type, payload;
   try {
     const body = JSON.parse(event.body || "{}");
@@ -70,11 +99,31 @@ exports.handler = async (event) => {
       if (!payload.messages || !Array.isArray(payload.messages)) {
         return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "payload.messages must be an array" }) };
       }
+      // Abuse ceiling — count only real coach chat messages, after validation.
+      // Atomic increment via RPC; fail OPEN on any DB error (auth is the real gate).
+      if (type === "chat") {
+        try {
+          const admin = getAdminClient();
+          const { data: usedCount, error: rlError } = await admin.rpc("increment_coach_usage", { p_user: user_id });
+          if (rlError) {
+            console.error("[coach] usage RPC error (failing open):", rlError.message);
+          } else if (typeof usedCount === "number" && usedCount > CHAT_DAILY_CEILING) {
+            return {
+              statusCode: 429,
+              headers: corsHeaders,
+              body: JSON.stringify({ error: "rate_limited", message: "You've hit today's Coach message limit. It resets tomorrow." }),
+            };
+          }
+        } catch (e) {
+          console.error("[coach] usage check failed (failing open):", e.message);
+        }
+      }
       anthropicBody = {
         model: "claude-sonnet-4-6",
         max_tokens: 1024,
-        system: payload.system ||
+        system:
           "You are Flourish, a friendly and knowledgeable personal finance coach. Be concise, warm, and practical." +
+          (payload.context ? `\n\nUSER FINANCIAL CONTEXT (authoritative — use these exact figures, do not alter them):\n${payload.context}` : "") +
           TRUST_RULES,
         messages: payload.messages,
       };
@@ -107,9 +156,10 @@ exports.handler = async (event) => {
       anthropicBody = {
         model: "claude-sonnet-4-6",
         max_tokens: 1200,
-        system: payload.system ||
-          ("You are Flourish, a warm financial coach. Analyze real transaction data. Use exact numbers from the data. Respond ONLY with valid JSON." +
-            TRUST_RULES),
+        system:
+          "You are Flourish, a warm financial coach. Analyze real transaction data. Use exact numbers from the data. Respond ONLY with valid JSON." +
+          (payload.context ? `\n\nDATA (authoritative — use these exact figures):\n${payload.context}` : "") +
+          TRUST_RULES,
         messages: [{ role: "user", content: payload.prompt || "Analyze this user's financial data." }],
       };
       break;
@@ -153,7 +203,7 @@ exports.handler = async (event) => {
   }
 
   try {
-    console.log(`[coach] type="${type}" model="${anthropicBody.model}"`);
+    console.log(`[coach] type="${type}" model="${anthropicBody.model}" user="${user_id.slice(0, 8)}"`);
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
