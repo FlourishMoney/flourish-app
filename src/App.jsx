@@ -493,24 +493,9 @@ async function callPlaid(action, params={}, options={}) {
 }
 
 // Phase D1: persist Plaid Item to Supabase via authenticated server call.
-// Silent failure during migration window — falls back to localStorage path.
-// After D1-F removes the localStorage path, success becomes mandatory.
-async function storePlaidItemServerSide({access_token, item_id, institution_name}) {
-  if (!access_token || !item_id) return;
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) {
-      console.warn("[storePlaidItem] no session — skipping server-side persist");
-      return;
-    }
-    await callPlaid("store_item", {
-      access_token, item_id, institution_name: institution_name || "Your Bank",
-    }, { jwt: session.access_token });
-    console.log("[storePlaidItem] stored", item_id);
-  } catch (err) {
-    console.warn("[storePlaidItem] failed (non-fatal)", err.message);
-  }
-}
+// Phase 1.2: storePlaidItemServerSide removed — exchange_token now exchanges AND
+// persists the Plaid item server-side atomically, so the client never handles or
+// round-trips an access_token.
 
 // Phase D1-E: one-time migration of existing localStorage tokens to Supabase.
 // Idempotent on the server side (upsert by user_id+item_id), so safe to re-run.
@@ -3882,23 +3867,13 @@ function Onboarding({onComplete,onViewLegal,userId}){
     let progTimer=null;
     try{
       progTimer=setInterval(()=>setBankProg(v=>Math.min(v+7,88)),220);
+      const jwt = await getJwt();
       const ex=await callPlaid("exchange_token",{
         public_token:publicToken,
         institution_name:metadata?.institution?.name||"Your Bank",
-      });
-      // Phase D6: Supabase via storePlaidItemServerSide is now the source of truth.
-      // localStorage token cache removed (Settings UI reads from getUserItems instead).
-      try{
-        const instName = ex.institution_name||"Your Bank";
-        await storePlaidItemServerSide({
-          access_token: ex.access_token,
-          item_id: ex.item_id,
-          institution_name: instName,
-        });
-      }catch{}
-      // Phase D1-F-C: fetch accounts via item_id + JWT (server-side token lookup).
-      // Transactions load silently on dashboard.
-      const jwt = await getJwt();
+      }, {jwt});
+      // Phase 1.2: exchange_token persists the item server-side atomically — no
+      // access_token is returned to the client. Fetch accounts via item_id + JWT.
       const acctData = await callPlaid("get_accounts",{item_id:ex.item_id}, {jwt});
       clearInterval(progTimer);setBankProg(100);
 
@@ -12944,18 +12919,12 @@ export default function FlourishApp(){
   };
 
   // ── Plaid reconnect success handler (must be before early returns — Rules of Hooks) ──
-  const onReconnectSuccess = useCallback((publicToken, metadata)=>{
-    callPlaid("exchange_token",{ public_token: publicToken, institution_name: metadata?.institution?.name||"Your Bank" })
+  const onReconnectSuccess = useCallback(async (publicToken, metadata)=>{
+    const jwt = await getJwt();
+    callPlaid("exchange_token",{ public_token: publicToken, institution_name: metadata?.institution?.name||"Your Bank" }, {jwt})
       .then(async ex=>{
-        // Phase D6: Supabase via storePlaidItemServerSide is now the source of truth.
-        // localStorage token cache removed (Settings UI reads from getUserItems instead).
-        await storePlaidItemServerSide({
-          access_token: ex.access_token,
-          item_id: ex.item_id,
-          institution_name: ex.institution_name || "Your Bank",
-        });
-        // Phase D1-F-C: fetch accounts + transactions via item_id + JWT
-        const jwt = await getJwt();
+        // Phase 1.2: exchange_token persists the item server-side atomically; no
+        // access_token returns to the client. Fetch accounts + transactions via item_id + JWT.
         return Promise.all([
           callPlaid("get_accounts",{ item_id: ex.item_id }, {jwt}),
           callPlaid("get_transactions",{ item_id: ex.item_id, days: 90 }, {jwt}),

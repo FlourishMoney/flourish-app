@@ -148,12 +148,42 @@ exports.handler = async (event) => {
       return ok({ link_token: data.link_token });
     }
 
-    // 2. exchange_token
+    // 2. exchange_token — auth-required (Tier 1.2): exchange the public_token AND
+    // persist the access_token server-side in ONE action. The token NEVER returns
+    // to the client; callers reference the item by item_id afterward.
     if (action === "exchange_token") {
-      const { public_token, institution_name = "Your Bank" } = body;
+      const { user_id, error: authError } = await getUserFromRequest(event);
+      if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
+      const { public_token, institution_name = "Your Bank", institution_id = null } = body;
       if (!public_token) return e400("public_token required");
+
       const data = await plaid("/item/public_token/exchange", { public_token });
-      return ok({ access_token: data.access_token, item_id: data.item_id, institution_name });
+      const access_token = data.access_token;
+      const item_id = data.item_id;
+
+      const admin = getAdminClient();
+      const { error: upsertErr } = await admin
+        .from("plaid_items")
+        .upsert({
+          user_id,
+          item_id,
+          access_token,
+          institution_id,
+          institution_name,
+          status: "active",
+        }, { onConflict: "user_id,item_id" });
+
+      if (upsertErr) {
+        // Persist failed — roll back the orphaned Plaid item so we never leave a
+        // live access_token we couldn't save (best-effort).
+        console.error("[exchange_token upsert]", upsertErr.message);
+        try { await plaid("/item/remove", { access_token }); }
+        catch (rbErr) { console.warn("[exchange_token rollback /item/remove failed]", rbErr.message); }
+        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Could not save your bank connection. Please try again." }) };
+      }
+
+      // access_token intentionally NOT returned.
+      return ok({ ok: true, item_id, institution_name });
     }
 
     // 3. get_accounts
@@ -336,31 +366,11 @@ exports.handler = async (event) => {
       return ok({ enriched: enrichedAll });
     }
 
-    // 9. store_item — auth-required: persist a Plaid Item for the authenticated user
-    // Body: { access_token, item_id, institution_id?, institution_name? }
+    // 9. store_item — DEPRECATED (Tier 1.2). Clients must never send access_tokens.
+    // exchange_token now exchanges AND persists the item atomically server-side,
+    // so this token-in-request-body path is permanently closed.
     if (action === "store_item") {
-      const { user_id, error: authError } = await getUserFromRequest(event);
-      if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
-      const { access_token, item_id, institution_id, institution_name } = body;
-      if (!access_token || !item_id) return e400("access_token and item_id required");
-      const admin = getAdminClient();
-      const { data, error } = await admin
-        .from("plaid_items")
-        .upsert({
-          user_id,
-          item_id,
-          access_token,
-          institution_id: institution_id || null,
-          institution_name: institution_name || null,
-          status: "active",
-        }, { onConflict: "user_id,item_id" })
-        .select("id, item_id, institution_name, status, created_at")
-        .single();
-      if (error) {
-        console.error("[plaid_items upsert]", error.message);
-        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: error.message }) };
-      }
-      return ok({ item: data });
+      return { statusCode: 410, headers: CORS, body: JSON.stringify({ error: "store_item is deprecated — exchange_token now persists the item server-side." }) };
     }
 
     // 10. list_items — auth-required: return all items for the authenticated user
@@ -433,7 +443,7 @@ exports.handler = async (event) => {
       const failures = [];
       for (const t of tokens) {
         if (!t?.token) {
-          failures.push({ token: null, error: "missing token" });
+          failures.push({ error: "missing token" });
           continue;
         }
         try {
@@ -442,7 +452,7 @@ exports.handler = async (event) => {
           const item_id = itemResp.item?.item_id;
           const institution_id = itemResp.item?.institution_id || null;
           if (!item_id) {
-            failures.push({ token: t.token, error: "no item_id returned" });
+            failures.push({ error: "no item_id returned" });
             continue;
           }
           // Upsert (idempotent — re-running migration is safe)
@@ -457,13 +467,13 @@ exports.handler = async (event) => {
               status: "active",
             }, { onConflict: "user_id,item_id" });
           if (upsertErr) {
-            failures.push({ token: t.token, error: upsertErr.message });
+            failures.push({ error: upsertErr.message });
             continue;
           }
-          successes.push({ token: t.token, item_id });
+          successes.push({ item_id });
         } catch (err) {
           // Plaid /item/get failed (revoked token, login required, network, etc.)
-          failures.push({ token: t.token, error: err.message || "plaid error", error_code: err.errorCode || null });
+          failures.push({ error: err.message || "plaid error", error_code: err.errorCode || null });
         }
       }
       return ok({ successes, failures });
