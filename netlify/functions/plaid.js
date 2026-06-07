@@ -102,16 +102,21 @@ exports.handler = async (event) => {
   console.log("[Plaid debug] ENV:", process.env.PLAID_ENV, "| ACTION:", action, "| CLIENT_ID length:", (process.env.PLAID_CLIENT_ID||"").length, "| SECRET length:", (process.env.PLAID_SECRET||"").length);
 
   try {
-    // 1. create_link_token
+    // 1. create_link_token — auth-required (Tier 1.3). Every mint (new or
+    // update-mode) happens after login, so the whole action is gated. The Plaid
+    // client_user_id is the authenticated user_id (stable per-user, improves
+    // Plaid's duplicate-account detection).
     if (action === "create_link_token") {
+      const { user_id, error: authError } = await getUserFromRequest(event);
+      if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
+
       const country = body.country === "US" ? "US" : "CA";
       const WEBHOOK_URL = "https://flourishmoney.app/.netlify/functions/plaid-webhook";
 
-      // Phase D11: legacy raw-token-in-body path removed. Update-mode now requires item_id + JWT.
+      // Update-mode: re-link an existing item. Verify ownership and read the
+      // access_token server-side (never from the client).
       let updateAccessToken = null;
       if (body.item_id) {
-        const { user_id, error: authError } = await getUserFromRequest(event);
-        if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
         const admin = getAdminClient();
         const { data, error } = await admin
           .from("plaid_items")
@@ -128,14 +133,14 @@ exports.handler = async (event) => {
       const isUpdate = !!updateAccessToken;
       const linkBody = isUpdate
         ? {
-            user:         { client_user_id: body.user_id || "flourish-user" },
+            user:         { client_user_id: user_id },
             client_name:  "Flourish Money",
             access_token: updateAccessToken,
             webhook:      WEBHOOK_URL,
             language:     "en",
           }
         : {
-            user:          { client_user_id: body.user_id || "flourish-user" },
+            user:          { client_user_id: user_id },
             client_name:   "Flourish Money",
             products:      ["transactions", "investments", "liabilities"],
             country_codes: [country],
@@ -317,9 +322,20 @@ exports.handler = async (event) => {
       // Plaid endpoint accepts max 100 txns per request — we chunk internally.
       // Returns: { enriched: [{id, name, logo, mcc, category, ...}, ...] } — a flat array
       //          where each entry is keyed by `id` so the frontend can merge by id.
-      const { transactions } = body;
+      const { user_id, error: authError } = await getUserFromRequest(event);
+      if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
+
+      let { transactions } = body;
       if (!Array.isArray(transactions) || transactions.length === 0) {
         return ok({ enriched: [] });
+      }
+
+      // Tier 1.3 per-call cost cap: enrich at most 500 txns. Truncate-and-log
+      // rather than reject, so heavy first-connects still get most names/logos.
+      const ENRICH_CAP = 500;
+      if (transactions.length > ENRICH_CAP) {
+        console.warn(`[enrich] user=${user_id.slice(0, 8)} capped ${transactions.length} -> ${ENRICH_CAP}`);
+        transactions = transactions.slice(0, ENRICH_CAP);
       }
 
       // Chunk into max-100 batches

@@ -622,7 +622,7 @@ export function markTransfers(txns, keywordIsTransferFn, isCashAdvanceFn) {
 //   5. On any error: return newTxns unchanged. Enrichment is non-critical —
 //      the txns still display fine without it.
 
-export async function enrichTxns(newTxns, existingTxns, accounts, callPlaidFn) {
+export async function enrichTxns(newTxns, existingTxns, accounts, callPlaidFn, jwt) {
   if (!Array.isArray(newTxns) || newTxns.length === 0) return newTxns || [];
   if (!callPlaidFn) return newTxns;
 
@@ -648,7 +648,7 @@ export async function enrichTxns(newTxns, existingTxns, accounts, callPlaidFn) {
   if (eligible.length === 0) return newTxns;
 
   try {
-    const resp = await callPlaidFn("enrich_transactions", { transactions: eligible });
+    const resp = await callPlaidFn("enrich_transactions", { transactions: eligible }, { jwt });
     const enrichedById = new Map();
     (resp.enriched || []).forEach(e => enrichedById.set(e.id, e));
 

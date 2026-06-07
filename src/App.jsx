@@ -3849,11 +3849,12 @@ function Onboarding({onComplete,onViewLegal,userId}){
   // Fetch Plaid link_token as soon as user hits the bank step
   const [linkTokenLoading, setLinkTokenLoading] = useState(false);
 
-  const fetchLinkToken = useCallback(()=>{
+  const fetchLinkToken = useCallback(async ()=>{
     if(linkToken) return; // already have one
     setLinkTokenLoading(true);
     setBankError(null);
-    callPlaid("create_link_token",{country:p.country, user_id: userId || ("guest-" + Math.random().toString(36).slice(2))})
+    const jwt = await getJwt();
+    callPlaid("create_link_token",{country:p.country, user_id: userId || ("guest-" + Math.random().toString(36).slice(2))}, {jwt})
       .then(d=>{ setLinkToken(d.link_token); setLinkTokenLoading(false); })
       .catch(()=>{ setBankError("Could not connect to your bank — please check your connection and try again."); setLinkTokenLoading(false); });
   },[linkToken, p.country]); // eslint-disable-line
@@ -4513,7 +4514,7 @@ async function backgroundRefresh(isPremium, setAppData) {
       .flatMap(r => r.value.transactions || []);
     if(allAccounts.length === 0) return;
     const normalisedTxns = normaliseTxns(allRawTxns);
-    const enrichedTxns = await enrichTxns(normalisedTxns, [], allAccounts, callPlaid);
+    const enrichedTxns = await enrichTxns(normalisedTxns, [], allAccounts, callPlaid, jwt);
     setAppData(prev => {
       const freshAccounts = allAccounts.map(a => ({
         id: a.id,
@@ -12774,7 +12775,7 @@ export default function FlourishApp(){
         // Sort combined transactions by date
         allTxns.sort((a,b) => a.date < b.date ? 1 : -1);
         if(allTxns.length === 0) return;
-        const enrichedAllTxns = await enrichTxns(allTxns, appData?.transactions || [], appData?.accounts || [], callPlaid);
+        const enrichedAllTxns = await enrichTxns(allTxns, appData?.transactions || [], appData?.accounts || [], callPlaid, jwt);
         // Also refresh account balances with real-time data now that we have time
         try {
           const balResults = await Promise.allSettled(
@@ -12941,7 +12942,7 @@ export default function FlourishApp(){
           institution:instName,
         }));
         const transactions = normaliseTxns(txnData.transactions||[]);
-        const enrichedReconnectTxns = await enrichTxns(transactions, [], accounts, callPlaid);
+        const enrichedReconnectTxns = await enrichTxns(transactions, [], accounts, callPlaid, jwt);
         setAppData(d=>{
           // Auto-add credit card accounts to debts — don't overwrite existing debt entries
           const creditAccts = accounts.filter(a =>
@@ -13034,7 +13035,6 @@ export default function FlourishApp(){
       const country = appData?.profile?.country || "CA";
       const jwt = await getJwt();
       let payload = { country, user_id: user?.id };
-      let useAuth = false;
       if (jwt) {
         const items = await getUserItems();
         // Pick the item that triggered reconnect: prefer status==="error" or "pending_expiration"
@@ -13042,10 +13042,10 @@ export default function FlourishApp(){
         const target = broken || items[0];
         if (target?.item_id) {
           payload = { item_id: target.item_id, country };
-          useAuth = true;
         }
       }
-      const opts = useAuth ? { jwt } : undefined;
+      // create_link_token is auth-required now — always pass the JWT.
+      const opts = jwt ? { jwt } : undefined;
       const d = await callPlaid("create_link_token", payload, opts);
       setReconnectToken(d.link_token);
     } catch {
@@ -13055,12 +13055,13 @@ export default function FlourishApp(){
     }
   };
 
-  const handleAddNewBank = ()=>{
+  const handleAddNewBank = async ()=>{
     // FRESH LINK: always creates new connection, never update mode
     if(reconnectLoading) return;
     setReconnectLoading(true);
     const country = appData?.profile?.country || "CA";
-    callPlaid("create_link_token", { country, user_id: user?.id })
+    const jwt = await getJwt();
+    callPlaid("create_link_token", { country, user_id: user?.id }, {jwt})
       .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
       .catch(()=>{ setReconnectLoading(false); alert("Could not start bank connection — please try again."); });
   };
