@@ -848,6 +848,21 @@ function isBillArchived(b) {
   return b.isoDate < today;
 }
 
+// Tier 5: single source of truth for removing a bill — drops it AND records the merchant in
+// userBillOverrides.removed so auto-detection never re-adds it. Shared by every remove surface.
+function removeBillWithOverride(setAppData, idx, name) {
+  if (!setAppData) return;
+  const norm = String(name || "").toLowerCase().trim();
+  setAppData(prev => {
+    const ov = prev.userBillOverrides || {};
+    return {
+      ...prev,
+      bills: (prev.bills || []).filter((_, x) => x !== idx),
+      userBillOverrides: { removed: Array.from(new Set([...(ov.removed || []), norm])).filter(Boolean), typed: ov.typed || {} },
+    };
+  });
+}
+
 function detectRecurringBills(txns, opts = {}) {
   if (!txns || txns.length === 0) return [];
 
@@ -5981,15 +5996,7 @@ function BillManager({data, setAppData, onClose}){
   // re-adds it (keyed by the lowercased display name the user sees).
   const removeBill = (i, name) => {
     if(!window.confirm("Remove this bill? It won't be auto-detected again.")) return;
-    const norm = String(name||"").toLowerCase().trim();
-    setAppData(prev=>{
-      const ov = prev.userBillOverrides || {};
-      return {
-        ...prev,
-        bills:(prev.bills||[]).filter((_,x)=>x!==i),
-        userBillOverrides: { removed: Array.from(new Set([...(ov.removed||[]), norm])).filter(Boolean), typed: ov.typed||{} },
-      };
-    });
+    removeBillWithOverride(setAppData, i, name);
   };
   const updateBill = (i,field,val) => setAppData(prev=>({...prev, bills:(prev.bills||[]).map((b,x)=>x===i?{...b,[field]:val}:b)}));
   // Tier 4: type toggle updates the bill AND records userBillOverrides.typed (for re-detection).
@@ -10035,7 +10042,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
 
   if(sectionKey==="bills") {
     const updateBillAmt = (i,val) => { if(setAppData) setAppData(prev=>({...prev,bills:(prev.bills||[]).map((b,x)=>x===i?{...b,amount:val}:b)})); };
-    const removeBillS = i => { if(setAppData) setAppData(prev=>({...prev,bills:(prev.bills||[]).filter((_,x)=>x!==i)})); };
+    const removeBillS = (i, name) => { if(window.confirm("Remove this bill? It won't be auto-detected again.")) removeBillWithOverride(setAppData, i, name); }; // Tier 5: shared remove (records override)
     const ord = n => { const v=parseInt(n); return [11,12,13].includes(v)?"th":["st","nd","rd"][v%10-1]||"th"; };
     return (
       <div style={s}>
@@ -10052,7 +10059,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
                 <input value={b.amount} onChange={e=>updateBillAmt(i,e.target.value)} type="number" inputMode="decimal"
                   style={{flex:1,background:"none",border:"none",padding:"5px 4px 5px 0",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none",width:0,fontWeight:600}}/>
               </div>
-              <button onClick={()=>removeBillS(i)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:13,padding:"4px",flexShrink:0,minWidth:24,minHeight:24}}>✕</button>
+              <button onClick={()=>removeBillS(i,b.name)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:13,padding:"4px",flexShrink:0,minWidth:24,minHeight:24}}>✕</button>
             </div>
           ))
         }
