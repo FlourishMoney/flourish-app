@@ -4629,26 +4629,55 @@ async function backgroundRefresh(isPremium, setAppData) {
       Promise.allSettled(items.map(it => callPlaid("get_accounts", { item_id: it.item_id }, { jwt }))),
       Promise.allSettled(items.map(it => callPlaid("get_transactions", { item_id: it.item_id, days: 90 }, { jwt }))),
     ]);
-    const allAccounts = acctResults
-      .filter(r => r.status === "fulfilled")
-      .flatMap(r => r.value.accounts || []);
+
+    // Sprint 1b: track per-item success and stamp each fresh account with its item_id, so a
+    // PARTIAL multi-bank failure no longer wipes the bank that failed this round. Previously
+    // `accounts: freshAccounts` replaced the whole array with only the succeeded banks.
+    const failedItemIds = new Set();
+    const rawFreshAccounts = []; // raw Plaid accounts from SUCCEEDED items, stamped with _item
+    acctResults.forEach((r, idx) => {
+      const itemId = items[idx].item_id;
+      if (r.status === "fulfilled") {
+        (r.value.accounts || []).forEach(a => rawFreshAccounts.push({ ...a, _item: itemId }));
+      } else {
+        failedItemIds.add(itemId);
+        console.error(`[backgroundRefresh] get_accounts failed for item ${String(itemId).slice(0,8)}:`, r.reason?.message || r.reason);
+      }
+    });
+    const allSucceeded = failedItemIds.size === 0;
+    // Only bail entirely if EVERY item failed — keep cached state untouched.
+    if (rawFreshAccounts.length === 0 && !allSucceeded) {
+      console.error("[backgroundRefresh] all items failed account refresh — keeping cached state");
+      return;
+    }
+
     const allRawTxns = txnResults
       .filter(r => r.status === "fulfilled")
       .flatMap(r => r.value.transactions || []);
-    if(allAccounts.length === 0) return;
     const normalisedTxns = normaliseTxns(allRawTxns);
-    const enrichedTxns = await enrichTxns(normalisedTxns, [], allAccounts, callPlaid, jwt);
+    const enrichedTxns = await enrichTxns(normalisedTxns, [], rawFreshAccounts, callPlaid, jwt);
+
     setAppData(prev => {
-      const freshAccounts = allAccounts.map(a => ({
+      const mapAcct = a => ({
         id: a.id,
         name: a.name,
         type: a.type,
         subtype: a.subtype||null,
         balance: (a.type==="credit"||a.type==="loan") ? -(a.balance?.current||0) : (a.balance?.current??a.balance?.available??0),
         institution: prev.accounts?.find(p=>p.id===a.id)?.institution||"Bank",
-      }));
+        _item: a._item || null,
+      });
+      const freshAccounts = rawFreshAccounts.map(mapAcct);
+      const freshIds = new Set(freshAccounts.map(a => a.id));
+      // Retain prior accounts that (a) belong to a FAILED item (by stamped _item), or
+      // (b) are legacy/unstamped or manual accounts not refreshed this round — instead of
+      // dropping them. Accounts a succeeded item genuinely removed fall out of the fresh set.
+      const retained = (prev.accounts||[]).filter(p =>
+        !freshIds.has(p.id) && (p._item ? failedItemIds.has(p._item) : true)
+      );
+      const mergedAccounts = [...freshAccounts, ...retained];
       // Sync new credit card accounts into debts on background refresh
-      const creditAccts = freshAccounts.filter(a =>
+      const creditAccts = mergedAccounts.filter(a =>
         a.type === "credit" || a.type === "credit card" ||
         a.subtype === "credit card" || a.type === "line of credit"
       );
@@ -4662,8 +4691,10 @@ async function backgroundRefresh(isPremium, setAppData) {
         }));
       return {
         ...prev,
-        accounts: freshAccounts,
-        transactions: enrichedTxns.length > 0
+        accounts: mergedAccounts,
+        // Only replace transactions when EVERY item succeeded — otherwise a partial failure
+        // would drop the failed bank's transactions. Keep cached txns on partial failure.
+        transactions: (allSucceeded && enrichedTxns.length > 0)
           ? markTransfers(enrichedTxns, t => isInternalTransfer(t) || isCCPayment(t, prev.debts || []), isCashAdvance)
           : prev.transactions,
         debts: newCCDebts.length > 0
@@ -4671,8 +4702,12 @@ async function backgroundRefresh(isPremium, setAppData) {
           : prev.debts,
       };
     });
+    // Keep the 30-min throttle regardless of partial failure (a persistently-failing item
+    // shouldn't bypass it and hammer Plaid). The deep-merge above already preserved its data.
     localStorage.setItem("flourish_last_refresh", Date.now().toString());
-  } catch { /* silent failure */ }
+  } catch (e) {
+    console.error("[backgroundRefresh] unexpected error:", e?.message || e);
+  }
 }
 
 
