@@ -93,6 +93,29 @@ export function buildDbBlob(state, { userId = null, nowIso = null } = {}) {
   };
 }
 
+// ── Supabase I/O (caller injects the client; this file imports nothing) ──────────
+// Returns { blob, updatedAt } on a found row, null on a clean "no row", and THROWS on a
+// real read error — so the caller migrate-uploads ONLY on the clean-null case (never
+// clobbers a row it merely couldn't reach).
+export async function fetchUserData(sb, userId) {
+  const { data, error } = await sb.from("user_data").select("data, updated_at").eq("user_id", userId).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return { blob: data.data, updatedAt: data.updated_at };
+}
+
+// Upsert the blob (RLS-scoped to the owner). updated_at is set server-side by the trigger.
+export async function upsertUserData(sb, userId, blob) {
+  try {
+    const { error } = await sb.from("user_data").upsert(
+      { user_id: userId, data: blob, schema_version: (blob && blob.schemaVersion) || PERSIST_SCHEMA_VERSION },
+      { onConflict: "user_id" }
+    );
+    if (error) { console.error("[persist] upsert failed:", error.message); return { ok: false, error }; }
+    return { ok: true };
+  } catch (e) { console.error("[persist] upsert threw:", e?.message || e); return { ok: false, error: e }; }
+}
+
 // Generic debounce with an immediate flush() (for pagehide). The caller supplies saveFn —
 // commit 2 passes the Supabase upsert. Pure: this file knows nothing about the DB.
 export function makeDebouncedSaver(saveFn, delayMs = 2000) {

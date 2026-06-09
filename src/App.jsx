@@ -12,6 +12,7 @@ import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns, toMonthly, billMonthlyAmount } from "./lib/financialCalculations.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
+import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver } from "./lib/persistence.js";
 
 // Capacitor iOS platform detection — true only when running as a native iOS app via Capacitor.
 // Returns false on web/dev. Used to gate iOS-specific behavior: iOS launches free during v1
@@ -13065,6 +13066,34 @@ export default function FlourishApp(){
   const {w}=useWindowSize();
   const isDesktop=w>=960;
 
+  // ── Sprint 2: cloud persistence (Supabase) for authenticated users ──────────
+  const hydratingRef = useRef(true);      // blocks DB save until the first hydrate pulls/decides
+  const syncErrorRef = useRef(false);
+  const syncFailRef  = useRef(0);
+  const saverRef     = useRef(null);
+  const [syncError, setSyncError] = useState(false);
+  const getSaver = () => {
+    if (!saverRef.current) {
+      saverRef.current = makeDebouncedSaver(async ({ userId, blob }) => {
+        const { ok } = await upsertUserData(supabase, userId, blob);
+        if (ok) { syncFailRef.current = 0; if (syncErrorRef.current) { syncErrorRef.current = false; setSyncError(false); } }
+        else if (++syncFailRef.current >= 3 && !syncErrorRef.current) { syncErrorRef.current = true; setSyncError(true); }
+      });
+    }
+    return saverRef.current;
+  };
+  // Apply a hydrated DB blob to React state (DB is canonical). Preserves iOS free-unlock;
+  // isPremium from the DB is UI cache only (real entitlement = future profiles table).
+  const applyBlob = (blob) => {
+    const c = (blob && blob.core) || {};
+    if (c.appData !== undefined) setAppData(c.appData);
+    setOnboarded(!!c.onboarded);
+    setHousehold(c.household ?? null);
+    setIsPremium(isCapacitorIOS() || !!c.isPremium);
+    setCheckInBonus(c.checkInBonus || 0);
+    writeSideKeys(blob && blob.sideKeys);
+  };
+
   // ── Supabase auth session check ────────────────────────────────
   useEffect(()=>{
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -13084,12 +13113,62 @@ export default function FlourishApp(){
     migrateLocalStorageTokensToSupabase();
   }, [user]);
 
-  // ── Persist state changes to localStorage ──────────────────────
-  // Sprint 2 commit 1: stamp each local save with savedAt (last-write-wins compare on
-  // hydrate) + userId (shared-device match). localStorage keeps the FULL appData; the
-  // manual-only transaction trim applies to the DB blob only (commit 2).
-  useEffect(()=>{ saveState({onboarded,appData,household,isPremium,checkInBonus, savedAt:new Date().toISOString(), userId:user?.id||null}); },
-    [onboarded,appData,household,isPremium,checkInBonus,user]);
+  // ── Sprint 2: hydrate from Supabase on login (DB canonical; localStorage = cache) ──
+  // Defined BEFORE the save effect so that on a [user] change it sets hydratingRef=true
+  // before the save effect can fire — preventing a stale local state from racing up to DB.
+  useEffect(()=>{
+    if (!user) { hydratingRef.current = false; return; }
+    let cancelled = false;
+    hydratingRef.current = true;
+    (async ()=>{
+      try {
+        const remote = await fetchUserData(supabase, user.id); // throws on read error; null on clean no-row
+        if (cancelled) return;
+        const snap = loadState() || {};
+        const localSavedAt = snap.savedAt || null;
+        if (remote) {
+          const dbNewer = !localSavedAt || new Date(remote.updatedAt).getTime() >= new Date(localSavedAt).getTime();
+          if (dbNewer) {
+            applyBlob(remote.blob);                       // DB wins
+          } else {
+            // local is strictly newer (offline edits before login) → push it up, don't lose it
+            getSaver().schedule({ userId: user.id, blob: buildDbBlob(snap, { userId: user.id, nowIso: new Date().toISOString() }) });
+          }
+        } else if (snap.appData) {
+          // clean "no row" + we have local data → MIGRATION upload (only here, never on read error)
+          await upsertUserData(supabase, user.id, buildDbBlob(snap, { userId: user.id, nowIso: new Date().toISOString() }));
+          try { localStorage.setItem("flourish_db_migrated", "1"); } catch {}
+        }
+      } catch (e) {
+        console.error("[persist] hydrate read failed — keeping local cache, no upload:", e?.message || e);
+      } finally {
+        if (!cancelled) hydratingRef.current = false;
+      }
+    })();
+    return ()=>{ cancelled = true; };
+  }, [user]);
+
+  // ── Persist state changes: localStorage (always) + Supabase (authed, debounced) ──
+  // localStorage is the durability floor (full appData, synchronous, never fails silently).
+  // The DB save is gated on !hydratingRef so a hydrate-driven setAppData can't echo back up,
+  // and skipped for anonymous users (no `user`). DB blob carries manual-only transactions.
+  useEffect(()=>{
+    const nowIso = new Date().toISOString();
+    saveState({onboarded,appData,household,isPremium,checkInBonus, savedAt:nowIso, userId:user?.id||null});
+    if (user && !hydratingRef.current) {
+      getSaver().schedule({ userId:user.id, blob: buildDbBlob({onboarded,appData,household,isPremium,checkInBonus}, {userId:user.id, nowIso}) });
+    }
+  }, [onboarded,appData,household,isPremium,checkInBonus,user]);
+
+  // ── Sprint 2: flush the pending cloud save on tab hide/close (best-effort) ──
+  // localStorage already holds the durable copy, so a missed flush only delays sync.
+  useEffect(()=>{
+    const flush = ()=>{ try { saverRef.current?.flush(); } catch {} };
+    const onVis = ()=>{ if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVis);
+    return ()=>{ window.removeEventListener("pagehide", flush); document.removeEventListener("visibilitychange", onVis); };
+  }, []);
 
   // ── Fetch transactions on first dashboard load after bank connect ──
   // Onboarding only fetches accounts (fast). Transactions are fetched here silently.
@@ -13544,9 +13623,17 @@ input,button,select,textarea { font-family:inherit; }
     ::selection{background:rgba(0,214,143,0.25);color:#EDE8E1}
     body{background:#060A0E}
 `
+  // Sprint 2: shown only after repeated cloud-sync failures — data is safe on-device meanwhile.
+  const syncBanner = syncError ? (
+    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.gold+"22",borderBottom:`1px solid ${C.gold}55`,color:C.goldBright,fontSize:12,fontWeight:600,textAlign:"center",padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+      Saved on this device — cloud sync is retrying…
+    </div>
+  ) : null;
+
   if(isDesktop) return (
     <div style={{background:C.bg,minHeight:"100vh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
+      {syncBanner}
 
       {/* ── DESKTOP SIDEBAR ─────────────────────────────────────────── */}
       <div style={{width:240,minHeight:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:0,height:"100vh",flexShrink:0}}>
@@ -13647,6 +13734,7 @@ input,button,select,textarea { font-family:inherit; }
   return(
     <div style={{background:C.bg,minHeight:"100vh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
+      {syncBanner}
       {/* Ambient mesh background */}
       <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
         <div style={{position:"absolute",top:-220,left:-180,width:640,height:640,borderRadius:"50%",background:C.isDark?"radial-gradient(circle,rgba(0,204,133,0.055) 0%,transparent 68%)":"radial-gradient(circle,rgba(0,147,95,0.07) 0%,transparent 68%)",animation:"breathe 8s ease-in-out infinite"}}/>
