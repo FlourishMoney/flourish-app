@@ -688,20 +688,8 @@ function isCashAdvance(txn) {
          (name.includes("advance") && (name.includes("credit") || name.includes("card")));
 }
 
-// Returns CC payment transactions from a list, with the likely debt they paid
-function detectCCPayments(txns, debts=[]) {
-  return txns
-    .filter(t => t.amount > 0 && isCCPayment(t, debts))
-    .map(t => {
-      const matchedDebt = debts.find(d => {
-        const min = parseFloat(d.min||0);
-        const bal = parseFloat(d.balance||0);
-        return (min > 0 && Math.abs(t.amount - min) < 5) ||
-               (bal > 0 && Math.abs(t.amount - bal) < 50);
-      });
-      return { ...t, likelyCCPayment: true, matchedDebt: matchedDebt?.name || null };
-    });
-}
+// (Sprint 1 audit: detectCCPayments removed — it was dead code, never called. isCCPayment,
+// which it wrapped, is still used directly by markTransfers and the engines.)
 
 const CAT_META = {
   FOOD_AND_DRINK:            { cat:"Coffee & Dining", icon:"🍕", color:"#D97A3A" },
@@ -1153,7 +1141,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
   const safeToday = Math.floor(safePerDay);
 
   // Debt payoff impact
-  const topDebt = debts.sort((a,b)=>parseFloat(b.rate||0)-parseFloat(a.rate||0))[0];
+  const topDebt = [...debts].sort((a,b)=>parseFloat(b.rate||0)-parseFloat(a.rate||0))[0]; // Sprint 1: copy before sort — don't mutate data.debts
   const extraPayment = 150;
   let monthsSaved = 0;
   if (topDebt) {
@@ -1697,7 +1685,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
   const _toMoSim = toMonthly; // Bug 1: canonical converter
   const bal = (data.accounts||[])
     .filter(a => isCashAccount(a))
-    .reduce((s,a) => s + parseFloat(a.balance||0), 0) || DEMO.balance;
+    .reduce((s,a) => s + parseFloat(a.balance||0), 0) || 0; // Sprint 1: no fake DEMO.balance — real $0/unknown
   const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0)
     .reduce((s,i) => s + _toMoSim(i.amount,i.freq), 0); // Bug 5: no fake income fallback
   const { liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
@@ -4994,6 +4982,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const _ss         = SafeSpendEngine.calculate(data);
   const bal         = _ss.balance;
   const safe        = _ss.safeAmount;
+  const hasCashAccount = (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0; // Sprint 1: gate safe-to-spend empty state
   // overdraft: either bills in next 10 days exceed balance (immediate)
   // OR forecast shows negative balance within 7 days (imminent)
   // sevenDayRisk is calculated below — use a temporary check here with SafeSpend only,
@@ -5208,6 +5197,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                 ? <span style={{color:heroColorBright+"55",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· live</span>
                 : <span style={{color:C.gold+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· estimated</span>}
             </div>
+            {hasCashAccount ? (
             <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.88,marginBottom:18,position:"relative",display:"inline-block"}}>
               <span style={{fontSize:24,color:heroColorBright+"77",verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
               <span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`,
@@ -5221,6 +5211,13 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                   backgroundSize:"200% 100%",animation:"shimmer 1.2s ease-in-out infinite"}}/>
               )}
             </div>
+            ) : (
+            /* Sprint 1: no fake number when no cash account is connected */
+            <div style={{marginBottom:18,maxWidth:320}}>
+              <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:heroColorBright,fontSize:19,fontWeight:800,lineHeight:1.3}}>Connect an account to see your safe-to-spend</div>
+              <div style={{color:heroColorBright+"99",fontSize:12,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Add a bank or enter your balances to get started →</div>
+            </div>
+            )}
             {/* ── Timestamp — hidden during refresh to avoid contradiction ── */}
             {data.bankConnected&&!isRefreshing&&(()=>{
               const lastRefresh = parseInt(localStorage.getItem("flourish_last_refresh")||"0");
@@ -5234,7 +5231,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
               );
             })()}
             {/* ── Inline math proof — one line, no tap required ── */}
-            {(()=>{
+            {hasCashAccount && (()=>{
               // Bug 6: breakdown rows come straight from SafeSpendEngine so they SUM to the headline.
               const _ss = SafeSpendEngine.calculate(data);
               // Overdraft: show a focused warning instead of the math
@@ -10473,7 +10470,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const prov = sanitizeField(profile.province||"", 40);
     const _toMoCtx = toMonthly; // Bug 1: canonical converter
     const income = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0).reduce((s,i)=>s+_toMoCtx(i.amount,i.freq),0); // Bug 5: no fake income fallback
-    const balance = (accounts||[]).filter(a=>isCashAccount(a)).reduce((s,a)=>s+parseFloat(a.balance||0),0) || DEMO.balance;
+    const balance = (accounts||[]).filter(a=>isCashAccount(a)).reduce((s,a)=>s+parseFloat(a.balance||0),0) || 0; // Sprint 1: no fake DEMO.balance in Coach context
     const spending = txns.filter(t=>t.amount>0 && !t.isTransfer).reduce((s,t)=>s+t.amount,0);
 
     // ── PHASE 1C: pre-computed engine values for affordability reasoning ──

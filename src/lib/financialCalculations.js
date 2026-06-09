@@ -134,27 +134,31 @@ export function simulateDebtPayoff({ balance, apr, monthlyPayment }) {
     return { monthsToPayoff: Infinity, totalInterest: Infinity, totalPaid: Infinity, payoffInMonths: Infinity, payoffDate: null };
   }
 
-  let months;
-  if (r === 0) {
-    months = bal / pmt;
-  } else {
-    const argument = 1 - (bal * r) / pmt;
-    if (argument <= 0) {
-      return { monthsToPayoff: Infinity, totalInterest: Infinity, totalPaid: Infinity, payoffInMonths: Infinity, payoffDate: null };
-    }
-    months = -Math.log(argument) / Math.log(1 + r);
+  // Guard: if the payment never exceeds the monthly interest, the debt never amortizes.
+  if (r > 0 && pmt <= bal * r) {
+    return { monthsToPayoff: Infinity, totalInterest: Infinity, totalPaid: Infinity, payoffInMonths: Infinity, payoffDate: null };
   }
 
-  const monthsRounded = Math.ceil(months);
-  const totalPaid     = _round(monthsRounded * pmt);
-  const totalInterest = _round(totalPaid - bal);
+  // Sprint-1 audit fix: amortize month-by-month for EXACT totals. The final month is a
+  // partial payment, so the old closed-form (Math.ceil(months) * pmt) overstated totalPaid
+  // and totalInterest (e.g. $1000 @ 12% / $100 → returned 1100/100 vs the true 1058.98/58.98).
+  let remaining = bal, paid = 0, n = 0;
+  while (remaining > 0 && n < 1200) {
+    const interest = remaining * r;
+    const pay = Math.min(pmt, remaining + interest);
+    paid += pay;
+    remaining = remaining + interest - pay;
+    n++;
+  }
+  const totalPaid     = _round(paid);
+  const totalInterest = _round(paid - bal);
 
   return {
-    monthsToPayoff: monthsRounded,
-    payoffInMonths: monthsRounded,
+    monthsToPayoff: n,
+    payoffInMonths: n,
     totalPaid,
     totalInterest,
-    payoffDate: _monthsFromNow(monthsRounded),
+    payoffDate: _monthsFromNow(n),
   };
 }
 
