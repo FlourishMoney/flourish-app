@@ -636,6 +636,26 @@ export function toMonthly(amount, frequency) {
   }
 }
 
+// Tier 5: canonical bill amount → monthly-equivalent. Use everywhere bills are summed into
+// a MONTHLY total. One-offs are not recurring, so they contribute 0 to monthly totals (their
+// impact lands in the forecast on their date + the SafeSpend upcoming-window instead).
+export function billMonthlyAmount(bill) {
+  if (!bill) return 0;
+  const a = parseFloat(bill.amount || 0) || 0;
+  if (a <= 0) return 0;
+  if (bill.type === "one_off") return 0;
+  switch (bill.freq) {
+    case "weekly":      return a * 4.333; // 52/12
+    case "biweekly":    return a * 2.167; // 26/12
+    case "semimonthly": return a * 2;     // 24/12
+    case "quarterly":   return a / 3;
+    case "annual":
+    case "annually":    return a / 12;
+    case "monthly":
+    default:            return a;
+  }
+}
+
 export async function enrichTxns(newTxns, existingTxns, accounts, callPlaidFn, jwt) {
   if (!Array.isArray(newTxns) || newTxns.length === 0) return newTxns || [];
   if (!callPlaidFn) return newTxns;

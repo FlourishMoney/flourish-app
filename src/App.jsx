@@ -9,7 +9,7 @@ import {
   Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
-import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns, toMonthly } from "./lib/financialCalculations.js";
+import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns, toMonthly, billMonthlyAmount } from "./lib/financialCalculations.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 
 // Capacitor iOS platform detection — true only when running as a native iOS app via Capacitor.
@@ -1677,7 +1677,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
   const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0)
     .reduce((s,i) => s + _toMoSim(i.amount,i.freq), 0); // Bug 5: no fake income fallback
   const { liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
-  const bills = (data.bills||[]).reduce((s,b) => s + parseFloat(b.amount||0), 0);
+  const bills = (data.bills||[]).reduce((s,b) => s + billMonthlyAmount(b), 0);
   const {score} = calcHealthScore(data);
 
   const simulate = async (q, typeOverride) => {
@@ -2939,7 +2939,7 @@ const FinancialCalcEngine = {
     // Bug 5: no invented income fallback — 0 when none entered (ratio calcs guard >0).
     const monthlyIncome = incomes.reduce((s,i) => s + toMonthly(i.amount, i.freq), 0);
     // Bills: committed expenses from bills array — source of truth
-    const monthlyBills  = bills.reduce((s,b) => s + parseFloat(b.amount||0), 0);
+    const monthlyBills  = bills.reduce((s,b) => s + billMonthlyAmount(b), 0);
     // Discretionary: excludes non-spend flows, bill categories (already in monthlyBills), CC payments
     const monthlySpend  = txns.filter(t => {
       const cat = getEffCat(t);
@@ -5083,7 +5083,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         // Calculate a real estimate from their onboarding data
         const toMo = toMonthly; // Bug 1: canonical converter
         const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
-        const monthlyBills = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
+        const monthlyBills = (data.bills||[]).reduce((s,b)=>s+billMonthlyAmount(b),0);
         const safetyBuffer = monthlyIncome * 0.15;
         const estimatedSpend = monthlyIncome * 0.68; // avg spend rate
         const surplus = monthlyIncome - monthlyBills - safetyBuffer;
@@ -6636,7 +6636,7 @@ function generateBudgetSuggestions(data) {
   const netMo     = Math.round(grossMo*(1-taxRate));
 
   // ── Fixed commitments (auto-filled from bills + debt minimums) ──────
-  const billsMo   = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
+  const billsMo   = (data.bills||[]).reduce((s,b)=>s+billMonthlyAmount(b),0);
   const debtsMo   = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.min||0),0);
   const fixedMo   = Math.round(billsMo+debtsMo);
 
@@ -10422,7 +10422,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
         .reduce((acc,t)=>{acc[t.cat]=(acc[t.cat]||0)+t.amount;return acc;},{})
     ).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`${sanitizeField(k,60)}: $${(v||0).toFixed(0)}`).join(", ");
     const goals = (data.goals||[]).map(g=>`${sanitizeField(g.name,80)}: $${parseFloat(g.saved||0).toFixed(0)} saved of $${parseFloat(g.target||0).toFixed(0)} target${g.monthly?`, $${parseFloat(g.monthly)||0}/mo contribution`:""}`).join("; ")||"none set";
-    const bills = (data.bills||[]).map(b=>`${sanitizeField(b.name,80)} $${parseFloat(b.amount)||0}/mo${b.arrears?` (arrears: $${parseFloat(b.arrears)||0})`:""}` ).join("; ")||"none tracked";
+    const bills = (data.bills||[]).map(b=>`${sanitizeField(b.name,80)} $${billMonthlyAmount(b).toFixed(0)}/mo${b.arrears?` (arrears: $${parseFloat(b.arrears)||0})`:""}` ).join("; ")||"none tracked";
     const debts = (data.debts||[]).map(d=>`${sanitizeField(d.name,80)} $${parseFloat(d.balance||0).toFixed(0)}${d.rate?` @ ${parseFloat(d.rate)||0}%`:""}`).join("; ")||"none";
     const ret = profile.retirement||{};
     const retInfo = Object.entries(ret).filter(([,v])=>parseFloat(v)>0).map(([k,v])=>`${sanitizeField(k,40)}: $${parseFloat(v)||0}`).join(", ")||"none entered";
@@ -11225,7 +11225,7 @@ function FirstVisitScreen({data, onDismiss}) {
   const { monthlyIncome, monthlyBills } = FinancialCalcEngine.cashFlow(data);
   const toMo = toMonthly; // Bug 1: canonical converter
   const incomeAmt = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
-  const billsAmt = (data.bills||[]).reduce((s,b)=>s+parseFloat(b.amount||0),0);
+  const billsAmt = (data.bills||[]).reduce((s,b)=>s+billMonthlyAmount(b),0);
   const safeFloor = incomeAmt * 0.15;
   const bufferAmt = Math.max(0, incomeAmt - billsAmt - safeFloor);
   const name = data.profile?.name || "there";
