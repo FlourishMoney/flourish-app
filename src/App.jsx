@@ -822,11 +822,34 @@ function detectIncomeFromTxns(txns) {
   };
 }
 
-function detectRecurringBills(txns) {
+// Small Levenshtein for fuzzy bill-name dedupe (Tier 4). Inputs are short merchant names.
+function _levenshtein(a, b) {
+  if (a === b) return 0;
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+function detectRecurringBills(txns, opts = {}) {
   if (!txns || txns.length === 0) return [];
 
-  // Categories that indicate a bill (not groceries, dining, etc.)
-  const BILL_CATS = new Set([
+  // Tier 4: consult user overrides — never re-add a removed merchant; honor manual type.
+  const { overrides = {}, debts = [] } = opts;
+  const removedSet = new Set((overrides.removed || []).map(s => String(s).toLowerCase()));
+  const typedMap = overrides.typed || {};
+
+  // Categories that indicate a bill (not groceries, dining, etc.). Named distinctly from
+  // the module-level BILL_CATS (the budget-exclusion set) to end the prior shadowing.
+  const DETECT_BILL_CATS = new Set([
     "Utilities","Bills","Services","Health","Education","Home",
     "Gas & Transport","Entertainment","Shopping",
   ]);
@@ -842,12 +865,20 @@ function detectRecurringBills(txns) {
     "fortis","toronto hydro","bc hydro","epcor","alectra",
   ];
 
-  // Only look at expenses (positive = money out), exclude income/transfers
+  // Only look at expenses (positive = money out). Tier 4: also exclude inter-account
+  // moves (cash advances, card payments, balance transfers) so they never surface as
+  // bills — reusing the existing transfer classifiers + a keyword guard.
+  const TRANSFER_RX = /cash advance|payment to|transfer to|balance transfer|e-?transfer|pymt|autopay/i;
   const expenses = txns.filter(t =>
     t.amount > 0 &&
     t.cat !== "Income" &&
     t.cat !== "Transfer" &&
-    t.cat !== "Fees"
+    t.cat !== "Fees" &&
+    !t.isTransfer &&
+    !isInternalTransfer(t) &&
+    !isCashAdvance(t) &&
+    !isCCPayment(t, debts) &&
+    !TRANSFER_RX.test(t.name || "")
   );
 
   // Group by normalized merchant name
@@ -864,8 +895,11 @@ function detectRecurringBills(txns) {
     // Must appear at least 2 times in 90 days to be "recurring"
     if (txList.length < 2) return;
 
+    // Tier 4: respect user removals — never re-detect a merchant the user deleted.
+    if (removedSet.has(key)) return;
+
     // Check if it's a bill category OR matches a bill keyword
-    const isBillCat     = txList.some(t => BILL_CATS.has(t.cat));
+    const isBillCat     = txList.some(t => DETECT_BILL_CATS.has(t.cat));
     const isBillKeyword = BILL_KEYWORDS.some(kw => key.includes(kw));
     if (!isBillCat && !isBillKeyword) return;
 
@@ -887,6 +921,12 @@ function detectRecurringBills(txns) {
     const recent = txList.slice(-3);
     const avg    = recent.reduce((s,t) => s + t.amount, 0) / recent.length;
 
+    // Tier 4: Fixed vs Variable — >15% spread across occurrences ⇒ variable (hydro,
+    // phone), else fixed (rent, subscriptions). A user override always wins.
+    const amts     = txList.map(t => t.amount);
+    const spread   = avg > 0 ? (Math.max(...amts) - Math.min(...amts)) / avg : 0;
+    const billType = typedMap[key] || (spread > 0.15 ? "variable" : "fixed");
+
     // Estimate due date from most common day of month
     const days     = txList.map(t => new Date(t.date + "T12:00:00").getDate());
     const dayMode  = days.sort((a,b) =>
@@ -903,21 +943,28 @@ function detectRecurringBills(txns) {
       name:    displayName,
       amount:  (avg||0).toFixed(2),
       date:    String(dayMode),
+      type:    billType,   // Tier 4: "fixed" | "variable"
+      freq:    "monthly",
       auto:    true,   // flag so UI can show "detected" badge
       avgNote: txList.length >= 3 ? `avg of last ${Math.min(txList.length,3)} months` : "estimated",
     });
   });
 
-  // Sort by amount desc, deduplicate by normalized name
-  const seen = new Set();
-  return bills
-    .sort((a,b) => Number(b.amount) - Number(a.amount))
-    .filter(b => {
-      const k = b.name.toLowerCase();
-      if (seen.has(k)) return false;
-      seen.add(k);
-      return true;
+  // Sort by amount desc, then fuzzy-dedupe: drop a bill whose name is contained in,
+  // contains, or is within edit-distance 3 of one already kept — collapses near-dupes
+  // like "Insurance Intact" vs "Insurance".
+  const kept = [];
+  bills.sort((a,b) => Number(b.amount) - Number(a.amount));
+  for (const b of bills) {
+    const k = b.name.toLowerCase().trim();
+    const dupe = kept.some(x => {
+      const j = x.name.toLowerCase().trim();
+      if (j === k || j.includes(k) || k.includes(j)) return true;
+      return _levenshtein(j, k) <= 3;
     });
+    if (!dupe) kept.push(b);
+  }
+  return kept;
 }
 
 // ─── Plaid Link SDK hook ──────────────────────────────────────────────────────
@@ -8595,7 +8642,7 @@ function Family({data,household,setHousehold,setScreen}){
             if(item.id==="bills"){
               const allBills=(data.bills||[]).map(b=>{
                 const today2=new Date();
-                const due=new Date(today2.getFullYear(),today2.getMonth(),parseInt(b.dueDay||1));
+                const due=new Date(today2.getFullYear(),today2.getMonth(),parseInt(b.date||b.dueDay||1));
                 if(due<today2)due.setMonth(due.getMonth()+1);
                 const days=Math.round((due-today2)/(1000*60*60*24));
                 return{...b,days};
@@ -12967,20 +13014,25 @@ export default function FlourishApp(){
         } catch(e) { /* silent — cached balances still shown */ }
         // Auto-detect income and bills from combined data
         const detectedIncome = detectIncomeFromTxns(enrichedAllTxns);
-        const detectedBills = detectRecurringBills(enrichedAllTxns);
-        setAppData(prev=>({
-          ...prev,
-          transactions: markTransfers(enrichedAllTxns, t => isInternalTransfer(t) || isCCPayment(t, prev.debts || []), isCashAdvance),
-          incomes: (() => {
-            // Only auto-set income if user hasn't entered any real income yet
-            const hasRealIncome = (prev.incomes||[]).some(i => parseFloat(i.amount||0) > 0);
-            if (!detectedIncome || hasRealIncome) return prev.incomes;
-            return [{id:1,label:detectedIncome.label,amount:String(detectedIncome.typical),freq:"biweekly",type:"employment",isVariable:detectedIncome.isVariable,typicalAmount:String(detectedIncome.typical),lowAmount:String(detectedIncome.low),highAmount:String(detectedIncome.high),autoDetected:true}];
-          })(),
-          bills: detectedBills?.length > 0 && (!prev.bills?.some(b=>b.name))
-            ? detectedBills.map(b=>({name:b.name,amount:b.amount,date:b.date}))
-            : prev.bills,
-        }));
+        setAppData(prev=>{
+          // Mark transfers FIRST so detection sees t.isTransfer and filters them out.
+          const markedTxns = markTransfers(enrichedAllTxns, t => isInternalTransfer(t) || isCCPayment(t, prev.debts || []), isCashAdvance);
+          // Tier 4: detect against user overrides + debts (filters transfers & removed merchants).
+          const detectedBills = detectRecurringBills(markedTxns, { overrides: prev.userBillOverrides || {}, debts: prev.debts || [] });
+          return {
+            ...prev,
+            transactions: markedTxns,
+            incomes: (() => {
+              // Only auto-set income if user hasn't entered any real income yet
+              const hasRealIncome = (prev.incomes||[]).some(i => parseFloat(i.amount||0) > 0);
+              if (!detectedIncome || hasRealIncome) return prev.incomes;
+              return [{id:1,label:detectedIncome.label,amount:String(detectedIncome.typical),freq:"biweekly",type:"employment",isVariable:detectedIncome.isVariable,typicalAmount:String(detectedIncome.typical),lowAmount:String(detectedIncome.low),highAmount:String(detectedIncome.high),autoDetected:true}];
+            })(),
+            bills: detectedBills?.length > 0 && (!prev.bills?.some(b=>b.name))
+              ? detectedBills.map(b=>({name:b.name,amount:b.amount,date:b.date,type:b.type||"fixed",freq:b.freq||"monthly",auto:true}))
+              : prev.bills,
+          };
+        });
       } catch(e) {
         console.warn("[Flourish] Background transaction fetch failed:", e.message);
       }
