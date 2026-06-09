@@ -12,7 +12,7 @@ import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns, toMonthly, billMonthlyAmount } from "./lib/financialCalculations.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
-import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver } from "./lib/persistence.js";
+import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal } from "./lib/persistence.js";
 
 // Capacitor iOS platform detection — true only when running as a native iOS app via Capacitor.
 // Returns false on web/dev. Used to gate iOS-specific behavior: iOS launches free during v1
@@ -13072,6 +13072,9 @@ export default function FlourishApp(){
   const syncFailRef  = useRef(0);
   const saverRef     = useRef(null);
   const [syncError, setSyncError] = useState(false);
+  // (5) one-time "backed up" banner after a local→DB migration upload.
+  const [showMigratedBanner, setShowMigratedBanner] = useState(()=>{ try { return localStorage.getItem("flourish_db_migrated")==="1"; } catch { return false; } });
+  const dismissMigratedBanner = ()=>{ try { localStorage.setItem("flourish_db_migrated","seen"); } catch {} setShowMigratedBanner(false); };
   const getSaver = () => {
     if (!saverRef.current) {
       saverRef.current = makeDebouncedSaver(async ({ userId, blob }) => {
@@ -13120,6 +13123,14 @@ export default function FlourishApp(){
     if (!user) { hydratingRef.current = false; return; }
     let cancelled = false;
     hydratingRef.current = true;
+    // (4) Shared-device safety: if local data belongs to a DIFFERENT user, wipe it BEFORE
+    // hydrating so user B never sees user A's finances (closes the Tier 2.8 leak). Anonymous
+    // local data (userId null) is NOT wiped — it migrates into the new account below.
+    const localUid = loadState()?.userId || (()=>{ try { return localStorage.getItem(STAMP_KEY); } catch { return null; } })();
+    if (localUid && localUid !== user.id) {
+      clearAllUserLocal();
+      setAppData(null); setOnboarded(false); setHousehold(null); setIsPremium(isCapacitorIOS()); setCheckInBonus(0);
+    }
     (async ()=>{
       try {
         const remote = await fetchUserData(supabase, user.id); // throws on read error; null on clean no-row
@@ -13138,10 +13149,12 @@ export default function FlourishApp(){
           // clean "no row" + we have local data → MIGRATION upload (only here, never on read error)
           await upsertUserData(supabase, user.id, buildDbBlob(snap, { userId: user.id, nowIso: new Date().toISOString() }));
           try { localStorage.setItem("flourish_db_migrated", "1"); } catch {}
+          setShowMigratedBanner(true);                    // (5) surface the one-time banner
         }
       } catch (e) {
         console.error("[persist] hydrate read failed — keeping local cache, no upload:", e?.message || e);
       } finally {
+        try { localStorage.setItem(STAMP_KEY, user.id); } catch {} // stamp the device for this user
         if (!cancelled) hydratingRef.current = false;
       }
     })();
@@ -13629,11 +13642,18 @@ input,button,select,textarea { font-family:inherit; }
       Saved on this device — cloud sync is retrying…
     </div>
   ) : null;
+  // (5) one-time, dismissible — appears after a successful local→DB migration upload.
+  const migratedBanner = showMigratedBanner ? (
+    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.green+"22",borderBottom:`1px solid ${C.green}55`,color:C.greenBright,fontSize:12,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+      ✓ Your data is now backed up to your Flourish account
+      <button onClick={dismissMigratedBanner} style={{background:"none",border:"none",color:C.greenBright,cursor:"pointer",fontWeight:800,fontSize:14,padding:"0 4px",lineHeight:1}}>✕</button>
+    </div>
+  ) : null;
 
   if(isDesktop) return (
     <div style={{background:C.bg,minHeight:"100vh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      {syncBanner}
+      {syncBanner}{migratedBanner}
 
       {/* ── DESKTOP SIDEBAR ─────────────────────────────────────────── */}
       <div style={{width:240,minHeight:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:0,height:"100vh",flexShrink:0}}>
@@ -13734,7 +13754,7 @@ input,button,select,textarea { font-family:inherit; }
   return(
     <div style={{background:C.bg,minHeight:"100vh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      {syncBanner}
+      {syncBanner}{migratedBanner}
       {/* Ambient mesh background */}
       <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
         <div style={{position:"absolute",top:-220,left:-180,width:640,height:640,borderRadius:"50%",background:C.isDark?"radial-gradient(circle,rgba(0,204,133,0.055) 0%,transparent 68%)":"radial-gradient(circle,rgba(0,147,95,0.07) 0%,transparent 68%)",animation:"breathe 8s ease-in-out infinite"}}/>

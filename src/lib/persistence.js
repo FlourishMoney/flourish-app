@@ -77,6 +77,20 @@ export function writeSideKeys(sideKeys) {
   } catch {}
 }
 
+// Shared-device safety (Tier 2.8 / Sprint 2 commit 4): wipe ALL flourish_* keys when a
+// DIFFERENT user signs in on the same device. More aggressive than the sync allow-list on
+// purpose — this also clears coach history and device flags so user B starts truly fresh.
+export function clearAllUserLocal() {
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("flourish_")) keys.push(k);
+    }
+    keys.forEach(k => { try { localStorage.removeItem(k); } catch {} });
+  } catch {}
+}
+
 // Build the canonical DB blob from React state + localStorage side keys.
 // `nowIso` is injected (callers pass new Date().toISOString()) to keep this function pure.
 export function buildDbBlob(state, { userId = null, nowIso = null } = {}) {
