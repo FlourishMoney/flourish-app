@@ -13085,8 +13085,11 @@ export default function FlourishApp(){
   }, [user]);
 
   // ── Persist state changes to localStorage ──────────────────────
-  useEffect(()=>{ saveState({onboarded,appData,household,isPremium,checkInBonus}); },
-    [onboarded,appData,household,isPremium,checkInBonus]);
+  // Sprint 2 commit 1: stamp each local save with savedAt (last-write-wins compare on
+  // hydrate) + userId (shared-device match). localStorage keeps the FULL appData; the
+  // manual-only transaction trim applies to the DB blob only (commit 2).
+  useEffect(()=>{ saveState({onboarded,appData,household,isPremium,checkInBonus, savedAt:new Date().toISOString(), userId:user?.id||null}); },
+    [onboarded,appData,household,isPremium,checkInBonus,user]);
 
   // ── Fetch transactions on first dashboard load after bank connect ──
   // Onboarding only fetches accounts (fast). Transactions are fetched here silently.

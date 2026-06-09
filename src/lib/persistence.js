@@ -1,0 +1,113 @@
+// src/lib/persistence.js
+// -----------------------------------------------------------------------------
+// Flourish — authenticated-user cloud persistence helpers (Sprint 2).
+//
+// TWO-TIER MODEL: anonymous users stay localStorage-only. Authenticated users get
+// localStorage (instant cache + offline floor) PLUS Supabase (canonical source of truth).
+//
+// These helpers are PURE — they hold no Supabase client. The caller injects one in the
+// save/hydrate layers (commits 2-3). That keeps this file dependency-free and unit-testable.
+//
+// WHAT SYNCS TO THE DB BLOB
+//   core:     onboarded, household, isPremium (UI cache only — NOT an entitlement),
+//             checkInBonus, and appData with transactions reduced to MANUAL ONLY
+//             (Plaid txns re-fetch via backgroundRefresh, so persisting them is waste).
+//   sideKeys: an ALLOW-LISTed subset of flourish_* localStorage keys.
+//
+// WHAT NEVER SYNCS
+//   - flourish_coach_history  → privacy promise ("no conversation history stored server-side")
+//   - flourish_plaid_token*   → secrets (tokens live server-side in plaid_items only)
+//   - device-only UX flags    → last_refresh, dash_tab, tour/visit/disclosure flags, etc.
+//   The allow-list guarantees a NEW localStorage key cannot leave the device unless a
+//   reviewer explicitly adds it here.
+//
+// NOTE: localStorage (flourish_v1) keeps the FULL appData (all transactions) as the local
+// cache. The manual-only transaction trim applies ONLY to the DB blob (size/cost).
+// -----------------------------------------------------------------------------
+
+export const PERSIST_SCHEMA_VERSION = 1;
+export const STAMP_KEY = "flourish_uid"; // localStorage stamp for shared-device safety (commit 4)
+
+// Side localStorage keys that ARE user data and should sync (exact allow-list).
+const SIDE_KEYS = [
+  "flourish_custom_cats",      // custom budget categories
+  "flourish_cat_overrides",    // per-txn category recategorizations / budget targets
+  "flourish_kids",             // kids-zone roster
+  "flourish_streak",           // check-in streak
+  "flourish_plan",             // UI cache only (real entitlement = future profiles table)
+  "flourish_trial_started_at", // trial state
+];
+// Per-kid dynamic keys (chores / data / theme) share this prefix.
+const SIDE_KEY_PREFIX = "flourish_kid_";
+
+function isSideKey(k) {
+  return SIDE_KEYS.includes(k) || k.startsWith(SIDE_KEY_PREFIX);
+}
+
+// Transactions that CANNOT be re-fetched from Plaid (manual / statement / manual-account).
+// A txn is Plaid-refetchable only if its account_id belongs to an item-backed bank account.
+export function manualTransactions(transactions = [], accounts = []) {
+  const plaidAcctIds = new Set(
+    (accounts || [])
+      .filter(a => a && (a._item || (a.institution && !["Manual", "Statement"].includes(a.institution))))
+      .map(a => a.id)
+  );
+  return (transactions || []).filter(t => !t || !plaidAcctIds.has(t.account_id));
+}
+
+// Read the allow-listed side keys from localStorage into a plain object (raw strings).
+export function readSideKeys() {
+  const out = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && isSideKey(k)) out[k] = localStorage.getItem(k);
+    }
+  } catch {}
+  return out;
+}
+
+// Scatter side keys back to localStorage (used on hydrate, commit 3). Allow-list enforced again.
+export function writeSideKeys(sideKeys) {
+  if (!sideKeys || typeof sideKeys !== "object") return;
+  try {
+    for (const [k, v] of Object.entries(sideKeys)) {
+      if (v != null && isSideKey(k)) localStorage.setItem(k, v);
+    }
+  } catch {}
+}
+
+// Build the canonical DB blob from React state + localStorage side keys.
+// `nowIso` is injected (callers pass new Date().toISOString()) to keep this function pure.
+export function buildDbBlob(state, { userId = null, nowIso = null } = {}) {
+  const { onboarded = false, appData = null, household = null, isPremium = false, checkInBonus = 0 } = state || {};
+  const slimAppData = appData
+    ? { ...appData, transactions: manualTransactions(appData.transactions, appData.accounts) }
+    : appData;
+  return {
+    schemaVersion: PERSIST_SCHEMA_VERSION,
+    savedAt: nowIso,
+    userId: userId || null,
+    core: { onboarded, household, isPremium, checkInBonus, appData: slimAppData },
+    sideKeys: readSideKeys(),
+  };
+}
+
+// Generic debounce with an immediate flush() (for pagehide). The caller supplies saveFn —
+// commit 2 passes the Supabase upsert. Pure: this file knows nothing about the DB.
+export function makeDebouncedSaver(saveFn, delayMs = 2000) {
+  let timer = null;
+  let pending = null;
+  const run = () => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (pending == null) return;
+    const payload = pending;
+    pending = null;
+    try { saveFn(payload); } catch (e) { console.error("[persist] save threw:", e?.message || e); }
+  };
+  return {
+    schedule(payload) { pending = payload; if (timer) clearTimeout(timer); timer = setTimeout(run, delayMs); },
+    flush() { run(); },
+    hasPending() { return pending != null; },
+  };
+}
