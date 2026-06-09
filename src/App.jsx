@@ -839,6 +839,15 @@ function _levenshtein(a, b) {
   return prev[n];
 }
 
+// Tier 5: a one-off expense is archived once its date has passed (skip in forecast/upcoming).
+// isoDate is "YYYY-MM-DD" which sorts lexicographically = chronologically.
+function isBillArchived(b) {
+  if (!b || b.type !== "one_off" || !b.isoDate) return false;
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  return b.isoDate < today;
+}
+
 function detectRecurringBills(txns, opts = {}) {
   if (!txns || txns.length === 0) return [];
 
@@ -3035,19 +3044,25 @@ const SafeSpendEngine = {
         return nameMatch && amtMatch;
       });
     };
-    const upcomingBills = bills
-      .filter(b => {
-        const dueDay = parseInt(b.date);
-        if(!dueDay) return false;
-        if(isBillPaid(b)) return false; // already paid this month — don't double-subtract
-        // Build this month's due date
-        const thisMonth = new Date(todayDate.getFullYear(), todayDate.getMonth(), dueDay);
-        // Build next month's due date
-        const nextMonth = new Date(todayDate.getFullYear(), todayDate.getMonth()+1, dueDay);
-        return (thisMonth >= todayDate && thisMonth <= in10Days) ||
-               (nextMonth >= todayDate && nextMonth <= in10Days);
-      })
-      .reduce((s,b) => s + parseFloat(b.amount||0), 0);
+    // Tier 5: count occurrences of each bill in the next 10 days (freq-aware + one-off + skip archived).
+    const occurrencesInWindow = (b) => {
+      if (isBillArchived(b)) return 0;
+      if (parseFloat(b.amount||0) <= 0) return 0;
+      if (b.type === "one_off") {
+        if (!b.isoDate) return 0;
+        const od = new Date(b.isoDate + "T12:00:00");
+        return (od >= todayDate && od <= in10Days) ? 1 : 0;
+      }
+      if (isBillPaid(b)) return 0; // recurring already paid this month — don't double-subtract
+      if (b.freq === "weekly" || b.freq === "biweekly") return 1; // recurs within any 10-day window
+      const dueDay = parseInt(b.date);
+      if (!dueDay) return 0;
+      const thisMonth = new Date(todayDate.getFullYear(), todayDate.getMonth(), dueDay);
+      const nextMonth = new Date(todayDate.getFullYear(), todayDate.getMonth()+1, dueDay);
+      return ((thisMonth >= todayDate && thisMonth <= in10Days) ||
+              (nextMonth >= todayDate && nextMonth <= in10Days)) ? 1 : 0;
+    };
+    const upcomingBills = bills.reduce((s,b) => s + parseFloat(b.amount||0) * occurrencesInWindow(b), 0);
 
     // Minimum debt payments due this month
     const debtPayments = debts
@@ -3172,12 +3187,26 @@ generate(data, days = 90, scenario = null) {
     secondaryMo.filter(i=>(i.freq==="monthly"?dayNum===1:(dayNum===1||dayNum===15)))
                .reduce((s,i)=>s+perDeposit(i),0);
 
+  // Tier 5: freq-aware bill placement. weekly/biweekly recur from today; semimonthly twice a
+  // month; a one-off lands once on its ISO date; monthly/quarterly/annual on their day-of-month
+  // (short horizon — quarterly/annual exact-month timing needs a stored anchor; deferred).
+  const billOccursOn = (b, d, i) => {
+    if (b.type === "one_off") return b.isoDate === localYMD(d);
+    const dueDay = parseInt(b.date);
+    switch (b.freq) {
+      case "weekly":      return i > 0 && i % 7 === 0;
+      case "biweekly":    return i > 0 && i % 14 === 0;
+      case "semimonthly": return dueDay > 0 && (d.getDate() === dueDay || d.getDate() === ((dueDay + 14) % 28) + 1);
+      default:            return dueDay > 0 && d.getDate() === dueDay;
+    }
+  };
+
   for(let i = 0; i <= days; i++) {
     const d       = new Date(today); d.setDate(today.getDate()+i);
     const dayNum  = d.getDate();
     const dateKey = localYMD(d);
     const isPayday = i > 0 && paydayDates.has(dateKey);
-    const dayBills = bills.filter(b=>parseInt(b.date)===dayNum&&parseInt(b.date)>0);
+    const dayBills = bills.filter(b => !isBillArchived(b) && billOccursOn(b, d, i));
     const inc      = (isPayday ? paycheque : 0) + getSecondary(dayNum);
     const out      = dayBills.reduce((s,b)=>s+parseFloat(b.amount||0),0) + (i===0?0:avgDaily);
     // Phase 3d-B: apply active scenario impact (purchase day-1, debt/invest monthly on the 1st, never day 0)
@@ -5932,6 +5961,7 @@ function BillManager({data, setAppData, onClose}){
   const [customName, setCustomName] = useState("");
   const [billType, setBillType] = useState("fixed");  // Tier 4: fixed | variable (add form)
   const [freq, setFreq] = useState("monthly");         // Tier 4: bill frequency (add form)
+  const [oneOffDate, setOneOffDate] = useState("");    // Tier 5: ISO date for a one-off expense
   const [saved, setSaved] = useState("");
   const country = data.profile?.country||"CA";
   const templates = BILL_TEMPLATES[country]||BILL_TEMPLATES.CA;
@@ -5940,7 +5970,10 @@ function BillManager({data, setAppData, onClose}){
 
   const saveBill = name => {
     if(!amount||!name) return;
-    setAppData(prev=>({...prev, bills:[...(prev.bills||[]), {name, amount, date:dueDate, type:billType, freq, manuallyAdded:true}]}));
+    const newBill = billType==="one_off"
+      ? {name, amount, isoDate:oneOffDate, date:String(parseInt((oneOffDate||"").slice(8,10))||1), type:"one_off", manuallyAdded:true}
+      : {name, amount, date:dueDate, type:billType, freq, manuallyAdded:true};
+    setAppData(prev=>({...prev, bills:[...(prev.bills||[]), newBill]}));
     setSaved(name); setTimeout(()=>setSaved(""), 2000);
     setAdding(null); setAmount(""); setDueDate("1"); setCustomName(""); setBillType("fixed"); setFreq("monthly");
   };
@@ -5972,23 +6005,28 @@ function BillManager({data, setAppData, onClose}){
     });
   };
   const ord = n => { const v=parseInt(n); return [11,12,13].includes(v)?"th":["st","nd","rd"][v%10-1]||"th"; };
-  const openAdd = (tp) => { setAdding({icon:tp==="variable"?"🔄":"📝",name:"__custom__"}); setAmount(""); setDueDate("1"); setCustomName(""); setBillType(tp); setFreq("monthly"); };
+  const todayISO = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+  const openAdd = (tp) => { setAdding({icon:tp==="one_off"?"📌":tp==="variable"?"🔄":"📝",name:"__custom__"}); setAmount(""); setDueDate("1"); setCustomName(""); setBillType(tp); setFreq("monthly"); setOneOffDate(todayISO()); };
 
-  // Tier 4: split bills into fixed/variable, preserving the original index for edits.
+  // Tier 4/5: split bills into fixed / variable / one-off, preserving original index for edits.
   const billsIdx = (data.bills||[]).map((b,i)=>({b,i}));
-  const fixedBills    = billsIdx.filter(({b})=>(b.type||"fixed")!=="variable");
+  const fixedBills    = billsIdx.filter(({b})=>b.type!=="variable" && b.type!=="one_off");
   const variableBills = billsIdx.filter(({b})=>b.type==="variable");
+  const oneOffBills   = billsIdx.filter(({b})=>b.type==="one_off");
 
   const renderBill = (b, i) => {
     const hasArrears = parseFloat(b.arrears||0) > 0;
+    const isOneOff = b.type === "one_off";
+    const archived = isBillArchived(b);
     return (
-      <div key={i} style={{background:C.card,borderRadius:16,marginBottom:10,border:`1px solid ${hasArrears?C.gold+"44":C.border}`,overflow:"hidden"}}>
-        {/* Main row: editable name + amount + due + remove */}
+      <div key={i} style={{background:C.card,borderRadius:16,marginBottom:10,border:`1px solid ${hasArrears?C.gold+"44":C.border}`,overflow:"hidden",opacity:archived?0.55:1}}>
+        {/* Main row: editable name + amount + due/date + remove */}
         <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px"}}>
           <div style={{flex:1,minWidth:0}}>
-            <input value={b.name} onChange={e=>updateBill(i,"name",e.target.value)} placeholder="Bill name"
+            <input value={b.name} onChange={e=>updateBill(i,"name",e.target.value)} placeholder={isOneOff?"Expense name":"Bill name"}
               style={{width:"100%",background:"none",border:"none",borderBottom:`1px solid ${C.border}`,color:C.cream,fontWeight:700,fontSize:13,fontFamily:"inherit",outline:"none",padding:"2px 0",boxSizing:"border-box"}}/>
             {hasArrears&&<div style={{color:C.goldBright,fontSize:10,fontWeight:700,marginTop:3}}>⚠ ${parseFloat(b.arrears).toFixed(2)} in arrears</div>}
+            {archived&&<div style={{color:C.muted,fontSize:10,fontWeight:700,marginTop:3}}>✓ Past — archived</div>}
           </div>
           <div>
             <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:3,textAlign:"center"}}>Amount</div>
@@ -5998,16 +6036,25 @@ function BillManager({data, setAppData, onClose}){
                 style={{flex:1,background:"none",border:"none",padding:"7px 4px 7px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,fontWeight:700}}/>
             </div>
           </div>
-          <div>
-            <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:3,textAlign:"center"}}>Due</div>
-            <select value={b.date||"1"} onChange={e=>updateBill(i,"date",e.target.value)}
-              style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 6px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none",minHeight:33}}>
-              {Array.from({length:28},(_,d)=><option key={d+1} value={String(d+1)}>{d+1}{ord(d+1)}</option>)}
-            </select>
-          </div>
-          <button onClick={()=>removeBill(i,b.name)} title="Remove bill" style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:15,padding:"4px 6px",minWidth:32,minHeight:32,flexShrink:0}}>✕</button>
+          {isOneOff ? (
+            <div>
+              <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:3,textAlign:"center"}}>Date</div>
+              <input type="date" value={b.isoDate||""} onChange={e=>updateBill(i,"isoDate",e.target.value)}
+                style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 6px",color:C.cream,fontSize:11,fontFamily:"inherit",outline:"none",minHeight:33}}/>
+            </div>
+          ) : (
+            <div>
+              <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:3,textAlign:"center"}}>Due</div>
+              <select value={b.date||"1"} onChange={e=>updateBill(i,"date",e.target.value)}
+                style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 6px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none",minHeight:33}}>
+                {Array.from({length:28},(_,d)=><option key={d+1} value={String(d+1)}>{d+1}{ord(d+1)}</option>)}
+              </select>
+            </div>
+          )}
+          <button onClick={()=>removeBill(i,b.name)} title="Remove" style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:15,padding:"4px 6px",minWidth:32,minHeight:32,flexShrink:0}}>✕</button>
         </div>
-        {/* Controls: fixed/variable toggle + frequency */}
+        {/* Controls: fixed/variable toggle + frequency (recurring only) */}
+        {!isOneOff && (
         <div style={{borderTop:`1px solid ${C.border}`,padding:"8px 14px",display:"flex",gap:10,alignItems:"center",background:C.cardAlt+"55"}}>
           <div style={{display:"flex",gap:4,flex:1}}>
             {["fixed","variable"].map(tp=>{
@@ -6021,7 +6068,9 @@ function BillManager({data, setAppData, onClose}){
             {FREQS.map(f=><option key={f} value={f}>{f}</option>)}
           </select>
         </div>
-        {/* Arrears row */}
+        )}
+        {/* Arrears row (recurring only — a one-off can't be in arrears) */}
+        {!isOneOff && (
         <div style={{borderTop:`1px solid ${C.border}`,padding:"10px 14px",background:C.cardAlt+"88"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <div style={{flex:1}}>
@@ -6035,12 +6084,13 @@ function BillManager({data, setAppData, onClose}){
             </div>
           </div>
         </div>
+        )}
       </div>
     );
   };
 
   const sectionAddBtn = (tp,label) => (
-    <button onClick={()=>openAdd(tp)} style={{width:"100%",background:"none",border:`1px dashed ${C.border}`,borderRadius:12,padding:"11px",color:tp==="variable"?C.tealBright:C.greenBright,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginTop:2}}>{label}</button>
+    <button onClick={()=>openAdd(tp)} style={{width:"100%",background:"none",border:`1px dashed ${C.border}`,borderRadius:12,padding:"11px",color:tp==="one_off"?C.goldBright:tp==="variable"?C.tealBright:C.greenBright,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginTop:2}}>{label}</button>
   );
 
   return (
@@ -6073,6 +6123,14 @@ function BillManager({data, setAppData, onClose}){
               : <div style={{color:C.muted,fontSize:12,padding:"6px 2px 10px"}}>No variable bills yet — hydro, phone, anything that changes month to month.</div>}
             {sectionAddBtn("variable","+ Add variable bill")}
           </div>
+          {/* Tier 5: One-time expenses */}
+          <div style={{marginBottom:18}}>
+            <div style={{color:C.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:10}}>One-time expenses</div>
+            {oneOffBills.length>0
+              ? oneOffBills.map(({b,i})=>renderBill(b,i))
+              : <div style={{color:C.muted,fontSize:12,padding:"6px 2px 10px"}}>No one-time expenses — a single upcoming cost like a flight or a repair.</div>}
+            {sectionAddBtn("one_off","+ Add one-off expense")}
+          </div>
           {adding&&(
             <div style={{background:C.cardAlt,borderRadius:16,padding:"14px 16px",marginBottom:16,border:`1px solid ${C.green}44`}}>
               <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:12}}>{adding.icon} {adding.name==="__custom__"?customName||"Custom Bill":adding.name}</div>
@@ -6082,7 +6140,7 @@ function BillManager({data, setAppData, onClose}){
               )}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
                 <div>
-                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Monthly Amount</div>
+                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>{billType==="one_off"?"Amount":"Monthly Amount"}</div>
                   <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.green}`,borderRadius:10,overflow:"hidden"}}>
                     <span style={{color:C.muted,padding:"0 8px",fontSize:13}}>$</span>
                     <input value={amount} onChange={e=>setAmount(e.target.value)} type="number" inputMode="decimal" placeholder="0.00" autoFocus
@@ -6090,14 +6148,18 @@ function BillManager({data, setAppData, onClose}){
                   </div>
                 </div>
                 <div>
-                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Day Due</div>
-                  <select value={dueDate} onChange={e=>setDueDate(e.target.value)}
-                    style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}>
-                    {Array.from({length:28},(_,i)=><option key={i+1} value={String(i+1)}>{i+1}{ord(i+1)}</option>)}
-                  </select>
+                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>{billType==="one_off"?"Date":"Day Due"}</div>
+                  {billType==="one_off"
+                    ? <input type="date" value={oneOffDate} onChange={e=>setOneOffDate(e.target.value)}
+                        style={{width:"100%",boxSizing:"border-box",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
+                    : <select value={dueDate} onChange={e=>setDueDate(e.target.value)}
+                        style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}>
+                        {Array.from({length:28},(_,i)=><option key={i+1} value={String(i+1)}>{i+1}{ord(i+1)}</option>)}
+                      </select>}
                 </div>
               </div>
-              {/* Tier 4: type + frequency */}
+              {/* Tier 4: type + frequency (recurring only) */}
+              {billType!=="one_off" && (
               <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center"}}>
                 <div style={{display:"flex",gap:4,flex:1}}>
                   {["fixed","variable"].map(tp=>{
@@ -6111,6 +6173,7 @@ function BillManager({data, setAppData, onClose}){
                   {FREQS.map(f=><option key={f} value={f}>{f}</option>)}
                 </select>
               </div>
+              )}
               <div style={{display:"flex",gap:8}}>
                 <button onClick={()=>saveBill(adding.name==="__custom__"?customName:adding.name)}
                   disabled={!amount||(adding.name==="__custom__"&&!customName)}
