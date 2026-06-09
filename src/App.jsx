@@ -939,11 +939,16 @@ function detectRecurringBills(txns, opts = {}) {
       .replace(/\w/g, c => c.toUpperCase())
       .trim();
 
+    // Tier 4: overrides are keyed by the cleaned display name (what the user removes/types).
+    const _dnl = displayName.toLowerCase().trim();
+    if (removedSet.has(_dnl)) return;
+    const finalType = typedMap[_dnl] || billType;
+
     bills.push({
       name:    displayName,
       amount:  (avg||0).toFixed(2),
       date:    String(dayMode),
-      type:    billType,   // Tier 4: "fixed" | "variable"
+      type:    finalType,   // Tier 4: "fixed" | "variable"
       freq:    "monthly",
       auto:    true,   // flag so UI can show "detected" badge
       avgNote: txList.length >= 3 ? `avg of last ${Math.min(txList.length,3)} months` : "estimated",
@@ -5925,20 +5930,118 @@ function BillManager({data, setAppData, onClose}){
   const [amount, setAmount] = useState("");
   const [dueDate, setDueDate] = useState("1");
   const [customName, setCustomName] = useState("");
+  const [billType, setBillType] = useState("fixed");  // Tier 4: fixed | variable (add form)
+  const [freq, setFreq] = useState("monthly");         // Tier 4: bill frequency (add form)
   const [saved, setSaved] = useState("");
   const country = data.profile?.country||"CA";
   const templates = BILL_TEMPLATES[country]||BILL_TEMPLATES.CA;
   const existingNames = new Set((data.bills||[]).map(b=>b.name.toLowerCase()));
+  const FREQS = ["weekly","biweekly","monthly","quarterly","annually"];
 
   const saveBill = name => {
     if(!amount||!name) return;
-    setAppData(prev=>({...prev, bills:[...(prev.bills||[]), {name, amount, date:dueDate}]}));
+    setAppData(prev=>({...prev, bills:[...(prev.bills||[]), {name, amount, date:dueDate, type:billType, freq, manuallyAdded:true}]}));
     setSaved(name); setTimeout(()=>setSaved(""), 2000);
-    setAdding(null); setAmount(""); setDueDate("1"); setCustomName("");
+    setAdding(null); setAmount(""); setDueDate("1"); setCustomName(""); setBillType("fixed"); setFreq("monthly");
   };
-  const removeBill = i => setAppData(prev=>({...prev, bills:(prev.bills||[]).filter((_,x)=>x!==i)}));
+  // Tier 4: removing records the bill in userBillOverrides.removed so auto-detection never
+  // re-adds it (keyed by the lowercased display name the user sees).
+  const removeBill = (i, name) => {
+    if(!window.confirm("Remove this bill? It won't be auto-detected again.")) return;
+    const norm = String(name||"").toLowerCase().trim();
+    setAppData(prev=>{
+      const ov = prev.userBillOverrides || {};
+      return {
+        ...prev,
+        bills:(prev.bills||[]).filter((_,x)=>x!==i),
+        userBillOverrides: { removed: Array.from(new Set([...(ov.removed||[]), norm])).filter(Boolean), typed: ov.typed||{} },
+      };
+    });
+  };
   const updateBill = (i,field,val) => setAppData(prev=>({...prev, bills:(prev.bills||[]).map((b,x)=>x===i?{...b,[field]:val}:b)}));
+  // Tier 4: type toggle updates the bill AND records userBillOverrides.typed (for re-detection).
+  const setBillCatType = (i, name, tp) => {
+    const norm = String(name||"").toLowerCase().trim();
+    setAppData(prev=>{
+      const ov = prev.userBillOverrides || {};
+      return {
+        ...prev,
+        bills:(prev.bills||[]).map((b,x)=>x===i?{...b,type:tp}:b),
+        userBillOverrides: { removed: ov.removed||[], typed: { ...(ov.typed||{}), [norm]: tp } },
+      };
+    });
+  };
   const ord = n => { const v=parseInt(n); return [11,12,13].includes(v)?"th":["st","nd","rd"][v%10-1]||"th"; };
+  const openAdd = (tp) => { setAdding({icon:tp==="variable"?"🔄":"📝",name:"__custom__"}); setAmount(""); setDueDate("1"); setCustomName(""); setBillType(tp); setFreq("monthly"); };
+
+  // Tier 4: split bills into fixed/variable, preserving the original index for edits.
+  const billsIdx = (data.bills||[]).map((b,i)=>({b,i}));
+  const fixedBills    = billsIdx.filter(({b})=>(b.type||"fixed")!=="variable");
+  const variableBills = billsIdx.filter(({b})=>b.type==="variable");
+
+  const renderBill = (b, i) => {
+    const hasArrears = parseFloat(b.arrears||0) > 0;
+    return (
+      <div key={i} style={{background:C.card,borderRadius:16,marginBottom:10,border:`1px solid ${hasArrears?C.gold+"44":C.border}`,overflow:"hidden"}}>
+        {/* Main row: editable name + amount + due + remove */}
+        <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px"}}>
+          <div style={{flex:1,minWidth:0}}>
+            <input value={b.name} onChange={e=>updateBill(i,"name",e.target.value)} placeholder="Bill name"
+              style={{width:"100%",background:"none",border:"none",borderBottom:`1px solid ${C.border}`,color:C.cream,fontWeight:700,fontSize:13,fontFamily:"inherit",outline:"none",padding:"2px 0",boxSizing:"border-box"}}/>
+            {hasArrears&&<div style={{color:C.goldBright,fontSize:10,fontWeight:700,marginTop:3}}>⚠ ${parseFloat(b.arrears).toFixed(2)} in arrears</div>}
+          </div>
+          <div>
+            <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:3,textAlign:"center"}}>Amount</div>
+            <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",width:80}}>
+              <span style={{color:C.muted,fontSize:11,padding:"0 4px 0 6px"}}>$</span>
+              <input value={b.amount} onChange={e=>updateBill(i,"amount",e.target.value)} type="number" inputMode="decimal"
+                style={{flex:1,background:"none",border:"none",padding:"7px 4px 7px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,fontWeight:700}}/>
+            </div>
+          </div>
+          <div>
+            <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:3,textAlign:"center"}}>Due</div>
+            <select value={b.date||"1"} onChange={e=>updateBill(i,"date",e.target.value)}
+              style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 6px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none",minHeight:33}}>
+              {Array.from({length:28},(_,d)=><option key={d+1} value={String(d+1)}>{d+1}{ord(d+1)}</option>)}
+            </select>
+          </div>
+          <button onClick={()=>removeBill(i,b.name)} title="Remove bill" style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:15,padding:"4px 6px",minWidth:32,minHeight:32,flexShrink:0}}>✕</button>
+        </div>
+        {/* Controls: fixed/variable toggle + frequency */}
+        <div style={{borderTop:`1px solid ${C.border}`,padding:"8px 14px",display:"flex",gap:10,alignItems:"center",background:C.cardAlt+"55"}}>
+          <div style={{display:"flex",gap:4,flex:1}}>
+            {["fixed","variable"].map(tp=>{
+              const on=(b.type||"fixed")===tp; const clr=tp==="variable"?C.teal:C.green;
+              return <button key={tp} onClick={()=>setBillCatType(i,b.name,tp)}
+                style={{flex:1,background:on?clr+"22":"none",border:`1px solid ${on?clr:C.border}`,color:on?(tp==="variable"?C.tealBright:C.greenBright):C.muted,borderRadius:8,padding:"5px 6px",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textTransform:"capitalize",minHeight:30}}>{tp}</button>;
+            })}
+          </div>
+          <select value={b.freq||"monthly"} onChange={e=>updateBill(i,"freq",e.target.value)}
+            style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 6px",color:C.mutedHi,fontSize:11,fontFamily:"inherit",outline:"none",minHeight:30,textTransform:"capitalize"}}>
+            {FREQS.map(f=><option key={f} value={f}>{f}</option>)}
+          </select>
+        </div>
+        {/* Arrears row */}
+        <div style={{borderTop:`1px solid ${C.border}`,padding:"10px 14px",background:C.cardAlt+"88"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{flex:1}}>
+              <div style={{color:C.muted,fontSize:10,fontWeight:700,marginBottom:1}}>Amount currently owed (arrears)</div>
+              <div style={{color:C.muted,fontSize:10,lineHeight:1.4}}>{hasArrears?"Payments from Transactions will reduce this balance.":"Behind on this bill? Enter the total you owe — not the monthly amount."}</div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${hasArrears?C.gold+"66":C.border}`,borderRadius:8,overflow:"hidden",width:96}}>
+              <span style={{color:C.muted,fontSize:11,padding:"0 4px 0 6px"}}>$</span>
+              <input value={b.arrears||""} onChange={e=>updateBill(i,"arrears",e.target.value)} type="number" inputMode="decimal" placeholder="0.00"
+                style={{flex:1,background:"none",border:"none",padding:"7px 4px 7px 0",color:hasArrears?C.goldBright:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,fontWeight:700}}/>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const sectionAddBtn = (tp,label) => (
+    <button onClick={()=>openAdd(tp)} style={{width:"100%",background:"none",border:`1px dashed ${C.border}`,borderRadius:12,padding:"11px",color:tp==="variable"?C.tealBright:C.greenBright,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginTop:2}}>{label}</button>
+  );
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)",display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",justifyContent:"center"}} onClick={onClose}>
@@ -5954,66 +6057,22 @@ function BillManager({data, setAppData, onClose}){
           </div>
         </div>
         <div style={{overflowY:"auto",flex:1,padding:"16px 20px 32px"}}>
-          {(data.bills||[]).length>0&&(
-            <div style={{marginBottom:20}}>
-              <div style={{color:C.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:10}}>Your Current Bills</div>
-              {(data.bills||[]).map((b,i)=>{
-                const hasArrears = parseFloat(b.arrears||0) > 0;
-                return (
-                <div key={i} style={{background:C.card,borderRadius:16,marginBottom:10,border:`1px solid ${hasArrears?C.gold+"44":C.border}`,overflow:"hidden"}}>
-                  {/* Main row */}
-                  <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px"}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{color:C.cream,fontWeight:700,fontSize:13}}>{b.name}</div>
-                      {hasArrears&&(
-                        <div style={{color:C.goldBright,fontSize:10,fontWeight:700,marginTop:2}}>
-                          ⚠ ${parseFloat(b.arrears).toFixed(2)} in arrears
-                        </div>
-                      )}
-                    </div>
-                    {/* Amount — always editable */}
-                    <div>
-                      <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:3,textAlign:"center"}}>Monthly</div>
-                      <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",width:80}}>
-                        <span style={{color:C.muted,fontSize:11,padding:"0 4px 0 6px"}}>$</span>
-                        <input value={b.amount} onChange={e=>updateBill(i,"amount",e.target.value)}
-                          type="number" inputMode="decimal"
-                          style={{flex:1,background:"none",border:"none",padding:"7px 4px 7px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,fontWeight:700}}/>
-                      </div>
-                    </div>
-                    {/* Due date — always editable */}
-                    <div>
-                      <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:3,textAlign:"center"}}>Due</div>
-                      <select value={b.date||"1"} onChange={e=>updateBill(i,"date",e.target.value)}
-                        style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 6px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none",minHeight:33}}>
-                        {Array.from({length:28},(_,d)=><option key={d+1} value={String(d+1)}>{d+1}{ord(d+1)}</option>)}
-                      </select>
-                    </div>
-                    <button onClick={()=>removeBill(i)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:15,padding:"4px 6px",minWidth:32,minHeight:32,flexShrink:0}}>✕</button>
-                  </div>
-                  {/* Arrears row — expandable */}
-                  <div style={{borderTop:`1px solid ${C.border}`,padding:"10px 14px",background:C.cardAlt+"88"}}>
-                    <div style={{display:"flex",alignItems:"center",gap:10}}>
-                      <div style={{flex:1}}>
-                        <div style={{color:C.muted,fontSize:10,fontWeight:700,marginBottom:1}}>Amount currently owed (arrears)</div>
-                        <div style={{color:C.muted,fontSize:10,lineHeight:1.4}}>
-                          {hasArrears
-                            ? "Payments from Transactions will reduce this balance."
-                            : "Behind on this bill? Enter the total you owe — not the monthly amount."}
-                        </div>
-                      </div>
-                      <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${hasArrears?C.gold+"66":C.border}`,borderRadius:8,overflow:"hidden",width:96}}>
-                        <span style={{color:C.muted,fontSize:11,padding:"0 4px 0 6px"}}>$</span>
-                        <input value={b.arrears||""} onChange={e=>updateBill(i,"arrears",e.target.value)}
-                          type="number" inputMode="decimal" placeholder="0.00"
-                          style={{flex:1,background:"none",border:"none",padding:"7px 4px 7px 0",color:hasArrears?C.goldBright:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,fontWeight:700}}/>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );})}
-            </div>
-          )}
+          {/* Tier 4: Fixed commitments */}
+          <div style={{marginBottom:18}}>
+            <div style={{color:C.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:10}}>Fixed commitments</div>
+            {fixedBills.length>0
+              ? fixedBills.map(({b,i})=>renderBill(b,i))
+              : <div style={{color:C.muted,fontSize:12,padding:"6px 2px 10px"}}>No fixed bills yet — rent, insurance, subscriptions.</div>}
+            {sectionAddBtn("fixed","+ Add bill")}
+          </div>
+          {/* Tier 4: Variable bills */}
+          <div style={{marginBottom:18}}>
+            <div style={{color:C.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:10}}>Variable bills</div>
+            {variableBills.length>0
+              ? variableBills.map(({b,i})=>renderBill(b,i))
+              : <div style={{color:C.muted,fontSize:12,padding:"6px 2px 10px"}}>No variable bills yet — hydro, phone, anything that changes month to month.</div>}
+            {sectionAddBtn("variable","+ Add variable bill")}
+          </div>
           {adding&&(
             <div style={{background:C.cardAlt,borderRadius:16,padding:"14px 16px",marginBottom:16,border:`1px solid ${C.green}44`}}>
               <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:12}}>{adding.icon} {adding.name==="__custom__"?customName||"Custom Bill":adding.name}</div>
@@ -6038,6 +6097,20 @@ function BillManager({data, setAppData, onClose}){
                   </select>
                 </div>
               </div>
+              {/* Tier 4: type + frequency */}
+              <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center"}}>
+                <div style={{display:"flex",gap:4,flex:1}}>
+                  {["fixed","variable"].map(tp=>{
+                    const on=billType===tp; const clr=tp==="variable"?C.teal:C.green;
+                    return <button key={tp} onClick={()=>setBillType(tp)}
+                      style={{flex:1,background:on?clr+"22":"none",border:`1px solid ${on?clr:C.border}`,color:on?(tp==="variable"?C.tealBright:C.greenBright):C.muted,borderRadius:10,padding:"9px 6px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textTransform:"capitalize"}}>{tp}</button>;
+                  })}
+                </div>
+                <select value={freq} onChange={e=>setFreq(e.target.value)}
+                  style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 8px",color:C.cream,fontSize:12,fontFamily:"inherit",textTransform:"capitalize"}}>
+                  {FREQS.map(f=><option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
               <div style={{display:"flex",gap:8}}>
                 <button onClick={()=>saveBill(adding.name==="__custom__"?customName:adding.name)}
                   disabled={!amount||(adding.name==="__custom__"&&!customName)}
@@ -6056,7 +6129,7 @@ function BillManager({data, setAppData, onClose}){
             {templates.filter(t=>!existingNames.has(t.name.toLowerCase())).map((t,i)=>{
               const clr=BILL_CAT_COLORS[t.cat]||C.teal;
               return(
-                <button key={i} onClick={()=>{setAdding(t);setAmount("");setDueDate("1");}}
+                <button key={i} onClick={()=>{setAdding(t);setAmount("");setDueDate("1");setBillType("fixed");setFreq("monthly");}}
                   style={{background:clr+"12",border:`1px solid ${clr}33`,borderRadius:14,padding:"12px 14px",cursor:"pointer",textAlign:"left",fontFamily:"inherit",transition:"all .15s"}}
                   onMouseEnter={e=>{e.currentTarget.style.borderColor=clr+"88";e.currentTarget.style.background=clr+"22";}}
                   onMouseLeave={e=>{e.currentTarget.style.borderColor=clr+"33";e.currentTarget.style.background=clr+"12";}}>
@@ -6067,7 +6140,7 @@ function BillManager({data, setAppData, onClose}){
               );
             })}
           </div>
-          <button onClick={()=>{setAdding({icon:"📝",name:"__custom__"});setAmount("");setDueDate("1");}}
+          <button onClick={()=>openAdd("fixed")}
             style={{width:"100%",background:"none",border:`1px dashed ${C.border}`,borderRadius:14,padding:"13px",color:C.muted,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
             + Add custom bill
           </button>
