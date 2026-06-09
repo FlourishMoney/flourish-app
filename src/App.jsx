@@ -13079,6 +13079,7 @@ export default function FlourishApp(){
     if (!saverRef.current) {
       saverRef.current = makeDebouncedSaver(async ({ userId, blob }) => {
         const { ok } = await upsertUserData(supabase, userId, blob);
+        console.log("[persist] save complete", { ok });
         if (ok) { syncFailRef.current = 0; if (syncErrorRef.current) { syncErrorRef.current = false; setSyncError(false); } }
         else if (++syncFailRef.current >= 3 && !syncErrorRef.current) { syncErrorRef.current = true; setSyncError(true); }
       });
@@ -13120,9 +13121,11 @@ export default function FlourishApp(){
   // Defined BEFORE the save effect so that on a [user] change it sets hydratingRef=true
   // before the save effect can fire — preventing a stale local state from racing up to DB.
   useEffect(()=>{
+    console.log("[persist] hydrate effect fired", { userId: user?.id || null, hydrating: hydratingRef.current });
     if (!user) { hydratingRef.current = false; return; }
     let cancelled = false;
     hydratingRef.current = true;
+    console.log("[persist] hydrate: set hydrating=true, fetching for", user.id);
     // (4) Shared-device safety: if local data belongs to a DIFFERENT user, wipe it BEFORE
     // hydrating so user B never sees user A's finances (closes the Tier 2.8 leak). Anonymous
     // local data (userId null) is NOT wiped — it migrates into the new account below.
@@ -13134,6 +13137,7 @@ export default function FlourishApp(){
     (async ()=>{
       try {
         const remote = await fetchUserData(supabase, user.id); // throws on read error; null on clean no-row
+        console.log("[persist] hydrate fetched", { hasRow: !!remote, cancelled });
         if (cancelled) return;
         const snap = loadState() || {};
         const localSavedAt = snap.savedAt || null;
@@ -13156,6 +13160,7 @@ export default function FlourishApp(){
       } finally {
         try { localStorage.setItem(STAMP_KEY, user.id); } catch {} // stamp the device for this user
         if (!cancelled) hydratingRef.current = false;
+        console.log("[persist] hydrate done", { cancelled, hydratingNow: hydratingRef.current });
       }
     })();
     return ()=>{ cancelled = true; };
@@ -13168,7 +13173,9 @@ export default function FlourishApp(){
   useEffect(()=>{
     const nowIso = new Date().toISOString();
     saveState({onboarded,appData,household,isPremium,checkInBonus, savedAt:nowIso, userId:user?.id||null});
+    console.log("[persist] save effect fired", { user: !!user, userId: user?.id || null, hydrating: hydratingRef.current });
     if (user && !hydratingRef.current) {
+      console.log("[persist] → scheduling DB save");
       getSaver().schedule({ userId:user.id, blob: buildDbBlob({onboarded,appData,household,isPremium,checkInBonus}, {userId:user.id, nowIso}) });
     }
   }, [onboarded,appData,household,isPremium,checkInBonus,user]);

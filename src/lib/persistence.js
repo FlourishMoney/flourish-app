@@ -126,6 +126,7 @@ export async function upsertUserData(sb, userId, blob) {
       { onConflict: "user_id" }
     );
     if (error) { console.error("[persist] upsert failed:", error.message); return { ok: false, error }; }
+    console.log("[persist] upsert OK — row written for", userId);
     return { ok: true };
   } catch (e) { console.error("[persist] upsert threw:", e?.message || e); return { ok: false, error: e }; }
 }
@@ -140,10 +141,11 @@ export function makeDebouncedSaver(saveFn, delayMs = 2000) {
     if (pending == null) return;
     const payload = pending;
     pending = null;
+    console.log("[persist] save flushing (debounce fired)");
     try { saveFn(payload); } catch (e) { console.error("[persist] save threw:", e?.message || e); }
   };
   return {
-    schedule(payload) { pending = payload; if (timer) clearTimeout(timer); timer = setTimeout(run, delayMs); },
+    schedule(payload) { console.log("[persist] save scheduled (debounce armed)"); pending = payload; if (timer) clearTimeout(timer); timer = setTimeout(run, delayMs); },
     flush() { run(); },
     hasPending() { return pending != null; },
   };
