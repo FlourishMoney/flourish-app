@@ -13067,7 +13067,7 @@ export default function FlourishApp(){
   const isDesktop=w>=960;
 
   // ── Sprint 2: cloud persistence (Supabase) for authenticated users ──────────
-  const hydratingRef = useRef(true);      // blocks DB save until the first hydrate pulls/decides
+  const hydratedUidRef = useRef(null);    // the user id we've COMPLETED hydrate/decide for. DB save is gated on this === user.id (POSITIVE gate — structurally impossible to write before hydrate finishes for this user, so no empty pre-hydrate overwrite).
   const syncErrorRef = useRef(false);
   const syncFailRef  = useRef(0);
   const saverRef     = useRef(null);
@@ -13118,19 +13118,19 @@ export default function FlourishApp(){
   }, [user]);
 
   // ── Sprint 2: hydrate from Supabase on login (DB canonical; localStorage = cache) ──
-  // Defined BEFORE the save effect so that on a [user] change it sets hydratingRef=true
-  // before the save effect can fire — preventing a stale local state from racing up to DB.
+  // The save gate (hydratedUidRef === user.id) stays CLOSED until this completes a clean
+  // decision for the current user, so an empty pre-hydrate state can never race up to the DB.
   useEffect(()=>{
-    console.log("[persist] hydrate effect fired", { userId: user?.id || null, hydrating: hydratingRef.current });
-    if (!user) { hydratingRef.current = false; return; }
+    console.log("[persist] hydrate effect fired", { userId: user?.id || null, hydratedUid: hydratedUidRef.current });
+    if (!user) return;   // anonymous: no DB; the save gate is closed (hydratedUid !== a null user)
     let cancelled = false;
-    hydratingRef.current = true;
-    console.log("[persist] hydrate: set hydrating=true, fetching for", user.id);
     // (4) Shared-device safety: if local data belongs to a DIFFERENT user, wipe it BEFORE
-    // hydrating so user B never sees user A's finances (closes the Tier 2.8 leak). Anonymous
-    // local data (userId null) is NOT wiped — it migrates into the new account below.
+    // hydrating so user B never sees user A's finances. Anonymous local data (userId null) is
+    // NOT wiped — it migrates into the new account below. The positive gate keeps DB writes
+    // blocked through this whole reset, so the cleared empty state can't be saved up.
     const localUid = loadState()?.userId || (()=>{ try { return localStorage.getItem(STAMP_KEY); } catch { return null; } })();
     if (localUid && localUid !== user.id) {
+      console.log("[persist] shared-device: clearing prior user's local data", { localUid, now: user.id });
       clearAllUserLocal();
       setAppData(null); setOnboarded(false); setHousehold(null); setIsPremium(isCapacitorIOS()); setCheckInBonus(0);
     }
@@ -13143,24 +13143,23 @@ export default function FlourishApp(){
         const localSavedAt = snap.savedAt || null;
         if (remote) {
           const dbNewer = !localSavedAt || new Date(remote.updatedAt).getTime() >= new Date(localSavedAt).getTime();
-          if (dbNewer) {
-            applyBlob(remote.blob);                       // DB wins
-          } else {
-            // local is strictly newer (offline edits before login) → push it up, don't lose it
-            getSaver().schedule({ userId: user.id, blob: buildDbBlob(snap, { userId: user.id, nowIso: new Date().toISOString() }) });
-          }
+          if (dbNewer) applyBlob(remote.blob);            // DB wins
+          else getSaver().schedule({ userId: user.id, blob: buildDbBlob(snap, { userId: user.id, nowIso: new Date().toISOString() }) }); // local newer → push up
         } else if (snap.appData) {
           // clean "no row" + we have local data → MIGRATION upload (only here, never on read error)
           await upsertUserData(supabase, user.id, buildDbBlob(snap, { userId: user.id, nowIso: new Date().toISOString() }));
           try { localStorage.setItem("flourish_db_migrated", "1"); } catch {}
           setShowMigratedBanner(true);                    // (5) surface the one-time banner
         }
+        if (!cancelled) {
+          hydratedUidRef.current = user.id;               // ✅ OPEN the save gate ONLY after a clean hydrate/decision
+          console.log("[persist] hydrate complete → save gate OPEN for", user.id);
+        }
       } catch (e) {
-        console.error("[persist] hydrate read failed — keeping local cache, no upload:", e?.message || e);
+        // read error: leave the gate CLOSED — never write this session (localStorage holds everything)
+        console.error("[persist] hydrate read failed — save gate stays CLOSED, keeping local cache:", e?.message || e);
       } finally {
         try { localStorage.setItem(STAMP_KEY, user.id); } catch {} // stamp the device for this user
-        if (!cancelled) hydratingRef.current = false;
-        console.log("[persist] hydrate done", { cancelled, hydratingNow: hydratingRef.current });
       }
     })();
     return ()=>{ cancelled = true; };
@@ -13168,13 +13167,15 @@ export default function FlourishApp(){
 
   // ── Persist state changes: localStorage (always) + Supabase (authed, debounced) ──
   // localStorage is the durability floor (full appData, synchronous, never fails silently).
-  // The DB save is gated on !hydratingRef so a hydrate-driven setAppData can't echo back up,
-  // and skipped for anonymous users (no `user`). DB blob carries manual-only transactions.
+  // The DB save fires ONLY when the positive gate is open (hydratedUid === current user) — i.e.
+  // after hydrate has decided for this user — so a pre-hydrate empty state can't overwrite the
+  // DB. Anonymous users (no `user`) never write. DB blob carries manual-only transactions.
   useEffect(()=>{
     const nowIso = new Date().toISOString();
     saveState({onboarded,appData,household,isPremium,checkInBonus, savedAt:nowIso, userId:user?.id||null});
-    console.log("[persist] save effect fired", { user: !!user, userId: user?.id || null, hydrating: hydratingRef.current });
-    if (user && !hydratingRef.current) {
+    const gateOpen = !!user && hydratedUidRef.current === user?.id;
+    console.log("[persist] save effect fired", { user: !!user, userId: user?.id || null, hydratedUid: hydratedUidRef.current, gateOpen });
+    if (gateOpen) {
       console.log("[persist] → scheduling DB save");
       getSaver().schedule({ userId:user.id, blob: buildDbBlob({onboarded,appData,household,isPremium,checkInBonus}, {userId:user.id, nowIso}) });
     }

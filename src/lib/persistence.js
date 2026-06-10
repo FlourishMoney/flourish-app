@@ -107,6 +107,15 @@ export function buildDbBlob(state, { userId = null, nowIso = null } = {}) {
   };
 }
 
+// True when a blob carries no meaningful user data. Used by the save-overwrite safety net.
+export function isBlobEmpty(blob) {
+  const a = blob && blob.core && blob.core.appData;
+  if (!a) return true;
+  const has = (x) => Array.isArray(x) && x.length > 0;
+  const profileHasData = a.profile && (a.profile.name || a.profile.country || a.profile.province || a.profile.partnerName);
+  return !(has(a.bills) || has(a.incomes) || has(a.debts) || has(a.goals) || has(a.accounts) || has(a.transactions) || profileHasData);
+}
+
 // ── Supabase I/O (caller injects the client; this file imports nothing) ──────────
 // Returns { blob, updatedAt } on a found row, null on a clean "no row", and THROWS on a
 // real read error — so the caller migrate-uploads ONLY on the clean-null case (never
@@ -121,6 +130,19 @@ export async function fetchUserData(sb, userId) {
 // Upsert the blob (RLS-scoped to the owner). updated_at is set server-side by the trigger.
 export async function upsertUserData(sb, userId, blob) {
   try {
+    // ── SAFETY NET (non-negotiable for a finance app) ───────────────────────────
+    // Never overwrite a non-empty DB row with empty local state. If the incoming blob is
+    // empty, confirm the existing row is also empty/absent FIRST; refuse if it has data, or
+    // if we cannot verify it (read error). A hydrate bug must never silently destroy data.
+    if (isBlobEmpty(blob)) {
+      let existing;
+      try { existing = await fetchUserData(sb, userId); } // null = no row; throws → couldn't verify
+      catch { existing = undefined; }
+      if (existing === undefined || (existing && !isBlobEmpty(existing.blob))) {
+        console.error("[persist] REFUSED: would overwrite non-empty DB row with empty local state", { userId, verified: existing !== undefined });
+        return { ok: false, refused: true };
+      }
+    }
     const { error } = await sb.from("user_data").upsert(
       { user_id: userId, data: blob, schema_version: (blob && blob.schemaVersion) || PERSIST_SCHEMA_VERSION },
       { onConflict: "user_id" }
