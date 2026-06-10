@@ -125,7 +125,7 @@ const CC = {
     ],
     debtTypes:["Credit Card","Student Loan (Federal)","Student Loan (Private)","Medical Debt","Car Loan","Personal Loan","Mortgage","HELOC","Payday Loan","Buy Now Pay Later","Other"],
     taxTips:[
-      {title:"Earned Income Tax Credit (EITC)",body:`One of the most under-claimed credits in America. Under $61,555 (single) or $68,675 (married) with qualifying children? You could get up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString()} back (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3 or more children) — even if you owe nothing. Must file to claim.`,savings:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString()} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,flag:"🇺🇸",priority:"high",action:"Check EITC Eligibility"},
+      {title:"Earned Income Tax Credit (EITC)",body:`One of the most under-claimed credits in America. Under $61,555 (single) or $68,675 (married) with qualifying children? You could get up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} back (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3 or more children) — even if you owe nothing. Must file to claim.`,savings:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,flag:"🇺🇸",priority:"high",action:"Check EITC Eligibility"},
       {title:"Child Tax Credit",body:"Up to $2,200 per qualifying child under 17 (increased by OBBBA, July 2025). Partially refundable up to $1,700 — meaning you can get money back even if you owe nothing. File even if your income is low.",savings:"$2,200/child (2025)",flag:"🇺🇸",priority:"high",action:"Claim on Schedule 8812"},
       {title:"401(k) — Get the Full Match First",body:"If your employer matches 401(k) contributions, not contributing enough to get the full match is leaving free money on the table. A 4% match on $50k = $2,000/year you're giving up.",savings:`Up to $${TAX_DATA.US.K401_DEFERRAL.value.toLocaleString("en-US")}/yr (2025)`,flag:"🇺🇸",priority:"high",action:"Increase 401k Contributions"},
       {title:"HSA: The Triple Tax Advantage",body:"If you have a high-deductible health plan, an HSA lets you contribute pre-tax, grow tax-free, and withdraw tax-free for medical expenses. It's legally the most tax-advantaged account available.",savings:`Up to $${TAX_DATA.US.HSA_SELF_ONLY.value.toLocaleString("en-US")}/yr (2025)`,flag:"🇺🇸",priority:"high",action:"Open an HSA"},
@@ -154,7 +154,7 @@ const CC = {
       {id:"529",name:"529 Plan",fullName:"Education Savings Account",icon:"🎓",color:"#8A5FC8",annualLimit:`No annual limit. $${TAX_DATA.US.GIFT_EXCLUSION_529.value.toLocaleString("en-US")}/yr gift tax exclusion (2025).`,taxNote:"State deduction varies. Federal tax-free growth and withdrawals for education.",tip:"Start when kids are young. Some states give immediate tax deductions."},
     ],
     benefitsChecker:[
-      {name:"Earned Income Tax Credit",icon:"💰",eligible:"Working, under $61,555 (single) / $68,675 (MFJ)",amount:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString()} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,apply:"File taxes (IRS Free File)",url:"https://irs.gov/eitc"},
+      {name:"Earned Income Tax Credit",icon:"💰",eligible:"Working, under $61,555 (single) / $68,675 (MFJ)",amount:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,apply:"File taxes (IRS Free File)",url:"https://irs.gov/eitc"},
       {name:"SNAP (Food Stamps)",icon:"🛒",eligible:"Low income households",amount:"~$191/mo per person (USDA FY2025)",apply:"Benefits.gov",url:"https://benefits.gov"},
       {name:"Medicaid / CHIP",icon:"🏥",eligible:"Low-income adults and children",amount:"Free/low-cost healthcare",apply:"Healthcare.gov",url:"https://healthcare.gov"},
       {name:"Child Tax Credit",icon:"👶",eligible:"Children under 17",amount:"Up to $2,200/child (2025)",apply:"File taxes",url:"https://irs.gov/ctc"},
@@ -4163,7 +4163,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
       <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",marginBottom:6}}>About you</div>
       <div style={{color:C.muted,fontSize:13,lineHeight:1.5,marginBottom:20}}>A quick few things to get started — you can flesh out your profile later in Settings.</div>
       <Inp label="Your name" value={p.name} onChange={v=>setP({...p,name:v})} placeholder="First name"/>
-      <Sel label="Country" value={p.country} onChange={v=>setP({...p,country:v,province:v==="CA"?"ON":"CA"})} options={[{value:"CA",label:"🇨🇦 Canada"},{value:"US",label:"🇺🇸 United States"}]}/>
+      <Sel label="Country" value={p.country} onChange={v=>setP({...p,country:v,province:v==="CA"?"ON":"CA",creditScore:Math.min(p.creditScore,v==="US"?850:900)})} options={[{value:"CA",label:"🇨🇦 Canada"},{value:"US",label:"🇺🇸 United States"}]}/>
       <Sel label={p.country==="CA" ? "Province" : "State"} value={p.province} onChange={v=>setP({...p,province:v})} options={(CC[p.country]?.regions || []).map(r => ({ value: r.code, label: r.name }))}/>
       <Btn label="Continue →" onClick={()=>setStep(2)} disabled={!p.name}/>
     </div>,
@@ -4503,7 +4503,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
             <Chip label={p.creditScore>=750?"Excellent 🌟":p.creditScore>=700?"Very Good 👍":p.creditScore>=650?"Good ✓":p.creditScore>=600?"Fair ⚠️":"Needs Work 🔧"} color={p.creditScore>=750?C.green:p.creditScore>=700?C.teal:p.creditScore>=650?C.gold:p.creditScore>=600?C.orange:C.red} size={13}/>
           </div>
           <input type="range" min={300} max={p.country==="US"?850:900} step={1} value={Math.min(p.creditScore,p.country==="US"?850:900)} onChange={e=>setP({...p,creditScore:Number(e.target.value)})} style={{width:"100%",accentColor:C.teal,height:6,cursor:"pointer",marginBottom:8}}/>
-          <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.red,fontSize:10}}>300 Poor</span><span style={{color:C.gold,fontSize:10}}>{p.country==="US"?"670 Good":"660 Good"}</span><span style={{color:C.greenBright,fontSize:10}}>{p.country==="US"?"850 Excellent":"900 Excellent"}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.red,fontSize:10}}>300 Poor</span><span style={{color:C.gold,fontSize:10}}>650 Good</span><span style={{color:C.greenBright,fontSize:10}}>{p.country==="US"?"850 Excellent":"900 Excellent"}</span></div>
           <div style={{color:C.muted,fontSize:11,marginTop:4,textAlign:"center",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{p.country==="US"?"FICO scale · 300–850":"Equifax / TransUnion Canada · 300–900"}</div>
         </div>
         <div style={{color:C.muted,fontSize:12,textAlign:"center",marginBottom:16}}>Check your score free at Borrowell (CA) or Credit Karma (US/CA) — soft pull only.</div>
@@ -6727,7 +6727,7 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
                     style={{flex:1,background:"none",border:"none",padding:"6px 4px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
                 </div>
                 <button onClick={saveBudget} style={{background:color,border:"none",borderRadius:8,padding:"6px 10px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✓</button>
-                <button aria-label="Remove" onClick={()=>setEditBudget(false)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 8px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✕</button>
+                <button aria-label="Close" onClick={()=>setEditBudget(false)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 8px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✕</button>
               </div>
             ) : (
               <button onClick={e=>{e.stopPropagation();setBudgetVal(budget?String(budget):"");setEditBudget(true);}}
@@ -7560,7 +7560,7 @@ function SpendScreen({data, setAppData, setScreen}){
                     Pay arrears →
                   </button>
                 )}
-                <button aria-label="Remove" onClick={()=>setRecatTxn(null)} style={{background:"none",border:"none",color:C.muted,fontSize:20,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>✕</button>
+                <button aria-label="Close" onClick={()=>setRecatTxn(null)} style={{background:"none",border:"none",color:C.muted,fontSize:20,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>✕</button>
               </div>
             </div>
           </div>
@@ -7762,7 +7762,7 @@ function SpendScreen({data, setAppData, setScreen}){
         :cuts.map(s=><Card key={s.id} glow={s.color}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
             <div style={{display:"flex",gap:10,alignItems:"center"}}><Icon id={s.icon||"card"} size={20} color={C.mutedHi} strokeWidth={1.5}/><span style={{color:s.color,fontWeight:800,fontSize:14}}>{s.title}</span></div>
-            <button aria-label="Remove" onClick={()=>setDismissed(d=>[...d,s.id])} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>✕</button>
+            <button aria-label="Dismiss" onClick={()=>setDismissed(d=>[...d,s.id])} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>✕</button>
           </div>
           <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:10}}>{s.body}</div>
           <div style={{display:"flex",gap:8}}><Chip label={`Save ${s.saving}`} color={C.green}/><Chip label={`Effort: ${s.effort}`} color={s.effort.includes("Very")?C.teal:C.green}/></div>
@@ -9379,7 +9379,7 @@ function Family({data,household,setHousehold,setScreen}){
                 </div>
                 <span style={{color:C.gold,fontWeight:700,fontSize:12}}>+${(ch.reward||0).toFixed(2)}</span>
                 {ch.done&&req&&ch.approved&&<span style={{color:C.green,fontSize:11}}>✓ approved</span>}
-                <button aria-label="Close" onClick={()=>removeKidChore(activeKid.id,ch.id)} style={{background:"none",border:"none",color:C.muted,fontSize:18,cursor:"pointer",padding:"0 2px",lineHeight:1,minHeight:30}}>×</button>
+                <button aria-label="Remove chore" onClick={()=>removeKidChore(activeKid.id,ch.id)} style={{background:"none",border:"none",color:C.muted,fontSize:18,cursor:"pointer",padding:"0 2px",lineHeight:1,minHeight:30}}>×</button>
               </div>
             ))}
 
@@ -10043,7 +10043,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
           // so Canadian "ON" doesn't persist for users switching to US (or vice versa).
           const newCountry = e.target.value;
           const defaultProvince = newCountry === "CA" ? "ON" : "CA";
-          if(setAppData) setAppData(prev=>({...prev, profile:{...prev.profile, country:newCountry, province:defaultProvince}}));
+          if(setAppData) setAppData(prev=>({...prev, profile:{...prev.profile, country:newCountry, province:defaultProvince, creditScore:Math.min(prev.profile?.creditScore??680, newCountry==="US"?850:900)}}));
         }}
           style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
           <option value="CA">🇨🇦 Canada</option><option value="US">🇺🇸 United States</option>
@@ -10279,7 +10279,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
             <div style={{color:C.muted,fontSize:11,marginTop:1}}>Follows system · manual override</div>
           </div>
         </div>
-        <Toggle on={theme==="dark"} onChange={()=>toggleTheme&&toggleTheme()}/>
+        <Toggle label={theme==="dark"?"Dark mode":"Light mode"} on={theme==="dark"} onChange={()=>toggleTheme&&toggleTheme()}/>
       </div>
       <button onClick={onOpenWidget} style={{width:"100%",padding:"13px 18px",background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"inherit"}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -10300,7 +10300,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
           <div style={{color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:2}}>AI Coach enabled</div>
           <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>Chat, simulator explanations, weekly tips. Turning off keeps your data on-device.</div>
         </div>
-        <Toggle on={aiCoachEnabled} onChange={(v)=>{
+        <Toggle label="AI Coach" on={aiCoachEnabled} onChange={(v)=>{
           try { localStorage.setItem("flourish_ai_coach_enabled", v ? "1" : "0"); } catch {}
           setAiCoachEnabled(v);
         }} />
@@ -10361,7 +10361,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <div style={{flex:1}}>
           <div style={{color:C.cream,fontSize:14,fontWeight:600}}>{label}</div>
         </div>
-        <Toggle on={notifToggles[key]} onChange={v=>setNotifToggles(t=>({...t,[key]:v}))}/>
+        <Toggle label={label} on={notifToggles[key]} onChange={v=>setNotifToggles(t=>({...t,[key]:v}))}/>
       </div>
     ))}
     {/* ── Bank reconnect banner ──────────────────────────────── */}
@@ -12642,7 +12642,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
                         style={{width:54,background:"none",border:"none",padding:"7px 2px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
                       <span style={{color:C.muted,padding:"0 4px",fontSize:9}}>/mo</span>
                     </div>
-                    <button aria-label="Close" onClick={()=>deleteCat(cat)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,padding:2,flexShrink:0,opacity:0.6,lineHeight:1}}>×</button>
+                    <button aria-label="Remove category" onClick={()=>deleteCat(cat)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,padding:2,flexShrink:0,opacity:0.6,lineHeight:1}}>×</button>
                   </div>
                 );
               })}
@@ -13727,7 +13727,7 @@ input,button,select,textarea { font-family:inherit; }
   const migratedBanner = showMigratedBanner ? (
     <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.green+"22",borderBottom:`1px solid ${C.green}55`,color:C.greenBright,fontSize:12,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
       ✓ Your data is now backed up to your Flourish account
-      <button aria-label="Remove" onClick={dismissMigratedBanner} style={{background:"none",border:"none",color:C.greenBright,cursor:"pointer",fontWeight:800,fontSize:14,padding:"0 4px",lineHeight:1}}>✕</button>
+      <button aria-label="Dismiss" onClick={dismissMigratedBanner} style={{background:"none",border:"none",color:C.greenBright,cursor:"pointer",fontWeight:800,fontSize:14,padding:"0 4px",lineHeight:1}}>✕</button>
     </div>
   ) : null;
 
