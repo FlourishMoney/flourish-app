@@ -4067,8 +4067,21 @@ function Onboarding({onComplete,onViewLegal,userId}){
         txns = await parseStatementWithAI(text);
       }
       if (!txns || txns.length === 0) throw new Error('No transactions found in this file.');
-      setPlaidTxns(txns);
-      setConnAccts([{id:'stmt1',name:`${file.name.replace(/\.[^.]+$/,'')}`,type:'checking',balance:DEMO.balance,institution:'Statement'}]);
+      // Sprint 3: APPEND (don't replace) so a second statement — or a prior bank connect —
+      // isn't wiped. Dedupe by date|name|amount, and re-id statement rows so React keys stay unique.
+      setPlaidTxns(prev => {
+        const seen = new Set(); const out = [];
+        for (const t of [...(prev||[]), ...txns]) {
+          const k = `${t.date}|${(t.name||"").toLowerCase()}|${t.amount}`;
+          if (seen.has(k)) continue; seen.add(k); out.push(t);
+        }
+        return out.map((t,i)=> String(t.id||"").startsWith("stmt_") ? {...t, id:`stmt_${i}`} : t);
+      });
+      const stmtName = file.name.replace(/\.[^.]+$/,"");
+      setConnAccts(prev => {
+        const kept = (prev||[]).filter(a => !(a.institution==="Statement" && a.name===stmtName)); // re-upload same file → replace its account
+        return [...kept, {id:`stmt_acct_${kept.length}`,name:stmtName,type:'checking',balance:0,institution:'Statement'}]; // balance 0, not DEMO.balance
+      });
       setStmtStatus('done');
       setStmtMsg(`${txns.length} transactions imported ✓`);
       setTimeout(() => setBankStage('done'), 900);
