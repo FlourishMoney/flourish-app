@@ -1350,7 +1350,7 @@ function AutopilotCard({data, setScreen}) {
           <div style={{color:autoMuted,fontSize:9,textTransform:"uppercase",letterSpacing:3,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:5}}>Autopilot · {today}</div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.cream,lineHeight:1.2}}>Today's Money Plan</div>
-            <span style={{background:C.teal+"33",color:C.tealBright,fontSize:8,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,letterSpacing:1,textTransform:"uppercase",padding:"3px 7px",borderRadius:99,border:`1px solid ${C.teal}44`}}>Adaptive</span>
+            <span style={{background:C.teal+"33",color:C.tealBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,letterSpacing:1,textTransform:"uppercase",padding:"3px 7px",borderRadius:99,border:`1px solid ${C.teal}44`}}>Adaptive</span>
           </div>
         </div>
         <div style={{background:plan.mode==="low"?"rgba(110,240,160,0.15)":plan.mode==="medium"?"rgba(255,193,69,0.15)":"rgba(255,100,100,0.15)",border:`1px solid ${plan.mode==="low"?C.green+"55":plan.mode==="medium"?C.gold+"55":C.red+"55"}`,borderRadius:99,padding:"4px 10px"}}>
@@ -1475,7 +1475,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
             Showing impact of: <strong style={{color:C.teal}}>{activeScenario.type === "purchase" ? `$${activeScenario.amount} purchase` : activeScenario.type === "debt" ? `+$${activeScenario.extraPayment}/mo on debt` : `$${activeScenario.monthlyContribution}/mo invested`}</strong>
           </div>
           {setActiveScenario && (
-            <button onClick={()=>setActiveScenario(null)} style={{background:"transparent",border:`1px solid ${C.teal}44`,color:C.teal,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:10,padding:"4px 10px",borderRadius:99,cursor:"pointer",whiteSpace:"nowrap"}}>Clear ✕</button>
+            <button aria-label="Remove" onClick={()=>setActiveScenario(null)} style={{background:"transparent",border:`1px solid ${C.teal}44`,color:C.teal,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:10,padding:"4px 10px",borderRadius:99,cursor:"pointer",whiteSpace:"nowrap"}}>Clear ✕</button>
           )}
         </div>
       )}
@@ -2031,7 +2031,7 @@ Rules: do not invent or quote any number not in the calculated results above. Do
             <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream,lineHeight:1.2}}>What If Simulator</div>
             <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3}}>Test any financial decision instantly</div>
           </div>
-          <button onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:24,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>×</button>
+          <button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:24,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>×</button>
         </div>
 
         {/* Quick presets */}
@@ -2442,7 +2442,7 @@ function WealthForecast({data}) {
                       <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{s.label}</span>
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:6}}>
-                      <span style={{background:C.purple+"18",border:`1px solid ${C.purple}33`,borderRadius:99,padding:"1px 6px",color:C.purpleBright,fontSize:8,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>PROJ.</span>
+                      <span style={{background:C.purple+"18",border:`1px solid ${C.purple}33`,borderRadius:99,padding:"1px 6px",color:C.purpleBright,fontSize:10,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>PROJ.</span>
                       <span style={{color:s.color,fontWeight:900,fontFamily:"'Playfair Display',serif",fontSize:18}}>{fmt(vals[i])}</span>
                     </div>
                   </div>
@@ -2709,7 +2709,7 @@ function MoneyWrapped({data, onClose}) {
           <div key={i} style={{flex:1,height:3,borderRadius:99,background:i<=slide?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.25)",transition:"background 0.3s"}}/>
         ))}
       </div>
-      <button onClick={onClose} style={{position:"absolute",top:52,right:24,background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",fontSize:18,width:36,height:36,borderRadius:"50%",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+      <button aria-label="Close" onClick={onClose} style={{position:"absolute",top:52,right:24,background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",fontSize:18,width:36,height:36,borderRadius:"50%",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
 
       {/* Slide content */}
       <div style={{width:"100%",maxWidth:400,padding:"0 24px",animation:"fadeUp 0.4s ease both"}}>
@@ -3711,7 +3711,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
               <div key={i} style={{width:i<=(step===4?3:step)?28:8,height:8,borderRadius:99,background:i<=(step===4?3:step)?C.green:C.border,transition:"all .3s"}}/>
             ))}
           </div>
-          <button onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>×</button>
+          <button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>×</button>
         </div>
         {loading
           ? <div style={{textAlign:"center",padding:"40px 20px"}}>
@@ -3929,7 +3929,7 @@ function DashCustomize({ layout, onChange, onClose }) {
         {!isDesktop&&<div style={{width:36,height:4,borderRadius:99,background:C.border,margin:'12px auto 0',flexShrink:0}}/>}
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'20px 20px 0',flexShrink:0}}>
           <div style={{color:C.cream,fontWeight:800,fontSize:18,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Customize Dashboard</div>
-          <button onClick={onClose} style={{background:'none',border:'none',color:C.muted,fontSize:22,cursor:'pointer',padding:4,lineHeight:1,fontFamily:'inherit'}}>×</button>
+          <button aria-label="Close" onClick={onClose} style={{background:'none',border:'none',color:C.muted,fontSize:22,cursor:'pointer',padding:4,lineHeight:1,fontFamily:'inherit'}}>×</button>
         </div>
         <div style={{color:C.muted,fontSize:12,padding:'4px 20px 14px',fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Use ↑↓ to reorder · toggle to show or hide</div>
         <div style={{overflowY:'auto',flex:1,padding:'0 16px 8px'}}>
@@ -3941,9 +3941,9 @@ function DashCustomize({ layout, onChange, onClose }) {
                 border:`1px solid ${tile.locked?C.gold+'44':tile.visible!==false?C.green+'33':C.border}`,
                 opacity:tile.visible!==false?1:0.5,transition:'all .15s'}}>
                 <div style={{display:'flex',flexDirection:'column',gap:1,flexShrink:0}}>
-                  <button onClick={()=>!tile.locked&&moveUp(tile.id)}
+                  <button aria-label="Move up" onClick={()=>!tile.locked&&moveUp(tile.id)}
                     style={{background:'none',border:'none',color:idx===0||tile.locked?C.border:C.muted,cursor:idx===0||tile.locked?'default':'pointer',fontSize:13,lineHeight:1,padding:'3px 6px',borderRadius:6,transition:'color .15s',fontFamily:'inherit'}}>▲</button>
-                  <button onClick={()=>!tile.locked&&moveDown(tile.id)}
+                  <button aria-label="Move down" onClick={()=>!tile.locked&&moveDown(tile.id)}
                     style={{background:'none',border:'none',color:idx===items.length-1||tile.locked?C.border:C.muted,cursor:idx===items.length-1||tile.locked?'default':'pointer',fontSize:13,lineHeight:1,padding:'3px 6px',borderRadius:6,transition:'color .15s',fontFamily:'inherit'}}>▼</button>
                 </div>
                 <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:32,height:32,borderRadius:9,background:tile.visible!==false?C.green+'18':C.cardAlt,border:`1px solid ${tile.visible!==false?C.green+'33':C.border}`,flexShrink:0}}>
@@ -4324,7 +4324,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
                 {inc.autoDetected&&<span style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px",color:C.greenBright,fontSize:10,fontWeight:700,marginLeft:4}}>Auto ✓</span>}
                 {inc.isVariable&&<span style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:99,padding:"2px 8px",color:C.purpleBright||C.tealBright,fontSize:10,fontWeight:700}}>Variable</span>}
               </div>
-              {incomes.length>1&&<button onClick={()=>setIncomes(incomes.filter(x=>x.id!==inc.id))}
+              {incomes.length>1&&<button aria-label="Remove income" onClick={()=>setIncomes(incomes.filter(x=>x.id!==inc.id))}
                 style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:20,padding:"0 0 0 8px",lineHeight:1}}>×</button>}
             </div>
 
@@ -4435,7 +4435,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
                 <Inp label="Day Due" value={b.date} onChange={v=>upBill(i,"date",v)} type="number" inputMode="numeric" placeholder="1–28" sm/>
               </div>
             </div>
-            {bills.length>1&&<button onClick={()=>rmBill(i)} style={{background:C.redDim,border:"none",color:C.red,borderRadius:8,padding:"6px 10px",cursor:"pointer",alignSelf:"flex-start",marginTop:18}}>✕</button>}
+            {bills.length>1&&<button aria-label="Remove" onClick={()=>rmBill(i)} style={{background:C.redDim,border:"none",color:C.red,borderRadius:8,padding:"6px 10px",cursor:"pointer",alignSelf:"flex-start",marginTop:18}}>✕</button>}
           </div>
         </div>
       ))}
@@ -4472,7 +4472,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
               <Inp label="Min Payment $" value={d.min} onChange={v=>upDebt(i,"min",v)} type="number" sm/>
               {d.fromBank&&!d.rate&&<div style={{color:C.gold,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2,marginBottom:4}}>⚡ Add interest rate to unlock payoff simulator</div>}
             </div>
-            {debts.length>1&&<button onClick={()=>rmDebt(i)} style={{background:C.redDim,border:"none",color:C.red,borderRadius:8,padding:"6px 10px",cursor:"pointer",alignSelf:"flex-start",marginTop:18}}>✕</button>}
+            {debts.length>1&&<button aria-label="Remove" onClick={()=>rmDebt(i)} style={{background:C.redDim,border:"none",color:C.red,borderRadius:8,padding:"6px 10px",cursor:"pointer",alignSelf:"flex-start",marginTop:18}}>✕</button>}
           </div>
         </div>
       ))}
@@ -4616,7 +4616,7 @@ function Notifications({onClose, data, onMarkAllRead}){
           <div style={{flex:1}}>
             <div style={{display:"flex",justifyContent:"space-between"}}>
               <div style={{color:n.read?C.cream:n.color,fontWeight:700,fontSize:14}}>{n.title}</div>
-              <button onClick={e=>{e.stopPropagation();setNotifs(ns=>ns.filter(x=>x.id!==n.id));}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",padding:"0 0 0 8px",fontSize:14}}>✕</button>
+              <button aria-label="Remove" onClick={e=>{e.stopPropagation();setNotifs(ns=>ns.filter(x=>x.id!==n.id));}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",padding:"0 0 0 8px",fontSize:14}}>✕</button>
             </div>
             <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.55,marginTop:4}}>{n.body}</div>
             <div style={{color:C.muted,fontSize:11,marginTop:6}}>{n.time}</div>
@@ -4876,7 +4876,7 @@ function DataTransparencyPanel({data, onClose}) {
               <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.cream}}>How it's calculated</div>
               <div style={{...s,fontSize:11,color:C.muted,marginTop:2}}>Full audit trail of every number in Flourish</div>
             </div>
-            <button onClick={onClose} style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,
+            <button aria-label="Close" onClick={onClose} style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,
               borderRadius:10,padding:"8px 12px",color:C.muted,cursor:"pointer",...s,fontSize:13,minHeight:36}}>✕</button>
           </div>
           {/* Tabs */}
@@ -5192,7 +5192,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         <button onClick={()=>setShowNotifs(true)} style={{position:"relative",...glass(unread>0?C.red:""),borderRadius:14,width:44,height:44,cursor:"pointer",color:C.cream,display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s",flexShrink:0}}>
           <Icon id="bell" size={18} color={C.cream} strokeWidth={1.5}/>
           {unread>0&&<>
-            <div style={{position:"absolute",top:-3,right:-3,width:16,height:16,borderRadius:"50%",background:C.red,color:"#fff",fontSize:8,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{unread}</div>
+            <div style={{position:"absolute",top:-3,right:-3,width:16,height:16,borderRadius:"50%",background:C.red,color:"#fff",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{unread}</div>
             <div style={{position:"absolute",top:-3,right:-3,width:16,height:16,borderRadius:"50%",background:C.red,animation:"ringPulse 1.5s ease-out infinite"}}/>
           </>}
         </button>
@@ -6164,7 +6164,7 @@ function BillManager({data, setAppData, onClose}){
               </select>
             </div>
           )}
-          <button onClick={()=>removeBill(i,b.name)} title="Remove" style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:15,padding:"4px 6px",minWidth:32,minHeight:32,flexShrink:0}}>✕</button>
+          <button aria-label="Remove" onClick={()=>removeBill(i,b.name)} title="Remove" style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:15,padding:"4px 6px",minWidth:32,minHeight:32,flexShrink:0}}>✕</button>
         </div>
         {/* Controls: fixed/variable toggle + frequency (recurring only) */}
         {!isOneOff && (
@@ -6216,7 +6216,7 @@ function BillManager({data, setAppData, onClose}){
               <div style={{color:C.cream,fontWeight:800,fontSize:17}}>Your Bills</div>
               <div style={{color:C.muted,fontSize:12,marginTop:2}}>Add regular expenses to power your forecast</div>
             </div>
-            <button onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>✕</button>
+            <button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>✕</button>
           </div>
         </div>
         <div style={{overflowY:"auto",flex:1,padding:"16px 20px 32px"}}>
@@ -6568,7 +6568,7 @@ function AddCustomCategory({onAdd}){
           onKeyDown={e=>{if(e.key==="Enter") save();}}
           style={{flex:1,background:C.cardAlt,border:`1px solid ${C.green}`,borderRadius:10,padding:"8px 12px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}} autoFocus/>
         <button onClick={()=>save()} style={{background:C.green,border:"none",borderRadius:10,padding:"8px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>Add</button>
-        <button onClick={()=>{setShow(false);setVal("");}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 12px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>✕</button>
+        <button aria-label="Close" onClick={()=>{setShow(false);setVal("");}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 12px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>✕</button>
       </div>
     </div>
   );
@@ -6727,7 +6727,7 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
                     style={{flex:1,background:"none",border:"none",padding:"6px 4px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
                 </div>
                 <button onClick={saveBudget} style={{background:color,border:"none",borderRadius:8,padding:"6px 10px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✓</button>
-                <button onClick={()=>setEditBudget(false)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 8px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✕</button>
+                <button aria-label="Remove" onClick={()=>setEditBudget(false)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 8px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✕</button>
               </div>
             ) : (
               <button onClick={e=>{e.stopPropagation();setBudgetVal(budget?String(budget):"");setEditBudget(true);}}
@@ -7066,7 +7066,7 @@ function BudgetPlanCard({data, setAppData}) {
             ~${Math.round(discret).toLocaleString()}/mo discretionary · adjust any amount · add categories
           </div>
         </div>
-        <button onClick={()=>setOpen(false)}
+        <button aria-label="Close" onClick={()=>setOpen(false)}
           style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0,lineHeight:1}}>✕</button>
       </div>
 
@@ -7106,7 +7106,7 @@ function BudgetPlanCard({data, setAppData}) {
                     fontSize:12,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
                 <span style={{color:C.muted,padding:"0 3px",fontSize:9}}>/mo</span>
               </div>
-              <button onClick={()=>handleDeleteCat(cat)}
+              <button aria-label="Remove category" onClick={()=>handleDeleteCat(cat)}
                 style={{background:"none",border:"none",color:C.muted,cursor:"pointer",
                   fontSize:14,padding:"2px",flexShrink:0,opacity:0.6,lineHeight:1}}
                 title="Remove category">×</button>
@@ -7126,7 +7126,7 @@ function BudgetPlanCard({data, setAppData}) {
             <button onClick={handleAddCustom}
               style={{background:C.green,border:"none",borderRadius:8,padding:"7px 10px",
                 color:"#041810",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Add</button>
-            <button onClick={()=>{setShowAddCat(false);setCustomCat("");}}
+            <button aria-label="Close" onClick={()=>{setShowAddCat(false);setCustomCat("");}}
               style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0}}>✕</button>
           </div>
         ) : (
@@ -7560,7 +7560,7 @@ function SpendScreen({data, setAppData, setScreen}){
                     Pay arrears →
                   </button>
                 )}
-                <button onClick={()=>setRecatTxn(null)} style={{background:"none",border:"none",color:C.muted,fontSize:20,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>✕</button>
+                <button aria-label="Remove" onClick={()=>setRecatTxn(null)} style={{background:"none",border:"none",color:C.muted,fontSize:20,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>✕</button>
               </div>
             </div>
           </div>
@@ -7762,7 +7762,7 @@ function SpendScreen({data, setAppData, setScreen}){
         :cuts.map(s=><Card key={s.id} glow={s.color}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
             <div style={{display:"flex",gap:10,alignItems:"center"}}><Icon id={s.icon||"card"} size={20} color={C.mutedHi} strokeWidth={1.5}/><span style={{color:s.color,fontWeight:800,fontSize:14}}>{s.title}</span></div>
-            <button onClick={()=>setDismissed(d=>[...d,s.id])} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>✕</button>
+            <button aria-label="Remove" onClick={()=>setDismissed(d=>[...d,s.id])} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>✕</button>
           </div>
           <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:10}}>{s.body}</div>
           <div style={{display:"flex",gap:8}}><Chip label={`Save ${s.saving}`} color={C.green}/><Chip label={`Effort: ${s.effort}`} color={s.effort.includes("Very")?C.teal:C.green}/></div>
@@ -7933,7 +7933,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                           style={{background:col+"18",border:`1px solid ${col}33`,borderRadius:8,padding:"5px 10px",color:col,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:28}}>
                           Edit
                         </button>
-                        <button onClick={()=>removeGoal(i)}
+                        <button aria-label="Remove goal" onClick={()=>removeGoal(i)}
                           style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"5px 8px",minHeight:28,minWidth:28}}>✕</button>
                       </div>
                     </div>
@@ -8205,7 +8205,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                 </div>
                 <div style={{background:C.gold+"18",borderRadius:12,padding:"8px 10px",textAlign:"center",flexShrink:0,minWidth:56}}>
                   <div style={{fontSize:18}}>{tip.flag}</div>
-                  <div style={{color:C.goldBright,fontSize:8,fontWeight:800,textTransform:"uppercase",letterSpacing:0.8,marginTop:3}}>Priority</div>
+                  <div style={{color:C.goldBright,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:0.8,marginTop:3}}>Priority</div>
                 </div>
               </div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:12,borderTop:`1px solid ${C.gold}22`}}>
@@ -9379,7 +9379,7 @@ function Family({data,household,setHousehold,setScreen}){
                 </div>
                 <span style={{color:C.gold,fontWeight:700,fontSize:12}}>+${(ch.reward||0).toFixed(2)}</span>
                 {ch.done&&req&&ch.approved&&<span style={{color:C.green,fontSize:11}}>✓ approved</span>}
-                <button onClick={()=>removeKidChore(activeKid.id,ch.id)} style={{background:"none",border:"none",color:C.muted,fontSize:18,cursor:"pointer",padding:"0 2px",lineHeight:1,minHeight:30}}>×</button>
+                <button aria-label="Close" onClick={()=>removeKidChore(activeKid.id,ch.id)} style={{background:"none",border:"none",color:C.muted,fontSize:18,cursor:"pointer",padding:"0 2px",lineHeight:1,minHeight:30}}>×</button>
               </div>
             ))}
 
@@ -9618,7 +9618,7 @@ function WidgetScreen({data,onBack}){
   // Shared widget stat tile (dark always)
   const WTile=({label,value,color="rgba(237,233,226,0.9)",bg="rgba(255,255,255,0.05)"})=>(
     <div style={{background:bg,borderRadius:10,padding:"6px 10px",flex:1,minWidth:0}}>
-      <div style={{color:"rgba(237,233,226,0.4)",fontSize:8,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:1,marginBottom:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</div>
+      <div style={{color:"rgba(237,233,226,0.4)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:1,marginBottom:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</div>
       <div style={{color,fontSize:13,fontWeight:800,fontFamily:"'Playfair Display',serif",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{value}</div>
     </div>
   );
@@ -9690,7 +9690,7 @@ function WidgetScreen({data,onBack}){
         {largeTiles.length>0&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           {largeTiles.slice(0,4).map((t,i)=>(
             <div key={i} style={{background:t.bg,border:`1px solid ${t.color.replace("0.9","0.15").replace("0.95","0.15")}`,borderRadius:14,padding:"11px 12px"}}>
-              <div style={{color:t.color.replace(/[\d.]+\)$/,"0.5)"),fontSize:8,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{t.label}</div>
+              <div style={{color:t.color.replace(/[\d.]+\)$/,"0.5)"),fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{t.label}</div>
               <div style={{color:t.color,fontWeight:900,fontSize:24,fontFamily:"'Playfair Display',serif",marginTop:3,letterSpacing:-0.5}}>{t.value}</div>
             </div>
           ))}
@@ -9875,7 +9875,7 @@ function InlineDebtEditor({data, setAppData, color, navToScreen}){
               <div style={{color:C.cream,fontWeight:600,fontSize:13}}>{d.name}</div>
               {d.fromBank&&<span style={{fontSize:9,fontWeight:700,color:C.greenBright,background:C.green+"22",border:`1px solid ${C.green}33`,borderRadius:99,padding:"2px 7px",flexShrink:0}}>live</span>}
             </div>
-            <button onClick={()=>removeDebt(i)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"4px 8px",minWidth:32,minHeight:32}}>✕</button>
+            <button aria-label="Remove" onClick={()=>removeDebt(i)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"4px 8px",minWidth:32,minHeight:32}}>✕</button>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
             {[["Balance","balance","$"],["Rate %","rate","%"],["Min/mo","min","$"]].map(([lbl,field,pre])=>(
@@ -9960,7 +9960,7 @@ function InlineGoalEditor({data, setAppData, color}){
           <div key={i} style={{background:C.cardAlt,borderRadius:12,padding:"10px 14px",marginBottom:8,border:`1px solid ${C.border}`}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
               <div style={{color:C.cream,fontWeight:600,fontSize:13}}>{g.name||g.label||"Goal"}</div>
-              <button onClick={()=>removeGoal(i)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"2px 6px"}}>✕</button>
+              <button aria-label="Remove" onClick={()=>removeGoal(i)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"2px 6px"}}>✕</button>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:6}}>
               {[["Saved","saved"],["Target","target"]].map(([lbl,field])=>(
@@ -10165,7 +10165,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
                 <input value={b.amount} onChange={e=>updateBillAmt(i,e.target.value)} type="number" inputMode="decimal"
                   style={{flex:1,background:"none",border:"none",padding:"5px 4px 5px 0",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none",width:0,fontWeight:600}}/>
               </div>
-              <button onClick={()=>removeBillS(i,b.name)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:13,padding:"4px",flexShrink:0,minWidth:24,minHeight:24}}>✕</button>
+              <button aria-label="Remove" onClick={()=>removeBillS(i,b.name)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:13,padding:"4px",flexShrink:0,minWidth:24,minHeight:24}}>✕</button>
             </div>
           ))
         }
@@ -11001,7 +11001,7 @@ function CreditScreen({data,setScreen}){
           {[["580","Poor",C.red],["670","Fair",C.gold],["740","Good",C.green],["800","Excellent",C.teal]].map(([s,l,col])=>(
             <div key={s} style={{background:col+"22",border:`1px solid ${col}44`,borderRadius:8,padding:"3px 8px",textAlign:"center"}}>
               <div style={{color:col,fontSize:9,fontWeight:800}}>{s}+</div>
-              <div style={{color:col,fontSize:8,fontWeight:600}}>{l}</div>
+              <div style={{color:col,fontSize:10,fontWeight:600}}>{l}</div>
             </div>
           ))}
         </div>
@@ -11098,7 +11098,7 @@ function FeedbackModal({onClose}){
               <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                 Beta Feedback
               </div>
-              <button onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:20,cursor:"pointer",padding:0,lineHeight:1}}>✕</button>
+              <button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:20,cursor:"pointer",padding:0,lineHeight:1}}>✕</button>
             </div>
             {/* Type selector */}
             <div style={{display:"flex",gap:6,marginBottom:14}}>
@@ -12642,7 +12642,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
                         style={{width:54,background:"none",border:"none",padding:"7px 2px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
                       <span style={{color:C.muted,padding:"0 4px",fontSize:9}}>/mo</span>
                     </div>
-                    <button onClick={()=>deleteCat(cat)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,padding:2,flexShrink:0,opacity:0.6,lineHeight:1}}>×</button>
+                    <button aria-label="Close" onClick={()=>deleteCat(cat)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,padding:2,flexShrink:0,opacity:0.6,lineHeight:1}}>×</button>
                   </div>
                 );
               })}
@@ -12654,7 +12654,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
                     onKeyDown={e=>e.key==="Enter"&&addCustom()}
                     style={{flex:1,background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none"}}/>
                   <button onClick={addCustom} style={{background:C.green,border:"none",borderRadius:8,padding:"7px 12px",color:"#041810",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Add</button>
-                  <button onClick={()=>{setShowAddCat(false);setCustomCat("");}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0}}>✕</button>
+                  <button aria-label="Close" onClick={()=>{setShowAddCat(false);setCustomCat("");}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0}}>✕</button>
                 </div>
               ):(
                 <button onClick={()=>setShowAddCat(true)} style={{background:"none",border:`1px dashed ${C.green}44`,borderRadius:10,padding:"9px 12px",color:C.green,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
@@ -13727,7 +13727,7 @@ input,button,select,textarea { font-family:inherit; }
   const migratedBanner = showMigratedBanner ? (
     <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.green+"22",borderBottom:`1px solid ${C.green}55`,color:C.greenBright,fontSize:12,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
       ✓ Your data is now backed up to your Flourish account
-      <button onClick={dismissMigratedBanner} style={{background:"none",border:"none",color:C.greenBright,cursor:"pointer",fontWeight:800,fontSize:14,padding:"0 4px",lineHeight:1}}>✕</button>
+      <button aria-label="Remove" onClick={dismissMigratedBanner} style={{background:"none",border:"none",color:C.greenBright,cursor:"pointer",fontWeight:800,fontSize:14,padding:"0 4px",lineHeight:1}}>✕</button>
     </div>
   ) : null;
 
