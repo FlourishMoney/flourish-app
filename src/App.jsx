@@ -1793,6 +1793,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
         debtType: targetDebt.debtType,
         debtBalance: balance,
         debtApr: apr,
+        debtAprEstimated: !!targetDebt.rateEstimated, // Sprint 4b: APR was a fallback, not the user's real rate
         currentPayment,
         extraPayment,
         baselineMonths: result.baseline.monthsToPayoff,
@@ -2108,7 +2109,7 @@ Rules: do not invent or quote any number not in the calculated results above. Do
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"12px 14px"}}>
                   <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>Applied to</div>
                   <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,color:C.cream}}>{result.debtName}</div>
-                  <div style={{color:C.muted,fontSize:11,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${result.debtBalance.toFixed(2)} @ {result.debtApr}% APR · ${result.currentPayment.toFixed(0)}/mo current payment</div>
+                  <div style={{color:C.muted,fontSize:11,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${result.debtBalance.toFixed(2)} @ {result.debtApr}% APR{result.debtAprEstimated ? " (est.)" : ""} · ${result.currentPayment.toFixed(0)}/mo current payment</div>
                 </div>
                 {/* Before / After comparison */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>

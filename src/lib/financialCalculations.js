@@ -435,6 +435,13 @@ export function isInvestmentAccount(a) {
 //      Plaid is the source of truth for those. If liabilities is missing/empty,
 //      fall back to using manual debts as-is.
 
+// Sprint 4b: fallback rates used ONLY when the real APR is missing (user left it blank, or
+// Plaid returned null). Every fabricated rate is tagged rateEstimated:true so the UI can show
+// "(est.)" — the payoff math then never silently presents an assumed rate as the user's real one.
+const DEFAULT_APR_CREDIT    = 20; // typical Canadian credit-card APR
+const DEFAULT_RATE_MORTGAGE = 5;  // mortgages typically 3–6%
+const DEFAULT_RATE_STUDENT  = 6;  // student loans typically 5–7%
+
 export function buildDebtListForSimulator(manualDebts, liabilities) {
   const manual = Array.isArray(manualDebts) ? manualDebts : [];
   const plaidCredit   = liabilities && Array.isArray(liabilities.credit)   ? liabilities.credit   : [];
@@ -446,64 +453,84 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
   if (!hasAnyPlaid) {
     return manual
       .filter(d => parseFloat(d.balance || 0) > 0)
-      .map(d => ({
-        name: d.name || "Debt",
-        balance: parseFloat(d.balance || 0),
-        rate: parseFloat(d.rate || 0) || 20, // fallback 20% APR if user left blank
-        min: parseFloat(d.min || 0) || Math.max(25, parseFloat(d.balance || 0) * 0.02),
-        source: "manual",
-        debtType: "manual",
-      }));
+      .map(d => {
+        const real = parseFloat(d.rate || 0);
+        return {
+          name: d.name || "Debt",
+          balance: parseFloat(d.balance || 0),
+          rate: real > 0 ? real : DEFAULT_APR_CREDIT,
+          rateEstimated: !(real > 0), // Sprint 4b: flag fabricated APRs so the UI can label them
+          min: parseFloat(d.min || 0) || Math.max(25, parseFloat(d.balance || 0) * 0.02),
+          source: "manual",
+          debtType: "manual",
+        };
+      });
   }
 
   // Plaid liabilities present → build authoritative list across all 3 categories
   const creditEntries = plaidCredit
     .filter(c => (c.balance || 0) > 0)
-    .map(c => ({
-      name: c.name || "Credit Card",
-      balance: c.balance || 0,
-      rate: c.apr || 20, // Plaid sometimes returns null APR; fallback 20%
-      min: c.minPayment || Math.max(25, (c.balance || 0) * 0.02),
-      source: "plaid_liability",
-      debtType: "credit_card",
-      account_id: c.account_id,
-    }));
+    .map(c => {
+      const real = parseFloat(c.apr || 0);
+      return {
+        name: c.name || "Credit Card",
+        balance: c.balance || 0,
+        rate: real > 0 ? real : DEFAULT_APR_CREDIT, // Plaid sometimes returns null APR
+        rateEstimated: !(real > 0),
+        min: c.minPayment || Math.max(25, (c.balance || 0) * 0.02),
+        source: "plaid_liability",
+        debtType: "credit_card",
+        account_id: c.account_id,
+      };
+    });
 
   const mortgageEntries = plaidMortgage
     .filter(m => (m.balance || 0) > 0)
-    .map(m => ({
-      name: m.name || "Mortgage",
-      balance: m.balance || 0,
-      rate: m.interestRate || 5, // mortgages typically 3-6%; fallback 5%
-      min: m.monthlyPayment || Math.max(25, (m.balance || 0) * 0.005), // 0.5%/mo as last-resort default
-      source: "plaid_liability",
-      debtType: "mortgage",
-      account_id: m.account_id,
-    }));
+    .map(m => {
+      const real = parseFloat(m.interestRate || 0);
+      return {
+        name: m.name || "Mortgage",
+        balance: m.balance || 0,
+        rate: real > 0 ? real : DEFAULT_RATE_MORTGAGE,
+        rateEstimated: !(real > 0),
+        min: m.monthlyPayment || Math.max(25, (m.balance || 0) * 0.005), // 0.5%/mo as last-resort default
+        source: "plaid_liability",
+        debtType: "mortgage",
+        account_id: m.account_id,
+      };
+    });
 
   const studentEntries = plaidStudent
     .filter(s => (s.balance || 0) > 0)
-    .map(s => ({
-      name: s.name || "Student Loan",
-      balance: s.balance || 0,
-      rate: s.interestRate || 6, // student loans typically 5-7%; fallback 6%
-      min: Math.max(25, (s.balance || 0) * 0.01), // Plaid student liabilities don't return min payment; default 1% of balance
-      source: "plaid_liability",
-      debtType: "student",
-      account_id: s.account_id,
-    }));
+    .map(s => {
+      const real = parseFloat(s.interestRate || 0);
+      return {
+        name: s.name || "Student Loan",
+        balance: s.balance || 0,
+        rate: real > 0 ? real : DEFAULT_RATE_STUDENT,
+        rateEstimated: !(real > 0),
+        min: Math.max(25, (s.balance || 0) * 0.01), // Plaid student liabilities don't return min payment; default 1% of balance
+        source: "plaid_liability",
+        debtType: "student",
+        account_id: s.account_id,
+      };
+    });
 
   // Add manual debts that are NOT fromBank (user-entered standalones — IOUs, unconnected cards, etc.)
   const manualStandalones = manual
     .filter(d => !d.fromBank && parseFloat(d.balance || 0) > 0)
-    .map(d => ({
-      name: d.name || "Debt",
-      balance: parseFloat(d.balance || 0),
-      rate: parseFloat(d.rate || 0) || 20,
-      min: parseFloat(d.min || 0) || Math.max(25, parseFloat(d.balance || 0) * 0.02),
-      source: "manual",
-      debtType: "manual",
-    }));
+    .map(d => {
+      const real = parseFloat(d.rate || 0);
+      return {
+        name: d.name || "Debt",
+        balance: parseFloat(d.balance || 0),
+        rate: real > 0 ? real : DEFAULT_APR_CREDIT,
+        rateEstimated: !(real > 0),
+        min: parseFloat(d.min || 0) || Math.max(25, parseFloat(d.balance || 0) * 0.02),
+        source: "manual",
+        debtType: "manual",
+      };
+    });
 
   return [...creditEntries, ...mortgageEntries, ...studentEntries, ...manualStandalones];
 }
