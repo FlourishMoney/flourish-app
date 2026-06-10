@@ -13165,7 +13165,6 @@ export default function FlourishApp(){
   })();
   const [screen,setScreen]=useState(initialScreen);
   const [user,setUser]=useState(null);
-  const [mfaGate,setMfaGate]=useState("ok"); // AAL2 enforcement: "ok" | "checking" | "needed"
   const [authLoading,setAuthLoading]=useState(true);
   const [showNotifs,setShowNotifs]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
@@ -13278,22 +13277,17 @@ export default function FlourishApp(){
 
   // ── Supabase auth session check ────────────────────────────────
   useEffect(()=>{
-    // AAL2 gate: a session below aal2 must complete MFA before the app renders. Computed here
-    // (not inside AuthScreen) to avoid the onAuthStateChange→setUser race that unmounted AuthScreen
-    // the instant a password was accepted, skipping its MFA screen entirely.
-    const syncSession = async (session, fromInit) => {
+    // MFA rolled back for v1: TOTP enrollment is too much friction for a personal-finance app,
+    // and no competitor (Mint, YNAB, Monarch, Copilot) mandates it. The top-level AAL2 gate is
+    // disabled, so an authenticated session hands off straight to the app. MfaGate is kept
+    // in-tree (unreferenced) for v1.1, when MFA returns as optional (biometric-first on iOS,
+    // TOTP fallback, recovery codes, remember-this-device).
+    const syncSession = (session, fromInit) => {
       setUser(session?.user ?? null);
-      if (!session?.user) { setMfaGate("ok"); if (fromInit) setAuthLoading(false); return; }
-      setMfaGate("checking");
-      try {
-        const { data: aal, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-        setMfaGate(!error && aal?.currentLevel === "aal2" ? "ok" : "needed");
-      } catch (e) { console.error("[auth] AAL check failed (fail-closed):", e?.message || e); setMfaGate("needed"); }
       if (fromInit) setAuthLoading(false);
     };
     supabase.auth.getSession().then(({ data: { session } }) => syncSession(session, true));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "TOKEN_REFRESHED") { setUser(session?.user ?? null); return; } // don't re-gate mid-MFA-setup
       syncSession(session, false);
     });
     return () => subscription.unsubscribe();
@@ -13633,8 +13627,6 @@ export default function FlourishApp(){
   // ── Auth gate ───────────────────────────────────────────────────
   if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
   if(!user)return <AuthScreen onAuth={u=>setUser(u)}/>;
-  if(mfaGate==="checking")return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
-  if(mfaGate==="needed")return <MfaGate onPass={()=>setMfaGate("ok")} onSignOut={async()=>{ try{await supabase.auth.signOut();}catch{} setUser(null); setMfaGate("ok"); }}/>;
 
   // ── AI disclosure gate (Apple 5.1.2(i)) — must precede onboarding + all AI features ──
   if(!aiDisclosureSeen)return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={()=>setUser(null)}/>;
