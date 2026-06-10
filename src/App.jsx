@@ -3056,9 +3056,12 @@ const SafeSpendEngine = {
       const billName = _normName(bill.vendorPattern||bill.name);
       const billAmt  = parseFloat(bill.amount||0);
       if(billName.length < 3) return false;
+      // Sprint 4 (item 6): a $0 placeholder bill is "not applicable" — we can't confirm payment.
+      // The old amount-agnostic fallback (`: true`) marked it paid on ANY name hit. Treat as not-paid.
+      if(billAmt <= 0) return false;
       return txnList.some(t => {
         const nameMatch = t.name && (t.name.includes(billName) || billName.includes(t.name));
-        const amtMatch  = billAmt > 0 ? Math.abs(t.amount - billAmt) <= Math.max(2, billAmt*0.05) : true;
+        const amtMatch  = Math.abs(t.amount - billAmt) <= Math.max(2, billAmt*0.05);
         return nameMatch && amtMatch;
       });
     };
@@ -3106,6 +3109,7 @@ const SafeSpendEngine = {
       soonBills: bills.filter(b => {
         const dueDay = parseInt(b.date);
         if(!dueDay) return false;
+        if(parseFloat(b.amount||0) <= 0) return false; // Sprint 4 (item 6): skip $0 placeholders
         if(isBillPaid(b)) return false;
         const thisMonth = new Date(todayDate.getFullYear(), todayDate.getMonth(), dueDay);
         const nextMonth = new Date(todayDate.getFullYear(), todayDate.getMonth()+1, dueDay);
