@@ -3356,7 +3356,7 @@ const AutopilotEngine = {
     const { monthlyIncome, cashFlow, totalExpenses } = FinancialCalcEngine.cashFlow(data);
     const { forecast, overdraftRisk, lowBalanceWarnings } = ForecastEngine.generate(data, 30);
     const { spendingStability, spikeRatio } = BehaviorEngine.analyze(data);
-    const debts = (data.debts || []).sort((a,b) => parseFloat(b.rate||0) - parseFloat(a.rate||0));
+    const debts = [...(data.debts || [])].sort((a,b) => parseFloat(b.rate||0) - parseFloat(a.rate||0)); // Sprint 6b: copy before sort — never mutate data.debts in render
     const goals  = data.goals || [];
     const today  = new Date();
     const todayNum = today.getDate();
@@ -4511,7 +4511,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
   ];
 
   return (
-    <div style={{background:C.bg,minHeight:"100vh",display:"flex",justifyContent:"center",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"background .4s"}}>
+    <div style={{background:C.bg,minHeight:"100dvh",display:"flex",justifyContent:"center",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"background .4s"}}>
       <div style={{width:"100%",maxWidth:430,padding:"max(28px, env(safe-area-inset-top)) 20px 60px"}}>
         {step>0&&step<7&&(
           <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",marginBottom:24}}>
@@ -6735,7 +6735,7 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
           {catTxns.length===0
             ? <div style={{color:C.muted,fontSize:12}}>No transactions in this category this month.</div>
             : (()=>{
-              const sorted = catTxns.sort((a,b)=>b.amount-a.amount);
+              const sorted = [...catTxns].sort((a,b)=>b.amount-a.amount); // Sprint 6b: copy before sort — catTxns is a prop
               const visible = showAllTxns ? sorted : sorted.slice(0, TXN_LIMIT);
               const hiddenCount = sorted.length - TXN_LIMIT;
               return (<>
@@ -10775,7 +10775,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
   ];
 
   return(
-    <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 120px)",fontFamily:"'Plus Jakarta Sans',sans-serif",maxWidth:430,margin:"0 auto",width:"100%"}}>
+    <div style={{display:"flex",flexDirection:"column",height:"calc(100dvh - 120px)",fontFamily:"'Plus Jakarta Sans',sans-serif",maxWidth:430,margin:"0 auto",width:"100%"}}>
       {/* Header */}
       <div style={{padding:"16px 20px 12px",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -11304,7 +11304,7 @@ function Paywall({onClose,onUpgrade,onPromoUpgrade,country}){
   ];
 
   return(
-    <div style={{background:C.bg,minHeight:"100vh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s"}}>
+    <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s"}}>
       <div style={{width:"100%",maxWidth:430,padding:"24px 20px 60px"}}>
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}>
@@ -11484,7 +11484,7 @@ function FirstVisitScreen({data, onDismiss}) {
 // Phase D3: AI disclosure screen (Apple 5.1.2(i) compliance — first-time gate before AI features)
 function AIDisclosureScreen({onAccept, onDecline}){
   return (
-    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"max(24px, env(safe-area-inset-top)) 24px 24px"}}>
+    <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"max(24px, env(safe-area-inset-top)) 24px 24px"}}>
       <div style={{maxWidth:480,width:"100%"}}>
         <div style={{textAlign:"center",marginBottom:24}}>
           <div style={{fontSize:48,marginBottom:8}}>🤖</div>
@@ -13726,12 +13726,12 @@ input,button,select,textarea { font-family:inherit; }
   ) : null;
 
   if(isDesktop) return (
-    <div style={{background:C.bg,minHeight:"100vh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex"}}>
+    <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
       {syncBanner}{migratedBanner}
 
       {/* ── DESKTOP SIDEBAR ─────────────────────────────────────────── */}
-      <div style={{width:240,minHeight:"100vh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:0,height:"100vh",flexShrink:0}}>
+      <div style={{width:240,minHeight:"100dvh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:0,height:"100dvh",flexShrink:0}}>
         {/* Logo */}
         <div style={{padding:"28px 24px 20px"}}>
           <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{background:"none",border:"none",cursor:"pointer",padding:0,display:"flex",alignItems:"center",gap:10}}>
@@ -13790,7 +13790,7 @@ input,button,select,textarea { font-family:inherit; }
       </div>
 
       {/* ── DESKTOP MAIN CONTENT ────────────────────────────────────── */}
-      <div style={{flex:1,minHeight:"100vh",display:"flex",flexDirection:"column",maxWidth:"calc(100vw - 240px)"}}>
+      <div style={{flex:1,minHeight:"100dvh",display:"flex",flexDirection:"column",maxWidth:"calc(100vw - 240px)"}}>
         {/* Top bar */}
         <div style={{padding:"20px 36px 16px",background:C.isDark?`${C.bg}F8`:`${C.bg}EE`,backdropFilter:"blur(12px)",position:"sticky",top:0,zIndex:20,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid ${C.border}`}}>
           <div>
@@ -13827,7 +13827,7 @@ input,button,select,textarea { font-family:inherit; }
 
   // ── MOBILE LAYOUT ────────────────────────────────────────────────────────
   return(
-    <div style={{background:C.bg,minHeight:"100vh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s"}}>
+    <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
       {syncBanner}{migratedBanner}
       {/* Ambient mesh background */}
@@ -13836,7 +13836,7 @@ input,button,select,textarea { font-family:inherit; }
         <div style={{position:"absolute",bottom:-160,right:-160,width:540,height:540,borderRadius:"50%",background:C.isDark?"radial-gradient(circle,rgba(155,125,255,0.045) 0%,transparent 68%)":"radial-gradient(circle,rgba(88,64,188,0.05) 0%,transparent 68%)",animation:"breathe 10s ease-in-out infinite 2s"}}/>
         <div style={{position:"absolute",top:"40%",right:-100,width:360,height:360,borderRadius:"50%",background:C.isDark?"radial-gradient(circle,rgba(77,168,255,0.025) 0%,transparent 70%)":"radial-gradient(circle,rgba(36,114,200,0.04) 0%,transparent 70%)",animation:"breathe 12s ease-in-out infinite 4s"}}/>
       </div>
-      <div style={{width:"100%",maxWidth:430,minHeight:"100vh",display:"flex",flexDirection:"column",position:"relative",zIndex:1}}>
+      <div style={{width:"100%",maxWidth:430,minHeight:"100dvh",display:"flex",flexDirection:"column",position:"relative",zIndex:1}}>
         {/* ── OFFLINE BANNER ─────────────────────────── */}
         {!isOnline&&(
           <div style={{position:"fixed",top:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,zIndex:9999,background:"#180800",borderBottom:`2px solid ${C.orange}44`,padding:"9px 20px",display:"flex",alignItems:"center",gap:10}}>
