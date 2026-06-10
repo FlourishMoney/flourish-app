@@ -538,6 +538,15 @@ exports.handler = async (event) => {
         errors.push({ step: "delete_rows" });
       }
 
+      // 3b. Sprint 3: explicitly wipe other user-scoped rows. user_data has ON DELETE CASCADE
+      // so it would go with the auth user below, but we clear it + the coach_usage counter
+      // outright too (idempotent; non-fatal — orphaned rows aren't a user-facing failure).
+      // webhook_seen is keyed by jti hash (NOT user-scoped), so there's nothing per-user there.
+      const { error: udErr } = await admin.from("user_data").delete().eq("user_id", user_id);
+      if (udErr) console.warn("[delete_account] user_data delete:", udErr.message);
+      const { error: cuErr } = await admin.from("coach_usage").delete().eq("user_id", user_id);
+      if (cuErr) console.warn("[delete_account] coach_usage delete:", cuErr.message);
+
       // 4. Delete the Supabase auth user (service-role only)
       const { error: authDelErr } = await admin.auth.admin.deleteUser(user_id);
       if (authDelErr) {
