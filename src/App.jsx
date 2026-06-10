@@ -11961,9 +11961,6 @@ function AuthScreen({ onAuth }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [betaCode, setBetaCode] = useState("");
-  const [mfaCode, setMfaCode] = useState("");
-  const [qrUrl, setQrUrl] = useState("");
-  const [factorId, setFactorId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -12059,26 +12056,6 @@ function AuthScreen({ onAuth }) {
     // in-AuthScreen MFA flow was unreachable — onAuthStateChange set `user` and unmounted this
     // screen the moment the password was accepted, before any MFA screen could render.)
     onAuth(data.user);
-    setLoading(false);
-  };
-
-  const handleMFASetup = async () => {
-    setLoading(true); setError("");
-    const { data: challenge } = await supabase.auth.mfa.challenge({ factorId });
-    const { error } = await supabase.auth.mfa.verify({ factorId, challengeId: challenge.id, code: mfaCode });
-    if (error) { setError("Invalid code — try again."); setLoading(false); return; }
-    const { data: { user } } = await supabase.auth.getUser();
-    onAuth(user);
-    setLoading(false);
-  };
-
-  const handleMFAVerify = async () => {
-    setLoading(true); setError("");
-    const { data: challenge } = await supabase.auth.mfa.challenge({ factorId });
-    const { error } = await supabase.auth.mfa.verify({ factorId, challengeId: challenge.id, code: mfaCode });
-    if (error) { setError("Invalid code — try again."); setLoading(false); return; }
-    const { data: { user } } = await supabase.auth.getUser();
-    onAuth(user);
     setLoading(false);
   };
 
@@ -12384,27 +12361,6 @@ function AuthScreen({ onAuth }) {
                       </div>
                     </div>
                   )}
-                </div>
-              )}
-
-              {mode === "mfa_setup" && (
-                <div>
-                  <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 20, fontWeight: 900, color: "#EDE9E2", marginBottom: 6 }}>Set up 2-factor auth</div>
-                  <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 20, lineHeight: 1.6 }}>Scan this QR code with Google Authenticator, then enter the 6-digit code.</div>
-                  {qrUrl && <img src={qrUrl} alt="MFA QR" style={{ width: "100%", borderRadius: 12, marginBottom: 16, background: "#fff", padding: 8 }} />}
-                  <input style={{ ...inpStyle, letterSpacing: 6, textAlign: "center", fontSize: 22 }} placeholder="000000" value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g,""))} maxLength={6} />
-                  {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
-                  <button style={btnStyle(!loading && mfaCode.length === 6)} onClick={handleMFASetup} disabled={loading || mfaCode.length !== 6}>{loading ? "Verifying..." : "Verify & Continue"}</button>
-                </div>
-              )}
-
-              {mode === "mfa_verify" && (
-                <div>
-                  <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 20, fontWeight: 900, color: "#EDE9E2", marginBottom: 6 }}>Enter your code</div>
-                  <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 20 }}>Open Google Authenticator and enter the 6-digit code for Flourish Money.</div>
-                  <input style={{ ...inpStyle, letterSpacing: 6, textAlign: "center", fontSize: 22 }} placeholder="000000" value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g,""))} maxLength={6} />
-                  {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
-                  <button style={btnStyle(!loading && mfaCode.length === 6)} onClick={handleMFAVerify} disabled={loading || mfaCode.length !== 6}>{loading ? "Verifying..." : "Log In"}</button>
                 </div>
               )}
 
