@@ -36,6 +36,9 @@ const SIDE_KEYS = [
   "flourish_streak",           // check-in streak
   "flourish_plan",             // UI cache only (real entitlement = future profiles table)
   "flourish_trial_started_at", // trial state
+  "flourish_ai_disclosure_seen", // Apple 5.1.2(i) AI disclosure acknowledged (cross-device)
+  "flourish_ai_disclosed_at",    // timestamp of the AI-disclosure choice (audit trail)
+  "flourish_ai_coach_enabled",   // AI on/off choice (synced so it persists across devices)
 ];
 // Per-kid dynamic keys (chores / data / theme) share this prefix.
 const SIDE_KEY_PREFIX = "flourish_kid_";

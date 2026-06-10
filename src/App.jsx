@@ -11518,6 +11518,11 @@ function AIDisclosureScreen({onAccept, onDecline}){
           <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Quick heads-up before you use AI features.</div>
         </div>
 
+        <div style={{background:C.green+"14",borderRadius:18,padding:"18px 20px",border:`1px solid ${C.green}44`,marginBottom:14}}>
+          <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>Educational guidance — not advice</div>
+          <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish uses AI (Anthropic Claude) to provide financial coaching. AI responses are <strong style={{color:C.cream}}>educational guidance, not personal financial, tax, or legal advice</strong>. Information you share is processed by Anthropic per their privacy policy. You can stop using AI features anytime.</div>
+        </div>
+
         <div style={{background:C.card,borderRadius:18,padding:"18px 20px",border:`1px solid ${C.border}`,marginBottom:14}}>
           <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>What we send to Anthropic (our AI provider)</div>
           <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your financial summary (balance, income, bills, debts), transaction descriptions, and the messages you send. <strong style={{color:C.cream}}>We never send your name, email, account credentials, or full account numbers.</strong></div>
@@ -11538,8 +11543,8 @@ function AIDisclosureScreen({onAccept, onDecline}){
           <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Anthropic does not train AI models on your data. You can disable AI features anytime in <strong style={{color:C.cream}}>Settings → Privacy & AI</strong>. Read the <a href="/privacy" style={{color:C.greenBright,textDecoration:"underline"}}>full Privacy Policy</a> for details.</div>
         </div>
 
-        <button onClick={onAccept} style={{width:"100%",background:`linear-gradient(135deg,${C.green} 0%,${C.greenBright} 100%)`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",marginBottom:10}}>I Understand — Use AI Features</button>
-        <button onClick={onDecline} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer"}}>Not now</button>
+        <button onClick={onAccept} style={{width:"100%",background:`linear-gradient(135deg,${C.green} 0%,${C.greenBright} 100%)`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",marginBottom:10}}>I understand</button>
+        <button onClick={onDecline} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer"}}>Don't use AI</button>
       </div>
     </div>
   );
@@ -13151,7 +13156,20 @@ export default function FlourishApp(){
     try { return localStorage.getItem("flourish_ai_coach_enabled") !== "0"; } catch { return true; }
   });
   const acceptAIDisclosure = ()=>{
-    try { localStorage.setItem("flourish_ai_disclosure_seen", "1"); } catch {}
+    try {
+      localStorage.setItem("flourish_ai_disclosure_seen", "1");
+      if (!localStorage.getItem("flourish_ai_disclosed_at")) localStorage.setItem("flourish_ai_disclosed_at", new Date().toISOString());
+    } catch {}
+    setAiDisclosureSeen(true);
+  };
+  // Apple 5.1.2(i): "Don't use AI" — log the disclosure choice (audit trail) but disable AI and stay in the app.
+  const declineAIDisclosure = ()=>{
+    try {
+      localStorage.setItem("flourish_ai_disclosure_seen", "1");
+      if (!localStorage.getItem("flourish_ai_disclosed_at")) localStorage.setItem("flourish_ai_disclosed_at", new Date().toISOString());
+      localStorage.setItem("flourish_ai_coach_enabled", "0");
+    } catch {}
+    setAiCoachEnabled(false);
     setAiDisclosureSeen(true);
   };
   const [appData,setAppData]=useState(()=>saved?.appData||null);
@@ -13273,6 +13291,11 @@ export default function FlourishApp(){
     setIsPremium(isCapacitorIOS() || !!c.isPremium);
     setCheckInBonus(c.checkInBonus || 0);
     writeSideKeys(blob && blob.sideKeys);
+    // Sprint 7: reflect synced AI-disclosure choices so a returning / cross-device user isn't re-prompted.
+    try {
+      setAiDisclosureSeen(localStorage.getItem("flourish_ai_disclosure_seen") === "1");
+      setAiCoachEnabled(localStorage.getItem("flourish_ai_coach_enabled") !== "0");
+    } catch {}
   };
 
   // ── Supabase auth session check ────────────────────────────────
@@ -13629,7 +13652,7 @@ export default function FlourishApp(){
   if(!user)return <AuthScreen onAuth={u=>setUser(u)}/>;
 
   // ── AI disclosure gate (Apple 5.1.2(i)) — must precede onboarding + all AI features ──
-  if(!aiDisclosureSeen)return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={()=>setUser(null)}/>;
+  if(!aiDisclosureSeen)return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={declineAIDisclosure}/>;
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={()=>setShowPaywall(true)} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
@@ -13776,7 +13799,7 @@ export default function FlourishApp(){
     if(screen==="coach"){
       // Phase D3: AI gates — opt-out check first, then first-time disclosure
       if(!aiCoachEnabled) return <AIDisabledNotice onOpenSettings={()=>setShowSettings(true)} onClose={()=>setScreen("home")}/>;
-      if(!aiDisclosureSeen) return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={()=>setScreen("home")}/>;
+      if(!aiDisclosureSeen) return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={()=>{declineAIDisclosure();setScreen("home");}}/>;
       // Phase D7: gate via library (handles trial unlimited + post-trial daily caps + tiers)
       const freeCoachAllowed = canUseCoach();
       const showCoach = isPremium || freeCoachAllowed;
