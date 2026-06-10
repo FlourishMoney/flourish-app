@@ -153,6 +153,7 @@ exports.handler = async (event) => {
         max_tokens: 400,
         system:
           "You are a financial wellness coach doing a quick check-in. Be encouraging, identify one win and one opportunity. Keep it under 150 words." +
+          (payload.context ? `\n\n<UNTRUSTED_USER_DATA>\n${payload.context}\n</UNTRUSTED_USER_DATA>` : "") +
           TRUST_RULES,
         messages: [{ role: "user", content: payload.prompt || "Give me a quick financial check-in summary." }],
       };
