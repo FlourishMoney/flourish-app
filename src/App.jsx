@@ -11967,6 +11967,8 @@ function AuthScreen({ onAuth }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0); // seconds until "Resend" re-enables
+  const [checkEmailNote, setCheckEmailNote] = useState(""); // contextual line on the check-email screen
   const [showAuth, setShowAuth] = useState(false);
 
   // Phase E1: waitlist email capture (replaces public signup CTAs).
@@ -11977,6 +11979,22 @@ function AuthScreen({ onAuth }) {
 
   const BETA_CODES = FLOURISH_BETA_CODES;
   const BETA_CAP = 30;
+
+  // Resend-confirmation cooldown ticker (1s decrements while >0).
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
+
+  const handleResend = async () => {
+    if (resendCooldown > 0 || !email || loading) return;
+    setError(""); setCheckEmailNote("");
+    const { error } = await supabase.auth.resend({ type: "signup", email, options: { emailRedirectTo: window.location.origin } });
+    if (error) { setError(error.message); return; }
+    setCheckEmailNote("Confirmation email re-sent ✓ — check your inbox (and spam).");
+    setResendCooldown(60);
+  };
 
   const handleSignup = async () => {
     setLoading(true); setError("");
@@ -12000,9 +12018,9 @@ function AuthScreen({ onAuth }) {
     } catch {
       // If check fails, allow signup so an error doesn't block testers
     }
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email, password,
-      options:{ data:{ beta:true, signed_up:new Date().toISOString() } }
+      options:{ data:{ beta:true, signed_up:new Date().toISOString() }, emailRedirectTo: window.location.origin }
     });
     if (error) {
       if(error.message?.toLowerCase().includes("user already registered")) {
@@ -12012,14 +12030,31 @@ function AuthScreen({ onAuth }) {
       }
       setLoading(false); return;
     }
-    setSuccess("Check your email to confirm your account, then log in.");
-    setMode("login"); setLoading(false);
+    // Supabase enumeration-protection: an EXISTING email returns a "success" with an empty
+    // identities array (not an error) and does NOT auto-resend — detect it and guide the user.
+    const isExisting = Array.isArray(data?.user?.identities) && data.user.identities.length === 0;
+    setError(""); setSuccess("");
+    if (isExisting) {
+      setCheckEmailNote("An account with this email may already exist — check your inbox to confirm it, resend below, or log in.");
+      setResendCooldown(0);
+    } else {
+      setCheckEmailNote("");
+      setResendCooldown(60); // a fresh confirmation email was just sent — debounce resend
+    }
+    setMode("check_email"); setLoading(false);
   };
 
   const handleLogin = async () => {
     setLoading(true); setError("");
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) { setError(error.message); setLoading(false); return; }
+    if (error) {
+      // Unconfirmed account → route to the check-email screen with a resend option (not a raw error).
+      if (error.code === "email_not_confirmed" || error.message?.toLowerCase().includes("email not confirmed")) {
+        setError(""); setCheckEmailNote("Your email isn't confirmed yet — confirm it to log in, or resend below.");
+        setResendCooldown(0); setMode("check_email"); setLoading(false); return;
+      }
+      setError(error.message); setLoading(false); return;
+    }
     const { data: factors } = await supabase.auth.mfa.listFactors();
     const totpFactor = factors?.totp?.[0];
     if (!totpFactor) {
@@ -12311,7 +12346,7 @@ function AuthScreen({ onAuth }) {
               </button>
               <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><FlourishMark size={80} /></div>
               <div style={{ color: "#6B7A6E", fontSize: 13, marginTop: 4 }}>
-                {mode === "waitlist" ? "Get early access" : mode === "signup" ? "Create your free account" : "Welcome back"}
+                {mode === "waitlist" ? "Get early access" : mode === "signup" ? "Create your free account" : mode === "check_email" ? "Almost there" : "Welcome back"}
               </div>
             </div>
 
@@ -12381,6 +12416,31 @@ function AuthScreen({ onAuth }) {
                   <input style={{ ...inpStyle, letterSpacing: 6, textAlign: "center", fontSize: 22 }} placeholder="000000" value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g,""))} maxLength={6} />
                   {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
                   <button style={btnStyle(!loading && mfaCode.length === 6)} onClick={handleMFAVerify} disabled={loading || mfaCode.length !== 6}>{loading ? "Verifying..." : "Log In"}</button>
+                </div>
+              )}
+
+              {mode === "check_email" && (
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 42, marginBottom: 12 }}>📬</div>
+                  <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 22, fontWeight: 900, color: "#EDE9E2", marginBottom: 10 }}>Check your email</div>
+                  <div style={{ color: "#6B7A6E", fontSize: 13, lineHeight: 1.65, marginBottom: checkEmailNote ? 10 : 20, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                    We sent a confirmation link to <span style={{ color: "#EDE9E2", fontWeight: 600 }}>{email || "your email"}</span>. Click it to activate your account, then come back and log in.
+                  </div>
+                  {checkEmailNote && <div style={{ color: "#00D68F", fontSize: 12.5, marginBottom: 18, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10, lineHeight: 1.5 }}>{checkEmailNote}</div>}
+                  {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
+                  <button style={btnStyle(!loading && resendCooldown === 0 && !!email)} onClick={handleResend} disabled={loading || resendCooldown > 0 || !email}>
+                    {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend confirmation email"}
+                  </button>
+                  <div style={{ display: "flex", gap: 18, justifyContent: "center", marginTop: 16 }}>
+                    <button onClick={() => { setMode("signup"); setError(""); setCheckEmailNote(""); setResendCooldown(0); }}
+                      style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
+                      Wrong email? Start over
+                    </button>
+                    <button onClick={() => { setMode("login"); setError(""); setCheckEmailNote(""); setResendCooldown(0); }}
+                      style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
+                      Back to log in
+                    </button>
+                  </div>
                 </div>
               )}
 
