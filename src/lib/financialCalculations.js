@@ -51,6 +51,9 @@ export function parseAmountFromQuery(text) {
   const bare = normalized.match(/\b(\d{2,}(?:\.\d+)?)\b/);
   if (bare) {
     const n = _num(bare[1]);
+    // Sprint 4: a bare 4-digit year (1900–2099) is not a dollar amount ("spending in 2026").
+    // Amounts in that range must use a $ prefix (handled above).
+    if (/^\d{4}$/.test(bare[1]) && n >= 1900 && n <= 2099) return 0;
     return n >= 50 ? n : 0;
   }
   return 0;
@@ -181,16 +184,21 @@ export function simulateDebtPayoffBoost({ balance, apr, currentPayment, extraPay
 // ── 5. simulateInvestmentGrowth ──────────────────────────────────────────────
 // Compound growth with periodic contributions.
 // FV = P × (1 + r)^n  +  C × [((1 + r)^n − 1) / r]
+// Sprint 4: contributions are END-of-month by default (ordinary annuity). Pass
+// contributionTiming:"begin" for start-of-month (annuity due — one extra period of growth).
+// Negative contribution/principal inputs are clamped to 0 (no silent garbage).
 export function simulateInvestmentGrowth({
   monthlyContribution,
   annualReturnPct,
   years,
   initialPrincipal = 0,
+  contributionTiming = "end",
 }) {
-  const c = _num(monthlyContribution);
+  const c = Math.max(0, _num(monthlyContribution));
   const r = _num(annualReturnPct) / 100 / 12;
   const n = Math.max(0, Math.round(_num(years) * 12));
-  const p = _num(initialPrincipal);
+  const p = Math.max(0, _num(initialPrincipal));
+  const due = contributionTiming === "begin" ? (1 + r) : 1;
 
   if (n === 0) {
     return { finalValue: _round(p), totalContributed: _round(p), totalGrowth: 0, yearByYear: [] };
@@ -198,7 +206,7 @@ export function simulateInvestmentGrowth({
 
   const growthFactor = Math.pow(1 + r, n);
   const fvPrincipal  = p * growthFactor;
-  const fvContribs   = r === 0 ? c * n : c * ((growthFactor - 1) / r);
+  const fvContribs   = (r === 0 ? c * n : c * ((growthFactor - 1) / r)) * due;
 
   const finalValue       = _round(fvPrincipal + fvContribs);
   const totalContributed = _round(p + c * n);
@@ -209,7 +217,7 @@ export function simulateInvestmentGrowth({
     const periods = y * 12;
     const gf      = Math.pow(1 + r, periods);
     const fvP     = p * gf;
-    const fvC     = r === 0 ? c * periods : c * ((gf - 1) / r);
+    const fvC     = (r === 0 ? c * periods : c * ((gf - 1) / r)) * due;
     yearByYear.push({
       year: y,
       value: _round(fvP + fvC),
@@ -281,11 +289,16 @@ export function summarizeScenarioForCoach(impact, verdict) {
 // ── Internal: date helper ────────────────────────────────────────────────────
 function _monthsFromNow(months) {
   if (!Number.isFinite(months)) return null;
-  const d = new Date();
-  d.setMonth(d.getMonth() + Math.round(months));
-  const y  = d.getFullYear();
-  const m  = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
+  // Sprint 4: month-end clamp. Plain setMonth() overflows (Jan 31 + 1mo → Mar 3); instead pin
+  // to the 1st of the target month, find that month's last valid day, and clamp (→ Feb 28/29).
+  const now = new Date();
+  const day = now.getDate();
+  const target = new Date(now.getFullYear(), now.getMonth() + Math.round(months), 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(day, lastDay));
+  const y  = target.getFullYear();
+  const m  = String(target.getMonth() + 1).padStart(2, "0");
+  const dd = String(target.getDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
 }
 
@@ -529,6 +542,11 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
 //   6. After cross-account pass, run keywordIsTransferFn on every remaining
 //      txn to catch single-sided transfers (e.g., transfer to disconnected account).
 
+// Sprint 4: a cross-account amount+date match alone is too weak to call a "transfer" (a
+// coincidental refund + purchase of the same value would pair). Require a transfer-like word
+// in one of the two descriptions to confirm it before pairing.
+const _TRANSFER_NAME_RX = /transfer|xfer|e-?transfer|interac|to (savings|chequing|checking)|from (savings|chequing|checking)|move to|withdrawal|wire/i;
+
 export function markTransfers(txns, keywordIsTransferFn, isCashAdvanceFn) {
   if (!Array.isArray(txns) || txns.length === 0) return [];
 
@@ -576,6 +594,9 @@ export function markTransfers(txns, keywordIsTransferFn, isCashAdvanceFn) {
       if (isNaN(inDate.getTime())) continue;
       const dayDiff = Math.abs((outDate - inDate) / (1000 * 60 * 60 * 24));
       if (dayDiff > 2) continue;
+      // Sprint 4: require a transfer-like signal in either description — opposite-sign,
+      // same-amount, different-account is necessary but not sufficient (refund + purchase).
+      if (!_TRANSFER_NAME_RX.test(outflow.name || "") && !_TRANSFER_NAME_RX.test(inflow.name || "")) continue;
 
       // Match found — mark both
       const pairId = `${outflow.id || outIdx}+${inflow.id || inIdx}`;
