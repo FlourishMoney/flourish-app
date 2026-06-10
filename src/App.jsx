@@ -2873,8 +2873,13 @@ function Bar({v,max,color=C.green,h=7}){
 function Chip({label,color,size=11,icon}){
   return <span style={{background:color+"18",color,borderRadius:99,padding:"4px 11px",fontSize:size,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"inline-flex",alignItems:"center",gap:4,border:`1px solid ${color}30`,letterSpacing:0.1}}>{icon&&<span style={{fontSize:size}}>{icon}</span>}{label}</span>;
 }
-function Toggle({on,onChange}){
-  return <div onClick={()=>onChange(!on)} style={{width:48,height:28,borderRadius:99,cursor:"pointer",
+function Toggle({on,onChange,label}){
+  // Sprint 6b: a real switch for assistive tech + keyboard — role/aria-checked announce state,
+  // tabIndex makes it focusable, and Space/Enter toggle it (was a mouse-only div).
+  return <div role="switch" aria-checked={on} aria-label={label} tabIndex={0}
+    onClick={()=>onChange(!on)}
+    onKeyDown={e=>{ if(e.key===" "||e.key==="Enter"){ e.preventDefault(); onChange(!on); } }}
+    style={{width:48,height:28,borderRadius:99,cursor:"pointer",
     background:on?C.green:C.isDark?"rgba(255,255,255,0.10)":"rgba(0,0,0,0.10)",position:"relative",
     transition:"background .3s",flexShrink:0,
     boxShadow:on?`0 0 12px ${C.green}44`:"none"}}>
@@ -13707,7 +13712,8 @@ input,button,select,textarea { font-family:inherit; }
     input[type=range]{-webkit-appearance:none;appearance:none;background:transparent}
     input[type=range]::-webkit-slider-runnable-track{background:rgba(255,255,255,0.08);border-radius:99px;height:6px}
     input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;margin-top:-4px;width:16px;height:16px;border-radius:50%;background:var(--thumb-color,#00D68F);cursor:pointer;box-shadow:0 0 8px var(--thumb-color,#00D68F)66}
-    input[type=range]:focus{outline:none}
+    input[type=range]:focus:not(:focus-visible){outline:none}
+    button:focus-visible,a:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible,[role="switch"]:focus-visible,[tabindex]:focus-visible{outline:2px solid #00D68F;outline-offset:2px;border-radius:6px}
     ::selection{background:rgba(0,214,143,0.25);color:#EDE8E1}
     body{background:#060A0E}
 `
