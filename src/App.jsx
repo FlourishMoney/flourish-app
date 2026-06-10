@@ -4211,11 +4211,18 @@ function Onboarding({onComplete,onViewLegal,userId}){
           {initError?"Please refresh and try again":linkTokenLoading?"Preparing secure connection…":"Supports TD, RBC, Chase, BoA, and 11,000+ more"}
         </div>
 
-        <div style={{marginTop:6}}><Btn label="Skip — enter manually" onClick={skipBank} outline color={C.muted} small/></div>
+        {/* Sprint 6a: statement upload promoted to a co-equal connection path (not a footnote) —
+            the primary route for accounts Plaid can't reach (employer RRSPs, some credit unions). */}
+        <div style={{display:"flex",alignItems:"center",gap:10,margin:"4px 0 12px"}}>
+          <div style={{flex:1,height:1,background:C.border}}/>
+          <div style={{color:C.muted,fontSize:11,fontWeight:700,letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>OR</div>
+          <div style={{flex:1,height:1,background:C.border}}/>
+        </div>
 
-        {/* Statement upload */}
-        <div style={{marginTop:10,background:C.cardAlt,borderRadius:14,padding:'12px 14px',border:`1px solid ${C.border}`}}>
-          <div style={{color:C.mutedHi,fontWeight:600,fontSize:12,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📄 Or upload a bank statement</div>
+        {/* Statement upload — primary path for non-Plaid accounts */}
+        <div style={{background:C.cardAlt,borderRadius:14,padding:'12px 14px',border:`1px solid ${C.border}`}}>
+          <div style={{color:C.mutedHi,fontWeight:700,fontSize:13,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📄 Upload a statement instead</div>
+          <div style={{color:C.muted,fontSize:12,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Best for accounts Plaid can't connect — employer RRSPs, some credit unions, older institutions.</div>
           <label style={{display:'block',cursor:'pointer'}}>
             <input type="file" accept=".pdf,.csv" style={{display:'none'}} onChange={handleStatementUpload} disabled={stmtStatus==='parsing'}/>
             <div style={{background:stmtStatus==='parsing'?C.card:`linear-gradient(135deg,${C.gold}22,${C.gold}0A)`,border:`1px dashed ${stmtStatus==='error'?C.red:stmtStatus==='done'?C.green:C.gold}`,borderRadius:10,padding:'10px 14px',textAlign:'center',color:stmtStatus==='error'?C.redBright:stmtStatus==='done'?C.greenBright:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,transition:'all .2s'}}>
@@ -4224,6 +4231,8 @@ function Onboarding({onComplete,onViewLegal,userId}){
           </label>
           {!stmtStatus&&<div style={{color:C.muted,fontSize:11,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Supports most Canadian & US bank exports. AI parses PDFs automatically.</div>}
         </div>
+
+        <div style={{marginTop:14}}><Btn label="Skip — enter manually" onClick={skipBank} outline color={C.muted} small/></div>
       </>}
 
       {bankStage==="loading"&&<div style={{textAlign:"center",padding:"40px 0"}}>
