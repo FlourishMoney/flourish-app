@@ -1782,6 +1782,11 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
       const parsedAmount = parseAmountFromQuery(qText);
       const extraPayment = parsedAmount > 0 && parsedAmount < currentPayment * 5 ? parsedAmount : 100;
       const result = simulateDebtPayoffBoost({ balance, apr, currentPayment, extraPayment });
+      // Sprint 4b: when the current payment never fully amortizes (payment <= monthly interest),
+      // baseline months/interest are Infinity. Detect it so the verdict stays meaningful instead
+      // of implying "already optimal" (and so the UI never renders raw Infinity).
+      const baselineNever = !Number.isFinite(result.baseline.monthsToPayoff);
+      const boostedPays   = Number.isFinite(result.boosted.monthsToPayoff);
       setResult({
         scenarioType: "debt",
         debtName: targetDebt.name || debtTypeLabel.replace(/\b\w/g, c => c.toUpperCase()),
@@ -1796,10 +1801,12 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
         boostedInterest: result.boosted.totalInterest,
         monthsSaved: result.monthsSaved,
         interestSaved: result.interestSaved,
-        verdict: result.monthsSaved > 0 ? "Worth doing" : "No change",
-        verdictReason: result.monthsSaved > 0
-          ? `Adding $${extraPayment}/mo clears your ${targetDebt.name || debtTypeLabel} ${result.monthsSaved} months sooner and saves $${result.interestSaved} in interest.`
-          : "Your current payment is already optimal for this debt.",
+        verdict: (result.monthsSaved > 0 || (baselineNever && boostedPays)) ? "Worth doing" : "No change",
+        verdictReason: baselineNever && boostedPays
+          ? `Your current payment never fully clears this debt — adding $${extraPayment}/mo pays it off in ${result.boosted.monthsToPayoff} months.`
+          : result.monthsSaved > 0
+            ? `Adding $${extraPayment}/mo clears your ${targetDebt.name || debtTypeLabel} ${result.monthsSaved} months sooner and saves $${result.interestSaved} in interest.`
+            : "Your current payment is already optimal for this debt.",
         availableDebts: debts.map(d => ({ name: d.name, balance: d.balance, rate: d.rate, debtType: d.debtType })),
       });
       setLoading(false);
@@ -2112,8 +2119,8 @@ Rules: do not invent or quote any number not in the calculated results above. Do
                   </div>
                   <div style={{background:C.greenDim,border:`1px solid ${C.greenBright}`,borderRadius:16,padding:"14px"}}>
                     <div style={{color:C.greenBright,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:6}}>+ ${result.extraPayment}/mo</div>
-                    <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.greenBright,lineHeight:1.1}}>{result.boostedMonths} mo</div>
-                    <div style={{color:C.greenBright,fontSize:11,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${result.boostedInterest.toFixed(0)} interest</div>
+                    <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.greenBright,lineHeight:1.1}}>{Number.isFinite(result.boostedMonths) ? `${result.boostedMonths} mo` : "Never"}</div>
+                    <div style={{color:C.greenBright,fontSize:11,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${Number.isFinite(result.boostedInterest) ? result.boostedInterest.toFixed(0) : "∞"} interest</div>
                   </div>
                 </div>
                 {/* Savings highlight */}
