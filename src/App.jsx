@@ -12055,21 +12055,10 @@ function AuthScreen({ onAuth }) {
       }
       setError(error.message); setLoading(false); return;
     }
-    const { data: factors } = await supabase.auth.mfa.listFactors();
-    const totpFactor = factors?.totp?.[0];
-    if (!totpFactor) {
-      const { data: enroll, error: enrollErr } = await supabase.auth.mfa.enroll({ factorType: "totp", issuer: "Flourish Money" });
-      if (enrollErr) { setError(enrollErr.message); setLoading(false); return; }
-      setQrUrl(enroll.totp.qr_code);
-      setFactorId(enroll.id);
-      setMode("mfa_setup");
-    } else if (totpFactor.status === "verified") {
-      const { data: challenge } = await supabase.auth.mfa.challenge({ factorId: totpFactor.id });
-      setFactorId(totpFactor.id);
-      setMode("mfa_verify");
-    } else {
-      onAuth(data.user);
-    }
+    // MFA is now enforced by the top-level AAL2 gate, so just hand off the session here. (The old
+    // in-AuthScreen MFA flow was unreachable — onAuthStateChange set `user` and unmounted this
+    // screen the moment the password was accepted, before any MFA screen could render.)
+    onAuth(data.user);
     setLoading(false);
   };
 
@@ -12486,6 +12475,85 @@ function AuthScreen({ onAuth }) {
 
 
 // ─── BUDGET SCREEN ─────────────────────────────────────────────────────────────
+// ─── MFA GATE (top-level AAL2 enforcement) ──────────────────────────────────────
+// Rendered whenever an authenticated session is below aal2. Enrolls TOTP if the user has no
+// factor, otherwise challenges the existing one. On success the session is elevated to aal2.
+function MfaGate({ onPass, onSignOut }) {
+  const [stage, setStage] = useState("loading"); // loading | setup | verify | error
+  const [qrUrl, setQrUrl] = useState("");
+  const [factorId, setFactorId] = useState("");
+  const [code, setCode] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: factors, error } = await supabase.auth.mfa.listFactors();
+        if (error) throw error;
+        if (cancelled) return;
+        const verified = factors?.totp?.find(f => f.status === "verified");
+        if (verified) { setFactorId(verified.id); setStage("verify"); return; }
+        for (const f of (factors?.totp || [])) { try { await supabase.auth.mfa.unenroll({ factorId: f.id }); } catch {} } // clear stale unverified factor
+        const { data: enroll, error: enrErr } = await supabase.auth.mfa.enroll({ factorType: "totp", issuer: "Flourish Money" });
+        if (enrErr) throw enrErr;
+        if (cancelled) return;
+        setQrUrl(enroll.totp.qr_code); setFactorId(enroll.id); setStage("setup");
+      } catch (e) { if (!cancelled) { setErr(e?.message || "Couldn't start verification."); setStage("error"); } }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const verify = async () => {
+    if (busy || code.length !== 6 || !factorId) return;
+    setBusy(true); setErr("");
+    try {
+      const { data: ch, error: chErr } = await supabase.auth.mfa.challenge({ factorId });
+      if (chErr) throw chErr;
+      const { error } = await supabase.auth.mfa.verify({ factorId, challengeId: ch.id, code });
+      if (error) { setErr("Invalid code — try again."); setBusy(false); return; }
+      onPass();
+    } catch (e) { setErr(e?.message || "Verification failed."); setBusy(false); }
+  };
+
+  const inp = { width:"100%", padding:"14px 16px", borderRadius:14, background:"rgba(255,255,255,0.06)", border:"1.5px solid rgba(255,255,255,0.12)", color:"#EDE9E2", fontSize:22, letterSpacing:6, textAlign:"center", fontFamily:"'Plus Jakarta Sans',sans-serif", outline:"none", boxSizing:"border-box", marginBottom:16 };
+  const btnS = (active) => ({ width:"100%", padding:15, borderRadius:14, border:"none", fontFamily:"'Plus Jakarta Sans',sans-serif", fontWeight:700, fontSize:15, cursor:active?"pointer":"default", background:active?"#00D68F":"rgba(255,255,255,0.1)", color:active?"#021208":"#6B7A6E" });
+  const wrap = (children) => (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100dvh", padding:24, background:"#050D09" }}>
+      <div style={{ width:"100%", maxWidth:400, animation:"fadeUp .5s ease both" }}>
+        <div style={{ display:"flex", justifyContent:"center", marginBottom:18 }}><FlourishMark size={64} /></div>
+        <div style={{ background:"#0D1F12", borderRadius:24, padding:28, border:"1px solid rgba(255,255,255,0.08)" }}>{children}</div>
+        <div style={{ textAlign:"center", marginTop:16 }}>
+          <button onClick={onSignOut} style={{ background:"none", border:"none", color:"#6B7A6E", fontSize:12, cursor:"pointer", fontFamily:"'Plus Jakarta Sans',sans-serif", textDecoration:"underline" }}>Sign out</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (stage === "loading") return wrap(<div style={{ textAlign:"center", color:"#6B7A6E", fontSize:14, padding:"20px 0", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>Securing your account…</div>);
+  if (stage === "error") return wrap(
+    <div>
+      <div style={{ fontSize:36, textAlign:"center", marginBottom:10 }}>⚠️</div>
+      <div style={{ fontFamily:"'Playfair Display',serif", fontSize:20, fontWeight:900, color:"#EDE9E2", marginBottom:6, textAlign:"center" }}>Couldn't start verification</div>
+      <div style={{ color:"#FF6B6B", fontSize:13, marginBottom:4, textAlign:"center" }}>{err}</div>
+    </div>
+  );
+
+  return wrap(
+    <div>
+      <div style={{ fontFamily:"'Playfair Display',serif", fontSize:20, fontWeight:900, color:"#EDE9E2", marginBottom:6 }}>{stage === "setup" ? "Set up 2-factor auth" : "Two-factor verification"}</div>
+      <div style={{ color:"#6B7A6E", fontSize:13, fontFamily:"'Plus Jakarta Sans',sans-serif", marginBottom:20, lineHeight:1.6 }}>
+        {stage === "setup" ? "Scan this QR code with Google Authenticator (or any TOTP app), then enter the 6-digit code to secure your account." : "Open your authenticator app and enter the current 6-digit code for Flourish Money."}
+      </div>
+      {stage === "setup" && qrUrl && <img src={qrUrl} alt="Authenticator QR code" style={{ width:"100%", borderRadius:12, marginBottom:16, background:"#fff", padding:8, boxSizing:"border-box" }} />}
+      <input style={inp} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" value={code} onChange={e => setCode(e.target.value.replace(/\D/g,"").slice(0,6))} maxLength={6} onKeyDown={e => e.key === "Enter" && verify()} />
+      {err && <div style={{ color:"#FF6B6B", fontSize:12, marginBottom:12 }}>{err}</div>}
+      <button style={btnS(!busy && code.length === 6)} onClick={verify} disabled={busy || code.length !== 6}>{busy ? "Verifying…" : stage === "setup" ? "Verify & Continue" : "Verify"}</button>
+    </div>
+  );
+}
+
 function BudgetScreen({data, setAppData, setScreen}) {
   const isDesktop = window.innerWidth >= 960;
   const [editMode, setEditMode] = useState(false);
@@ -13141,6 +13209,7 @@ export default function FlourishApp(){
   })();
   const [screen,setScreen]=useState(initialScreen);
   const [user,setUser]=useState(null);
+  const [mfaGate,setMfaGate]=useState("ok"); // AAL2 enforcement: "ok" | "checking" | "needed"
   const [authLoading,setAuthLoading]=useState(true);
   const [showNotifs,setShowNotifs]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
@@ -13253,12 +13322,23 @@ export default function FlourishApp(){
 
   // ── Supabase auth session check ────────────────────────────────
   useEffect(()=>{
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // AAL2 gate: a session below aal2 must complete MFA before the app renders. Computed here
+    // (not inside AuthScreen) to avoid the onAuthStateChange→setUser race that unmounted AuthScreen
+    // the instant a password was accepted, skipping its MFA screen entirely.
+    const syncSession = async (session, fromInit) => {
       setUser(session?.user ?? null);
-      setAuthLoading(false);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      if (!session?.user) { setMfaGate("ok"); if (fromInit) setAuthLoading(false); return; }
+      setMfaGate("checking");
+      try {
+        const { data: aal, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        setMfaGate(!error && aal?.currentLevel === "aal2" ? "ok" : "needed");
+      } catch (e) { console.error("[auth] AAL check failed (fail-closed):", e?.message || e); setMfaGate("needed"); }
+      if (fromInit) setAuthLoading(false);
+    };
+    supabase.auth.getSession().then(({ data: { session } }) => syncSession(session, true));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "TOKEN_REFRESHED") { setUser(session?.user ?? null); return; } // don't re-gate mid-MFA-setup
+      syncSession(session, false);
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -13597,6 +13677,8 @@ export default function FlourishApp(){
   // ── Auth gate ───────────────────────────────────────────────────
   if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
   if(!user)return <AuthScreen onAuth={u=>setUser(u)}/>;
+  if(mfaGate==="checking")return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
+  if(mfaGate==="needed")return <MfaGate onPass={()=>setMfaGate("ok")} onSignOut={async()=>{ try{await supabase.auth.signOut();}catch{} setUser(null); setMfaGate("ok"); }}/>;
 
   // ── AI disclosure gate (Apple 5.1.2(i)) — must precede onboarding + all AI features ──
   if(!aiDisclosureSeen)return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={()=>setUser(null)}/>;
