@@ -514,7 +514,7 @@ async function migrateLocalStorageTokensToSupabase() {
 
     // Defensive merge of legacy single-token + multi-bank array
     const arr = (() => {
-      try { return JSON.parse(localStorage.getItem("flourish_plaid_tokens") || "null"); }
+      try { return safeLoadLS("flourish_plaid_tokens", null); }
       catch { return null; }
     })();
     const legacy = localStorage.getItem("flourish_plaid_token");
@@ -813,6 +813,18 @@ function detectIncomeFromTxns(txns) {
 }
 
 // Small Levenshtein for fuzzy bill-name dedupe (Tier 4). Inputs are short merchant names.
+// Sprint 4b: corruption-safe localStorage JSON read. A malformed value (a truncated write,
+// manual tampering, or quota eviction mid-write) returns the fallback instead of throwing —
+// previously an unguarded JSON.parse in a render path could white-screen the whole app.
+function safeLoadLS(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return fallback;
+    const v = JSON.parse(raw);
+    return v == null ? fallback : v;
+  } catch { return fallback; }
+}
+
 function _levenshtein(a, b) {
   if (a === b) return 0;
   const m = a.length, n = b.length;
@@ -2959,7 +2971,7 @@ const FinancialCalcEngine = {
     const incomes = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
     const bills   = data.bills || [];
     // catOverrides: ensures user-recategorized transactions affect cash flow correctly
-    const catOv = (()=>{ try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}")}catch{return{}} })();
+    const catOv = (()=>{ try{return safeLoadLS("flourish_cat_overrides", {})}catch{return{}} })();
     const getEffCat = (t) => catOv[t.id] || t.cat;
     // Filter to current month only
     const now = new Date();
@@ -4560,7 +4572,7 @@ function buildLiveNotifs(data) {
 
 function Notifications({onClose, data, onMarkAllRead}){
   // useState with inline lazy initialiser — avoids TDZ from named function before hook
-  const [readIds, setReadIds] = useState(()=>{ try { return new Set(JSON.parse(localStorage.getItem("flourish_read_notifs")||"[]")); } catch { return new Set(); } });
+  const [readIds, setReadIds] = useState(()=>{ try { return new Set(safeLoadLS("flourish_read_notifs", [])); } catch { return new Set(); } });
   const liveNotifs = data ? [...buildLiveNotifs(data), ...INIT_NOTIFS] : INIT_NOTIFS;
   const notifs = liveNotifs.map(n=>({...n, read: readIds.has(n.id)}));
   const unread = notifs.filter(n=>!n.read).length;
@@ -4607,7 +4619,7 @@ function Notifications({onClose, data, onMarkAllRead}){
 function snapshotNetWorth(netWorth) {
   try {
     const key = "flourish_nw_history";
-    const history = JSON.parse(localStorage.getItem(key)||"[]");
+    const history = safeLoadLS(key, []);
     const today = new Date().toISOString().slice(0,7); // "2026-03"
     // Only snapshot once per month
     if(history.length > 0 && history[history.length-1].month === today) {
@@ -4624,7 +4636,7 @@ function snapshotNetWorth(netWorth) {
 }
 
 function getNetWorthHistory() {
-  try { return JSON.parse(localStorage.getItem("flourish_nw_history")||"[]"); } catch { return []; }
+  try { return safeLoadLS("flourish_nw_history", []); } catch { return []; }
 }
 
 function NetWorthSparkline({history, color}){
@@ -5078,7 +5090,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   // Badge reads live from localStorage so it updates after Notifications marks-read
   const getUnreadCount = () => {
     try {
-      const readIds = new Set(JSON.parse(localStorage.getItem("flourish_read_notifs")||"[]"));
+      const readIds = new Set(safeLoadLS("flourish_read_notifs", []));
       return [...INIT_NOTIFS, ...(data ? buildLiveNotifs(data) : [])].filter(n=>!readIds.has(n.id)).length;
     } catch { return 0; }
   };
@@ -6514,7 +6526,7 @@ function AddCustomCategory({onAdd}){
   const save=(name)=>{
     const n = (name||val).trim();
     if(!n) return;
-    const existing=JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]");
+    const existing=safeLoadLS("flourish_custom_cats", []);
     if(!existing.includes(n)) localStorage.setItem("flourish_custom_cats",JSON.stringify([...existing,n]));
     onAdd(n);
     setVal(""); setShow(false);
@@ -6585,7 +6597,7 @@ function detectPayroll(transactions, existingIncomes) {
 
 function IncomeDetectionBanner({transactions, incomes, setAppData}){
   const [dismissed, setDismissed] = useState(()=>{
-    try { return JSON.parse(localStorage.getItem("flourish_dismissed_income")||"[]"); } catch { return []; }
+    try { return safeLoadLS("flourish_dismissed_income", []); } catch { return []; }
   });
   const candidates = detectPayroll(transactions, incomes).filter(c => !dismissed.includes(c.name));
   if(candidates.length === 0) return null;
@@ -6947,7 +6959,7 @@ function BudgetPlanCard({data, setAppData}) {
 
 
   // Current-month spending per budget category — excludes bill categories and CC payments
-  const catOverrides = (()=>{ try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}")}catch{return{}} })();
+  const catOverrides = (()=>{ try{return safeLoadLS("flourish_cat_overrides", {})}catch{return{}} })();
   const now = new Date();
   const monthTxns = (data.transactions||[]).filter(t=>{
     try{const d=new Date(t.date+"T12:00:00");return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()&&t.amount>0;}catch{return false;}
@@ -7173,12 +7185,12 @@ function SpendScreen({data, setAppData, setScreen}){
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
   });
   const monthLabel = now.toLocaleString("en-CA",{month:"long",year:"numeric"});
-  const catOverrides = JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
+  const catOverrides = safeLoadLS("flourish_cat_overrides", {});
   const getCat = (t) => catOverrides[t.id] || t.cat;
   const stats=computeStats(thisMonthTxns, catOverrides);
 
   const recat = (txn, newCat, applyToAll=false) => {
-    const overrides = JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
+    const overrides = safeLoadLS("flourish_cat_overrides", {});
     if(applyToAll) {
       const merchantKey = (txn.name||"").toLowerCase().trim();
       const updated = {...overrides};
@@ -7384,7 +7396,7 @@ function SpendScreen({data, setAppData, setScreen}){
                     }
                     // Categorise transaction under bill's category (not generic "Bills")
                     const billCat = billForm.category||"Other Bills";
-                    const overrides=JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");
+                    const overrides=safeLoadLS("flourish_cat_overrides", {});
                     localStorage.setItem("flourish_cat_overrides",JSON.stringify({...overrides,[markBillTxn.id]:billCat}));
                   }
                   setMarkBillTxn(null);setBillForm({name:"",amount:"",date:"1",type:"fixed",category:"Bills"});
@@ -7540,7 +7552,7 @@ function SpendScreen({data, setAppData, setScreen}){
           {/* Scrollable categories */}
           <div style={{overflowY:"auto",padding:"16px 20px",flex:1}}>
             <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
-              {[...ALL_CATS, ...(JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]"))].map(cat=>(
+              {[...ALL_CATS, ...(safeLoadLS("flourish_custom_cats", []))].map(cat=>(
                 <button key={cat} onClick={()=>recatWithSmartPrompt(recatTxn,cat)} style={{background:getCat(recatTxn)===cat?C.orange+"33":C.cardAlt,border:`1px solid ${getCat(recatTxn)===cat?C.orange:C.border}`,color:getCat(recatTxn)===cat?C.orangeBright:C.muted,borderRadius:99,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",minHeight:36}}>
                   {cat}
                 </button>
@@ -8414,7 +8426,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       const spendPool = Math.max(50, discret - localGoalsMo);
 
       // Current month spending per category
-      const catOverrides = (()=>{try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");}catch{return {};}})();
+      const catOverrides = (()=>{try{return safeLoadLS("flourish_cat_overrides", {});}catch{return {};}})();
       const now = new Date();
       const monthTxns = (data.transactions||[]).filter(t=>{
         try{const d=new Date(t.date+"T12:00:00");return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()&&t.amount>0;}catch{return false;}
@@ -8587,7 +8599,7 @@ function Family({data,household,setHousehold,setScreen}){
   const [expandedItem,setExpandedItem]=useState(null);
   const [kids,setKids]=useState(()=>{
     try{
-      const saved=JSON.parse(localStorage.getItem("flourish_kids")||"null")||[];
+      const saved=safeLoadLS("flourish_kids", null)||[];
       return saved.map(k=>({
         jars:{spend:0,save:0,give:0},
         goal:{name:"",amount:"",emoji:"🎯"},
@@ -8598,7 +8610,7 @@ function Family({data,household,setHousehold,setScreen}){
     }catch{return[];}
   });
   const [activeKidId,setActiveKidId]=useState(()=>{
-    try{const k=JSON.parse(localStorage.getItem("flourish_kids")||"null")||[];return k[0]?.id||null;}catch{return null;}
+    try{const k=safeLoadLS("flourish_kids", null)||[];return k[0]?.id||null;}catch{return null;}
   });
   const [showAddKid,setShowAddKid]=useState(false);
   const [newKidName,setNewKidName]=useState("");
@@ -10499,7 +10511,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
   // ── ALL HOOKS FIRST — constants moved below to prevent TDZ ───────────────
   const [messages, setMessages] = useState(()=>{
     try {
-      const saved = JSON.parse(localStorage.getItem("flourish_coach_history") || "null");
+      const saved = safeLoadLS("flourish_coach_history", null);
       if (Array.isArray(saved) && saved.length > 0) return saved.slice(-40);
     } catch {}
     return [{role:"assistant", content:"Hey! I'm your Flourish AI Coach 👋 I can see your spending patterns, balances, and financial data. What would you like to work on today?"}];
@@ -10521,7 +10533,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
   // If the last saved message is from a different day, inject a date divider on load
   useEffect(()=>{
     try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)||"null");
+      const saved = safeLoadLS(STORAGE_KEY, null);
       if (Array.isArray(saved) && saved.length > 0) {
         const lastMsg = saved[saved.length-1];
         if (lastMsg._date && lastMsg._date !== sessionDate) {
@@ -11551,7 +11563,7 @@ function KidsGoal({goal, jars, code, theme, primary, playSound}){
 
   const getDisplayGoal=()=>{
     let d=goal;
-    try{const local=JSON.parse(localStorage.getItem("flourish_kid_goal_"+code)||"null");if(local?.name)d=local;}catch{}
+    try{const local=safeLoadLS("flourish_kid_goal_"+code, null);if(local?.name)d=local;}catch{}
     return d;
   };
   const [displayGoal,setDisplayGoal]=useState(getDisplayGoal);
@@ -11560,7 +11572,7 @@ function KidsGoal({goal, jars, code, theme, primary, playSound}){
     if(!goalName||!goalAmt2)return;
     const g={name:goalName,amount:goalAmt2,emoji:goalEmoji2};
     try{
-      const all=JSON.parse(localStorage.getItem("flourish_kids")||"[]");
+      const all=safeLoadLS("flourish_kids", []);
       const updated=all.map(k=>k.code===code?{...k,goal:g}:k);
       localStorage.setItem("flourish_kids",JSON.stringify(updated));
       localStorage.setItem("flourish_kid_goal_"+code,JSON.stringify(g));
@@ -11635,10 +11647,10 @@ function KidsMiniSite(){
   const kidData=(()=>{
     try{
       // Try localStorage first (same device as parent)
-      const all=JSON.parse(localStorage.getItem("flourish_kids")||"[]");
+      const all=safeLoadLS("flourish_kids", []);
       const k=all.find(k=>k.code===code);
       if(k)return k;
-      const d=JSON.parse(localStorage.getItem("flourish_kid_data_"+code)||"null");
+      const d=safeLoadLS("flourish_kid_data_"+code, null);
       if(d)return d;
       // Fall back to URL params (any device — data encoded in the share link)
       const n=params.get("n");
@@ -11695,7 +11707,7 @@ function KidsMiniSite(){
   const [kidAge,setKidAge]=useState(kidData?.age||"8-12");
   const [chores,setChores]=useState(()=>{
     try{
-      const saved=JSON.parse(localStorage.getItem("flourish_kid_chores_"+code)||"null");
+      const saved=safeLoadLS("flourish_kid_chores_"+code, null);
       if(saved)return saved;
       return kidData?.chores||[];
     }catch{return[];}
@@ -12401,7 +12413,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
 
   // discret already accounts for goals (from generateBudgetSuggestions)
   // Current month spending per category — excludes bill categories (tracked separately) and CC payments
-  const catOverrides = (() => { try { return JSON.parse(localStorage.getItem("flourish_cat_overrides") || "{}"); } catch { return {}; } })();
+  const catOverrides = (() => { try { return safeLoadLS("flourish_cat_overrides", {}); } catch { return {}; } })();
   const monthTxns = (data.transactions || []).filter(t => {
     try { const d = new Date(t.date + "T12:00:00"); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && t.amount > 0; } catch { return false; }
   });
@@ -12440,8 +12452,8 @@ function BudgetScreen({data, setAppData, setScreen}) {
     // 2. Situation-based suggestions for categories not yet budgeted
     Object.entries(suggestions).forEach(([k, v]) => { if (!seed[k]) seed[k] = String(v); });
     // 3. Any custom categories that have actual spending this month — auto-appear in budget
-    const catOv = (()=>{ try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");} catch{return{};} })();
-    const customCats = JSON.parse(localStorage.getItem("flourish_custom_cats")||"[]");
+    const catOv = (()=>{ try{return safeLoadLS("flourish_cat_overrides", {});} catch{return{};} })();
+    const customCats = safeLoadLS("flourish_custom_cats", []);
     const now2 = new Date();
     (data.transactions||[]).filter(t => {
       if(t.amount <= 0 || !t.date) return false;
@@ -12757,7 +12769,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
 
                 // Match transactions to bills via vendorBillMap
                 const vendorBillMap = data.vendorBillMap||{};
-                const catOverridesLocal = (()=>{try{return JSON.parse(localStorage.getItem("flourish_cat_overrides")||"{}");}catch{return {};}})();
+                const catOverridesLocal = (()=>{try{return safeLoadLS("flourish_cat_overrides", {});}catch{return {};}})();
                 const billsWithStatus = allBills.map(bill => {
                   // Find a transaction this month that pays this bill
                   const linkedTxn = monthTxns.find(t => {
@@ -13503,7 +13515,7 @@ export default function FlourishApp(){
 
   const unread = (() => {
     try {
-      const readIds = new Set(JSON.parse(localStorage.getItem("flourish_read_notifs")||"[]"));
+      const readIds = new Set(safeLoadLS("flourish_read_notifs", []));
       const all = [...INIT_NOTIFS, ...(appData ? buildLiveNotifs(appData) : [])];
       return all.filter(n=>!readIds.has(n.id)).length;
     } catch { return 0; }
