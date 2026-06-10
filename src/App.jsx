@@ -4096,7 +4096,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
       <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:30,letterSpacing:-0.5,marginBottom:12,lineHeight:1,color:C.cream}}>flourish</div>
       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.mutedHi,fontSize:14,lineHeight:1.6,maxWidth:300,marginBottom:30}}>Know what's safe to spend, every day.</div>
       <button onClick={()=>setStep(1)} style={{background:"linear-gradient(135deg,"+C.green+" 0%,"+C.greenBright+" 100%)",color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:"0 8px 32px "+C.green+"33, inset 0 1px 0 rgba(255,255,255,0.30)",letterSpacing:0.3,transition:"all .2s"}}>Get Started →</button>
-      <button onClick={()=>onComplete({profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true,lifeStages:["t4"],partnerLifeStages:["t4"]},incomes:[{id:1,label:"Full-time Job",amount:"2840",freq:"biweekly",type:"employment"},{id:2,label:"Canada Child Benefit",amount:"560",freq:"monthly",type:"ccb"}],bills:[{name:"Rent",amount:"1650",date:"1"},{name:"Hydro",amount:"95",date:"11"},{name:"Phone",amount:"65",date:"15"},{name:"Netflix",amount:"18.99",date:"22"}],debts:[{name:"TD Visa",balance:"3420",rate:"19.99",min:"68"},{name:"Car Loan",balance:"8200",rate:"6.99",min:"280"}],accounts:MOCK_ACCOUNTS,transactions:MOCK_TXN,bankConnected:true})} style={{marginTop:10,background:"none",border:"1px solid "+C.border,borderRadius:99,padding:"9px 22px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer",fontWeight:600}}>👀 Try Demo (no account needed)</button>
+      <button onClick={()=>onComplete({profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true,lifeStages:["t4"],partnerLifeStages:["t4"]},incomes:[{id:1,label:"Full-time Job",amount:"2840",freq:"biweekly",type:"employment"},{id:2,label:"Canada Child Benefit",amount:"560",freq:"monthly",type:"ccb"}],bills:[{name:"Rent",amount:"1650",date:"1"},{name:"Hydro",amount:"95",date:"11"},{name:"Phone",amount:"65",date:"15"},{name:"Netflix",amount:"18.99",date:"22"}],debts:[{name:"TD Visa",balance:"3420",rate:"19.99",min:"68"},{name:"Car Loan",balance:"8200",rate:"6.99",min:"280"}],accounts:MOCK_ACCOUNTS,transactions:MOCK_TXN,bankConnected:true,demo:true})} style={{marginTop:10,background:"none",border:"1px solid "+C.border,borderRadius:99,padding:"9px 22px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer",fontWeight:600}}>👀 Try Demo (no account needed)</button>
       <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:12}}>Free to start · Canada & USA · No credit card</div>
       <div style={{marginTop:18,padding:"10px 14px",background:C.card,borderRadius:12,border:"1px solid "+C.border,maxWidth:320,textAlign:"left"}}>
         <div style={{color:C.mutedHi,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>By continuing you agree to our <button onClick={()=>onViewLegal&&onViewLegal("terms")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Terms</button> and <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Privacy Policy</button>, and consent to data processing per PIPEDA (CA) and US privacy laws.</div>
@@ -7126,7 +7126,7 @@ function SpendScreen({data, setAppData, setScreen}){
   const [showAllBdCats, setShowAllBdCats] = useState(false);
 
   // ── NON-HOOK DERIVED VALUES (after all hooks) ──────────────────────────────
-  const isDemo=!data.bankConnected;
+  const isDemo=!!data.demo||!data.bankConnected; // Sprint 3: Try-Demo sets bankConnected:true, so also check the demo flag
   const txns=data.transactions||[];
   const now = new Date();
   const thisMonthTxns = txns.filter(t => {
@@ -13152,8 +13152,8 @@ export default function FlourishApp(){
           const dbNewer = !localSavedAt || new Date(remote.updatedAt).getTime() >= new Date(localSavedAt).getTime();
           if (dbNewer) applyBlob(remote.blob);            // DB wins
           else getSaver().schedule({ userId: user.id, blob: buildDbBlob(snap, { userId: user.id, nowIso: new Date().toISOString() }) }); // local newer → push up
-        } else if (snap.appData) {
-          // clean "no row" + we have local data → MIGRATION upload (only here, never on read error)
+        } else if (snap.appData && !snap.appData.demo) {
+          // clean "no row" + we have REAL local data (not demo) → MIGRATION upload (only here, never on read error)
           await upsertUserData(supabase, user.id, buildDbBlob(snap, { userId: user.id, nowIso: new Date().toISOString() }));
           try { localStorage.setItem("flourish_db_migrated", "1"); } catch {}
           setShowMigratedBanner(true);                    // (5) surface the one-time banner
@@ -13180,7 +13180,7 @@ export default function FlourishApp(){
   useEffect(()=>{
     const nowIso = new Date().toISOString();
     saveState({onboarded,appData,household,isPremium,checkInBonus, savedAt:nowIso, userId:user?.id||null});
-    const gateOpen = !!user && hydratedUidRef.current === user?.id;
+    const gateOpen = !!user && hydratedUidRef.current === user?.id && !appData?.demo; // never sync demo/sample data to the DB
     console.log("[persist] save effect fired", { user: !!user, userId: user?.id || null, hydratedUid: hydratedUidRef.current, gateOpen });
     if (gateOpen) {
       console.log("[persist] → scheduling DB save");

@@ -110,7 +110,7 @@ export function buildDbBlob(state, { userId = null, nowIso = null } = {}) {
 // True when a blob carries no meaningful user data. Used by the save-overwrite safety net.
 export function isBlobEmpty(blob) {
   const a = blob && blob.core && blob.core.appData;
-  if (!a) return true;
+  if (!a || a.demo) return true;   // treat demo/sample data as empty — it must never persist
   const has = (x) => Array.isArray(x) && x.length > 0;
   const profileHasData = a.profile && (a.profile.name || a.profile.country || a.profile.province || a.profile.partnerName);
   return !(has(a.bills) || has(a.incomes) || has(a.debts) || has(a.goals) || has(a.accounts) || has(a.transactions) || profileHasData);
