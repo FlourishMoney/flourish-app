@@ -917,21 +917,30 @@ function detectRecurringBills(txns, opts = {}) {
     const isBillKeyword = BILL_KEYWORDS.some(kw => key.includes(kw));
     if (!isBillCat && !isBillKeyword) return;
 
-    // Check monthly cadence — dates should be ~28-35 days apart
+    // Sprint 4 (items 3 & 8): classify cadence — EVERY gap must sit within a tight band of a
+    // known cadence, so a 2-occurrence bill with random spacing is no longer accepted, and the
+    // proposed freq reflects reality (weekly/biweekly/semimonthly/monthly/quarterly).
     const dates = txList.map(t => new Date(t.date + "T12:00:00")).sort((a,b) => a-b);
-    let isMonthly = false;
-    if (dates.length >= 2) {
-      const gaps = [];
-      for (let i = 1; i < dates.length; i++) {
-        gaps.push((dates[i] - dates[i-1]) / (1000 * 60 * 60 * 24));
+    const gaps = [];
+    for (let i = 1; i < dates.length; i++) gaps.push((dates[i] - dates[i-1]) / 86400000);
+    const cadence = (() => {
+      if (gaps.length === 0) return null;
+      const avg = gaps.reduce((a,b) => a+b, 0) / gaps.length;
+      const bands = [["weekly",7,3],["biweekly",14,4],["monthly",30,5],["quarterly",91,12]];
+      for (const [freq, anchor, tol] of bands) {
+        if (Math.abs(avg - anchor) <= tol && gaps.every(g => Math.abs(g - anchor) <= tol + 3)) {
+          if (freq === "biweekly") {
+            const doms = new Set(dates.map(d => d.getDate()));   // two fixed days ⇒ semimonthly (1st & 15th)
+            return { freq: doms.size <= 2 ? "semimonthly" : "biweekly" };
+          }
+          return { freq };
+        }
       }
-      const avgGap = gaps.reduce((a,b) => a+b, 0) / gaps.length;
-      isMonthly = avgGap >= 25 && avgGap <= 40;
-    }
-    // Also accept if only 2 occurrences but both in bill category
-    if (!isMonthly && !(txList.length === 2 && isBillCat)) return;
+      return null;
+    })();
+    if (!cadence) return;   // irregular spacing — not a recurring bill
 
-    // Average of last 3 months amounts
+    // Average of the last 3 occurrences
     const recent = txList.slice(-3);
     const avg    = recent.reduce((s,t) => s + t.amount, 0) / recent.length;
 
@@ -963,23 +972,27 @@ function detectRecurringBills(txns, opts = {}) {
       amount:  (avg||0).toFixed(2),
       date:    String(dayMode),
       type:    finalType,   // Tier 4: "fixed" | "variable"
-      freq:    "monthly",
+      freq:    cadence.freq, // Sprint 4 (item 8): weekly | biweekly | semimonthly | monthly | quarterly
       auto:    true,   // flag so UI can show "detected" badge
-      avgNote: txList.length >= 3 ? `avg of last ${Math.min(txList.length,3)} months` : "estimated",
+      avgNote: txList.length >= 3 ? `avg of last ${Math.min(txList.length,3)}` : "estimated",
     });
   });
 
-  // Sort by amount desc, then fuzzy-dedupe: drop a bill whose name is contained in,
-  // contains, or is within edit-distance 3 of one already kept — collapses near-dupes
-  // like "Insurance Intact" vs "Insurance".
+  // Sort by amount desc, then fuzzy-dedupe. Sprint 4 (item 4): name similarity ALONE is not
+  // enough — also require amount-within-10% OR same due-day, so "Bell" and "Bell Insurance"
+  // (genuinely different bills) don't collapse into one.
   const kept = [];
   bills.sort((a,b) => Number(b.amount) - Number(a.amount));
   for (const b of bills) {
     const k = b.name.toLowerCase().trim();
     const dupe = kept.some(x => {
       const j = x.name.toLowerCase().trim();
-      if (j === k || j.includes(k) || k.includes(j)) return true;
-      return _levenshtein(j, k) <= 3;
+      const nameMatch = j === k || j.includes(k) || k.includes(j) || _levenshtein(j, k) <= 3;
+      if (!nameMatch) return false;
+      const amtA = Number(b.amount), amtB = Number(x.amount);
+      const amtClose = amtA > 0 && amtB > 0 && Math.abs(amtA - amtB) / Math.max(amtA, amtB) <= 0.10;
+      const sameDay  = b.date && x.date && b.date === x.date;
+      return amtClose || sameDay;
     });
     if (!dupe) kept.push(b);
   }
