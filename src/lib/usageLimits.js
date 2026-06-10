@@ -74,10 +74,13 @@ export function isPremiumOrFounder() {
 // On read, if stored date != today, the counter is treated as 0.
 
 function _todayStr() {
+  // Sprint 3: UTC day boundary — consistent with the trial's UTC timestamp + epoch-ms math,
+  // and deterministic regardless of the user's timezone or device-clock TZ (no off-by-one,
+  // and you can't reset the daily Coach/Sim counters by changing timezone). Resets at 00:00 UTC.
   const d = new Date();
-  const y  = d.getFullYear();
-  const m  = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
+  const y  = d.getUTCFullYear();
+  const m  = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
 }
 
