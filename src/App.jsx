@@ -3988,7 +3988,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
   // profile.province holds CA province code when country=CA, US state code when country=US.
   // Defaults: ON for CA, CA (California) for US.
   const [p,setP]=useState({name:"",country:"CA",province:"ON",status:"single",hasKids:false,partnerName:"",creditScore:680,creditKnown:false,lifeStages:["t4"],partnerLifeStages:[],birthYear:"",kids:[],isHomeowner:false,rrspRoom:"",tfsaRoom:"",retirementRoom:""});
-  const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment",isVariable:false}]);
+  const [incomes,setIncomes]=useState([{id:1,label:"",amount:"",freq:"biweekly",type:"employment",sourceTypes:["employment"],isVariable:false,owner:"self"}]);
   const [bills,setBills]=useState([{name:"",amount:"",date:""}]);
   const [debts,setDebts]=useState([{name:"",balance:"",rate:"",min:""}]);
   // Pre-populate debts from connected credit card accounts when user reaches debt step
@@ -4309,6 +4309,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
           investment:{label:"Investment Income",emoji:"📈"},
         };
         const meta = incTypeMeta[inc.type] || {label:inc.type,emoji:"💰"};
+        const selTypes = (inc.sourceTypes&&inc.sourceTypes.length)?inc.sourceTypes:(inc.type?[inc.type]:[]); // Sprint 6a-2: multi-select source types (back-compat: derive from single type)
         const freqLabel = {weekly:"weekly",biweekly:"every 2 weeks",semimonthly:"twice/month",monthly:"monthly"}[inc.freq]||"";
         const summaryAmt = parseFloat(inc.amount||inc.typicalAmount||0);
         return (
@@ -4323,6 +4324,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
                 </div>
                 {inc.autoDetected&&<span style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px",color:C.greenBright,fontSize:10,fontWeight:700,marginLeft:4}}>Auto ✓</span>}
                 {inc.isVariable&&<span style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:99,padding:"2px 8px",color:C.purpleBright||C.tealBright,fontSize:10,fontWeight:700}}>Variable</span>}
+                {inc.owner==="partner"&&<span style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:99,padding:"2px 8px",color:C.tealBright,fontSize:10,fontWeight:700}}>{p.partnerName||"Partner"}</span>}
               </div>
               {incomes.length>1&&<button aria-label="Remove income" onClick={()=>setIncomes(incomes.filter(x=>x.id!==inc.id))}
                 style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:20,padding:"0 0 0 8px",lineHeight:1}}>×</button>}
@@ -4331,14 +4333,33 @@ function Onboarding({onComplete,onViewLegal,userId}){
             <div style={{padding:"12px 16px 16px"}}>
               {/* Step 1 — Income type chips */}
               <div style={{marginBottom:12}}>
-                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:8}}>Income type</div>
+                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:8}}>Income type <span style={{textTransform:"none",letterSpacing:0,color:C.border}}>· tap all that apply</span></div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                  {(CC[p.country]?.incomeTypes||CC.CA.incomeTypes).map(([val,lbl])=>(
-                    <button key={val} onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,type:val,label:x.label||(incTypeMeta[val]?.label||"")}:x))}
-                      style={{background:inc.type===val?C.green+"22":C.cardAlt,border:`1px solid ${inc.type===val?C.green:C.border}`,color:inc.type===val?C.greenBright:C.muted,borderRadius:99,padding:"6px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:inc.type===val?700:400,transition:"all .15s"}}>{lbl}</button>
-                  ))}
+                  {(CC[p.country]?.incomeTypes||CC.CA.incomeTypes).map(([val,lbl])=>{
+                    const on=selTypes.includes(val);
+                    return <button key={val} onClick={()=>setIncomes(incomes.map(x=>{
+                      if(x.id!==inc.id) return x;
+                      const cur=(x.sourceTypes&&x.sourceTypes.length)?x.sourceTypes:(x.type?[x.type]:[]);
+                      const next=cur.includes(val)?cur.filter(t=>t!==val):[...cur,val];
+                      const ft=next.length?next:[val]; // never empty — keep at least the tapped type
+                      return {...x,sourceTypes:ft,type:ft[0],label:x.label||(incTypeMeta[ft[0]]?.label||"")};
+                    }))}
+                      style={{background:on?C.green+"22":C.cardAlt,border:`1px solid ${on?C.green:C.border}`,color:on?C.greenBright:C.muted,borderRadius:99,padding:"6px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:on?700:400,transition:"all .15s"}}>{lbl}</button>;
+                  })}
                 </div>
               </div>
+
+              {/* Sprint 6a-2: spousal income owner (couples only) */}
+              {(p.status==="couple"||p.status==="cohabit")&&<div style={{marginBottom:12}}>
+                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:8}}>Whose income?</div>
+                <div style={{display:"flex",gap:6}}>
+                  {[["self",p.name?p.name.split(" ")[0]:"Mine"],["partner",p.partnerName||"Partner"]].map(([val,lbl])=>{
+                    const on=(inc.owner||"self")===val;
+                    return <button key={val} onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,owner:val}:x))}
+                      style={{flex:1,background:on?C.teal+"22":C.cardAlt,border:`1px solid ${on?C.teal:C.border}`,color:on?C.tealBright:C.muted,borderRadius:10,padding:"8px 12px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:on?700:400}}>{lbl}</button>;
+                  })}
+                </div>
+              </div>}
 
               {/* Step 2 — Label */}
               <div style={{marginBottom:12}}>
@@ -4394,7 +4415,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
       })}
 
       {/* Add income button — prominent */}
-      <button onClick={()=>setIncomes([...incomes,{id:Date.now(),label:"",amount:"",freq:"biweekly",type:"employment",isVariable:false}])}
+      <button onClick={()=>setIncomes([...incomes,{id:Date.now(),label:"",amount:"",freq:"biweekly",type:"employment",sourceTypes:["employment"],isVariable:false,owner:"self"}])}
         style={{width:"100%",background:`linear-gradient(135deg,${C.green}18,${C.green}08)`,border:`1px solid ${C.green}66`,borderRadius:14,padding:"14px",color:C.greenBright,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginBottom:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
         <span style={{fontSize:18,lineHeight:1}}>＋</span> Add Another Income Source
       </button>
