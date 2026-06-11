@@ -8326,7 +8326,7 @@ function Family({data,household,setHousehold,setScreen}){
       {/* Active kid full view */}
       {activeKid&&(()=>{
         const kidTheme=KID_THEMES[activeKid.theme||"pink"];
-        const kidUrl=`${window.location.origin}/kids?code=${activeKid.code}&n=${encodeURIComponent(activeKid.name)}&e=${encodeURIComponent(activeKid.emoji||"🌱")}&a=${encodeURIComponent(activeKid.age||"8-12")}&t=${encodeURIComponent(activeKid.theme||"pink")}`;
+        const kidUrl=`${window.location.origin}/kids?code=${activeKid.code}`; // Sprint Z2 #13: code only — no child name/age/emoji/theme PII in the share URL (same-device localStorage carries them)
         const kidChores=activeKid.chores||[];
         const jars=activeKid.jars||{spend:0,save:0,give:0};
         const goal=activeKid.goal||{name:"",amount:"",emoji:"🎯"};
@@ -10859,17 +10859,9 @@ function KidsMiniSite(){
       if(k)return k;
       const d=safeLoadLS("flourish_kid_data_"+code, null);
       if(d)return d;
-      // Fall back to URL params (any device — data encoded in the share link)
-      const n=params.get("n");
-      if(n)return{
-        name:n,
-        emoji:params.get("e")||"🌱",
-        age:params.get("a")||"8-12",
-        theme:params.get("t")||"pink",
-        jars:{spend:0,save:0,give:0},
-        goal:{name:"",amount:"",emoji:"🎯"},
-        streak:0,
-      };
+      // Sprint Z2 #13: no URL-param fallback — child PII no longer travels in the share link.
+      // Same-device only: opened where the parent's localStorage isn't present, kidData is null and
+      // KidsMiniSite renders a generic empty kid site (default theme, $0 jars) rather than the child.
       return null;
     }catch{return null;}
   })();
@@ -10895,9 +10887,7 @@ function KidsMiniSite(){
 
   const [activeTheme,setActiveTheme]=useState(()=>{
     try{
-      // URL param takes priority (fresh share link), then localStorage, then kidData, then pink
-      const urlTheme=params.get("t");
-      if(urlTheme&&THEMES_KEYS.includes(urlTheme))return urlTheme;
+      // Sprint Z2 #13: theme no longer comes from the URL — localStorage first, then kidData, then pink.
       const stored=localStorage.getItem("flourish_kid_theme_"+code);
       if(stored&&THEMES_KEYS.includes(stored))return stored;
       if(kidData?.theme)return kidData.theme;
@@ -11259,8 +11249,13 @@ function AuthScreen({ onAuth, onTryDemo }) {
       options:{ data:{ beta:true, signed_up:new Date().toISOString() }, emailRedirectTo: window.location.origin }
     });
     if (error) {
-      if(error.message?.toLowerCase().includes("user already registered")) {
+      const msg = (error.message||"").toLowerCase();
+      if(msg.includes("user already registered")) {
         setError("This email is already registered. Try logging in instead.");
+      } else if(error.code === "signup_disabled" || msg.includes("signups not allowed")) {
+        // Sprint Z2 #14: public signups disabled in Supabase (invite-only beta) → friendly message
+        // instead of the raw "Signups not allowed for this instance".
+        setError("Beta is invite-only right now — request access at hello@flourishmoney.app");
       } else {
         setError(error.message);
       }
