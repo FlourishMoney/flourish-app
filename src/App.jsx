@@ -572,6 +572,54 @@ function mergeById(existing, fresh) {
   return [...safeExisting.filter(x => x?.id && !freshIds.has(x.id)), ...safeFresh];
 }
 
+// Like mergeById but keyed by account_id — keeps last-known entries for accounts whose source
+// couldn't be refreshed this round (Sprint Z #2: liabilities keep-stale).
+function mergeByAccountId(existing, fresh) {
+  const safeExisting = Array.isArray(existing) ? existing : [];
+  const safeFresh = Array.isArray(fresh) ? fresh : [];
+  const freshIds = new Set(safeFresh.map(x => x?.account_id).filter(Boolean));
+  return [...safeExisting.filter(x => x?.account_id && !freshIds.has(x.account_id)), ...safeFresh];
+}
+
+// Remove transactions by id — the inverse of mergeById, for Plaid /transactions/sync `removed`
+// (Sprint Z #1). The ids are transaction_ids, which normaliseTxns stores as `id`.
+function removeByIds(list, ids) {
+  const safe = Array.isArray(list) ? list : [];
+  if (!Array.isArray(ids) || ids.length === 0) return safe;
+  const rm = new Set(ids);
+  return safe.filter(x => x?.id && !rm.has(x.id));
+}
+
+// Sprint Z #1 (B1 safety net): the server persists the per-item cursor, so a delta dropped before
+// the client applied it (lost response, app killed mid-save) could otherwise be stranded forever.
+// Force a full resync at least weekly to self-heal any such gap (mergeById makes a re-pull idempotent).
+const FULL_SYNC_STALE_MS = 7 * 24 * 60 * 60 * 1000;
+function isFullSyncStale() {
+  try { return (Date.now() - parseInt(localStorage.getItem("flourish_last_full_sync") || "0", 10)) > FULL_SYNC_STALE_MS; } catch { return false; }
+}
+function stampFullSync() {
+  try { localStorage.setItem("flourish_last_full_sync", Date.now().toString()); } catch {}
+}
+
+// Sprint Z #3: drain a truncated sync within one cycle. The server caps pages per call and flags
+// `truncated`; we keep calling for the item (the persisted cursor resumes) until it's complete,
+// so the user never sees partial history waiting on the next throttled refresh. Bounded guard.
+async function fetchItemTxns(item_id, jwt, fullResync) {
+  const transactions = [];
+  const removed = [];
+  let full = false;
+  let resync = !!fullResync;
+  for (let guard = 0; guard < 12; guard++) {
+    const resp = await callPlaid("get_transactions", { item_id, days: 90, full_resync: resync }, { jwt });
+    if (Array.isArray(resp.transactions)) transactions.push(...resp.transactions);
+    if (Array.isArray(resp.removed)) removed.push(...resp.removed);
+    full = full || !!resp.full;
+    if (!resp.truncated) break;
+    resync = false; // subsequent pages resume from the persisted cursor, never re-full
+  }
+  return { transactions, removed, full };
+}
+
 // Phase D1-F-B: fetch the user's connected Plaid items (metadata only — no access_tokens).
 // Used by multi-bank fan-out sites to drive get_transactions/accounts/etc. via item_id + JWT.
 async function getUserItems() {
@@ -4735,7 +4783,7 @@ function NetWorthSparkline({history, color}){
 
 
 // ─── BACKGROUND REFRESH (Plus only, 30-min rate limit) ───────────────────────
-async function backgroundRefresh(isPremium, setAppData) {
+async function backgroundRefresh(isPremium, setAppData, fullResync = false) {
   if(!isPremium) return;
   const lastFetch = parseInt(localStorage.getItem("flourish_last_refresh")||"0");
   const THIRTY_MIN = 30 * 60 * 1000;
@@ -4749,7 +4797,7 @@ async function backgroundRefresh(isPremium, setAppData) {
     // Fan out: fetch accounts + transactions for each item in parallel
     const [acctResults, txnResults] = await Promise.all([
       Promise.allSettled(items.map(it => callPlaid("get_accounts", { item_id: it.item_id }, { jwt }))),
-      Promise.allSettled(items.map(it => callPlaid("get_transactions", { item_id: it.item_id, days: 90 }, { jwt }))),
+      Promise.allSettled(items.map(it => fetchItemTxns(it.item_id, jwt, fullResync))),
     ]);
 
     // Sprint 1b: track per-item success and stamp each fresh account with its item_id, so a
@@ -4767,8 +4815,10 @@ async function backgroundRefresh(isPremium, setAppData) {
       }
     });
     const allSucceeded = failedItemIds.size === 0;
-    // Only bail entirely if EVERY item failed — keep cached state untouched.
-    if (rawFreshAccounts.length === 0 && !allSucceeded) {
+    // Sprint Z/B2: don't strand transaction deltas behind an account-fetch failure. Bail only if
+    // EVERY account failed AND there are no txn changes to apply this round.
+    const anyTxnData = txnResults.some(r => r.status === "fulfilled" && (((r.value.transactions||[]).length) > 0 || ((r.value.removed||[]).length) > 0));
+    if (rawFreshAccounts.length === 0 && !allSucceeded && !anyTxnData) {
       console.error("[backgroundRefresh] all items failed account refresh — keeping cached state");
       return;
     }
@@ -4776,6 +4826,10 @@ async function backgroundRefresh(isPremium, setAppData) {
     const allRawTxns = txnResults
       .filter(r => r.status === "fulfilled")
       .flatMap(r => r.value.transactions || []);
+    // Sprint Z #1: collect removed ids across items so we can apply deletions to the local store.
+    const allRemovedIds = txnResults
+      .filter(r => r.status === "fulfilled")
+      .flatMap(r => r.value.removed || []);
     const normalisedTxns = normaliseTxns(allRawTxns);
     const enrichedTxns = await enrichTxns(normalisedTxns, [], rawFreshAccounts, callPlaid, jwt);
 
@@ -4814,11 +4868,14 @@ async function backgroundRefresh(isPremium, setAppData) {
       return {
         ...prev,
         accounts: mergedAccounts,
-        // Only replace transactions when EVERY item succeeded — otherwise a partial failure
-        // would drop the failed bank's transactions. Keep cached txns on partial failure.
-        transactions: (allSucceeded && enrichedTxns.length > 0)
-          ? markTransfers(enrichedTxns, t => isInternalTransfer(t) || isCCPayment(t, prev.debts || []), isCashAdvance)
-          : prev.transactions,
+        // Sprint Z #1/B2: always MERGE the fulfilled items' deltas + apply their removals. Merge is
+        // inherently partial-failure-safe (a failed item's txns aren't in the delta, so they're
+        // retained), and committing succeeded items — even when another item or an account call
+        // failed — prevents their already-advanced server cursor from stranding the delta.
+        transactions: removeByIds(
+          mergeById(prev.transactions, markTransfers(enrichedTxns, t => isInternalTransfer(t) || isCCPayment(t, prev.debts || []), isCashAdvance)),
+          allRemovedIds
+        ),
         debts: newCCDebts.length > 0
           ? [...(prev.debts||[]).filter(d => d.name || d.balance), ...newCCDebts]
           : prev.debts,
@@ -4827,6 +4884,7 @@ async function backgroundRefresh(isPremium, setAppData) {
     // Keep the 30-min throttle regardless of partial failure (a persistently-failing item
     // shouldn't bypass it and hammer Plaid). The deep-merge above already preserved its data.
     localStorage.setItem("flourish_last_refresh", Date.now().toString());
+    if (fullResync) stampFullSync(); // Sprint Z/B1: mark the weekly self-heal as done
   } catch (e) {
     console.error("[backgroundRefresh] unexpected error:", e?.message || e);
   }
@@ -13684,16 +13742,19 @@ export default function FlourishApp(){
         if(!jwt) return;
         const items = await getUserItems();
         if(items.length === 0) return;
-        // Fetch transactions from ALL connected banks in parallel
+        // Sprint Z #1: incremental sync — request full_resync when the local store is empty (fresh
+        // device / cleared cache) or weekly (B1 self-heal) so the server ignores the stored cursor.
+        const fullResync = (appData?.transactions?.length || 0) === 0 || isFullSyncStale();
         const results = await Promise.allSettled(
-          items.map(it => callPlaid("get_transactions",{item_id:it.item_id,days:90}, {jwt}))
+          items.map(it => fetchItemTxns(it.item_id, jwt, fullResync))
         );
-        const allTxns = results
-          .filter(r => r.status === "fulfilled")
-          .flatMap(r => normaliseTxns(r.value.transactions||[]));
+        const fulfilled = results.filter(r => r.status === "fulfilled").map(r => r.value);
+        const allTxns = fulfilled.flatMap(v => normaliseTxns(v.transactions||[]));
+        const allRemovedIds = fulfilled.flatMap(v => v.removed || []);
         // Sort combined transactions by date
         allTxns.sort((a,b) => a.date < b.date ? 1 : -1);
-        if(allTxns.length === 0) return;
+        // Nothing changed (no added/modified AND no removed) → leave state as-is.
+        if(allTxns.length === 0 && allRemovedIds.length === 0) return;
         const enrichedAllTxns = await enrichTxns(allTxns, appData?.transactions || [], appData?.accounts || [], callPlaid, jwt);
         // Also refresh account balances with real-time data now that we have time
         try {
@@ -13743,17 +13804,30 @@ export default function FlourishApp(){
           const liabResults = await Promise.allSettled(
             items.map(it => callPlaid("get_liabilities",{item_id:it.item_id}, {jwt}))
           );
-          const merged = { credit: [], mortgage: [], student: [] };
+          // Sprint Z #2: keep-stale. The server now returns { liabilitiesUnavailable:true } on
+          // error instead of empty arrays, so we can tell "confirmed no debt" from "couldn't fetch".
+          const fresh = { credit: [], mortgage: [], student: [] };
+          let anyUnavailable = false;
           liabResults.forEach(r => {
-            if (r.status === "fulfilled" && r.value) {
-              if (Array.isArray(r.value.credit))   merged.credit.push(...r.value.credit);
-              if (Array.isArray(r.value.mortgage)) merged.mortgage.push(...r.value.mortgage);
-              if (Array.isArray(r.value.student))  merged.student.push(...r.value.student);
+            if (r.status === "fulfilled" && r.value && !r.value.liabilitiesUnavailable) {
+              if (Array.isArray(r.value.credit))   fresh.credit.push(...r.value.credit);
+              if (Array.isArray(r.value.mortgage)) fresh.mortgage.push(...r.value.mortgage);
+              if (Array.isArray(r.value.student))  fresh.student.push(...r.value.student);
+            } else {
+              anyUnavailable = true; // rejected promise OR liabilitiesUnavailable flag
             }
           });
-          if (merged.credit.length || merged.mortgage.length || merged.student.length) {
-            setAppData(prev => ({ ...prev, liabilities: merged }));
-          }
+          setAppData(prev => {
+            const prevLiab = prev.liabilities || { credit: [], mortgage: [], student: [] };
+            // Sprint Z #2 (H2): keep-stale per category. When some item is unavailable, merge fresh
+            // by account_id into prior. When all are available, replace a category only if we got
+            // data for it — an all-empty success must NOT wipe a prior mortgage/student loan (those
+            // live only in liabilities and feed the debt simulator), since "empty" can be transient.
+            const pick = (cat) => anyUnavailable
+              ? mergeByAccountId(prevLiab[cat] || [], fresh[cat])
+              : (fresh[cat].length > 0 ? fresh[cat] : (prevLiab[cat] || []));
+            return { ...prev, liabilities: { credit: pick("credit"), mortgage: pick("mortgage"), student: pick("student") } };
+          });
         } catch(e) { /* silent — institution may not support liabilities */ }
         // Phase B3: fetch investment holdings per item, merge across banks
         try {
@@ -13771,11 +13845,14 @@ export default function FlourishApp(){
           }
         } catch(e) { /* silent — institution may not support investments */ }
         } catch(e) { /* silent — cached balances still shown */ }
-        // Auto-detect income and bills from combined data
-        const detectedIncome = detectIncomeFromTxns(enrichedAllTxns);
+        // Auto-detect income and bills from the MERGED transaction set (Sprint Z #1).
         setAppData(prev=>{
+          // Merge the delta (added/modified) into existing txns and apply removals BEFORE
+          // detection, so income/bill detection sees the FULL set — not just this sync's delta.
+          const mergedRaw = removeByIds(mergeById(prev.transactions, enrichedAllTxns), allRemovedIds);
           // Mark transfers FIRST so detection sees t.isTransfer and filters them out.
-          const markedTxns = markTransfers(enrichedAllTxns, t => isInternalTransfer(t) || isCCPayment(t, prev.debts || []), isCashAdvance);
+          const markedTxns = markTransfers(mergedRaw, t => isInternalTransfer(t) || isCCPayment(t, prev.debts || []), isCashAdvance);
+          const detectedIncome = detectIncomeFromTxns(markedTxns);
           // Tier 4: detect against user overrides + debts (filters transfers & removed merchants).
           const detectedBills = detectRecurringBills(markedTxns, { overrides: prev.userBillOverrides || {}, debts: prev.debts || [] });
           return {
@@ -13792,6 +13869,7 @@ export default function FlourishApp(){
               : prev.bills,
           };
         });
+        if (fullResync) stampFullSync(); // Sprint Z/B1: weekly self-heal done
       } catch(e) {
         console.warn("[Flourish] Background transaction fetch failed:", e.message);
       }
@@ -13852,7 +13930,7 @@ export default function FlourishApp(){
         // access_token returns to the client. Fetch accounts + transactions via item_id + JWT.
         return Promise.all([
           callPlaid("get_accounts",{ item_id: ex.item_id }, {jwt}),
-          callPlaid("get_transactions",{ item_id: ex.item_id, days: 90 }, {jwt}),
+          fetchItemTxns(ex.item_id, jwt, false), // Sprint Z #3: drains truncation on a large connect
         ]);
       })
       .then(async ([acctData, txnData])=>{
@@ -13887,7 +13965,8 @@ export default function FlourishApp(){
             ...d,
             // Phase D2: merge by id so existing banks aren't replaced when adding another
             accounts: mergeById(d.accounts, accounts),
-            transactions: mergeById(d.transactions, markTransfers(enrichedReconnectTxns, t => isInternalTransfer(t) || isCCPayment(t, d.debts || []), isCashAdvance)),
+            // Sprint Z #1: merge added/modified + apply removals (removed is empty on a fresh item, but keep the contract consistent).
+            transactions: removeByIds(mergeById(d.transactions, markTransfers(enrichedReconnectTxns, t => isInternalTransfer(t) || isCCPayment(t, d.debts || []), isCashAdvance)), txnData.removed||[]),
             bankConnected: true,
             debts: [...(d.debts||[]).filter(deb => deb.name || deb.balance), ...newCCDebts],
           };
@@ -13910,7 +13989,7 @@ export default function FlourishApp(){
       // Only show shimmer if we're actually going to refresh
       const willRefresh = appData?.bankConnected && isPremium && (Date.now()-lastFetch >= THIRTY_MIN);
       if(willRefresh) setIsRefreshing(true);
-      await backgroundRefresh(isPremium, setAppData);
+      await backgroundRefresh(isPremium, setAppData, (appData?.transactions?.length||0)===0 || isFullSyncStale());
       setIsRefreshing(false);
     }, 2000);
     return ()=>clearTimeout(timer);

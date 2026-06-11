@@ -227,20 +227,31 @@ exports.handler = async (event) => {
 
     // 4. get_transactions
     if (action === "get_transactions") {
-      const { days = 90 } = body;
-      const { access_token, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
+      const { days = 90, full_resync = false } = body;
+      const { access_token, user_id, error: tokenError, statusCode: tokenStatus } = await resolveAccessToken(event, body);
       if (!access_token) return { statusCode: tokenStatus || 400, headers: CORS, body: JSON.stringify({ error: tokenError }) };
 
       const cappedDays = Math.min(Math.max(1, days), 730);
       const endDate    = new Date().toISOString().split("T")[0];
       const startDate  = new Date(Date.now() - cappedDays * 86_400_000).toISOString().split("T")[0];
 
-      let transactions = await syncTransactions(access_token, startDate, endDate);
-      if (transactions.length === 0) {
-        transactions = await getTransactions(access_token, startDate, endDate);
+      // Sprint Z #1/#3: incremental cursor sync. Returns { transactions (added+modified, normalized),
+      // removed (ids), truncated, full }. Cursor is read from / persisted to plaid_items per item.
+      let result = await syncTransactions(access_token, startDate, endDate, { user_id, item_id: body.item_id, fullResync: !!full_resync });
+      // Fall back to /transactions/get ONLY on an empty FULL sync (fresh sandbox items sometimes
+      // return nothing from /sync at first). An empty INCREMENTAL sync just means "no changes".
+      if (result.full && result.transactions.length === 0 && result.removed.length === 0) {
+        const fallback = await getTransactions(access_token, startDate, endDate);
+        result = { transactions: fallback, removed: [], truncated: false, full: true };
       }
 
-      return ok({ transactions, total: transactions.length });
+      return ok({
+        transactions: result.transactions,
+        removed:      result.removed,
+        truncated:    result.truncated,
+        full:         result.full,
+        total:        result.transactions.length,
+      });
     }
 
     // 5. get_investments
@@ -312,8 +323,10 @@ exports.handler = async (event) => {
             interestRate: s.interest_rate_percentage || null,
           })),
         });
-      } catch {
-        return ok({ credit: [], mortgage: [], student: [] });
+      } catch (err) {
+        // Sprint Z #2: signal failure instead of empty arrays so the client keeps stale
+        // liabilities (empty arrays were indistinguishable from a confirmed "no debt").
+        return ok({ liabilitiesUnavailable: true, error_code: err.errorCode || null });
       }
     }
 
@@ -635,28 +648,91 @@ async function resolveAccessToken(event, body) {
   if (error || !data) {
     return { access_token: null, error: "item not found for this user", statusCode: 400 };
   }
-  return { access_token: data.access_token, error: null };
+  return { access_token: data.access_token, user_id, error: null };
 }
 
-// /transactions/sync — cursor-based, handles updates/removes
-async function syncTransactions(access_token, startDate, endDate) {
-  let added   = [];
-  let cursor  = null;
-  let hasMore = true;
-  let pages   = 0;
+// /transactions/sync — cursor-based incremental sync (Sprint Z #1/#3).
+// Reads the per-item cursor from plaid_items.next_cursor (NULL → full sync from the start),
+// pages until has_more is false or the page cap is hit, dedups added+modified by transaction_id
+// (modified overwrites added), collects removed ids, persists the cursor reached, and flags
+// truncation so the caller knows more pages remain (the next sync resumes from the saved cursor).
+//
+// Delivery is at-least-once: the client applies changes idempotently via mergeById, so a
+// re-delivered page is harmless. The only residual risk (a dropped 200 after the cursor was
+// persisted) is recoverable with a full_resync.
+const SYNC_PAGE_CAP = 10;
+async function syncTransactions(access_token, startDate, endDate, ctx = {}) {
+  const { user_id, item_id, fullResync = false } = ctx;
+  const canPersist = !!(user_id && item_id);
+  const admin = canPersist ? getAdminClient() : null;
 
-  while (hasMore && pages < 10) {
-    const req = { access_token, options: { include_personal_finance_category: true } };
-    if (cursor) req.cursor = cursor;
-
-    const page = await plaid("/transactions/sync", req);
-    added   = added.concat(page.added);
-    cursor  = page.next_cursor;
-    hasMore = page.has_more;
-    pages++;
+  // Starting cursor: the stored cursor unless a full resync is forced.
+  let startCursor = null;
+  if (admin && !fullResync) {
+    const { data, error } = await admin
+      .from("plaid_items")
+      .select("next_cursor")
+      .eq("user_id", user_id)
+      .eq("item_id", item_id)
+      .single();
+    if (!error) startCursor = data?.next_cursor || null;
   }
 
-  return normalizeTxns(added, startDate, endDate);
+  // Page loop with Plaid sync recovery (L4): a dataset mutation mid-pagination restarts from where
+  // we began; a stale/invalid cursor restarts from null (full). Bounded retries, then propagate.
+  let attempt = 0;
+  while (true) {
+    attempt++;
+    let cursor    = startCursor;
+    const isFull  = !cursor; // null cursor → full sync from the beginning
+    const byId    = new Map(); // transaction_id → txn (modified overwrites added)
+    const removed = [];
+    let hasMore   = true;
+    let pages     = 0;
+
+    try {
+      while (hasMore && pages < SYNC_PAGE_CAP) {
+        const req = { access_token, options: { include_personal_finance_category: true } };
+        if (cursor) req.cursor = cursor;
+
+        const page = await plaid("/transactions/sync", req);
+        (page.added    || []).forEach(t => byId.set(t.transaction_id, t));
+        (page.modified || []).forEach(t => byId.set(t.transaction_id, t));
+        (page.removed  || []).forEach(r => { if (r.transaction_id) removed.push(r.transaction_id); });
+        cursor  = page.next_cursor;
+        hasMore = page.has_more;
+        pages++;
+      }
+    } catch (err) {
+      if (err.errorCode === "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION" && attempt <= 3) {
+        continue; // data changed mid-pagination → restart this sync from startCursor
+      }
+      if (err.errorCode === "PAGINATION_INVALID_CURSOR" && attempt <= 2) {
+        startCursor = null; // bad cursor → fall back to a full sync
+        continue;
+      }
+      throw err;
+    }
+
+    const truncated = hasMore; // stopped at the cap with more pages remaining
+
+    // Persist the cursor reached so the next sync resumes (incremental advance, or truncation resume).
+    if (admin && cursor) {
+      const { error } = await admin
+        .from("plaid_items")
+        .update({ next_cursor: cursor })
+        .eq("user_id", user_id)
+        .eq("item_id", item_id);
+      if (error) console.error("[syncTransactions cursor persist]", error.message);
+    }
+
+    return {
+      transactions: normalizeTxns(Array.from(byId.values()), startDate, endDate),
+      removed,
+      truncated,
+      full: isFull,
+    };
+  }
 }
 
 // /transactions/get — date-range based, more reliable on fresh sandbox items
