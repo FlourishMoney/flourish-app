@@ -397,7 +397,7 @@ const DARK_C = {
 };
 const LIGHT_C = {
   bg:"#F4F1EB",surface:"#FDFCFA",card:"#FFFFFF",cardAlt:"#EDEAE4",
-  cream:"#1A2035",muted:"rgba(26,32,53,0.44)",mutedHi:"rgba(26,32,53,0.72)",
+  cream:"#1A2035",muted:"rgba(26,32,53,0.60)",mutedHi:"rgba(26,32,53,0.72)", // Sprint Q item 8: .44→.60 clears AA body 4.5:1
   glass:"rgba(255,255,255,0.84)",glassBright:"rgba(255,255,255,0.94)",
   glassEdge:"rgba(0,0,0,0.07)",glassEdgeHi:"rgba(0,0,0,0.13)",
   green:"#00935F",greenBright:"#00A86D",greenDim:"rgba(0,147,95,0.10)",
@@ -4173,8 +4173,9 @@ function Onboarding({onComplete,onViewLegal,userId}){
   const screens=[
     // 0: Welcome (slim — Phase 3e-A trim)
     <div style={{minHeight:"60vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"20px 0"}}>
-      <FlourishMark size={56} style={{borderRadius:16,marginBottom:14}}/>
-      <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:30,letterSpacing:-0.5,marginBottom:12,lineHeight:1,color:C.cream}}>flourish</div>
+      {/* Quality Sprint item 9: single combined lockup (diamond + wordmark are baked into the
+          app-icon art) replaces the icon + a separate text wordmark — no more duplicated "flourish". */}
+      <img src="/flourish-adult-app-icon-180.png" alt="Flourish" width={128} height={128} style={{display:"block",marginBottom:16}}/>
       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.mutedHi,fontSize:14,lineHeight:1.6,maxWidth:300,marginBottom:30}}>Know what's safe to spend, every day.</div>
       <button onClick={()=>setStep(1)} style={{background:"linear-gradient(135deg,"+C.green+" 0%,"+C.greenBright+" 100%)",color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:"0 8px 32px "+C.green+"33, inset 0 1px 0 rgba(255,255,255,0.30)",letterSpacing:0.3,transition:"all .2s"}}>Get Started →</button>
       <button onClick={()=>onComplete({profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true,lifeStages:["t4"],partnerLifeStages:["t4"]},incomes:[{id:1,label:"Full-time Job",amount:"2840",freq:"biweekly",type:"employment"},{id:2,label:"Canada Child Benefit",amount:"560",freq:"monthly",type:"ccb"}],bills:[{name:"Rent",amount:"1650",date:"1"},{name:"Hydro",amount:"95",date:"11"},{name:"Phone",amount:"65",date:"15"},{name:"Netflix",amount:"18.99",date:"22"}],debts:[{name:"TD Visa",balance:"3420",rate:"19.99",min:"68"},{name:"Car Loan",balance:"8200",rate:"6.99",min:"280"}],accounts:MOCK_ACCOUNTS,transactions:MOCK_TXN,bankConnected:true,demo:true})} style={{marginTop:10,background:"none",border:"1px solid "+C.border,borderRadius:99,padding:"9px 22px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer",fontWeight:600}}>👀 Try Demo (no account needed)</button>
