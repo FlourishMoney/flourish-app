@@ -397,7 +397,7 @@ const DARK_C = {
 };
 const LIGHT_C = {
   bg:"#F4F1EB",surface:"#FDFCFA",card:"#FFFFFF",cardAlt:"#EDEAE4",
-  cream:"#1A2035",muted:"rgba(26,32,53,0.60)",mutedHi:"rgba(26,32,53,0.72)", // Sprint Q item 8: .44→.60 clears AA body 4.5:1
+  cream:"#1A2035",muted:"rgba(26,32,53,0.66)",mutedHi:"rgba(26,32,53,0.72)", // Sprint Q item 8: .44→.66 clears AA body 4.5:1 (.60 only reached 4.14:1)
   glass:"rgba(255,255,255,0.84)",glassBright:"rgba(255,255,255,0.94)",
   glassEdge:"rgba(0,0,0,0.07)",glassEdgeHi:"rgba(0,0,0,0.13)",
   green:"#00935F",greenBright:"#00A86D",greenDim:"rgba(0,147,95,0.10)",
