@@ -16,11 +16,14 @@ import { ForecastEngine } from "./forecastEngine.js";
 // Pure helpers extracted from the DecisionEngine UI component. The component calls these, then builds
 // the themed advice cards (colors / labels / toLocaleString) — those stay in the component.
 
-// Days until the next payday, assuming income on the 15th or the 1st (whichever is sooner).
-// `today` is the day-of-month (1-31).
-export function computePaydayGap(today) {
-  const paydayGuess = today < 15 ? 15 : 1;
-  const daysToPayday = paydayGuess >= today ? paydayGuess - today : (31 - today + paydayGuess);
+// Days until the next payday (income on the 15th or the 1st, whichever is sooner).
+// Sprint Z2 #9: `today` is a Date; days-in-month is DERIVED from it so the month-end wraparound is
+// exact (Feb 28/29, 30-day months) instead of a hardcoded 31. Defaults to now; tests inject a Date.
+export function computePaydayGap(today = new Date()) {
+  const dom = today.getDate();
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const paydayGuess = dom < 15 ? 15 : 1;
+  const daysToPayday = paydayGuess >= dom ? paydayGuess - dom : (daysInMonth - dom + paydayGuess);
   return { paydayGuess, daysToPayday };
 }
 
@@ -261,7 +264,10 @@ export function calcHealthScore(data, catOverrides = {}, currentDate = new Date(
   // ⑤ Investments — 10 pts
   const hasInv = accounts.some(a => isInvestmentAccount(a));
   const invBal = accounts.filter(a => isInvestmentAccount(a)).reduce((s,a) => s + parseFloat(a.balance||0), 0);
-  const ivScore = hasInv ? Math.min(10, 5 + Math.round(Math.min(5, invBal / (monthlyIncome * 3)))) : 0;
+  // Sprint Z2 #5: guard div-by-zero — monthlyIncome is 0 when no income is entered, which made
+  // invBal/(income*3) → NaN (0/0, poisoning the whole score) or Infinity. denom=1 floors it.
+  const denom = monthlyIncome > 0 ? monthlyIncome * 3 : 1;
+  const ivScore = hasInv ? Math.min(10, 5 + Math.round(Math.min(5, invBal / denom))) : 0;
 
   // ⑥ Credit Health — 10 pts
   const rawCredit = data.profile?.creditScore ? parseFloat(data.profile.creditScore) : 680;

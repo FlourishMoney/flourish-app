@@ -220,8 +220,12 @@ const D = (iso) => new Date(iso + "T12:00:00");
   t.eq(fcast.firstNegativeDay.day, 9, "forecast first-negative on rent day (Jun 10 = day 9)");
 
   // ── decisionEngine: helpers + engines ───────────────────────────────────────────────────────────
-  t.eq(de.computePaydayGap(10).daysToPayday, 5, "paydayGap day10 → 5 to the 15th");
-  t.eq(de.computePaydayGap(20).daysToPayday, 12, "paydayGap day20 → 12 to the 1st");
+  t.eq(de.computePaydayGap(D("2026-01-10")).daysToPayday, 5, "paydayGap day10 → 5 to the 15th");
+  t.eq(de.computePaydayGap(D("2026-01-20")).daysToPayday, 12, "paydayGap day20 (Jan, 31d) → 12 to the 1st");
+  // Sprint Z2 #9: month-end wraparound uses the ACTUAL days-in-month, not a hardcoded 31.
+  t.eq(de.computePaydayGap(D("2026-02-20")).daysToPayday, 9,  "paydayGap Feb 20 (28d, non-leap) → 9");
+  t.eq(de.computePaydayGap(D("2024-02-20")).daysToPayday, 10, "paydayGap Feb 20 2024 (29d, leap) → 10");
+  t.eq(de.computePaydayGap(D("2026-04-20")).daysToPayday, 11, "paydayGap Apr 20 (30d) → 11");
   t.eq(de.computeDailySpendLimit(280, 7).safeToday, 40, "dailySpendLimit 280/7 → 40");
   t.eq(de.computeDailySpendLimit(280, 0).daysLeft, 14, "dailySpendLimit floors days at 14");
   t.eq(de.selectHighestRateDebt([{ name: "A", rate: "6" }, { name: "B", rate: "20" }]).name, "B", "selectHighestRateDebt picks highest APR");
@@ -236,6 +240,10 @@ const D = (iso) => new Date(iso + "T12:00:00");
   const h = de.calcHealthScore(lowSaveData, {}, JUN);
   t.ok(h.score >= 8 && h.score <= 100 && h.pillars.length === 6, "calcHealthScore in [8,100] with 6 pillars");
   t.ok(de.calcHealthScore(lowSaveData, {}, JUN).score !== de.calcHealthScore(lowSaveData, { t1: "Rent" }, JUN).score, "calcHealthScore reflects catOverrides (re-categorization changes score)");
+  // Sprint Z2 #5: $0 income + investment account with $0 balance → finite score ≥ 8 (was 0/0 = NaN).
+  const noIncInv = { accounts: [{ type: "investment", balance: "0" }], bills: [], debts: [], incomes: [], goals: [], transactions: [], profile: {} };
+  const nanGuard = de.calcHealthScore(noIncInv, {}, JUN).score;
+  t.ok(Number.isFinite(nanGuard) && nanGuard >= 8, "calcHealthScore finite + ≥8 for $0 income + $0-balance investment (no NaN)");
   // BehaviorEngine + AutopilotEngine
   t.ok(de.BehaviorEngine.analyze(lowSaveData).spendingStability >= 0, "BehaviorEngine spendingStability >= 0");
   t.ok(!("insights" in de.BehaviorEngine.analyze(lowSaveData)), "BehaviorEngine insights array removed (finding #3 — it was dead output)");

@@ -839,8 +839,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
 
   // Sprint MATH-LOCK Group F: pure decision math lives in lib/decisionEngine.js (tested there); this
   // component calls the helpers, then builds the themed advice cards (colors/labels) below.
-  const today = todayDate || new Date().getDate();
-  const { daysToPayday } = computePaydayGap(today);
+  const { daysToPayday } = computePaydayGap(todayDate instanceof Date ? todayDate : new Date()); // Sprint Z2 #9: Date in
   const incomeAmt = (data.incomes||[]).reduce((s,i)=>s+toMonthly(i.amount,i.freq),0); // Bug 5: no fake income fallback
   const { daysLeft, safePerDay, safeToday } = computeDailySpendLimit(safe, daysToPayday);
   const topDebt = selectHighestRateDebt(debts);
@@ -5166,7 +5165,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
 
         {/* DECISIONS — Decision engine */}
         <div style={{...anim(120),background:C.isDark?"rgba(155,125,255,0.04)":"rgba(155,125,255,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.purple}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden"}}>
-          <DecisionEngine data={data} safe={safe} bal={bal} monthlyIncome={monthlyIncome} soonBills={soonBills} todayDate={today} setScreen={setScreen}/>
+          <DecisionEngine data={data} safe={safe} bal={bal} monthlyIncome={monthlyIncome} soonBills={soonBills} todayDate={new Date()} setScreen={setScreen}/>
         </div>
 
         {/* DECISIONS — Opportunity detector */}
