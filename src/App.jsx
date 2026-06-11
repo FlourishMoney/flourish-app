@@ -12496,9 +12496,18 @@ function ModalHost() {
   const [m, setM] = useState(null);
   const [val, setVal] = useState("");
   useEffect(() => {
-    _modalListener = (cfg) => { setVal(cfg.defaultValue || ""); setM(cfg); };
+    // Single global listener (exactly one ModalHost is mounted — the shell-level one, a sibling of
+    // content() so it also covers Settings). setM resolves any OUTGOING modal first so a rapid
+    // second request can't leave the first promise hanging (review #4).
+    _modalListener = (cfg) => { setVal(cfg.defaultValue || ""); setM(prev => { if (prev && prev._resolve) prev._resolve(prev.kind === "confirm" ? false : prev.kind === "prompt" ? null : undefined); return cfg; }); };
     return () => { _modalListener = null; };
   }, []);
+  useEffect(() => {
+    if (!m) return;
+    const onKey = (e) => { if (e.key === "Escape") { const r = m._resolve; setM(null); if (r) r(m.kind === "prompt" ? null : m.kind === "confirm" ? false : undefined); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [m]);
   if (!m) return null;
   const isConfirm = m.kind === "confirm", isPrompt = m.kind === "prompt";
   const finish = (result) => { const r = m._resolve; setM(null); if (r) r(result); };
@@ -13898,7 +13907,7 @@ export default function FlourishApp(){
 
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setShowBankConsent(false);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled}/>{showBankConsent&&<BankConsentModal onContinue={()=>{ try{localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString());}catch{} setShowBankConsent(false); doAddNewBank(); }} onCancel={()=>setShowBankConsent(false)}/>}<ModalHost/></>;
+    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setShowBankConsent(false);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled}/>{showBankConsent&&<BankConsentModal onContinue={()=>{ try{localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString());}catch{} setShowBankConsent(false); doAddNewBank(); }} onCancel={()=>setShowBankConsent(false)}/>}</>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
