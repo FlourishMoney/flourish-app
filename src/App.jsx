@@ -6127,8 +6127,8 @@ function BillManager({data, setAppData, onClose}){
   };
   // Tier 4: removing records the bill in userBillOverrides.removed so auto-detection never
   // re-adds it (keyed by the lowercased display name the user sees).
-  const removeBill = (i, name) => {
-    if(!window.confirm("Remove this bill? It won't be auto-detected again.")) return;
+  const removeBill = async (i, name) => {
+    if(!(await confirmModal({title:"Remove this bill?",message:"It won't be auto-detected again.",confirmLabel:"Remove",destructive:true}))) return;
     removeBillWithOverride(setAppData, i, name);
   };
   const updateBill = (i,field,val) => setAppData(prev=>{
@@ -9233,7 +9233,7 @@ function Family({data,household,setHousehold,setScreen}){
                   <span style={{color:C.muted,fontSize:12}}>${totalJars.toFixed(2)} total saved</span>
                 </div>
               </div>
-              <button onClick={()=>{if(window.confirm(`Remove ${activeKid.name}?`)){removeKid(activeKid.id);setActiveKidId(kids.find(k=>String(k.id)!==String(activeKid.id))?.id||null);}}}
+              <button onClick={async ()=>{if(await confirmModal({title:`Remove ${activeKid.name}?`,confirmLabel:"Remove",destructive:true})){removeKid(activeKid.id);setActiveKidId(kids.find(k=>String(k.id)!==String(activeKid.id))?.id||null);}}}
                 style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",color:C.muted,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Remove</button>
             </div>
 
@@ -9359,8 +9359,8 @@ function Family({data,household,setHousehold,setScreen}){
             </div>
             {/* Payday button */}
             {earned>0&&(
-              <button onClick={()=>{
-                  if(window.confirm(`Pay out $${earned.toFixed(2)} to ${activeKid.name}'s jars and reset chores?`)){
+              <button onClick={async ()=>{
+                  if(await confirmModal({title:"Pay out & reset chores?",message:`Pay out $${earned.toFixed(2)} to ${activeKid.name}'s jars and reset chores?`,confirmLabel:"Pay out"})){
                     paydayKid(activeKid.id);
                   }
                 }}
@@ -10187,7 +10187,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
 
   if(sectionKey==="bills") {
     const updateBillAmt = (i,val) => { if(setAppData) setAppData(prev=>({...prev,bills:(prev.bills||[]).map((b,x)=>x===i?{...b,amount:val}:b)})); };
-    const removeBillS = (i, name) => { if(window.confirm("Remove this bill? It won't be auto-detected again.")) removeBillWithOverride(setAppData, i, name); }; // Tier 5: shared remove (records override)
+    const removeBillS = async (i, name) => { if(await confirmModal({title:"Remove this bill?",message:"It won't be auto-detected again.",confirmLabel:"Remove",destructive:true})) removeBillWithOverride(setAppData, i, name); }; // Tier 5: shared remove (records override)
     const ord = n => { const v=parseInt(n); return [11,12,13].includes(v)?"th":["st","nd","rd"][v%10-1]||"th"; };
     return (
       <div style={s}>
@@ -10267,7 +10267,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     const url="https://flourishmoney.app";
     const text="I've been using Flourish to track my spending and it actually tells me exactly how much I can spend today. Worth checking out.";
     if(navigator.share){navigator.share({title:"Flourish Money",text,url}).catch(()=>{});}
-    else{navigator.clipboard?.writeText(url).then(()=>alert("Link copied! Share it with a friend 🌱")).catch(()=>window.open(url,"_blank"));}
+    else{navigator.clipboard?.writeText(url).then(()=>alertModal({message:"Link copied! Share it with a friend 🌱"})).catch(()=>window.open(url,"_blank"));}
   };
 
   // Data portability (PIPEDA / Quebec Law 25) + user-owned backup: download
@@ -10301,7 +10301,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
       a.href = url; a.download = `flourish-export-${stamp}.json`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch { alert("Could not export your data — please try again."); }
+    } catch { alertModal({message:"Could not export your data — please try again."}); }
   };
   return <div style={{color:C.cream}}>
     <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:20}}>
@@ -10432,9 +10432,9 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
               <div style={{color:C.cream,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.institution_name || "Your Bank"}</div>
             </div>
             <button onClick={async () => {
-              if (!window.confirm(`Disconnect ${b.institution_name || "this bank"}?`)) return;
+              if (!(await confirmModal({title:`Disconnect ${b.institution_name || "this bank"}?`,confirmLabel:"Disconnect",destructive:true}))) return;
               const jwt = await getJwt();
-              if (!jwt) { alert("Please sign in again."); return; }
+              if (!jwt) { alertModal({message:"Please sign in again."}); return; }
               try {
                 await callPlaid("delete_item", { item_id: b.item_id }, { jwt });
               } catch (e) {
@@ -10469,7 +10469,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
       <Btn label="Delete Account" onClick={onDeleteData||onReset} color={C.red} small/>
     </div>
     {onReset&&(
-      <button onClick={()=>{if(window.confirm("Reset app and go back to setup?"))onReset();}} style={{width:"100%",marginTop:8,background:"none",border:`1px solid ${C.border}`,borderRadius:14,padding:"11px",fontFamily:"inherit",fontWeight:600,color:C.muted,cursor:"pointer",fontSize:12}}>
+      <button onClick={()=>{confirmModal({title:"Reset app?",message:"This goes back to setup.",confirmLabel:"Reset",destructive:true}).then(ok=>{if(ok)onReset();});}} style={{width:"100%",marginTop:8,background:"none",border:`1px solid ${C.border}`,borderRadius:14,padding:"11px",fontFamily:"inherit",fontWeight:600,color:C.muted,cursor:"pointer",fontSize:12}}>
         🔄 Reset to onboarding
       </button>
     )}
@@ -10834,8 +10834,8 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
               {isOnline?"Live · Your real data":"Offline"}
             </div>
           </div>
-          <button onClick={()=>{
-            if(window.confirm("Clear chat history? This cannot be undone.")){
+          <button onClick={async ()=>{
+            if(await confirmModal({title:"Clear chat history?",message:"This cannot be undone.",confirmLabel:"Clear",destructive:true})){
               try{localStorage.removeItem(STORAGE_KEY);}catch{}
               setMessages([WELCOME]);
             }
@@ -12476,6 +12476,57 @@ function AuthScreen({ onAuth }) {
 
 
 // ─── BUDGET SCREEN ─────────────────────────────────────────────────────────────
+// ── Quality Sprint item 4: shared modal family (replaces window.confirm/alert/prompt) ─────────
+// Promise-based imperative API so call sites convert with minimal restructuring:
+//   if (!(await confirmModal({...}))) return;     const name = await promptModal({...});
+//   await alertModal({ message });
+// A single <ModalHost/> mounted in the app (and Settings) renders whatever is requested.
+let _modalListener = null;
+function _showModal(cfg) {
+  return new Promise(resolve => {
+    if (!_modalListener) { resolve(cfg.kind === "confirm" ? false : cfg.kind === "prompt" ? null : undefined); return; }
+    _modalListener({ ...cfg, _resolve: resolve });
+  });
+}
+function confirmModal(opts = {}) { return _showModal({ kind: "confirm", ...opts }); }
+function alertModal(opts = {})   { return _showModal({ kind: "alert", ...opts }); }
+function promptModal(opts = {})  { return _showModal({ kind: "prompt", ...opts }); }
+
+function ModalHost() {
+  const [m, setM] = useState(null);
+  const [val, setVal] = useState("");
+  useEffect(() => {
+    _modalListener = (cfg) => { setVal(cfg.defaultValue || ""); setM(cfg); };
+    return () => { _modalListener = null; };
+  }, []);
+  if (!m) return null;
+  const isConfirm = m.kind === "confirm", isPrompt = m.kind === "prompt";
+  const finish = (result) => { const r = m._resolve; setM(null); if (r) r(result); };
+  const accentBg = m.destructive ? C.red : C.green;
+  const accentFg = m.destructive ? "#fff" : (C.isDark ? "#041810" : "#FFFFFF");
+  return (
+    <div role="dialog" aria-modal="true" aria-label={m.title || "Dialog"}
+      style={{position:"fixed",inset:0,zIndex:10000,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}
+      onClick={(e)=>{ if(e.target===e.currentTarget && !m.destructive) finish(isConfirm?false:isPrompt?null:undefined); }}>
+      <div style={{maxWidth:400,width:"100%",background:C.bg,borderRadius:24,border:`1px solid ${C.border}`,padding:24}}>
+        {m.title && <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:20,color:C.cream,marginBottom:8}}>{m.title}</div>}
+        {m.message && <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:isPrompt?14:20,whiteSpace:"pre-line"}}>{m.message}</div>}
+        {isPrompt && <input autoFocus value={val} onChange={e=>setVal(e.target.value)} placeholder={m.placeholder||""}
+          onKeyDown={e=>{ if(e.key==="Enter") finish(val); if(e.key==="Escape") finish(null); }}
+          style={{width:"100%",padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.06)",border:`1.5px solid ${C.border}`,color:C.cream,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box",marginBottom:20}}/>}
+        <button onClick={()=>finish(isConfirm?true:isPrompt?val:undefined)}
+          style={{width:"100%",background:accentBg,color:accentFg,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"13px",borderRadius:99,border:"none",cursor:"pointer",marginBottom:(isConfirm||isPrompt)?10:0}}>
+          {m.confirmLabel || (isConfirm ? "Confirm" : "OK")}
+        </button>
+        {(isConfirm||isPrompt) && <button onClick={()=>finish(isConfirm?false:null)}
+          style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer"}}>
+          {m.cancelLabel || "Cancel"}
+        </button>}
+      </div>
+    </div>
+  );
+}
+
 // ─── MFA GATE (top-level AAL2 enforcement) ──────────────────────────────────────
 // Rendered whenever an authenticated session is below aal2. Enrolls TOTP if the user has no
 // factor, otherwise challenges the existing one. On success the session is elevated to aal2.
@@ -13749,7 +13800,7 @@ export default function FlourishApp(){
       const d = await callPlaid("create_link_token", payload, opts);
       setReconnectToken(d.link_token);
     } catch {
-      alert("Could not reconnect — please try again.");
+      alertModal({message:"Could not reconnect — please try again."});
     } finally {
       setReconnectLoading(false);
     }
@@ -13763,7 +13814,7 @@ export default function FlourishApp(){
     const jwt = await getJwt();
     callPlaid("create_link_token", { country, user_id: user?.id }, {jwt})
       .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
-      .catch(()=>{ setReconnectLoading(false); alert("Could not start bank connection — please try again."); });
+      .catch(()=>{ setReconnectLoading(false); alertModal({message:"Could not start bank connection — please try again."}); });
   };
   // Apple 5.1.1: gate a settings-initiated connect on the app-level bank consent, unless the user
   // already consented (timestamp synced via user_data) — show it once.
@@ -13788,14 +13839,14 @@ export default function FlourishApp(){
   };
 
   const deleteAllData = async ()=>{
-    if(!window.confirm("Delete your account? This permanently erases your account and all associated data from our servers. This cannot be undone.")) return;
+    if(!(await confirmModal({title:"Delete your account?",message:"This permanently erases your account and all associated data from our servers. This cannot be undone.",confirmLabel:"Delete account",destructive:true}))) return;
 
     // Tier 2.7: FAIL CLOSED. Only sign out + wipe local data once the backend confirms
     // the account was actually deleted. Any failure leaves the session + local data intact
     // and surfaces the error to the user (Apple 5.1.1(v) — delete must actually delete).
     const jwt = await getJwt();
     if (!jwt) {
-      alert("You need to be signed in to delete your account. Please sign in and try again.");
+      alertModal({message:"You need to be signed in to delete your account. Please sign in and try again."});
       return;
     }
 
@@ -13805,7 +13856,7 @@ export default function FlourishApp(){
       resp = await callPlaid("delete_account", {}, { jwt });
     } catch (err) {
       console.error("[deleteAllData] backend wipe failed:", err?.message);
-      alert("We couldn't delete your account right now: " + (err?.message || "network error") + ".\n\nYour account and data are unchanged. Please try again, or contact privacy@flourishmoney.app.");
+      alertModal({message:"We couldn't delete your account right now: " + (err?.message || "network error") + ".\n\nYour account and data are unchanged. Please try again, or contact privacy@flourishmoney.app."});
       return; // FAIL CLOSED — keep session + local data
     }
 
@@ -13816,7 +13867,7 @@ export default function FlourishApp(){
     const criticalErrors = errs.filter(e => e && e.step !== "plaid_remove");
     if (criticalErrors.length) {
       console.error("[deleteAllData] account NOT fully deleted:", criticalErrors);
-      alert("Your account could not be fully deleted, so nothing was changed. Please try again, or contact privacy@flourishmoney.app.");
+      alertModal({message:"Your account could not be fully deleted, so nothing was changed. Please try again, or contact privacy@flourishmoney.app."});
       return; // FAIL CLOSED
     }
     if (errs.length) {
@@ -13837,7 +13888,7 @@ export default function FlourishApp(){
   // so re-login restores the user's data — Option A. Fast-follow: stamp appData with user_id
   // + clear-on-mismatch at login to close shared-device exposure without data loss.
   const signOut = async ()=>{
-    if(!window.confirm("Sign out on this device? Your data stays saved for when you sign back in.")) return;
+    if(!(await confirmModal({title:"Sign out?",message:"Your data stays saved for when you sign back in.",confirmLabel:"Sign out"}))) return;
     try { await supabase.auth.signOut(); } catch {}
     try {
       Object.keys(localStorage).filter(k => k.startsWith("flourish_") && k !== STORAGE_KEY).forEach(k => localStorage.removeItem(k));
@@ -13847,7 +13898,7 @@ export default function FlourishApp(){
 
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setShowBankConsent(false);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled}/>{showBankConsent&&<BankConsentModal onContinue={()=>{ try{localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString());}catch{} setShowBankConsent(false); doAddNewBank(); }} onCancel={()=>setShowBankConsent(false)}/>}</>;
+    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setShowBankConsent(false);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled}/>{showBankConsent&&<BankConsentModal onContinue={()=>{ try{localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString());}catch{} setShowBankConsent(false); doAddNewBank(); }} onCancel={()=>setShowBankConsent(false)}/>}<ModalHost/></>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
@@ -13924,7 +13975,7 @@ input,button,select,textarea { font-family:inherit; }
   if(isDesktop) return (
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      {syncBanner}{migratedBanner}
+      {syncBanner}{migratedBanner}<ModalHost/>
 
       {/* ── DESKTOP SIDEBAR ─────────────────────────────────────────── */}
       <div style={{width:240,minHeight:"100dvh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:0,height:"100dvh",flexShrink:0}}>
@@ -14025,7 +14076,7 @@ input,button,select,textarea { font-family:inherit; }
   return(
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      {syncBanner}{migratedBanner}
+      {syncBanner}{migratedBanner}<ModalHost/>
       {/* Ambient mesh background */}
       <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
         <div style={{position:"absolute",top:-220,left:-180,width:640,height:640,borderRadius:"50%",background:C.isDark?"radial-gradient(circle,rgba(0,204,133,0.055) 0%,transparent 68%)":"radial-gradient(circle,rgba(0,147,95,0.07) 0%,transparent 68%)",animation:"breathe 8s ease-in-out infinite"}}/>
