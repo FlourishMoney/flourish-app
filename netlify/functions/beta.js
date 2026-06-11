@@ -74,6 +74,15 @@ exports.handler = async (event) => {
     action = body.action || "count";
   } catch {}
 
+  // Sprint Z #5: beta/promo-code validation moved server-side — codes no longer ship in the client
+  // bundle. Configurable via the BETA_CODES env var (comma-separated); falls back to the launch list.
+  if (action === "validate") {
+    const code = String(body.code || "").trim().toUpperCase();
+    const codes = (process.env.BETA_CODES || "BETA100,FLOURISH2026,FOUNDER,APPLE_REVIEW_2026")
+      .split(",").map(c => c.trim().toUpperCase()).filter(Boolean);
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: codes.includes(code) }) };
+  }
+
   // Phase E1: waitlist email capture (replaces public signup CTAs).
   if (action === "join_waitlist") {
     const { email, country, source, metadata } = body;

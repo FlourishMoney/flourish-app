@@ -22,7 +22,18 @@ const isCapacitorIOS = () => {
   catch { return false; }
 };
 
-const FLOURISH_BETA_CODES = ["BETA100","FLOURISH2026","FOUNDER","APPLE_REVIEW_2026"];
+// Sprint Z #5: beta/promo codes live server-side only (netlify/functions/beta.js, action "validate")
+// — they no longer ship in the client bundle. Submit a code to the endpoint for a yes/no verdict.
+async function validateBetaCode(code) {
+  const res = await fetch("/api/beta", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "validate", code: String(code || "").trim().toUpperCase() }),
+  });
+  if (!res.ok) throw new Error("beta validate failed");
+  const data = await res.json();
+  return !!data.ok;
+}
 
 // ── Supabase client ────────────────────────────────────────────────────────────
 const supabase = createClient(
@@ -4693,6 +4704,13 @@ function Notifications({onClose, data, onMarkAllRead}){
     try { localStorage.setItem("flourish_read_notifs", JSON.stringify([...ids])); } catch {}
     if(onMarkAllRead) onMarkAllRead();
   };
+  // Sprint Z #4: mark one notification read (was setNotifs — an undefined ref that crashed on click
+  // and on the ✕ button). Notifs are derived from readIds, so dismissing == marking read; persist it.
+  const markRead = (id) => setReadIds(prev => {
+    const next = new Set(prev); next.add(id);
+    try { localStorage.setItem("flourish_read_notifs", JSON.stringify([...next])); } catch {}
+    return next;
+  });
   return <div style={{color:C.cream}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
       <div>
@@ -4705,14 +4723,14 @@ function Notifications({onClose, data, onMarkAllRead}){
       </div>
     </div>
     {notifs.map(n=>(
-      <div key={n.id} onClick={()=>setNotifs(ns=>ns.map(x=>x.id===n.id?{...x,read:true}:x))}
+      <div key={n.id} onClick={()=>markRead(n.id)}
         style={{background:n.read?C.card:n.color+"12",borderRadius:20,padding:"15px 17px",border:`1px solid ${n.read?C.border:n.color+"44"}`,marginBottom:10,cursor:"pointer",position:"relative",transition:"all .2s"}}>
         <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
           <div style={{width:40,height:40,borderRadius:12,background:n.color+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon id={n.icon||"bell"} size={18} color={n.color} strokeWidth={1.5}/></div>
           <div style={{flex:1}}>
             <div style={{display:"flex",justifyContent:"space-between"}}>
               <div style={{color:n.read?C.cream:n.color,fontWeight:700,fontSize:14}}>{n.title}</div>
-              <button aria-label="Remove" onClick={e=>{e.stopPropagation();setNotifs(ns=>ns.filter(x=>x.id!==n.id));}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",padding:"0 0 0 8px",fontSize:14}}>✕</button>
+              <button aria-label="Dismiss" onClick={e=>{e.stopPropagation();markRead(n.id);}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",padding:"0 0 0 8px",fontSize:14}}>✕</button>
             </div>
             <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.55,marginTop:4}}>{n.body}</div>
             <div style={{color:C.muted,fontSize:11,marginTop:6}}>{n.time}</div>
@@ -11351,7 +11369,7 @@ function TermsOfService({onBack}){
       <div style={{...p,background:`${C.gold}11`,borderRadius:12,padding:"12px 14px",border:`1px solid ${C.gold}33`}}>⚠️ <strong style={{color:C.goldBright}}>Important:</strong> Flourish Money is an educational financial tool, not a licensed financial advisor. The AI Coach, insights, scores, and all content in the App are for informational purposes only and do not constitute financial, investment, tax, or legal advice. Always consult a qualified financial professional before making significant financial decisions.</div>
 
       <div style={h2}>4. Account Registration</div>
-      <div style={p}>Flourish Money requires a registered account. You sign up using an email and password, and verify your account using two-factor authentication (TOTP). Authentication is handled through Supabase. You may delete your account and all associated data at any time from Settings. You are responsible for maintaining the confidentiality of your account credentials and for all activity that occurs under your account. You must notify us immediately at hello@flourishmoney.app of any unauthorized use.</div>
+      <div style={p}>Flourish Money requires a registered account. You sign up using an email and password. Optional two-factor authentication may be added in future versions. Authentication is handled through Supabase. You may delete your account and all associated data at any time from Settings. You are responsible for maintaining the confidentiality of your account credentials and for all activity that occurs under your account. You must notify us immediately at hello@flourishmoney.app of any unauthorized use.</div>
 
       <div style={h2}>5. Bank Connectivity (Plaid)</div>
       <div style={p}>If you choose to connect your bank accounts, you authorize us to use Plaid Inc. to access your financial institution on your behalf. This access is read-only; we cannot initiate transactions. Your banking credentials are never shared with or stored by Flourish Money. By connecting your bank, you also agree to Plaid's End User Privacy Policy.</div>
@@ -11416,7 +11434,6 @@ function Paywall({onClose,onUpgrade,onPromoUpgrade,country}){
   const [selected,setSelected]=useState("annual");
   const [promo,setPromo]=useState("");
   const [promoError,setPromoError]=useState("");
-  const PROMO_CODES = FLOURISH_BETA_CODES;
   const isCA=country==="CA";
   const plans={
     annual:{label:"Annual",price:isCA?"$79.99/yr":"$59.99/yr",monthly:isCA?"$6.67/mo":"$5.00/mo",save:"Save 33%",badge:"Best Value"},
@@ -11484,9 +11501,12 @@ function Paywall({onClose,onUpgrade,onPromoUpgrade,country}){
             style={{flex:1,background:C.card,border:`1.5px solid ${promoError?C.red:C.border}`,borderRadius:12,padding:"11px 14px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none"}}
           />
           <button
-            onClick={()=>{
-              if(PROMO_CODES.includes(promo.trim())){onPromoUpgrade();}
-              else{setPromoError("Invalid code");}
+            onClick={async ()=>{
+              setPromoError("");
+              try {
+                if(await validateBetaCode(promo)){onPromoUpgrade();}
+                else{setPromoError("Invalid code");}
+              } catch { setPromoError("Couldn't verify code — try again."); }
             }}
             style={{background:C.purple+"22",border:`1.5px solid ${C.purple}44`,borderRadius:12,padding:"11px 16px",color:C.purpleBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",whiteSpace:"nowrap"}}
           >Apply</button>
@@ -12171,7 +12191,6 @@ function AuthScreen({ onAuth }) {
   const [waitlistCountry, setWaitlistCountry] = useState("CA");
   const [waitlistStatus, setWaitlistStatus] = useState(null); // null | "submitting" | "success" | "error" | "already"
 
-  const BETA_CODES = FLOURISH_BETA_CODES;
   const BETA_CAP = 30;
 
   // Resend-confirmation cooldown ticker (1s decrements while >0).
@@ -12192,10 +12211,12 @@ function AuthScreen({ onAuth }) {
 
   const handleSignup = async () => {
     setLoading(true); setError("");
-    // Validate beta code
-    if(!BETA_CODES.includes(betaCode.trim().toUpperCase())) {
-      setError("Invalid beta code. Request one at hello@flourishmoney.app");
-      setLoading(false); return;
+    // Sprint Z #5: validate the beta code server-side (codes aren't in the client bundle).
+    try {
+      const valid = await validateBetaCode(betaCode);
+      if (!valid) { setError("Invalid beta code. Request one at hello@flourishmoney.app"); setLoading(false); return; }
+    } catch {
+      setError("Couldn't verify your beta code — check your connection and try again."); setLoading(false); return;
     }
     // Check beta cap server-side
     try {
@@ -12281,9 +12302,8 @@ function AuthScreen({ onAuth }) {
       }
       setError(error.message); setLoading(false); return;
     }
-    // MFA is now enforced by the top-level AAL2 gate, so just hand off the session here. (The old
-    // in-AuthScreen MFA flow was unreachable — onAuthStateChange set `user` and unmounted this
-    // screen the moment the password was accepted, before any MFA screen could render.)
+    // v1 has no 2FA (the AAL2 gate was rolled back; MfaGate is kept unreferenced for v1.1), so a
+    // successful password sign-in hands the session straight to the app.
     onAuth(data.user);
     setLoading(false);
   };
