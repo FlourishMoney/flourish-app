@@ -3125,13 +3125,15 @@ const SafeSpendEngine = {
     const debtPayments = debts
       .reduce((s,d) => s + parseFloat(d.min||0), 0);
 
-    // Safety buffer: 10 days of average daily spend
+    // Safety buffer: 10 days of average daily spend (Sprint Q item 3: NaN-guarded)
     const avgDaily   = FinancialCalcEngine.avgDailySpend(data);
-    const safetyBuf  = Math.round(avgDaily * 10);
+    const safetyBuf  = Math.round((Number.isFinite(avgDaily) ? avgDaily : 0) * 10);
 
     // Savings allocation: 10% of monthly income
     const { monthlyIncome } = FinancialCalcEngine.cashFlow(data);
-    const savingsAlloc = Math.round(monthlyIncome * 0.10 / 30 * 10); // 10 days' worth
+    const mIncome    = Number.isFinite(monthlyIncome) ? monthlyIncome : 0;
+    const savingsAlloc = Math.round(mIncome * 0.10 / 30 * 10); // 10 days' worth
+    const noIncome   = !(mIncome > 0); // Sprint Q item 3: signal "set up income" instead of a misleading number
 
     const safeAmount = Math.max(0, balance - upcomingBills - debtPayments - safetyBuf - savingsAlloc);
     const riskLevel  = safeAmount <= 0 ? "critical" :
@@ -3140,18 +3142,11 @@ const SafeSpendEngine = {
 
     return {
       balance, upcomingBills, debtPayments, safetyBuf, savingsAlloc,
-      safeAmount, riskLevel,
+      safeAmount, riskLevel, noIncome,
       overdraft: upcomingBills > balance,
-      soonBills: bills.filter(b => {
-        const dueDay = parseInt(b.date);
-        if(!dueDay) return false;
-        if(parseFloat(b.amount||0) <= 0) return false; // Sprint 4 (item 6): skip $0 placeholders
-        if(isBillPaid(b)) return false;
-        const thisMonth = new Date(todayDate.getFullYear(), todayDate.getMonth(), dueDay);
-        const nextMonth = new Date(todayDate.getFullYear(), todayDate.getMonth()+1, dueDay);
-        return (thisMonth >= todayDate && thisMonth <= in10Days) ||
-               (nextMonth >= todayDate && nextMonth <= in10Days);
-      }),
+      // Sprint Q item 3: soonBills reuses the nextDueDate-anchored occurrencesInWindow (was a
+      // day-of-month check that mishandled weekly/biweekly and could miss/double across months).
+      soonBills: bills.filter(b => occurrencesInWindow(b) > 0),
     };
   }
 };
@@ -5332,7 +5327,13 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                 ? <span style={{color:heroColorBright+"55",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· live</span>
                 : <span style={{color:C.gold+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· estimated</span>}
             </div>
-            {hasCashAccount ? (
+            {hasCashAccount ? (_ss.noIncome ? (
+            /* Sprint Q item 3: no income → prompt to set it up, not a misleading safe-to-spend */
+            <div style={{marginBottom:18,maxWidth:320}}>
+              <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:heroColorBright,fontSize:19,fontWeight:800,lineHeight:1.3}}>Add your income to see what's safe to spend</div>
+              <div style={{color:heroColorBright+"99",fontSize:12,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Safe-to-spend plans around your bills using your income →</div>
+            </div>
+            ) : (
             <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.88,marginBottom:18,position:"relative",display:"inline-block"}}>
               <span style={{fontSize:24,color:heroColorBright+"77",verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
               <span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`,
@@ -5346,7 +5347,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                   backgroundSize:"200% 100%",animation:"shimmer 1.2s ease-in-out infinite"}}/>
               )}
             </div>
-            ) : (
+            )) : (
             /* Sprint 1: no fake number when no cash account is connected */
             <div style={{marginBottom:18,maxWidth:320}}>
               <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:heroColorBright,fontSize:19,fontWeight:800,lineHeight:1.3}}>Connect an account to see your safe-to-spend</div>
