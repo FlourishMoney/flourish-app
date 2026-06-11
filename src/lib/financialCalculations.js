@@ -751,8 +751,11 @@ export function billNextDue(bill, today = new Date()) {
   const anchor = _isoToDate(bill.nextDueDate);
   const stepM = freq === "quarterly" ? 3 : (freq === "annual" || freq === "annually") ? 12 : 1;
   if (anchor) {
-    let a = anchor, guard = 0;
-    while (a < t && guard++ < 600) a = _domDate(a.getFullYear(), a.getMonth() + stepM, anchor.getDate());
+    // O(1) jump to the next occurrence on/after today — immune to very stale (imported) anchors.
+    const monthsBehind = (t.getFullYear() - anchor.getFullYear()) * 12 + (t.getMonth() - anchor.getMonth());
+    const steps = Math.max(0, Math.ceil(monthsBehind / stepM));
+    let a = _domDate(anchor.getFullYear(), anchor.getMonth() + steps * stepM, anchor.getDate());
+    if (a < t) a = _domDate(anchor.getFullYear(), anchor.getMonth() + (steps + 1) * stepM, anchor.getDate());
     return _atNoon(a);
   }
   const dueDay = parseInt(bill.date);
@@ -781,8 +784,11 @@ export function billOccursOnDate(bill, d, today = new Date()) {
     const anchor = _isoToDate(bill.nextDueDate);
     const d1 = anchor ? anchor.getDate() : (parseInt(bill.date) || 1);
     const d2 = ((d1 + 14) % 28) + 1;
+    // clamp to month length (parity with billNextDue's _domDate) so a day 29–31 anchor still
+    // matches in short months — otherwise the occurrence would be silently dropped.
+    const dim = _daysInMonth(target.getFullYear(), target.getMonth());
     const day = target.getDate();
-    return day === d1 || day === d2;
+    return day === Math.min(d1, dim) || day === Math.min(d2, dim);
   }
   // monthly / quarterly / annual — match day-of-month, and (quarterly/annual) the right month
   const aDay = _isoToDate(bill.nextDueDate);
