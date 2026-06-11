@@ -50,6 +50,10 @@ async function getUserFromRequest(event) {
   }
 }
 
+// Sprint Q (v1 policy): plan limits are CODE-READY but OFF for v1 (free, no IAP). Flip via the
+// Netlify env var ENFORCE_PLAN_LIMITS=true when v1.1 IAP ships — no code deploy needed.
+const ENFORCE_PLAN_LIMITS = process.env.ENFORCE_PLAN_LIMITS === "true";
+
 // Sprint Q item 11: server-authoritative plan/entitlement from the profiles table (never trust a
 // client-sent plan). Returns { plan, founder_flag, unlimited }. A trial counts as unlimited only
 // while unexpired (14 days from trial_started_at). Defaults to free on any error — auth still gates
@@ -89,5 +93,6 @@ module.exports = {
   getAdminClient,
   getUserFromRequest,
   getUserPlan,
+  ENFORCE_PLAN_LIMITS,
   unauthorized,
 };

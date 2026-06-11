@@ -13,7 +13,7 @@
 
 "use strict";
 
-const { getUserFromRequest, getAdminClient, getUserPlan } = require("./_lib/auth");
+const { getUserFromRequest, getAdminClient, getUserPlan, ENFORCE_PLAN_LIMITS } = require("./_lib/auth");
 
 const PLAID_BASE = {
   sandbox:     "https://sandbox.plaid.com",
@@ -166,7 +166,7 @@ exports.handler = async (event) => {
       // server-authoritatively from the profiles table (never client state). FLAG: chosen freemium
       // policy — adjust the limit or remove this block if free should allow multiple banks.
       const { unlimited } = await getUserPlan(user_id);
-      if (!unlimited) {
+      if (ENFORCE_PLAN_LIMITS && !unlimited) {
         const adminChk = getAdminClient();
         const { count } = await adminChk.from("plaid_items").select("item_id", { count: "exact", head: true }).eq("user_id", user_id).eq("status", "active");
         if ((count || 0) >= 1) {
@@ -473,8 +473,9 @@ exports.handler = async (event) => {
       // Sprint Q item 11: enforce the free-tier one-bank cap here too (migrate_items is a SECOND
       // write path into plaid_items). Re-migrating an already-active item is always allowed.
       const { unlimited } = await getUserPlan(user_id);
+      const capBanks = ENFORCE_PLAN_LIMITS && !unlimited; // v1: flag off → no cap
       let existingIds = new Set(), activeCount = 0;
-      if (!unlimited) {
+      if (capBanks) {
         const { data: existing } = await admin.from("plaid_items").select("item_id").eq("user_id", user_id).eq("status", "active");
         existingIds = new Set((existing || []).map(r => r.item_id));
         activeCount = existingIds.size;
@@ -494,7 +495,7 @@ exports.handler = async (event) => {
             continue;
           }
           // Free tier: skip NEW banks beyond the one-bank cap (re-migrating an existing item is fine).
-          if (!unlimited && !existingIds.has(item_id) && activeCount >= 1) {
+          if (capBanks && !existingIds.has(item_id) && activeCount >= 1) {
             failures.push({ error: "plan_limit", message: "Free plan supports one bank — upgrade to Plus to add more." });
             continue;
           }

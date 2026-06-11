@@ -19,7 +19,7 @@
 // embeds inside a server-controlled prompt + TRUST_RULES.
 // -----------------------------------------------------------------------------
 
-const { getUserFromRequest, getAdminClient, getUserPlan } = require("./_lib/auth");
+const { getUserFromRequest, getAdminClient, getUserPlan, ENFORCE_PLAN_LIMITS } = require("./_lib/auth");
 
 const TRUST_RULES = `
 STRICT NUMBER POLICY (non-negotiable):
@@ -117,7 +117,7 @@ exports.handler = async (event) => {
           // Sprint Q item 11: plan-aware limit from the profiles table (server-authoritative, NOT
           // client-sent). Free → FREE_CHAT_DAILY/day; trial/plus/pro/founder → the abuse ceiling.
           const { unlimited } = await getUserPlan(user_id);
-          const ceiling = unlimited ? CHAT_DAILY_CEILING : FREE_CHAT_DAILY;
+          const ceiling = (!ENFORCE_PLAN_LIMITS || unlimited) ? CHAT_DAILY_CEILING : FREE_CHAT_DAILY; // v1: flag off → everyone gets the abuse ceiling, not the free 1/day
           const admin = getAdminClient();
           const { data: usedCount, error: rlError } = await admin.rpc("increment_coach_usage", { p_user: user_id });
           if (rlError) {
