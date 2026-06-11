@@ -3,9 +3,9 @@
 // Flourish — behavior / autopilot / health-score engines (Sprint MATH-LOCK Group F).
 //
 // PURE: catOverrides + currentDate injected where the underlying cashFlow math depends
-// on them (defaults preserve behavior; tests inject frozen values). BehaviorEngine's
-// `insights` carry a theme-agnostic `colorKey` (was `color: C.<x>`) — the array is
-// currently unconsumed, so this is behavior-identical and future-proof.
+// on them (defaults preserve behavior; tests inject frozen values). BehaviorEngine.analyze
+// returns only the consumed metrics (spikeRatio / subTotal / diningTotal / spendingStability);
+// its old themed `insights` array was dead output and was removed (MATH-LOCK finding #3).
 // -----------------------------------------------------------------------------
 
 import { FinancialCalcEngine, isInvestmentAccount } from "./financialCalculations.js";
@@ -67,9 +67,9 @@ export function detectLowCashWarning(safe, monthlyIncome) {
 export const BehaviorEngine = {
   analyze(data) {
     const txns   = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
-    // Only monthlyIncome is read — override- and date-independent, so {} is exact (verified Group B).
-    const income = FinancialCalcEngine.cashFlow(data, {}).monthlyIncome;
-    const insights = [];
+    // MATH-LOCK finding #3: the `insights` array (themed cards) was never consumed anywhere — removed,
+    // along with the cashFlow `income` read that only fed those cards. The consumed values
+    // (spikeRatio / subTotal / diningTotal / spendingStability) are unchanged.
 
     // ① Payday spending spike: compare spend in days 1-5 vs rest of month
     const earlyMonthSpend = txns.filter(t => {
@@ -81,38 +81,14 @@ export const BehaviorEngine = {
     const restDailyAvg = (restSpend / 25) || 1;
     const earlyDailyAvg = (earlyMonthSpend / 5) || 0;
     const spikeRatio = earlyDailyAvg / restDailyAvg;
-    if (spikeRatio > 1.35) {
-      insights.push({
-        type:"pattern", icon:"📈", priority:"high", colorKey:"orange",
-        title:"Payday spending spike detected",
-        body:`Your daily spend is ${Math.round((spikeRatio-1)*100)}% higher in the first 5 days of the month. This pattern is responsible for most cash shortfalls later.`,
-        saving: `$${Math.round((earlyDailyAvg - restDailyAvg) * 5 * 0.6)}/mo if corrected`
-      });
-    }
 
-    // ② Subscription creep: count + total subscription transactions
+    // ② Subscription creep total
     const subTxns  = txns.filter(t => t.cat === "Subscriptions");
     const subTotal = subTxns.reduce((s,t) => s + Math.abs(t.amount), 0);
-    if (subTxns.length >= 3 && subTotal > 35) {
-      insights.push({
-        type:"warning", icon:"📱", priority:"medium", colorKey:"teal",
-        title:"Subscription creep detected",
-        body:`${subTxns.length} recurring subscriptions totalling $${(subTotal||0).toFixed(0)}/mo. That's ${Math.round(subTotal/income*100)}% of your income.`,
-        saving: `$${Math.round(subTotal * 0.35)}/mo potential saving`
-      });
-    }
 
-    // ③ Dining / delivery inflation
+    // ③ Dining / delivery total
     const diningTxns  = txns.filter(t => ["Food","Coffee","Dining"].includes(t.cat));
     const diningTotal = diningTxns.reduce((s,t) => s + Math.abs(t.amount), 0);
-    if (diningTotal > income * 0.18) {
-      insights.push({
-        type:"pattern", icon:"🍔", priority:"medium", colorKey:"gold",
-        title:"Food spending above benchmark",
-        body:`Food & dining is $${diningTotal.toFixed(0)}/mo — ${Math.round(diningTotal/income*100)}% of income. Benchmark is under 15%.`,
-        saving: `$${Math.round(diningTotal * 0.25)}/mo by cooking 3x more/week`
-      });
-    }
 
     // ④ Spending stability (variance) — low variance = better score
     const daily = {};
@@ -125,7 +101,7 @@ export const BehaviorEngine = {
     const variance = vals.reduce((s,v)=>s+Math.pow(v-mean,2),0) / (vals.length||1);
     const cv = Math.sqrt(variance) / (mean||1); // coefficient of variation
 
-    return { insights, spikeRatio, subTotal, diningTotal, spendingStability: Math.max(0, 1 - cv) };
+    return { spikeRatio, subTotal, diningTotal, spendingStability: Math.max(0, 1 - cv) };
   }
 };
 

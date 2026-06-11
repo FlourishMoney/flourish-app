@@ -169,7 +169,11 @@ const D = (iso) => new Date(iso + "T12:00:00");
   ]);
   t.eq(bills.length, 1, "detectRecurringBills collapses 3 monthly into 1");
   t.eq(bills[0].freq, "monthly", "detectRecurringBills classifies monthly cadence");
-  t.eq(bills[0].name, "Netflix", "detectRecurringBills preserves original case (Group C finding)");
+  t.eq(bills[0].name, "Netflix", "detectRecurringBills Title-Cases the name (Netflix → Netflix)");
+  // MATH-LOCK finding #1: Title Case bill names, preserving short ALL-CAPS acronyms (TD/RBC/BC/…).
+  t.eq(["NETFLIX SUBSCRIPTION", "TD VISA", "BC HYDRO", "goodlife gym"].map(pn.titleCaseBillName),
+       ["Netflix Subscription", "TD Visa", "BC Hydro", "Goodlife Gym"],
+       "Title Case bill names, preserving short acronyms (finding #1)");
   t.eq(pn.detectRecurringBills([]).length, 0, "detectRecurringBills empty → []");
   // detectIncomeFromTxns
   const inc = pn.detectIncomeFromTxns([{ name: "PAYROLL", amount: -2000, cat: "INCOME", date: "2026-05-15" }, { name: "PAYROLL", amount: -2000, cat: "INCOME", date: "2026-06-15" }]);
@@ -227,7 +231,7 @@ const D = (iso) => new Date(iso + "T12:00:00");
   t.ok(de.calcHealthScore(lowSaveData, {}, JUN).score !== de.calcHealthScore(lowSaveData, { t1: "Rent" }, JUN).score, "calcHealthScore reflects catOverrides (re-categorization changes score)");
   // BehaviorEngine + AutopilotEngine
   t.ok(de.BehaviorEngine.analyze(lowSaveData).spendingStability >= 0, "BehaviorEngine spendingStability >= 0");
-  t.ok(de.BehaviorEngine.analyze(lowSaveData).insights.every(i => !("color" in i)), "BehaviorEngine insights use colorKey, never resolved color");
+  t.ok(!("insights" in de.BehaviorEngine.analyze(lowSaveData)), "BehaviorEngine insights array removed (finding #3 — it was dead output)");
   const plan = de.AutopilotEngine.generate(lowSaveData, {}, JUN);
   t.ok(typeof plan.dailySpendLimit === "number" && ["low", "medium", "high"].includes(plan.mode), "AutopilotEngine produces a valid plan");
 

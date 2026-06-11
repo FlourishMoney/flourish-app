@@ -115,6 +115,18 @@ export function _levenshtein(a, b) {
   return prev[n];
 }
 
+// Title-case a bank merchant name for display (MATH-LOCK finding #1 — restores the long-corrupted
+// `/\b\w/g` intent). Lowercases then capitalizes each word, BUT preserves short all-caps tokens
+// (≤3 chars: TD, RBC, BMO, BC, PC, GST…) as acronyms — Canadian bank/utility names are full of them.
+// "NETFLIX SUBSCRIPTION" → "Netflix Subscription"; "TD VISA" → "TD Visa"; "BC HYDRO" → "BC Hydro".
+export function titleCaseBillName(s) {
+  return String(s || "").replace(/\S+/g, w =>
+    (w.length <= 3 && /^[A-Z]+$/.test(w))                       // short all-caps token → keep as acronym
+      ? w
+      : w.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())  // else Title Case
+  );
+}
+
 // Scan transactions for recurring bills (same merchant, regular cadence). Returns
 // [{ name, amount, date, type, freq, nextDueDate, auto, avgNote }]. opts = { overrides, debts }.
 export function detectRecurringBills(txns, opts = {}) {
@@ -220,15 +232,12 @@ export function detectRecurringBills(txns, opts = {}) {
       days.filter(d=>d===b).length - days.filter(d=>d===a).length
     )[0];
 
-    // Clean up display name — strip trailing account numbers, preserve original case.
-    // MATH-LOCK Group C finding: the original App.jsx code had a corrupted case-normalize regex —
-    // a literal backspace byte (0x08) instead of `\b`, i.e. `/<BS>\w/g` — which matches nothing in a
-    // merchant name, so it was a silent NO-OP and bill names shipped in their ORIGINAL case. Behavior
-    // preserved here (no-op dropped). The author clearly intended Title Case (`/\b\w/g`); applying
-    // that is a deliberate behavior change, flagged for a separate decision, NOT made during extraction.
-    const displayName = txList[0].name
-      .replace(/\s+\d{4,}.*$/, "")   // strip trailing account numbers
-      .trim();
+    // Clean up display name — strip trailing account numbers, then Title Case (acronym-preserving).
+    // MATH-LOCK finding #1: restores the case-normalization the original code intended but never ran
+    // (a corrupted `/<BS>\w/g` was a silent no-op for years, so bank names shipped raw, e.g. all-caps).
+    const displayName = titleCaseBillName(
+      txList[0].name.replace(/\s+\d{4,}.*$/, "").trim()  // strip trailing account numbers
+    );
 
     // Tier 4: overrides are keyed by the cleaned display name (what the user removes/types).
     const _dnl = displayName.toLowerCase().trim();
