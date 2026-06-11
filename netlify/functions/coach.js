@@ -19,7 +19,7 @@
 // embeds inside a server-controlled prompt + TRUST_RULES.
 // -----------------------------------------------------------------------------
 
-const { getUserFromRequest, getAdminClient } = require("./_lib/auth");
+const { getUserFromRequest, getAdminClient, getUserPlan } = require("./_lib/auth");
 
 const TRUST_RULES = `
 STRICT NUMBER POLICY (non-negotiable):
@@ -38,6 +38,11 @@ DATA SAFETY RULES (non-negotiable):
 // — this is a cost/DoS backstop, not the product limit. Plan-aware free=1/day
 // will layer on once a server plan source (profiles table) exists.
 const CHAT_DAILY_CEILING = 50;
+
+// Sprint Q item 11: plan-aware free-tier daily Coach limit (server-authoritative via the profiles
+// table). Matches the product's free tier; trial/plus/pro/founder get the abuse ceiling above.
+// FLAG: bump this if 1/day proves too tight for free users.
+const FREE_CHAT_DAILY = 1;
 
 // Reject absurdly large bodies (cheap DoS guard; real coach messages are a few KB).
 const MAX_BODY_BYTES = 100000;
@@ -109,15 +114,21 @@ exports.handler = async (event) => {
       // Atomic increment via RPC; fail OPEN on any DB error (auth is the real gate).
       if (type === "chat") {
         try {
+          // Sprint Q item 11: plan-aware limit from the profiles table (server-authoritative, NOT
+          // client-sent). Free → FREE_CHAT_DAILY/day; trial/plus/pro/founder → the abuse ceiling.
+          const { unlimited } = await getUserPlan(user_id);
+          const ceiling = unlimited ? CHAT_DAILY_CEILING : FREE_CHAT_DAILY;
           const admin = getAdminClient();
           const { data: usedCount, error: rlError } = await admin.rpc("increment_coach_usage", { p_user: user_id });
           if (rlError) {
             console.error("[coach] usage RPC error (failing open):", rlError.message);
-          } else if (typeof usedCount === "number" && usedCount > CHAT_DAILY_CEILING) {
+          } else if (typeof usedCount === "number" && usedCount > ceiling) {
             return {
               statusCode: 429,
               headers: corsHeaders,
-              body: JSON.stringify({ error: "rate_limited", message: "You've hit today's Coach message limit. It resets tomorrow." }),
+              body: JSON.stringify({ error: "rate_limited", message: unlimited
+                ? "You've hit today's Coach message limit. It resets tomorrow."
+                : "You've used today's free Coach message. Upgrade to Plus for unlimited — or come back tomorrow." }),
             };
           }
         } catch (e) {

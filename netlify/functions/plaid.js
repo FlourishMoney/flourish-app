@@ -13,7 +13,7 @@
 
 "use strict";
 
-const { getUserFromRequest, getAdminClient } = require("./_lib/auth");
+const { getUserFromRequest, getAdminClient, getUserPlan } = require("./_lib/auth");
 
 const PLAID_BASE = {
   sandbox:     "https://sandbox.plaid.com",
@@ -161,6 +161,18 @@ exports.handler = async (event) => {
       if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
       const { public_token, institution_name = "Your Bank", institution_id = null } = body;
       if (!public_token) return e400("public_token required");
+
+      // Sprint Q item 11: free tier connects ONE bank; multi-bank is a paid feature. Plan is read
+      // server-authoritatively from the profiles table (never client state). FLAG: chosen freemium
+      // policy — adjust the limit or remove this block if free should allow multiple banks.
+      const { unlimited } = await getUserPlan(user_id);
+      if (!unlimited) {
+        const adminChk = getAdminClient();
+        const { count } = await adminChk.from("plaid_items").select("item_id", { count: "exact", head: true }).eq("user_id", user_id).eq("status", "active");
+        if ((count || 0) >= 1) {
+          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message: "Connecting more than one bank is a Plus feature — upgrade to add unlimited banks." }) };
+        }
+      }
 
       const data = await plaid("/item/public_token/exchange", { public_token });
       const access_token = data.access_token;
