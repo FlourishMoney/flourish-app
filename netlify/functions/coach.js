@@ -132,8 +132,10 @@ exports.handler = async (event) => {
       if (!payload.messages || !Array.isArray(payload.messages)) {
         return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "payload.messages must be an array" }) };
       }
-      // Abuse control — count only real coach chat messages, after validation.
-      if (type === "chat") {
+      // Abuse control — count real coach chat AND plan messages (both make the same upstream call).
+      // Sprint Z2 #4: "plan" shares this branch with "chat"; the old `type === "chat"` guard let any
+      // authenticated caller send {type:"plan"} for an identical, fully UNMETERED Anthropic request.
+      if (type === "chat" || type === "plan") {
         // Sprint Z #8: per-IP backstop FIRST, independent of Supabase. Counts every request, so it
         // still limits abuse even if the per-user counter/DB is down.
         const ip = clientIp(event);
@@ -220,7 +222,7 @@ exports.handler = async (event) => {
         max_tokens: 1200,
         system:
           "You are Flourish, a warm financial coach. Analyze real transaction data. Use exact numbers from the data. Respond ONLY with valid JSON." +
-          (payload.context ? `\n\nDATA (authoritative — use these exact figures):\n${payload.context}` : "") +
+          (payload.context ? `\n\n<UNTRUSTED_USER_DATA>\n${payload.context}\n</UNTRUSTED_USER_DATA>` : "") +
           TRUST_RULES,
         messages: [{ role: "user", content: payload.prompt || "Analyze this user's financial data." }],
       };

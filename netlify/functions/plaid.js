@@ -15,6 +15,10 @@
 
 const { getUserFromRequest, getAdminClient, getUserPlan, ENFORCE_PLAN_LIMITS } = require("./_lib/auth");
 
+// Sprint Z2 #15: reject absurdly large bodies (cheap DoS guard). Larger than coach.js's 100KB because
+// enrich_transactions / migrate_items legitimately carry up to ~500 transactions or several item tokens.
+const MAX_BODY_BYTES = 200000;
+
 const PLAID_BASE = {
   sandbox:     "https://sandbox.plaid.com",
   development: "https://development.plaid.com",
@@ -85,6 +89,11 @@ exports.handler = async (event) => {
   }
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: "Method not allowed" }) };
+  }
+
+  // Sprint Z2 #15: size guard BEFORE JSON.parse (mirrors coach.js). event.body is a string here.
+  if ((event.body || "").length > MAX_BODY_BYTES) {
+    return { statusCode: 413, headers: CORS, body: JSON.stringify({ error: "Request too large" }) };
   }
 
   let body;
