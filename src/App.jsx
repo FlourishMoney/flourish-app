@@ -476,22 +476,29 @@ async function callPlaid(action, params={}, options={}) {
   if (options.jwt) {
     headers["Authorization"] = `Bearer ${options.jwt}`;
   }
-  const res = await fetch("/api/plaid", {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ action, ...params }),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    const err = new Error(data.error || "Plaid error");
-    err.needs_reconnect = data.needs_reconnect || false;
-    // Signal the top-level app to show the reconnect banner
-    if(data.needs_reconnect && typeof window.__flourishReconnect === "function") {
-      window.__flourishReconnect();
+  const body = JSON.stringify({ action, ...params });
+  // Quality Sprint item 6: retry transient failures (network drops + 502/503/504) with exponential
+  // backoff. Client errors (4xx) and needs_reconnect surface immediately — retrying them is futile.
+  const maxAttempts = options.retries ?? 3;
+  let lastErr;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 400 * Math.pow(2, attempt - 1))); // 400ms, 800ms
+    let res;
+    try {
+      res = await fetch("/api/plaid", { method: "POST", headers, body });
+    } catch (netErr) { lastErr = netErr; continue; } // network drop / offline → retry
+    let data = {};
+    try { data = await res.json(); } catch {}
+    if (!res.ok) {
+      if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < maxAttempts - 1) { lastErr = new Error(data.error || "server busy"); continue; }
+      const err = new Error(data.error || "Plaid error");
+      err.needs_reconnect = data.needs_reconnect || false;
+      if (data.needs_reconnect && typeof window.__flourishReconnect === "function") window.__flourishReconnect();
+      throw err;
     }
-    throw err;
+    return data;
   }
-  return data;
+  throw (lastErr || new Error("Network error — please check your connection."));
 }
 
 // Phase D1: persist Plaid Item to Supabase via authenticated server call.
@@ -4025,15 +4032,24 @@ function Onboarding({onComplete,onViewLegal,userId}){
 
   const fetchLinkToken = useCallback(async ()=>{
     if(linkToken) return; // already have one
+    // Quality Sprint item 6: offline → recoverable message + auto-retry when back online (effect below).
+    if(typeof navigator!=="undefined" && navigator.onLine===false){ setBankError("You're offline — reconnect to the internet, then tap Retry."); setLinkTokenLoading(false); return; }
     setLinkTokenLoading(true);
     setBankError(null);
     const jwt = await getJwt();
     callPlaid("create_link_token",{country:p.country, user_id: userId || ("guest-" + Math.random().toString(36).slice(2))}, {jwt})
       .then(d=>{ setLinkToken(d.link_token); setLinkTokenLoading(false); })
-      .catch(()=>{ setBankError("Could not connect to your bank — please check your connection and try again."); setLinkTokenLoading(false); });
+      .catch(()=>{ setBankError((typeof navigator!=="undefined" && !navigator.onLine) ? "You're offline — reconnect, then tap Retry." : "Couldn't reach your bank — tap Retry."); setLinkTokenLoading(false); });
   },[linkToken, p.country]); // eslint-disable-line
 
   useEffect(()=>{ if(step===2) fetchLinkToken(); },[step]); // eslint-disable-line
+  // Quality Sprint item 6: when the network returns, auto-retry the link-token fetch if we're on the
+  // bank step without one yet (callPlaid also retries transient drops with backoff).
+  useEffect(()=>{
+    const onOnline = ()=>{ if(step===2 && !linkToken) fetchLinkToken(); };
+    window.addEventListener("online", onOnline);
+    return ()=>window.removeEventListener("online", onOnline);
+  },[step, linkToken, fetchLinkToken]); // eslint-disable-line
 
   // Called by Plaid Link after user authenticates
   const onPlaidSuccess=useCallback(async(publicToken,metadata)=>{
