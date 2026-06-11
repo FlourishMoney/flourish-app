@@ -3810,7 +3810,10 @@ function NetWorthSparkline({history, color}){
 
 // ─── BACKGROUND REFRESH (Plus only, 30-min rate limit) ───────────────────────
 async function backgroundRefresh(isPremium, setAppData, fullResync = false) {
-  if(!isPremium) return;
+  // Sprint Z2 #16: v1 is all-free (ENFORCE_PLAN_LIMITS=false server-side), so auto-refresh is NOT
+  // plan-gated — free web users get it too (iOS already did via isPremium=true). The 30-min throttle
+  // below still prevents hammering Plaid. Re-introduce a plan gate here when v1.1 IAP ships. (isPremium
+  // param retained for call-site stability and the eventual v1.1 re-gate.)
   const lastFetch = parseInt(localStorage.getItem("flourish_last_refresh")||"0");
   const THIRTY_MIN = 30 * 60 * 1000;
   if(Date.now() - lastFetch < THIRTY_MIN) return;
@@ -10718,7 +10721,7 @@ function BankConsentModal({ onContinue, onCancel }){
         </div>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"16px 18px",marginBottom:18}}>
           <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-            Flourish connects to your bank via <strong style={{color:C.cream}}>Plaid (read-only — we can never move money)</strong>. We see transactions, balances, and account names. Data is stored in Supabase, <strong style={{color:C.cream}}>encrypted in transit and at rest</strong>. You can disconnect anytime in Settings. Deleting your account permanently removes all bank data <strong style={{color:C.cream}}>within 30 days</strong>.
+            Flourish connects to your bank via <strong style={{color:C.cream}}>Plaid (read-only — we can never move money)</strong>. We access: <strong style={{color:C.cream}}>account details</strong> (names &amp; types), <strong style={{color:C.cream}}>balances</strong>, <strong style={{color:C.cream}}>transactions</strong> (posted and pending), <strong style={{color:C.cream}}>liabilities</strong> (credit cards, loans, mortgages, student loans), and <strong style={{color:C.cream}}>investment holdings</strong> where available. <strong style={{color:C.cream}}>Plaid never receives your bank login credentials and cannot move money.</strong> Data is stored in Supabase, <strong style={{color:C.cream}}>encrypted in transit and at rest</strong>. You can disconnect anytime in Settings. Deleting your account permanently removes all bank data <strong style={{color:C.cream}}>within 30 days</strong>.
           </div>
         </div>
         <button onClick={onContinue} style={{width:"100%",background:`linear-gradient(135deg,${C.teal},${C.tealBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"none",cursor:"pointer",marginBottom:10}}>Continue to Plaid</button>
@@ -11191,7 +11194,7 @@ function ResetPasswordScreen({ onDone, onCancel }) {
   );
 }
 
-function AuthScreen({ onAuth }) {
+function AuthScreen({ onAuth, onTryDemo }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -11450,6 +11453,12 @@ function AuthScreen({ onAuth }) {
             <button onClick={() => goWaitlist("hero")} style={{ width: "100%", maxWidth: 340, padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", marginBottom: 12, boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
               Get Early Access
             </button>
+            {/* Sprint Z2 #2: demo entry on the auth screen so App reviewers (no OTP) can explore without an account */}
+            {onTryDemo && (
+              <button onClick={onTryDemo} style={{ width: "100%", maxWidth: 340, padding: "15px", borderRadius: 16, border: "1px solid rgba(0,214,143,0.35)", background: "rgba(0,214,143,0.08)", color: "#00D68F", fontWeight: 800, fontSize: 15, cursor: "pointer", marginBottom: 12, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                👀 Try the demo — no account needed
+              </button>
+            )}
             <div style={{ color: "#6B7A6E", fontSize: 12, marginBottom: 52, maxWidth: 340, textAlign: "center", lineHeight: 1.6 }}>Drop your email — we'll let you know the moment Flourish hits the App Store.</div>
 
             {/* Trust row */}
@@ -13031,7 +13040,7 @@ export default function FlourishApp(){
       const lastFetch = parseInt(localStorage.getItem("flourish_last_refresh")||"0");
       const THIRTY_MIN = 30 * 60 * 1000;
       // Only show shimmer if we're actually going to refresh
-      const willRefresh = appData?.bankConnected && isPremium && (Date.now()-lastFetch >= THIRTY_MIN);
+      const willRefresh = appData?.bankConnected && (Date.now()-lastFetch >= THIRTY_MIN); // Sprint Z2 #16: no plan gate in v1
       if(willRefresh) setIsRefreshing(true);
       await backgroundRefresh(isPremium, setAppData, (appData?.transactions?.length||0)===0 || isFullSyncStale());
       setIsRefreshing(false);
@@ -13047,7 +13056,9 @@ export default function FlourishApp(){
   // ── Auth gate ───────────────────────────────────────────────────
   if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
   if(recoveryMode)return <ResetPasswordScreen onDone={()=>setRecoveryMode(false)} onCancel={()=>setRecoveryMode(false)}/>;
-  if(!user)return <AuthScreen onAuth={u=>setUser(u)}/>;
+  // Sprint Z2 #2: demo bypasses the auth gate (user stays null — no fake user, no Supabase fetch).
+  // onTryDemo seeds demo state + flips the AI-disclosure & onboarding flags; exitDemo (demoBanner) clears it.
+  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={()=>{ acceptAIDisclosure(); const dd=buildDemoState(); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); }}/>;
 
   // ── AI disclosure gate (Apple 5.1.2(i)) — must precede onboarding + all AI features ──
   if(!aiDisclosureSeen)return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={declineAIDisclosure}/>;
