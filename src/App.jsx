@@ -19,7 +19,7 @@ import { AutopilotEngine, calcHealthScore, computePaydayGap, computeDailySpendLi
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
-import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal } from "./lib/persistence.js";
+import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty } from "./lib/persistence.js";
 
 // Capacitor iOS platform detection — true only when running as a native iOS app via Capacitor.
 // Returns false on web/dev. Used to gate iOS-specific behavior: iOS launches free during v1
@@ -3659,6 +3659,7 @@ function buildLiveNotifs(data) {
   const notifs = [];
   const today = new Date();
   const todayDate = today.getDate();
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth()+1, 0).getDate(); // Sprint Z2 #9 sibling: real month length, not 30
   const bills = data?.bills || [];
   const accounts = data?.accounts || [];
   const debts = data?.debts || [];
@@ -3668,7 +3669,7 @@ function buildLiveNotifs(data) {
   bills.filter(b=>b.name&&b.amount).forEach((b,i) => {
     const dueDay = parseInt(b.date||0);
     if(!dueDay) return;
-    const daysUntil = dueDay >= todayDate ? dueDay - todayDate : (30 - todayDate + dueDay);
+    const daysUntil = dueDay >= todayDate ? dueDay - todayDate : (daysInMonth - todayDate + dueDay);
     if(daysUntil <= 5) {
       const covers = balance >= parseFloat(b.amount||0);
       notifs.push({
@@ -9370,7 +9371,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
   return null;
 }
 
-function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled}){
+function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent}){
   const [notifToggles,setNotifToggles]=useState({overdraft:true,bills:true,coach:true,meeting:false,patterns:true});
   const [activeSection,setActiveSection]=useState(null);
 
@@ -9466,6 +9467,12 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
           try { localStorage.setItem("flourish_ai_coach_enabled", v ? "1" : "0"); } catch {}
           setAiCoachEnabled(v);
         }} />
+      </div>
+      {/* Sprint Z2 #8: revoke third-party AI consent (not just disable AI) */}
+      <div style={{borderTop:`1px solid ${C.border}`,marginTop:14,paddingTop:14}}>
+        <div style={{color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:2}}>Third-party AI consent</div>
+        <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginBottom:10}}>You agreed to share your financial summary &amp; messages with Anthropic for AI features. Revoking turns AI off and withdraws that consent.</div>
+        <button onClick={onRevokeAIConsent} style={{background:"none",border:`1px solid ${C.orange}66`,color:C.orange,borderRadius:99,padding:"9px 16px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700,cursor:"pointer"}}>Revoke AI consent</button>
       </div>
     </div>
     <button onClick={handleShare} style={{background:"linear-gradient(135deg,#0D3320 0%,#0A2518 100%)",borderRadius:18,padding:"20px 22px",border:"1px solid rgba(0,204,133,0.25)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"inherit",width:"100%",marginBottom:10,boxShadow:"0 4px 24px rgba(0,204,133,0.12)"}}>
@@ -10687,7 +10694,7 @@ function AIDisclosureScreen({onAccept, onDecline}){
           <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Anthropic does not train AI models on your data. You can disable AI features anytime in <strong style={{color:C.cream}}>Settings → Privacy & AI</strong>. Read the <a href="/privacy" style={{color:C.greenBright,textDecoration:"underline"}}>full Privacy Policy</a> for details.</div>
         </div>
 
-        <button onClick={onAccept} style={{width:"100%",background:`linear-gradient(135deg,${C.green} 0%,${C.greenBright} 100%)`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",marginBottom:10}}>I understand</button>
+        <button onClick={onAccept} style={{width:"100%",background:`linear-gradient(135deg,${C.green} 0%,${C.greenBright} 100%)`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",marginBottom:10}}>I agree to share my financial summary and messages with Anthropic for AI features</button>
         <button onClick={onDecline} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer"}}>Don't use AI</button>
       </div>
     </div>
@@ -12502,6 +12509,7 @@ export default function FlourishApp(){
   const acceptAIDisclosure = ()=>{
     try {
       localStorage.setItem("flourish_ai_disclosure_seen", "1");
+      localStorage.setItem("flourish_ai_third_party_consent", "1"); // Sprint Z2 #8: explicit consent to share summary+messages with Anthropic
       if (!localStorage.getItem("flourish_ai_disclosed_at")) localStorage.setItem("flourish_ai_disclosed_at", new Date().toISOString());
     } catch {}
     setAiDisclosureSeen(true);
@@ -12510,11 +12518,20 @@ export default function FlourishApp(){
   const declineAIDisclosure = ()=>{
     try {
       localStorage.setItem("flourish_ai_disclosure_seen", "1");
+      localStorage.setItem("flourish_ai_third_party_consent", "0"); // Sprint Z2 #8: declined = no third-party-sharing consent
       if (!localStorage.getItem("flourish_ai_disclosed_at")) localStorage.setItem("flourish_ai_disclosed_at", new Date().toISOString());
       localStorage.setItem("flourish_ai_coach_enabled", "0");
     } catch {}
     setAiCoachEnabled(false);
     setAiDisclosureSeen(true);
+  };
+  // Sprint Z2 #8: revoke third-party AI consent from Settings — withdraws consent AND turns AI off.
+  const revokeAIConsent = ()=>{
+    try {
+      localStorage.setItem("flourish_ai_third_party_consent", "0");
+      localStorage.setItem("flourish_ai_coach_enabled", "0");
+    } catch {}
+    setAiCoachEnabled(false);
   };
   const [appData,setAppData]=useState(()=>saved?.appData||null);
   // Sprint Q item 1: one-time, idempotent backfill of nextDueDate onto legacy sub-monthly/quarterly/
@@ -12624,6 +12641,7 @@ export default function FlourishApp(){
   const syncErrorRef = useRef(false);
   const syncFailRef  = useRef(0);
   const saverRef     = useRef(null);
+  const accessTokenRef = useRef(null); // Sprint Z2 #12: latest JWT, cached for the synchronous pagehide keepalive beacon
   const [syncError, setSyncError] = useState(false);
   // (5) one-time "backed up" banner after a local→DB migration upload.
   const [showMigratedBanner, setShowMigratedBanner] = useState(()=>{ try { return localStorage.getItem("flourish_db_migrated")==="1"; } catch { return false; } });
@@ -12665,6 +12683,7 @@ export default function FlourishApp(){
     // TOTP fallback, recovery codes, remember-this-device).
     const syncSession = (session, fromInit) => {
       setUser(session?.user ?? null);
+      accessTokenRef.current = session?.access_token || null; // Sprint Z2 #12: keep JWT fresh for the exit beacon
       if (fromInit) setAuthLoading(false);
     };
     supabase.auth.getSession().then(({ data: { session } }) => syncSession(session, true));
@@ -12766,10 +12785,44 @@ export default function FlourishApp(){
     }
   }, [onboarded,appData,household,isPremium,checkInBonus,user]);
 
-  // ── Sprint 2: flush the pending cloud save on tab hide/close (best-effort) ──
-  // localStorage already holds the durable copy, so a missed flush only delays sync.
+  // ── Sprint 2 + Z2 #12: persist the pending cloud save on tab hide/close ──
+  // localStorage already holds the durable copy, so a missed flush only delays sync. The normal saver
+  // upserts via the Supabase client (abortable on teardown), so the LAST pending edit can be killed
+  // mid-flight. For the exit case only, send that pending blob with keepalive:true (survives teardown).
+  // NOTE: navigator.sendBeacon can't set Supabase's apikey/Authorization headers (→ 401 / RLS reject),
+  // so keepalive fetch is the only header-capable transport here; localStorage stays the durable floor.
+  const beaconPersist = (payload) => {
+    try {
+      if (!payload || !payload.userId || !payload.blob) return false;
+      if (isBlobEmpty(payload.blob)) return false;          // never beacon empty/demo: the read-then-decide safety net can't run one-shot
+      const token = accessTokenRef.current;
+      if (!token) return false;                              // no JWT → would 401; let the normal flush handle it
+      fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/user_data?on_conflict=user_id`, {
+        method: "POST",
+        keepalive: true,
+        headers: {
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Prefer: "resolution=merge-duplicates,return=minimal",
+        },
+        body: JSON.stringify({ user_id: payload.userId, data: payload.blob, schema_version: payload.blob?.schemaVersion || 1 }),
+      }).catch(()=>{});                                      // fire-and-forget; localStorage is the durable floor
+      return true;
+    } catch { return false; }
+  };
   useEffect(()=>{
-    const flush = ()=>{ try { saverRef.current?.flush(); } catch {} };
+    const flush = ()=>{
+      try {
+        const saver = saverRef.current;
+        if (saver?.hasPending?.()) {
+          // Send the pending blob via keepalive; if dispatched, consume it so the normal (abortable)
+          // saveFn doesn't double-write. If it can't go (no token / empty), fall through to flush().
+          if (beaconPersist(saver.peek?.())) { saver.discard?.(); return; }
+        }
+        saver?.flush?.();
+      } catch {}
+    };
     const onVis = ()=>{ if (document.visibilityState === "hidden") flush(); };
     window.addEventListener("pagehide", flush);
     document.addEventListener("visibilitychange", onVis);
@@ -13201,7 +13254,7 @@ export default function FlourishApp(){
 
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setShowBankConsent(false);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled}/>{showBankConsent&&<BankConsentModal onContinue={()=>{ try{localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString());}catch{} setShowBankConsent(false); doAddNewBank(); }} onCancel={()=>setShowBankConsent(false)}/>}</>;
+    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setShowBankConsent(false);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent}/>{showBankConsent&&<BankConsentModal onContinue={()=>{ try{localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString());}catch{} setShowBankConsent(false); doAddNewBank(); }} onCancel={()=>setShowBankConsent(false)}/>}</>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
