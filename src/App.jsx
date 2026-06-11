@@ -12,7 +12,7 @@ import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
   BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine } from "./lib/financialCalculations.js";
-import { normaliseTxns, detectIncomeFromTxns, detectRecurringBills, markTransfers } from "./lib/plaidNormalize.js";
+import { normaliseTxns, detectIncomeFromTxns, detectRecurringBills, markTransfers, mergeById, mergeByAccountId, removeByIds } from "./lib/plaidNormalize.js";
 import { SafeSpendEngine } from "./lib/safeSpendEngine.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { AutopilotEngine, calcHealthScore, computePaydayGap, computeDailySpendLimit, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
@@ -585,31 +585,6 @@ async function getJwt() {
   } catch { return null; }
 }
 
-// Phase D2: merge two arrays of {id, ...} by id; fresh entries win.
-function mergeById(existing, fresh) {
-  const safeExisting = Array.isArray(existing) ? existing : [];
-  const safeFresh = Array.isArray(fresh) ? fresh : [];
-  const freshIds = new Set(safeFresh.map(x => x?.id).filter(Boolean));
-  return [...safeExisting.filter(x => x?.id && !freshIds.has(x.id)), ...safeFresh];
-}
-
-// Like mergeById but keyed by account_id — keeps last-known entries for accounts whose source
-// couldn't be refreshed this round (Sprint Z #2: liabilities keep-stale).
-function mergeByAccountId(existing, fresh) {
-  const safeExisting = Array.isArray(existing) ? existing : [];
-  const safeFresh = Array.isArray(fresh) ? fresh : [];
-  const freshIds = new Set(safeFresh.map(x => x?.account_id).filter(Boolean));
-  return [...safeExisting.filter(x => x?.account_id && !freshIds.has(x.account_id)), ...safeFresh];
-}
-
-// Remove transactions by id — the inverse of mergeById, for Plaid /transactions/sync `removed`
-// (Sprint Z #1). The ids are transaction_ids, which normaliseTxns stores as `id`.
-function removeByIds(list, ids) {
-  const safe = Array.isArray(list) ? list : [];
-  if (!Array.isArray(ids) || ids.length === 0) return safe;
-  const rm = new Set(ids);
-  return safe.filter(x => x?.id && !rm.has(x.id));
-}
 
 // Sprint Z #1 (B1 safety net): the server persists the per-item cursor, so a delta dropped before
 // the client applied it (lost response, app killed mid-save) could otherwise be stranded forever.

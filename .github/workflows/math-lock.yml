@@ -1,0 +1,22 @@
+name: MATH-LOCK
+
+# The math test gate. Runs the pure-math unit, pipeline, and invariant suites on every push and PR.
+# These suites import only src/lib/*.js (zero runtime deps), so no install/build is needed — they
+# run with bare node in seconds. A red check here MUST block merge to main (see DEPLOY.md).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  math:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Run MATH-LOCK suites (unit + pipeline + invariants)
+        run: npm run test:math

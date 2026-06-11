@@ -365,3 +365,32 @@ export function markTransfers(txns, keywordIsTransferFn, isCashAdvanceFn) {
 
   return result;
 }
+
+// ── Sync merge helpers (Sprint MATH-LOCK: extracted from App.jsx for pipeline testability) ───────
+// The incremental /transactions/sync merge step: added/modified merge by id (fresh wins), removed
+// drop by id, and liabilities keep-stale merge by account_id. Pure — the inverse pair of the sync.
+
+// Merge two arrays of {id,...} by id; fresh entries win (added + modified).
+export function mergeById(existing, fresh) {
+  const safeExisting = Array.isArray(existing) ? existing : [];
+  const safeFresh = Array.isArray(fresh) ? fresh : [];
+  const freshIds = new Set(safeFresh.map(x => x?.id).filter(Boolean));
+  return [...safeExisting.filter(x => x?.id && !freshIds.has(x.id)), ...safeFresh];
+}
+
+// Like mergeById but keyed by account_id — keeps last-known entries whose source wasn't refreshed
+// this round (Sprint Z #2: liabilities keep-stale).
+export function mergeByAccountId(existing, fresh) {
+  const safeExisting = Array.isArray(existing) ? existing : [];
+  const safeFresh = Array.isArray(fresh) ? fresh : [];
+  const freshIds = new Set(safeFresh.map(x => x?.account_id).filter(Boolean));
+  return [...safeExisting.filter(x => x?.account_id && !freshIds.has(x.account_id)), ...safeFresh];
+}
+
+// Remove transactions by id — the inverse of mergeById, for /transactions/sync `removed` (Sprint Z #1).
+export function removeByIds(list, ids) {
+  const safe = Array.isArray(list) ? list : [];
+  if (!Array.isArray(ids) || ids.length === 0) return safe;
+  const rm = new Set(ids);
+  return safe.filter(x => x?.id && !rm.has(x.id));
+}
