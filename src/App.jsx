@@ -14110,7 +14110,7 @@ input,button,select,textarea { font-family:inherit; }
             </div>
           </div>
         ):(
-          <div style={{flex:1,padding:"28px 36px 40px",overflowY:"auto",maxWidth:860}}>
+          <div style={{flex:1,padding:"28px 36px 40px",overflowY:"auto",maxWidth:860,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
             {content()}
           </div>
         )}
