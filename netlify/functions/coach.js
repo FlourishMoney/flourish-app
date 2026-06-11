@@ -280,11 +280,14 @@ exports.handler = async (event) => {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("[coach] Anthropic error:", JSON.stringify(data));
+      // Sprint Z #14: don't leak upstream error internals to the client. Log the detail server-side
+      // under a ref the client can quote to support.
+      const ref = `coach_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      console.error(`[coach] Anthropic error [${ref}]:`, JSON.stringify(data));
       return {
         statusCode: response.status,
         headers: corsHeaders,
-        body: JSON.stringify({ error: "Anthropic API error", details: data.error?.message || "Unknown error" }),
+        body: JSON.stringify({ error: "The coach is temporarily unavailable. Please try again.", ref }),
       };
     }
 
@@ -292,11 +295,12 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers: corsHeaders, body: JSON.stringify(data) };
 
   } catch (err) {
-    console.error("[coach] Network error:", err.message);
+    const ref = `coach_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    console.error(`[coach] Network error [${ref}]:`, err.message);
     return {
       statusCode: 502,
       headers: corsHeaders,
-      body: JSON.stringify({ error: "Failed to reach Anthropic API", details: err.message }),
+      body: JSON.stringify({ error: "The coach is temporarily unavailable. Please try again.", ref }),
     };
   }
 };

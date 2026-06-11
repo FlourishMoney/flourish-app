@@ -45,7 +45,7 @@ async function plaid(endpoint, body) {
   const base = PLAID_BASE[env] || PLAID_BASE.sandbox;
 
   const controller = new AbortController();
-  const timeout    = setTimeout(() => controller.abort(), 9500);
+  const timeout    = setTimeout(() => controller.abort(), 7500); // Sprint Z #17: leave headroom under Netlify's 10s function limit
 
   let res;
   try {

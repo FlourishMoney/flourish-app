@@ -4095,6 +4095,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
       rate: "",
       min: "",
       fromBank: true,
+      account_id: a.id, // Sprint Z #13: disconnect cleanup matches by id, not name
     }));
     setDebts(prePopulated);
   }, [step]);
@@ -4892,7 +4893,7 @@ async function backgroundRefresh(isPremium, setAppData, fullResync = false) {
         .map(a => ({
           name: a.name || "Credit Card",
           balance: Math.abs(a.balance || 0).toFixed(2),
-          rate: "", min: "", fromBank: true,
+          rate: "", min: "", fromBank: true, account_id: a.id, // Sprint Z #13
         }));
       return {
         ...prev,
@@ -10234,9 +10235,14 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
         const filtered = (prev.accounts||[]).filter(a => a.id !== accountId);
         // Remove associated debts
         const removedAcct = (prev.accounts||[]).find(a => a.id === accountId);
-        const debtsFiltered = removedAcct
-          ? (prev.debts||[]).filter(d => (d.name||"").toLowerCase() !== (removedAcct.name||"").toLowerCase())
-          : prev.debts;
+        // Sprint Z #13: remove only the Plaid-linked debt for THIS account (by account_id). Manual
+        // debts (no account_id) are always kept — a name collision no longer deletes a manual entry.
+        // Legacy bank debts created before account_id stamping fall back to a name match.
+        const debtsFiltered = (prev.debts||[]).filter(d => {
+          if (d.account_id) return d.account_id !== accountId;
+          if (!d.fromBank) return true;
+          return (d.name||"").toLowerCase() !== (removedAcct?.name||"").toLowerCase();
+        });
         // Remove transactions belonging to this account
         const txnsFiltered = (prev.transactions||[]).filter(t => t.account_id !== accountId);
         return {
@@ -12276,11 +12282,13 @@ function AuthScreen({ onAuth }) {
   // set-new-password screen. Neutral wording avoids leaking whether an account exists.
   const handleForgotPassword = async () => {
     if (!email) { setError("Enter your email above, then tap “Forgot password.”"); return; }
+    if (resendCooldown > 0) return; // Sprint Z #12: throttle repeated sends
     setLoading(true); setError(""); setSuccess("");
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
     setLoading(false);
     if (error) { setError(error.message); return; }
     setSuccess("If an account exists for that email, a password-reset link is on its way.");
+    setResendCooldown(60); // Sprint Z #12
   };
 
   // Sprint Q item 13: passwordless magic-link sign-in (signInWithOtp), offered alongside the
@@ -12288,6 +12296,7 @@ function AuthScreen({ onAuth }) {
   // through signup (which requires a beta access code), so the magic link can't bypass that gate.
   const handleMagicLink = async () => {
     if (!email) { setError("Enter your email above, then tap “Email me a magic link.”"); return; }
+    if (resendCooldown > 0) return; // Sprint Z #12: throttle repeated sends
     setLoading(true); setError(""); setSuccess("");
     const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin, shouldCreateUser: false } });
     setLoading(false);
@@ -12297,10 +12306,11 @@ function AuthScreen({ onAuth }) {
     const NEUTRAL = "If an account exists for that email, a magic sign-in link is on its way.";
     if (error) {
       const m = (error.message || "").toLowerCase();
-      if (m.includes("not allowed") || m.includes("not found") || m.includes("no user") || m.includes("signups")) { setSuccess(NEUTRAL); return; }
+      // Cooldown fires on the neutral path too — otherwise its presence/absence would leak whether the account exists.
+      if (m.includes("not allowed") || m.includes("not found") || m.includes("no user") || m.includes("signups")) { setSuccess(NEUTRAL); setResendCooldown(60); return; }
       setError(error.message); return;
     }
-    setSuccess(NEUTRAL);
+    setSuccess(NEUTRAL); setResendCooldown(60); // Sprint Z #12
   };
 
   const handleLogin = async () => {
@@ -12672,14 +12682,14 @@ function AuthScreen({ onAuth }) {
                   </button>
                   {mode === "login" && (
                     <>
-                      <button onClick={handleMagicLink} disabled={loading}
-                        style={{ width: "100%", marginTop: 12, background: "transparent", color: "#00D68F", border: "1.5px solid rgba(0,214,143,0.4)", borderRadius: 14, padding: "13px", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 700, fontSize: 14, cursor: loading ? "default" : "pointer" }}>
-                        Email me a magic link
+                      <button onClick={handleMagicLink} disabled={loading || resendCooldown > 0}
+                        style={{ width: "100%", marginTop: 12, background: "transparent", color: "#00D68F", border: "1.5px solid rgba(0,214,143,0.4)", borderRadius: 14, padding: "13px", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 700, fontSize: 14, cursor: (loading || resendCooldown > 0) ? "default" : "pointer", opacity: resendCooldown > 0 ? 0.6 : 1 }}>
+                        {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Email me a magic link"}
                       </button>
                       <div style={{ textAlign: "center", marginTop: 14 }}>
-                        <button onClick={handleForgotPassword} disabled={loading}
-                          style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
-                          Forgot password?
+                        <button onClick={handleForgotPassword} disabled={loading || resendCooldown > 0}
+                          style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 12, cursor: (loading || resendCooldown > 0) ? "default" : "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline", opacity: resendCooldown > 0 ? 0.6 : 1 }}>
+                          {resendCooldown > 0 ? `Forgot password? (wait ${resendCooldown}s)` : "Forgot password?"}
                         </button>
                       </div>
                     </>
@@ -13821,7 +13831,7 @@ export default function FlourishApp(){
                 .map(a => ({
                   name: a.name || "Credit Card",
                   balance: Math.abs(a.balance||0).toFixed(2),
-                  rate: "", min: "", fromBank: true,
+                  rate: "", min: "", fromBank: true, account_id: a.id, // Sprint Z #13
                 }));
               return {
                 ...prev,
@@ -13993,6 +14003,7 @@ export default function FlourishApp(){
               rate: "",
               min: "",
               fromBank: true,
+              account_id: a.id, // Sprint Z #13
             }));
           return {
             ...d,

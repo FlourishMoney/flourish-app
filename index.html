@@ -10,15 +10,7 @@
     <title>Flourish — Financial Coaching</title>
     <link rel="icon" type="image/png" href="/flourish-adult-favicon-32.png" id="favicon" />
     <link rel="apple-touch-icon" href="/flourish-adult-app-icon-180.png" id="apple-touch-icon" />
-    <script>
-      (function() {
-        if (window.location.pathname.startsWith('/kids')) {
-          document.getElementById('favicon').href = '/flourish-kids-favicon-32.png';
-          document.getElementById('apple-touch-icon').href = '/flourish-kids-app-icon-180.png';
-          document.title = 'Flourish Kids';
-        }
-      })();
-    </script>
+    <!-- Sprint Z #16: the kids favicon/title swap moved into src/main.jsx so the CSP can drop 'unsafe-inline'. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   </head>
