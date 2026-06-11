@@ -13966,6 +13966,16 @@ input,button,select,textarea { font-family:inherit; }
     button:focus-visible,a:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible,[role="switch"]:focus-visible,[tabindex]:focus-visible{outline:2px solid #00D68F;outline-offset:2px;border-radius:6px}
     ::selection{background:rgba(0,214,143,0.25);color:#EDE8E1}
     body{background:#060A0E}
+    /* Quality Sprint item 7: respect prefers-reduced-motion — neutralize keyframe animations +
+       inline transitions (the !important overrides the inline style transition/animation props). */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
 `
   // Sprint 2: shown only after repeated cloud-sync failures — data is safe on-device meanwhile.
   const syncBanner = syncError ? (
