@@ -9,7 +9,9 @@ import {
   Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
-import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO } from "./lib/financialCalculations.js";
+import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
+  CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
+  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived } from "./lib/financialCalculations.js";
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
@@ -652,152 +654,8 @@ async function getUserItems() {
 // Plaid Personal Finance Category (PFC) primary values → Flourish display meta
 // Shared keyword list for detecting credit card payments in transactions.
 // Used by income detection, spending calc, and transparency panel — single source of truth.
-// Compound phrases only — single words like "payment","visa","amex" are too broad
-// Real CC payments are caught by Transfer category. These catch non-Transfer settlements.
-const CC_PAYMENT_KEYWORDS = [
-  "credit card payment",
-  "card payment",
-  "minimum payment",
-  "balance payment",
-  "autopay",
-  "amex payment",
-  "visa payment",
-  "mastercard payment",
-  "credit card autopay",
-];
-
-// Canadian/US bank online payment names — catch BNS SCOTIAONLINE etc.
-// NOT "bill payment" — too broad, catches Enbridge/Hydro One
-const CC_INSTITUTION_PATTERNS = [
-  "scotiaonline",
-  "mb-credit card",
-  "credit card/loc",
-  "mb-visa",
-  "mb-mastercard",
-  "mb-amex",
-  "online bill pay",
-  "web payment",
-  "telephone banking",
-];
-
-// Internal transfer patterns — Interac e-Transfer, wire, own-account moves
-const INTERNAL_TRANSFER_PATTERNS = [
-  "interac e-transfer",
-  "interac etransfer",
-  "e-transfer",
-  "etransfer",
-  "wire transfer",
-  "online transfer",
-  "account transfer",
-  "transfer to savings",
-  "transfer from savings",
-  "transfer to chequing",
-  "transfer from chequing",
-  "transfer to checking",
-  "transfer from checking",
-  "internal transfer",
-  "own transfer",
-  "tfr to",
-  "tfr from",
-  "funds transfer",
-  "swift transfer",
-  "ach transfer",
-];
-
-function isInternalTransfer(txn) {
-  if(!txn) return false;
-  const name = (txn.name || "").toLowerCase();
-  const cat  = (txn.cat  || "").toLowerCase();
-  if(cat === "transfer") return true;
-  return INTERNAL_TRANSFER_PATTERNS.some(p => name.includes(p));
-}
-
-// Categories that represent fixed/variable bill commitments — NOT discretionary spending.
-// These are tracked via the Bills array and must be excluded from budget category suggestions
-// and discretionary spend calculations to prevent double-counting.
-const BILL_CATS = new Set([
-  "Utilities","Housing","Bills","Phone & Internet","Insurance",
-  "Other Bills","Rent","Mortgage","Transportation" // Transportation when it's a bill payment
-]);
-
-// Categories always excluded from spending breakdowns (non-expense flows)
-const NON_SPEND_CATS = new Set(["Transfer","Income","Fees"]);
-
-// ─── CC PAYMENT DETECTOR ──────────────────────────────────────────────────────
-// Identifies transactions that are credit card payments (not spending).
-// Plaid shows CC payments as: Transfer category OR matching CC keywords in name.
-// Also detects by amount matching a known debt balance (±$5 tolerance).
-function isCCPayment(txn, debts=[]) {
-  if(!txn || txn.amount <= 0) return false;
-  const name = (txn.name || "").toLowerCase();
-  const cat  = (txn.cat  || "").toUpperCase();
-  // Compound keyword match (safe — no broad single words)
-  if(CC_PAYMENT_KEYWORDS.some(kw => name.includes(kw))) return true;
-  // Institution-specific online banking payment names
-  if(CC_INSTITUTION_PATTERNS.some(p => name.includes(p))) return true;
-  // CC network name + payment verb — catches "MB-RBC ROYAL BANK MASTERCARD"
-  if((name.includes("mastercard") || name.includes("amex") || name.includes("visa")) &&
-     (name.includes("payment") || name.includes("/loc pay") || name.includes("credit card"))) return true;
-  // Transfer category + debt amount match (specific, not broad)
-  if(cat === "TRANSFER" || cat.includes("TRANSFER")) {
-    if(debts.length > 0) {
-      const matchesDet = debts.some(d => {
-        const min = parseFloat(d.min||0);
-        const bal = parseFloat(d.balance||0);
-        return (min > 0 && Math.abs(txn.amount - min) < 5) ||
-               (bal > 0 && Math.abs(txn.amount - bal) < 5);
-      });
-      if(matchesDet) return true;
-    }
-    // NOTE: round-amount heuristic removed — too aggressive, hid mortgage payments
-  }
-  return false;
-}
-
-function isCashAdvance(txn) {
-  if(!txn) return false; // both directions — CC charge and bank transfer
-  const name = (txn.name || "").toLowerCase();
-  return name.includes("cash advance") ||
-         name.includes("cash adv") ||
-         name.includes("atm advance") ||
-         name.includes("credit advance") ||
-         (name.includes("advance") && (name.includes("credit") || name.includes("card")));
-}
-
-// (Sprint 1 audit: detectCCPayments removed — it was dead code, never called. isCCPayment,
-// which it wrapped, is still used directly by markTransfers and the engines.)
-
-const CAT_META = {
-  FOOD_AND_DRINK:            { cat:"Coffee & Dining", icon:"🍕", color:"#D97A3A" },
-  GROCERIES:                 { cat:"Groceries",       icon:"🛒", color:"#2E8B2E" },
-  GENERAL_MERCHANDISE:       { cat:"Shopping",        icon:"🛍️", color:"#C45898" },
-  CLOTHING_AND_ACCESSORIES:  { cat:"Shopping",        icon:"👕", color:"#C45898" },
-  TRANSPORTATION:            { cat:"Gas & Transport", icon:"⛽", color:"#CFA03E" },
-  TRAVEL:                    { cat:"Travel",          icon:"✈️", color:"#4A8FCC" },
-  ENTERTAINMENT:             { cat:"Entertainment",   icon:"🎬", color:"#8A5FC8" },
-  PERSONAL_CARE:             { cat:"Health",          icon:"💊", color:"#4A8FCC" },
-  MEDICAL:                   { cat:"Health",          icon:"💊", color:"#4A8FCC" },
-  UTILITIES:                 { cat:"Utilities",       icon:"⚡", color:"#CFA03E" },
-  LOAN_PAYMENTS:             { cat:"Bills",           icon:"📱", color:"#CFA03E" },
-  RENT_AND_UTILITIES:        { cat:"Utilities",       icon:"🏠", color:"#CFA03E" },
-  HOME_IMPROVEMENT:          { cat:"Home",            icon:"🔨", color:"#CFA03E" },
-  INCOME:                    { cat:"Income",          icon:"💰", color:"#6FE494" },
-  TRANSFER_IN:               { cat:"Transfer",        icon:"↔️", color:"#888"    },
-  TRANSFER_OUT:              { cat:"Transfer",        icon:"↔️", color:"#888"    },
-  CREDIT_CARD_PAYMENT:       { cat:"Transfer",        icon:"💳", color:"#888"    },
-  BANK_FEES:                 { cat:"Fees",            icon:"🏦", color:"#888"    },
-  GENERAL_SERVICES:          { cat:"Services",        icon:"⚙️", color:"#888"    },
-  GOVERNMENT_AND_NON_PROFIT: { cat:"Services",        icon:"🏛️", color:"#888"    },
-  EDUCATION:                 { cat:"Education",       icon:"📚", color:"#4A8FCC" },
-  // Legacy Plaid category strings (pre-PFC API)
-  "Food and Drink":          { cat:"Coffee & Dining", icon:"🍕", color:"#D97A3A" },
-  "Shops":                   { cat:"Shopping",        icon:"🛍️", color:"#C45898" },
-  "Travel":                  { cat:"Gas & Transport", icon:"⛽", color:"#CFA03E" },
-  "Transfer":                { cat:"Transfer",        icon:"↔️", color:"#888"    },
-  "Payment":                 { cat:"Bills",           icon:"📱", color:"#CFA03E" },
-  "Recreation":              { cat:"Entertainment",   icon:"🎬", color:"#8A5FC8" },
-  "Healthcare":              { cat:"Health",          icon:"💊", color:"#4A8FCC" },
-};
+// Sprint MATH-LOCK: CC/transfer constants, BILL_CATS/NON_SPEND_CATS, isInternalTransfer,
+// isCCPayment, isCashAdvance, and CAT_META moved to financialCalculations.js (imported above).
 
 function normaliseTxns(plaidTxns) {
   return plaidTxns.map((t, i) => {
@@ -915,14 +773,8 @@ function _levenshtein(a, b) {
   return prev[n];
 }
 
-// Tier 5: a one-off expense is archived once its date has passed (skip in forecast/upcoming).
-// isoDate is "YYYY-MM-DD" which sorts lexicographically = chronologically.
-function isBillArchived(b) {
-  if (!b || b.type !== "one_off" || !b.isoDate) return false;
-  const d = new Date();
-  const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-  return b.isoDate < today;
-}
+// Sprint MATH-LOCK: isBillArchived (now with a threaded `today` for testability) moved to
+// financialCalculations.js (imported above).
 
 // Tier 5: single source of truth for removing a bill — drops it AND records the merchant in
 // userBillOverrides.removed so auto-detection never re-adds it. Shared by every remove surface.
