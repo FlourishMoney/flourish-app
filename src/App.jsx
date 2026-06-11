@@ -9,9 +9,10 @@ import {
   Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
-import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
+import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
   BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine } from "./lib/financialCalculations.js";
+import { normaliseTxns, detectIncomeFromTxns, detectRecurringBills, markTransfers } from "./lib/plaidNormalize.js";
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
@@ -657,92 +658,7 @@ async function getUserItems() {
 // Sprint MATH-LOCK: CC/transfer constants, BILL_CATS/NON_SPEND_CATS, isInternalTransfer,
 // isCCPayment, isCashAdvance, and CAT_META moved to financialCalculations.js (imported above).
 
-function normaliseTxns(plaidTxns) {
-  return plaidTxns.map((t, i) => {
-    // Match exact key, then try stripping underscores for legacy, then prefix
-    const rawCat = t.category || "OTHER";
-    const meta = CAT_META[rawCat]
-      || CAT_META[rawCat.replace(/_/g," ")]
-      || Object.entries(CAT_META).find(([k]) => rawCat.startsWith(k))?.[1]
-      || { cat:"Other", icon:"💳", color:"#888" };
-    // Compute day-of-week (0=Sun) — used by spending charts & patterns
-    const d = t.date ? new Date(t.date + "T12:00:00") : new Date();
-    return {
-      id:         t.id || `plaid_${i}`,
-      date:       t.date,
-      name:       t.name,
-      amount:     t.amount,     // positive = expense (matches MOCK_TXN convention)
-      cat:        meta.cat,
-      icon:       meta.icon,
-      color:      meta.color,
-      dow:        d.getDay(),   // 0–6; matches shape expected by spend screens
-      pending:    t.pending || false,
-      account_id: t.account_id,
-      currency:   t.currency || "CAD",
-      logo:       t.logo_url || null,
-    };
-  });
-}
-
-// ─── Recurring Bill Detector ─────────────────────────────────────────────────
-// Scans Plaid transactions and finds recurring bills (same merchant, monthly cadence)
-// Returns array of { name, amount (avg), date (day of month), auto:true }
-// Detect income deposits from transactions — returns {monthlyAvg, low, high, typical, isVariable, label}
-function detectIncomeFromTxns(txns) {
-  if (!txns || txns.length === 0) return null;
-  // Income = negative amounts (money in) with income-like categories
-  // CRITICAL: TRANSFER is excluded — credit card payments show as TRANSFER_IN
-  // and must never be counted as income. Only true payroll/direct deposits qualify.
-  const incomeTxns = txns.filter(t => {
-    if (t.amount >= 0) return false; // must be money IN (negative in Plaid convention)
-    const name = (t.name || "").toLowerCase();
-    const cat  = (t.cat  || "").toUpperCase();
-    // Exclude anything that looks like a credit card payment
-    if (CC_PAYMENT_KEYWORDS.some(kw => name.includes(kw))) return false;
-    // Exclude pure transfers — these are account-to-account moves, not income
-    if (cat.includes("TRANSFER")) return false;
-    // Only count genuine income signals
-    return (
-      cat.includes("INCOME") ||
-      cat.includes("PAYROLL") ||
-      name.includes("payroll") ||
-      name.includes("direct deposit") ||
-      name.includes("salary") ||
-      name.includes("pay ") ||
-      name.includes("deposit")
-    );
-  });
-  if (incomeTxns.length === 0) return null;
-
-  // Group by month
-  const byMonth = {};
-  incomeTxns.forEach(t => {
-    const month = t.date.substring(0, 7); // "YYYY-MM"
-    byMonth[month] = (byMonth[month] || 0) + Math.abs(t.amount);
-  });
-  const monthlyTotals = Object.values(byMonth);
-  if (monthlyTotals.length === 0) return null;
-
-  const avg = monthlyTotals.reduce((a,b) => a+b, 0) / monthlyTotals.length;
-  const low = Math.min(...monthlyTotals);
-  const high = Math.max(...monthlyTotals);
-  // Variable if spread > 15% of average
-  const isVariable = monthlyTotals.length > 1 && (high - low) / avg > 0.15;
-
-  // Detect most common deposit name
-  const nameCount = {};
-  incomeTxns.forEach(t => { nameCount[t.name] = (nameCount[t.name]||0)+1; });
-  const topName = Object.entries(nameCount).sort((a,b)=>b[1]-a[1])[0]?.[0] || "Employment";
-
-  return {
-    monthlyAvg: Math.round(avg),
-    low: Math.round(low),
-    high: Math.round(high),
-    typical: Math.round(avg),
-    isVariable,
-    label: topName,
-  };
-}
+// Sprint MATH-LOCK Group C: normaliseTxns + detectIncomeFromTxns moved to plaidNormalize.js (imported above).
 
 // Small Levenshtein for fuzzy bill-name dedupe (Tier 4). Inputs are short merchant names.
 // Sprint 4b: corruption-safe localStorage JSON read. A malformed value (a truncated write,
@@ -762,21 +678,7 @@ function safeLoadLS(key, fallback) {
 // at every call site so re-categorization keeps affecting cash-flow/spend math (no silent {} drop).
 const getCatOv = () => safeLoadLS("flourish_cat_overrides", {});
 
-function _levenshtein(a, b) {
-  if (a === b) return 0;
-  const m = a.length, n = b.length;
-  if (!m) return n;
-  if (!n) return m;
-  let prev = Array.from({ length: n + 1 }, (_, i) => i);
-  for (let i = 1; i <= m; i++) {
-    const cur = [i];
-    for (let j = 1; j <= n; j++) {
-      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
-    }
-    prev = cur;
-  }
-  return prev[n];
-}
+// Sprint MATH-LOCK Group C: _levenshtein moved to plaidNormalize.js (used by detectRecurringBills).
 
 // Sprint MATH-LOCK: isBillArchived (now with a threaded `today` for testability) moved to
 // financialCalculations.js (imported above).
@@ -796,170 +698,6 @@ function removeBillWithOverride(setAppData, idx, name) {
   });
 }
 
-function detectRecurringBills(txns, opts = {}) {
-  if (!txns || txns.length === 0) return [];
-
-  // Tier 4: consult user overrides — never re-add a removed merchant; honor manual type.
-  const { overrides = {}, debts = [] } = opts;
-  const removedSet = new Set((overrides.removed || []).map(s => String(s).toLowerCase()));
-  const typedMap = overrides.typed || {};
-  const cadenceMap = overrides.cadence || {}; // Sprint Q item 2: user cadence corrections (keyed by name)
-
-  // Categories that indicate a bill (not groceries, dining, etc.). Named distinctly from
-  // the module-level BILL_CATS (the budget-exclusion set) to end the prior shadowing.
-  const DETECT_BILL_CATS = new Set([
-    "Utilities","Bills","Services","Health","Education","Home",
-    "Gas & Transport","Entertainment","Shopping",
-  ]);
-
-  // Also catch by name keywords regardless of category
-  const BILL_KEYWORDS = [
-    "hydro","electric","gas","water","internet","wifi","rogers","bell","telus",
-    "shaw","videotron","fido","koodo","virgin","netflix","spotify","apple",
-    "google","amazon prime","disney","crave","insurance","allstate","intact",
-    "aviva","manulife","sunlife","great-west","rent","mortgage","condo","strata",
-    "gym","goodlife","ymca","planet fitness","adobe","microsoft","dropbox","icloud",
-    "hulu","paramount","phone","mobile","wireless","hydro one","enbridge","atco",
-    "fortis","toronto hydro","bc hydro","epcor","alectra",
-  ];
-
-  // Only look at expenses (positive = money out). Tier 4: also exclude inter-account
-  // moves (cash advances, card payments, balance transfers) so they never surface as
-  // bills — reusing the existing transfer classifiers + a keyword guard.
-  const TRANSFER_RX = /cash advance|payment to|transfer to|balance transfer|e-?transfer|pymt|autopay/i;
-  const expenses = txns.filter(t =>
-    t.amount > 0 &&
-    t.cat !== "Income" &&
-    t.cat !== "Transfer" &&
-    t.cat !== "Fees" &&
-    !t.isTransfer &&
-    !isInternalTransfer(t) &&
-    !isCashAdvance(t) &&
-    !isCCPayment(t, debts) &&
-    !TRANSFER_RX.test(t.name || "")
-  );
-
-  // Group by normalized merchant name
-  const byMerchant = {};
-  expenses.forEach(t => {
-    const key = t.name.toLowerCase().trim();
-    if (!byMerchant[key]) byMerchant[key] = [];
-    byMerchant[key].push(t);
-  });
-
-  const bills = [];
-
-  Object.entries(byMerchant).forEach(([key, txList]) => {
-    // Must appear at least 2 times in 90 days to be "recurring"
-    if (txList.length < 2) return;
-
-    // Tier 4: respect user removals — never re-detect a merchant the user deleted.
-    if (removedSet.has(key)) return;
-
-    // Check if it's a bill category OR matches a bill keyword
-    const isBillCat     = txList.some(t => DETECT_BILL_CATS.has(t.cat));
-    const isBillKeyword = BILL_KEYWORDS.some(kw => key.includes(kw));
-    if (!isBillCat && !isBillKeyword) return;
-
-    // Sprint 4 (items 3 & 8): classify cadence — EVERY gap must sit within a tight band of a
-    // known cadence, so a 2-occurrence bill with random spacing is no longer accepted, and the
-    // proposed freq reflects reality (weekly/biweekly/semimonthly/monthly/quarterly).
-    const dates = txList.map(t => new Date(t.date + "T12:00:00")).sort((a,b) => a-b);
-    const gaps = [];
-    for (let i = 1; i < dates.length; i++) gaps.push((dates[i] - dates[i-1]) / 86400000);
-    const cadence = (() => {
-      if (gaps.length === 0) return null;
-      const avg = gaps.reduce((a,b) => a+b, 0) / gaps.length;
-      const bands = [["weekly",7,3],["biweekly",14,4],["monthly",30,5],["quarterly",91,12]];
-      for (const [freq, anchor, tol] of bands) {
-        if (Math.abs(avg - anchor) <= tol && gaps.every(g => Math.abs(g - anchor) <= tol + 3)) {
-          if (freq === "biweekly") {
-            const doms = new Set(dates.map(d => d.getDate()));   // two fixed days ⇒ semimonthly (1st & 15th)
-            return { freq: doms.size <= 2 ? "semimonthly" : "biweekly" };
-          }
-          return { freq };
-        }
-      }
-      return null;
-    })();
-    if (!cadence) return;   // irregular spacing — not a recurring bill
-
-    // Average of the last 3 occurrences
-    const recent = txList.slice(-3);
-    const avg    = recent.reduce((s,t) => s + t.amount, 0) / recent.length;
-
-    // Tier 4: Fixed vs Variable — >15% spread across occurrences ⇒ variable (hydro,
-    // phone), else fixed (rent, subscriptions). A user override always wins.
-    const amts     = txList.map(t => t.amount);
-    const spread   = avg > 0 ? (Math.max(...amts) - Math.min(...amts)) / avg : 0;
-    const billType = typedMap[key] || (spread > 0.15 ? "variable" : "fixed");
-
-    // Estimate due date from most common day of month
-    const days     = txList.map(t => new Date(t.date + "T12:00:00").getDate());
-    const dayMode  = days.sort((a,b) =>
-      days.filter(d=>d===b).length - days.filter(d=>d===a).length
-    )[0];
-
-    // Clean up display name — capitalize words, strip account numbers
-    const displayName = txList[0].name
-      .replace(/\s+\d{4,}.*$/, "")   // strip trailing account numbers
-      .replace(/\w/g, c => c.toUpperCase())
-      .trim();
-
-    // Tier 4: overrides are keyed by the cleaned display name (what the user removes/types).
-    const _dnl = displayName.toLowerCase().trim();
-    if (removedSet.has(_dnl)) return;
-    const finalType = typedMap[_dnl] || billType;
-    // Sprint Q item 2: a persisted user cadence correction wins over the freshly-detected cadence.
-    const finalFreq = cadenceMap[_dnl] || cadence.freq;
-
-    // Sprint Q item 1: anchor nextDueDate from the LAST observed occurrence + cadence, so the
-    // forecast/SafeSpend recur from the real phase (e.g. biweekly last seen 7d ago → due in 7d).
-    const _last = dates[dates.length - 1];
-    let _nextDue;
-    if (_last) {
-      if (finalFreq === "weekly" || finalFreq === "biweekly") {
-        // Sprint Z #7: DST-safe calendar offset (setDate, not +days*86400000 — which drifts a day across a DST boundary).
-        const _d = new Date(_last);
-        _d.setDate(_d.getDate() + (finalFreq === "weekly" ? 7 : 14));
-        _nextDue = dateToISO(_d);
-      } else {
-        _nextDue = dateToISO(_last); // monthly/semimonthly/quarterly: last-occurrence anchor; billNextDue steps it forward
-      }
-    }
-
-    bills.push({
-      name:    displayName,
-      amount:  (avg||0).toFixed(2),
-      date:    String(dayMode),
-      type:    finalType,   // Tier 4: "fixed" | "variable"
-      freq:    finalFreq, // Sprint 4 (item 8) + Sprint Q item 2: detected cadence, or user override
-      nextDueDate: _nextDue, // Sprint Q item 1: cadence phase anchor
-      auto:    true,   // flag so UI can show "detected" badge
-      avgNote: txList.length >= 3 ? `avg of last ${Math.min(txList.length,3)}` : "estimated",
-    });
-  });
-
-  // Sort by amount desc, then fuzzy-dedupe. Sprint 4 (item 4): name similarity ALONE is not
-  // enough — also require amount-within-10% OR same due-day, so "Bell" and "Bell Insurance"
-  // (genuinely different bills) don't collapse into one.
-  const kept = [];
-  bills.sort((a,b) => Number(b.amount) - Number(a.amount));
-  for (const b of bills) {
-    const k = b.name.toLowerCase().trim();
-    const dupe = kept.some(x => {
-      const j = x.name.toLowerCase().trim();
-      const nameMatch = j === k || j.includes(k) || k.includes(j) || _levenshtein(j, k) <= 3;
-      if (!nameMatch) return false;
-      const amtA = Number(b.amount), amtB = Number(x.amount);
-      const amtClose = amtA > 0 && amtB > 0 && Math.abs(amtA - amtB) / Math.max(amtA, amtB) <= 0.10;
-      const sameDay  = b.date && x.date && b.date === x.date;
-      return amtClose || sameDay;
-    });
-    if (!dupe) kept.push(b);
-  }
-  return kept;
-}
 
 // ─── Plaid Link SDK hook ──────────────────────────────────────────────────────
 // Loads Plaid CDN script once. Uses a ref for onSuccess so the handler is
