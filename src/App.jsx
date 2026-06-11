@@ -9,7 +9,7 @@ import {
   Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
-import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns, toMonthly, billMonthlyAmount } from "./lib/financialCalculations.js";
+import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO } from "./lib/financialCalculations.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal } from "./lib/persistence.js";
@@ -979,12 +979,22 @@ function detectRecurringBills(txns, opts = {}) {
     if (removedSet.has(_dnl)) return;
     const finalType = typedMap[_dnl] || billType;
 
+    // Sprint Q item 1: anchor nextDueDate from the LAST observed occurrence + cadence, so the
+    // forecast/SafeSpend recur from the real phase (e.g. biweekly last seen 7d ago → due in 7d).
+    const _last = dates[dates.length - 1];
+    const _nextDue = _last
+      ? ((cadence.freq === "weekly" || cadence.freq === "biweekly")
+          ? dateToISO(new Date(_last.getTime() + (cadence.freq === "weekly" ? 7 : 14) * 86400000))
+          : dateToISO(_last)) // monthly/semimonthly/quarterly: last-occurrence anchor; billNextDue steps it forward
+      : undefined;
+
     bills.push({
       name:    displayName,
       amount:  (avg||0).toFixed(2),
       date:    String(dayMode),
       type:    finalType,   // Tier 4: "fixed" | "variable"
       freq:    cadence.freq, // Sprint 4 (item 8): weekly | biweekly | semimonthly | monthly | quarterly
+      nextDueDate: _nextDue, // Sprint Q item 1: cadence phase anchor
       auto:    true,   // flag so UI can show "detected" badge
       avgNote: txList.length >= 3 ? `avg of last ${Math.min(txList.length,3)}` : "estimated",
     });
@@ -3094,19 +3104,17 @@ const SafeSpendEngine = {
     const occurrencesInWindow = (b) => {
       if (isBillArchived(b)) return 0;
       if (parseFloat(b.amount||0) <= 0) return 0;
-      if (b.type === "one_off") {
-        if (!b.isoDate) return 0;
-        const od = new Date(b.isoDate + "T12:00:00");
-        return (od >= todayDate && od <= in10Days) ? 1 : 0;
+      // Sprint Q items 1 & 3: count ACTUAL occurrences in the 10-day window via the nextDueDate
+      // anchor. A monthly+ bill already paid this month is done; sub-monthly bills recur multiple
+      // times a month, so the anchor (not "paid this month") governs them — fixes a biweekly bill
+      // paid 7 days ago being wrongly skipped when its next occurrence is inside the window.
+      const subMonthly = b.freq === "weekly" || b.freq === "biweekly" || b.freq === "semimonthly";
+      if (b.type !== "one_off" && !subMonthly && isBillPaid(b)) return 0;
+      let count = 0;
+      for (let dd = new Date(todayDate); dd <= in10Days; dd.setDate(dd.getDate() + 1)) {
+        if (billOccursOnDate(b, dd, todayDate)) count++;
       }
-      if (isBillPaid(b)) return 0; // recurring already paid this month — don't double-subtract
-      if (b.freq === "weekly" || b.freq === "biweekly") return 1; // recurs within any 10-day window
-      const dueDay = parseInt(b.date);
-      if (!dueDay) return 0;
-      const thisMonth = new Date(todayDate.getFullYear(), todayDate.getMonth(), dueDay);
-      const nextMonth = new Date(todayDate.getFullYear(), todayDate.getMonth()+1, dueDay);
-      return ((thisMonth >= todayDate && thisMonth <= in10Days) ||
-              (nextMonth >= todayDate && nextMonth <= in10Days)) ? 1 : 0;
+      return count;
     };
     const upcomingBills = bills.reduce((s,b) => s + parseFloat(b.amount||0) * occurrencesInWindow(b), 0);
 
@@ -3237,16 +3245,10 @@ generate(data, days = 90, scenario = null) {
   // Tier 5: freq-aware bill placement. weekly/biweekly recur from today; semimonthly twice a
   // month; a one-off lands once on its ISO date; monthly/quarterly/annual on their day-of-month
   // (short horizon — quarterly/annual exact-month timing needs a stored anchor; deferred).
-  const billOccursOn = (b, d, i) => {
-    if (b.type === "one_off") return b.isoDate === localYMD(d);
-    const dueDay = parseInt(b.date);
-    switch (b.freq) {
-      case "weekly":      return i > 0 && i % 7 === 0;
-      case "biweekly":    return i > 0 && i % 14 === 0;
-      case "semimonthly": return dueDay > 0 && (d.getDate() === dueDay || d.getDate() === ((dueDay + 14) % 28) + 1);
-      default:            return dueDay > 0 && d.getDate() === dueDay;
-    }
-  };
+  // Sprint Q item 1: anchor recurrence on nextDueDate (not today/day-of-month). One-offs may land
+  // on day 0; recurring bills skip day 0 (today's balance already reflects them). billOccursOnDate
+  // also fixes quarterly/annual (was firing EVERY month via the old day-of-month default).
+  const billOccursOn = (b, d, i) => (b.type === "one_off" ? billOccursOnDate(b, d, today) : (i > 0 && billOccursOnDate(b, d, today)));
 
   for(let i = 0; i <= days; i++) {
     const d       = new Date(today); d.setDate(today.getDate()+i);
@@ -13195,6 +13197,15 @@ export default function FlourishApp(){
     setAiDisclosureSeen(true);
   };
   const [appData,setAppData]=useState(()=>saved?.appData||null);
+  // Sprint Q item 1: one-time, idempotent backfill of nextDueDate onto legacy sub-monthly/quarterly/
+  // annual bills so their cadence phase persists (monthly uses day-of-month, no anchor needed).
+  useEffect(() => {
+    const bs = appData?.bills;
+    if (!Array.isArray(bs) || !bs.length) return;
+    const needs = (b) => b && !b.nextDueDate && b.type !== "one_off" && (b.freq || "monthly") !== "monthly" && !!computeNextDueDate(b);
+    if (!bs.some(needs)) return;
+    setAppData(d => ({ ...d, bills: (d.bills || []).map(b => needs(b) ? { ...b, nextDueDate: computeNextDueDate(b) } : b) }));
+  }, [appData?.bills]); // eslint-disable-line react-hooks/exhaustive-deps
   // Read URL path on load so /privacy and /terms work as direct links
   const initialScreen = (() => {
     const path = window.location.pathname.replace(/\/+$/,"").toLowerCase();

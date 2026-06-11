@@ -708,6 +708,99 @@ export function billMonthlyAmount(bill) {
   }
 }
 
+// ── Quality Sprint item 1: nextDueDate cadence anchoring ─────────────────────
+// Sub-monthly bills (weekly/biweekly) must recur from their actual next due date, not from
+// "today". `bill.nextDueDate` ("YYYY-MM-DD") is the phase anchor — set at detection (last
+// occurrence + cadence) and backfilled for legacy bills. Pure + unit-tested.
+const _DAY_MS = 86400000;
+function _atNoon(d) { const x = new Date(d); x.setHours(12, 0, 0, 0); return x; }
+function _isoToDate(s) {
+  if (typeof s !== "string") return null;
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
+  return isNaN(d.getTime()) ? null : d;
+}
+export function dateToISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function _daysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
+function _domDate(y, m, day) { return new Date(y, m, Math.min(day, _daysInMonth(y, m)), 12, 0, 0); }
+
+// Next occurrence Date on/after `today`. Returns null for non-datable bills.
+export function billNextDue(bill, today = new Date()) {
+  if (!bill) return null;
+  const t = _atNoon(today);
+  if (bill.type === "one_off") { const d = _isoToDate(bill.isoDate); return d && d >= t ? d : null; }
+  const freq = bill.freq || "monthly";
+  if (freq === "weekly" || freq === "biweekly") {
+    const step = freq === "weekly" ? 7 : 14;
+    let a = _isoToDate(bill.nextDueDate) || t; // no legacy anchor → today (phase unknown)
+    if (a < t) { const k = Math.ceil((t - a) / (step * _DAY_MS)); a = new Date(a.getTime() + k * step * _DAY_MS); }
+    return _atNoon(a);
+  }
+  if (freq === "semimonthly") {
+    const anchor = _isoToDate(bill.nextDueDate);
+    const d1 = anchor ? anchor.getDate() : (parseInt(bill.date) || 1);
+    const d2 = ((d1 + 14) % 28) + 1;
+    const cands = [];
+    for (let mo = 0; mo <= 1; mo++) for (const day of [d1, d2]) cands.push(_domDate(t.getFullYear(), t.getMonth() + mo, day));
+    return cands.filter(c => c >= t).sort((a, b) => a - b)[0] || null;
+  }
+  // monthly / quarterly / annual
+  const anchor = _isoToDate(bill.nextDueDate);
+  const stepM = freq === "quarterly" ? 3 : (freq === "annual" || freq === "annually") ? 12 : 1;
+  if (anchor) {
+    let a = anchor, guard = 0;
+    while (a < t && guard++ < 600) a = _domDate(a.getFullYear(), a.getMonth() + stepM, anchor.getDate());
+    return _atNoon(a);
+  }
+  const dueDay = parseInt(bill.date);
+  if (!dueDay) return null;
+  let cand = _domDate(t.getFullYear(), t.getMonth(), dueDay);
+  if (cand < t) cand = _domDate(t.getFullYear(), t.getMonth() + 1, dueDay);
+  return cand;
+}
+
+// True if `bill` has an occurrence on calendar date `d` (day granularity, on/after today).
+export function billOccursOnDate(bill, d, today = new Date()) {
+  if (!bill) return false;
+  const t = _atNoon(today);
+  const target = _atNoon(d);
+  if (target < t) return false;
+  if (bill.type === "one_off") { const iso = _isoToDate(bill.isoDate); return !!iso && dateToISO(iso) === dateToISO(target); }
+  const freq = bill.freq || "monthly";
+  const first = billNextDue(bill, today);
+  if (!first) return false;
+  if (freq === "weekly" || freq === "biweekly") {
+    const step = freq === "weekly" ? 7 : 14;
+    if (target < first) return false;
+    return Math.round((target - first) / _DAY_MS) % step === 0;
+  }
+  if (freq === "semimonthly") {
+    const anchor = _isoToDate(bill.nextDueDate);
+    const d1 = anchor ? anchor.getDate() : (parseInt(bill.date) || 1);
+    const d2 = ((d1 + 14) % 28) + 1;
+    const day = target.getDate();
+    return day === d1 || day === d2;
+  }
+  // monthly / quarterly / annual — match day-of-month, and (quarterly/annual) the right month
+  const aDay = _isoToDate(bill.nextDueDate);
+  const dueDay = (aDay ? aDay.getDate() : 0) || parseInt(bill.date);
+  if (!dueDay) return false;
+  if (target.getDate() !== Math.min(dueDay, _daysInMonth(target.getFullYear(), target.getMonth()))) return false;
+  if (freq === "monthly") return true;
+  const stepM = freq === "quarterly" ? 3 : 12;
+  const monthsApart = (target.getFullYear() - first.getFullYear()) * 12 + (target.getMonth() - first.getMonth());
+  return monthsApart >= 0 && monthsApart % stepM === 0;
+}
+
+// Storable nextDueDate ISO for backfilling a bill that lacks one.
+export function computeNextDueDate(bill, today = new Date()) {
+  const d = billNextDue(bill, today);
+  return d ? dateToISO(d) : null;
+}
+
 export async function enrichTxns(newTxns, existingTxns, accounts, callPlaidFn, jwt) {
   if (!Array.isArray(newTxns) || newTxns.length === 0) return newTxns || [];
   if (!callPlaidFn) return newTxns;
