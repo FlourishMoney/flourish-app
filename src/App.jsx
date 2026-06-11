@@ -12028,6 +12028,73 @@ function KidsMiniSite(){
   );
 }
 
+// Sprint Q item 12: set-new-password screen. Shown by FlourishApp when a password-recovery token
+// lands (PASSWORD_RECOVERY). The recovery token establishes a temporary session, so updateUser can
+// set the new password directly. On success we strip the recovery hash and hand back to the app.
+function ResetPasswordScreen({ onDone, onCancel }) {
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const stripHash = () => { try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch {} }; // drop #access_token, keep ?query
+  // BLOCKER fix: hand back to the app only after the success state has shown, via a cleanup-safe
+  // timer (so it can't fire setState on an unmounted tree if an auth event re-renders first).
+  useEffect(() => {
+    if (!done) return;
+    const t = setTimeout(() => onDone(), 1400);
+    return () => clearTimeout(t);
+  }, [done]);
+  // BLOCKER fix: escape hatch. If the recovery token is expired/invalid, updateUser fails and there
+  // was no way out (the hash kept re-seeding recoveryMode on refresh) — this strips the hash and bails.
+  const cancel = () => { stripHash(); onCancel(); };
+  const submit = async () => {
+    if (pw.length < 8) { setErr("Password must be at least 8 characters."); return; }
+    if (pw !== pw2) { setErr("Those passwords don't match."); return; }
+    setBusy(true); setErr("");
+    const { error } = await supabase.auth.updateUser({ password: pw });
+    if (error) { setErr(error.message || "Couldn't update password. The reset link may have expired — request a new one below."); setBusy(false); return; }
+    stripHash();
+    setBusy(false);
+    setDone(true);
+  };
+  const inp = { width: "100%", padding: "14px 16px", borderRadius: 14, background: "rgba(255,255,255,0.06)", border: "1.5px solid rgba(255,255,255,0.12)", color: "#EDE9E2", fontSize: 15, fontFamily: "'Plus Jakarta Sans',sans-serif", outline: "none", boxSizing: "border-box", marginBottom: 12 };
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: 24, background: "#050D09" }}>
+      <div style={{ width: "100%", maxWidth: 400 }}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}><FlourishMark size={64} /></div>
+        <div style={{ background: "#0D1F12", borderRadius: 24, padding: 28, border: "1px solid rgba(255,255,255,0.08)" }}>
+          {done ? (
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 38, marginBottom: 10 }}>✓</div>
+              <div style={{ fontFamily: "'Playfair Display',Georgia,serif", fontWeight: 900, fontSize: 22, color: "#EDE9E2" }}>Password updated</div>
+              <div style={{ color: "#6B7A6E", fontSize: 13, marginTop: 8, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Taking you to Flourish…</div>
+            </div>
+          ) : (
+            <>
+              <div style={{ fontFamily: "'Playfair Display',Georgia,serif", fontWeight: 900, fontSize: 20, color: "#EDE9E2", marginBottom: 6 }}>Set a new password</div>
+              <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 20, lineHeight: 1.6 }}>Choose a new password for your Flourish account.</div>
+              <input style={inp} type="password" placeholder="New password (min 8 characters)" value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password" />
+              <input style={{ ...inp, marginBottom: 20 }} type="password" placeholder="Confirm new password" value={pw2} onChange={e => setPw2(e.target.value)} autoComplete="new-password" onKeyDown={e => e.key === "Enter" && submit()} />
+              {err && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>{err}</div>}
+              <button onClick={submit} disabled={busy}
+                style={{ width: "100%", background: busy ? "rgba(255,255,255,0.1)" : "linear-gradient(135deg,#00D68F,#00EFA0)", color: busy ? "#6B7A6E" : "#041810", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 800, fontSize: 15, padding: "15px", borderRadius: 14, border: "none", cursor: busy ? "default" : "pointer" }}>
+                {busy ? "Updating…" : "Update password"}
+              </button>
+              <div style={{ textAlign: "center", marginTop: 16 }}>
+                <button onClick={cancel} disabled={busy}
+                  style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
+                  Back to log in
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
@@ -12111,6 +12178,38 @@ function AuthScreen({ onAuth }) {
       setResendCooldown(60); // a fresh confirmation email was just sent — debounce resend
     }
     setMode("check_email"); setLoading(false);
+  };
+
+  // Sprint Q item 12: password recovery — email a reset link (resetPasswordForEmail). The link
+  // returns to the app with a recovery token; FlourishApp detects PASSWORD_RECOVERY and shows the
+  // set-new-password screen. Neutral wording avoids leaking whether an account exists.
+  const handleForgotPassword = async () => {
+    if (!email) { setError("Enter your email above, then tap “Forgot password.”"); return; }
+    setLoading(true); setError(""); setSuccess("");
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+    setLoading(false);
+    if (error) { setError(error.message); return; }
+    setSuccess("If an account exists for that email, a password-reset link is on its way.");
+  };
+
+  // Sprint Q item 13: passwordless magic-link sign-in (signInWithOtp), offered alongside the
+  // password form. shouldCreateUser:false keeps this sign-IN only — new accounts must still go
+  // through signup (which requires a beta access code), so the magic link can't bypass that gate.
+  const handleMagicLink = async () => {
+    if (!email) { setError("Enter your email above, then tap “Email me a magic link.”"); return; }
+    setLoading(true); setError(""); setSuccess("");
+    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin, shouldCreateUser: false } });
+    setLoading(false);
+    // Don't leak whether an account exists: shouldCreateUser:false makes signInWithOtp error for a
+    // non-existent email. Map that "no such user" class of error to the SAME neutral confirmation a
+    // real send gets; surface only genuine errors (rate limit, network).
+    const NEUTRAL = "If an account exists for that email, a magic sign-in link is on its way.";
+    if (error) {
+      const m = (error.message || "").toLowerCase();
+      if (m.includes("not allowed") || m.includes("not found") || m.includes("no user") || m.includes("signups")) { setSuccess(NEUTRAL); return; }
+      setError(error.message); return;
+    }
+    setSuccess(NEUTRAL);
   };
 
   const handleLogin = async () => {
@@ -12449,11 +12548,11 @@ function AuthScreen({ onAuth }) {
                     {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend confirmation email"}
                   </button>
                   <div style={{ display: "flex", gap: 18, justifyContent: "center", marginTop: 16 }}>
-                    <button onClick={() => { setMode("signup"); setError(""); setCheckEmailNote(""); setResendCooldown(0); }}
+                    <button onClick={() => { setMode("signup"); setError(""); setSuccess(""); setCheckEmailNote(""); setResendCooldown(0); }}
                       style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
                       Wrong email? Start over
                     </button>
-                    <button onClick={() => { setMode("login"); setError(""); setCheckEmailNote(""); setResendCooldown(0); }}
+                    <button onClick={() => { setMode("login"); setError(""); setSuccess(""); setCheckEmailNote(""); setResendCooldown(0); }}
                       style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
                       Back to log in
                     </button>
@@ -12481,6 +12580,20 @@ function AuthScreen({ onAuth }) {
                   <button style={btnStyle(!loading && email && password.length >= 8 && (mode==="login"||betaCode.trim().length>0))} onClick={mode === "login" ? handleLogin : handleSignup} disabled={loading || !email || password.length < 8 || (mode==="signup"&&!betaCode.trim())}>
                     {loading ? "..." : mode === "login" ? "Log In" : "Create Account"}
                   </button>
+                  {mode === "login" && (
+                    <>
+                      <button onClick={handleMagicLink} disabled={loading}
+                        style={{ width: "100%", marginTop: 12, background: "transparent", color: "#00D68F", border: "1.5px solid rgba(0,214,143,0.4)", borderRadius: 14, padding: "13px", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 700, fontSize: 14, cursor: loading ? "default" : "pointer" }}>
+                        Email me a magic link
+                      </button>
+                      <div style={{ textAlign: "center", marginTop: 14 }}>
+                        <button onClick={handleForgotPassword} disabled={loading}
+                          style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
+                          Forgot password?
+                        </button>
+                      </div>
+                    </>
+                  )}
                   {mode === "signup" && (
                     <div style={{ color: "#6B7A6E", fontSize: 11, textAlign: "center", marginTop: 14, lineHeight: 1.5 }}>
                       By signing up you agree to our{" "}
@@ -13320,6 +13433,10 @@ export default function FlourishApp(){
   const [screen,setScreen]=useState(initialScreen);
   const [user,setUser]=useState(null);
   const [authLoading,setAuthLoading]=useState(true);
+  // Sprint Q item 12: password recovery. supabase-js fires PASSWORD_RECOVERY when the email link's
+  // recovery token lands; we also seed from the URL hash so the set-new-password screen shows even
+  // before the event resolves. Overrides the normal app render until the user sets a new password.
+  const [recoveryMode,setRecoveryMode]=useState(()=>{ try { return window.location.hash.includes("type=recovery"); } catch { return false; } });
   const [showNotifs,setShowNotifs]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
   const [showFeedback,setShowFeedback]=useState(false);
@@ -13448,6 +13565,9 @@ export default function FlourishApp(){
     };
     supabase.auth.getSession().then(({ data: { session } }) => syncSession(session, true));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // Sprint Q item 12: the recovery link creates a temporary session AND fires PASSWORD_RECOVERY.
+      // Flag it so the render gate shows the set-new-password screen instead of the authed app.
+      if (event === "PASSWORD_RECOVERY") setRecoveryMode(true);
       syncSession(session, false);
     });
     return () => subscription.unsubscribe();
@@ -13803,6 +13923,7 @@ export default function FlourishApp(){
 
   // ── Auth gate ───────────────────────────────────────────────────
   if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
+  if(recoveryMode)return <ResetPasswordScreen onDone={()=>setRecoveryMode(false)} onCancel={()=>setRecoveryMode(false)}/>;
   if(!user)return <AuthScreen onAuth={u=>setUser(u)}/>;
 
   // ── AI disclosure gate (Apple 5.1.2(i)) — must precede onboarding + all AI features ──
