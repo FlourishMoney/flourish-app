@@ -1055,11 +1055,17 @@ function detectRecurringBills(txns, opts = {}) {
     // Sprint Q item 1: anchor nextDueDate from the LAST observed occurrence + cadence, so the
     // forecast/SafeSpend recur from the real phase (e.g. biweekly last seen 7d ago → due in 7d).
     const _last = dates[dates.length - 1];
-    const _nextDue = _last
-      ? ((finalFreq === "weekly" || finalFreq === "biweekly")
-          ? dateToISO(new Date(_last.getTime() + (finalFreq === "weekly" ? 7 : 14) * 86400000))
-          : dateToISO(_last)) // monthly/semimonthly/quarterly: last-occurrence anchor; billNextDue steps it forward
-      : undefined;
+    let _nextDue;
+    if (_last) {
+      if (finalFreq === "weekly" || finalFreq === "biweekly") {
+        // Sprint Z #7: DST-safe calendar offset (setDate, not +days*86400000 — which drifts a day across a DST boundary).
+        const _d = new Date(_last);
+        _d.setDate(_d.getDate() + (finalFreq === "weekly" ? 7 : 14));
+        _nextDue = dateToISO(_d);
+      } else {
+        _nextDue = dateToISO(_last); // monthly/semimonthly/quarterly: last-occurrence anchor; billNextDue steps it forward
+      }
+    }
 
     bills.push({
       name:    displayName,
@@ -3287,7 +3293,7 @@ generate(data, days = 90, scenario = null) {
       // Advance from last deposit until we pass today, then keep projecting forward
       let next = new Date(anchor);
       next.setDate(next.getDate() + freqDays);
-      const horizon = new Date(today.getTime() + days*86400000);
+      const horizon = new Date(today); horizon.setDate(horizon.getDate() + days); // Sprint Z #7: DST-safe calendar offset
       while(next <= horizon) {
         paydayDates.add(localYMD(next));
         next = new Date(next); next.setDate(next.getDate() + freqDays);
