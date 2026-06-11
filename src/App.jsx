@@ -479,7 +479,11 @@ async function callPlaid(action, params={}, options={}) {
   const body = JSON.stringify({ action, ...params });
   // Quality Sprint item 6: retry transient failures (network drops + 502/503/504) with exponential
   // backoff. Client errors (4xx) and needs_reconnect surface immediately — retrying them is futile.
-  const maxAttempts = options.retries ?? 3;
+  // Quality Sprint review: only auto-retry idempotent/safe actions (reads, keyed upserts, idempotent
+  // deletes). Non-idempotent mutations (exchange_token = single-use public_token) must NOT auto-retry
+  // — a lost response could otherwise double-act. retries:0 still performs 1 attempt.
+  const RETRY_SAFE = new Set(["create_link_token","get_accounts","get_transactions","get_liabilities","get_investments","list_items","migrate_items","delete_item","delete_account"]);
+  const maxAttempts = Math.max(1, options.retries ?? (RETRY_SAFE.has(action) ? 3 : 1));
   let lastErr;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) await new Promise(r => setTimeout(r, 400 * Math.pow(2, attempt - 1))); // 400ms, 800ms
@@ -2949,9 +2953,15 @@ function Sel({label,value,onChange,options}){
     </select>
   </div>;
 }
+// Quality Sprint review: honor prefers-reduced-motion for JS-driven animations too (the CSS media
+// query only covers CSS animations/transitions).
+const _prefersReducedMotion = () => typeof window!=="undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 function CountUp({to,prefix="",decimals=0,dur=900}){
   const [v,setV]=useState(0);
-  useEffect(()=>{let s=0;const step=to/(dur/16);const t=setInterval(()=>{s=Math.min(s+step,to);setV(s);if(s>=to)clearInterval(t);},16);return()=>clearInterval(t);},[to]);
+  useEffect(()=>{
+    if(_prefersReducedMotion()){ setV(to); return; } // jump straight to the value — no count-up
+    let s=0;const step=to/(dur/16);const t=setInterval(()=>{s=Math.min(s+step,to);setV(s);if(s>=to)clearInterval(t);},16);return()=>clearInterval(t);
+  },[to]);
   return <span>{prefix}{(v||0).toFixed(decimals)}</span>;
 }
 
@@ -10622,7 +10632,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
   },[messages]);
 
   useEffect(()=>{
-    bottomRef.current?.scrollIntoView({behavior:"smooth"});
+    bottomRef.current?.scrollIntoView({behavior: _prefersReducedMotion() ? "auto" : "smooth"});
   },[messages]);
 
   // Build a concise financial snapshot to inject into the system prompt
