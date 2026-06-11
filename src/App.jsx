@@ -3862,24 +3862,25 @@ function parseCSVStatement(text) {
   }).filter(t => t.date && t.name);
 }
 
+let _pdfjsLib = null;
 async function loadPdfJs() {
-  if (window.pdfjsLib) return window.pdfjsLib;
-  return new Promise((res, rej) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-    s.onload = () => {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      res(window.pdfjsLib);
-    };
-    s.onerror = rej;
-    document.head.appendChild(s);
-  });
+  if (_pdfjsLib) return _pdfjsLib;
+  // Sprint Z: bundled/self-hosted pdf.js (was injected from cdnjs, which the hardened CSP blocks).
+  // Dynamic import keeps it out of the main bundle — only fetched when a user actually imports a PDF.
+  // The worker is a same-origin bundled asset (worker-src 'self'), no external CDN.
+  const pdfjsLib = await import('pdfjs-dist');
+  const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.js?url')).default;
+  pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+  _pdfjsLib = pdfjsLib;
+  return _pdfjsLib;
 }
 
 async function extractPdfText(file) {
   const lib = await loadPdfJs();
   const buf = await file.arrayBuffer();
-  const pdf = await lib.getDocument({ data: buf }).promise;
+  // isEvalSupported:false → pdf.js never uses eval/new Function (its font-render fast path), so it
+  // stays compliant with the hardened CSP (no 'unsafe-eval'). We only extract text, so no downside.
+  const pdf = await lib.getDocument({ data: buf, isEvalSupported: false }).promise;
   let text = '';
   for (let i = 1; i <= Math.min(pdf.numPages, 12); i++) {
     const page = await pdf.getPage(i);
