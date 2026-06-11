@@ -115,14 +115,22 @@ export function _levenshtein(a, b) {
   return prev[n];
 }
 
+// Known Canadian banking/financial acronyms — preserved as uppercase at ANY length (CIBC, HSBC,
+// TFSA, RRSP…). The short ones (TD, BC, GST…) live here too so the rule is UNIFORM: a token is kept
+// uppercase iff it's in this Set. A blanket "≤3 all-caps" rule was rejected — it mis-preserved common
+// words ("MY"→"MY", "OF"→"OF"); the explicit allowlist Title-Cases those while keeping real acronyms.
+const CA_BANKING_ACRONYMS = new Set([
+  'CIBC','HSBC','AMEX','TFSA','RRSP','RESP','FHSA','GIC','ETF',
+  'PCMC','BMO','RBC','TD','BC','PC','GST','HST','PST','QST','EI','CPP','OAS',
+]);
+
 // Title-case a bank merchant name for display (MATH-LOCK finding #1 — restores the long-corrupted
-// `/\b\w/g` intent). Lowercases then capitalizes each word, BUT preserves short all-caps tokens
-// (≤3 chars: TD, RBC, BMO, BC, PC, GST…) as acronyms — Canadian bank/utility names are full of them.
-// "NETFLIX SUBSCRIPTION" → "Netflix Subscription"; "TD VISA" → "TD Visa"; "BC HYDRO" → "BC Hydro".
+// `/\b\w/g` intent), preserving the acronyms above. "NETFLIX SUBSCRIPTION" → "Netflix Subscription";
+// "TD VISA" → "TD Visa"; "CIBC MORTGAGE" → "CIBC Mortgage"; "MY TFSA CONTRIBUTION" → "My TFSA Contribution".
 export function titleCaseBillName(s) {
   return String(s || "").replace(/\S+/g, w =>
-    (w.length <= 3 && /^[A-Z]+$/.test(w))                       // short all-caps token → keep as acronym
-      ? w
+    CA_BANKING_ACRONYMS.has(w.toUpperCase())                    // known acronym (any length) → keep uppercase
+      ? w.toUpperCase()
       : w.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())  // else Title Case
   );
 }

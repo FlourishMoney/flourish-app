@@ -174,6 +174,13 @@ const D = (iso) => new Date(iso + "T12:00:00");
   t.eq(["NETFLIX SUBSCRIPTION", "TD VISA", "BC HYDRO", "goodlife gym"].map(pn.titleCaseBillName),
        ["Netflix Subscription", "TD Visa", "BC Hydro", "Goodlife Gym"],
        "Title Case bill names, preserving short acronyms (finding #1)");
+  // Explicit 4+ char banking/financial acronym allowlist (CIBC/HSBC/TFSA/RRSP/AMEX) — preserved at any
+  // length; common short words (MY/OF) and ordinary words (BANK/AUTO/LOAN/CARD) are Title-Cased.
+  t.eq(["CIBC MORTGAGE", "HSBC CREDIT CARD", "MY TFSA CONTRIBUTION", "RRSP TRANSFER",
+        "AMEX PAYMENT", "BANK OF MONTREAL", "AUTO LOAN PAYMENT", "CREDIT CARD PAYMENT"].map(pn.titleCaseBillName),
+       ["CIBC Mortgage", "HSBC Credit Card", "My TFSA Contribution", "RRSP Transfer",
+        "AMEX Payment", "Bank Of Montreal", "Auto Loan Payment", "Credit Card Payment"],
+       "Title Case preserves allowlisted acronyms (any length), Title-Cases everything else");
   t.eq(pn.detectRecurringBills([]).length, 0, "detectRecurringBills empty → []");
   // detectIncomeFromTxns
   const inc = pn.detectIncomeFromTxns([{ name: "PAYROLL", amount: -2000, cat: "INCOME", date: "2026-05-15" }, { name: "PAYROLL", amount: -2000, cat: "INCOME", date: "2026-06-15" }]);
