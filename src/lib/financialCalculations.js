@@ -1024,3 +1024,111 @@ export function isBillArchived(b, today = new Date()) {
   const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
   return b.isoDate < todayStr;
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Sprint MATH-LOCK Group B — FinancialCalcEngine (core ratios). PURE: the user's
+// per-transaction category reassignments (`catOverrides`, shape { txnId: category })
+// and `currentDate` are INJECTED — the caller loads catOverrides from localStorage
+// and passes it, so re-categorization is preserved without this layer touching
+// storage or the ambient clock. Defaults preserve the original behavior.
+// ═════════════════════════════════════════════════════════════════════════════
+export const FinancialCalcEngine = {
+  /** Net Worth = all assets − all liabilities */
+  netWorth(data) {
+    const accounts = data.accounts || [];
+    const debts    = data.debts    || [];
+    // Assets: only positive-balance accounts (cash + investment). Credit accounts have
+    // negative balances and are already captured in liabilities.
+    const assets = accounts
+      .filter(a => isCashAccount(a) || isInvestmentAccount(a))
+      .reduce((s,a) => s + Math.max(0, parseFloat(a.balance||0)), 0);
+    const bankCreditAccounts = accounts.filter(a => {
+      const t = (a.type||"").toLowerCase(), s = (a.subtype||"").toLowerCase();
+      return t==="credit" || t==="credit card" || s==="credit card" || t==="line of credit";
+    });
+    const bankCreditLiabilities = bankCreditAccounts
+      .reduce((s,a) => s + Math.abs(parseFloat(a.balance||0)), 0);
+    // Deduplicate: exclude manual debts flagged fromBank or matching a bank account name.
+    const bankCreditNames = new Set(bankCreditAccounts.map(a => (a.name||"").trim().toLowerCase()));
+    const manualNonBankDebts = debts
+      .filter(d => !d.fromBank && !bankCreditNames.has((d.name||"").trim().toLowerCase()))
+      .reduce((s,d) => s + Math.max(0, parseFloat(d.balance||0)), 0);
+    const liabilities = bankCreditLiabilities + manualNonBankDebts;
+    return { assets, liabilities, netWorth: assets - liabilities, bankCreditLiabilities, manualNonBankDebts };
+  },
+
+  /** Monthly cash flow = income − bills − discretionary spend (no double-counting).
+   *  catOverrides { txnId: category } reassign txn categories; currentDate scopes the spend month. */
+  cashFlow(data, catOverrides = {}, currentDate = new Date()) {
+    const incomes = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
+    const bills   = data.bills || [];
+    const getEffCat = (t) => catOverrides[t.id] || t.cat;
+    // Filter to the current month only.
+    const txns = (data.transactions || []).filter(t => {
+      if(t.amount <= 0) return false;
+      if(!t.date) return false;
+      if(t.pending) return false; // pending txns not yet settled — exclude from spending
+      const d = new Date(t.date + "T12:00:00");
+      return d.getFullYear() === currentDate.getFullYear() && d.getMonth() === currentDate.getMonth();
+    });
+    // No invented income fallback — 0 when none entered (ratio calcs guard >0).
+    const monthlyIncome = incomes.reduce((s,i) => s + toMonthly(i.amount, i.freq), 0);
+    const monthlyBills  = bills.reduce((s,b) => s + billMonthlyAmount(b), 0);
+    // Discretionary: excludes non-spend flows, bill categories (already in monthlyBills), CC payments.
+    const monthlySpend  = txns.filter(t => {
+      const cat = getEffCat(t);
+      return !NON_SPEND_CATS.has(cat) &&
+             !BILL_CATS.has(cat) &&
+             !isInternalTransfer(t) &&
+             !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw));
+    }).reduce((s,t) => s + t.amount, 0);
+    const totalExpenses = monthlyBills + monthlySpend;
+    return { monthlyIncome, monthlyBills, monthlySpend, totalExpenses,
+             cashFlow: monthlyIncome - totalExpenses };
+  },
+
+  /** Savings rate = (income − expenses) / income */
+  savingsRate(data, catOverrides = {}, currentDate = new Date()) {
+    const { monthlyIncome, totalExpenses } = FinancialCalcEngine.cashFlow(data, catOverrides, currentDate);
+    return monthlyIncome > 0 ? Math.max(0, (monthlyIncome - totalExpenses) / monthlyIncome) : 0;
+  },
+
+  /** Debt ratio = total debt / annual income (uses only monthlyIncome, override-independent — threaded for API uniformity) */
+  debtRatio(data, catOverrides = {}, currentDate = new Date()) {
+    const { monthlyIncome } = FinancialCalcEngine.cashFlow(data, catOverrides, currentDate);
+    const totalDebt = (data.debts||[]).reduce((s,d) => s + parseFloat(d.balance||0), 0);
+    return monthlyIncome > 0 ? totalDebt / (monthlyIncome * 12) : 0;
+  },
+
+  /** Emergency fund months = liquid savings / monthly expenses */
+  emergencyFundMonths(data, catOverrides = {}, currentDate = new Date()) {
+    const accounts = data.accounts || [];
+    const { totalExpenses } = FinancialCalcEngine.cashFlow(data, catOverrides, currentDate);
+    const liquidSavings = accounts
+      .filter(a => ["savings","checking","depository"].includes(a.type))
+      .reduce((s,a) => s + parseFloat(a.balance||0), 0) || 0;
+    return totalExpenses > 0 ? liquidSavings / totalExpenses : 0;
+  },
+
+  /** Average daily spend from transaction history. Uses raw t.cat (never respected overrides) and
+   *  derives its window from the txn dates themselves — already pure, no params threaded. */
+  avgDailySpend(data) {
+    const txns = (data.transactions || []).filter(t =>
+      t.amount > 0 &&
+      !t.pending &&
+      !isInternalTransfer(t) &&
+      t.cat !== "Income" &&
+      t.cat !== "Fees" &&
+      !BILL_CATS.has(t.cat) &&
+      !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw))
+    );
+    if(txns.length === 0) return 0;
+    const total = txns.reduce((s,t) => s + Math.abs(t.amount), 0);
+    const dates = txns.map(t => new Date(t.date)).filter(d => !isNaN(d));
+    const daySpan = dates.length > 1
+      ? Math.max(1, Math.round((Math.max(...dates) - Math.min(...dates)) / (1000*60*60*24)))
+      : 30;
+    const normalisedDays = Math.min(90, Math.max(14, daySpan));
+    return total / normalisedDays;
+  },
+};

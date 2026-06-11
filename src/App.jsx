@@ -11,7 +11,7 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
-  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived } from "./lib/financialCalculations.js";
+  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine } from "./lib/financialCalculations.js";
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
@@ -756,6 +756,11 @@ function safeLoadLS(key, fallback) {
     return v == null ? fallback : v;
   } catch { return fallback; }
 }
+
+// Sprint MATH-LOCK Group B: per-transaction category reassignments { txnId: category }. Loads the
+// EXACT value FinancialCalcEngine.cashFlow used to read internally — passed into the now-pure engine
+// at every call site so re-categorization keeps affecting cash-flow/spend math (no silent {} drop).
+const getCatOv = () => safeLoadLS("flourish_cat_overrides", {});
 
 function _levenshtein(a, b) {
   if (a === b) return 0;
@@ -1568,7 +1573,7 @@ function FinancialTimeline({data}) {
   // ── Delegate to ForecastEngine — no duplicate forecasting logic ──
   const { forecast } = ForecastEngine.generate(data, 30);
   const safeFloor = SafeSpendEngine.calculate(data).balance * 0.12;
-  const { monthlyIncome } = FinancialCalcEngine.cashFlow(data);
+  const { monthlyIncome } = FinancialCalcEngine.cashFlow(data, getCatOv());
   const avgDaily = FinancialCalcEngine.avgDailySpend(data);
 
   const events = forecast.filter(f => f.day === 0 || f.isPayday || f.bills.length > 0 || f.day === 30);
@@ -1852,7 +1857,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
     // consistent so the simulator's "newSafeToSpend" matches user expectations.
     const safeToSpend  = SafeSpendEngine.calculate(data).safeAmount || 0;
     const dailySpend   = FinancialCalcEngine.avgDailySpend(data) || 0;
-    const cashFlowObj  = FinancialCalcEngine.cashFlow(data);
+    const cashFlowObj  = FinancialCalcEngine.cashFlow(data, getCatOv());
     const monthlySurplus = cashFlowObj.cashFlow || 0;
 
     // Step 3: Deterministic scenario math (no AI involved)
@@ -2913,112 +2918,10 @@ function CountUp({to,prefix="",decimals=0,dur=900}){
 // ── ENGINE 1: FINANCIAL CALCULATION ENGINE ────────────────────────────────────
 // Computes all core financial metrics from raw user data.
 
-const FinancialCalcEngine = {
-  /** Net Worth = all assets − all liabilities */
-  netWorth(data) {
-    const accounts = data.accounts || [];
-    const debts    = data.debts    || [];
-    // Assets: only positive-balance accounts (cash + investment)
-    // Credit accounts have negative balances and are already captured in liabilities
-    const assets = accounts
-      .filter(a => isCashAccount(a) || isInvestmentAccount(a))
-      .reduce((s,a) => s + Math.max(0, parseFloat(a.balance||0)), 0);
-    // Liabilities: bank credit accounts + manual debts not duplicated in bank
-    const bankCreditAccounts = accounts.filter(a => {
-      const t = (a.type||"").toLowerCase(), s = (a.subtype||"").toLowerCase();
-      return t==="credit" || t==="credit card" || s==="credit card" || t==="line of credit";
-    });
-    const bankCreditLiabilities = bankCreditAccounts
-      .reduce((s,a) => s + Math.abs(parseFloat(a.balance||0)), 0);
-    // Deduplicate: exclude manual debts that are flagged fromBank or match a bank account name
-    const bankCreditNames = new Set(bankCreditAccounts.map(a => (a.name||"").trim().toLowerCase()));
-    const manualNonBankDebts = debts
-      .filter(d => !d.fromBank && !bankCreditNames.has((d.name||"").trim().toLowerCase()))
-      .reduce((s,d) => s + Math.max(0, parseFloat(d.balance||0)), 0);
-    const liabilities = bankCreditLiabilities + manualNonBankDebts;
-    return { assets, liabilities, netWorth: assets - liabilities, bankCreditLiabilities, manualNonBankDebts };
-  },
-
-  /** Monthly cash flow = income − bills − discretionary spend (no double-counting) */
-  cashFlow(data) {
-    const incomes = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
-    const bills   = data.bills || [];
-    // catOverrides: ensures user-recategorized transactions affect cash flow correctly
-    const catOv = (()=>{ try{return safeLoadLS("flourish_cat_overrides", {})}catch{return{}} })();
-    const getEffCat = (t) => catOv[t.id] || t.cat;
-    // Filter to current month only
-    const now = new Date();
-    const txns = (data.transactions || []).filter(t => {
-      if(t.amount <= 0) return false;
-      if(!t.date) return false;
-      if(t.pending) return false; // pending txns not yet settled — exclude from spending
-      const d = new Date(t.date + "T12:00:00");
-      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-    });
-    // Bug 1: use the canonical toMonthly import (handles annually).
-    // Bug 5: no invented income fallback — 0 when none entered (ratio calcs guard >0).
-    const monthlyIncome = incomes.reduce((s,i) => s + toMonthly(i.amount, i.freq), 0);
-    // Bills: committed expenses from bills array — source of truth
-    const monthlyBills  = bills.reduce((s,b) => s + billMonthlyAmount(b), 0);
-    // Discretionary: excludes non-spend flows, bill categories (already in monthlyBills), CC payments
-    const monthlySpend  = txns.filter(t => {
-      const cat = getEffCat(t);
-      return !NON_SPEND_CATS.has(cat) &&
-             !BILL_CATS.has(cat) &&
-             !isInternalTransfer(t) &&
-             !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw));
-    }).reduce((s,t) => s + t.amount, 0);
-    // No fallback — zero spend is valid; fabricating spend for bank-connected users breaks cashFlow
-    const totalExpenses = monthlyBills + monthlySpend;
-    return { monthlyIncome, monthlyBills, monthlySpend, totalExpenses,
-             cashFlow: monthlyIncome - totalExpenses };
-  },
-
-  /** Savings rate = (income − expenses) / income */
-  savingsRate(data) {
-    const { monthlyIncome, totalExpenses } = FinancialCalcEngine.cashFlow(data);
-    return monthlyIncome > 0 ? Math.max(0, (monthlyIncome - totalExpenses) / monthlyIncome) : 0;
-  },
-
-  /** Debt ratio = total debt / annual income */
-  debtRatio(data) {
-    const { monthlyIncome } = FinancialCalcEngine.cashFlow(data);
-    const totalDebt = (data.debts||[]).reduce((s,d) => s + parseFloat(d.balance||0), 0);
-    return monthlyIncome > 0 ? totalDebt / (monthlyIncome * 12) : 0;
-  },
-
-  /** Emergency fund months = liquid savings / monthly expenses */
-  emergencyFundMonths(data) {
-    const accounts = data.accounts || [];
-    const { totalExpenses } = FinancialCalcEngine.cashFlow(data);
-    const liquidSavings = accounts
-      .filter(a => ["savings","checking","depository"].includes(a.type))
-      .reduce((s,a) => s + parseFloat(a.balance||0), 0) || 0;
-    return totalExpenses > 0 ? liquidSavings / totalExpenses : 0;
-  },
-
-  /** Average daily spend from transaction history */
-  avgDailySpend(data) {
-    const txns = (data.transactions || []).filter(t =>
-      t.amount > 0 &&
-      !t.pending &&
-      !isInternalTransfer(t) &&
-      t.cat !== "Income" &&
-      t.cat !== "Fees" &&
-      !BILL_CATS.has(t.cat) && // exclude recurring bills already in upcomingBills
-      !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw))
-    );
-    if(txns.length === 0) return 0;
-    const total = txns.reduce((s,t) => s + Math.abs(t.amount), 0);
-    // Calculate actual date span from transaction history (max 90 days)
-    const dates = txns.map(t => new Date(t.date)).filter(d => !isNaN(d));
-    const daySpan = dates.length > 1
-      ? Math.max(1, Math.round((Math.max(...dates) - Math.min(...dates)) / (1000*60*60*24)))
-      : 30;
-    const normalisedDays = Math.min(90, Math.max(14, daySpan));
-    return total / normalisedDays;
-  },
-};
+// Sprint MATH-LOCK Group B: FinancialCalcEngine moved to financialCalculations.js (imported above).
+// cashFlow/savingsRate/debtRatio/emergencyFundMonths now take (data, catOverrides, currentDate).
+// Call sites pass getCatOv() (the same flourish_cat_overrides load the engine did internally) so the
+// re-categorization feature is preserved; currentDate defaults to now (behavior-preserving).
 
 // ── ENGINE 2: SAFE-SPEND ENGINE ───────────────────────────────────────────────
 // Core feature: What is truly safe to spend right now?
@@ -3085,7 +2988,7 @@ const SafeSpendEngine = {
     const safetyBuf  = Math.round((Number.isFinite(avgDaily) ? avgDaily : 0) * 10);
 
     // Savings allocation: 10% of monthly income
-    const { monthlyIncome } = FinancialCalcEngine.cashFlow(data);
+    const { monthlyIncome } = FinancialCalcEngine.cashFlow(data, getCatOv());
     const mIncome    = Number.isFinite(monthlyIncome) ? monthlyIncome : 0;
     const savingsAlloc = Math.round(mIncome * 0.10 / 30 * 10); // 10 days' worth
     const noIncome   = !(mIncome > 0); // Sprint Q item 3: signal "set up income" instead of a misleading number
@@ -3241,7 +3144,7 @@ generate(data, days = 90, scenario = null) {
 const BehaviorEngine = {
   analyze(data) {
     const txns   = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
-    const income = FinancialCalcEngine.cashFlow(data).monthlyIncome;
+    const income = FinancialCalcEngine.cashFlow(data, getCatOv()).monthlyIncome;
     const insights = [];
 
     // ① Payday spending spike: compare spend in days 1-3 vs rest of month
@@ -3313,7 +3216,7 @@ const AutopilotEngine = {
    */
   generate(data) {
     const { safeAmount, balance, soonBills, riskLevel: rawRisk } = SafeSpendEngine.calculate(data);
-    const { monthlyIncome, cashFlow, totalExpenses } = FinancialCalcEngine.cashFlow(data);
+    const { monthlyIncome, cashFlow, totalExpenses } = FinancialCalcEngine.cashFlow(data, getCatOv());
     const { forecast, overdraftRisk, lowBalanceWarnings } = ForecastEngine.generate(data, 30);
     const { spendingStability, spikeRatio } = BehaviorEngine.analyze(data);
     const debts = [...(data.debts || [])].sort((a,b) => parseFloat(b.rate||0) - parseFloat(a.rate||0)); // Sprint 6b: copy before sort — never mutate data.debts in render
@@ -3377,7 +3280,7 @@ const AutopilotEngine = {
     let savingsTransfer = 0;
     let savingsTarget = "Emergency Fund";
     if (mode !== "high" && surplus > monthlyIncome * 0.12) {
-      const efMonths = typeof FinancialCalcEngine.emergencyFundMonths === 'function' ? FinancialCalcEngine.emergencyFundMonths(data) : 0;
+      const efMonths = typeof FinancialCalcEngine.emergencyFundMonths === 'function' ? FinancialCalcEngine.emergencyFundMonths(data, getCatOv()) : 0;
       const invAcct  = (data.accounts||[]).find(a => isInvestmentAccount(a));
       savingsTarget  = efMonths < 3 ? "Emergency Fund" : invAcct ? "TFSA / Investment" : "Savings";
       // Adaptive: reduce savings amount if spending is volatile
@@ -3450,10 +3353,10 @@ const AutopilotEngine = {
 // ── ENGINE 5: FINANCIAL HEALTH SCORE (spec-compliant: Savings 25%, Debt 20%, Emergency 20%, Stability 15%, Investments 10%, Credit 10%) ──
 function calcHealthScore(data) {
   // Pull from engines for consistency
-  const { monthlyIncome, totalExpenses, monthlySpend } = FinancialCalcEngine.cashFlow(data);
-  const efMonths      = FinancialCalcEngine.emergencyFundMonths(data);
-  const debtRatio     = FinancialCalcEngine.debtRatio(data);
-  const savingsRate   = FinancialCalcEngine.savingsRate(data);
+  const { monthlyIncome, totalExpenses, monthlySpend } = FinancialCalcEngine.cashFlow(data, getCatOv());
+  const efMonths      = FinancialCalcEngine.emergencyFundMonths(data, getCatOv());
+  const debtRatio     = FinancialCalcEngine.debtRatio(data, getCatOv());
+  const savingsRate   = FinancialCalcEngine.savingsRate(data, getCatOv());
   const { spendingStability } = BehaviorEngine.analyze(data);
   const accounts      = data.accounts || [];
   const debts         = data.debts    || [];
@@ -5105,7 +5008,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const soonBills   = _ss.soonBills;
   const soonTotal   = _ss.upcomingBills;
   const today       = new Date().getDate();
-  const monthlyIncome = FinancialCalcEngine.cashFlow(data).monthlyIncome;
+  const monthlyIncome = FinancialCalcEngine.cashFlow(data, getCatOv()).monthlyIncome;
   const { netWorth, liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
   // Badge reads live from localStorage so it updates after Notifications marks-read
   const getUnreadCount = () => {
@@ -6416,7 +6319,7 @@ function PlanAhead({data, setAppData, setScreen}){
   const { balance: bal } = SafeSpendEngine.calculate(data);
   // Use actual per-paycheque amount based on income frequency
   const _retFreq = (data.incomes||[])[0]?.freq||"biweekly";
-  const _retMoInc = FinancialCalcEngine.cashFlow(data).monthlyIncome;
+  const _retMoInc = FinancialCalcEngine.cashFlow(data, getCatOv()).monthlyIncome;
   const income = _retFreq==="monthly"?_retMoInc:_retFreq==="semimonthly"?_retMoInc/2:_retFreq==="weekly"?_retMoInc/4.333:_retMoInc/2.167;
   const minBalance = Math.min(...days.map(d => d.balance));
 
@@ -6432,7 +6335,7 @@ function PlanAhead({data, setAppData, setScreen}){
       const _fbal = SafeSpendEngine.calculate(data).balance;
       const _favg = FinancialCalcEngine.avgDailySpend(data);
       const _ffreq = (data.incomes||[])[0]?.freq||"biweekly";
-      const _fIncome = FinancialCalcEngine.cashFlow(data).monthlyIncome;
+      const _fIncome = FinancialCalcEngine.cashFlow(data, getCatOv()).monthlyIncome;
       const _fPay = _ffreq==="monthly"?_fIncome:_ffreq==="semimonthly"?_fIncome/2:_ffreq==="weekly"?_fIncome/4.333:_fIncome/2.167;
       return (
         <div style={{background:C.isDark?"rgba(255,255,255,0.03)":C.surface,borderRadius:14,padding:"12px 16px",border:`1px solid ${C.border}`}}>
@@ -8784,7 +8687,7 @@ function Family({data,household,setHousehold,setScreen}){
 
   // Pull real metrics for meeting
   const _ss=SafeSpendEngine.calculate(data);
-  const {monthlyIncome,monthlyBills,cashFlow}=FinancialCalcEngine.cashFlow(data);
+  const {monthlyIncome,monthlyBills,cashFlow}=FinancialCalcEngine.cashFlow(data, getCatOv());
   const { liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
   const SKIP_FAM = new Set(["Transfer","Income","Fees"]);
   const topSpend=(data.transactions||[])
@@ -9638,7 +9541,7 @@ function WidgetScreen({data,onBack}){
   );
 
   // Compute cashFlow for widget
-  const {cashFlow:wCashFlow}=FinancialCalcEngine.cashFlow(data);
+  const {cashFlow:wCashFlow}=FinancialCalcEngine.cashFlow(data, getCatOv());
   // Check-in streak from localStorage
   const wStreak=(()=>{try{return parseInt(localStorage.getItem("flourish_streak")||"0");}catch{return 0;}})();
 
@@ -10618,9 +10521,9 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     // The Coach must see these so it can answer "can I afford X" honestly.
     // Without safeToSpend, the Coach treats any purchase < raw balance as fine.
     const _safeSpend  = SafeSpendEngine.calculate(data);
-    const _cashFlow   = FinancialCalcEngine.cashFlow(data);
+    const _cashFlow   = FinancialCalcEngine.cashFlow(data, getCatOv());
     const _avgDaily   = FinancialCalcEngine.avgDailySpend(data) || 0;
-    const _efMonths   = FinancialCalcEngine.emergencyFundMonths(data) || 0;
+    const _efMonths   = FinancialCalcEngine.emergencyFundMonths(data, getCatOv()) || 0;
     const _safeToSpend     = _safeSpend.safeAmount || 0;
     const _upcomingBills   = _safeSpend.upcomingBills || 0;
     const _monthlySurplus  = _cashFlow.cashFlow || 0;
@@ -11433,7 +11336,7 @@ function FirstVisitScreen({data, onDismiss}) {
   const [showBreakdown, setShowBreakdown] = useState(false);
 
   const { safeAmount } = SafeSpendEngine.calculate(data);
-  const { monthlyIncome, monthlyBills } = FinancialCalcEngine.cashFlow(data);
+  const { monthlyIncome, monthlyBills } = FinancialCalcEngine.cashFlow(data, getCatOv());
   const toMo = toMonthly; // Bug 1: canonical converter
   const incomeAmt = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
   const billsAmt = (data.bills||[]).reduce((s,b)=>s+billMonthlyAmount(b),0);
