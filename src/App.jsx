@@ -4184,7 +4184,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
         {/* App-level bank-data consent (Apple 5.1.1/5.1.2) — separate from Plaid Link's own consent */}
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
           <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-            Flourish reads your balances, transactions, and account details on a <strong style={{color:C.cream}}>read-only</strong> basis — we can never move your money. We keep that data only while you use Flourish, and you can disconnect any bank any time from <strong style={{color:C.cream}}>Settings → Connected Accounts</strong>. Delete your account and all your bank data is permanently erased with it. Full details are in our <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit",textDecoration:"underline"}}>Privacy Policy</button>.
+            Flourish reads your balances, transactions, and account details on a <strong style={{color:C.cream}}>read-only</strong> basis — we can never move your money. Your data is stored in Supabase, <strong style={{color:C.cream}}>encrypted in transit and at rest</strong>. We keep it only while you use Flourish, and you can disconnect any bank any time from <strong style={{color:C.cream}}>Settings → Connected Accounts</strong>. Delete your account and all your bank data is permanently erased <strong style={{color:C.cream}}>within 30 days</strong>. Full details are in our <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit",textDecoration:"underline"}}>Privacy Policy</button>.
           </div>
           <label style={{display:"flex",gap:10,alignItems:"flex-start",marginTop:12,cursor:"pointer"}}>
             <input type="checkbox" checked={bankConsent} onChange={e=>setBankConsent(e.target.checked)} style={{marginTop:1,width:16,height:16,accentColor:C.teal,cursor:"pointer",flexShrink:0}}/>
@@ -4202,7 +4202,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
 
         {/* Main CTA button */}
         <button
-          onClick={canConnect?openPlaidLink:undefined}
+          onClick={canConnect?()=>{ try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at", new Date().toISOString()); }catch{} openPlaidLink(); }:undefined}
           disabled={!canConnect}
           style={{width:"100%",background:canConnect?`linear-gradient(135deg,${C.teal},${C.tealBright})`:"rgba(255,255,255,0.06)",border:canConnect?"none":`1px solid ${C.border}`,borderRadius:14,padding:"15px 18px",color:"white",fontSize:15,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:10,cursor:canConnect?"pointer":"default",fontFamily:"inherit",marginBottom:10,transition:"all .3s",opacity:canConnect?1:0.55}}>
           {linkTokenLoading?(
@@ -11565,6 +11565,28 @@ function AIDisabledNotice({onOpenSettings, onClose}){
   );
 }
 
+// Apple 5.1.1: app-level bank-data consent shown before a Settings-initiated Plaid connect
+// (onboarding uses the inline consent card). Separate from Plaid Link's own consent.
+function BankConsentModal({ onContinue, onCancel }){
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{maxWidth:420,width:"100%",background:C.bg,borderRadius:24,border:`1px solid ${C.border}`,padding:24}}>
+        <div style={{textAlign:"center",marginBottom:16}}>
+          <div style={{fontSize:40,marginBottom:8}}>🔒</div>
+          <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:22,color:C.cream}}>Connect your bank</div>
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"16px 18px",marginBottom:18}}>
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            Flourish connects to your bank via <strong style={{color:C.cream}}>Plaid (read-only — we can never move money)</strong>. We see transactions, balances, and account names. Data is stored in Supabase, <strong style={{color:C.cream}}>encrypted in transit and at rest</strong>. You can disconnect anytime in Settings. Deleting your account permanently removes all bank data <strong style={{color:C.cream}}>within 30 days</strong>.
+          </div>
+        </div>
+        <button onClick={onContinue} style={{width:"100%",background:`linear-gradient(135deg,${C.teal},${C.tealBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"none",cursor:"pointer",marginBottom:10}}>Continue to Plaid</button>
+        <button onClick={onCancel} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer"}}>Not now</button>
+      </div>
+    </div>
+  );
+}
+
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 const NAV=[
   {id:"home",  icon:"home",     label:"Today"},
@@ -13202,6 +13224,7 @@ export default function FlourishApp(){
   // and only at one-time migration of existing beta users to Supabase.
   const [needsReconnect,setNeedsReconnect]=useState(false);
   const [reconnectToken,setReconnectToken]=useState(null);
+  const [showBankConsent,setShowBankConsent]=useState(false); // Apple 5.1.1: consent before a settings-initiated Plaid connect
   const [reconnectLoading,setReconnectLoading]=useState(false);
   // ── Trial timer (Phase D7: library-driven, single source of truth) ─────────
   // trialDaysLeft: number 0..14 (during active trial), or null if user is not on trial
@@ -13705,7 +13728,7 @@ export default function FlourishApp(){
     }
   };
 
-  const handleAddNewBank = async ()=>{
+  const doAddNewBank = async ()=>{
     // FRESH LINK: always creates new connection, never update mode
     if(reconnectLoading) return;
     setReconnectLoading(true);
@@ -13714,6 +13737,12 @@ export default function FlourishApp(){
     callPlaid("create_link_token", { country, user_id: user?.id }, {jwt})
       .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
       .catch(()=>{ setReconnectLoading(false); alert("Could not start bank connection — please try again."); });
+  };
+  // Apple 5.1.1: gate a settings-initiated connect on the app-level bank consent, unless the user
+  // already consented (timestamp synced via user_data) — show it once.
+  const handleAddNewBank = ()=>{
+    let consented=false; try { consented=!!localStorage.getItem("flourish_plaid_consented_at"); } catch {}
+    if(consented) doAddNewBank(); else setShowBankConsent(true);
   };
 
 
@@ -13791,7 +13820,7 @@ export default function FlourishApp(){
 
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <Settings data={appData} setAppData={setAppData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled}/>;
+    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>setShowSettings(false)} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled}/>{showBankConsent&&<BankConsentModal onContinue={()=>{ try{localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString());}catch{} setShowBankConsent(false); doAddNewBank(); }} onCancel={()=>setShowBankConsent(false)}/>}</>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;

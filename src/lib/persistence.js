@@ -39,6 +39,7 @@ const SIDE_KEYS = [
   "flourish_ai_disclosure_seen", // Apple 5.1.2(i) AI disclosure acknowledged (cross-device)
   "flourish_ai_disclosed_at",    // timestamp of the AI-disclosure choice (audit trail)
   "flourish_ai_coach_enabled",   // AI on/off choice (synced so it persists across devices)
+  "flourish_plaid_consented_at", // Apple 5.1.1 bank-data consent timestamp (cross-device, see-once)
 ];
 // Per-kid dynamic keys (chores / data / theme) share this prefix.
 const SIDE_KEY_PREFIX = "flourish_kid_";
