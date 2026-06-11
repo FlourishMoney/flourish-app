@@ -13494,28 +13494,21 @@ export default function FlourishApp(){
           try { localStorage.setItem("flourish_db_migrated", "1"); } catch {}
           setShowMigratedBanner(true);                    // (5) surface the one-time banner
         }
-        // Sprint Q item 11: the profiles table is the AUTHORITATIVE source for plan/founder (the
-        // server enforces real limits from it too). Read it, grant a trial to a never-trialed free
-        // row, expire stale trials, and reflect into the client plan. premium/beta_founder are the
-        // client's vocabulary → map plus/pro→premium, founder_flag→beta_founder.
+        // Sprint Q item 11: the profiles table is the AUTHORITATIVE source for plan/founder; the
+        // server enforces real limits from it. This client read is UI-ONLY — it cannot grant
+        // anything (RLS + a guard trigger block client writes to plan/founder/trial; the server
+        // grants the trial at signup and derives expiry). Map plus/pro→premium, founder_flag→beta_founder.
         try {
           const { data: prof } = await supabase.from("profiles").select("plan,trial_started_at,founder_flag").eq("user_id", user.id).maybeSingle();
           if (!cancelled && prof) {
-            let pf = prof; const TRIAL_MS = 14 * 86400000;
-            if (pf.plan === "free" && !pf.trial_started_at) { // first load on a fresh free row → start the trial
-              const nowIso = new Date().toISOString();
-              try { const { error } = await supabase.from("profiles").update({ plan: "trial", trial_started_at: nowIso }).eq("user_id", user.id); if (!error) pf = { ...pf, plan: "trial", trial_started_at: nowIso }; } catch {}
-            } else if (pf.plan === "trial" && pf.trial_started_at && (Date.now() - new Date(pf.trial_started_at).getTime()) >= TRIAL_MS) {
-              try { await supabase.from("profiles").update({ plan: "free" }).eq("user_id", user.id); } catch {} // expire stale trial server-side
-              pf = { ...pf, plan: "free" };
-            }
+            const TRIAL_MS = 14 * 86400000;
             let cp = "free";
-            if (pf.founder_flag) cp = "beta_founder";
-            else if (pf.plan === "plus" || pf.plan === "pro") cp = "premium";
-            else if (pf.plan === "trial") cp = "trial";
+            if (prof.founder_flag) cp = "beta_founder";
+            else if (prof.plan === "plus" || prof.plan === "pro") cp = "premium";
+            else if (prof.plan === "trial" && prof.trial_started_at && (Date.now() - new Date(prof.trial_started_at).getTime()) < TRIAL_MS) cp = "trial";
             setPlan(cp);
-            if (pf.trial_started_at) { try { localStorage.setItem("flourish_trial_started_at", pf.trial_started_at); } catch {} }
-            if (!cancelled) setIsPremium(isCapacitorIOS() || cp === "premium" || cp === "beta_founder" || cp === "trial");
+            if (prof.trial_started_at) { try { localStorage.setItem("flourish_trial_started_at", prof.trial_started_at); } catch {} }
+            setIsPremium(isCapacitorIOS() || cp === "premium" || cp === "beta_founder" || cp === "trial");
           }
         } catch (e) { console.error("[profiles] plan reconcile failed:", e?.message || e); }
         if (!cancelled) {

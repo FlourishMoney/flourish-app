@@ -470,6 +470,15 @@ exports.handler = async (event) => {
       const admin = getAdminClient();
       const successes = [];
       const failures = [];
+      // Sprint Q item 11: enforce the free-tier one-bank cap here too (migrate_items is a SECOND
+      // write path into plaid_items). Re-migrating an already-active item is always allowed.
+      const { unlimited } = await getUserPlan(user_id);
+      let existingIds = new Set(), activeCount = 0;
+      if (!unlimited) {
+        const { data: existing } = await admin.from("plaid_items").select("item_id").eq("user_id", user_id).eq("status", "active");
+        existingIds = new Set((existing || []).map(r => r.item_id));
+        activeCount = existingIds.size;
+      }
       for (const t of tokens) {
         if (!t?.token) {
           failures.push({ error: "missing token" });
@@ -482,6 +491,11 @@ exports.handler = async (event) => {
           const institution_id = itemResp.item?.institution_id || null;
           if (!item_id) {
             failures.push({ error: "no item_id returned" });
+            continue;
+          }
+          // Free tier: skip NEW banks beyond the one-bank cap (re-migrating an existing item is fine).
+          if (!unlimited && !existingIds.has(item_id) && activeCount >= 1) {
+            failures.push({ error: "plan_limit", message: "Free plan supports one bank — upgrade to Plus to add more." });
             continue;
           }
           // Upsert (idempotent — re-running migration is safe)
@@ -500,6 +514,7 @@ exports.handler = async (event) => {
             failures.push({ error: "Could not save this bank." });
             continue;
           }
+          if (!existingIds.has(item_id)) { existingIds.add(item_id); activeCount++; }
           successes.push({ item_id });
         } catch (err) {
           // Plaid /item/get failed (revoked token, login required, network, etc.)
