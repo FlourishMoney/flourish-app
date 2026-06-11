@@ -15,6 +15,7 @@ import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict,
 import { normaliseTxns, detectIncomeFromTxns, detectRecurringBills, markTransfers } from "./lib/plaidNormalize.js";
 import { SafeSpendEngine } from "./lib/safeSpendEngine.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
+import { AutopilotEngine, calcHealthScore } from "./lib/decisionEngine.js";
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
@@ -978,7 +979,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
 function AutopilotCard({data, setScreen}) {
   const [revealed, setRevealed] = useState(false);
   const [showDrillDown, setShowDrillDown] = useState(false);
-  const plan = AutopilotEngine.generate(data);
+  const plan = AutopilotEngine.generate(data, getCatOv());
   const today = new Date().toLocaleDateString("en-CA", {weekday:"long", month:"long", day:"numeric"});
   const hasActions = plan.savingsTransfer > 0 || plan.debtPayment > 0 || plan.goalContribution > 0;
 
@@ -1423,7 +1424,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
     .reduce((s,i) => s + _toMoSim(i.amount,i.freq), 0); // Bug 5: no fake income fallback
   const { liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
   const bills = (data.bills||[]).reduce((s,b) => s + billMonthlyAmount(b), 0);
-  const {score} = calcHealthScore(data);
+  const {score} = calcHealthScore(data, getCatOv());
 
   const simulate = async (q, typeOverride) => {
     const qText = q || inputVal;
@@ -2298,7 +2299,7 @@ function MoneyWrapped({data, onClose}) {
   const lowestCat = Object.entries(cats).sort((a,b)=>a[1]-b[1])[0] || ["Transport","45"];
   const biggestTxn = txns.sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount))[0];
   const netWorthChange = Math.round(_wrappedNW);
-  const {score} = calcHealthScore(data);
+  const {score} = calcHealthScore(data, getCatOv());
   const year = new Date().getFullYear();
 
   const slides = [
@@ -2667,266 +2668,9 @@ function CountUp({to,prefix="",decimals=0,dur=900}){
 
 // ── ENGINE 3: 90-DAY CASH FLOW FORECAST — moved to lib/forecastEngine.js (Sprint MATH-LOCK Group E) ──
 
-// ── ENGINE 4: BEHAVIOR ANALYSIS ENGINE ────────────────────────────────────────
-// Detects spending patterns: payday spikes, subscription creep, impulse clusters.
-
-const BehaviorEngine = {
-  analyze(data) {
-    const txns   = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
-    const income = FinancialCalcEngine.cashFlow(data, getCatOv()).monthlyIncome;
-    const insights = [];
-
-    // ① Payday spending spike: compare spend in days 1-3 vs rest of month
-    const earlyMonthSpend = txns.filter(t => {
-      const d = new Date(t.date); return d.getDate() <= 5;
-    }).reduce((s,t) => s + Math.abs(t.amount), 0);
-    const restSpend = txns.filter(t => {
-      const d = new Date(t.date); return d.getDate() > 5;
-    }).reduce((s,t) => s + Math.abs(t.amount), 0);
-    const restDailyAvg = (restSpend / 25) || 1;
-    const earlyDailyAvg = (earlyMonthSpend / 5) || 0;
-    const spikeRatio = earlyDailyAvg / restDailyAvg;
-    if (spikeRatio > 1.35) {
-      insights.push({
-        type:"pattern", icon:"📈", priority:"high", color: C.orange,
-        title:"Payday spending spike detected",
-        body:`Your daily spend is ${Math.round((spikeRatio-1)*100)}% higher in the first 5 days of the month. This pattern is responsible for most cash shortfalls later.`,
-        saving: `$${Math.round((earlyDailyAvg - restDailyAvg) * 5 * 0.6)}/mo if corrected`
-      });
-    }
-
-    // ② Subscription creep: count + total subscription transactions
-    const subTxns  = txns.filter(t => t.cat === "Subscriptions");
-    const subTotal = subTxns.reduce((s,t) => s + Math.abs(t.amount), 0);
-    if (subTxns.length >= 3 && subTotal > 35) {
-      insights.push({
-        type:"warning", icon:"📱", priority:"medium", color: C.teal,
-        title:"Subscription creep detected",
-        body:`${subTxns.length} recurring subscriptions totalling $${(subTotal||0).toFixed(0)}/mo. That's ${Math.round(subTotal/income*100)}% of your income.`,
-        saving: `$${Math.round(subTotal * 0.35)}/mo potential saving`
-      });
-    }
-
-    // ③ Dining / delivery inflation
-    const diningTxns  = txns.filter(t => ["Food","Coffee","Dining"].includes(t.cat));
-    const diningTotal = diningTxns.reduce((s,t) => s + Math.abs(t.amount), 0);
-    if (diningTotal > income * 0.18) {
-      insights.push({
-        type:"pattern", icon:"🍔", priority:"medium", color: C.gold,
-        title:"Food spending above benchmark",
-        body:`Food & dining is $${diningTotal.toFixed(0)}/mo — ${Math.round(diningTotal/income*100)}% of income. Benchmark is under 15%.`,
-        saving: `$${Math.round(diningTotal * 0.25)}/mo by cooking 3x more/week`
-      });
-    }
-
-    // ④ Spending stability (variance) — low variance = better score
-    const daily = {};
-    txns.forEach(t => {
-      const k = t.date?.slice(0,10) || "na";
-      daily[k] = (daily[k]||0) + Math.abs(t.amount);
-    });
-    const vals = Object.values(daily);
-    const mean = vals.reduce((s,v)=>s+v,0) / (vals.length||1);
-    const variance = vals.reduce((s,v)=>s+Math.pow(v-mean,2),0) / (vals.length||1);
-    const cv = Math.sqrt(variance) / (mean||1); // coefficient of variation
-
-    return { insights, spikeRatio, subTotal, diningTotal, spendingStability: Math.max(0, 1 - cv) };
-  }
-};
-
-const AutopilotEngine = {
-  /**
-   * ADAPTIVE AUTOPILOT ENGINE
-   * Continuously adjusts the daily money plan based on:
-   *   1. Behavior patterns (spikeRatio, stability)
-   *   2. Forecast risk (upcoming low-balance events)
-   *   3. Income schedule (detects payday from onboarding data)
-   *   4. Risk mode (Low / Medium / High) that gates all allocations
-   */
-  generate(data) {
-    const { safeAmount, balance, soonBills, riskLevel: rawRisk } = SafeSpendEngine.calculate(data);
-    const { monthlyIncome, cashFlow, totalExpenses } = FinancialCalcEngine.cashFlow(data, getCatOv());
-    const { forecast, overdraftRisk, lowBalanceWarnings } = ForecastEngine.generate(data, 30);
-    const { spendingStability, spikeRatio } = BehaviorEngine.analyze(data);
-    const debts = [...(data.debts || [])].sort((a,b) => parseFloat(b.rate||0) - parseFloat(a.rate||0)); // Sprint 6b: copy before sort — never mutate data.debts in render
-    const goals  = data.goals || [];
-    const today  = new Date();
-    const todayNum = today.getDate();
-
-    // ── ADAPTIVE: Derive payday from ForecastEngine (anchor-based, not modulo) ─
-    const nextPayday = forecast.find(f => f.day > 0 && f.isPayday);
-    const daysLeft   = Math.max(1, nextPayday ? nextPayday.day : 14);
-
-    // ── ADAPTIVE: Base safeDaily, then adjust for behavior ───────────────────
-    let safeDaily = daysLeft > 0 ? Math.floor(safeAmount / daysLeft) : safeAmount;
-
-    // Behavior adjustment ①: spike ratio → tighten daily limit
-    if (spikeRatio > 1.4) {
-      const reduction = Math.round(safeDaily * 0.15);
-      safeDaily = Math.max(0, safeDaily - reduction);
-    }
-    // Behavior adjustment ②: consistent underspend → loosen daily limit
-    if (spendingStability > 0.85 && spikeRatio < 1.1) {
-      safeDaily = Math.round(safeDaily * 1.08);
-    }
-
-    // ── ADAPTIVE: Forecast-driven pre-emptive tightening ─────────────────────
-    // If balance will drop dangerously within 7 days, reduce today's limit now
-    const nearTermLow = lowBalanceWarnings.find(w => w.day <= 7);
-    if (nearTermLow) {
-      const daysUntilLow = nearTermLow.day;
-      const urgency = 1 - (daysUntilLow / 7); // 0 = 7 days away, 1 = tomorrow
-      safeDaily = Math.round(safeDaily * (1 - urgency * 0.30));
-    }
-
-    // ── ADAPTIVE: Risk mode gates all downstream allocations ─────────────────
-    // Derived from SafeSpendEngine risk + forecast signals
-    const forecastDanger = overdraftRisk.length > 0;
-    const mode = forecastDanger ? "high" :
-                 rawRisk === "critical" || rawRisk === "high" ? "high" :
-                 rawRisk === "medium" || nearTermLow ? "medium" : "low";
-
-    const modeMultipliers = {
-      low:    { savings: 0.40, debt: 0.40, goal: 0.50 },
-      medium: { savings: 0.20, debt: 0.30, goal: 0.25 },
-      high:   { savings: 0,    debt: 0,    goal: 0    },
-    };
-    const mult = modeMultipliers[mode];
-
-    // ── Safe floor & surplus ──────────────────────────────────────────────────
-    const safeFloor = monthlyIncome * 0.15;
-    const surplus = Math.max(0,
-      balance
-      - soonBills.reduce((s,b) => s + parseFloat(b.amount||0), 0)
-      - (totalExpenses / 30 * daysLeft)   // forecast remaining spend this period
-      - safeFloor
-    );
-
-    // ── ① Daily spend limit (adaptive) ───────────────────────────────────────
-    const dailySpendLimit = Math.max(0, safeDaily);
-
-    // ── ② Savings transfer (mode-gated, adaptive amount) ─────────────────────
-    let savingsTransfer = 0;
-    let savingsTarget = "Emergency Fund";
-    if (mode !== "high" && surplus > monthlyIncome * 0.12) {
-      const efMonths = typeof FinancialCalcEngine.emergencyFundMonths === 'function' ? FinancialCalcEngine.emergencyFundMonths(data, getCatOv()) : 0;
-      const invAcct  = (data.accounts||[]).find(a => isInvestmentAccount(a));
-      savingsTarget  = efMonths < 3 ? "Emergency Fund" : invAcct ? "TFSA / Investment" : "Savings";
-      // Adaptive: reduce savings amount if spending is volatile
-      const volatilityFactor = spendingStability > 0.7 ? 1.0 : 0.7;
-      savingsTransfer = Math.round(surplus * mult.savings * volatilityFactor);
-    }
-
-    // ── ③ Debt acceleration (mode-gated) ─────────────────────────────────────
-    let debtPayment = 0;
-    let debtTarget  = null;
-    const remainAfterSavings = surplus - savingsTransfer;
-    if (mode !== "high" && remainAfterSavings > 30 && debts.length > 0 && parseFloat(debts[0].rate||0) > 8) {
-      debtPayment = Math.round(Math.min(remainAfterSavings * mult.debt, 200));
-      debtTarget  = debts[0];
-    }
-
-    // ── ④ Goal contribution (mode-gated) ─────────────────────────────────────
-    let goalContribution = 0;
-    let goalTarget = null;
-    const remainAfterDebt = remainAfterSavings - debtPayment;
-    if (mode === "low" && remainAfterDebt > 20 && goals.length > 0) {
-      goalContribution = Math.round(remainAfterDebt * mult.goal);
-      goalTarget = goals[0];
-    }
-
-    // ── ⑤ Buffer ─────────────────────────────────────────────────────────────
-    const buffer = Math.max(0, balance - dailySpendLimit - savingsTransfer - debtPayment - goalContribution);
-
-    // ── ⑥ Adaptive alerts (contextual, not generic) ──────────────────────────
-    const alerts = [];
-    if (mode === "high") {
-      const msg = forecastDanger
-        ? `Balance projected to go negative in ${overdraftRisk[0]?.day} days. Hold all non-essential spending.`
-        : "Cash is critically low. Bills protection mode active — savings and extras paused.";
-      alerts.push({ type:"danger", msg });
-    } else if (nearTermLow) {
-      alerts.push({ type:"warning", msg:`Balance drops near your safety floor in ${nearTermLow.day} days — daily limit tightened by 15% as a precaution.` });
-    }
-    if (spikeRatio > 1.4 && mode !== "high") {
-      alerts.push({ type:"tip", msg:`Payday spike habit detected (+${Math.round((spikeRatio-1)*100)}%). Daily limit reduced by 15% to smooth your cash flow.` });
-    }
-
-    // ── ⑦ Adherence — based on spending stability (0-100) ────────────────────
-    const adherence = Math.min(100, Math.round(spendingStability * 100));
-
-    // ── ⑧ Mode label for UI ──────────────────────────────────────────────────
-    const modeLabel = mode === "low" ? "On Track" : mode === "medium" ? "Monitor" : "At Risk";
-    const adaptations = [
-      spikeRatio > 1.4 && `Limit -15% (payday spike habit)`,
-      nearTermLow && `Limit tightened (low balance in ${nearTermLow.day}d)`,
-      spendingStability > 0.85 && `Limit +8% (consistent spending)`,
-      mode === "high" && `Extras paused (protect bills first)`,
-    ].filter(Boolean);
-
-    return {
-      dailySpendLimit, savingsTransfer, savingsTarget,
-      debtPayment, debtTarget, goalContribution, goalTarget,
-      buffer, alerts, mode, modeLabel,
-      daysLeft, adherence, surplus, adaptations,
-      riskLevel: rawRisk,
-    };
-  }
-};
-
-
-// ── ENGINE 5: FINANCIAL HEALTH SCORE ENGINE (spec-compliant weights) ──────────
-// Weights from Flourish spec: Savings 25%, Debt 20%, Emergency 20%,
-// Spending Stability 15%, Investments 10%, Credit 10%
-
-// ── ENGINE 5: FINANCIAL HEALTH SCORE (spec-compliant: Savings 25%, Debt 20%, Emergency 20%, Stability 15%, Investments 10%, Credit 10%) ──
-function calcHealthScore(data) {
-  // Pull from engines for consistency
-  const { monthlyIncome, totalExpenses, monthlySpend } = FinancialCalcEngine.cashFlow(data, getCatOv());
-  const efMonths      = FinancialCalcEngine.emergencyFundMonths(data, getCatOv());
-  const debtRatio     = FinancialCalcEngine.debtRatio(data, getCatOv());
-  const savingsRate   = FinancialCalcEngine.savingsRate(data, getCatOv());
-  const { spendingStability } = BehaviorEngine.analyze(data);
-  const accounts      = data.accounts || [];
-  const debts         = data.debts    || [];
-
-  // ① Savings Rate — 25 pts
-  // 20%+ savings rate = full score; 0% = 0 pts
-  const srScore = Math.min(25, Math.round(savingsRate * 125));
-
-  // ② Debt Ratio — 20 pts
-  // No debt = 20; debt > 1× annual income = 0
-  const drScore = Math.max(0, Math.round(20 * (1 - Math.min(1, debtRatio * 1.25))));
-
-  // ③ Emergency Fund — 20 pts
-  // 3 months = 15 pts; 6 months = full 20 pts
-  const efScore = efMonths >= 6 ? 20 : efMonths >= 3 ? 15 : efMonths >= 1 ? 9 : Math.round(efMonths * 6);
-
-  // ④ Spending Stability — 15 pts
-  // Low variance in daily spend = higher score
-  const ssScore = Math.round(spendingStability * 15);
-
-  // ⑤ Investments — 10 pts
-  const hasInv = accounts.some(a => isInvestmentAccount(a));
-  const invBal = accounts.filter(a => isInvestmentAccount(a)).reduce((s,a) => s + parseFloat(a.balance||0), 0);
-  const ivScore = hasInv ? Math.min(10, 5 + Math.round(Math.min(5, invBal / (monthlyIncome * 3)))) : 0;
-
-  // ⑥ Credit Health — 10 pts
-  const rawCredit = data.profile?.creditScore ? parseFloat(data.profile.creditScore) : 680;
-  const crScore = rawCredit >= 760 ? 10 : rawCredit >= 720 ? 8 : rawCredit >= 670 ? 6 : rawCredit >= 620 ? 4 : 2;
-
-  const score = Math.min(100, Math.max(8, srScore + drScore + efScore + ssScore + ivScore + crScore));
-
-  const pillars = [
-    {label:"Savings Rate",    pts:srScore, max:25, detail:`${Math.round(savingsRate*100)}% savings rate`},
-    {label:"Debt Ratio",      pts:drScore, max:20, detail:`${Math.round(debtRatio*100)}% of annual income`},
-    {label:"Emergency Fund",  pts:efScore, max:20, detail:`${(efMonths||0).toFixed(1)} months covered`},
-    {label:"Stability",       pts:ssScore, max:15, detail:`Spending consistency`},
-    {label:"Investments",     pts:ivScore, max:10, detail:hasInv?`$${(invBal||0).toFixed(0)} invested`:`Not started`},
-    {label:"Credit",          pts:crScore, max:10, detail:`Score ~${rawCredit}`},
-  ];
-  return { score, pillars, breakdown:{ srScore, drScore, efScore, ssScore, ivScore, crScore } };
-}
+// ── ENGINES 4 & 5: BehaviorEngine, AutopilotEngine, calcHealthScore (ProsperityEngine) —
+//    moved to lib/decisionEngine.js (Sprint MATH-LOCK Group F). HealthScoreRing (below) is the
+//    UI component that renders calcHealthScore's output and stays here.
 
 function HealthScoreRing({score, size=110, strokeW=9, bonus=0}) {
   const [displayed, setDisplayed] = useState(0);
@@ -2991,7 +2735,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
   const fetchInsight = async () => {
     setLoading(true);
     const txns = (data.transactions || []).slice(0, 15).map(t=>`${sanitizeField(t.name||t.merchant||"Purchase",80)} $${Math.abs(parseFloat(t.amount)||0)}`).join(", ");
-    const {score} = calcHealthScore(data);
+    const {score} = calcHealthScore(data, getCatOv());
     // Sprint 3: send the user's data as `context` (the server wraps it in UNTRUSTED_USER_DATA
     // INSIDE the system prompt) and a fixed instruction as the user-role `prompt` — so untrusted
     // transaction text never rides in the user turn.
@@ -4556,7 +4300,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const heroColorBright=overdraftImmediate?C.redBright:sevenDayOverdraft?C.goldBright:C.greenBright;
   // Combined overdraft signal: immediate (10-day window) OR imminent (7-day forecast)
   const overdraft = overdraftImmediate || sevenDayOverdraft;
-  const {score:healthScore,pillars}=calcHealthScore(data);
+  const {score:healthScore,pillars}=calcHealthScore(data, getCatOv());
   const adjScore=Math.min(100,healthScore+(checkInBonus||0));
   const scoreColor=adjScore>=80?C.greenBright:adjScore>=65?C.tealBright:adjScore>=50?C.goldBright:adjScore>=35?C.orangeBright:C.redBright;
   const scoreBase=adjScore>=80?C.green:adjScore>=65?C.teal:adjScore>=50?C.gold:adjScore>=35?C.orange:C.red;
@@ -8227,7 +7971,7 @@ function Family({data,household,setHousehold,setScreen}){
       return acc;
     },{});
   const topCat=Object.entries(topSpend).sort((a,b)=>b[1]-a[1])[0];
-  const {score:healthScore}=calcHealthScore(data);
+  const {score:healthScore}=calcHealthScore(data, getCatOv());
   const soonBills=_ss.soonBills||[];
   const householdCode_gen="FLRSH"+Math.random().toString(36).substring(2,5).toUpperCase();
 
@@ -9035,7 +8779,7 @@ function WidgetScreen({data,onBack}){
   const overdraft=_ss.overdraft;
   const soonBills=_ss.soonBills||[];
   const nextBill=soonBills[0];
-  const {score:healthScore}=calcHealthScore(data);
+  const {score:healthScore}=calcHealthScore(data, getCatOv());
   const heroColor=overdraft?C.red:C.green;
   const heroColorBright=overdraft?C.redBright:C.greenBright;
   const today=new Date().toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"});
