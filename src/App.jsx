@@ -15,7 +15,7 @@ import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict,
 import { normaliseTxns, detectIncomeFromTxns, detectRecurringBills, markTransfers } from "./lib/plaidNormalize.js";
 import { SafeSpendEngine } from "./lib/safeSpendEngine.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
-import { AutopilotEngine, calcHealthScore } from "./lib/decisionEngine.js";
+import { AutopilotEngine, calcHealthScore, computePaydayGap, computeDailySpendLimit, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
@@ -862,40 +862,17 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
   const bills = data.bills || [];
   const debts = data.debts || [];
 
-  // Find next payday (assume monthly income on the 15th or 1st, whichever is sooner)
+  // Sprint MATH-LOCK Group F: pure decision math lives in lib/decisionEngine.js (tested there); this
+  // component calls the helpers, then builds the themed advice cards (colors/labels) below.
   const today = todayDate || new Date().getDate();
-  const paydayGuess = today < 15 ? 15 : 1;
-  const daysToPayday = paydayGuess >= today ? paydayGuess - today : (31 - today + paydayGuess);
-  const _toMo = toMonthly; // Bug 1: canonical converter (handles annually)
-  const incomeAmt = (data.incomes||[]).reduce((s,i)=>s+_toMo(i.amount,i.freq),0); // Bug 5: no fake income fallback
-
-  // Decision Engine calculations
-  const daysLeft = daysToPayday > 0 ? daysToPayday : 14;
-  const safePerDay = safe > 0 ? safe / daysLeft : 0;
-  const safeToday = Math.floor(safePerDay);
-
-  // Debt payoff impact
-  const topDebt = [...debts].sort((a,b)=>parseFloat(b.rate||0)-parseFloat(a.rate||0))[0]; // Sprint 1: copy before sort — don't mutate data.debts
+  const { daysToPayday } = computePaydayGap(today);
+  const incomeAmt = (data.incomes||[]).reduce((s,i)=>s+toMonthly(i.amount,i.freq),0); // Bug 5: no fake income fallback
+  const { daysLeft, safePerDay, safeToday } = computeDailySpendLimit(safe, daysToPayday);
+  const topDebt = selectHighestRateDebt(debts);
   const extraPayment = 150;
-  let monthsSaved = 0;
-  if (topDebt) {
-    const rate = parseFloat(topDebt.rate || 19.99) / 100 / 12;
-    const balance = parseFloat(topDebt.balance || 0);
-    const minPay = Math.max(25, balance * 0.02);
-    const calcMonths = (bal, pay) => {
-      if (pay <= 0 || bal <= 0) return 0;
-      let m = 0, b = bal;
-      while (b > 0 && m < 240) { b = b * (1 + rate) - pay; m++; }
-      return m;
-    };
-    monthsSaved = Math.max(0, calcMonths(balance, minPay) - calcMonths(balance, minPay + extraPayment));
-  }
-
-  // Savings move suggestion
-  const safeToMove = Math.max(0, Math.floor(safe * 0.25));
-
-  // Spending spike warning — if safe < 20% of income
-  const lowCash = safe < monthlyIncome * 0.15;
+  const monthsSaved = computeDebtPayoffImpact(topDebt, extraPayment);
+  const safeToMove = computeSavingsOpportunity(safe);
+  const lowCash = detectLowCashWarning(safe, monthlyIncome);
 
   // Build decision cards
   const decisions = [];

@@ -12,6 +12,57 @@ import { FinancialCalcEngine, isInvestmentAccount } from "./financialCalculation
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { ForecastEngine } from "./forecastEngine.js";
 
+// ── DecisionEngine "what to do today" math (Sprint MATH-LOCK Group F) ─────────────────────────────
+// Pure helpers extracted from the DecisionEngine UI component. The component calls these, then builds
+// the themed advice cards (colors / labels / toLocaleString) — those stay in the component.
+
+// Days until the next payday, assuming income on the 15th or the 1st (whichever is sooner).
+// `today` is the day-of-month (1-31).
+export function computePaydayGap(today) {
+  const paydayGuess = today < 15 ? 15 : 1;
+  const daysToPayday = paydayGuess >= today ? paydayGuess - today : (31 - today + paydayGuess);
+  return { paydayGuess, daysToPayday };
+}
+
+// Daily safe-to-spend until payday. daysLeft floors at 14 to avoid a tiny window inflating the limit.
+export function computeDailySpendLimit(safe, daysToPayday) {
+  const daysLeft = daysToPayday > 0 ? daysToPayday : 14;
+  const safePerDay = safe > 0 ? safe / daysLeft : 0;
+  const safeToday = Math.floor(safePerDay);
+  return { daysLeft, safePerDay, safeToday };
+}
+
+// Highest-APR debt (copy before sort — never mutate the caller's array). Returns null if none.
+export function selectHighestRateDebt(debts) {
+  return [...(debts || [])].sort((a,b) => parseFloat(b.rate||0) - parseFloat(a.rate||0))[0] || null;
+}
+
+// Months shaved off the payoff date by paying `extraPayment` extra/month on the given debt,
+// via month-by-month amortization (240-month ceiling). Default APR 19.99% if the debt has none.
+export function computeDebtPayoffImpact(topDebt, extraPayment) {
+  if (!topDebt) return 0;
+  const rate = parseFloat(topDebt.rate || 19.99) / 100 / 12;
+  const balance = parseFloat(topDebt.balance || 0);
+  const minPay = Math.max(25, balance * 0.02);
+  const calcMonths = (bal, pay) => {
+    if (pay <= 0 || bal <= 0) return 0;
+    let m = 0, b = bal;
+    while (b > 0 && m < 240) { b = b * (1 + rate) - pay; m++; }
+    return m;
+  };
+  return Math.max(0, calcMonths(balance, minPay) - calcMonths(balance, minPay + extraPayment));
+}
+
+// Safe amount to move to savings now (25% of safe-to-spend, floored).
+export function computeSavingsOpportunity(safe) {
+  return Math.max(0, Math.floor(safe * 0.25));
+}
+
+// Cash-tight warning: safe-to-spend below 15% of monthly income.
+export function detectLowCashWarning(safe, monthlyIncome) {
+  return safe < monthlyIncome * 0.15;
+}
+
 // ── ENGINE: BEHAVIOR ANALYSIS — spending patterns (payday spikes, sub creep, dining inflation) ──
 export const BehaviorEngine = {
   analyze(data) {
