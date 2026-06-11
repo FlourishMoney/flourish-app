@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, markTransfers, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO } from "./lib/financialCalculations.js";
+import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal } from "./lib/persistence.js";
@@ -513,7 +514,10 @@ async function callPlaid(action, params={}, options={}) {
     }
     return data;
   }
-  throw (lastErr || new Error("Network error — please check your connection."));
+  // Sprint Z #10: report the final failure (retries exhausted / network) once, for all Plaid calls.
+  const _finalErr = (lastErr || new Error("Network error — please check your connection."));
+  captureError(_finalErr, { area: "plaid", extra: { action } });
+  throw _finalErr;
 }
 
 // Phase D1: persist Plaid Item to Supabase via authenticated server call.
@@ -2043,7 +2047,8 @@ Rules: do not invent or quote any number not in the calculated results above. Do
       const text = d.content?.[0]?.text || "{}";
       const clean = text.replace(/```json|```/g,"").trim();
       prose = JSON.parse(clean);
-    } catch {
+    } catch (e) {
+      if (e?.message !== "AI disabled") captureError(e, { area: "coach" }); // Sprint Z #10 (skip the opt-out throw)
       // Network/parse failure: use neutral fallback prose. The numbers are
       // still correct because they came from JS, not Claude.
       prose = {
@@ -3705,7 +3710,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
       });
       const d = await r.json();
       setInsight(d.content?.[0]?.text || "Great job checking in! Keep tracking your spending this week and look for one subscription you can pause.");
-    } catch { setInsight("Great job checking in! Focus on one small win this week — even saving $20 moves your score forward."); }
+    } catch (e) { if (e?.message !== "AI disabled") captureError(e, { area: "coach" }); setInsight("Great job checking in! Focus on one small win this week — even saving $20 moves your score forward."); }
     setLoading(false);
     setStep(4);
   };
@@ -4855,7 +4860,7 @@ async function backgroundRefresh(isPremium, setAppData, fullResync = false) {
       .filter(r => r.status === "fulfilled")
       .flatMap(r => r.value.removed || []);
     const normalisedTxns = normaliseTxns(allRawTxns);
-    const enrichedTxns = await enrichTxns(normalisedTxns, [], rawFreshAccounts, callPlaid, jwt);
+    const enrichedTxns = await enrichTxns(normalisedTxns, [], rawFreshAccounts, callPlaid, jwt, (err)=>captureError(err,{area:"enrich"}));
 
     setAppData(prev => {
       const mapAcct = a => ({
@@ -10911,6 +10916,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
         return msgs;
       });
     } catch(e){
+      captureError(e, { area: "coach" }); // Sprint Z #10 (429/opt-out handled before the throw, so this is a real failure)
       setError("Couldn't reach the coach. Check your connection and try again.");
       setMessages(prev=>prev.slice(0,-1)); // remove the user msg so they can retry
       setInput(text);
@@ -13611,10 +13617,10 @@ export default function FlourishApp(){
   const getSaver = () => {
     if (!saverRef.current) {
       saverRef.current = makeDebouncedSaver(async ({ userId, blob }) => {
-        const { ok } = await upsertUserData(supabase, userId, blob);
+        const { ok, error: persistErr } = await upsertUserData(supabase, userId, blob);
         console.log("[persist] save complete", { ok });
         if (ok) { syncFailRef.current = 0; if (syncErrorRef.current) { syncErrorRef.current = false; setSyncError(false); } }
-        else if (++syncFailRef.current >= 3 && !syncErrorRef.current) { syncErrorRef.current = true; setSyncError(true); }
+        else { if (persistErr) captureError(persistErr, { area: "persist" }); if (++syncFailRef.current >= 3 && !syncErrorRef.current) { syncErrorRef.current = true; setSyncError(true); } } // Sprint Z #10
       });
     }
     return saverRef.current;
@@ -13694,7 +13700,8 @@ export default function FlourishApp(){
           else getSaver().schedule({ userId: user.id, blob: buildDbBlob(snap, { userId: user.id, nowIso: new Date().toISOString() }) }); // local newer → push up
         } else if (snap.appData && !snap.appData.demo) {
           // clean "no row" + we have REAL local data (not demo) → MIGRATION upload (only here, never on read error)
-          await upsertUserData(supabase, user.id, buildDbBlob(snap, { userId: user.id, nowIso: new Date().toISOString() }));
+          const _mig = await upsertUserData(supabase, user.id, buildDbBlob(snap, { userId: user.id, nowIso: new Date().toISOString() }));
+          if (_mig && _mig.error) captureError(_mig.error, { area: "persist" }); // Sprint Z #10
           try { localStorage.setItem("flourish_db_migrated", "1"); } catch {}
           setShowMigratedBanner(true);                    // (5) surface the one-time banner
         }
@@ -13781,7 +13788,7 @@ export default function FlourishApp(){
         allTxns.sort((a,b) => a.date < b.date ? 1 : -1);
         // Nothing changed (no added/modified AND no removed) → leave state as-is.
         if(allTxns.length === 0 && allRemovedIds.length === 0) return;
-        const enrichedAllTxns = await enrichTxns(allTxns, appData?.transactions || [], appData?.accounts || [], callPlaid, jwt);
+        const enrichedAllTxns = await enrichTxns(allTxns, appData?.transactions || [], appData?.accounts || [], callPlaid, jwt, (err)=>captureError(err,{area:"enrich"}));
         // Also refresh account balances with real-time data now that we have time
         try {
           const balResults = await Promise.allSettled(
@@ -13970,7 +13977,7 @@ export default function FlourishApp(){
           institution:instName,
         }));
         const transactions = normaliseTxns(txnData.transactions||[]);
-        const enrichedReconnectTxns = await enrichTxns(transactions, [], accounts, callPlaid, jwt);
+        const enrichedReconnectTxns = await enrichTxns(transactions, [], accounts, callPlaid, jwt, (err)=>captureError(err,{area:"enrich"}));
         setAppData(d=>{
           // Auto-add credit card accounts to debts — don't overwrite existing debt entries
           const creditAccts = accounts.filter(a =>

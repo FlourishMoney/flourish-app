@@ -20,6 +20,28 @@
 // -----------------------------------------------------------------------------
 
 const { getUserFromRequest, getAdminClient, getUserPlan, ENFORCE_PLAN_LIMITS } = require("./_lib/auth");
+const { getStore } = require("@netlify/blobs");
+
+// Sprint Z #8: per-IP abuse backstop, independent of Supabase. The client IP comes from Netlify's
+// trusted header (falls back to x-forwarded-for).
+function clientIp(event) {
+  const h = event.headers || {};
+  const ip = (h["x-nf-client-connection-ip"] || h["x-forwarded-for"] || "").split(",")[0].trim();
+  return ip || null;
+}
+
+// Increment + return today's per-IP coach count in Netlify Blobs. Read-then-write isn't atomic, so
+// it can slightly undercount under heavy concurrency — fine for an abuse/cost backstop (not a precise
+// quota). Returns null when no IP or Blobs is unavailable, so callers can decide how to degrade.
+async function bumpIpUsage(ip) {
+  if (!ip) return null;
+  const store = getStore("coach_ip_usage");
+  const key = `${new Date().toISOString().slice(0, 10)}:${ip}`;
+  const cur = await store.get(key, { type: "json" });
+  const n = ((cur && cur.n) || 0) + 1;
+  await store.setJSON(key, { n });
+  return n;
+}
 // TRUST_RULES + buildChatSystem live in _lib/coachPrompt.js so the Coach QA suite
 // (tests/coach_qa.cjs) tests the exact prompt this function ships.
 const { TRUST_RULES, buildChatSystem } = require("./_lib/coachPrompt");
@@ -33,6 +55,16 @@ const CHAT_DAILY_CEILING = 50;
 // table). Matches the product's free tier; trial/plus/pro/founder get the abuse ceiling above.
 // FLAG: bump this if 1/day proves too tight for free users.
 const FREE_CHAT_DAILY = 1;
+
+// Sprint Z #8: per-IP daily caps (Netlify Blobs). IP_DAILY_CAP is the healthy-mode abuse/cost
+// backstop — generous so users behind shared NAT aren't hit. EMERGENCY_IP_DAILY is the much tighter
+// cap applied only when the per-user counter (Supabase RPC) is DOWN, so an outage can't open the
+// floodgates (fail closed, not open).
+const IP_DAILY_CAP = 100;
+// FLAG (tunable): the emergency cap only applies during a per-user-counter outage. It's intentionally
+// tight, but it's PER-IP, so a shared NAT (office / campus / cellular CGNAT) shares this budget during
+// the outage. Raise it if legitimate shared-IP users get throttled during incidents.
+const EMERGENCY_IP_DAILY = 10;
 
 // Reject absurdly large bodies (cheap DoS guard; real coach messages are a few KB).
 const MAX_BODY_BYTES = 100000;
@@ -100,9 +132,16 @@ exports.handler = async (event) => {
       if (!payload.messages || !Array.isArray(payload.messages)) {
         return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "payload.messages must be an array" }) };
       }
-      // Abuse ceiling — count only real coach chat messages, after validation.
-      // Atomic increment via RPC; fail OPEN on any DB error (auth is the real gate).
+      // Abuse control — count only real coach chat messages, after validation.
       if (type === "chat") {
+        // Sprint Z #8: per-IP backstop FIRST, independent of Supabase. Counts every request, so it
+        // still limits abuse even if the per-user counter/DB is down.
+        const ip = clientIp(event);
+        let ipCount = null;
+        try { ipCount = await bumpIpUsage(ip); }
+        catch (e) { console.error("[coach] IP backstop unavailable:", e.message); }
+
+        let userRpcOk = false;
         try {
           // Sprint Q item 11: plan-aware limit from the profiles table (server-authoritative, NOT
           // client-sent). Free → FREE_CHAT_DAILY/day; trial/plus/pro/founder → the abuse ceiling.
@@ -110,9 +149,9 @@ exports.handler = async (event) => {
           const ceiling = (!ENFORCE_PLAN_LIMITS || unlimited) ? CHAT_DAILY_CEILING : FREE_CHAT_DAILY; // v1: flag off → everyone gets the abuse ceiling, not the free 1/day
           const admin = getAdminClient();
           const { data: usedCount, error: rlError } = await admin.rpc("increment_coach_usage", { p_user: user_id });
-          if (rlError) {
-            console.error("[coach] usage RPC error (failing open):", rlError.message);
-          } else if (typeof usedCount === "number" && usedCount > ceiling) {
+          if (rlError) throw rlError;
+          userRpcOk = true;
+          if (typeof usedCount === "number" && usedCount > ceiling) {
             return {
               statusCode: 429,
               headers: corsHeaders,
@@ -122,7 +161,25 @@ exports.handler = async (event) => {
             };
           }
         } catch (e) {
-          console.error("[coach] usage check failed (failing open):", e.message);
+          // Sprint Z #8: FAIL CLOSED. The per-user counter is down — don't allow unlimited. Enforce a
+          // small emergency per-IP cap, and reject outright if the IP backstop is also unavailable.
+          console.error("[coach] usage RPC error (failing closed to IP backstop):", e.message);
+          if (ipCount === null || ipCount > EMERGENCY_IP_DAILY) {
+            return {
+              statusCode: 429,
+              headers: corsHeaders,
+              body: JSON.stringify({ error: "rate_limited", message: "Coach is briefly unavailable — please try again in a few minutes." }),
+            };
+          }
+        }
+
+        // Healthy-mode per-IP abuse/cost cap (only meaningful when the per-user gate is working).
+        if (userRpcOk && ipCount !== null && ipCount > IP_DAILY_CAP) {
+          return {
+            statusCode: 429,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: "rate_limited", message: "Too many Coach requests from your network today. Please try again tomorrow." }),
+          };
         }
       }
       anthropicBody = {

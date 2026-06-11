@@ -807,7 +807,7 @@ export function computeNextDueDate(bill, today = new Date()) {
   return d ? dateToISO(d) : null;
 }
 
-export async function enrichTxns(newTxns, existingTxns, accounts, callPlaidFn, jwt) {
+export async function enrichTxns(newTxns, existingTxns, accounts, callPlaidFn, jwt, onError) {
   if (!Array.isArray(newTxns) || newTxns.length === 0) return newTxns || [];
   if (!callPlaidFn) return newTxns;
 
@@ -854,8 +854,10 @@ export async function enrichTxns(newTxns, existingTxns, accounts, callPlaidFn, j
       };
     });
   } catch (err) {
-    // Non-critical: enrichment failed, return original txns
+    // Non-critical: enrichment failed, return original txns. Report via the injected reporter (if
+    // provided) — keeps this trust-layer file dependency-free (no direct Sentry import). Sprint Z #10.
     console.warn("Enrich call failed:", err?.message || err);
+    if (typeof onError === "function") { try { onError(err); } catch {} }
     return newTxns;
   }
 }

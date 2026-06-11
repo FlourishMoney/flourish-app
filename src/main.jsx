@@ -1,13 +1,17 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App, { clearState } from './App.jsx'
+import { initErrorReporting, captureError } from './lib/errorReporting.js'
+
+// Sprint Z #10: env-gated error reporting. No-op until VITE_SENTRY_DSN is configured.
+initErrorReporting()
 
 // Tier 3: catch render-time crashes so a thrown component shows a recoverable
 // fallback instead of a permanent white screen (unrecoverable on a native app).
 class ErrorBoundary extends React.Component {
   constructor(props){ super(props); this.state = { hasError: false }; }
   static getDerivedStateFromError(){ return { hasError: true }; }
-  componentDidCatch(error, info){ console.error("[ErrorBoundary]", error, info?.componentStack); }
+  componentDidCatch(error, info){ console.error("[ErrorBoundary]", error, info?.componentStack); captureError(error, { area: "render" }); }
   render(){
     if (this.state.hasError) {
       return (

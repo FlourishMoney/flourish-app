@@ -10,6 +10,8 @@
     "test:coach": "node tests/coach_qa.cjs"
   },
   "dependencies": {
+    "@netlify/blobs": "^10.7.9",
+    "@sentry/react": "^10.57.0",
     "@supabase/supabase-js": "^2.99.0",
     "jose": "^6.2.3",
     "lucide-react": "^0.263.1",
