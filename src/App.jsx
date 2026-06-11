@@ -12,7 +12,7 @@ import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
   BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine } from "./lib/financialCalculations.js";
-import { normaliseTxns, detectIncomeFromTxns, detectRecurringBills, markTransfers, mergeById, mergeByAccountId, removeByIds } from "./lib/plaidNormalize.js";
+import { normaliseTxns, detectIncomeFromTxns, detectRecurringBills, markTransfers, mergeById, removeByIds } from "./lib/plaidNormalize.js";
 import { SafeSpendEngine } from "./lib/safeSpendEngine.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { AutopilotEngine, calcHealthScore, computePaydayGap, computeDailySpendLimit, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
@@ -12861,16 +12861,28 @@ export default function FlourishApp(){
           const balResults = await Promise.allSettled(
             items.map(it => callPlaid("get_accounts",{item_id:it.item_id}, {jwt}))
           );
-          const freshAccounts = balResults
-            .filter(r=>r.status==="fulfilled")
-            .flatMap(r=>r.value.accounts.map(a=>({
-              id:a.id,
-              name:a.name,
-              type:a.type,
-              subtype:a.subtype||null,
-              balance:(a.type==="credit"||a.type==="loan")?-(a.balance?.current||0):(a.balance?.current??a.balance?.available??0),
-              institution:a.institution||"Bank",
-            })));
+          // Sprint Z2 #6: stamp _item per fulfilled item + track failures, so a PARTIAL multi-bank
+          // failure on first connect doesn't wipe the bank that failed this round (mirrors backgroundRefresh).
+          const balFailedItemIds = new Set();
+          const rawFresh = [];
+          balResults.forEach((r, idx) => {
+            const itemId = items[idx].item_id;
+            if (r.status === "fulfilled") {
+              (r.value.accounts || []).forEach(a => rawFresh.push({ ...a, _item: itemId }));
+            } else {
+              balFailedItemIds.add(itemId);
+              console.error(`[onboarding] get_accounts failed for item ${String(itemId).slice(0,8)}:`, r.reason?.message || r.reason);
+            }
+          });
+          const freshAccounts = rawFresh.map(a=>({
+            id:a.id,
+            name:a.name,
+            type:a.type,
+            subtype:a.subtype||null,
+            balance:(a.type==="credit"||a.type==="loan")?-(a.balance?.current||0):(a.balance?.current??a.balance?.available??0),
+            institution:a.institution||"Bank",
+            _item:a._item||null,
+          }));
           // Dedup by account id — multiple tokens from same bank cause duplicates
           const seenIds = new Set();
           const dedupedAccounts = freshAccounts.filter(a => {
@@ -12880,8 +12892,15 @@ export default function FlourishApp(){
           });
           if(dedupedAccounts.length > 0) {
             setAppData(prev=>{
+              // Sprint Z2 #6: retain prior accounts that belong to a FAILED item (by stamped _item) or
+              // are legacy/unstamped/manual; only a succeeded item's genuinely-removed accounts fall out.
+              const freshIds = new Set(dedupedAccounts.map(a=>a.id));
+              const retained = (prev.accounts||[]).filter(p =>
+                !freshIds.has(p.id) && (p._item ? balFailedItemIds.has(p._item) : true)
+              );
+              const mergedAccounts = [...dedupedAccounts, ...retained];
               // Sync new credit card accounts into debts
-              const creditAccts = dedupedAccounts.filter(a => isCreditLiability(a));
+              const creditAccts = mergedAccounts.filter(a => isCreditLiability(a));
               const existingDebtNames = new Set((prev.debts||[]).map(d => (d.name||"").toLowerCase()));
               const newCCDebts = creditAccts
                 .filter(a => !existingDebtNames.has((a.name||"").toLowerCase()))
@@ -12892,7 +12911,7 @@ export default function FlourishApp(){
                 }));
               return {
                 ...prev,
-                accounts: dedupedAccounts,
+                accounts: mergedAccounts,
                 debts: newCCDebts.length > 0
                   ? [...(prev.debts||[]).filter(d => d.name || d.balance), ...newCCDebts]
                   : prev.debts,
@@ -12904,28 +12923,38 @@ export default function FlourishApp(){
           const liabResults = await Promise.allSettled(
             items.map(it => callPlaid("get_liabilities",{item_id:it.item_id}, {jwt}))
           );
-          // Sprint Z #2: keep-stale. The server now returns { liabilitiesUnavailable:true } on
-          // error instead of empty arrays, so we can tell "confirmed no debt" from "couldn't fetch".
+          // The server returns { liabilitiesUnavailable:true } on error (vs empty arrays on success), so
+          // we can tell "confirmed no debt" from "couldn't fetch" — now resolved per ITEM, not globally.
+          // Sprint Z2 #7: per-ITEM availability (liabResults[i] ↔ items[i]). Build fresh from AVAILABLE
+          // items and record which item_ids were reachable this round.
           const fresh = { credit: [], mortgage: [], student: [] };
-          let anyUnavailable = false;
-          liabResults.forEach(r => {
+          const availableItemIds = new Set();
+          liabResults.forEach((r, idx) => {
             if (r.status === "fulfilled" && r.value && !r.value.liabilitiesUnavailable) {
+              availableItemIds.add(items[idx].item_id);
               if (Array.isArray(r.value.credit))   fresh.credit.push(...r.value.credit);
               if (Array.isArray(r.value.mortgage)) fresh.mortgage.push(...r.value.mortgage);
               if (Array.isArray(r.value.student))  fresh.student.push(...r.value.student);
-            } else {
-              anyUnavailable = true; // rejected promise OR liabilitiesUnavailable flag
             }
           });
           setAppData(prev => {
             const prevLiab = prev.liabilities || { credit: [], mortgage: [], student: [] };
-            // Sprint Z #2 (H2): keep-stale per category. When some item is unavailable, merge fresh
-            // by account_id into prior. When all are available, replace a category only if we got
-            // data for it — an all-empty success must NOT wipe a prior mortgage/student loan (those
-            // live only in liabilities and feed the debt simulator), since "empty" can be transient.
-            const pick = (cat) => anyUnavailable
-              ? mergeByAccountId(prevLiab[cat] || [], fresh[cat])
-              : (fresh[cat].length > 0 ? fresh[cat] : (prevLiab[cat] || []));
+            // Map a liability's account_id → its owning bank item (via the _item-stamped accounts from
+            // #6), so we can tell whether the bank that owns a PRIOR liability was reachable this round.
+            const acctItem = new Map((prev.accounts || []).map(a => [a.id, a._item || null]));
+            // Keep a prior entry ONLY when its owning item was unavailable (couldn't fetch). If its item
+            // WAS available and no longer returns it → confirmed paid-off → drop (fixes the old
+            // `fresh.length>0 ? fresh : prev` that kept paid-off loans forever). Unknown owner → keep
+            // (conservative: never drop a debt we can't reason about; self-heals once its account is stamped).
+            const pick = (cat) => {
+              const freshIds = new Set(fresh[cat].map(e => e.account_id));
+              const retained = (prevLiab[cat] || []).filter(e => {
+                if (freshIds.has(e.account_id)) return false;            // superseded by a fresh entry
+                const item = acctItem.get(e.account_id);
+                return item == null ? true : !availableItemIds.has(item); // keep only if its item was unavailable
+              });
+              return [...retained, ...fresh[cat]];
+            };
             return { ...prev, liabilities: { credit: pick("credit"), mortgage: pick("mortgage"), student: pick("student") } };
           });
         } catch(e) { /* silent — institution may not support liabilities */ }
