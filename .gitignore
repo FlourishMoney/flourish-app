@@ -7,6 +7,7 @@ dist/
 
 # Local build / deploy artifacts (not for git)
 *.zip
+audit-bundle.txt
 api/
 flourish-deploy/
 *.bak
