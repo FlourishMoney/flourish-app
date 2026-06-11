@@ -860,7 +860,7 @@ function removeBillWithOverride(setAppData, idx, name) {
     return {
       ...prev,
       bills: (prev.bills || []).filter((_, x) => x !== idx),
-      userBillOverrides: { removed: Array.from(new Set([...(ov.removed || []), norm])).filter(Boolean), typed: ov.typed || {} },
+      userBillOverrides: { removed: Array.from(new Set([...(ov.removed || []), norm])).filter(Boolean), typed: ov.typed || {}, cadence: ov.cadence || {} },
     };
   });
 }
@@ -872,6 +872,7 @@ function detectRecurringBills(txns, opts = {}) {
   const { overrides = {}, debts = [] } = opts;
   const removedSet = new Set((overrides.removed || []).map(s => String(s).toLowerCase()));
   const typedMap = overrides.typed || {};
+  const cadenceMap = overrides.cadence || {}; // Sprint Q item 2: user cadence corrections (keyed by name)
 
   // Categories that indicate a bill (not groceries, dining, etc.). Named distinctly from
   // the module-level BILL_CATS (the budget-exclusion set) to end the prior shadowing.
@@ -978,13 +979,15 @@ function detectRecurringBills(txns, opts = {}) {
     const _dnl = displayName.toLowerCase().trim();
     if (removedSet.has(_dnl)) return;
     const finalType = typedMap[_dnl] || billType;
+    // Sprint Q item 2: a persisted user cadence correction wins over the freshly-detected cadence.
+    const finalFreq = cadenceMap[_dnl] || cadence.freq;
 
     // Sprint Q item 1: anchor nextDueDate from the LAST observed occurrence + cadence, so the
     // forecast/SafeSpend recur from the real phase (e.g. biweekly last seen 7d ago → due in 7d).
     const _last = dates[dates.length - 1];
     const _nextDue = _last
-      ? ((cadence.freq === "weekly" || cadence.freq === "biweekly")
-          ? dateToISO(new Date(_last.getTime() + (cadence.freq === "weekly" ? 7 : 14) * 86400000))
+      ? ((finalFreq === "weekly" || finalFreq === "biweekly")
+          ? dateToISO(new Date(_last.getTime() + (finalFreq === "weekly" ? 7 : 14) * 86400000))
           : dateToISO(_last)) // monthly/semimonthly/quarterly: last-occurrence anchor; billNextDue steps it forward
       : undefined;
 
@@ -993,7 +996,7 @@ function detectRecurringBills(txns, opts = {}) {
       amount:  (avg||0).toFixed(2),
       date:    String(dayMode),
       type:    finalType,   // Tier 4: "fixed" | "variable"
-      freq:    cadence.freq, // Sprint 4 (item 8): weekly | biweekly | semimonthly | monthly | quarterly
+      freq:    finalFreq, // Sprint 4 (item 8) + Sprint Q item 2: detected cadence, or user override
       nextDueDate: _nextDue, // Sprint Q item 1: cadence phase anchor
       auto:    true,   // flag so UI can show "detected" badge
       avgNote: txList.length >= 3 ? `avg of last ${Math.min(txList.length,3)}` : "estimated",
@@ -6127,7 +6130,19 @@ function BillManager({data, setAppData, onClose}){
     if(!window.confirm("Remove this bill? It won't be auto-detected again.")) return;
     removeBillWithOverride(setAppData, i, name);
   };
-  const updateBill = (i,field,val) => setAppData(prev=>({...prev, bills:(prev.bills||[]).map((b,x)=>x===i?{...b,[field]:val}:b)}));
+  const updateBill = (i,field,val) => setAppData(prev=>{
+    const bills = (prev.bills||[]).map((b,x)=>{
+      if (x!==i) return b;
+      const nb = {...b,[field]:val};
+      if (field==="freq") nb.nextDueDate = computeNextDueDate(nb) || nb.nextDueDate; // Sprint Q: re-anchor to new cadence
+      return nb;
+    });
+    if (field!=="freq") return {...prev, bills};
+    // Sprint Q item 2: persist the cadence correction (keyed by name) so detection won't revert it.
+    const norm = String((prev.bills||[])[i]?.name||"").toLowerCase().trim();
+    const ov = prev.userBillOverrides || {};
+    return { ...prev, bills, userBillOverrides: { removed: ov.removed||[], typed: ov.typed||{}, cadence: { ...(ov.cadence||{}), [norm]: val } } };
+  });
   // Tier 4: type toggle updates the bill AND records userBillOverrides.typed (for re-detection).
   const setBillCatType = (i, name, tp) => {
     const norm = String(name||"").toLowerCase().trim();
@@ -6136,7 +6151,7 @@ function BillManager({data, setAppData, onClose}){
       return {
         ...prev,
         bills:(prev.bills||[]).map((b,x)=>x===i?{...b,type:tp}:b),
-        userBillOverrides: { removed: ov.removed||[], typed: { ...(ov.typed||{}), [norm]: tp } },
+        userBillOverrides: { removed: ov.removed||[], typed: { ...(ov.typed||{}), [norm]: tp }, cadence: ov.cadence||{} },
       };
     });
   };
