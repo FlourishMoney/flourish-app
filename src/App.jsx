@@ -9371,7 +9371,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
   return null;
 }
 
-function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent}){
+function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent}){
   const [notifToggles,setNotifToggles]=useState({overdraft:true,bills:true,coach:true,meeting:false,patterns:true});
   const [activeSection,setActiveSection]=useState(null);
 
@@ -9466,6 +9466,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <Toggle label="AI Coach" on={aiCoachEnabled} onChange={(v)=>{
           try { localStorage.setItem("flourish_ai_coach_enabled", v ? "1" : "0"); } catch {}
           setAiCoachEnabled(v);
+          if (v) onAcceptAIConsent?.(); // Sprint Z3 #2: turning AI on re-grants server consent (clears any prior revoke)
         }} />
       </div>
       {/* Sprint Z2 #8: revoke third-party AI consent (not just disable AI) */}
@@ -12486,6 +12487,18 @@ export default function FlourishApp(){
   const [aiCoachEnabled, setAiCoachEnabled] = useState(()=>{
     try { return localStorage.getItem("flourish_ai_coach_enabled") !== "0"; } catch { return true; }
   });
+  // Sprint Z3 #2: tell the server about a consent decision so /api/coach's gate is authoritative
+  // (client localStorage alone can be bypassed). JWT-guarded → the anonymous DEMO path (no user) skips it.
+  // accept_consent clears any prior revoke; revoke_consent sets it. Returns true if the server ack'd.
+  const postCoachConsent = async (consentAction)=>{
+    try {
+      const jwt = await getJwt();
+      if (!jwt) return false;
+      const res = await fetch("/api/coach", { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${jwt}` }, body: JSON.stringify({ action: consentAction }) });
+      if (!res.ok) console.error(`[consent] server ${consentAction} failed:`, res.status);
+      return res.ok;
+    } catch (e) { console.error(`[consent] server ${consentAction} threw:`, e?.message || e); return false; }
+  };
   const acceptAIDisclosure = ()=>{
     try {
       localStorage.setItem("flourish_ai_disclosure_seen", "1");
@@ -12493,6 +12506,7 @@ export default function FlourishApp(){
       if (!localStorage.getItem("flourish_ai_disclosed_at")) localStorage.setItem("flourish_ai_disclosed_at", new Date().toISOString());
     } catch {}
     setAiDisclosureSeen(true);
+    postCoachConsent("accept_consent"); // fire-and-forget — stays synchronous for the demo path (demo has no JWT → no-op)
   };
   // Apple 5.1.2(i): "Don't use AI" — log the disclosure choice (audit trail) but disable AI and stay in the app.
   const declineAIDisclosure = ()=>{
@@ -12505,13 +12519,23 @@ export default function FlourishApp(){
     setAiCoachEnabled(false);
     setAiDisclosureSeen(true);
   };
-  // Sprint Z2 #8: revoke third-party AI consent from Settings — withdraws consent AND turns AI off.
-  const revokeAIConsent = ()=>{
+  // Sprint Z2 #8 / Z3 #2: revoke third-party AI consent from Settings — withdraws consent AND turns AI
+  // off. The SERVER revoke goes FIRST (so /api/coach blocks even if localStorage is bypassed); the
+  // local flip follows best-effort so the client AI goes off regardless of the network result.
+  const revokeAIConsent = async ()=>{
+    await postCoachConsent("revoke_consent"); // server revoke FIRST — blocks /api/coach even if localStorage is bypassed
     try {
       localStorage.setItem("flourish_ai_third_party_consent", "0");
       localStorage.setItem("flourish_ai_coach_enabled", "0");
     } catch {}
     setAiCoachEnabled(false);
+  };
+  // Sprint Z3 #2: re-enabling AI = re-granting third-party consent. The Settings "AI Coach" toggle ON
+  // calls this so it clears any prior SERVER revoke — otherwise a revoked user toggling AI back on would
+  // stay 403-blocked, since the AIDisclosureScreen never re-shows once disclosure_seen=1.
+  const acceptAIConsentServer = ()=>{
+    try { localStorage.setItem("flourish_ai_third_party_consent", "1"); } catch {}
+    postCoachConsent("accept_consent"); // fire-and-forget
   };
   const [appData,setAppData]=useState(()=>saved?.appData||null);
   // Sprint Q item 1: one-time, idempotent backfill of nextDueDate onto legacy sub-monthly/quarterly/
@@ -13263,7 +13287,7 @@ export default function FlourishApp(){
 
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setShowBankConsent(false);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent}/>{showBankConsent&&<BankConsentModal onContinue={()=>{ try{localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString());}catch{} setShowBankConsent(false); doAddNewBank(); }} onCancel={()=>setShowBankConsent(false)}/>}</>;
+    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setShowBankConsent(false);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer}/>{showBankConsent&&<BankConsentModal onContinue={()=>{ try{localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString());}catch{} setShowBankConsent(false); doAddNewBank(); }} onCancel={()=>setShowBankConsent(false)}/>}</>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;

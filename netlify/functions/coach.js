@@ -108,13 +108,51 @@ exports.handler = async (event) => {
     return { statusCode: 413, headers: corsHeaders, body: JSON.stringify({ error: "Request too large" }) };
   }
 
-  let type, payload;
+  let type, payload, action;
   try {
     const body = JSON.parse(event.body || "{}");
     type = body.type;
     payload = body.payload || {};
+    action = body.action;
   } catch {
     return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "Invalid JSON body" }) };
+  }
+
+  // ── Sprint Z3 #2: AI third-party consent management (no consent gate, no Anthropic call) ──────
+  // The client POSTs these so the SERVER is the source of truth for consent — client localStorage
+  // alone can be bypassed. accept clears any prior revoke; revoke sets the timestamp the gate reads.
+  if (action === "accept_consent" || action === "revoke_consent") {
+    try {
+      const admin = getAdminClient();
+      const nowIso = new Date().toISOString();
+      const patch = action === "accept_consent"
+        ? { ai_third_party_consent_at: nowIso, ai_third_party_consent_revoked_at: null }
+        : { ai_third_party_consent_revoked_at: nowIso };
+      const { error } = await admin.from("profiles").update(patch).eq("user_id", user_id);
+      if (error) { console.error("[coach] consent update failed:", error.message); return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: "consent_update_failed" }) }; }
+      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ ok: true }) };
+    } catch (e) {
+      console.error("[coach] consent update threw:", e.message);
+      return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: "consent_update_failed" }) };
+    }
+  }
+
+  // ── Sprint Z3 #2: server-enforced consent GATE — block ALL AI paths if consent was revoked ───
+  // Direct profiles read (NOT inferred from getUserPlan). FAIL-OPEN on a read error (logged) so a
+  // transient DB blip doesn't take AI down for everyone; a CONFIRMED revoke is always enforced.
+  try {
+    const admin = getAdminClient();
+    const { data: prof, error: cErr } = await admin
+      .from("profiles")
+      .select("ai_third_party_consent_revoked_at")
+      .eq("user_id", user_id)
+      .maybeSingle();
+    if (cErr) console.error("[coach] consent check read error (failing open):", cErr.message);
+    else if (prof && prof.ai_third_party_consent_revoked_at) {
+      return { statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: "ai_consent_required" }) };
+    }
+  } catch (e) {
+    console.error("[coach] consent check threw (failing open):", e.message);
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
