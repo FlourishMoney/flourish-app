@@ -29,10 +29,17 @@ const isCapacitorIOS = () => {
   catch { return false; }
 };
 
+// Sprint Z3 #1: base for API fetches. "" on web (relative → same origin, flourishmoney.app). In a
+// Capacitor iOS build the WebView serves from capacitor://localhost, so /api/* would 404 — point it at
+// the deployed origin. UNVERIFIED in the Capacitor target until the iOS wrap exists (structural fix).
+const API_BASE = (typeof window !== "undefined" &&
+  (window.Capacitor?.getPlatform?.() === "ios" || window.location.protocol === "capacitor:"))
+  ? "https://flourishmoney.app" : "";
+
 // Sprint Z #5: beta/promo codes live server-side only (netlify/functions/beta.js, action "validate")
 // — they no longer ship in the client bundle. Submit a code to the endpoint for a yes/no verdict.
 async function validateBetaCode(code) {
-  const res = await fetch("/api/beta", {
+  const res = await fetch(`${API_BASE}/api/beta`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: "validate", code: String(code || "").trim().toUpperCase() }),
@@ -507,7 +514,7 @@ async function callPlaid(action, params={}, options={}) {
     if (attempt > 0) await new Promise(r => setTimeout(r, 400 * Math.pow(2, attempt - 1))); // 400ms, 800ms
     let res;
     try {
-      res = await fetch("/api/plaid", { method: "POST", headers, body });
+      res = await fetch(`${API_BASE}/api/plaid`, { method: "POST", headers, body });
     } catch (netErr) { lastErr = netErr; continue; } // network drop / offline → retry
     let data = {};
     try { data = await res.json(); } catch {}
@@ -1586,7 +1593,10 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
 
     // Step 5: Ask Claude to write ONLY the prose explanation fields.
     // We send the frozen numbers as context. Claude must not change them.
-    const prompt = `Write plain-language explanation text for a financial scenario the Flourish app already calculated. The user said: "${qText}".
+    // Sprint Z3 #2: fence the raw user text — coach.js's simulator case appends TRUST_RULES, which
+    // instructs the model to treat <UNTRUSTED_USER_DATA> content as DATA, not instructions.
+    const safeQText = `<UNTRUSTED_USER_DATA>${String(qText).replace(/UNTRUSTED_?USER_?DATA/gi, "U-U-D")}</UNTRUSTED_USER_DATA>`; // defang the tag name so a literal closing tag can't break the fence (matches the statement-parser pattern)
+    const prompt = `Write plain-language explanation text for a financial scenario the Flourish app already calculated. The user said: ${safeQText}.
 
 The app's calculated results (DO NOT CHANGE THESE NUMBERS — only explain them):
 ${JSON.stringify(frozenSummary, null, 2)}
@@ -1603,7 +1613,7 @@ Rules: do not invent or quote any number not in the calculated results above. Do
         throw new Error("AI disabled");
       }
       const _jwt = await getJwt();
-      const r = await fetch("/api/coach", {
+      const r = await fetch(`${API_BASE}/api/coach`, {
         method:"POST",
         headers:{"Content-Type":"application/json", Authorization:`Bearer ${_jwt}`},
         body: JSON.stringify({ type:"simulator", payload:{ prompt } })
@@ -2698,7 +2708,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
         throw new Error("AI disabled");
       }
       const _jwt = await getJwt();
-      const r = await fetch("/api/coach", {
+      const r = await fetch(`${API_BASE}/api/coach`, {
         method:"POST",
         headers:{"Content-Type":"application/json", Authorization:`Bearer ${_jwt}`},
         body: JSON.stringify({ type:"checkin", payload:{ context, prompt } })
@@ -2935,7 +2945,7 @@ Skip header rows, balance summaries, and non-transaction lines.
 ${safeText}
 </UNTRUSTED_USER_DATA>`;
   const _jwt = await getJwt();
-  const r = await fetch('/api/coach', {
+  const r = await fetch(`${API_BASE}/api/coach`, {
     method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${_jwt}`},
     body: JSON.stringify({ type:'document', payload:{ prompt } })
   });
@@ -3202,20 +3212,32 @@ function Onboarding({onComplete,onViewLegal,userId}){
         txns = await parseStatementWithAI(text);
       }
       if (!txns || txns.length === 0) throw new Error('No transactions found in this file.');
-      // Sprint 3: APPEND (don't replace) so a second statement — or a prior bank connect —
-      // isn't wiped. Dedupe by date|name|amount, and re-id statement rows so React keys stay unique.
+      const stmtName = file.name.replace(/\.[^.]+$/,"");
+      // Sprint Z3 #3: give this statement an account_id and TAG every transaction with it BEFORE
+      // appending — otherwise the rows have no account_id and vanish when the Activity tab is filtered
+      // by the statement account. Compute the id ONCE so the txns and the account below share it (a
+      // statement upload is serialized — the input is disabled while parsing — so closure connAccts
+      // equals the setConnAccts `prev`).
+      // Reuse the existing account's id on re-upload (keeps prior txns consistent); for a NEW statement
+      // use a collision-free index = max existing stmt_acct_ index + 1. A plain count would REUSE a live
+      // id when re-uploading an older statement after a newer one → cross-statement transaction bleed.
+      const existingStmt = (connAccts||[]).find(a => a.institution==="Statement" && a.name===stmtName);
+      const maxStmtIdx = (connAccts||[]).reduce((m,a) => { const x=/^stmt_acct_(\d+)$/.exec(String(a.id)); return x ? Math.max(m, parseInt(x[1],10)) : m; }, -1);
+      const newAccountId = existingStmt ? existingStmt.id : `stmt_acct_${maxStmtIdx + 1}`;
+      const taggedTxns = txns.map(t => ({ ...t, account_id: newAccountId }));
+      // Sprint 3: APPEND (don't replace) so a second statement — or a prior bank connect — isn't wiped.
+      // Dedupe by date|name|amount, re-id statement rows so React keys stay unique (the spread keeps account_id).
       setPlaidTxns(prev => {
         const seen = new Set(); const out = [];
-        for (const t of [...(prev||[]), ...txns]) {
+        for (const t of [...(prev||[]), ...taggedTxns]) {
           const k = `${t.date}|${(t.name||"").toLowerCase()}|${t.amount}`;
           if (seen.has(k)) continue; seen.add(k); out.push(t);
         }
         return out.map((t,i)=> String(t.id||"").startsWith("stmt_") ? {...t, id:`stmt_${i}`} : t);
       });
-      const stmtName = file.name.replace(/\.[^.]+$/,"");
       setConnAccts(prev => {
         const kept = (prev||[]).filter(a => !(a.institution==="Statement" && a.name===stmtName)); // re-upload same file → replace its account
-        return [...kept, {id:`stmt_acct_${kept.length}`,name:stmtName,type:'checking',balance:0,institution:'Statement'}]; // balance 0, not DEMO.balance
+        return [...kept, {id:newAccountId,name:stmtName,type:'checking',balance:0,institution:'Statement'}]; // balance 0, not DEMO.balance
       });
       setStmtStatus('done');
       setStmtMsg(`${txns.length} transactions imported ✓`);
@@ -9890,7 +9912,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
     setLoading(true);
     try {
       const _jwt = await getJwt();
-      const res = await fetch("/api/coach", {
+      const res = await fetch(`${API_BASE}/api/coach`, {
         method:"POST",
         headers:{"Content-Type":"application/json", Authorization:`Bearer ${_jwt}`},
         body: JSON.stringify({
@@ -11235,7 +11257,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
     // user. Client-side supabase.auth.signUp is gone, so this keeps working once Amanda disables public
     // sign-ups in Supabase. Option (b): no confirmation email — the user can log in immediately.
     try {
-      const res = await fetch("/api/beta", {
+      const res = await fetch(`${API_BASE}/api/beta`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "signup", email, password, code: betaCode }),
@@ -11361,7 +11383,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
     if (document.referrer) metadata.referrer = document.referrer;
 
     try {
-      const res = await fetch("/api/beta", {
+      const res = await fetch(`${API_BASE}/api/beta`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -12498,7 +12520,7 @@ export default function FlourishApp(){
     try {
       const jwt = await getJwt();
       if (!jwt) return false;
-      const res = await fetch("/api/coach", { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${jwt}` }, body: JSON.stringify({ action: consentAction }) });
+      const res = await fetch(`${API_BASE}/api/coach`, { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${jwt}` }, body: JSON.stringify({ action: consentAction }) });
       if (!res.ok) console.error(`[consent] server ${consentAction} failed:`, res.status);
       return res.ok;
     } catch (e) { console.error(`[consent] server ${consentAction} threw:`, e?.message || e); return false; }
