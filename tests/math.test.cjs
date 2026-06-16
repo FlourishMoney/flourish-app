@@ -151,6 +151,26 @@ const D = (iso) => new Date(iso + "T12:00:00");
   // FROZEN catOverrides: recategorize t1 Shopping→Rent (a BILL_CAT) → excluded from spend
   t.eq(fc.FinancialCalcEngine.cashFlow(baseData, { t1: "Rent" }, JUN).monthlySpend, 0, "cashFlow catOverrides reclassify drops spend (re-categorization works)");
   t.eq(fc.FinancialCalcEngine.netWorth(baseData).netWorth, 7300, "netWorth = (500+8000) - 1200");
+  // ── Sprint Z3 #6: currency-mix safety (single-currency IDENTICAL; foreign excluded + flag) ─────────
+  t.eq(fc.FinancialCalcEngine.netWorth(baseData).mixedCurrencyDetected, false, "#6 netWorth single-currency → no mixed flag");
+  const mixedNW = fc.FinancialCalcEngine.netWorth({ ...baseData, profile: { country: "CA" }, accounts: [...baseData.accounts, { type: "savings", balance: "5000", currency: "USD" }] });
+  t.eq(mixedNW.netWorth, 7300, "#6 netWorth excludes a USD account (CAD base) → totals unchanged vs single-currency");
+  t.eq(mixedNW.mixedCurrencyDetected, true, "#6 netWorth mixed-currency → flag set");
+  const usNW = fc.FinancialCalcEngine.netWorth({ debts: [], profile: { country: "US" }, accounts: [{ type:"checking", balance:"500", currency:"USD" }, { type:"savings", balance:"5000", currency:"CAD" }] });
+  t.eq(usNW.netWorth, 500, "#6 netWorth US base → USD counts (500), CAD excluded");
+  t.eq(usNW.mixedCurrencyDetected, true, "#6 netWorth US base + a CAD account → flag set");
+  const cfMixed = fc.FinancialCalcEngine.cashFlow({ profile:{country:"CA"}, accounts:[{type:"checking",balance:"0",currency:"USD",id:"usd1"}], transactions:[{id:"x1",date:"2026-06-10",amount:100,cat:"Shopping",account_id:"usd1"}] }, {}, JUN);
+  t.eq(cfMixed.monthlySpend, 0, "#6 cashFlow excludes spend from a USD account");
+  t.eq(cfMixed.mixedCurrencyDetected, true, "#6 cashFlow mixed-currency → flag set");
+  t.eq(fc.FinancialCalcEngine.cashFlow(baseData, {}, JUN).mixedCurrencyDetected, false, "#6 cashFlow single-currency → no flag");
+  // ── Sprint Z3 #8: debt dedupe by ACCOUNT_ID, not name (manual name-coincident debt still counts) ──
+  const dnw = fc.FinancialCalcEngine.netWorth({
+    accounts: [{ id:"acc1", type:"credit", balance:"-500", currency:"CAD" }],
+    debts: [{ name:"Visa", balance:"500", fromBank:true, account_id:"acc1" }, { name:"Visa", balance:"300" }],
+  });
+  t.eq(dnw.bankCreditLiabilities, 500, "#8 bank credit account counted once");
+  t.eq(dnw.manualNonBankDebts, 300, "#8 manual debt counts even when name-coincident with a bank card");
+  t.eq(dnw.liabilities, 800, "#8 liabilities = bank 500 + manual 300 (name-dedupe no longer drops it)");
   t.approx(fc.FinancialCalcEngine.debtRatio(baseData, {}, JUN), 0.05, 1e-9, "debtRatio = 1200/(2000*12)");
   t.eq(fc.FinancialCalcEngine.cashFlow({}, {}, JUN).monthlyIncome, 0, "cashFlow empty data → 0 income (no invented fallback)");
   t.eq(fc.FinancialCalcEngine.avgDailySpend({ transactions: [] }), 0, "avgDailySpend no txns → 0");

@@ -11,8 +11,9 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
-  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine } from "./lib/financialCalculations.js";
+  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectRecurringBills, markTransfers, mergeById, removeByIds } from "./lib/plaidNormalize.js";
+import { retainAccounts, retainLiabilities } from "./lib/multibank.js";
 import { SafeSpendEngine } from "./lib/safeSpendEngine.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { AutopilotEngine, calcHealthScore, computePaydayGap, computeDailySpendLimit, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
@@ -3892,26 +3893,25 @@ async function backgroundRefresh(isPremium, setAppData, fullResync = false) {
         type: a.type,
         subtype: a.subtype||null,
         balance: (a.type==="credit"||a.type==="loan") ? -(a.balance?.current||0) : (a.balance?.current??a.balance?.available??0),
+        currency: a.balance?.currency || "CAD", // Sprint Z3 #6: carry the account's currency for currency-mix safety
         institution: prev.accounts?.find(p=>p.id===a.id)?.institution||"Bank",
         _item: a._item || null,
       });
       const freshAccounts = rawFreshAccounts.map(mapAcct);
-      const freshIds = new Set(freshAccounts.map(a => a.id));
-      // Retain prior accounts that (a) belong to a FAILED item (by stamped _item), or
-      // (b) are legacy/unstamped or manual accounts not refreshed this round — instead of
-      // dropping them. Accounts a succeeded item genuinely removed fall out of the fresh set.
-      const retained = (prev.accounts||[]).filter(p =>
-        !freshIds.has(p.id) && (p._item ? failedItemIds.has(p._item) : true)
-      );
+      // Sprint Z3 #7/#10: pure retention — drop a legacy unstamped Plaid account a CLEAN refresh proves is
+      // gone; keep failed-item, manual/statement, and not-refreshed-this-round accounts. No data loss.
+      const retained = retainAccounts(prev.accounts, freshAccounts, failedItemIds, failedItemIds.size === 0);
       const mergedAccounts = [...freshAccounts, ...retained];
       // Sync new credit card accounts into debts on background refresh
       const creditAccts = mergedAccounts.filter(a =>
         a.type === "credit" || a.type === "credit card" ||
         a.subtype === "credit card" || a.type === "line of credit"
       );
-      const existingDebtNames = new Set((prev.debts||[]).map(d => (d.name||"").toLowerCase()));
+      // Sprint Z3 #8: dedupe by account_id, not name — a Plaid card is added unless an existing debt already
+      // has its account_id. Manual debts (no account_id) never block it + are always preserved.
+      const existingDebtAcctIds = new Set((prev.debts||[]).map(d => d.account_id).filter(Boolean));
       const newCCDebts = creditAccts
-        .filter(a => !existingDebtNames.has((a.name||"").toLowerCase()))
+        .filter(a => !existingDebtAcctIds.has(a.id))
         .map(a => ({
           name: a.name || "Credit Card",
           balance: Math.abs(a.balance || 0).toFixed(2),
@@ -7285,20 +7285,27 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
     </>}
     {tab==="worth"&&(()=>{
       const country=data.profile?.country||"CA";
+      const baseCur = baseCurrencyOf(data);
       const allAccts=data.accounts||[];
-      const investments=allAccts.filter(a=>isInvestmentAccount(a));
+      // Sprint Z3 #6: the breakdown below MUST match the engine net-worth headline, which excludes
+      // foreign-currency accounts (no FX in v1). Compute the tiles/rows from base-currency accounts only,
+      // and drop debts owned by a foreign account — otherwise the rows would sum 1:1 and contradict the total.
+      const baseAccts = allAccts.filter(a => String(a.currency||"CAD").toUpperCase() === baseCur);
+      const foreignAcctIds = new Set(allAccts.filter(a => String(a.currency||"CAD").toUpperCase() !== baseCur).map(a => a.id));
+      const foreignCur = allAccts.map(a => String(a.currency||"CAD").toUpperCase()).find(c => c !== baseCur) || "Foreign-currency";
+      const investments=baseAccts.filter(a=>isInvestmentAccount(a));
       const totalInvested=investments.reduce((s,a)=>s+(a.balance||0),0);
       const totalGain=investments.reduce((s,a)=>s+(a.gain||0),0);
-      const checking=allAccts.filter(a=>isCheckingAccount(a)).reduce((s,a)=>s+(a.balance||0),0);
-      const savings=allAccts.filter(a=>isSavingsAccount(a)).reduce((s,a)=>s+(a.balance||0),0);
+      const checking=baseAccts.filter(a=>isCheckingAccount(a)).reduce((s,a)=>s+(a.balance||0),0);
+      const savings=baseAccts.filter(a=>isSavingsAccount(a)).reduce((s,a)=>s+(a.balance||0),0);
       const totalAssets=checking+savings+totalInvested;
-      const { netWorth: realNetWorth, bankCreditLiabilities, manualNonBankDebts } = FinancialCalcEngine.netWorth(data);
+      const { netWorth: realNetWorth, bankCreditLiabilities, manualNonBankDebts, mixedCurrencyDetected } = FinancialCalcEngine.netWorth(data);
       const savLabel=country==="US"?"Savings / HYSA":"Savings / TFSA";
       const allItems=[
         {label:"Chequing / Checking",value:checking,type:"asset",color:C.green,icon:"🏦"},
         {label:savLabel,value:savings,type:"asset",color:C.teal,icon:"🛡️"},
         ...investments.map(inv=>({label:inv.name,value:inv.balance||0,type:"investment",color:C.purple,icon:"chartUp",gain:inv.gain,gainPct:inv.gainPct,ticker:inv.ticker})),
-        ...(data.debts||[]).map(d=>({label:d.name,value:parseFloat(d.balance||0),type:"debt",color:C.red,icon:"💳"})),
+        ...(data.debts||[]).filter(d=>!(d.account_id && foreignAcctIds.has(d.account_id))).map(d=>({label:d.name,value:parseFloat(d.balance||0),type:"debt",color:C.red,icon:"💳"})),
       ];
       return <>
       <div style={{background:`linear-gradient(135deg,${C.tealDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"22px",border:`1px solid ${C.teal}44`}}>
@@ -7311,6 +7318,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
             : <span style={{background:C.gold+"22",border:`1px solid ${C.gold}44`,borderRadius:99,padding:"2px 8px",color:C.goldBright,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📊 Estimated</span>}
           {manualNonBankDebts>0&&<span style={{background:C.orange+"22",border:`1px solid ${C.orange}44`,borderRadius:99,padding:"2px 8px",color:C.orange,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Includes manual debt</span>}
         </div>
+        {mixedCurrencyDetected&&<div style={{marginTop:10,background:C.gold+"15",border:`1px solid ${C.gold}33`,borderRadius:10,padding:"8px 12px",color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>Your {foreignCur} account(s) are excluded from these totals ({baseCur} only) — Flourish doesn't convert currencies yet. Multi-currency support is coming.</div>}
         {totalInvested>0&&<div style={{marginTop:12,display:"flex",gap:10}}>
           <div style={{flex:1,background:C.purple+"15",borderRadius:12,padding:"10px 14px",border:`1px solid ${C.purple}22`}}>
             <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Invested</div>
@@ -12913,6 +12921,7 @@ export default function FlourishApp(){
             type:a.type,
             subtype:a.subtype||null,
             balance:(a.type==="credit"||a.type==="loan")?-(a.balance?.current||0):(a.balance?.current??a.balance?.available??0),
+            currency:a.balance?.currency||"CAD", // Sprint Z3 #6
             institution:a.institution||"Bank",
             _item:a._item||null,
           }));
@@ -12925,18 +12934,15 @@ export default function FlourishApp(){
           });
           if(dedupedAccounts.length > 0) {
             setAppData(prev=>{
-              // Sprint Z2 #6: retain prior accounts that belong to a FAILED item (by stamped _item) or
-              // are legacy/unstamped/manual; only a succeeded item's genuinely-removed accounts fall out.
-              const freshIds = new Set(dedupedAccounts.map(a=>a.id));
-              const retained = (prev.accounts||[]).filter(p =>
-                !freshIds.has(p.id) && (p._item ? balFailedItemIds.has(p._item) : true)
-              );
+              // Sprint Z3 #7/#10: pure retention (drop a legacy Plaid account gone on a clean refresh; keep
+              // failed-item / manual / not-refreshed). Mirrors backgroundRefresh.
+              const retained = retainAccounts(prev.accounts, dedupedAccounts, balFailedItemIds, balFailedItemIds.size === 0);
               const mergedAccounts = [...dedupedAccounts, ...retained];
               // Sync new credit card accounts into debts
               const creditAccts = mergedAccounts.filter(a => isCreditLiability(a));
-              const existingDebtNames = new Set((prev.debts||[]).map(d => (d.name||"").toLowerCase()));
+              const existingDebtAcctIds = new Set((prev.debts||[]).map(d => d.account_id).filter(Boolean)); // Sprint Z3 #8: by account_id, not name
               const newCCDebts = creditAccts
-                .filter(a => !existingDebtNames.has((a.name||"").toLowerCase()))
+                .filter(a => !existingDebtAcctIds.has(a.id))
                 .map(a => ({
                   name: a.name || "Credit Card",
                   balance: Math.abs(a.balance||0).toFixed(2),
@@ -12971,24 +12977,12 @@ export default function FlourishApp(){
             }
           });
           setAppData(prev => {
-            const prevLiab = prev.liabilities || { credit: [], mortgage: [], student: [] };
-            // Map a liability's account_id → its owning bank item (via the _item-stamped accounts from
-            // #6), so we can tell whether the bank that owns a PRIOR liability was reachable this round.
+            // Sprint Z3 #10: pure per-item liability retention (extracted to multibank.js). Map a
+            // liability's account_id → its owning bank item via the _item-stamped accounts; keep a prior
+            // entry only if its bank was UNAVAILABLE this round (available-but-absent = paid-off → drop;
+            // unknown owner → keep). Same per-item-ownership logic as retainAccounts.
             const acctItem = new Map((prev.accounts || []).map(a => [a.id, a._item || null]));
-            // Keep a prior entry ONLY when its owning item was unavailable (couldn't fetch). If its item
-            // WAS available and no longer returns it → confirmed paid-off → drop (fixes the old
-            // `fresh.length>0 ? fresh : prev` that kept paid-off loans forever). Unknown owner → keep
-            // (conservative: never drop a debt we can't reason about; self-heals once its account is stamped).
-            const pick = (cat) => {
-              const freshIds = new Set(fresh[cat].map(e => e.account_id));
-              const retained = (prevLiab[cat] || []).filter(e => {
-                if (freshIds.has(e.account_id)) return false;            // superseded by a fresh entry
-                const item = acctItem.get(e.account_id);
-                return item == null ? true : !availableItemIds.has(item); // keep only if its item was unavailable
-              });
-              return [...retained, ...fresh[cat]];
-            };
-            return { ...prev, liabilities: { credit: pick("credit"), mortgage: pick("mortgage"), student: pick("student") } };
+            return { ...prev, liabilities: retainLiabilities(prev.liabilities, fresh, acctItem, availableItemIds) };
           });
         } catch(e) { /* silent — institution may not support liabilities */ }
         // Phase B3: fetch investment holdings per item, merge across banks
@@ -13103,6 +13097,7 @@ export default function FlourishApp(){
           type:a.type,
           subtype:a.subtype||null,
           balance:(a.type==="credit"||a.type==="loan")?-(a.balance?.current||0):(a.balance?.current??a.balance?.available??0),
+          currency:a.balance?.currency||"CAD", // Sprint Z3 #6
           institution:instName,
         }));
         const transactions = normaliseTxns(txnData.transactions||[]);
@@ -13113,9 +13108,9 @@ export default function FlourishApp(){
             a.type === "credit" || a.type === "credit card" ||
             a.subtype === "credit card" || a.type === "line of credit"
           );
-          const existingDebtNames = new Set((d.debts||[]).map(debt => (debt.name||"").toLowerCase()));
+          const existingDebtAcctIds = new Set((d.debts||[]).map(debt => debt.account_id).filter(Boolean)); // Sprint Z3 #8: by account_id, not name
           const newCCDebts = creditAccts
-            .filter(a => !existingDebtNames.has((a.name||"").toLowerCase()))
+            .filter(a => !existingDebtAcctIds.has(a.id))
             .map(a => ({
               name: a.name || "Credit Card",
               balance: Math.abs(a.balance || 0).toFixed(2),

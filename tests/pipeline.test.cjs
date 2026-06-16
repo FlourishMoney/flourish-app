@@ -128,5 +128,48 @@ const D = (iso) => new Date(iso + "T12:00:00");
   t.ok(e2eSafe.soonBills.length > 0, "end-to-end: detected bills surface in SafeSpend's soon-due window");
   t.ok(Number.isFinite(e2eSafe.safeAmount) && e2eSafe.safeAmount >= 0, "end-to-end: safeAmount finite + non-negative");
 
+  // ── Sprint Z3 #10: multi-bank retention (pure retainAccounts / retainLiabilities) ────────────────
+  const mb = await import("../src/lib/multibank.js");
+  const acct = (id, _item, institution = "Bank") => ({ id, _item, institution, name: id, type: "checking", balance: 100 });
+
+  // (1) single bank failing → keep its prior accounts; refreshed-this-round wins
+  {
+    const prev = [acct("a1", "itemA"), acct("a2", "itemB")];
+    const fresh = [acct("a1", "itemA")];            // itemA refreshed; itemB failed
+    const failed = new Set(["itemB"]);
+    const kept = mb.retainAccounts(prev, fresh, failed, failed.size === 0);
+    t.eq(kept.map(a => a.id).join(","), "a2", "#10 retain: failed bank's account (a2) kept; refreshed a1 falls to fresh");
+  }
+  // (2) all banks fail → keep ALL prior (no data loss)
+  {
+    const prev = [acct("a1", "itemA"), acct("a2", "itemB")];
+    const failed = new Set(["itemA", "itemB"]);
+    const kept = mb.retainAccounts(prev, [], failed, failed.size === 0);
+    t.eq(kept.length, 2, "#10 retain: ALL banks fail → keep every prior account (no data loss)");
+  }
+  // (3) legacy unstamped account on a CLEAN refresh → drop Plaid-shaped, keep Manual/Statement
+  {
+    const prev = [acct("legacy", null, "Royal Bank"), acct("stmt", null, "Statement"), acct("manual", null, "Manual")];
+    const kept = mb.retainAccounts(prev, [], new Set(), true); // clean refresh, nothing returned
+    t.eq(kept.map(a => a.id).sort().join(","), "manual,stmt", "#10 retain: clean refresh drops legacy Plaid acct, keeps Manual/Statement");
+    t.eq(mb.retainAccounts([acct("legacy", null, "Royal Bank")], [], new Set(["itemX"]), false).length, 1, "#10 retain: legacy Plaid acct kept when refresh was NOT clean");
+  }
+  // (4) paid-off loan on an AVAILABLE bank → dropped; loan on an UNAVAILABLE bank → kept
+  {
+    const empty = { credit: [], mortgage: [], student: [] };
+    const offA = mb.retainLiabilities({ ...empty, mortgage: [{ account_id: "m1", balance: 0 }] }, empty, new Map([["m1", "itemA"]]), new Set(["itemA"]));
+    t.eq(offA.mortgage.length, 0, "#10 retain liab: paid-off loan on an AVAILABLE bank → dropped");
+    const downB = mb.retainLiabilities({ ...empty, mortgage: [{ account_id: "m1", balance: 5000 }] }, empty, new Map([["m1", "itemB"]]), new Set(["itemA"]));
+    t.eq(downB.mortgage.length, 1, "#10 retain liab: loan on an UNAVAILABLE bank (itemB) → kept");
+  }
+  // (5) manual debt + Plaid debt of the same name → BOTH preserved (dedupe by account_id, #8)
+  {
+    const nw = fc.FinancialCalcEngine.netWorth({
+      accounts: [{ id: "acc1", type: "credit", balance: "-500", currency: "CAD" }],
+      debts: [{ name: "Visa", fromBank: true, account_id: "acc1", balance: "500" }, { name: "Visa", balance: "300" }],
+    });
+    t.eq(nw.liabilities, 800, "#10/#8 manual Visa ($300) + Plaid Visa ($500 via account) BOTH counted");
+  }
+
   return t.summary("pipeline.test");
 })().catch(e => { console.error("pipeline.test crashed:", e); process.exitCode = 1; });

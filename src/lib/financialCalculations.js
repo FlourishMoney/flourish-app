@@ -921,29 +921,49 @@ export function isBillArchived(b, today = new Date()) {
 // and passes it, so re-categorization is preserved without this layer touching
 // storage or the ambient clock. Defaults preserve the original behavior.
 // ═════════════════════════════════════════════════════════════════════════════
+// Sprint Z3 #6: base reporting currency — explicit profile.baseCurrency, else USD for US profiles, else
+// CAD. Single source of truth for netWorth/cashFlow AND the net-worth UI (so they can't drift).
+export function baseCurrencyOf(data) {
+  return String(data?.profile?.baseCurrency || (data?.profile?.country === "US" ? "USD" : "CAD")).toUpperCase();
+}
+
 export const FinancialCalcEngine = {
   /** Net Worth = all assets − all liabilities */
   netWorth(data) {
     const accounts = data.accounts || [];
     const debts    = data.debts    || [];
+    // Sprint Z3 #6: currency-mix safety. v1 has no FX conversion, so summing CAD+USD 1:1 gives
+    // cross-border users wrong totals. DETECT + EXCLUDE foreign-currency accounts (FX is a v1.x feature).
+    // Base = profile.baseCurrency, else USD for US profiles, else CAD. account.currency is stamped from
+    // Plaid (balance.iso_currency_code) and defaults CAD for legacy/unstamped accounts — so a
+    // single-currency CAD user sees IDENTICAL totals to before (every account stays in-base).
+    const base = baseCurrencyOf(data);
+    const isBase = a => String(a.currency || "CAD").toUpperCase() === base;
+    const mixedCurrencyDetected = accounts.some(a => !isBase(a));
+    const baseAccts = accounts.filter(isBase); // foreign-currency accounts are excluded from every sum
     // Assets: only positive-balance accounts (cash + investment). Credit accounts have
     // negative balances and are already captured in liabilities.
-    const assets = accounts
+    const assets = baseAccts
       .filter(a => isCashAccount(a) || isInvestmentAccount(a))
       .reduce((s,a) => s + Math.max(0, parseFloat(a.balance||0)), 0);
-    const bankCreditAccounts = accounts.filter(a => {
+    const isBankCredit = a => {
       const t = (a.type||"").toLowerCase(), s = (a.subtype||"").toLowerCase();
       return t==="credit" || t==="credit card" || s==="credit card" || t==="line of credit";
-    });
+    };
+    const bankCreditAccounts = baseAccts.filter(isBankCredit);
     const bankCreditLiabilities = bankCreditAccounts
       .reduce((s,a) => s + Math.abs(parseFloat(a.balance||0)), 0);
-    // Deduplicate: exclude manual debts flagged fromBank or matching a bank account name.
-    const bankCreditNames = new Set(bankCreditAccounts.map(a => (a.name||"").trim().toLowerCase()));
+    // Sprint Z3 #8: dedupe Plaid debts by ACCOUNT_ID, not name. fromBank debts are already represented by
+    // the credit ACCOUNTS above, and any debt whose account_id matches a bank-credit account is that same
+    // account — skip it. Manual debts (no account_id, not fromBank) ALWAYS count: a name coincidence with a
+    // bank account no longer silently drops a real user-entered debt. (ids from ALL bank-credit accounts,
+    // incl. excluded foreign ones, so a foreign-account debt isn't re-added into the base-currency total.)
+    const bankCreditAcctIds = new Set(accounts.filter(isBankCredit).map(a => a.id));
     const manualNonBankDebts = debts
-      .filter(d => !d.fromBank && !bankCreditNames.has((d.name||"").trim().toLowerCase()))
+      .filter(d => !d.fromBank && !(d.account_id && bankCreditAcctIds.has(d.account_id)))
       .reduce((s,d) => s + Math.max(0, parseFloat(d.balance||0)), 0);
     const liabilities = bankCreditLiabilities + manualNonBankDebts;
-    return { assets, liabilities, netWorth: assets - liabilities, bankCreditLiabilities, manualNonBankDebts };
+    return { assets, liabilities, netWorth: assets - liabilities, bankCreditLiabilities, manualNonBankDebts, mixedCurrencyDetected };
   },
 
   /** Monthly cash flow = income − bills − discretionary spend (no double-counting).
@@ -951,12 +971,19 @@ export const FinancialCalcEngine = {
   cashFlow(data, catOverrides = {}, currentDate = new Date()) {
     const incomes = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
     const bills   = data.bills || [];
+    const accounts = data.accounts || [];
     const getEffCat = (t) => catOverrides[t.id] || t.cat;
+    // Sprint Z3 #6: exclude transactions from foreign-currency accounts (no FX in v1) so monthly spend
+    // isn't summed 1:1 across currencies. account.currency defaults CAD → single-currency users unchanged.
+    const base = baseCurrencyOf(data);
+    const foreignAcctIds = new Set(accounts.filter(a => String(a.currency || "CAD").toUpperCase() !== base).map(a => a.id));
+    const mixedCurrencyDetected = foreignAcctIds.size > 0;
     // Filter to the current month only.
     const txns = (data.transactions || []).filter(t => {
       if(t.amount <= 0) return false;
       if(!t.date) return false;
       if(t.pending) return false; // pending txns not yet settled — exclude from spending
+      if(foreignAcctIds.has(t.account_id)) return false; // Sprint Z3 #6: skip foreign-currency txns
       const d = new Date(t.date + "T12:00:00");
       return d.getFullYear() === currentDate.getFullYear() && d.getMonth() === currentDate.getMonth();
     });
@@ -973,7 +1000,7 @@ export const FinancialCalcEngine = {
     }).reduce((s,t) => s + t.amount, 0);
     const totalExpenses = monthlyBills + monthlySpend;
     return { monthlyIncome, monthlyBills, monthlySpend, totalExpenses,
-             cashFlow: monthlyIncome - totalExpenses };
+             cashFlow: monthlyIncome - totalExpenses, mixedCurrencyDetected };
   },
 
   /** Savings rate = (income − expenses) / income */
