@@ -12784,7 +12784,10 @@ export default function FlourishApp(){
   // DB. Anonymous users (no `user`) never write. DB blob carries manual-only transactions.
   useEffect(()=>{
     const nowIso = new Date().toISOString();
-    saveState({onboarded,appData,household,isPremium,checkInBonus, savedAt:nowIso, userId:user?.id||null});
+    // Sprint Z3: stamp the local blob's owner ONLY when logged in; when logged out, PRESERVE the prior
+    // owner (don't null it) so the shared-device wipe keeps a 2nd owner signal beyond STAMP_KEY — a
+    // cross-user financial-data leak must not hinge on a single flag surviving sign-out.
+    saveState({onboarded,appData,household,isPremium,checkInBonus, savedAt:nowIso, ...(user?.id ? { userId: user.id } : {})});
     const gateOpen = !!user && hydratedUidRef.current === user?.id && !appData?.demo; // never sync demo/sample data to the DB
     console.log("[persist] save effect fired", { user: !!user, userId: user?.id || null, hydratedUid: hydratedUidRef.current, gateOpen });
     if (gateOpen) {
@@ -13277,14 +13280,16 @@ export default function FlourishApp(){
   };
 
   // Tier 2.8: explicit Sign Out (Apple requires logout in finance apps; protects shared/
-  // family devices). Mirrors deletion's local sweep BUT keeps the appData blob (STORAGE_KEY)
-  // so re-login restores the user's data — Option A. Fast-follow: stamp appData with user_id
-  // + clear-on-mismatch at login to close shared-device exposure without data loss.
+  // family devices). Keeps the appData blob (STORAGE_KEY) so re-login restores the user's data,
+  // AND keeps STAMP_KEY (flourish_uid) — the shared-device OWNER stamp. Sprint Z3 (the documented
+  // fast-follow): preserving the stamp lets the NEXT login detect a DIFFERENT user and wipe
+  // (clear-on-mismatch in the hydrate), so a new user can never inherit this user's cached data.
+  // (deleteAllData sweeps EVERYTHING incl. the stamp — that's account deletion, not sign-out.)
   const signOut = async ()=>{
     if(!(await confirmModal({title:"Sign out?",message:"Your data stays saved for when you sign back in.",confirmLabel:"Sign out"}))) return;
     try { await supabase.auth.signOut(); } catch {}
     try {
-      Object.keys(localStorage).filter(k => k.startsWith("flourish_") && k !== STORAGE_KEY).forEach(k => localStorage.removeItem(k));
+      Object.keys(localStorage).filter(k => k.startsWith("flourish_") && k !== STORAGE_KEY && k !== STAMP_KEY).forEach(k => localStorage.removeItem(k));
     } catch {}
     window.location.reload();
   };
