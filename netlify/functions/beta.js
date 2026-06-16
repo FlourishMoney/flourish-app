@@ -13,6 +13,8 @@
 
 "use strict";
 
+const { getAdminClient } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
+
 const BETA_CAP = 30;
 
 // Phase D2: origin-aware CORS — locks to known origins, falls back to production.
@@ -140,6 +142,80 @@ exports.handler = async (event) => {
       statusCode: 200, headers: CORS,
       body: JSON.stringify({ joined: true, alreadyJoined: false }),
     };
+  }
+
+  // Sprint Z3 #1: server-side signup — the ONLY signup path once public sign-ups are disabled in
+  // Supabase. Validates the beta code, ATOMICALLY reserves a seat (closes the count→insert TOCTOU via
+  // reserve_beta_seat's advisory lock), then admin-creates the user. email_confirm:true (option b) —
+  // beta accounts are admin-provisioned + confirmed; no transactional email provider needed (App Review note).
+  if (action === "signup") {
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = body.password;
+    const code = String(body.code || "").trim().toUpperCase();
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "invalid_email" }) };
+    }
+    if (!password || typeof password !== "string" || password.length < 8) {
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "weak_password" }) };
+    }
+    const codes = (process.env.BETA_CODES || "BETA100,FLOURISH2026,FOUNDER,APPLE_REVIEW_2026")
+      .split(",").map(c => c.trim().toUpperCase()).filter(Boolean);
+    if (!codes.includes(code)) {
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "invalid_code" }) };
+    }
+
+    let admin;
+    try { admin = getAdminClient(); }
+    catch (e) { console.error("[beta:signup] admin client unavailable:", e.message); return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_error" }) }; }
+
+    // Atomic seat reservation (advisory-locked count+insert in Postgres).
+    let seat;
+    try {
+      const { data, error } = await admin.rpc("reserve_beta_seat", { p_email: email, p_cap: BETA_CAP });
+      if (error) throw error;
+      seat = data; // 'ok' | 'cap_reached' | 'email_exists'
+    } catch (e) {
+      console.error("[beta:signup] reserve_beta_seat failed:", e.message);
+      return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: "server_error" }) };
+    }
+    if (seat === "cap_reached")  return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "cap_reached" }) };
+    if (seat === "email_exists") return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "email_exists" }) };
+
+    // seat === 'ok' → seat reserved. Create the auth user; on ANY failure, RELEASE the seat so the cap
+    // stays accurate (best-effort — if the release itself fails the seat orphans; log loudly for manual SQL).
+    const releaseSeat = async (why) => {
+      try {
+        const { error: delErr } = await admin.from("beta_signups").delete().eq("email", email);
+        if (delErr) console.error(`[beta:signup] ORPHAN SEAT (${why}) — seat-release FAILED for ${email}; manual cleanup: delete from public.beta_signups where email='${email}';`, delErr.message);
+      } catch (de) {
+        console.error(`[beta:signup] ORPHAN SEAT (${why}) — seat-release THREW for ${email}; manual cleanup: delete from public.beta_signups where email='${email}';`, de.message);
+      }
+    };
+
+    try {
+      const { error: createErr } = await admin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { beta: true, signed_up: new Date().toISOString() },
+      });
+      if (createErr) {
+        await releaseSeat("createUser error");
+        const m = (createErr.message || "").toLowerCase();
+        if (createErr.code === "email_exists" || m.includes("already registered") || m.includes("already been registered")) {
+          return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "email_exists" }) };
+        }
+        console.error("[beta:signup] createUser failed:", createErr.message);
+        return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "create_failed", message: createErr.message }) };
+      }
+    } catch (e) {
+      await releaseSeat("createUser threw");
+      console.error("[beta:signup] createUser threw:", e.message);
+      return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_error" }) };
+    }
+
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
   }
 
   try {

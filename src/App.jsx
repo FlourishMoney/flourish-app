@@ -11228,58 +11228,38 @@ function AuthScreen({ onAuth, onTryDemo }) {
   };
 
   const handleSignup = async () => {
-    setLoading(true); setError("");
-    // Sprint Z #5: validate the beta code server-side (codes aren't in the client bundle).
-    try {
-      const valid = await validateBetaCode(betaCode);
-      if (!valid) { setError("Invalid beta code. Request one at hello@flourishmoney.app"); setLoading(false); return; }
-    } catch {
-      setError("Couldn't verify your beta code — check your connection and try again."); setLoading(false); return;
-    }
-    // Check beta cap server-side
+    setLoading(true); setError(""); setSuccess("");
+    // Sprint Z3 #1: signup now goes through the SERVER (beta.js {action:"signup"}): it validates the
+    // beta code, atomically reserves a seat (closes the cap TOCTOU), then admin-creates a CONFIRMED
+    // user. Client-side supabase.auth.signUp is gone, so this keeps working once Amanda disables public
+    // sign-ups in Supabase. Option (b): no confirmation email — the user can log in immediately.
     try {
       const res = await fetch("/api/beta", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({action:"check"})
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "signup", email, password, code: betaCode }),
       });
-      const cap = await res.json();
-      if(cap.allowed === false) {
-        setError(`Beta is full (${BETA_CAP}/${BETA_CAP} testers). Join the waitlist at hello@flourishmoney.app`);
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || out.error) {
+        const e = out.error;
+        if (e === "invalid_code")       setError("Invalid beta code. Request one at hello@flourishmoney.app");
+        else if (e === "cap_reached")   setError(`Beta is full (${BETA_CAP}/${BETA_CAP} testers). Join the waitlist at hello@flourishmoney.app`);
+        else if (e === "email_exists")  setError("This email is already registered. Try logging in instead.");
+        else if (e === "weak_password") setError("Choose a password of at least 8 characters.");
+        else if (e === "invalid_email") setError("Enter a valid email address.");
+        else                            setError(out.message || "Couldn't create your account — please try again.");
         setLoading(false); return;
       }
-    } catch {
-      // If check fails, allow signup so an error doesn't block testers
-    }
-    const { data, error } = await supabase.auth.signUp({
-      email, password,
-      options:{ data:{ beta:true, signed_up:new Date().toISOString() }, emailRedirectTo: window.location.origin }
-    });
-    if (error) {
-      const msg = (error.message||"").toLowerCase();
-      if(msg.includes("user already registered")) {
-        setError("This email is already registered. Try logging in instead.");
-      } else if(error.code === "signup_disabled" || msg.includes("signups not allowed")) {
-        // Sprint Z2 #14: public signups disabled in Supabase (invite-only beta) → friendly message
-        // instead of the raw "Signups not allowed for this instance".
-        setError("Beta is invite-only right now — request access at hello@flourishmoney.app");
-      } else {
-        setError(error.message);
-      }
-      setLoading(false); return;
-    }
-    // Supabase enumeration-protection: an EXISTING email returns a "success" with an empty
-    // identities array (not an error) and does NOT auto-resend — detect it and guide the user.
-    const isExisting = Array.isArray(data?.user?.identities) && data.user.identities.length === 0;
-    setError(""); setSuccess("");
-    if (isExisting) {
-      setCheckEmailNote("An account with this email may already exist — check your inbox to confirm it, resend below, or log in.");
-      setResendCooldown(0);
-    } else {
+      // Account created + confirmed (option b) — no email to check. Drop the user on the login screen
+      // with a success banner; email + password are still populated so they can log straight in.
       setCheckEmailNote("");
-      setResendCooldown(60); // a fresh confirmation email was just sent — debounce resend
+      setSuccess("Account created — you can log in now.");
+      setMode("login");
+      setLoading(false);
+    } catch {
+      setError("Couldn't reach the server — check your connection and try again.");
+      setLoading(false);
     }
-    setMode("check_email"); setLoading(false);
   };
 
   // Sprint Q item 12: password recovery — email a reset link (resetPasswordForEmail). The link
