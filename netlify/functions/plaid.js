@@ -596,6 +596,30 @@ exports.handler = async (event) => {
       if (udErr) console.warn("[delete_account] user_data delete:", udErr.message);
       const { error: cuErr } = await admin.from("coach_usage").delete().eq("user_id", user_id);
       if (cuErr) console.warn("[delete_account] coach_usage delete:", cuErr.message);
+      // profiles (plan + AI-consent timestamps) has ON DELETE CASCADE to auth.users, but delete it
+      // explicitly too (idempotent) so the row + consent data is wiped even if the cascade ever changes.
+      const { error: pErr } = await admin.from("profiles").delete().eq("user_id", user_id);
+      if (pErr) console.warn("[delete_account] profiles delete:", pErr.message);
+
+      // 3c. Sprint Z3: free the BETA SEAT. beta_signups is keyed by EMAIL with NO FK to auth.users, so it
+      // does NOT cascade with the auth user below — a lingering row keeps the 30-seat cap consumed AND
+      // makes reserve_beta_seat return 'email_exists', blocking re-signup with the same email. Look up the
+      // email BEFORE deleting the auth user (afterwards it's gone). Best-effort: a stuck seat must NOT
+      // block the account deletion itself (Apple 5.1.1(v) — delete must delete), so log loudly instead.
+      try {
+        const { data: u } = await admin.auth.admin.getUserById(user_id);
+        const email = (u?.user?.email || "").trim().toLowerCase();
+        if (email) {
+          const { error: bsErr } = await admin.from("beta_signups").delete().eq("email", email);
+          if (bsErr) console.error(`[delete_account] beta_signups delete FAILED for ${email}; manual cleanup: delete from public.beta_signups where email='${email}';`, bsErr.message);
+          // Also erase any waitlist PII for this email (email-keyed, no FK → doesn't cascade). Best-effort:
+          // residual marketing PII shouldn't survive an account deletion (Apple 5.1.1(v) / privacy).
+          const { error: wlErr } = await admin.from("waitlist").delete().eq("email", email);
+          if (wlErr) console.warn("[delete_account] waitlist delete:", wlErr.message);
+        } else {
+          console.warn("[delete_account] no email found for user; beta seat (if any) not freed:", user_id);
+        }
+      } catch (e) { console.warn("[delete_account] beta seat free threw:", e.message); }
 
       // 4. Delete the Supabase auth user (service-role only)
       const { error: authDelErr } = await admin.auth.admin.deleteUser(user_id);
