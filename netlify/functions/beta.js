@@ -167,7 +167,7 @@ exports.handler = async (event) => {
 
     let admin;
     try { admin = getAdminClient(); }
-    catch (e) { console.error("[beta:signup] admin client unavailable:", e.message); return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_error" }) }; }
+    catch (e) { console.error("[beta:signup] admin client unavailable:", e.message); return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_misconfig" }) }; }
 
     // Atomic seat reservation (advisory-locked count+insert in Postgres).
     let seat;
@@ -177,7 +177,7 @@ exports.handler = async (event) => {
       seat = data; // 'ok' | 'cap_reached' | 'email_exists'
     } catch (e) {
       console.error("[beta:signup] reserve_beta_seat failed:", e.message);
-      return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: "server_error" }) };
+      return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: "reserve_failed", detail: (e.message || "").slice(0, 200) }) };
     }
     if (seat === "cap_reached")  return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "cap_reached" }) };
     if (seat === "email_exists") return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "email_exists" }) };
@@ -212,7 +212,7 @@ exports.handler = async (event) => {
     } catch (e) {
       await releaseSeat("createUser threw");
       console.error("[beta:signup] createUser threw:", e.message);
-      return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_error" }) };
+      return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "create_threw", detail: (e.message || "").slice(0, 200) }) };
     }
 
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };

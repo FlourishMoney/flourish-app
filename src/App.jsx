@@ -11243,12 +11243,16 @@ function AuthScreen({ onAuth, onTryDemo }) {
       const out = await res.json().catch(() => ({}));
       if (!res.ok || out.error) {
         const e = out.error;
-        if (e === "invalid_code")       setError("Invalid beta code. Request one at hello@flourishmoney.app");
-        else if (e === "cap_reached")   setError(`Beta is full (${BETA_CAP}/${BETA_CAP} testers). Join the waitlist at hello@flourishmoney.app`);
-        else if (e === "email_exists")  setError("This email is already registered. Try logging in instead.");
-        else if (e === "weak_password") setError("Choose a password of at least 8 characters.");
-        else if (e === "invalid_email") setError("Enter a valid email address.");
-        else                            setError(out.message || "Couldn't create your account — please try again.");
+        if (e === "invalid_code")          setError("Invalid beta code. Request one at hello@flourishmoney.app");
+        else if (e === "cap_reached")      setError(`Beta is full (${BETA_CAP}/${BETA_CAP} testers). Join the waitlist at hello@flourishmoney.app`);
+        else if (e === "email_exists")     setError("This email is already registered. Try logging in instead.");
+        else if (e === "weak_password")    setError("Choose a password of at least 8 characters.");
+        else if (e === "invalid_email")    setError("Enter a valid email address.");
+        else if (e === "server_misconfig") setError("Signups aren't fully configured on the server yet — please contact hello@flourishmoney.app.");
+        else if (e === "reserve_failed")   setError(`Couldn't reserve a beta seat (server error)${out.detail ? ` — ${out.detail}` : ""}. Please try again or contact hello@flourishmoney.app.`);
+        else if (e === "create_failed" || e === "create_threw") setError(`Couldn't create your account${(out.message || out.detail) ? ` — ${out.message || out.detail}` : ""}. Please try again or contact hello@flourishmoney.app.`);
+        // Sprint Z3 fix: never hide the real failure behind a pure generic — surface the server's code/detail.
+        else                               setError(`Signup failed${e ? ` (${e})` : ` (HTTP ${res.status})`}${out.detail ? ` — ${out.detail}` : out.message ? ` — ${out.message}` : ""}. Please contact hello@flourishmoney.app.`);
         setLoading(false); return;
       }
       // Account created + confirmed (option b) — no email to check. Drop the user on the login screen
