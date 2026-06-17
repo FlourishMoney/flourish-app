@@ -56,9 +56,17 @@ exports.handler = async (event) => {
       console.error("[webhook] dedupe insert failed (continuing):", seenErr.message);
     }
     // Opportunistic cleanup — keep the table bounded to ~the replay window (best-effort).
-    admin.from("webhook_seen").delete()
-      .lt("seen_at", new Date(Date.now() - 15 * 60 * 1000).toISOString())
-      .then(() => {}, () => {});
+    // Sprint Z3 Phase D #3: AWAIT it. Lambda freezes the instant the handler returns, so a
+    // fire-and-forget .then() may never run, run twice on thaw, or leak the connection. The delete
+    // is tiny; awaiting inline is simplest. Stays best-effort — a cleanup failure must not drop the
+    // webhook (we still return 200). If this ever adds real latency, move it to a pg_cron job.
+    try {
+      const { error: cleanupErr } = await admin.from("webhook_seen").delete()
+        .lt("seen_at", new Date(Date.now() - 15 * 60 * 1000).toISOString());
+      if (cleanupErr) console.warn("[webhook] cleanup failed (non-fatal):", cleanupErr.message);
+    } catch (e) {
+      console.warn("[webhook] cleanup threw (non-fatal):", e?.message || e);
+    }
   }
 
   // Tier 1.4: resolve the item owner BEFORE any mutation. Scoping every update by

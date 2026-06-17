@@ -7304,7 +7304,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       const allItems=[
         {label:"Chequing / Checking",value:checking,type:"asset",color:C.green,icon:"🏦"},
         {label:savLabel,value:savings,type:"asset",color:C.teal,icon:"🛡️"},
-        ...investments.map(inv=>({label:inv.name,value:inv.balance||0,type:"investment",color:C.purple,icon:"chartUp",gain:inv.gain,gainPct:inv.gainPct,ticker:inv.ticker})),
+        ...investments.map(inv=>({label:inv.name,value:inv.balance||0,type:"investment",color:C.purple,icon:"📈"/* Phase D #4: this list renders item.icon as raw text (emoji), NOT via <Icon>/ICON_MAP — an ICON_MAP key like "chartUp" would print literally */,gain:inv.gain,gainPct:inv.gainPct,ticker:inv.ticker})),
         ...(data.debts||[]).filter(d=>!(d.account_id && foreignAcctIds.has(d.account_id))).map(d=>({label:d.name,value:parseFloat(d.balance||0),type:"debt",color:C.red,icon:"💳"})),
       ];
       return <>
@@ -12690,7 +12690,7 @@ export default function FlourishApp(){
         const { ok, error: persistErr } = await upsertUserData(supabase, userId, blob);
         console.log("[persist] save complete", { ok });
         if (ok) { syncFailRef.current = 0; if (syncErrorRef.current) { syncErrorRef.current = false; setSyncError(false); } }
-        else { if (persistErr) captureError(persistErr, { area: "persist" }); if (++syncFailRef.current >= 3 && !syncErrorRef.current) { syncErrorRef.current = true; setSyncError(true); } } // Sprint Z #10
+        else { if (persistErr) captureError(new Error(`persist:${persistErr?.code || "unknown"}`), { area: "persist" }); if (++syncFailRef.current >= 3 && !syncErrorRef.current) { syncErrorRef.current = true; setSyncError(true); } } // Sprint Z #10 + Phase D #1: code-only, never the raw PostgrestError (its `details` can echo the row payload)
       });
     }
     return saverRef.current;
@@ -12772,7 +12772,7 @@ export default function FlourishApp(){
         } else if (snap.appData && !snap.appData.demo) {
           // clean "no row" + we have REAL local data (not demo) → MIGRATION upload (only here, never on read error)
           const _mig = await upsertUserData(supabase, user.id, buildDbBlob(snap, { userId: user.id, nowIso: new Date().toISOString() }));
-          if (_mig && _mig.error) captureError(_mig.error, { area: "persist" }); // Sprint Z #10
+          if (_mig && _mig.error) captureError(new Error(`persist:${_mig.error?.code || "unknown"}`), { area: "persist" }); // Sprint Z #10
           try { localStorage.setItem("flourish_db_migrated", "1"); } catch {}
           setShowMigratedBanner(true);                    // (5) surface the one-time banner
         }

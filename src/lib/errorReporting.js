@@ -27,11 +27,24 @@ function redact(s) {
   // backstop, not the primary control. Don't start sending raw user data in `extra`.
 }
 
+// Sprint Z3 Phase D #1: deep-scrub arbitrary structured data. event.extra is the one channel that
+// can carry a raw object (e.g. a Supabase PostgrestError whose `details` field echoes the query
+// payload — unencrypted financial rows for this app). Recurse and redact every string leaf.
+function scrubObject(x) {
+  if (typeof x === "string") return redact(x);
+  if (Array.isArray(x)) return x.map(scrubObject);
+  if (x && typeof x === "object") {
+    return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, scrubObject(v)]));
+  }
+  return x;
+}
+
 function scrubPII(event) {
   if (event.user) event.user = event.user.id ? { id: event.user.id } : undefined;
   if (event.message) event.message = redact(event.message);
   (event.exception?.values || []).forEach(v => { if (v.value) v.value = redact(v.value); });
   (event.breadcrumbs || []).forEach(b => { if (b.message) b.message = redact(b.message); });
+  if (event.extra) event.extra = scrubObject(event.extra); // Phase D #1: backstop for any rich `extra`
   return event;
 }
 

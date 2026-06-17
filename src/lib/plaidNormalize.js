@@ -166,9 +166,13 @@ export function detectRecurringBills(txns, opts = {}) {
 
   // Only look at expenses (positive = money out). Exclude inter-account moves (cash advances,
   // card payments, balance transfers) so they never surface as bills.
+  // Sprint Z3 Phase D #2: also exclude PENDING txns. cashFlow / SafeSpendEngine / the pipeline all
+  // drop pending; a pending charge must not prematurely create or distort a recurring bill (it can
+  // shift amount/date or vanish on settle). A bill needs two POSTED occurrences.
   const TRANSFER_RX = /cash advance|payment to|transfer to|balance transfer|e-?transfer|pymt|autopay/i;
   const expenses = txns.filter(t =>
     t.amount > 0 &&
+    !t.pending &&
     t.cat !== "Income" &&
     t.cat !== "Transfer" &&
     t.cat !== "Fees" &&

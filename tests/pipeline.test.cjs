@@ -171,5 +171,24 @@ const D = (iso) => new Date(iso + "T12:00:00");
     t.eq(nw.liabilities, 800, "#10/#8 manual Visa ($300) + Plaid Visa ($500 via account) BOTH counted");
   }
 
+  // ── Sprint Z3 Phase D #2: PENDING txns excluded from bill detection ───────────────────────────────
+  {
+    // a pending occurrence + a single posted occurrence must NOT yet create a recurring bill
+    const pendThenPost = pipeline([
+      { id: "nf_pend", date: "2026-05-22", name: "Netflix", amount: 18.99, category: "ENTERTAINMENT", account_id: "a1", pending: true },
+      { id: "nf_post", date: "2026-06-22", name: "Netflix", amount: 18.99, category: "ENTERTAINMENT", account_id: "a1", pending: false },
+    ]);
+    const billsPend = pn.detectRecurringBills(pendThenPost);
+    t.eq(billsPend.filter(b => b.name.toLowerCase().includes("netflix")).length, 0, "#2 pending: pending + 1 posted Netflix → NO bill (pending excluded, only 1 posted occurrence)");
+
+    // two POSTED occurrences DO create the bill — the filter must not break normal detection
+    const twoPosted = pipeline([
+      { id: "nf_p1", date: "2026-05-22", name: "Netflix", amount: 18.99, category: "ENTERTAINMENT", account_id: "a1", pending: false },
+      { id: "nf_p2", date: "2026-06-22", name: "Netflix", amount: 18.99, category: "ENTERTAINMENT", account_id: "a1", pending: false },
+    ]);
+    const billsPosted = pn.detectRecurringBills(twoPosted);
+    t.eq(billsPosted.filter(b => b.name.toLowerCase().includes("netflix")).length, 1, "#2 pending: two POSTED Netflix occurrences DO create the recurring bill");
+  }
+
   return t.summary("pipeline.test");
 })().catch(e => { console.error("pipeline.test crashed:", e); process.exitCode = 1; });
