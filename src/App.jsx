@@ -11235,7 +11235,6 @@ function AuthScreen({ onAuth, onTryDemo }) {
   const [showAuth, setShowAuth] = useState(false);
 
   // Phase E1: waitlist email capture (replaces public signup CTAs).
-  const [waitlistSource, setWaitlistSource] = useState("unknown");
   const [waitlistEmail, setWaitlistEmail] = useState("");
   const [waitlistCountry, setWaitlistCountry] = useState("CA");
   const [waitlistStatus, setWaitlistStatus] = useState(null); // null | "submitting" | "success" | "error" | "already"
@@ -11367,21 +11366,15 @@ function AuthScreen({ onAuth, onTryDemo }) {
 
   const goSignup = () => { setMode("signup"); setError(""); setSuccess(""); setShowAuth(true); };
   const goLogin  = () => { setMode("login");  setError(""); setSuccess(""); setShowAuth(true); };
-  // Phase E1: waitlist entry — captures source for analytics
-  const goWaitlist = (source = "unknown") => {
-    setMode("waitlist");
-    setWaitlistSource(source);
-    setWaitlistStatus(null);
-    setWaitlistEmail("");
-    setError(""); setSuccess("");
-    setShowAuth(true);
-  };
 
-  const handleWaitlistSubmit = async () => {
-    if (!waitlistEmail.trim()) return;
+  const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const handleWaitlistSubmit = async (sourceArg) => {
+    const emailVal = waitlistEmail.trim();
+    if (!EMAIL_RX.test(emailVal)) { setWaitlistStatus("invalid"); return; } // Phase E2: client-side email check before submit
+    const submitSource = (typeof sourceArg === "string" && sourceArg) || "landing";
     setWaitlistStatus("submitting");
 
-    // Capture UTM params from URL
+    // Capture UTM params from the URL into the request BODY (never the URL/query string — no PII in URLs).
     const params = new URLSearchParams(window.location.search);
     const metadata = {};
     ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"].forEach(k => {
@@ -11396,9 +11389,9 @@ function AuthScreen({ onAuth, onTryDemo }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "join_waitlist",
-          email: waitlistEmail,
+          email: emailVal,
           country: waitlistCountry,
-          source: waitlistSource,
+          source: submitSource,
           metadata,
         }),
       });
@@ -11413,184 +11406,208 @@ function AuthScreen({ onAuth, onTryDemo }) {
     }
   };
 
+  // Phase E2: inline waitlist capture, used at two spots on the landing (hero + bottom). Shared state,
+  // so a success at either point renders the success card. `source` tags the conversion point.
+  const renderCapture = (source) => {
+    if (waitlistStatus === "success" || waitlistStatus === "already") {
+      return (
+        <div className="fll-capture fll-done">
+          <div style={{ fontSize: 30, marginBottom: 6 }}>{waitlistStatus === "already" ? "👋" : "🎉"}</div>
+          <div className="fll-done-t">{waitlistStatus === "already" ? "You're already on the list!" : "You're on the list"}</div>
+          <div className="fll-done-b">We'll email you when Flourish launches on iOS. No spam — just the launch news.</div>
+        </div>
+      );
+    }
+    const busy = waitlistStatus === "submitting";
+    return (
+      <div className="fll-capture">
+        <div className="fll-form">
+          <input className="fll-input" type="email" inputMode="email" autoComplete="email" name="email"
+            placeholder="you@example.com" value={waitlistEmail} aria-label="Email address"
+            onChange={e => { setWaitlistEmail(e.target.value); if (waitlistStatus === "invalid" || waitlistStatus === "error") setWaitlistStatus(null); }}
+            onKeyDown={e => { if (e.key === "Enter") handleWaitlistSubmit(source); }} />
+          <button className="fll-btn" onClick={() => handleWaitlistSubmit(source)} disabled={busy}>
+            {busy ? "Joining…" : "Join the waitlist"}
+          </button>
+        </div>
+        <div className="fll-country">
+          {[["CA", "🇨🇦 Canada"], ["US", "🇺🇸 United States"]].map(([c, label]) => (
+            <button key={c} type="button" onClick={() => setWaitlistCountry(c)}
+              className={"fll-seg" + (waitlistCountry === c ? " fll-seg-on" : "")}>{label}</button>
+          ))}
+        </div>
+        {waitlistStatus === "invalid" && <div className="fll-err">Please enter a valid email address.</div>}
+        {waitlistStatus === "error" && <div className="fll-err">Something went wrong — please try again.</div>}
+      </div>
+    );
+  };
+
   return (
-    <div style={{ minHeight: "100dvh", background: "#050D09", fontFamily: "'Plus Jakarta Sans',sans-serif", overflowX: "hidden", paddingTop: "env(safe-area-inset-top)" }}>
+    <div style={{ minHeight: "100dvh", background: showAuth ? "#050D09" : "#FDF6EC", fontFamily: "'Plus Jakarta Sans',sans-serif", overflowX: "hidden", paddingTop: "env(safe-area-inset-top)" }}>
 
       {!showAuth ? (
 
         /* ───────────────── LANDING PAGE ───────────────── */
-        <div style={{ display: "flex", flexDirection: "column", minHeight: "100dvh" }}>
+        <div className="fll-root" style={{ display: "flex", flexDirection: "column", minHeight: "100dvh", background: "#FDF6EC" }}>
+
+          <style>{`
+            .fll-root{ color:#1c2b21; -webkit-font-smoothing:antialiased; }
+            .fll-root *{ box-sizing:border-box; }
+            .fll-wrap{ width:100%; max-width:1080px; margin:0 auto; padding:0 22px; }
+            .fll-nav{ display:flex; align-items:center; justify-content:space-between; width:100%; max-width:1080px; margin:0 auto; padding:18px 22px; }
+            .fll-brand{ display:flex; align-items:center; gap:9px; }
+            .fll-brand span{ font-family:'Playfair Display',serif; font-weight:900; font-size:18px; color:#163a1c; letter-spacing:-0.3px; }
+            .fll-login{ background:transparent; border:1px solid rgba(46,139,46,0.45); color:#1b5e20; border-radius:99px; padding:8px 18px; font-size:13px; font-weight:700; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-login:hover{ background:rgba(46,139,46,0.08); }
+
+            .fll-hero{ text-align:center; padding:38px 0 14px; }
+            .fll-badge{ display:inline-flex; align-items:center; gap:7px; background:rgba(46,139,46,0.09); border:1px solid rgba(46,139,46,0.28); color:#1b5e20; border-radius:99px; padding:7px 15px; font-size:12.5px; font-weight:700; margin-bottom:22px; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-h1{ font-family:'Playfair Display',serif; font-weight:900; font-size:clamp(33px,6.2vw,58px); line-height:1.06; letter-spacing:-0.6px; color:#15321a; margin:0 auto 18px; max-width:13ch; }
+            .fll-h1 em{ font-style:italic; color:#2E8B2E; }
+            .fll-sub{ font-family:'Plus Jakarta Sans',sans-serif; font-size:clamp(15px,2.2vw,19px); line-height:1.6; color:#52624f; max-width:560px; margin:0 auto 30px; }
+
+            .fll-capture{ max-width:440px; margin:0 auto; text-align:center; }
+            .fll-form{ display:flex; flex-direction:column; gap:10px; }
+            .fll-input{ flex:1 1 auto; min-width:0; width:100%; padding:14px 16px; border-radius:13px; border:1.5px solid #e3dac6; background:#fff; font-size:16px; font-family:'Plus Jakarta Sans',sans-serif; color:#1c2b21; outline:none; transition:border-color .15s, box-shadow .15s; }
+            .fll-input::placeholder{ color:#7c8a7b; }
+            .fll-input:focus{ border-color:#2E8B2E; box-shadow:0 0 0 3px rgba(46,139,46,0.16); }
+            .fll-btn{ width:100%; padding:14px 22px; border-radius:13px; border:none; background:linear-gradient(135deg,#2E8B2E,#1f6b22); color:#fff; font-weight:800; font-size:15px; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; box-shadow:0 8px 22px rgba(46,139,46,0.26); transition:transform .12s, box-shadow .12s; white-space:nowrap; }
+            .fll-btn:hover{ transform:translateY(-1px); box-shadow:0 10px 26px rgba(46,139,46,0.32); }
+            .fll-btn:disabled{ opacity:.55; cursor:default; transform:none; box-shadow:none; }
+            .fll-country{ display:inline-flex; gap:4px; margin-top:12px; background:rgba(46,139,46,0.06); border:1px solid rgba(46,139,46,0.14); border-radius:99px; padding:3px; }
+            .fll-seg{ border:none; background:transparent; color:#52624f; font-size:12.5px; font-weight:700; padding:6px 14px; border-radius:99px; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-seg-on{ background:#fff; color:#226b22; box-shadow:0 1px 3px rgba(0,0,0,0.10); }
+            .fll-err{ color:#c0392b; font-size:12.5px; margin-top:10px; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-done{ background:#fff; border:1px solid rgba(46,139,46,0.2); border-radius:18px; padding:22px 20px; box-shadow:0 10px 30px rgba(22,58,28,0.07); }
+            .fll-done-t{ font-family:'Playfair Display',serif; font-weight:900; font-size:21px; color:#15321a; margin-bottom:6px; }
+            .fll-done-b{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13.5px; line-height:1.55; color:#52624f; max-width:340px; margin:0 auto; }
+
+            .fll-demo{ display:inline-block; margin-top:16px; background:none; border:none; color:#52624f; font-size:13px; font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:3px; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-demo:hover{ color:#2E8B2E; }
+            .fll-trust{ display:inline-flex; align-items:center; gap:7px; margin-top:20px; font-size:12.5px; color:#52624f; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; }
+
+            .fll-section{ padding:44px 0; }
+            .fll-eyebrow{ text-align:center; font-size:11.5px; font-weight:800; letter-spacing:1.4px; text-transform:uppercase; color:#1b5e20; margin-bottom:10px; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-h2{ font-family:'Playfair Display',serif; font-weight:900; font-size:clamp(24px,4vw,34px); color:#15321a; text-align:center; line-height:1.15; margin:0 auto 8px; max-width:20ch; }
+            .fll-lede{ text-align:center; font-size:15px; color:#52624f; max-width:520px; margin:0 auto 28px; line-height:1.6; font-family:'Plus Jakarta Sans',sans-serif; }
+
+            .fll-proof{ display:flex; gap:18px; overflow-x:auto; padding:6px 22px 12px; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+            .fll-proof::-webkit-scrollbar{ display:none; }
+            .fll-shot{ flex:0 0 auto; width:208px; scroll-snap-align:center; }
+            .fll-frame{ background:#15271a; border-radius:30px; padding:6px; box-shadow:0 22px 50px rgba(22,58,28,0.18); }
+            .fll-frame img{ display:block; width:100%; height:auto; border-radius:25px; }
+            .fll-cap{ text-align:center; font-size:12px; color:#52624f; margin-top:11px; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; }
+
+            .fll-benefits{ display:grid; grid-template-columns:1fr; gap:14px; max-width:760px; margin:0 auto; }
+            .fll-card{ background:#fff; border:1px solid rgba(46,139,46,0.13); border-radius:18px; padding:22px; box-shadow:0 6px 22px rgba(22,58,28,0.05); }
+            .fll-ico{ width:42px; height:42px; border-radius:12px; background:rgba(46,139,46,0.1); border:1px solid rgba(46,139,46,0.2); display:flex; align-items:center; justify-content:center; margin-bottom:13px; }
+            .fll-card h3{ font-family:'Plus Jakarta Sans',sans-serif; font-weight:800; font-size:16px; color:#15321a; margin:0 0 6px; }
+            .fll-card p{ font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; line-height:1.6; color:#52624f; margin:0; }
+
+            .fll-cta2{ background:linear-gradient(160deg,#f4ebd7,#fdf6ec); border:1px solid rgba(46,139,46,0.16); border-radius:26px; padding:38px 24px; text-align:center; max-width:620px; margin:0 auto; }
+
+            .fll-foot{ border-top:1px solid rgba(46,139,46,0.12); margin-top:24px; }
+            .fll-foot-in{ width:100%; max-width:1080px; margin:0 auto; padding:24px 22px; display:flex; flex-wrap:wrap; gap:12px 22px; align-items:center; justify-content:space-between; }
+            .fll-foot a{ color:#52624f; font-size:12.5px; text-decoration:none; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-foot a:hover{ color:#2E8B2E; }
+            .fll-foot span{ color:#52624f; font-size:12px; font-family:'Plus Jakarta Sans',sans-serif; }
+
+            @media(min-width:560px){
+              .fll-form{ flex-direction:row; }
+              .fll-input{ width:auto; }
+              .fll-btn{ width:auto; }
+            }
+            @media(min-width:760px){
+              .fll-hero{ padding:58px 0 22px; }
+              .fll-section{ padding:58px 0; }
+              .fll-benefits{ grid-template-columns:1fr 1fr; }
+            }
+            @media(min-width:1040px){
+              .fll-proof{ justify-content:center; overflow-x:visible; flex-wrap:wrap; }
+              .fll-shot{ width:216px; }
+            }
+          `}</style>
 
           {/* Nav */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 24px", position: "sticky", top: 0, background: "rgba(5,13,9,0.92)", backdropFilter: "blur(12px)", zIndex: 10, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <FlourishMark size={32} />
-              <span style={{ color: "#EDE9E2", fontWeight: 800, fontSize: 16, letterSpacing: -0.3 }}>Flourish</span>
+          <div className="fll-nav">
+            <div className="fll-brand">
+              <img src="/flourish-adult-app-icon-180.png" alt="" width={30} height={30} style={{ borderRadius: 8 }} />
+              <span>Flourish</span>
             </div>
-            <button onClick={goLogin} style={{ background: "rgba(0,214,143,0.1)", border: "1px solid rgba(0,214,143,0.3)", color: "#00D68F", borderRadius: 99, padding: "9px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-              Log In
-            </button>
+            <button className="fll-login" onClick={goLogin}>Log in</button>
           </div>
 
           {/* Hero */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "52px 28px 40px", textAlign: "center" }}>
+          <div className="fll-wrap fll-hero">
+            <span className="fll-badge">
+              <svg width="12" height="12" viewBox="0 0 384 512" fill="currentColor" aria-hidden="true"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
+              Coming soon to iOS
+            </span>
+            <h1 className="fll-h1">Understand your money — <em>coaching, not just tracking.</em></h1>
+            <p className="fll-sub">See exactly what's safe to spend before payday, test any money decision, and finally understand your finances — in plain English.</p>
+            {renderCapture("hero")}
+            {onTryDemo && <button className="fll-demo" onClick={onTryDemo}>or preview the app with sample data →</button>}
+            <div><span className="fll-trust">🔒 Bank-level security. Your data stays yours.</span></div>
+          </div>
 
-            <div style={{ display: "inline-block", background: "rgba(0,214,143,0.1)", border: "1px solid rgba(0,214,143,0.25)", borderRadius: 99, padding: "6px 16px", fontSize: 12, fontWeight: 700, color: "#00D68F", letterSpacing: 0.5, marginBottom: 28 }}>
-              🇨🇦🇺🇸 Built for Canada & the US
-            </div>
-            <div style={{ display: "inline-block", background: "rgba(77,168,255,0.10)", border: "1px solid rgba(77,168,255,0.30)", borderRadius: 99, padding: "6px 16px", fontSize: 12, fontWeight: 700, color: "#4DA8FF", letterSpacing: 0.5, marginBottom: 28, marginLeft: 8 }}>
-              📱 iOS App Store · launching this month
-            </div>
-
-            <h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: "clamp(30px,9vw,52px)", fontWeight: 900, color: "#EDE9E2", lineHeight: 1.1, marginBottom: 18, letterSpacing: -0.5, maxWidth: 560 }}>
-              Know before you spend.{" "}
-              <span style={{ color: "#00D68F", fontStyle: "italic" }}>Finally.</span>
-            </h1>
-
-            <p style={{ color: "#6B7A6E", fontSize: 16, lineHeight: 1.75, maxWidth: 380, marginBottom: 40 }}>
-              Flourish gives you one simple safe-to-spend number, calculated from your accounts, bills, credit cards, and buffer — updated every day.
-            </p>
-
-            {/* Hero product card */}
-            <div style={{ width: "100%", maxWidth: 340, background: "#0D1F12", border: "1px solid rgba(0,214,143,0.2)", borderRadius: 24, padding: "28px 24px", marginBottom: 36, boxShadow: "0 0 80px rgba(0,214,143,0.07)" }}>
-              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Safe to spend per day</div>
-              <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 56, fontWeight: 900, color: "#00D68F", lineHeight: 1, marginBottom: 6 }}>$247</div>
-              <div style={{ color: "rgba(237,233,226,0.50)", fontSize: 12, marginBottom: 24, fontStyle: "italic" }}>Example shown — after bills, credit cards, and your buffer</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {[["🏦  Chequing / Checking","$1,843.22"],["💳  Credit Card","−$612.00"],["📅  Upcoming bills","−$984.00"]].map(([label,amount]) => (
-                  <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "11px 14px", background: "rgba(255,255,255,0.03)", borderRadius: 12, fontSize: 13 }}>
-                    <span style={{ color: "#6B7A6E" }}>{label}</span>
-                    <span style={{ color: "#EDE9E2", fontWeight: 600 }}>{amount}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Primary CTA */}
-            <button onClick={() => goWaitlist("hero")} style={{ width: "100%", maxWidth: 340, padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", marginBottom: 12, boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-              Get Early Access
-            </button>
-            {/* Sprint Z2 #2: demo entry on the auth screen so App reviewers (no OTP) can explore without an account */}
-            {onTryDemo && (
-              <button onClick={onTryDemo} style={{ width: "100%", maxWidth: 340, padding: "15px", borderRadius: 16, border: "1px solid rgba(0,214,143,0.35)", background: "rgba(0,214,143,0.08)", color: "#00D68F", fontWeight: 800, fontSize: 15, cursor: "pointer", marginBottom: 12, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                👀 Try the demo — no account needed
-              </button>
-            )}
-            <div style={{ color: "#6B7A6E", fontSize: 12, marginBottom: 52, maxWidth: 340, textAlign: "center", lineHeight: 1.6 }}>Drop your email — we'll let you know the moment Flourish hits the App Store.</div>
-
-            {/* Trust row */}
-            <div style={{ display: "flex", gap: 28, justifyContent: "center", flexWrap: "wrap", marginBottom: 64 }}>
-              {[["🔒","Bank-level security"],["🌎","CA & US accounts"],["⚡","Live in 60 seconds"]].map(([icon,label]) => (
-                <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, color: "#6B7A6E", fontSize: 12, fontWeight: 600 }}>
-                  <span>{icon}</span><span>{label}</span>
+          {/* Proof — real app screenshots */}
+          <div className="fll-section" style={{ paddingBottom: 6 }}>
+            <div className="fll-eyebrow">The real app</div>
+            <h2 className="fll-h2">This is Flourish — no mockups.</h2>
+            <p className="fll-lede">Real screens from the app you'll get on day one.</p>
+            <div className="fll-proof">
+              {[
+                ["/app-screens/home.jpg", "Your Safe-to-Spend number"],
+                ["/app-screens/whatif.jpg", "Test a decision before you make it"],
+                ["/app-screens/coach.jpg", "Coaching in plain English"],
+                ["/app-screens/networth.jpg", "Everything in one place"],
+              ].map(([src, cap]) => (
+                <div className="fll-shot" key={src}>
+                  <div className="fll-frame"><img src={src} alt={cap} loading="lazy" width={680} height={1474} /></div>
+                  <div className="fll-cap">{cap}</div>
                 </div>
               ))}
             </div>
+          </div>
 
-            {/* Pain section */}
-            <div style={{ width: "100%", maxWidth: 560, marginBottom: 64, textAlign: "left" }}>
-              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Sound familiar?</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {[
-                  "You close the banking app the second it opens because the number stresses you out.",
-                  "You tap your card and genuinely don't know if it'll go through.",
-                  "You have accounts at 3 different banks and no idea what the real total is.",
-                  "You've tried budgeting apps before and quit within a week."
-                ].map((text) => (
-                  <div key={text} style={{ display: "flex", gap: 14, alignItems: "flex-start", padding: "14px 18px", background: "#0D1F12", borderRadius: 14, border: "1px solid rgba(255,255,255,0.05)" }}>
-                    <span style={{ color: "#00D68F", fontSize: 16, flexShrink: 0, marginTop: 1 }}>✓</span>
-                    <span style={{ color: "#6B7A6E", fontSize: 14, lineHeight: 1.6 }}>{text}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* How it works */}
-            <div style={{ width: "100%", maxWidth: 560, marginBottom: 64 }}>
-              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>How it works</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {[
-                  ["1","Connect your banks","Plaid securely links RBC, TD, Chase, Wells Fargo and thousands more. Your login is never stored — Plaid is used by millions of financial apps worldwide."],
-                  ["2","See your real number","One safe-to-spend number calculated from your real balance, upcoming bills, and a protective buffer."],
-                  ["3","Know before you tap","Check it every morning. Stop guessing. Stop dreading. Just know."]
-                ].map(([num,title,body]) => (
-                  <div key={num} style={{ display: "flex", gap: 16, padding: "18px", background: "#0D1F12", borderRadius: 16, border: "1px solid rgba(255,255,255,0.06)" }}>
-                    <div style={{ width: 30, height: 30, borderRadius: 99, background: "rgba(0,214,143,0.15)", border: "1px solid rgba(0,214,143,0.3)", color: "#00D68F", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{num}</div>
-                    <div>
-                      <div style={{ color: "#EDE9E2", fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{title}</div>
-                      <div style={{ color: "#6B7A6E", fontSize: 13, lineHeight: 1.65 }}>{body}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Features */}
-            <div style={{ width: "100%", maxWidth: 560, marginBottom: 64 }}>
-              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Everything in one place</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                {[
-                  [<DollarSign size={20} color="#00D68F" strokeWidth={1.8}/>, "Safe-to-spend number", "One clear daily number that accounts for bills and buffer."],
-                  [<Sparkles size={20} color="#00D68F" strokeWidth={1.8}/>, "AI Financial Coach", "Ask anything. Get honest, personalised financial advice for Canada & the US."],
-                  [<CreditCard size={20} color="#00D68F" strokeWidth={1.8}/>, "All your accounts", "RBC, TD, Chase, Wells Fargo, and thousands more — all in one dashboard."],
-                  [<TrendingUp size={20} color="#00D68F" strokeWidth={1.8}/>, "Investment tracking", "Know exactly where you stand on RRSP, TFSA, 401k, and more."],
-                  [<Calendar size={20} color="#00D68F" strokeWidth={1.8}/>, "Bill forecasting", "See what's coming before it hits. Never be surprised."],
-                  [<Target size={20} color="#00D68F" strokeWidth={1.8}/>, "Goal tracking", "Set savings goals and watch them grow with 30-year projections."]
-                ].map(([icon,title,body]) => (
-                  <div key={title} style={{ padding: "16px", background: "#0D1F12", borderRadius: 16, border: "1px solid rgba(255,255,255,0.06)" }}>
-                    <div style={{ marginBottom: 10, display:"flex", alignItems:"center", justifyContent:"center", width:38, height:38, borderRadius:10, background:"rgba(0,214,143,0.1)", border:"1px solid rgba(0,214,143,0.2)" }}>{icon}</div>
-                    <div style={{ color: "#EDE9E2", fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{title}</div>
-                    <div style={{ color: "#6B7A6E", fontSize: 11, lineHeight: 1.6 }}>{body}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Pricing — hidden on iOS (no IAP; don't surface a subscription price) */}
-            {!isCapacitorIOS() && (
-            <div style={{ width: "100%", maxWidth: 400, marginBottom: 64 }}>
-              <div style={{ color: "#6B7A6E", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center", marginBottom: 28 }}>Simple pricing</div>
-              <div style={{ background: "#0D1F12", border: "1px solid rgba(0,214,143,0.25)", borderRadius: 24, padding: "32px 28px", textAlign: "center" }}>
-                <div style={{ color: "#6B7A6E", fontSize: 13, marginBottom: 8 }}>When we launch on iOS</div>
-                <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 48, fontWeight: 900, color: "#EDE9E2", lineHeight: 1, marginBottom: 4 }}>$14.99</div>
-                <div style={{ color: "#6B7A6E", fontSize: 13, marginBottom: 28 }}>per month · Cancel anytime</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28, textAlign: "left" }}>
-                  {["All accounts connected","Safe-to-spend number daily","AI Financial Coach","Investment & retirement tracking","Bill forecasting","Goal tracking with projections"].map(f => (
-                    <div key={f} style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                      <span style={{ color: "#00D68F", fontSize: 14 }}>✓</span>
-                      <span style={{ color: "#EDE9E2", fontSize: 13 }}>{f}</span>
-                    </div>
-                  ))}
+          {/* Benefits */}
+          <div className="fll-wrap fll-section">
+            <div className="fll-eyebrow">Why Flourish</div>
+            <h2 className="fll-h2">Coaching that helps you understand your money.</h2>
+            <div className="fll-benefits" style={{ marginTop: 24 }}>
+              {[
+                [<DollarSign size={20} color="#2E8B2E" strokeWidth={2}/>, "Safe to Spend", "Know exactly what's safe to spend before your next payday — your bills, buffer, and balances in one honest number."],
+                [<Target size={20} color="#2E8B2E" strokeWidth={2}/>, "What-If Simulator", "Test any money decision — a big purchase, an extra debt payment — and see the real impact before you commit."],
+                [<Sparkles size={20} color="#2E8B2E" strokeWidth={2}/>, "AI Coach", "Ask anything and get clear, plain-English explanations. Coaching that helps you understand your money — not just track it."],
+                [<Shield size={20} color="#2E8B2E" strokeWidth={2}/>, "Built for Canada & the US", "RRSP & TFSA or 401(k) & HSA — Flourish understands your country's accounts. Privacy-first: your data stays yours."],
+              ].map(([icon, title, body]) => (
+                <div className="fll-card" key={title}>
+                  <div className="fll-ico">{icon}</div>
+                  <h3>{title}</h3>
+                  <p>{body}</p>
                 </div>
-                <button onClick={() => goWaitlist("pricing")} style={{ width: "100%", padding: "16px", borderRadius: 14, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 15, cursor: "pointer", boxShadow: "0 8px 32px rgba(0,214,143,0.3)", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                  Get Early Access
-                </button>
-                <div style={{ color: "#6B7A6E", fontSize: 11, marginTop: 12 }}>No credit card required</div>
-              </div>
+              ))}
             </div>
-            )}
+          </div>
 
-            {/* Bottom CTA */}
-            <div style={{ width: "100%", maxWidth: 400, textAlign: "center", marginBottom: 64 }}>
-              <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 26, fontWeight: 900, color: "#EDE9E2", lineHeight: 1.2, marginBottom: 16 }}>
-                Stop guessing.<br />
-                <span style={{ color: "#00D68F", fontStyle: "italic" }}>Start knowing.</span>
-              </div>
-              <button onClick={() => goWaitlist("bottom_cta")} style={{ width: "100%", padding: "17px", borderRadius: 16, border: "none", background: "linear-gradient(135deg,#00D68F,#00B37A)", color: "#021208", fontWeight: 800, fontSize: 16, cursor: "pointer", boxShadow: "0 8px 32px rgba(0,214,143,0.35)", fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 10 }}>
-                Get Early Access
-              </button>
-              <div style={{ color: "#6B7A6E", fontSize: 12 }}>iOS App Store · Coming this month</div>
+          {/* Second email capture */}
+          <div className="fll-wrap fll-section" style={{ paddingTop: 6 }}>
+            <div className="fll-cta2">
+              <h2 className="fll-h2" style={{ marginBottom: 6 }}>Be first to know.</h2>
+              <p className="fll-lede" style={{ marginBottom: 22 }}>Join the waitlist and we'll email you the moment Flourish lands on the App Store.</p>
+              {renderCapture("bottom_cta")}
             </div>
-
           </div>
 
           {/* Footer */}
-          <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", padding: "20px 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-            <span style={{ color: "#6B7A6E", fontSize: 11 }}>© 2026 GrowSmart Inc. · Flourish Money</span>
-            <div style={{ display: "flex", gap: 24 }}>
-              {[["Privacy Policy","/privacy"],["Terms of Service","/terms"]].map(([label,href]) => (
-                <a key={label} href={href} style={{ color: "#6B7A6E", fontSize: 11, textDecoration: "none" }}>{label}</a>
-              ))}
+          <div className="fll-foot">
+            <div className="fll-foot-in">
+              <span>© 2026 GrowSmart Inc. · Flourish Money</span>
+              <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
+                <a href="/privacy">Privacy</a>
+                <a href="/terms">Terms</a>
+                <a href="mailto:hello@flourishmoney.app">hello@flourishmoney.app</a>
+              </div>
             </div>
           </div>
 
@@ -11609,57 +11626,11 @@ function AuthScreen({ onAuth, onTryDemo }) {
               </button>
               <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><FlourishMark size={80} /></div>
               <div style={{ color: "#6B7A6E", fontSize: 13, marginTop: 4 }}>
-                {mode === "waitlist" ? "Get early access" : mode === "signup" ? "Create your free account" : mode === "check_email" ? "Almost there" : "Welcome back"}
+                {mode === "signup" ? "Create your free account" : mode === "check_email" ? "Almost there" : "Welcome back"}
               </div>
             </div>
 
             <div style={{ background: "#0D1F12", borderRadius: 24, padding: 28, border: "1px solid rgba(255,255,255,0.08)" }}>
-
-              {/* Phase E1: waitlist mode — email-only public signup; beta-code holders use the "I have an invite code" link to switch to signup */}
-              {mode === "waitlist" && (
-                <div>
-                  {(waitlistStatus === "success" || waitlistStatus === "already") ? (
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 42, marginBottom: 12 }}>{waitlistStatus === "already" ? "👋" : "🎉"}</div>
-                      <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 22, fontWeight: 900, color: "#EDE9E2", marginBottom: 10 }}>
-                        {waitlistStatus === "already" ? "You're already on the list" : "You're on the list"}
-                      </div>
-                      <div style={{ color: "#6B7A6E", fontSize: 13, lineHeight: 1.65, marginBottom: 24, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                        {waitlistStatus === "already"
-                          ? "We've got your email — we'll tell you the moment Flourish launches on the App Store."
-                          : "We'll email you the moment Flourish hits the App Store. No spam, no marketing — just the launch news."}
-                      </div>
-                      <button onClick={() => setShowAuth(false)}
-                        style={{ background: "none", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 99, padding: "10px 22px", color: "#EDE9E2", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                        Back to home
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 20, fontWeight: 900, color: "#EDE9E2", marginBottom: 6 }}>Get early access</div>
-                      <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 20, lineHeight: 1.6 }}>Drop your email — we'll let you know the moment Flourish hits the App Store.</div>
-                      <input style={{ ...inpStyle, marginBottom: 14 }} type="email" placeholder="you@example.com" value={waitlistEmail} onChange={e => setWaitlistEmail(e.target.value)} autoComplete="email" name="email" />
-                      <select value={waitlistCountry} onChange={e => setWaitlistCountry(e.target.value)}
-                        style={{ ...inpStyle, marginBottom: 20, cursor: "pointer" }}>
-                        <option value="CA">🇨🇦 Canada</option>
-                        <option value="US">🇺🇸 United States</option>
-                      </select>
-                      {waitlistStatus === "error" && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>Something went wrong — please try again.</div>}
-                      <button style={btnStyle(waitlistStatus !== "submitting" && waitlistEmail.trim().length > 0)}
-                        onClick={handleWaitlistSubmit}
-                        disabled={waitlistStatus === "submitting" || !waitlistEmail.trim()}>
-                        {waitlistStatus === "submitting" ? "..." : "Notify Me at Launch"}
-                      </button>
-                      <div style={{ textAlign: "center", marginTop: 18 }}>
-                        <button onClick={() => { setMode("signup"); setError(""); setSuccess(""); }}
-                          style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
-                          I have an invite code
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
               {mode === "check_email" && (
                 <div style={{ textAlign: "center" }}>
