@@ -6,6 +6,20 @@ import { initErrorReporting, captureError } from './lib/errorReporting.js'
 // Sprint Z #10: env-gated error reporting. No-op until VITE_SENTRY_DSN is configured.
 initErrorReporting()
 
+// Landing fix (2026-06): a pre-Vite build (commit 74216a7) registered a service worker via
+// navigator.serviceWorker.register('sw.js'). The current app ships NO service worker. Safety net:
+// any client that reaches THIS (new) bundle proactively unregisters any leftover worker and clears
+// its caches, so no stale SW lingers. Clients still trapped by the old worker (which never reach this
+// code) are freed by the self-unregistering /sw.js kill-switch instead. No reload here — only the
+// kill-switch reloads, exactly once, so this can never cause a loop. (Remove if a real PWA SW is ever
+// added.)
+if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+  navigator.serviceWorker.getRegistrations().then(regs => { regs.forEach(r => r.unregister()); }).catch(() => {})
+  if (typeof caches !== "undefined") {
+    caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(() => {})
+  }
+}
+
 // Sprint Z #16: kids favicon/title swap, moved out of an inline <head> script so the CSP can drop
 // 'unsafe-inline'. Runs at module load — a brief default-icon flash on /kids is acceptable.
 if (typeof window !== "undefined" && window.location.pathname.startsWith('/kids')) {
