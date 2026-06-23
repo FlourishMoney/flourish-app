@@ -10566,6 +10566,11 @@ function FirstVisitScreen({data, onDismiss}) {
   const safeFloor = incomeAmt * 0.15;
   const bufferAmt = Math.max(0, incomeAmt - billsAmt - safeFloor);
   const name = data.profile?.name || "there";
+  // Bug fix: the breathing-room number is balance-driven (SafeSpendEngine reads account balances),
+  // so gate it on real balance data — a connected cash account — NOT on income. Gating on income
+  // let the number render at $0 before Plaid finished syncing, then visibly jump to the real value.
+  // Mirrors the dashboard hero ("no fake number when no cash account is connected").
+  const hasCashAccount = (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0;
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:9999,background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 28px",textAlign:"center"}}>
@@ -10578,9 +10583,10 @@ function FirstVisitScreen({data, onDismiss}) {
           Welcome, {name}
         </div>
 
-        {/* The Number */}
+        {/* The Number — shown only once real balance data has loaded (a cash account exists).
+            Before that: a loader (bank still syncing) or the ready state — never a $0/placeholder calc. */}
         <div style={{marginBottom:8}}>
-          {incomeAmt > 0 ? (<>
+          {hasCashAccount ? (<>
             <div style={{color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,fontWeight:700,letterSpacing:0.3}}>You're covered. Here's your breathing room.</div>
             <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,lineHeight:1}}>
               <span style={{fontSize:22,color:C.greenBright+"88",verticalAlign:"top",marginTop:12,display:"inline-block"}}>$</span>
@@ -10589,7 +10595,14 @@ function FirstVisitScreen({data, onDismiss}) {
               </span>
             </div>
             <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>to spend freely today</div>
-          </>) : (
+          </>) : data.bankConnected ? (
+            /* Bank linked but balances still syncing — a loader, not a placeholder number */
+            <div style={{marginTop:8}}>
+              <div style={{width:40,height:40,margin:"0 auto 14px",borderRadius:"50%",border:`3px solid ${C.green}33`,borderTopColor:C.greenBright,animation:"spin 0.8s linear infinite"}}/>
+              <div style={{fontFamily:"'Playfair Display',serif",fontSize:24,fontWeight:900,color:C.greenBright,marginBottom:6}}>Setting up your numbers…</div>
+              <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Pulling your latest balances</div>
+            </div>
+          ) : (
             <div style={{marginTop:8}}>
               <div style={{fontSize:64,marginBottom:12}}>🌱</div>
               <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:C.greenBright,marginBottom:8}}>Flourish is ready</div>
