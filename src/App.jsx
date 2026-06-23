@@ -4014,7 +4014,7 @@ function DataTransparencyPanel({data, onClose}) {
             {incomeRows.length===0&&(
               <div style={{background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:14,padding:"14px 16px",marginBottom:8}}>
                 <div style={{...s,fontSize:12,color:C.goldBright,fontWeight:700,marginBottom:4}}>⚠️ No income entered</div>
-                <div style={{...s,fontSize:12,color:C.mutedHi,lineHeight:1.7}}>Flourish is using a default estimate of $4,200/month. Go to <strong style={{color:C.cream}}>Settings → Edit Profile</strong> to enter your real income — this affects every calculation in the app.</div>
+                <div style={{...s,fontSize:12,color:C.mutedHi,lineHeight:1.7}}>With no income entered, income-based numbers default to $0 and may be incomplete. Go to <strong style={{color:C.cream}}>Settings → Edit Profile</strong> to enter your real income — this affects every calculation in the app.</div>
               </div>
             )}
             {incomeRows.map((r,i)=>(
@@ -5501,22 +5501,7 @@ function ScreenHeader({title, subtitle, onBack, cta, onCta, ctaColor}) {
 function PlanAhead({data, setAppData, setScreen}){
   const [range,setRange]=useState(14);
   const [showBillManager,setShowBillManager]=useState(false);
-  const [connected,setConnected]=useState([]);  // Start empty — user connects their own
-  const [showConnect,setShowConnect]=useState(false);
-  const [connecting,setConnecting]=useState(null);
-  const [customProviders,setCustomProviders]=useState([]);
-  const [showCustomForm,setShowCustomForm]=useState(false);
-  const [newProvider,setNewProvider]=useState({name:"",amount:"",icon:"🏦"});
   const [expandedPlanDay, setExpandedPlanDay] = useState(null);
-  const PROVIDERS=[
-    {name:"Netflix",icon:"🎬",color:"#E50914",amount:"18.99"},{name:"Spotify",icon:"🎵",color:C.green,amount:"11.99"},
-    {name:"Amazon Prime",icon:"📦",color:"#FF9900",amount:"9.99"},{name:"Hydro One",icon:"⚡",color:C.gold,amount:"124.00"},
-    {name:"Bell / Rogers",icon:"📱",color:C.blue,amount:"65.00"},{name:"Disney+",icon:"✨",color:"#113CCF",amount:"13.99"},
-    {name:"Apple iCloud",icon:"☁️",color:"#888",amount:"3.99"},{name:"Planet Fitness",icon:"💪",color:C.purple,amount:"25.00"},
-    {name:"Enbridge Gas",icon:"🔥",color:C.orange,amount:"89.00"},
-    ...customProviders,
-  ];
-  const doConnect=p=>{setConnecting(p.name);setTimeout(()=>{setConnected(c=>[...c,p.name]);setConnecting(null);},1400);};
   // ── ForecastEngine powers the plan ahead view
   const { forecast: _forecast, willGoNegative: willGoNeg, overdraftRisk, lowBalanceWarnings } = ForecastEngine.generate(data, Math.max(range, 30));
   const days = _forecast.slice(0, range).map(f => ({
@@ -5571,52 +5556,13 @@ function PlanAhead({data, setAppData, setScreen}){
       <div style={{color:C.redBright,fontWeight:800,marginBottom:4}}>Projected Overdraft</div>
       <div style={{color:C.cream,fontSize:13,lineHeight:1.5}}>Balance hits <strong style={{color:C.red}}>${(minBalance||0).toFixed(2)}</strong> before your next deposit. Reduce spending now.</div>
     </div>}
-    <Card style={{border:`1px solid ${C.teal}33`,background:`linear-gradient(135deg,rgba(0,200,224,0.05) 0%,${C.card} 100%)`}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:connected.length>0?10:0}}>
-        <div><div style={{color:C.tealBright,fontWeight:700,fontSize:14}}>📅 Bill Autopilot</div><div style={{color:C.muted,fontSize:11,marginTop:2}}>{(data.bills||[]).length} bills tracked</div></div>
-          {setAppData&&<button onClick={()=>setShowBillManager(true)} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>+ Add Bill</button>}
-        <button onClick={()=>setShowConnect(s=>!s)} style={{background:C.teal+"28",border:`1px solid ${C.teal}55`,color:C.tealBright,borderRadius:99,padding:"6px 15px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .2s"}}>{showConnect?"Done":"+ Connect"}</button>
+    {/* Bills summary — BillManager is the single bill entry point */}
+    <Card style={{display:"flex",justifyContent:"space-between",alignItems:"center",border:`1px solid ${C.teal}33`,background:`linear-gradient(135deg,rgba(0,200,224,0.05) 0%,${C.card} 100%)`}}>
+      <div>
+        <div style={{color:C.tealBright,fontWeight:700,fontSize:14}}>📅 Your bills</div>
+        <div style={{color:C.muted,fontSize:11,marginTop:2}}>{(data.bills||[]).length} tracked · powers your forecast</div>
       </div>
-      {connected.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:showConnect?10:0}}>
-        {connected.map(name=>{const p=PROVIDERS.find(x=>x.name===name);return p?<div key={name} style={{background:(p.color||C.teal)+"22",border:`1px solid ${(p.color||C.teal)}44`,borderRadius:99,padding:"3px 10px",display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:12}}>{p.icon}</span><span style={{color:C.cream,fontSize:11,fontWeight:600}}>{name}</span><span style={{color:C.green,fontSize:10}}>✓</span></div>:null;})}
-      </div>}
-      {showConnect&&<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:4}}>
-        {PROVIDERS.filter(p=>!connected.includes(p.name)).map(p=>(
-          <button key={p.name} onClick={()=>doConnect(p)} disabled={connecting===p.name} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",color:C.cream,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",gap:10,cursor:"pointer",fontFamily:"inherit",transition:"all .2s"}}
-            onMouseEnter={e=>e.currentTarget.style.borderColor=p.color||C.teal} onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>
-            <span style={{fontSize:16}}>{p.icon}</span><span style={{flex:1}}>{p.name}</span><span style={{color:C.muted,fontSize:11}}>${p.amount}/mo</span>
-            <span style={{color:connecting===p.name?C.gold:C.teal,fontSize:11}}>{connecting===p.name?"…":"Connect"}</span>
-          </button>
-        ))}
-        {/* Add custom provider */}
-        {!showCustomForm&&<button onClick={()=>setShowCustomForm(true)} style={{background:C.gold+"14",border:`1px dashed ${C.gold}55`,borderRadius:12,padding:"10px 14px",color:C.goldBright,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontFamily:"inherit"}}>
-          <span style={{fontSize:16}}>➕</span><span>Add custom bill / provider…</span>
-        </button>}
-        {showCustomForm&&<div style={{background:C.card,borderRadius:14,padding:"14px",border:`1px solid ${C.gold}44`}}>
-          <div style={{color:C.goldBright,fontWeight:700,fontSize:13,marginBottom:10}}>Custom Provider</div>
-          <div style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
-            <input value={newProvider.icon} onChange={e=>setNewProvider(v=>({...v,icon:e.target.value}))} placeholder="🏦" maxLength={2}
-              style={{width:44,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px",color:C.cream,fontSize:18,textAlign:"center",fontFamily:"inherit"}}/>
-            <input value={newProvider.name} onChange={e=>setNewProvider(v=>({...v,name:e.target.value}))} placeholder="e.g. Gym, Netflix, Internet"
-              style={{flex:2,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
-            <input value={newProvider.amount} onChange={e=>setNewProvider(v=>({...v,amount:e.target.value}))} placeholder="$/mo" type="number" inputMode="decimal"
-              style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>{
-              if(!newProvider.name.trim())return;
-              const p={name:newProvider.name.trim(),icon:newProvider.icon||"🏦",color:C.teal,amount:newProvider.amount||"0"};
-              setCustomProviders(v=>[...v,p]);
-              doConnect(p);
-              setNewProvider({name:"",amount:"",icon:"🏦"});
-              setShowCustomForm(false);
-            }} style={{flex:1,background:`linear-gradient(135deg,${C.teal},${C.tealBright})`,border:"none",borderRadius:10,padding:"9px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-              Add & Connect
-            </button>
-            <button onClick={()=>setShowCustomForm(false)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 14px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
-          </div>
-        </div>}
-      </div>}
+      {setAppData&&<button onClick={()=>setShowBillManager(true)} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>+ Add Bill</button>}
     </Card>
     <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.8,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
     {(()=>{
@@ -6127,6 +6073,9 @@ function BudgetPlanCard({data, setAppData}) {
   const totalBudgeted = Object.values(existingBudgets).reduce((s,v)=>s+v,0);
   const totalSpentThisMonth = Object.entries(existingBudgets).reduce((s,[cat])=>s+(monthSpend[cat]||0),0);
   const budgetUsedPct = totalBudgeted>0 ? Math.min(100,Math.round(totalSpentThisMonth/totalBudgeted*100)) : 0;
+  // Bug fix: overBudgetCats was used by the compact strip below but only defined in BudgetScreen — define it
+  // here (mirrors line ~11818) with in-scope vars, else this card throws a ReferenceError for any user with a saved budget.
+  const overBudgetCats = Object.entries(existingBudgets).filter(([cat,limit]) => (monthSpend[cat]||0) > limit);
 
   // Compact "budget active" strip when not editing
   if(hasBudgets&&!open) return (
@@ -7359,9 +7308,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                   <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>Potential savings</div>
                   <div style={{color:C.goldBright,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{tip.savings}</div>
                 </div>
-                <button style={{background:`linear-gradient(135deg,${C.gold}33,${C.gold}18)`,border:`1px solid ${C.gold}55`,borderRadius:99,padding:"8px 16px",color:C.goldBright,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                  {tip.action} →
-                </button>
+                <span style={{display:"inline-block",background:`linear-gradient(135deg,${C.gold}33,${C.gold}18)`,border:`1px solid ${C.gold}55`,borderRadius:99,padding:"8px 16px",color:C.goldBright,fontSize:11,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                  {tip.action}
+                </span>
               </div>
             </div>
           ))}
@@ -7385,9 +7334,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               </div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:10,borderTop:`1px solid ${C.border}`}}>
                 <div style={{color:C.tealBright,fontWeight:700,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{tip.savings}</div>
-                <button style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:99,padding:"6px 14px",color:C.mutedHi,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                  {tip.action} →
-                </button>
+                <span style={{display:"inline-block",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:99,padding:"6px 14px",color:C.mutedHi,fontSize:11,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                  {tip.action}
+                </span>
               </div>
             </div>
           ))}
@@ -7748,6 +7697,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
 
 
 // ─── FAMILY ───────────────────────────────────────────────────────────────────
+// Household/partner sharing is hidden until a real multi-user backend exists (audit: it was mock — fake
+// "FLRSH1" code, any join "succeeds", overview showed only the local user). Code retained; flip to re-enable.
+const HOUSEHOLD_ENABLED = false;
 function Family({data,household,setHousehold,setScreen}){
   const [tab,setTab]=useState("meeting");
   const [householdTab,setHouseholdTab]=useState("join");
@@ -7982,7 +7934,7 @@ function Family({data,household,setHousehold,setScreen}){
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <ScreenHeader title="Family" subtitle="Money is a team sport" onBack={setScreen?()=>setScreen("home"):null}/>
     <div style={{display:"flex",gap:6}}>
-      {[["meeting",isCouple?"Money Meeting":"Check-In"],["kids","Kids Zone"],["household","Household"]].map(([t,lbl])=>(
+      {[["meeting",isCouple?"Money Meeting":"Check-In"],["kids","Kids Zone"],...(HOUSEHOLD_ENABLED?[["household","Household"]]:[])].map(([t,lbl])=>(
         <button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.purple+"22":C.cardAlt,border:`1px solid ${tab===t?C.purple:C.border}`,color:tab===t?C.purpleBright:C.muted,borderRadius:12,padding:"10px",cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit"}}>
           {lbl}
         </button>
@@ -8854,7 +8806,7 @@ function WidgetScreen({data,onBack}){
     </WShell>
   );
 
-  const toggleW=k=>setWContent(v=>({...v,[k]:!v[k]}));
+  // toggleW removed with the widget customizer (see audit); wContent is now a fixed default driving the preview.
   const sizes=[["small","Small"],["medium","Medium"],["large","Large"]];
 
   // Phone frame mockup wrapping the widget preview
@@ -8914,33 +8866,7 @@ function WidgetScreen({data,onBack}){
       </div>
     </div>
 
-    {/* Widget content customizer */}
-    <div style={{background:C.card,borderRadius:20,padding:"18px 20px",border:`1px solid ${C.border}`}}>
-      <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:12}}>✦ Choose what to show</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-        {[
-          {key:"safe",label:"Safe until payday",always:true},
-          {key:"balance",label:"Account Balance"},
-          {key:"health",label:"Health Score"},
-          {key:"nextBill",label:"Next Bill Due"},
-          {key:"cashFlow",label:"Cash Flow"},
-          {key:"streak",label:"Check-in Streak"},
-        ].map(item=>(
-          <div key={item.key} onClick={()=>!item.always&&toggleW(item.key)}
-            style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:12,
-              background:wContent[item.key]?C.green+"14":C.cardAlt,
-              border:`1px solid ${wContent[item.key]?C.green+"44":C.border}`,
-              cursor:item.always?"default":"pointer",transition:"all .2s"}}>
-            <div style={{width:18,height:18,borderRadius:5,background:wContent[item.key]?C.green:"none",border:`2px solid ${wContent[item.key]?C.green:C.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-              {wContent[item.key]&&<span style={{color:"#fff",fontSize:10,fontWeight:900}}>✓</span>}
-            </div>
-            <span style={{color:wContent[item.key]?C.cream:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{item.label}</span>
-            {item.always&&<span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginLeft:"auto"}}>always</span>}
-          </div>
-        ))}
-      </div>
-      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:10}}>Small widget shows Safe to Spend only. Medium shows up to 3 items. Large shows all selected.</div>
-    </div>
+    {/* Widget content customizer removed — toggles persisted nothing and no native widget consumes them yet (see audit). The preview above uses a fixed default set (wContent). */}
 
     {/* iOS setup */}
     <div style={{background:C.isDark?`linear-gradient(135deg,${C.greenDim} 0%,${C.card} 100%)`:C.card,borderRadius:22,border:`1px solid ${C.green}33`,padding:"20px"}}>
@@ -9360,7 +9286,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
 }
 
 function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent}){
-  const [notifToggles,setNotifToggles]=useState({overdraft:true,bills:true,coach:true,meeting:false,patterns:true});
+  // notifToggles state removed with the Notifications preference section (no notification system yet — see audit).
   const [activeSection,setActiveSection]=useState(null);
 
   // Phase D6: bank list driven by Supabase plaid_items via getUserItems
@@ -9504,24 +9430,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
           {isActive&&<SettingsSectionContent sectionKey={item.key} data={data} setAppData={setAppData} navToScreen={navToScreen} color={item.color} onAddBank={onAddBank} onDisconnectBank={onDisconnectBank} bankConnected={bankConnected} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={onReconnect}/>}
         </div>
       );})}
-    <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.8,fontWeight:700,marginTop:20,marginBottom:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Notifications</div>
-    {[
-      ["overdraft","zap",    C.red,   "Overdraft warnings"],
-      ["bills",   "calendar",C.gold,  "Bill due soon alerts"],
-      ["coach",   "sparkles",C.green, "AI coach insights"],
-      ["meeting", "users",   C.teal,  "Money meeting reminders"],
-      ["patterns","chartUp", C.blue,  "Spending pattern alerts"],
-    ].map(([key,icon,color,label])=>(
-      <div key={key} style={{background:C.card,borderRadius:16,padding:"13px 16px",marginBottom:8,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:13}}>
-        <div style={{width:36,height:36,borderRadius:11,background:color+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-          <Icon id={icon} size={16} color={color} strokeWidth={1.6}/>
-        </div>
-        <div style={{flex:1}}>
-          <div style={{color:C.cream,fontSize:14,fontWeight:600}}>{label}</div>
-        </div>
-        <Toggle label={label} on={notifToggles[key]} onChange={v=>setNotifToggles(t=>({...t,[key]:v}))}/>
-      </div>
-    ))}
+    {/* Notifications preference section removed — toggles persisted nothing and there is no notification system yet (see audit). */}
     {/* ── Bank reconnect banner ──────────────────────────────── */}
     {needsReconnect&&bankConnected&&(
       <div style={{marginTop:16,padding:"14px 16px",background:`${C.gold}15`,borderRadius:16,border:`1px solid ${C.gold}44`,display:"flex",alignItems:"center",gap:12}}>
@@ -13407,7 +13316,7 @@ input,button,select,textarea { font-family:inherit; }
               <div style={{width:32,height:32,borderRadius:99,background:C.green+"22",border:`1px solid ${C.green}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}><Icon id="user" size={15} color={C.green} strokeWidth={1.5}/></div>
               <div>
                 <div style={{color:C.cream,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{appData.profile?.name||"User"}</div>
-                {household&&<div style={{color:C.green,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🏠 Household connected</div>}
+                {HOUSEHOLD_ENABLED&&household&&<div style={{color:C.green,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🏠 Household connected</div>}
                 {isPremium&&!iosFreeUnlock&&<div style={{color:C.goldBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ Flourish Plus</div>}
               </div>
             </div>
@@ -13432,7 +13341,7 @@ input,button,select,textarea { font-family:inherit; }
             <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{new Date().toLocaleDateString(CC[appData?.profile?.country||"CA"]?.locale||"en-CA",{weekday:"long",month:"long",day:"numeric"})}</div>
           </div>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
-            {household&&<div style={{background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:99,padding:"6px 14px",color:C.greenBright,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>🏠 Household #{household.code}</div>}
+            {HOUSEHOLD_ENABLED&&household&&<div style={{background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:99,padding:"6px 14px",color:C.greenBright,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>🏠 Household #{household.code}</div>}
             <button onClick={()=>{setShowSettings(false);setShowNotifs(true);}} style={{position:"relative",background:C.card,border:`1px solid ${unread>0?C.red+"55":C.border}`,borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:18,transition:"all .18s"}} onMouseEnter={e=>e.currentTarget.style.borderColor=C.borderHi} onMouseLeave={e=>e.currentTarget.style.borderColor=unread>0?C.red+"55":C.border}>
               <Icon id="bell" size={18} color={C.mutedHi} strokeWidth={1.5}/>
               {unread>0&&<div style={{position:"absolute",top:-4,right:-4,width:18,height:18,borderRadius:99,background:C.red,color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{unread}</div>}
