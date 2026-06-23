@@ -149,14 +149,21 @@ exports.handler = async (event) => {
             language:     "en",
           }
         : {
-            user:          { client_user_id: user_id },
-            client_name:   "Flourish Money",
-            products:      ["transactions", "investments", "liabilities"],
-            country_codes: [country],
-            language:      "en",
-            transactions:  { days_requested: 90 },
-            redirect_uri:  "https://flourishmoney.app",
-            webhook:       WEBHOOK_URL,
+            user:              { client_user_id: user_id },
+            client_name:       "Flourish Money",
+            // Only `transactions` is REQUIRED — every depository (chequing/savings) account
+            // supports it, so deposit-only users (e.g. Scotiabank with no cards/investments) can
+            // link. `investments` and `liabilities` are OPTIONAL: Plaid still shows the institution
+            // and lets the user link, extracting+billing those products only when the chosen
+            // account type supports them. Listing them under required `products` made Plaid reject
+            // any user whose accounts didn't support EVERY product ("Connectivity not supported").
+            products:          ["transactions"],
+            optional_products: ["investments", "liabilities"],
+            country_codes:     [country],
+            language:          "en",
+            transactions:      { days_requested: 90 },
+            redirect_uri:      "https://flourishmoney.app",
+            webhook:           WEBHOOK_URL,
           };
       const data = await plaid("/link/token/create", linkBody);
       return ok({ link_token: data.link_token });
