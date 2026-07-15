@@ -11,6 +11,9 @@
     "test:math": "node tests/math.test.cjs && node tests/pipeline.test.cjs && node tests/math-invariants.test.cjs"
   },
   "dependencies": {
+    "@capacitor/cli": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
+    "@capacitor/ios": "^8.4.2",
     "@netlify/blobs": "^10.7.9",
     "@sentry/react": "^10.57.0",
     "@supabase/supabase-js": "^2.99.0",
