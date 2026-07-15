@@ -13,7 +13,7 @@ Flourish Money — AI-powered personal finance app for Canadian and US users. Li
 
 ## Repo
 - GitHub: `FlourishMoney/flourish-app`
-- Local branch: `master`
+- Local branch: `main`
 - Remote branch: `main`
 - Deploy: auto on push to `main`
 
@@ -27,14 +27,14 @@ Flourish Money — AI-powered personal finance app for Canadian and US users. Li
 - `netlify/functions/plaid-webhook.js` — Plaid webhooks
 
 ## Working environment
-- OS: Windows
-- Shell: bash (PowerShell blocked by execution policy)
-- Local path: `C:\Users\simpl\OneDrive\Documents\Flourish\App\flourish-netlify-v5`
+- OS: macOS (Apple Silicon)
+- Shell: zsh
+- Local path: `~/Projects/flourish-app`
 
 ## Deploy workflow — three SEPARATE commands, never chained with &&
 git add <specific files>
 git commit -m "message"
-git push origin master:main
+git push origin main
 Always specify exact files in `git add`. Never `git add .`.
 
 ## iOS build (Capacitor)
