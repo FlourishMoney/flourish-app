@@ -11600,6 +11600,13 @@ function AuthScreen({ onAuth, onTryDemo }) {
               )}
 
             </div>
+            {isCapacitorIOS() && onTryDemo && (
+              /* App Store reviewers: enter with sample data — no account or beta code needed (iOS only). */
+              <div style={{ textAlign: "center", marginTop: 22 }}>
+                <button onClick={onTryDemo} style={{ background: "rgba(0,200,224,0.14)", border: "1px solid rgba(0,200,224,0.4)", color: "#00C8E0", borderRadius: 99, padding: "11px 22px", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>🧪 Try the demo — no account needed</button>
+                <div style={{ color: "#6B7A6E", fontSize: 11, marginTop: 8, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Explore Flourish with sample data</div>
+              </div>
+            )}
           </div>
         </div>
 
