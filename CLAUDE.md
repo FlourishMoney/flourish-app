@@ -37,6 +37,16 @@ git commit -m "message"
 git push origin master:main
 Always specify exact files in `git add`. Never `git add .`.
 
+## iOS build (Capacitor)
+Capacitor 8.4.2 wraps the web app as a native iOS app — appId `app.flourishmoney`, SPM-based (open `ios/App/App.xcodeproj`; there is **no** `.xcworkspace`). The app bundles `dist/` (no `server.url` in `capacitor.config.json`). After any web change, rebuild + sync + run:
+```
+npm run build       # build the web app into dist/
+npx cap sync ios    # copy dist/ into the native project + refresh plugins
+npx cap run ios     # build & run on a simulator/device
+                    # (or: npx cap open ios → then Build & Run ▶ in Xcode)
+```
+Native-only behaviour is gated by `isCapacitorIOS()`: the app boots into login/signup (skips the "coming soon" waitlist landing), and an iOS-only "Try demo" button gives App Store reviewers access without a beta code.
+
 ## Delivery constraints (NON-NEGOTIABLE)
 - Code must be delivered as individually copyable, clearly labeled blocks — never full file dumps. The user works with one functional hand; this is an accessibility requirement, not a stylistic preference.
 - Never auto-commit or auto-push. The user authorizes deploys explicitly.
