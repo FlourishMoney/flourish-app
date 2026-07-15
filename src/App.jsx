@@ -12,7 +12,7 @@ import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
   BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf } from "./lib/financialCalculations.js";
-import { normaliseTxns, detectIncomeFromTxns, detectRecurringBills, markTransfers, mergeById, removeByIds } from "./lib/plaidNormalize.js";
+import { normaliseTxns, detectIncomeFromTxns, detectRecurringBills, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
 import { retainAccounts, retainLiabilities } from "./lib/multibank.js";
 import { SafeSpendEngine } from "./lib/safeSpendEngine.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
@@ -685,15 +685,7 @@ function removeBillWithOverride(setAppData, idx, name) {
 }
 
 
-// ─── Account balance normalizer ──────────────────────────────────────────────
-// Single source of truth for turning a Plaid account into a signed balance number.
-// Cash/depository: prefer AVAILABLE (excludes held/pending funds, e.g. a cheque hold),
-// falling back to CURRENT only when Plaid omits available. Credit/loan: amount owed = CURRENT, negative.
-function normalizeAccountBalance(a) {
-  return (a.type === "credit" || a.type === "loan")
-    ? -(a.balance?.current || 0)
-    : (a.balance?.available ?? a.balance?.current ?? 0);
-}
+// normalizeAccountBalance lives in ./lib/plaidNormalize.js (pure + unit-tested); imported above.
 
 // ─── Plaid Link SDK hook ──────────────────────────────────────────────────────
 // Loads Plaid CDN script once. Uses a ref for onSuccess so the handler is

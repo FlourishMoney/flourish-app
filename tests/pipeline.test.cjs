@@ -190,5 +190,22 @@ const D = (iso) => new Date(iso + "T12:00:00");
     t.eq(billsPosted.filter(b => b.name.toLowerCase().includes("netflix")).length, 1, "#2 pending: two POSTED Netflix occurrences DO create the recurring bill");
   }
 
+  // ── normalizeAccountBalance: available (not current) for cash; negative current for debt ─────────
+  // Regression guard for the held-funds fix: a cheque on hold makes available < current, and
+  // Safe-to-Spend / forecasting must use available so spendable cash is never overstated.
+  {
+    const NB = pn.normalizeAccountBalance;
+    t.eq(NB({ type: "depository", subtype: "checking", balance: { available: 400, current: 1000 } }), 400,
+      "normalizeAccountBalance #1: cash with available → returns available (excludes the $600 hold)");
+    t.eq(NB({ type: "depository", subtype: "savings", balance: { available: null, current: 1000 } }), 1000,
+      "normalizeAccountBalance #2: cash with null available, has current → returns current");
+    t.eq(NB({ type: "depository", subtype: "checking", balance: { available: null, current: null } }), 0,
+      "normalizeAccountBalance #3: cash with both null → 0");
+    t.eq(NB({ type: "credit", subtype: "credit card", balance: { available: 4650, current: 350 } }), -350,
+      "normalizeAccountBalance #4: credit → negative current (amount owed; ignores available credit)");
+    t.eq(NB({ type: "loan", subtype: "student", balance: { available: null, current: 15000 } }), -15000,
+      "normalizeAccountBalance #5: loan → negative current");
+  }
+
   return t.summary("pipeline.test");
 })().catch(e => { console.error("pipeline.test crashed:", e); process.exitCode = 1; });

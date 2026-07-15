@@ -415,3 +415,12 @@ export function removeByIds(list, ids) {
   const rm = new Set(ids);
   return safe.filter(x => x?.id && !rm.has(x.id));
 }
+
+// Normalize a Plaid account into a single signed balance number (the app's canonical account.balance).
+// Cash/depository: prefer AVAILABLE (excludes held/pending funds, e.g. a cheque on hold), falling back to
+// CURRENT only when Plaid omits available. Credit/loan: the amount owed is the CURRENT balance, stored negative.
+export function normalizeAccountBalance(a) {
+  return (a.type === "credit" || a.type === "loan")
+    ? -(a.balance?.current || 0)
+    : (a.balance?.available ?? a.balance?.current ?? 0);
+}
