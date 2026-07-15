@@ -685,6 +685,16 @@ function removeBillWithOverride(setAppData, idx, name) {
 }
 
 
+// ─── Account balance normalizer ──────────────────────────────────────────────
+// Single source of truth for turning a Plaid account into a signed balance number.
+// Cash/depository: prefer AVAILABLE (excludes held/pending funds, e.g. a cheque hold),
+// falling back to CURRENT only when Plaid omits available. Credit/loan: amount owed = CURRENT, negative.
+function normalizeAccountBalance(a) {
+  return (a.type === "credit" || a.type === "loan")
+    ? -(a.balance?.current || 0)
+    : (a.balance?.available ?? a.balance?.current ?? 0);
+}
+
 // ─── Plaid Link SDK hook ──────────────────────────────────────────────────────
 // Loads Plaid CDN script once. Uses a ref for onSuccess so the handler is
 // never stale even if the callback closes over fresh state.
@@ -3119,7 +3129,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
         name:`${ex.institution_name} ••${a.mask||"????"}`,
         type:a.type,
         subtype:a.subtype||null,
-        balance:(a.type==="credit"||a.type==="loan")?-(a.balance?.current||0):(a.balance?.current??a.balance?.available??0),
+        balance:normalizeAccountBalance(a),
         institution:ex.institution_name,
       }));
 
@@ -3850,7 +3860,7 @@ async function backgroundRefresh(isPremium, setAppData, fullResync = false) {
         name: a.name,
         type: a.type,
         subtype: a.subtype||null,
-        balance: (a.type==="credit"||a.type==="loan") ? -(a.balance?.current||0) : (a.balance?.current??a.balance?.available??0),
+        balance: normalizeAccountBalance(a),
         currency: a.balance?.currency || "CAD", // Sprint Z3 #6: carry the account's currency for currency-mix safety
         institution: prev.accounts?.find(p=>p.id===a.id)?.institution||"Bank",
         _item: a._item || null,
@@ -12778,7 +12788,7 @@ export default function FlourishApp(){
             name:a.name,
             type:a.type,
             subtype:a.subtype||null,
-            balance:(a.type==="credit"||a.type==="loan")?-(a.balance?.current||0):(a.balance?.current??a.balance?.available??0),
+            balance:normalizeAccountBalance(a),
             currency:a.balance?.currency||"CAD", // Sprint Z3 #6
             institution:a.institution||"Bank",
             _item:a._item||null,
@@ -12954,7 +12964,7 @@ export default function FlourishApp(){
           name:`${instName} ••${a.mask||"????"}`,
           type:a.type,
           subtype:a.subtype||null,
-          balance:(a.type==="credit"||a.type==="loan")?-(a.balance?.current||0):(a.balance?.current??a.balance?.available??0),
+          balance:normalizeAccountBalance(a),
           currency:a.balance?.currency||"CAD", // Sprint Z3 #6
           institution:instName,
         }));
