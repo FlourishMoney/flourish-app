@@ -2936,106 +2936,100 @@ function TileIcon({id, size=18, color}){
     default:            return <LayoutGrid {...props}/>;
   }
 }
-// ─── DASH CUSTOMIZE SHEET ─────────────────────────────────────────────────────
-function DashCustomize({ layout, onChange, onClose }) {
-  const isDesktop = window.innerWidth >= 960;
-  const [items, setItems] = useState(layout);
-
-  const save = () => { onChange(items); onClose(); };
+// ─── DASH EDIT MODE ───────────────────────────────────────────────────────────
+// Inline (long-press) reorder + show/hide for dashboard sections. Touch-drag by the ⠿ handle using
+// Pointer Events (unifies touch + mouse) with pointer capture + touch-action:none — no external libs.
+// Persists via onChange → data.dashboardLayout = { order, hidden } in appData.
+function DashEditMode({ order, hidden, onChange, onDone }) {
+  const [items, setItems] = useState(order);
+  const [hiddenSet, setHiddenSet] = useState(() => new Set(hidden));
+  const [dragId, setDragId] = useState(null);
+  const [dragDy, setDragDy] = useState(0);
+  const drag = useRef({ id: null, startY: 0, startIdx: 0, curIdx: 0 });
+  const itemsRef = useRef(items); itemsRef.current = items;      // latest, for stale-free commit on drop
+  const hiddenRef = useRef(hiddenSet); hiddenRef.current = hiddenSet;
+  const ROW = 58; // fixed row height incl. gap — keeps the drag math reliable
+  const meta = id => DASH_TILES.find(t => t.id === id) || { label: id };
+  const commit = (nextItems, nextHiddenSet) => onChange(nextItems, [...nextHiddenSet]);
 
   const toggle = (id) => {
-    const tile = DASH_TILES.find(t=>t.id===id);
-    if(tile?.alwaysVisible) return;
-    setItems(prev => prev.map(t => t.id===id ? {...t, visible:!t.visible} : t));
-  };
-
-  const moveUp = (id) => {
-    setItems(prev => {
-      const idx = prev.findIndex(t=>t.id===id);
-      if(idx <= 0) return prev;
-      let target = idx - 1;
-      while(target >= 0 && prev[target].locked) target--;
-      if(target < 0) return prev;
-      const next = [...prev];
-      [next[target], next[idx]] = [next[idx], next[target]];
+    if (DASH_TILES.find(t => t.id === id)?.alwaysVisible) return; // hero can't be hidden
+    setHiddenSet(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      commit(itemsRef.current, next);
       return next;
     });
   };
 
-  const moveDown = (id) => {
-    setItems(prev => {
-      const idx = prev.findIndex(t=>t.id===id);
-      if(idx >= prev.length - 1) return prev;
-      let target = idx + 1;
-      while(target < prev.length && prev[target].locked) target++;
-      if(target >= prev.length) return prev;
-      const next = [...prev];
-      [next[target], next[idx]] = [next[idx], next[target]];
-      return next;
-    });
+  const onDragStart = (e, id) => {
+    const idx = items.indexOf(id);
+    drag.current = { id, startY: e.clientY, startIdx: idx, curIdx: idx };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    setDragId(id); setDragDy(0);
   };
-
-  const meta = id => DASH_TILES.find(t=>t.id===id)||{label:id};
+  const onDragMove = (e) => {
+    const d = drag.current; if (!d.id) return;
+    const offset = e.clientY - d.startY;
+    const target = Math.max(0, Math.min(items.length - 1, d.startIdx + Math.round(offset / ROW)));
+    if (target !== d.curIdx) {
+      setItems(prev => { const arr = prev.filter(x => x !== d.id); arr.splice(target, 0, d.id); return arr; });
+      d.curIdx = target;
+    }
+    setDragDy(offset - (d.curIdx - d.startIdx) * ROW); // finger-follow within the current slot
+  };
+  const onDragEnd = () => {
+    if (drag.current.id) commit(itemsRef.current, hiddenRef.current);
+    drag.current = { id: null, startY: 0, startIdx: 0, curIdx: 0 };
+    setDragId(null); setDragDy(0);
+  };
+  const reset = () => { const def = DASH_TILES.map(t => t.id); const hs = new Set(); setItems(def); setHiddenSet(hs); commit(def, hs); };
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:9000,display:'flex',alignItems:isDesktop?'center':'flex-end',justifyContent:'center',background:'rgba(0,0,0,0.6)',backdropFilter:'blur(6px)'}} onClick={onClose}>
-      <div style={{width:'100%',maxWidth:440,background:C.card,borderRadius:isDesktop?'24px':'24px 24px 0 0',maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 48px rgba(0,0,0,0.5)'}} onClick={e=>e.stopPropagation()}>
-        {!isDesktop&&<div style={{width:36,height:4,borderRadius:99,background:C.border,margin:'12px auto 0',flexShrink:0}}/>}
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'20px 20px 0',flexShrink:0}}>
-          <div style={{color:C.cream,fontWeight:800,fontSize:18,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Customize Dashboard</div>
-          <button aria-label="Close" onClick={onClose} style={{background:'none',border:'none',color:C.muted,fontSize:22,cursor:'pointer',padding:4,lineHeight:1,fontFamily:'inherit'}}>×</button>
+    <div style={{ position: "fixed", inset: 0, zIndex: 9000, background: C.bg, display: "flex", flexDirection: "column" }}>
+      <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+        <div>
+          <div style={{ color: C.cream, fontWeight: 800, fontSize: 18, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Edit dashboard</div>
+          <div style={{ color: C.muted, fontSize: 12, marginTop: 2, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Drag ⠿ to reorder · toggle to show or hide</div>
         </div>
-        <div style={{color:C.muted,fontSize:12,padding:'4px 20px 14px',fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Use ↑↓ to reorder · toggle to show or hide</div>
-        <div style={{overflowY:'auto',flex:1,padding:'0 16px 8px'}}>
-          {items.map((tile, idx) => {
-            const m = meta(tile.id);
-            return (
-              <div key={tile.id} style={{display:'flex',alignItems:'center',gap:10,padding:'11px 12px',borderRadius:14,marginBottom:7,
-                background:tile.locked?C.gold+'0A':C.cardAlt,
-                border:`1px solid ${tile.locked?C.gold+'44':tile.visible!==false?C.green+'33':C.border}`,
-                opacity:tile.visible!==false?1:0.5,transition:'all .15s'}}>
-                <div style={{display:'flex',flexDirection:'column',gap:1,flexShrink:0}}>
-                  <button aria-label="Move up" onClick={()=>!tile.locked&&moveUp(tile.id)}
-                    style={{background:'none',border:'none',color:idx===0||tile.locked?C.border:C.muted,cursor:idx===0||tile.locked?'default':'pointer',fontSize:13,lineHeight:1,padding:'3px 6px',borderRadius:6,transition:'color .15s',fontFamily:'inherit'}}>▲</button>
-                  <button aria-label="Move down" onClick={()=>!tile.locked&&moveDown(tile.id)}
-                    style={{background:'none',border:'none',color:idx===items.length-1||tile.locked?C.border:C.muted,cursor:idx===items.length-1||tile.locked?'default':'pointer',fontSize:13,lineHeight:1,padding:'3px 6px',borderRadius:6,transition:'color .15s',fontFamily:'inherit'}}>▼</button>
-                </div>
-                <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:32,height:32,borderRadius:9,background:tile.visible!==false?C.green+'18':C.cardAlt,border:`1px solid ${tile.visible!==false?C.green+'33':C.border}`,flexShrink:0}}>
-                  <TileIcon id={tile.id} size={16} color={tile.visible!==false?C.greenBright:C.muted}/>
-                </div>
-                <div style={{flex:1,color:C.cream,fontWeight:600,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",display:'flex',alignItems:'center',gap:8,minWidth:0}}>
-                  <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.label}</span>
-                  {m.alwaysVisible&&<span style={{color:C.gold,fontSize:10,fontWeight:700,flexShrink:0}}>always on</span>}
-                  {tile.locked&&<span style={{color:C.gold,fontSize:10,fontWeight:700,flexShrink:0}}>pinned</span>}
-                </div>
-                <button onClick={()=>setItems(prev=>prev.map(t=>t.id===tile.id?{...t,locked:!t.locked}:t))}
-                  style={{background:'none',border:`1px solid ${tile.locked?C.gold+'55':C.border}`,borderRadius:8,width:36,height:36,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,flexShrink:0,color:tile.locked?C.gold:C.muted,transition:'all .15s'}}>
-                  {tile.locked?'🔒':'🔓'}
-                </button>
-                {!m.alwaysVisible&&(
-                  <div onClick={()=>toggle(tile.id)}
-                    style={{width:44,height:26,borderRadius:99,background:tile.visible!==false?C.green:'rgba(255,255,255,0.09)',border:`1px solid ${tile.visible!==false?C.green:C.border}`,position:'relative',cursor:'pointer',transition:'background .2s',flexShrink:0}}>
-                    <div style={{position:'absolute',top:3,left:tile.visible!==false?21:3,width:18,height:18,borderRadius:'50%',background:'white',transition:'left .2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}}/>
-                  </div>
-                )}
+        <button onClick={onDone} style={{ background: `linear-gradient(135deg,${C.green},${C.greenBright})`, border: "none", borderRadius: 99, padding: "9px 22px", color: "#021208", fontWeight: 800, fontSize: 14, fontFamily: "'Plus Jakarta Sans',sans-serif", cursor: "pointer" }}>Done</button>
+      </div>
+      <div style={{ overflowY: "auto", flex: 1, padding: "14px 16px 28px", width: "100%", maxWidth: 480, margin: "0 auto", boxSizing: "border-box" }}>
+        {items.map((id) => {
+          const m = meta(id);
+          const shown = m.alwaysVisible || !hiddenSet.has(id);
+          const dragging = dragId === id;
+          return (
+            <div key={id} style={{
+              display: "flex", alignItems: "center", gap: 10, height: 50, marginBottom: 8, padding: "0 12px", borderRadius: 14, boxSizing: "border-box",
+              background: dragging ? C.cardAlt : C.card, border: `1px solid ${dragging ? C.green + "66" : C.border}`, opacity: shown ? 1 : 0.5,
+              transform: dragging ? `translateY(${dragDy}px) scale(1.02)` : "none", boxShadow: dragging ? "0 12px 32px rgba(0,0,0,0.5)" : "none",
+              position: "relative", zIndex: dragging ? 2 : 1, transition: dragging ? "none" : "transform .18s ease, opacity .15s",
+            }}>
+              <div onPointerDown={(e) => onDragStart(e, id)} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}
+                aria-label="Drag to reorder" title="Drag to reorder"
+                style={{ touchAction: "none", cursor: "grab", color: C.muted, fontSize: 18, padding: "8px 8px 8px 0", lineHeight: 1, flexShrink: 0, userSelect: "none" }}>⠿</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 9, background: shown ? C.green + "18" : C.cardAlt, border: `1px solid ${shown ? C.green + "33" : C.border}`, flexShrink: 0 }}>
+                <TileIcon id={id} size={15} color={shown ? C.greenBright : C.muted} />
               </div>
-            );
-          })}
-        </div>
-        <div style={{padding:'12px 16px 20px',flexShrink:0,borderTop:`1px solid ${C.border}`,display:'flex',gap:10}}>
-          <button onClick={()=>setItems(DASH_TILES.map(t=>({id:t.id,visible:true,locked:false})))}
-            style={{flex:1,background:'none',border:`1px solid ${C.border}`,borderRadius:12,padding:'12px',color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer',fontWeight:600}}>
-            Reset
-          </button>
-          <button onClick={save}
-            style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:'none',borderRadius:12,padding:'12px',color:'#021208',fontWeight:800,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer'}}>
-            Save Layout
-          </button>
-        </div>
+              <div style={{ flex: 1, color: C.cream, fontWeight: 600, fontSize: 14, fontFamily: "'Plus Jakarta Sans',sans-serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {m.label}{m.alwaysVisible && <span style={{ color: C.gold, fontSize: 10, fontWeight: 700, marginLeft: 8 }}>always on</span>}
+              </div>
+              {!m.alwaysVisible && (
+                <div onClick={() => toggle(id)} role="switch" aria-checked={shown}
+                  style={{ width: 44, height: 26, borderRadius: 99, background: shown ? C.green : "rgba(255,255,255,0.09)", border: `1px solid ${shown ? C.green : C.border}`, position: "relative", cursor: "pointer", transition: "background .2s", flexShrink: 0 }}>
+                  <div style={{ position: "absolute", top: 3, left: shown ? 21 : 3, width: 18, height: 18, borderRadius: "50%", background: "white", transition: "left .2s", boxShadow: "0 1px 4px rgba(0,0,0,0.3)" }} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <button onClick={reset} style={{ width: "100%", marginTop: 8, background: "none", border: `1px solid ${C.border}`, borderRadius: 12, padding: "11px", color: C.muted, fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", cursor: "pointer", fontWeight: 600 }}>Reset to default</button>
       </div>
     </div>
   );
 }
+
 // ─── ONBOARDING ───────────────────────────────────────────────────────────────
 function Onboarding({onComplete,onViewLegal,userId}){
   const [step,setStep]=useState(0);
@@ -4167,10 +4161,16 @@ function DataTransparencyPanel({data, onClose}) {
   );
 }
 
-function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo}){
+function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,setAppData,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo}){
   const [mounted,setMounted]=useState(false);
   const [expandedTile,setExpandedTile]=useState(null);
-  const [showCustomize,setShowCustomize]=useState(false);
+  const [editMode,setEditMode]=useState(false);
+  // Long-press anywhere on the dashboard → edit mode (mobile). suppressClick swallows the click that
+  // ends the long-press so a section doesn't also navigate. Also entered via the ⠿ button (desktop).
+  const lpTimer=useRef(null);
+  const suppressClick=useRef(false);
+  const startLongPress=()=>{ if(!setAppData||editMode)return; cancelLongPress(); lpTimer.current=setTimeout(()=>{ suppressClick.current=true; setEditMode(true); try{navigator.vibrate&&navigator.vibrate(12);}catch{} },500); };
+  const cancelLongPress=()=>{ if(lpTimer.current){clearTimeout(lpTimer.current);lpTimer.current=null;} };
   const [showTransparency,setShowTransparency]=useState(false);
   const [nwHistory,setNwHistory]=useState(()=>getNetWorthHistory());
   const [affordInput, setAffordInput] = useState("");
@@ -4201,8 +4201,13 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
     }
   },[data.bankConnected]);
 
-  const isVisible = id => !dashLayout || (dashLayout.find(t=>t.id===id)?.visible !== false);
-  const tileOrder = dashLayout ? dashLayout.map(t=>t.id) : DASH_TILES.map(t=>t.id);
+  // Layout persisted in appData: data.dashboardLayout = { order:[ids], hidden:[ids] }.
+  const _dl = data.dashboardLayout || {};
+  const _defOrder = DASH_TILES.map(t=>t.id);
+  const _savedOrder = Array.isArray(_dl.order) ? _dl.order.filter(id=>_defOrder.includes(id)) : [];
+  const tileOrder = [..._savedOrder, ..._defOrder.filter(id=>!_savedOrder.includes(id))]; // saved first, new tiles appended
+  const _hidden = Array.isArray(_dl.hidden) ? _dl.hidden : [];
+  const isVisible = id => DASH_TILES.find(t=>t.id===id)?.alwaysVisible || !_hidden.includes(id);
   const tileStyle = id => ({ order: tileOrder.indexOf(id) >= 0 ? tileOrder.indexOf(id) : 99 });
 
   // ── Engines ──────────────────────────────────────────────────────────────────
@@ -4275,8 +4280,10 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   const invAccts=(data.accounts||[]).filter(a=>isInvestmentAccount(a));
 
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:14}}>
-      {showCustomize&&dashLayout&&<DashCustomize layout={dashLayout} onChange={setDashLayout} onClose={()=>setShowCustomize(false)}/>}
+    <div style={{display:"flex",flexDirection:"column",gap:14}}
+      onTouchStart={startLongPress} onTouchMove={cancelLongPress} onTouchEnd={cancelLongPress} onTouchCancel={cancelLongPress}
+      onClickCapture={(e)=>{ if(suppressClick.current){ e.stopPropagation(); e.preventDefault(); suppressClick.current=false; } }}>
+      {editMode&&setAppData&&<DashEditMode order={tileOrder} hidden={_hidden} onChange={(order,hidden)=>setAppData(prev=>({...prev,dashboardLayout:{order,hidden}}))} onDone={()=>setEditMode(false)}/>}
       {showTransparency&&<DataTransparencyPanel data={data} onClose={()=>setShowTransparency(false)}/>}
 
       {/* ── Top status bar ───────────────────────────────────────────────── */}
@@ -4293,7 +4300,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2}}>{new Date().toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}</span>
-          {setDashLayout&&<button onClick={()=>setShowCustomize(true)} style={{background:`linear-gradient(135deg,${C.green}22,${C.teal}11)`,border:`1px solid ${C.green}44`,borderRadius:99,padding:"5px 12px",color:C.greenBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer",letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}>⠿ Reorder</button>}
+          {setAppData&&<button onClick={()=>setEditMode(true)} title="Tap, or long-press the dashboard, to edit sections" style={{background:`linear-gradient(135deg,${C.green}22,${C.teal}11)`,border:`1px solid ${C.green}44`,borderRadius:99,padding:"5px 12px",color:C.greenBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer",letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}>⠿ Edit</button>}
         </div>
       </div>
 
@@ -4394,7 +4401,8 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
       {/* Income accuracy: folded into priority tile below */}
 
       {/* ═══════════════════════════════════════════════════════════════════
-          BENTO GRID — rendered in user's custom order from dashLayout
+          BENTO GRID — rendered in user's custom order/visibility via tileStyle/isVisible
+          (source: data.dashboardLayout = {order,hidden}; edited via long-press → DashEditMode)
       ═══════════════════════════════════════════════════════════════════ */}
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
 
@@ -12521,10 +12529,8 @@ export default function FlourishApp(){
   const [activeScenario, setActiveScenario] = useState(null);
   const [showWrapped,setShowWrapped]=useState(false);
   const [isOnline,setIsOnline]=useState(()=>navigator.onLine);
-  const [dashLayout,setDashLayout]=useState(()=>{
-    try{ const s=localStorage.getItem('flourish_dash_layout'); if(s) return JSON.parse(s); }catch{}
-    return DASH_TILES.map(t=>({id:t.id,visible:true,locked:false}));
-  });
+  // Dashboard layout now lives in appData (data.dashboardLayout = {order,hidden}); see migration effect below.
+  const dashMigrated=useRef(false);
   const [goalsTab,setGoalsTab]=useState("sim");
   // ── Theme ───────────────────────────────────────────────────────
   const [theme,setTheme]=useState(()=>{
@@ -12907,7 +12913,18 @@ export default function FlourishApp(){
     return () => window.removeEventListener("flourish:settings", handler);
   },[]);
   useEffect(()=>{ try{localStorage.setItem("flourish_theme",theme);}catch{} },[theme]);
-  useEffect(()=>{ try{localStorage.setItem('flourish_dash_layout',JSON.stringify(dashLayout));}catch{} },[dashLayout]);
+  // One-time migration: convert the legacy localStorage layout ([{id,visible,locked}]) → appData.dashboardLayout.
+  useEffect(()=>{
+    if(dashMigrated.current || !appData || appData.dashboardLayout) return;
+    dashMigrated.current=true;
+    try{
+      const s=localStorage.getItem('flourish_dash_layout'); if(!s) return;
+      const legacy=JSON.parse(s); if(!Array.isArray(legacy)) return;
+      const order=legacy.map(t=>t&&t.id).filter(Boolean);
+      const hidden=legacy.filter(t=>t&&t.visible===false).map(t=>t.id);
+      setAppData(prev=>({...prev, dashboardLayout:{order,hidden}}));
+    }catch{}
+  },[appData]);
 
   // ── System dark/light preference listener ──────────────────────
   useEffect(()=>{
@@ -13174,7 +13191,7 @@ export default function FlourishApp(){
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
     if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setShowBankConsent(false);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer}/>{showBankConsent&&<BankConsentModal onContinue={()=>{ try{localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString());}catch{} setShowBankConsent(false); doAddNewBank(); }} onCancel={()=>setShowBankConsent(false)}/>}</>;
-    if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }}/>;
+    if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} setAppData={setAppData} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
   if(screen==="budget")return <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
@@ -13194,7 +13211,7 @@ export default function FlourishApp(){
     if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     // privacy and terms handled before auth gate above
-    return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/>;
+    return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} setAppData={setAppData} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/>;
   };
 
   const ALL_NAV=[
@@ -13354,7 +13371,7 @@ input,button,select,textarea { font-family:inherit; }
         {/* Two-column for home, single for others */}
         {screen==="home"&&!showNotifs&&!showSettings?(
           <div style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:28,padding:"28px 36px 40px",overflowY:"auto",flex:1,maxWidth:1320,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
-            <div><Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={true} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/></div>
+            <div><Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={true} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} setAppData={setAppData} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/></div>
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
               <DesktopSidebar data={dataWithHousehold} setScreen={setScreen}/>
             </div>
