@@ -11122,7 +11122,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
   const [success, setSuccess] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0); // seconds until "Resend" re-enables
   const [checkEmailNote, setCheckEmailNote] = useState(""); // contextual line on the check-email screen
-  const [showAuth, setShowAuth] = useState(false);
+  const [showAuth, setShowAuth] = useState(isCapacitorIOS()); // native iOS: skip the "coming soon" waitlist landing, boot straight into login/signup
 
   // Phase E1: waitlist email capture (replaces public signup CTAs).
   const [waitlistEmail, setWaitlistEmail] = useState("");
@@ -11517,10 +11517,10 @@ function AuthScreen({ onAuth, onTryDemo }) {
           <div style={{ width: "100%", maxWidth: 400, animation: "fadeUp .5s ease both" }}>
 
             <div style={{ textAlign: "center", marginBottom: 28 }}>
-              <button onClick={() => setShowAuth(false)}
+              {!isCapacitorIOS() && <button onClick={() => setShowAuth(false)}
                 style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, margin: "0 auto 16px", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
                 ← Back
-              </button>
+              </button>}
               <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><FlourishLockup size={60} color="#EDE9E2" /></div>
               <div style={{ color: "#6B7A6E", fontSize: 13, marginTop: 4 }}>
                 {mode === "signup" ? "Create your free account" : mode === "check_email" ? "Almost there" : "Welcome back"}
