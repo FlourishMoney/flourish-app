@@ -4405,20 +4405,20 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           <div style={{position:"relative",padding:"24px 24px 20px"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
               <div style={{width:6,height:6,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 10px ${heroColor}`,animation:"pulse 2.5s ease-in-out infinite"}}/>
-              <span style={{color:heroColorBright+"99",fontSize:9,textTransform:"uppercase",letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Safe to spend until next payday</span>
+              <span style={{color:heroColorBright,fontSize:9,textTransform:"uppercase",letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Safe to spend until next payday</span>
               {data.bankConnected
-                ? <span style={{color:heroColorBright+"55",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· live</span>
-                : <span style={{color:C.gold+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· estimated</span>}
+                ? <span style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· live</span>
+                : <span style={{color:C.gold,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· estimated</span>}
             </div>
             {hasCashAccount ? (_ss.noIncome ? (
             /* Sprint Q item 3: no income → prompt to set it up, not a misleading safe-to-spend */
             <div style={{marginBottom:18,maxWidth:320}}>
               <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:heroColorBright,fontSize:19,fontWeight:800,lineHeight:1.3}}>Add your income to see what's safe to spend</div>
-              <div style={{color:heroColorBright+"99",fontSize:12,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Safe-to-spend plans around your bills using your income →</div>
+              <div style={{color:C.mutedHi,fontSize:12,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Safe-to-spend plans around your bills using your income →</div>
             </div>
             ) : (
             <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.88,marginBottom:18,position:"relative",display:"inline-block"}}>
-              <span style={{fontSize:24,color:heroColorBright+"77",verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
+              <span style={{fontSize:24,color:heroColorBright,verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
               <span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`,
                 transition:"opacity .3s",opacity:isRefreshing?0.4:1}}>
                 <CountUp to={safe} decimals={0} dur={300}/>
@@ -4434,7 +4434,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             /* Sprint 1: no fake number when no cash account is connected */
             <div style={{marginBottom:18,maxWidth:320}}>
               <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:heroColorBright,fontSize:19,fontWeight:800,lineHeight:1.3}}>Connect an account to see your safe-to-spend</div>
-              <div style={{color:heroColorBright+"99",fontSize:12,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Add a bank or enter your balances to get started →</div>
+              <div style={{color:C.mutedHi,fontSize:12,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Add a bank or enter your balances to get started →</div>
               {onTryDemo && !data.demo && (
                 /* Sprint Z #15: explore the full app with sample data — no bank login (App reviewers). */
                 <button onClick={onTryDemo} style={{marginTop:16,background:C.teal+"22",border:`1px solid ${C.teal}55`,color:C.tealBright,borderRadius:99,padding:"10px 20px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🧪 Try with demo data</button>
@@ -4448,7 +4448,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
               const mins = Math.round((Date.now()-lastRefresh)/60000);
               const label = mins < 1 ? "just updated" : mins < 60 ? `updated ${mins}m ago` : mins < 1440 ? `updated ${Math.floor(mins/60)}h ago` : "updated today";
               return (
-                <div style={{color:heroColorBright+"44",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:500,letterSpacing:0.3,marginBottom:4}}>
+                <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:500,letterSpacing:0.3,marginBottom:4}}>
                   {label}
                 </div>
               );
@@ -4460,33 +4460,36 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
               // Overdraft: show a focused warning instead of the math
               if (overdraft) return (
                 <div style={{marginBottom:14}}>
-                  <div style={{color:overdraftImmediate?C.redBright+"88":C.goldBright+"88",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
+                  <div style={{color:C.cream,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
                     {overdraftImmediate
                       ? "Bills exceed your balance — tap to see forecast and fix it"
                       : "You will overdraft within 7 days — tap to see what's coming"}
                   </div>
                 </div>
               );
+              // Colours here are opaque by construction. Alpha-suffixing an accent (heroColorBright+"44")
+              // fades it toward the hero background, which collapses in light theme — greenBright is dark
+              // ink (#007E4A) on a near-white hero, so +"44" measured 1.44:1 against a 4.5:1 requirement.
               const breakdownRows = [
-                {label:"In your accounts", value:`$${(_ss.balance||0).toFixed(0)}`, sign:"", color:heroColorBright+"99"},
-                ...(_ss.upcomingBills>0 ? [{label:"Upcoming bills", value:`$${_ss.upcomingBills.toFixed(0)}`, sign:"−", color:C.gold+"CC"}] : []),
-                ...(_ss.debtPayments>0 ? [{label:"Min. debt payments", value:`$${_ss.debtPayments.toFixed(0)}`, sign:"−", color:C.gold+"CC"}] : []),
-                ...(_ss.safetyBuf>0 ? [{label:"Spending buffer", value:`$${_ss.safetyBuf.toFixed(0)}`, sign:"−", color:heroColorBright+"66"}] : []),
-                ...(_ss.savingsAlloc>0 ? [{label:"Savings set aside", value:`$${_ss.savingsAlloc.toFixed(0)}`, sign:"−", color:heroColorBright+"44"}] : []),
+                {label:"In your accounts", value:`$${(_ss.balance||0).toFixed(0)}`, sign:"", color:heroColorBright},
+                ...(_ss.upcomingBills>0 ? [{label:"Upcoming bills", value:`$${_ss.upcomingBills.toFixed(0)}`, sign:"−", color:C.gold}] : []),
+                ...(_ss.debtPayments>0 ? [{label:"Min. debt payments", value:`$${_ss.debtPayments.toFixed(0)}`, sign:"−", color:C.gold}] : []),
+                ...(_ss.safetyBuf>0 ? [{label:"Spending buffer", value:`$${_ss.safetyBuf.toFixed(0)}`, sign:"−", color:C.mutedHi}] : []),
+                ...(_ss.savingsAlloc>0 ? [{label:"Savings set aside", value:`$${_ss.savingsAlloc.toFixed(0)}`, sign:"−", color:C.mutedHi}] : []),
               ];
               return (
                 <div style={{marginBottom:14}}>
                   {breakdownRows.map((r,i)=>(
                     <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"2px 0"}}>
-                      <span style={{color:heroColorBright+"55",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign} {r.label}</span>
+                      <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign} {r.label}</span>
                       <span style={{color:r.color,fontSize:10,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.value}</span>
                     </div>
                   ))}
                   <div style={{borderTop:`1px solid ${heroColor}22`,marginTop:5,paddingTop:5,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{color:heroColorBright+"88",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>= Safe until next payday</span>
+                    <span style={{color:C.cream,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>= Safe until next payday</span>
                     <span style={{color:heroColorBright,fontSize:13,fontWeight:900,fontFamily:"'Playfair Display',serif"}}>${Math.max(0,safe).toFixed(0)}</span>
                   </div>
-                  {!data.bankConnected&&<div style={{color:C.gold+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>📊 Estimated · Connect bank for real numbers</div>}
+                  {!data.bankConnected&&<div style={{color:C.gold,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>📊 Estimated · Connect bank for real numbers</div>}
                 </div>
               );
             })()}
@@ -4541,7 +4544,7 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
 
                 return (
                   <div>
-                    <div style={{color:heroColorBright+"66",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>
+                    <div style={{color:C.mutedHi,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>
                       Can I afford this?
                     </div>
                     <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -4589,10 +4592,10 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
                           {presets.map(amt=>(
                             <button key={amt} onClick={()=>{setAffordInput(String(amt));checkAfford(String(amt));}}
                               style={{flex:1,background:heroColor+"0D",border:`1px solid ${heroColor}22`,borderRadius:10,
-                                padding:"7px 0",color:heroColorBright+"88",fontSize:12,fontWeight:700,cursor:"pointer",
+                                padding:"7px 0",color:heroColorBright,fontSize:12,fontWeight:700,cursor:"pointer",
                                 fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .15s",minHeight:34}}
-                              onMouseEnter={e=>{e.currentTarget.style.background=heroColor+"22";e.currentTarget.style.color=heroColorBright;}}
-                              onMouseLeave={e=>{e.currentTarget.style.background=heroColor+"0D";e.currentTarget.style.color=heroColorBright+"88";}}>
+                              onMouseEnter={e=>{e.currentTarget.style.background=heroColor+"22";}}
+                              onMouseLeave={e=>{e.currentTarget.style.background=heroColor+"0D";}}>
                               ${amt}
                             </button>
                           ))}
@@ -10140,84 +10143,6 @@ function CreditScreen({data,setScreen}){
 }
 
 // ─── PRIVACY POLICY ───────────────────────────────────────────────────────────
-// ─── FEEDBACK MODAL ───────────────────────────────────────────────────────────
-function FeedbackModal({onClose}){
-  const [msg,setMsg]=useState("");
-  const [type,setType]=useState("bug");
-  const [sent,setSent]=useState(false);
-  const [sending,setSending]=useState(false);
-
-  const submit=async()=>{
-    if(!msg.trim()) return;
-    setSending(true);
-    try{
-      await fetch("https://formspree.io/f/xnnqoqkl",{
-        method:"POST",
-        headers:{"Content-Type":"application/json","Accept":"application/json"},
-        body:JSON.stringify({type,message:msg,url:window.location.href})
-      });
-    }catch{}
-    setSent(true);
-    setSending(false);
-    setTimeout(onClose,1800);
-  };
-
-  const types=[["🐛","bug","Bug"],["💡","idea","Idea"],["👍","praise","Praise"],["❓","question","Question"]];
-
-  return(
-    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",
-      display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"0 0 20px"}}
-      onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
-      <div style={{width:"100%",maxWidth:430,background:C.surface,borderRadius:20,padding:"20px 20px 24px",
-        border:`1px solid ${C.border}`,animation:"slideUp .28s ease"}}>
-        {sent?(
-          <div style={{textAlign:"center",padding:"28px 0"}}>
-            <div style={{fontSize:40,marginBottom:10}}>🙏</div>
-            <div style={{color:C.greenBright,fontWeight:800,fontSize:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-              Thanks for your feedback!
-            </div>
-            <div style={{color:C.muted,fontSize:13,marginTop:6}}>It goes straight to Amanda.</div>
-          </div>
-        ):(
-          <>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-              <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                Beta Feedback
-              </div>
-              <button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:20,cursor:"pointer",padding:0,lineHeight:1}}>✕</button>
-            </div>
-            {/* Type selector */}
-            <div style={{display:"flex",gap:6,marginBottom:14}}>
-              {types.map(([emoji,val,label])=>(
-                <button key={val} onClick={()=>setType(val)}
-                  style={{flex:1,background:type===val?C.green+"33":C.cardAlt,border:`1px solid ${type===val?C.green:C.border}`,
-                    borderRadius:10,padding:"8px 4px",color:type===val?C.greenBright:C.muted,
-                    fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
-                    display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                  <span style={{fontSize:16}}>{emoji}</span>{label}
-                </button>
-              ))}
-            </div>
-            <textarea value={msg} onChange={e=>setMsg(e.target.value)}
-              placeholder={type==="bug"?"What happened? What did you expect?":type==="idea"?"What would make Flourish better?":type==="praise"?"What do you love?":"What's your question?"}
-              rows={4}
-              style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,
-                padding:"12px 14px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",
-                outline:"none",resize:"none",lineHeight:1.6,boxSizing:"border-box"}}/>
-            <button onClick={submit} disabled={!msg.trim()||sending}
-              style={{width:"100%",background:msg.trim()&&!sending?`linear-gradient(135deg,${C.green},${C.greenBright})`:"rgba(255,255,255,0.06)",
-                border:"none",borderRadius:12,padding:"13px",color:msg.trim()&&!sending?"#041810":C.muted,
-                fontWeight:800,fontSize:13,cursor:msg.trim()&&!sending?"pointer":"default",
-                fontFamily:"inherit",marginTop:10}}>
-              {sending?"Sending…":"Send Feedback →"}
-            </button>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function PrivacyPolicy({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
@@ -12481,7 +12406,6 @@ export default function FlourishApp(){
   const [recoveryMode,setRecoveryMode]=useState(()=>{ try { return window.location.hash.includes("type=recovery"); } catch { return false; } });
   const [showNotifs,setShowNotifs]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
-  const [showFeedback,setShowFeedback]=useState(false);
   const [tourStep,setTourStep]=useState(()=>{ try{return localStorage.getItem("flourish_tour_done")==="1"?null:0;}catch{return 0;} });
   const dismissTour=()=>{ try{localStorage.setItem("flourish_tour_done","1");}catch{} setTourStep(null); };
   const [household,setHousehold]=useState(()=>saved?.household||null);
@@ -13432,9 +13356,9 @@ input,button,select,textarea { font-family:inherit; }
           </div>
         )}
         <div style={{padding:"max(14px, env(safe-area-inset-top)) 20px 12px",background:C.isDark?"rgba(5,8,16,0.90)":"rgba(244,241,235,0.92)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",position:"sticky",top:0,zIndex:30,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 1px 0 rgba(255,255,255,0.025)"}}>
-          <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{display:"flex",alignItems:"center",gap:9,background:"none",border:"none",cursor:"pointer",padding:0}}>
-            <FlourishMark size={30}/>
-            <span style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:19,color:C.cream,letterSpacing:-0.5,background:`linear-gradient(130deg,${C.cream} 40%,rgba(237,233,226,0.7) 100%)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>flourish</span>
+          <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",padding:0}}>
+            <FlourishMark size={36}/>
+            <span style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:20,color:C.cream,letterSpacing:-0.3}}>flourish</span>
           </button>
           <div style={{display:"flex",gap:8}}>
             <button onClick={()=>{setShowSettings(false);setShowNotifs(true);}} style={{position:"relative",background:"rgba(255,255,255,0.07)",border:`1px solid ${unread>0?C.red+"55":C.border}`,borderRadius:12,padding:"8px 12px",cursor:"pointer"}}>
@@ -13468,19 +13392,6 @@ input,button,select,textarea { font-family:inherit; }
             </div>
           </div>
           </>
-        )}
-
-        {/* ── FEEDBACK FLOATING BUTTON ──────────────────── */}
-        {!showNotifs&&!showSettings&&(
-          <button onClick={()=>setShowFeedback(true)}
-            style={{position:"fixed",bottom:84,right:16,zIndex:60,
-              background:`linear-gradient(135deg,${C.purple}CC,${C.purpleDim}CC)`,
-              backdropFilter:"blur(8px)",border:`1px solid ${C.purple}55`,
-              borderRadius:99,padding:"7px 13px",display:"flex",alignItems:"center",gap:5,
-              boxShadow:"0 4px 20px rgba(0,0,0,0.4)",cursor:"pointer",
-              color:C.purpleBright,fontSize:11,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-            <span style={{fontSize:13}}>💬</span> Feedback
-          </button>
         )}
 
         {/* ── ONBOARDING TOUR ──────────────────────────── */}
@@ -13534,9 +13445,6 @@ input,button,select,textarea { font-family:inherit; }
             </div>
           );
         })()}
-
-        {/* ── FEEDBACK MODAL ──────────────────────────── */}
-        {showFeedback&&<FeedbackModal onClose={()=>setShowFeedback(false)}/>}
       </div>
     </div>
   );
