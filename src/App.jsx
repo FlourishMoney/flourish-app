@@ -2800,6 +2800,9 @@ const DASH_TILES = [
   { id: 'credit',      label: 'Credit Score',         lucide:'credit-card'  },
   { id: 'quicknav',    label: 'Quick Navigation',     lucide:'grid'         },
 ];
+// The 9 sections that actually render on the dashboard and can be shown/hidden in Settings → Dashboard
+// (persisted to data.dashboardLayout.hidden). 'hero' (Safe-to-Spend) is alwaysVisible and can't be hidden.
+const DASH_HIDEABLE = ['hero','bento','healthrow','action','networth','investments','autopilot','health','credit'];
 
 // ─── STATEMENT PARSING HELPERS ────────────────────────────────────────────────
 function parseCSVStatement(text) {
@@ -4201,7 +4204,9 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
     }
   },[data.bankConnected]);
 
-  const isVisible = id => !dashLayout || (dashLayout.find(t=>t.id===id)?.visible !== false);
+  // Visible unless hidden in the DashCustomize modal (localStorage dashLayout) OR the Settings → Dashboard
+  // toggles (appData data.dashboardLayout.hidden). Safe-to-Spend (alwaysVisible) can never be hidden.
+  const isVisible = id => (DASH_TILES.find(t=>t.id===id)?.alwaysVisible) || ((!dashLayout || dashLayout.find(t=>t.id===id)?.visible !== false) && !((data.dashboardLayout?.hidden)||[]).includes(id));
   const tileOrder = dashLayout ? dashLayout.map(t=>t.id) : DASH_TILES.map(t=>t.id);
   const tileStyle = id => ({ order: tileOrder.indexOf(id) >= 0 ? tileOrder.indexOf(id) : 99 });
 
@@ -9105,6 +9110,35 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
     if(setAppData) setAppData(prev=>({...prev, profile:{...prev.profile, [key]:value}}));
   };
 
+  if(sectionKey==="dashboard") {
+    const hidden = Array.isArray(data.dashboardLayout?.hidden) ? data.dashboardLayout.hidden : [];
+    const setHide = (id, hide) => setAppData(prev => {
+      const cur = Array.isArray(prev.dashboardLayout?.hidden) ? prev.dashboardLayout.hidden : [];
+      const next = hide ? Array.from(new Set([...cur, id])) : cur.filter(x => x !== id);
+      return { ...prev, dashboardLayout: { ...(prev.dashboardLayout || {}), hidden: next } };
+    });
+    return (
+      <div style={{ paddingBottom: 6 }}>
+        <div style={{ color: C.muted, fontSize: 12, marginBottom: 12, fontFamily: "'Plus Jakarta Sans',sans-serif", lineHeight: 1.5 }}>Choose which cards appear on your dashboard. Reorder them from the home screen with the ⠿ Reorder button.</div>
+        {DASH_TILES.filter(t => DASH_HIDEABLE.includes(t.id)).map(t => {
+          const isHidden = hidden.includes(t.id), locked = t.alwaysVisible;
+          return (
+            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 14, marginBottom: 8, background: C.card, border: `1px solid ${C.border}`, opacity: isHidden ? 0.6 : 1 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: !isHidden ? C.green + "18" : C.cardAlt, border: `1px solid ${!isHidden ? C.green + "33" : C.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <TileIcon id={t.id} size={16} color={!isHidden ? C.greenBright : C.muted} />
+              </div>
+              <div style={{ flex: 1, color: C.cream, fontWeight: 600, fontSize: 14, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                {t.label}{locked && <span style={{ color: C.gold, fontSize: 10, fontWeight: 700, marginLeft: 8 }}>always on</span>}
+              </div>
+              {locked
+                ? <span style={{ color: C.muted, fontSize: 16 }} title="Always visible">🔒</span>
+                : <Toggle on={!isHidden} onChange={v => setHide(t.id, !v)} label={t.label} />}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
   if(sectionKey==="profile") return (
     <div style={s}>
       <div style={row}><span style={lbl}>Name</span>
@@ -9411,6 +9445,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         {icon:"trendUp",color:C.orange,label:"Manage Debts",        sub:`${data.debts?.length||0} in plan`,                  key:"debts"},
         {icon:"target", color:C.gold,  label:"Savings Goals",       sub:"Emergency fund & more",                             key:"goals"},
         {icon:"users",  color:C.pink,  label:"Family Settings",     sub:`${data.profile?.status||"single"} · ${data.profile?.hasKids?"has kids":"no kids"}`, key:"family"},
+        {icon:"home",   color:C.teal,  label:"Dashboard",           sub:"Show or hide cards",                                key:"dashboard"},
       ].map((item,i)=>{
         const isActive = activeSection === item.key;
         return (
