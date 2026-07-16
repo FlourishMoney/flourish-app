@@ -13,6 +13,10 @@
     <!-- Sprint Z #16: the kids favicon/title swap moved into src/main.jsx so the CSP can drop 'unsafe-inline'. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Loaded here, not from an @import inside the app shell's <style>: the shell mounts behind the
+         auth/onboarding early returns, so pre-auth screens (landing, auth, reset, MFA) had no webfont
+         and silently fell back to Times. Plus Jakarta Sans stops at 800 — nothing may ask for 900. -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" />
   </head>
   <body>
     <div id="root"></div>

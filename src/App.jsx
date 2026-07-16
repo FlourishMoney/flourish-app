@@ -2441,7 +2441,7 @@ function FlourishLockup({ size = 72, color = "#EDE9E2", style = {} }) {
   return (
     <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: Math.round(size * 0.14), ...style }}>
       <FlourishMark size={size} />
-      <span style={{ fontFamily: "'Playfair Display',serif", fontWeight: 900, fontSize: Math.round(size * 0.44), letterSpacing: -0.5, color, lineHeight: 1 }}>Flourish</span>
+      <span style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 800, fontSize: Math.round(size * 0.44), letterSpacing: -0.3, color, lineHeight: 1 }}>Flourish</span>
     </div>
   );
 }
@@ -4124,7 +4124,7 @@ function DataTransparencyPanel({data, onClose}) {
               ))}
               <div style={{marginTop:8,background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:12,padding:"10px 12px"}}>
                 <div style={{...s,fontSize:11,color:C.goldBright,lineHeight:1.65}}>
-                  💡 Credit card balances are liabilities — they reduce your net worth but are NOT deducted from your chequing balance. Your "balance" in Flourish always means available cash, not net position.
+                  💡 Your credit card balance is money you owe, not money you have. Flourish tracks it as debt so your Safe-to-Spend only shows cash you can actually spend.
                 </div>
               </div>
             </>}
@@ -9417,7 +9417,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         </div>
         <div style={{textAlign:"left"}}>
           <div style={{color:"#fff",fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15,letterSpacing:-0.3}}>Share Flourish</div>
-          <div style={{color:"rgba(255,255,255,0.45)",fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3}}>Invite a friend · help them thrive</div>
+          <div style={{color:"rgba(255,255,255,0.62)",fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3}}>Invite a friend · help them thrive</div>
         </div>
       </div>
       <div style={{background:"rgba(0,204,133,0.2)",border:"1px solid rgba(0,204,133,0.35)",borderRadius:99,padding:"7px 16px",color:"#00CC85",fontSize:12,fontWeight:700,letterSpacing:0.2,flexShrink:0}}>Share ↗</div>
@@ -11279,7 +11279,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-wrap{ width:100%; max-width:1080px; margin:0 auto; padding:0 22px; }
             .fll-nav{ display:flex; align-items:center; justify-content:space-between; width:100%; max-width:1080px; margin:0 auto; padding:18px 22px; }
             .fll-brand{ display:flex; align-items:center; gap:9px; }
-            .fll-brand span{ font-family:'Playfair Display',serif; font-weight:900; font-size:18px; color:#163a1c; letter-spacing:-0.3px; }
+            .fll-brand span{ font-family:'Plus Jakarta Sans',sans-serif; font-weight:800; font-size:18px; color:#163a1c; letter-spacing:-0.3px; }
             .fll-login{ background:transparent; border:1px solid rgba(46,139,46,0.45); color:#1b5e20; border-radius:99px; padding:8px 18px; font-size:13px; font-weight:700; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-login:hover{ background:rgba(46,139,46,0.08); }
 
@@ -13155,7 +13155,6 @@ export default function FlourishApp(){
   ];
 
   const globalStyles=`
-    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 @keyframes fadeUp    { from{opacity:0;transform:translateY(22px)}  to{opacity:1;transform:translateY(0)} }
 @keyframes fadeIn    { from{opacity:0}                              to{opacity:1} }
 @keyframes slideUp   { from{opacity:0;transform:translateY(10px)}  to{opacity:1;transform:translateY(0)} }

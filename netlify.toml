@@ -13,7 +13,7 @@
     X-Frame-Options = "SAMEORIGIN"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Content-Security-Policy = "default-src 'self'; script-src 'self' cdn.plaid.com *.plaid.com; connect-src 'self' api.anthropic.com cdn.plaid.com production.plaid.com sandbox.plaid.com *.plaid.com qhcccjkmvijrybagkvyw.supabase.co https://formspree.io *.ingest.sentry.io *.sentry.io; style-src 'self' 'unsafe-inline' *.plaid.com https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: *.plaid.com; frame-src *.plaid.com cdn.plaid.com; worker-src 'self' blob:;"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' cdn.plaid.com *.plaid.com; connect-src 'self' api.anthropic.com cdn.plaid.com production.plaid.com sandbox.plaid.com *.plaid.com qhcccjkmvijrybagkvyw.supabase.co *.ingest.sentry.io *.sentry.io; style-src 'self' 'unsafe-inline' *.plaid.com https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: *.plaid.com; frame-src *.plaid.com cdn.plaid.com; worker-src 'self' blob:;"
 
 # The self-unregistering kill-switch SW (public/sw.js) must NEVER be cached, so a returning visitor's
 # browser re-fetches it on its next service-worker update check and retires the old (pre-Vite) zombie
