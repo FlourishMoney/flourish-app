@@ -405,7 +405,7 @@ function getPersonalizedTaxCredits(profile) {
 // ─── THEME PALETTES ──────────────────────────────────────────────────────────
 const DARK_C = {
   bg:"#050810",surface:"#0A1018",card:"#0D1520",cardAlt:"#121D2A",
-  cream:"#EDE9E2",muted:"rgba(237,233,226,0.50)",mutedHi:"rgba(237,233,226,0.80)",
+  cream:"#EDE9E2",muted:"rgba(237,233,226,0.62)",mutedHi:"rgba(237,233,226,0.80)", // .50→.62 clears AA body 4.5:1 on dark bg with margin (.50 only ~4.6:1)
   glass:"rgba(10,16,24,0.75)",glassBright:"rgba(16,26,38,0.82)",
   glassEdge:"rgba(255,255,255,0.06)",glassEdgeHi:"rgba(255,255,255,0.12)",
   green:"#00CC85",greenBright:"#00E89A",greenDim:"rgba(0,204,133,0.12)",
@@ -4300,13 +4300,6 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
             {urgentBill?`⚠️ ${urgentBill.name} due in ${parseInt(urgentBill.date)-today} day${parseInt(urgentBill.date)-today===1?"":"s"}`:isPayday?"🎉 Payday — great time to save":"Here's your financial pulse"}
           </div>
         </div>
-        <button onClick={()=>setShowNotifs(true)} style={{position:"relative",...glass(unread>0?C.red:""),borderRadius:14,width:44,height:44,cursor:"pointer",color:C.cream,display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s",flexShrink:0}}>
-          <Icon id="bell" size={18} color={C.cream} strokeWidth={1.5}/>
-          {unread>0&&<>
-            <div style={{position:"absolute",top:-3,right:-3,width:16,height:16,borderRadius:"50%",background:C.red,color:"#fff",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{unread}</div>
-            <div style={{position:"absolute",top:-3,right:-3,width:16,height:16,borderRadius:"50%",background:C.red,animation:"ringPulse 1.5s ease-out infinite"}}/>
-          </>}
-        </button>
       </div>
 
       {/* ── Phase 3a: Today / Decisions tab bar ─────────────────────────── */}
@@ -13440,7 +13433,7 @@ input,button,select,textarea { font-family:inherit; }
         )}
         <div style={{padding:"max(14px, env(safe-area-inset-top)) 20px 12px",background:C.isDark?"rgba(5,8,16,0.90)":"rgba(244,241,235,0.92)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",position:"sticky",top:0,zIndex:30,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 1px 0 rgba(255,255,255,0.025)"}}>
           <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{display:"flex",alignItems:"center",gap:9,background:"none",border:"none",cursor:"pointer",padding:0}}>
-            <FlourishMark size={24}/>
+            <FlourishMark size={30}/>
             <span style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:19,color:C.cream,letterSpacing:-0.5,background:`linear-gradient(130deg,${C.cream} 40%,rgba(237,233,226,0.7) 100%)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>flourish</span>
           </button>
           <div style={{display:"flex",gap:8}}>
