@@ -2946,12 +2946,6 @@ function DashCustomize({ layout, onChange, onClose }) {
 
   const save = () => { onChange(items); onClose(); };
 
-  const toggle = (id) => {
-    const tile = DASH_TILES.find(t=>t.id===id);
-    if(tile?.alwaysVisible) return;
-    setItems(prev => prev.map(t => t.id===id ? {...t, visible:!t.visible} : t));
-  };
-
   const moveUp = (id) => {
     setItems(prev => {
       const idx = prev.findIndex(t=>t.id===id);
@@ -2985,10 +2979,10 @@ function DashCustomize({ layout, onChange, onClose }) {
       <div style={{width:'100%',maxWidth:440,background:C.card,borderRadius:isDesktop?'24px':'24px 24px 0 0',maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 48px rgba(0,0,0,0.5)'}} onClick={e=>e.stopPropagation()}>
         {!isDesktop&&<div style={{width:36,height:4,borderRadius:99,background:C.border,margin:'12px auto 0',flexShrink:0}}/>}
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'20px 20px 0',flexShrink:0}}>
-          <div style={{color:C.cream,fontWeight:800,fontSize:18,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Customize Dashboard</div>
+          <div style={{color:C.cream,fontWeight:800,fontSize:18,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Reorder Dashboard</div>
           <button aria-label="Close" onClick={onClose} style={{background:'none',border:'none',color:C.muted,fontSize:22,cursor:'pointer',padding:4,lineHeight:1,fontFamily:'inherit'}}>×</button>
         </div>
-        <div style={{color:C.muted,fontSize:12,padding:'4px 20px 14px',fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Use ↑↓ to reorder · toggle to show or hide</div>
+        <div style={{color:C.muted,fontSize:12,padding:'4px 20px 14px',fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Use ↑↓ to reorder · 🔒 to pin. Show or hide cards in Settings → Dashboard.</div>
         <div style={{overflowY:'auto',flex:1,padding:'0 16px 8px'}}>
           {items.map((tile, idx) => {
             const m = meta(tile.id);
@@ -3015,12 +3009,6 @@ function DashCustomize({ layout, onChange, onClose }) {
                   style={{background:'none',border:`1px solid ${tile.locked?C.gold+'55':C.border}`,borderRadius:8,width:36,height:36,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,flexShrink:0,color:tile.locked?C.gold:C.muted,transition:'all .15s'}}>
                   {tile.locked?'🔒':'🔓'}
                 </button>
-                {!m.alwaysVisible&&(
-                  <div onClick={()=>toggle(tile.id)}
-                    style={{width:44,height:26,borderRadius:99,background:tile.visible!==false?C.green:'rgba(255,255,255,0.09)',border:`1px solid ${tile.visible!==false?C.green:C.border}`,position:'relative',cursor:'pointer',transition:'background .2s',flexShrink:0}}>
-                    <div style={{position:'absolute',top:3,left:tile.visible!==false?21:3,width:18,height:18,borderRadius:'50%',background:'white',transition:'left .2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}}/>
-                  </div>
-                )}
               </div>
             );
           })}
@@ -4204,9 +4192,9 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
     }
   },[data.bankConnected]);
 
-  // Visible unless hidden in the DashCustomize modal (localStorage dashLayout) OR the Settings → Dashboard
-  // toggles (appData data.dashboardLayout.hidden). Safe-to-Spend (alwaysVisible) can never be hidden.
-  const isVisible = id => (DASH_TILES.find(t=>t.id===id)?.alwaysVisible) || ((!dashLayout || dashLayout.find(t=>t.id===id)?.visible !== false) && !((data.dashboardLayout?.hidden)||[]).includes(id));
+  // Visibility is owned solely by Settings → Dashboard (data.dashboardLayout.hidden). The Reorder modal
+  // (DashCustomize) only reorders + pins. Safe-to-Spend (alwaysVisible) can never be hidden.
+  const isVisible = id => (DASH_TILES.find(t=>t.id===id)?.alwaysVisible) || !((data.dashboardLayout?.hidden)||[]).includes(id);
   const tileOrder = dashLayout ? dashLayout.map(t=>t.id) : DASH_TILES.map(t=>t.id);
   const tileStyle = id => ({ order: tileOrder.indexOf(id) >= 0 ? tileOrder.indexOf(id) : 99 });
 
