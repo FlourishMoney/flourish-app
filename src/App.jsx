@@ -3207,7 +3207,7 @@ function Onboarding({onComplete,onViewLegal,userId}){
   const addDebt=()=>setDebts([...debts,{name:"",balance:"",rate:"",min:""}]);
   const rmDebt=i=>setDebts(debts.filter((_,x)=>x!==i));
   const upDebt=(i,f,v)=>setDebts(debts.map((d,x)=>x===i?{...d,[f]:v}:d));
-  const finish=()=>onComplete({profile:p,incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),accounts:connAccts,transactions:plaidTxns.length?plaidTxns:[],bankConnected:connAccts.some(a=>a.institution!=="Manual")});
+  const finish=()=>onComplete({profile:{...p,creditScoreUpdated:p.creditKnown?Date.now():null},incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),accounts:connAccts,transactions:plaidTxns.length?plaidTxns:[],bankConnected:connAccts.some(a=>a.institution!=="Manual")});
 
   const banks=(CC[p.country]?.banks||CC.CA.banks);
 
@@ -4158,7 +4158,7 @@ function DataTransparencyPanel({data, onClose}) {
   );
 }
 
-function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo}){
+function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo}){
   const [mounted,setMounted]=useState(false);
   const [expandedTile,setExpandedTile]=useState(null);
   const [showCustomize,setShowCustomize]=useState(false);
@@ -4179,6 +4179,11 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
   });
   // Phase 3c: input value for the Decisions tab hero
   const [dashHeroInput, setDashHeroInput] = useState("");
+  // Credit score is hand-entered, so it needs its own edit affordance (the card is the only place
+  // it can be changed after onboarding). Declared here, not in the card's IIFE — that IIFE is
+  // rendered conditionally, so hooks inside it would break the rules of hooks.
+  const [editingCredit, setEditingCredit] = useState(false);
+  const [creditDraft, setCreditDraft] = useState("");
   useEffect(()=>{const t=setTimeout(()=>setMounted(true),60);return()=>clearTimeout(t);},[]);
   // Persist tab choice across sessions
   useEffect(()=>{
@@ -4994,23 +4999,73 @@ function Dashboard({data,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onChec
           const sc=score>=750?C.greenBright:score>=700?C.tealBright:score>=650?C.goldBright:score>=600?C.orangeBright:C.redBright;
           const scBase=score>=750?C.green:score>=700?C.teal:score>=650?C.gold:score>=600?C.orange:C.red;
           const lbl=score>=750?"Excellent":score>=700?"Good":score>=650?"Fair":score>=600?"Poor":"Very Poor";
-          return <div style={{...anim(285),...glass(scBase),borderRadius:22,padding:"16px 20px",cursor:"pointer",display:"flex",alignItems:"center",gap:16,overflow:"hidden",position:"relative"}} onClick={()=>setScreen("goals")}>
+          // Hand-entered scores go stale silently, so surface the age and nudge past 30 days.
+          // No timestamp (pre-existing profiles) reads as stale — we can't claim it's current.
+          const maxScore=data.profile?.country==="US"?850:900;
+          const updatedAt=data.profile?.creditScoreUpdated;
+          const daysSince=updatedAt?Math.floor((Date.now()-updatedAt)/86400000):null;
+          const stale=daysSince===null||daysSince>=30;
+          const draftNum=parseInt(creditDraft,10);
+          const draftValid=Number.isFinite(draftNum)&&draftNum>=300&&draftNum<=maxScore;
+          const saveScore=()=>{
+            if(!draftValid||!setAppData) return;
+            setAppData(prev=>({...prev,profile:{...prev.profile,creditScore:draftNum,creditScoreUpdated:Date.now()}}));
+            setEditingCredit(false);
+          };
+          // Ink is C.cream / a fixed green rather than the score-band accent: at scBase+"22" the band
+          // accents measure 2.93-4.41:1 in light theme, i.e. all five bands fail AA.
+          return <div style={{...anim(285),...glass(scBase),borderRadius:22,padding:"16px 20px",overflow:"hidden",position:"relative"}}>
             <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at 0% 50%,${scBase}14 0%,transparent 60%)`,pointerEvents:"none"}}/>
-            <div style={{width:52,height:52,borderRadius:16,background:scBase+"20",border:`1.5px solid ${scBase}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-              <span style={{fontSize:22,fontWeight:900,color:sc,fontFamily:"'Playfair Display',serif"}}>{score>=750?"A":score>=700?"B":score>=650?"C":"D"}</span>
-            </div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{...label11(C.muted),marginBottom:2}}>Credit Score</div>
-              <div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:2}}>
-                <span style={{fontSize:28,fontWeight:900,color:sc,fontFamily:"'Playfair Display',serif",letterSpacing:-1}}>{score}</span>
-                <span style={{fontSize:13,color:scBase,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{lbl}</span>
+            <div onClick={()=>setScreen("goals")} style={{position:"relative",cursor:"pointer",display:"flex",alignItems:"center",gap:16}}>
+              <div style={{width:52,height:52,borderRadius:16,background:scBase+"20",border:`1.5px solid ${scBase}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                <span style={{fontSize:22,fontWeight:900,color:sc,fontFamily:"'Playfair Display',serif"}}>{score>=750?"A":score>=700?"B":score>=650?"C":"D"}</span>
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{...label11(C.muted),marginBottom:2}}>Credit Score</div>
+                <div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:2}}>
+                  <span style={{fontSize:28,fontWeight:900,color:sc,fontFamily:"'Playfair Display',serif",letterSpacing:-1}}>{score}</span>
+                  <span style={{fontSize:13,color:scBase,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{lbl}</span>
+                </div>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+                <span style={{color:scBase,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Coach →</span>
+                <div style={{background:C.glassEdge,borderRadius:99,width:5,height:38,overflow:"hidden"}}>
+                  <div style={{height:`${Math.round((score-300)/6)}%`,background:`linear-gradient(to top,${sc},${scBase})`,borderRadius:99,transition:"height 1s"}}/>
+                </div>
               </div>
             </div>
-            <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
-              <span style={{color:scBase,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Coach →</span>
-              <div style={{background:C.glassEdge,borderRadius:99,width:5,height:38,overflow:"hidden"}}>
-                <div style={{height:`${Math.round((score-300)/6)}%`,background:`linear-gradient(to top,${sc},${scBase})`,borderRadius:99,transition:"height 1s"}}/>
-              </div>
+            <div style={{position:"relative",marginTop:12,paddingTop:12,borderTop:`1px solid ${C.border}`}}>
+              {editingCredit?(<>
+                <div style={{color:C.mutedHi,fontSize:11,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>
+                  Credit scores update monthly. Get yours free at Borrowell (Canada) or Credit Karma (US/Canada), then update it here.
+                </div>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <input type="number" inputMode="numeric" min={300} max={maxScore} value={creditDraft} autoFocus aria-label="Credit score"
+                    onChange={e=>setCreditDraft(e.target.value)}
+                    onKeyDown={e=>{if(e.key==="Enter")saveScore();if(e.key==="Escape")setEditingCredit(false);}}
+                    style={{width:92,background:C.cardAlt,border:`1px solid ${creditDraft&&!draftValid?C.red:C.border}`,borderRadius:10,padding:"9px 11px",color:C.cream,fontSize:15,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
+                  <button onClick={saveScore} disabled={!draftValid}
+                    style={{background:draftValid?C.green:"rgba(255,255,255,0.06)",border:"none",borderRadius:10,padding:"10px 16px",color:draftValid?(C.isDark?"#041810":"#fff"):C.muted,fontSize:12,fontWeight:800,cursor:draftValid?"pointer":"default",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Save</button>
+                  <button onClick={()=>setEditingCredit(false)}
+                    style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.mutedHi,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Cancel</button>
+                </div>
+                <div style={{color:creditDraft&&!draftValid?C.redBright:C.muted,fontSize:10,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                  {data.profile?.country==="US"?"FICO scale · 300–850":"Equifax / TransUnion Canada · 300–900"}
+                </div>
+              </>):(
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                      {updatedAt?`Updated ${new Date(updatedAt).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}`:"Not updated yet"}
+                    </div>
+                    {stale&&<div style={{color:C.goldBright,fontSize:11,marginTop:3,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                      Your score may have changed — consider updating it.
+                    </div>}
+                  </div>
+                  {setAppData&&<button onClick={()=>{setCreditDraft(String(score));setEditingCredit(true);}}
+                    style={{flexShrink:0,background:scBase+"22",border:`1px solid ${scBase}55`,borderRadius:99,padding:"8px 14px",color:C.cream,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Update Score</button>}
+                </div>
+              )}
             </div>
           </div>;
         })()}
@@ -6137,7 +6192,7 @@ function BudgetPlanCard({data, setAppData}) {
       {/* Header */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
         <div>
-          <div style={{color:C.greenBright,fontWeight:900,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+          <div style={{color:C.greenBright,fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
             {accepted?"✅ Budget Plan Saved!":"📊 Your Budget Plan"}
           </div>
           <div style={{color:C.muted,fontSize:11,marginTop:2}}>
@@ -13121,7 +13176,7 @@ export default function FlourishApp(){
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
     if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setShowBankConsent(false);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer}/>{showBankConsent&&<BankConsentModal onContinue={()=>{ try{localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString());}catch{} setShowBankConsent(false); doAddNewBank(); }} onCancel={()=>setShowBankConsent(false)}/>}</>;
-    if(screen==="home")return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }}/>;
+    if(screen==="home")return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }}/>;
     if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
     if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
   if(screen==="budget")return <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
@@ -13141,7 +13196,7 @@ export default function FlourishApp(){
     if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     // privacy and terms handled before auth gate above
-    return <Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/>;
+    return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/>;
   };
 
   const ALL_NAV=[
@@ -13300,7 +13355,7 @@ input,button,select,textarea { font-family:inherit; }
         {/* Two-column for home, single for others */}
         {screen==="home"&&!showNotifs&&!showSettings?(
           <div style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:28,padding:"28px 36px 40px",overflowY:"auto",flex:1,maxWidth:1320,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
-            <div><Dashboard data={dataWithHousehold} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={true} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/></div>
+            <div><Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={true} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/></div>
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
               <DesktopSidebar data={dataWithHousehold} setScreen={setScreen}/>
             </div>
