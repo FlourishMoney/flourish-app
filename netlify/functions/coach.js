@@ -72,6 +72,11 @@ const MAX_BODY_BYTES = 100000;
 // Phase D2: origin-aware CORS — locks to known origins, falls back to production.
 const ALLOWED_ORIGINS = new Set([
   "https://flourishmoney.app",
+  // iOS app. The WKWebView serves from capacitor://localhost, so its fetches to this function are
+  // cross-origin. capacitor.config.json sets neither iosScheme nor hostname, so Capacitor's defaults
+  // apply ("capacitor" / "localhost"). Without this the fallback below answers with the production
+  // origin, which does not match the caller — the browser blocks the response and fetch throws.
+  "capacitor://localhost",
   "http://localhost:5173",
   "http://localhost:8888",
 ]);

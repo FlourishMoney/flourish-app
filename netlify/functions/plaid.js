@@ -28,6 +28,7 @@ const PLAID_BASE = {
 // Phase D2: origin-aware CORS — locks to known origins, falls back to production.
 const ALLOWED_ORIGINS = new Set([
   "https://flourishmoney.app",
+  "capacitor://localhost", // iOS app WKWebView origin — see coach.js for why. Without it, bank connect fails on device.
   "http://localhost:5173",
   "http://localhost:8888",
 ]);
