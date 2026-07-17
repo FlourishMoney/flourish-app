@@ -13344,7 +13344,11 @@ input,button,select,textarea { font-family:inherit; }
   const demoBanner = appData?.demo ? (
     <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.teal+"22",borderBottom:`1px solid ${C.teal}55`,color:C.tealBright,fontSize:12,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif",flexWrap:"wrap"}}>
       🧪 Demo mode — you're viewing sample data.
-      <button onClick={exitDemo} style={{background:C.teal+"33",border:`1px solid ${C.teal}66`,color:C.tealBright,cursor:"pointer",fontWeight:800,fontSize:11,padding:"3px 12px",borderRadius:99,fontFamily:"inherit"}}>Connect your bank →</button>
+      {/* Labelled as an exit, not a "connect your bank" prompt: in demo the numbers are sample data,
+          so nagging to connect a bank misreads the context. This button is also the ONLY route out
+          of demo — exitDemo has no other caller, and signOut cannot clear it (it preserves
+          flourish_v1, where demo state lives). Do not remove it without adding another exit. */}
+      <button onClick={exitDemo} style={{background:C.teal+"33",border:`1px solid ${C.teal}66`,color:C.tealBright,cursor:"pointer",fontWeight:800,fontSize:11,padding:"3px 12px",borderRadius:99,fontFamily:"inherit"}}>Exit demo →</button>
     </div>
   ) : null;
   // (5) one-time, dismissible — appears after a successful local→DB migration upload.
