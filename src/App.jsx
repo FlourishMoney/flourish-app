@@ -12634,6 +12634,10 @@ export default function FlourishApp(){
   const [syncError, setSyncError] = useState(false);
   // (5) one-time "backed up" banner after a local→DB migration upload.
   const [showMigratedBanner, setShowMigratedBanner] = useState(()=>{ try { return localStorage.getItem("flourish_db_migrated")==="1"; } catch { return false; } });
+  // Lets demo screenshots avoid the banner. Deliberately session-only — NOT persisted — so the
+  // "sample data" disclosure returns on next open and cannot be dismissed for good. Safe only
+  // because Settings carries a second, permanent exit from demo.
+  const [demoBannerHidden, setDemoBannerHidden] = useState(false);
   const dismissMigratedBanner = ()=>{ try { localStorage.setItem("flourish_db_migrated","seen"); } catch {} setShowMigratedBanner(false); };
   const getSaver = () => {
     if (!saverRef.current) {
@@ -13355,14 +13359,18 @@ input,button,select,textarea { font-family:inherit; }
   const exitDemo = () => { try { clearState(); } catch {} setAppData(null); setOnboarded(false); };
   // Sprint Z #15: persistent demo-mode banner so it's always clear the data is sample data and how
   // to switch to real. (The "Try Demo" entry already lives on the onboarding bank-connect step.)
-  const demoBanner = appData?.demo ? (
-    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.teal+"22",borderBottom:`1px solid ${C.teal}55`,color:C.tealBright,fontSize:12,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif",flexWrap:"wrap"}}>
+  const demoBanner = appData?.demo && !demoBannerHidden ? (
+    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.teal+"22",borderBottom:`1px solid ${C.teal}55`,color:C.tealBright,fontSize:12,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 34px",fontFamily:"'Plus Jakarta Sans',sans-serif",flexWrap:"wrap"}}>
       🧪 Demo mode — you're viewing sample data.
       {/* Labelled as an exit, not a "connect your bank" prompt: in demo the numbers are sample data,
           so nagging to connect a bank misreads the context. This button is also the ONLY route out
           of demo — exitDemo has no other caller, and signOut cannot clear it (it preserves
           flourish_v1, where demo state lives). Do not remove it without adding another exit. */}
       <button onClick={exitDemo} style={{background:C.teal+"33",border:`1px solid ${C.teal}66`,color:C.tealBright,cursor:"pointer",fontWeight:800,fontSize:11,padding:"3px 12px",borderRadius:99,fontFamily:"inherit"}}>Exit demo →</button>
+      {/* Hides the banner for this session only (screenshots). Absolutely positioned so the message
+          stays optically centred; the banner's 34px side padding reserves its gutter. */}
+      <button aria-label="Hide demo banner" title="Hide for now" onClick={()=>setDemoBannerHidden(true)}
+        style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:C.tealBright,cursor:"pointer",fontSize:14,lineHeight:1,padding:"6px 8px",fontFamily:"inherit"}}>✕</button>
     </div>
   ) : null;
   // (5) one-time, dismissible — appears after a successful local→DB migration upload.
