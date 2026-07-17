@@ -9697,7 +9697,7 @@ function DesktopSidebar({data,setScreen}){
 
 
 // ─── AI COACH ─────────────────────────────────────────────────────────────────
-function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}, setScreen, setAppData}){
+function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}, setScreen, setAppData, onExitDemo}){
   // ── ALL HOOKS FIRST — constants moved below to prevent TDZ ───────────────
   const [messages, setMessages] = useState(()=>{
     try {
@@ -9882,6 +9882,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
   const send = async ()=>{
     const text = input.trim();
     if(!text || loading) return;
+    if(data.demo) return; // demo has no JWT; the UI gates this, but never let a fetch 401 from here
     if(!isPremium && freeMsgsLeft<=0){ onUpgrade(); return; }
     // Detect if user is asking about balance mismatch
     const isBalanceQuestion = (text.toLowerCase().includes("balance") && 
@@ -9986,6 +9987,19 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
         </div>
       </div>
 
+      {/* Demo has no account → getJwt() returns null → the coach 401s at auth (not CORS). Gate it with
+          a sign-up prompt rather than letting it fail into a misleading "couldn't reach the coach"
+          error. onExitDemo clears demo and drops to the auth screen to sign up / log in. */}
+      {data.demo ? (
+        <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"24px 28px",gap:14}}>
+          <div style={{width:56,height:56,borderRadius:16,background:`linear-gradient(135deg,${C.purple}33,${C.purple}11)`,border:`1px solid ${C.purple}44`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <Icon id="sparkles" size={26} color={C.purpleBright} strokeWidth={1.5}/>
+          </div>
+          <div style={{color:C.cream,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',Georgia,serif",lineHeight:1.3,maxWidth:300}}>Your AI Coach is part of the full experience</div>
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,maxWidth:300,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>You're viewing sample data. Sign up or log in to chat with your coach about your real numbers.</div>
+          {onExitDemo&&<button onClick={onExitDemo} style={{marginTop:6,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:99,padding:"13px 24px",color:C.isDark?"#160B2E":"#FFFFFF",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Create free account →</button>}
+        </div>
+      ) : (<>
       {/* Tier 2.9: persistent AI disclosure (Apple 5.1.2(i)) — inline, non-dismissible */}
       <div style={{padding:"8px 20px",borderBottom:`1px solid ${C.border}`,background:C.cardAlt,flexShrink:0}}>
         <div style={{color:C.muted,fontSize:10,fontStyle:"italic",lineHeight:1.5,textAlign:"center"}}>
@@ -10087,6 +10101,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
           </svg>
         </button>
       </div>
+      </>)}
     </div>
   );
 }
@@ -13294,7 +13309,7 @@ export default function FlourishApp(){
       // Phase D7: gate via library (handles trial unlimited + post-trial daily caps + tiers)
       const freeCoachAllowed = canUseCoach();
       const showCoach = isPremium || freeCoachAllowed;
-      if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium || isTrialActive()} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen} setAppData={setAppData}/>;
+      if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium || isTrialActive()} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen} setAppData={setAppData} onExitDemo={exitDemo}/>;
       // Phase D10: removed stale 5-message gate (D7 dropped FREE_TIER_LIMITS.coachMessagesPerDay to 1; line below handles all gated cases).
       return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;
     }
