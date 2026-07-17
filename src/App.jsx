@@ -9363,6 +9363,17 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
 function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent}){
   // notifToggles state removed with the Notifications preference section (no notification system yet — see audit).
   const [activeSection,setActiveSection]=useState(null);
+  // Apple 5.1.2(i): flipping the AI Coach toggle ON re-grants third-party sharing consent via
+  // onAcceptAIConsent. A control labelled "AI Coach enabled" is not informed consent to send data
+  // to Anthropic, so anyone without current consent (declined at the disclosure, or revoked here)
+  // must re-see the terms before the grant happens.
+  const [pendingAIConsent,setPendingAIConsent]=useState(false);
+  const hasAIConsent=()=>{ try { return localStorage.getItem("flourish_ai_third_party_consent")==="1"; } catch { return false; } };
+  const applyAICoachEnabled=(v)=>{
+    try { localStorage.setItem("flourish_ai_coach_enabled", v ? "1" : "0"); } catch {}
+    setAiCoachEnabled(v);
+    if (v) onAcceptAIConsent?.(); // Sprint Z3 #2: turning AI on re-grants server consent (clears any prior revoke)
+  };
 
   // Phase D6: bank list driven by Supabase plaid_items via getUserItems
   const [bankItems, setBankItems] = useState(null);
@@ -9453,9 +9464,12 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
           <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>Chat, simulator explanations, weekly tips. Turning off keeps your data on-device.</div>
         </div>
         <Toggle label="AI Coach" on={aiCoachEnabled} onChange={(v)=>{
-          try { localStorage.setItem("flourish_ai_coach_enabled", v ? "1" : "0"); } catch {}
-          setAiCoachEnabled(v);
-          if (v) onAcceptAIConsent?.(); // Sprint Z3 #2: turning AI on re-grants server consent (clears any prior revoke)
+          // Turning ON without current consent would grant third-party sharing silently — re-disclose
+          // first and let the modal apply it. Users who already consented (and just switched AI off
+          // for quiet) keep their consent, so they are not re-prompted. Toggle is controlled, so
+          // returning early leaves it visually off.
+          if (v && !hasAIConsent()) { setPendingAIConsent(true); return; }
+          applyAICoachEnabled(v);
         }} />
       </div>
       {/* Sprint Z2 #8: revoke third-party AI consent (not just disable AI) */}
@@ -9464,6 +9478,9 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginBottom:10}}>You agreed to share your financial summary &amp; messages with Anthropic for AI features. Revoking turns AI off and withdraws that consent.</div>
         <button onClick={onRevokeAIConsent} style={{background:"none",border:`1px solid ${C.orange}66`,color:C.orange,borderRadius:99,padding:"9px 16px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700,cursor:"pointer"}}>Revoke AI consent</button>
       </div>
+      {pendingAIConsent&&<AIConsentModal
+        onEnable={()=>{ applyAICoachEnabled(true); setPendingAIConsent(false); }}
+        onCancel={()=>setPendingAIConsent(false)}/>}
     </div>
     <button onClick={handleShare} style={{background:"linear-gradient(135deg,#0D3320 0%,#0A2518 100%)",borderRadius:18,padding:"20px 22px",border:"1px solid rgba(0,204,133,0.25)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"inherit",width:"100%",marginBottom:10,boxShadow:"0 4px 24px rgba(0,204,133,0.12)"}}>
       <div style={{display:"flex",alignItems:"center",gap:14}}>
@@ -10646,6 +10663,30 @@ function BankConsentModal({ onContinue, onCancel }){
         </div>
         <button onClick={onContinue} style={{width:"100%",background:`linear-gradient(135deg,${C.teal},${C.tealBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"none",cursor:"pointer",marginBottom:10}}>Continue to Plaid</button>
         <button onClick={onCancel} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer"}}>Not now</button>
+      </div>
+    </div>
+  );
+}
+
+// Apple 5.1.2(i): re-disclosure for the Settings "AI Coach enabled" toggle. Turning it on grants
+// third-party sharing consent, so a user who declined at the first-run disclosure — or revoked it
+// here — sees the terms again before any grant. Cancel leaves the toggle off and consent ungranted.
+function AIConsentModal({ onEnable, onCancel }){
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}
+      onClick={e=>{ if(e.target===e.currentTarget) onCancel(); }}>
+      <div style={{maxWidth:420,width:"100%",background:C.bg,borderRadius:24,border:`1px solid ${C.border}`,padding:24}}>
+        <div style={{textAlign:"center",marginBottom:16}}>
+          <div style={{fontSize:40,marginBottom:8}}>🤖</div>
+          <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:22,color:C.cream}}>Enable AI Coach</div>
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"16px 18px",marginBottom:18}}>
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            This enables AI coaching powered by <strong style={{color:C.cream}}>Claude (Anthropic)</strong>. Your conversations may be processed by Anthropic to generate responses. <strong style={{color:C.cream}}>This is not financial advice.</strong>
+          </div>
+        </div>
+        <button onClick={onEnable} style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"none",cursor:"pointer",marginBottom:10}}>Enable AI Coach</button>
+        <button onClick={onCancel} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.mutedHi,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer"}}>Cancel</button>
       </div>
     </div>
   );
