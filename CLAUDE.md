@@ -90,7 +90,9 @@ Native-only behaviour is gated by `isCapacitorIOS()`: the app boots into login/s
 - STRIPE_INTEGRATION_POINT comments mark seams for server-side enforcement later
 
 ### Auth
-- Supabase auth only (no `supabase.from(` calls in App.jsx)
+- Supabase is auth **and** database. Client-side `supabase.from(` reads are allowed in App.jsx but are **UI-only and never authoritative** — RLS plus the `profiles_guard_privileged()` trigger block client writes to `plan`, `founder_flag`, `trial_started_at` and the AI-consent columns. Anything authoritative (entitlements, consent) is written by a service-role Netlify function.
+- AI consent is server-authoritative: `profiles.ai_third_party_consent_at` / `ai_third_party_consent_revoked_at` (migration `0005`), written only via `postCoachConsent()` → `netlify/functions/coach.js`. There is no `ai_disclosure_accepted_at` column — `ai_third_party_consent_at` *is* that timestamp.
+- Migrations in `supabase/migrations/` are applied BY HAND in the Supabase SQL editor (no CLI, no db push). The dir is a partial record — `user_data`, `plaid_items`, `coach_usage` have no create-table migration.
 - Signup gated by BETA_CODES list (line ~11042 in AuthScreen)
 - Login is not gated
 

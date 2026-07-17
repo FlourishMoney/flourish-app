@@ -10568,7 +10568,7 @@ function FirstVisitScreen({data, onDismiss}) {
 }
 
 // Phase D3: AI disclosure screen (Apple 5.1.2(i) compliance — first-time gate before AI features)
-function AIDisclosureScreen({onAccept, onDecline}){
+function AIDisclosureScreen({onAccept, onDecline, onViewLegal}){
   return (
     <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"max(24px, env(safe-area-inset-top)) 24px 24px"}}>
       <div style={{maxWidth:480,width:"100%"}}>
@@ -10600,11 +10600,15 @@ function AIDisclosureScreen({onAccept, onDecline}){
 
         <div style={{background:C.card,borderRadius:18,padding:"18px 20px",border:`1px solid ${C.border}`,marginBottom:20}}>
           <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>Your control</div>
-          <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Anthropic does not train AI models on your data. You can disable AI features anytime in <strong style={{color:C.cream}}>Settings → Privacy & AI</strong>. Read the <a href="/privacy" style={{color:C.greenBright,textDecoration:"underline"}}>full Privacy Policy</a> for details.</div>
+          <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Anthropic does not train AI models on your data. You can disable AI features anytime in <strong style={{color:C.cream}}>Settings → Privacy & AI</strong>. Read the <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,font:"inherit",color:C.greenBright,textDecoration:"underline",cursor:"pointer"}}>full Privacy Policy</button> for details.</div>
         </div>
 
-        <button onClick={onAccept} style={{width:"100%",background:`linear-gradient(135deg,${C.green} 0%,${C.greenBright} 100%)`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",marginBottom:10}}>I agree to share my financial summary and messages with Anthropic for AI features</button>
-        <button onClick={onDecline} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer"}}>Don't use AI</button>
+        <button onClick={onAccept} style={{width:"100%",background:`linear-gradient(135deg,${C.green} 0%,${C.greenBright} 100%)`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",marginBottom:10}}>I Understand &amp; Accept</button>
+        <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"12px",color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:10}}>Learn More</button>
+        {/* Apple 5.1.2(i) opt-out. AI is not core functionality (all math runs in JS on-device — AI
+            only writes the prose), so consent to third-party sharing must not be a condition of
+            using the app. Keep this path. */}
+        <button onClick={onDecline} style={{width:"100%",background:"none",border:"none",borderRadius:99,padding:"11px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer"}}>Don't use AI</button>
       </div>
     </div>
   );
@@ -12415,6 +12419,10 @@ export default function FlourishApp(){
     } catch {}
     setAiCoachEnabled(false);
     setAiDisclosureSeen(true);
+    // Tell the server too, so a decline is durable and enforceable rather than a localStorage-only
+    // fact. Without this the server sees both consent columns NULL — indistinguishable from "never
+    // saw the screen" — so a decliner who clears localStorage would not be gated by /api/coach.
+    postCoachConsent("revoke_consent"); // fire-and-forget — demo has no JWT → no-op
   };
   // Sprint Z2 #8 / Z3 #2: revoke third-party AI consent from Settings — withdraws consent AND turns AI
   // off. The SERVER revoke goes FIRST (so /api/coach blocks even if localStorage is bypassed); the
@@ -13016,19 +13024,26 @@ export default function FlourishApp(){
   },[appData?.bankConnected, isPremium]);
 
   // ── Legal screens — always accessible, even before auth/onboarding ──
-  if(screen==="privacy")return <PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>;
-  if(screen==="terms")return <TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/>;
+  // These render ABOVE the app shell, so the shell's background wrapper never mounts. Both screens
+  // colour their text with C.cream/C.mutedHi, which on the UA's default white body is near-white on
+  // white — unreadable in dark theme. legalShell supplies the background the shell would have.
+  const legalShell={background:C.bg,minHeight:"100dvh",padding:"max(20px, env(safe-area-inset-top)) 16px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"};
+  if(screen==="privacy")return <div style={legalShell}><PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
+  if(screen==="terms")return <div style={legalShell}><TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="kids")return <KidsMiniSite/>;
 
   // ── Auth gate ───────────────────────────────────────────────────
   if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
   if(recoveryMode)return <ResetPasswordScreen onDone={()=>setRecoveryMode(false)} onCancel={()=>setRecoveryMode(false)}/>;
   // Sprint Z2 #2: demo bypasses the auth gate (user stays null — no fake user, no Supabase fetch).
-  // onTryDemo seeds demo state + flips the AI-disclosure & onboarding flags; exitDemo (demoBanner) clears it.
-  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={()=>{ acceptAIDisclosure(); const dd=buildDemoState(); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); }}/>;
+  // onTryDemo seeds demo state + skips onboarding; exitDemo (demoBanner) clears it.
+  // It must NOT pre-accept the AI disclosure: demo is the path App Review takes (the iOS-only
+  // "Try the demo" button), so auto-accepting hid the 5.1.2(i) screen from the exact audience it
+  // exists for. Demo users now fall through to the disclosure gate below like everyone else.
+  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={()=>{ const dd=buildDemoState(); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); }}/>;
 
   // ── AI disclosure gate (Apple 5.1.2(i)) — must precede onboarding + all AI features ──
-  if(!aiDisclosureSeen)return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={declineAIDisclosure}/>;
+  if(!aiDisclosureSeen)return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={declineAIDisclosure} onViewLegal={s=>setScreen(s)}/>;
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={()=>setShowPaywall(true)} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
@@ -13183,7 +13198,7 @@ export default function FlourishApp(){
     if(screen==="coach"){
       // Phase D3: AI gates — opt-out check first, then first-time disclosure
       if(!aiCoachEnabled) return <AIDisabledNotice onOpenSettings={()=>setShowSettings(true)} onClose={()=>setScreen("home")}/>;
-      if(!aiDisclosureSeen) return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={()=>{declineAIDisclosure();setScreen("home");}}/>;
+      if(!aiDisclosureSeen) return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={()=>{declineAIDisclosure();setScreen("home");}} onViewLegal={s=>setScreen(s)}/>;
       // Phase D7: gate via library (handles trial unlimited + post-trial daily caps + tiers)
       const freeCoachAllowed = canUseCoach();
       const showCoach = isPremium || freeCoachAllowed;
