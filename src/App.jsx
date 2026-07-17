@@ -9358,7 +9358,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
   return null;
 }
 
-function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent}){
+function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo}){
   // notifToggles state removed with the Notifications preference section (no notification system yet — see audit).
   const [activeSection,setActiveSection]=useState(null);
   // Apple 5.1.2(i): flipping the AI Coach toggle ON re-grants third-party sharing consent via
@@ -9430,6 +9430,20 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
       <button onClick={onClose} style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.05)",border:`1px solid ${C.border}`,color:C.mutedHi,borderRadius:12,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .2s",letterSpacing:0.2}}>← Back</button>
       <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Settings</div>
     </div>
+    {/* ── Exit demo ──────────────────────────────────────────────
+        Second, independent route out of demo. The demo banner's button is the other one; demo state
+        persists to flourish_v1 and signOut deliberately preserves that key, so if the banner is ever
+        missed or obscured there would otherwise be no way back to signup. */}
+    {data?.demo&&onExitDemo&&(
+      <button onClick={onExitDemo} style={{width:"100%",textAlign:"left",background:C.teal+"18",border:`1px solid ${C.teal}55`,borderRadius:18,padding:"14px 16px",marginBottom:12,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:12}}>
+        <span style={{fontSize:22,flexShrink:0}}>🧪</span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{color:C.cream,fontSize:14,fontWeight:700,marginBottom:2}}>Exit demo mode</div>
+          <div style={{color:C.mutedHi,fontSize:11,lineHeight:1.5}}>You're viewing sample data — tap to sign up or log in.</div>
+        </div>
+        <span style={{color:C.mutedHi,fontSize:16,flexShrink:0}}>→</span>
+      </button>
+    )}
     {/* ── Appearance ─────────────────────────────────────────── */}
     <div style={{background:C.card,borderRadius:20,border:`1px solid ${C.border}`,overflow:"hidden",marginBottom:10}}>
       <div style={{padding:"13px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:`1px solid ${C.border}`}}>
@@ -13258,7 +13272,7 @@ export default function FlourishApp(){
 
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer}/>{pendingPlaid&&<BankConsentModal
+    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo}/>{pendingPlaid&&<BankConsentModal
       onViewLegal={s=>{setShowSettings(false);setPendingPlaid(null);setScreen(s);}}
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;
