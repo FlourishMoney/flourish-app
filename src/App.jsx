@@ -30,12 +30,18 @@ const isCapacitorIOS = () => {
   catch { return false; }
 };
 
-// Sprint Z3 #1: base for API fetches. "" on web (relative → same origin, flourishmoney.app). In a
-// Capacitor iOS build the WebView serves from capacitor://localhost, so /api/* would 404 — point it at
-// the deployed origin. UNVERIFIED in the Capacitor target until the iOS wrap exists (structural fix).
-const API_BASE = (typeof window !== "undefined" &&
-  (window.Capacitor?.getPlatform?.() === "ios" || window.location.protocol === "capacitor:"))
-  ? "https://flourishmoney.app" : "";
+// Base for API fetches. "" on web → relative → same origin (flourishmoney.app AND Netlify deploy
+// previews). Any NON-web shell (Capacitor serves from capacitor://localhost; also file:/ionic:) must
+// hit the deployed origin, because a relative /api/* there resolves against capacitor://localhost and
+// fails. Keyed on the URL scheme, not just window.Capacitor — the native bridge may not be ready at
+// module-load, but window.location.protocol is set before any JS runs, so this can't miss the shell.
+const API_BASE = (() => {
+  if (typeof window === "undefined") return "";                       // SSR / build
+  const proto = window.location.protocol;
+  const isNativeShell = window.Capacitor?.getPlatform?.() === "ios"
+    || (proto !== "http:" && proto !== "https:");                     // capacitor:, file:, ionic:, …
+  return isNativeShell ? "https://flourishmoney.app" : "";
+})();
 
 // Sprint Z #5: beta/promo codes live server-side only (netlify/functions/beta.js, action "validate")
 // — they no longer ship in the client bundle. Submit a code to the endpoint for a yes/no verdict.
@@ -11271,8 +11277,13 @@ function AuthScreen({ onAuth, onTryDemo }) {
       setSuccess("Account created — you can log in now.");
       setMode("login");
       setLoading(false);
-    } catch {
-      setError("Couldn't reach the server — check your connection and try again.");
+    } catch (e) {
+      // Was a bare `catch {}` — the failure never reached Sentry and the real message was invisible,
+      // which is why an on-device signup failure could not be diagnosed. Capture it (with the resolved
+      // API_BASE, so we can tell an absolute-URL call from a relative one on the failing device) and
+      // surface the actual error, since the Capacitor WebView can't be attached to an inspector.
+      captureError(e, { area: "signup", extra: { apiBase: API_BASE || "(relative)", origin: (typeof window !== "undefined" && window.location.origin) || "" } });
+      setError(`Couldn't reach the server (${e?.message || "network error"}). Check your connection and try again.`);
       setLoading(false);
     }
   };
