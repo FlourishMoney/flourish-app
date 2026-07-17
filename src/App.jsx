@@ -11326,19 +11326,33 @@ function AuthScreen({ onAuth, onTryDemo }) {
 
   const handleLogin = async () => {
     setLoading(true); setError("");
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      // Unconfirmed account → route to the check-email screen with a resend option (not a raw error).
-      if (error.code === "email_not_confirmed" || error.message?.toLowerCase().includes("email not confirmed")) {
-        setError(""); setCheckEmailNote("Your email isn't confirmed yet — confirm it to log in, or resend below.");
-        setResendCooldown(0); setMode("check_email"); setLoading(false); return;
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        // Unconfirmed account → route to the check-email screen with a resend option (not a raw error).
+        if (error.code === "email_not_confirmed" || error.message?.toLowerCase().includes("email not confirmed")) {
+          setError(""); setCheckEmailNote("Your email isn't confirmed yet — confirm it to log in, or resend below.");
+          setResendCooldown(0); setMode("check_email"); setLoading(false); return;
+        }
+        // A network/CORS failure from the Supabase SDK arrives HERE as an AuthRetryableFetchError
+        // (status 0, sometimes an empty message), not as a thrown error — so setError(error.message)
+        // could render blank ("no details"). Capture it and always show something concrete.
+        captureError(error, { area: "login", extra: { code: error.code || "", status: error.status ?? "", supabaseUrl: import.meta.env.VITE_SUPABASE_URL || "(unset)" } });
+        setError(error.message || `Login failed${error.status ? ` (HTTP ${error.status})` : ""}. Check your email and password — or your connection.`);
+        setLoading(false); return;
       }
-      setError(error.message); setLoading(false); return;
+      // v1 has no 2FA (the AAL2 gate was rolled back; MfaGate is kept unreferenced for v1.1), so a
+      // successful password sign-in hands the session straight to the app.
+      onAuth(data.user);
+      setLoading(false);
+    } catch (e) {
+      // signInWithPassword usually returns errors rather than throwing, but a hard fetch failure in the
+      // Capacitor WebView can throw — and without this the login button just stuck on "…" with nothing
+      // shown. Surface the real message (no inspector on device) and capture the resolved Supabase URL.
+      captureError(e, { area: "login", extra: { threw: true, supabaseUrl: import.meta.env.VITE_SUPABASE_URL || "(unset)" } });
+      setError(`Couldn't reach the server (${e?.message || "network error"}). Check your connection and try again.`);
+      setLoading(false);
     }
-    // v1 has no 2FA (the AAL2 gate was rolled back; MfaGate is kept unreferenced for v1.1), so a
-    // successful password sign-in hands the session straight to the app.
-    onAuth(data.user);
-    setLoading(false);
   };
 
   const inpStyle = {
