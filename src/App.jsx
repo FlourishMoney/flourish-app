@@ -7440,7 +7440,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
             💼 My Current Balances & Contributions
           </div>
           {/* ── Balances row (2 col grid) */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+          {/* minmax(0,1fr), not 1fr: a bare 1fr track keeps min-width:auto, so the number input's
+              intrinsic ~180px width stops the column shrinking and the right cell bleeds past the card. */}
+          <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:10,marginBottom:14}}>
           {(isCA?[
             ["rrspBalance","RRSP Balance","Current RRSP value"],
             ["tfsaBalance","TFSA Balance","Current TFSA value"],
@@ -7448,13 +7450,13 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
             ["401kBalance","401(k) Balance","Current 401(k) value"],
             ["iraBalance","IRA / Roth IRA Balance","Current IRA value"],
           ]).map(([field,label,hint])=>(
-            <div key={field}>
+            <div key={field} style={{minWidth:0}}>
               <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>
               <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
                 <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
                 <input value={ret[field]||""} onChange={e=>updateRet(field,e.target.value)}
                   type="number" inputMode="decimal" placeholder="0" title={hint}
-                  style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:C.tealBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700}}/>
+                  style={{flex:1,minWidth:0,boxSizing:"border-box",background:"none",border:"none",padding:"10px 8px 10px 0",color:C.tealBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700}}/>
               </div>
               <div style={{color:C.muted,fontSize:9,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{hint}</div>
             </div>
@@ -7478,11 +7480,11 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               <div key={field}>
                 <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>
                 <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                  <div style={{flex:1,display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                  <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
                     <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
                     <input value={ret[field]||""} onChange={e=>updateRet(field,e.target.value)}
                       type="number" inputMode="decimal" placeholder="0"
-                      style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:C.tealBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700}}/>
+                      style={{flex:1,minWidth:0,boxSizing:"border-box",background:"none",border:"none",padding:"10px 8px 10px 0",color:C.tealBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700}}/>
                   </div>
                   <select value={freq} onChange={e=>updateRet(freqField,e.target.value)}
                     style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 8px",
