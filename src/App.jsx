@@ -739,38 +739,48 @@ function usePlaidLinkSDK(linkToken, onSuccess) {
   return { openPlaidLink, plaidReady: sdkReady && !!linkToken, plaidSdkError: sdkError };
 }
 
-const MOCK_TXN = [
-  {id:"t1", date:"2026-03-06",name:"Loblaws",         amount:67.43,  cat:"Groceries",      icon:"🛒",color:"#2E8B2E",dow:4},
-  {id:"t2", date:"2026-03-06",name:"Tim Hortons",      amount:4.85,   cat:"Coffee & Dining",icon:"☕",color:"#D97A3A",dow:4},
-  {id:"t3", date:"2026-03-06",name:"Tim Hortons",      amount:5.10,   cat:"Coffee & Dining",icon:"☕",color:"#D97A3A",dow:4},
-  {id:"t4", date:"2026-03-05",name:"Payroll Deposit",  amount:-DEMO.income,cat:"Income",         icon:"💰",color:"#6FE494",dow:3},
-  {id:"t5", date:"2026-03-05",name:"Shell Gas",        amount:62.10,  cat:"Gas & Transport",icon:"⛽",color:"#CFA03E",dow:3},
-  {id:"t6", date:"2026-03-04",name:"Starbucks",        amount:6.75,   cat:"Coffee & Dining",icon:"☕",color:"#D97A3A",dow:2},
-  {id:"t7", date:"2026-03-03",name:"Netflix",          amount:18.99,  cat:"Subscriptions",  icon:"🎬",color:"#8A5FC8",dow:1},
-  {id:"t8", date:"2026-03-03",name:"Amazon.ca",        amount:34.99,  cat:"Shopping",       icon:"📦",color:"#C45898",dow:1},
-  {id:"t9", date:"2026-03-02",name:"Uber Eats",        amount:28.40,  cat:"Coffee & Dining",icon:"🍕",color:"#D97A3A",dow:0},
-  {id:"t10",date:"2026-03-01",name:"LCBO",             amount:24.15,  cat:"Shopping",       icon:"🛍️",color:"#C45898",dow:6},
-  {id:"t11",date:"2026-02-28",name:"Walmart",          amount:89.22,  cat:"Groceries",      icon:"🛒",color:"#2E8B2E",dow:5},
-  {id:"t12",date:"2026-02-27",name:"Hydro One",        amount:124.00, cat:"Utilities",      icon:"⚡",color:"#CFA03E",dow:4},
-  {id:"t13",date:"2026-02-28",name:"Starbucks",        amount:6.50,   cat:"Coffee & Dining",icon:"☕",color:"#D97A3A",dow:4},
-  {id:"t14",date:"2026-02-27",name:"Spotify",          amount:11.99,  cat:"Subscriptions",  icon:"🎵",color:"#8A5FC8",dow:3},
-  {id:"t15",date:"2026-02-27",name:"Rexall Pharmacy",  amount:18.40,  cat:"Health",         icon:"💊",color:"#4A8FCC",dow:3},
-  {id:"t16",date:"2026-02-26",name:"H&M",              amount:67.00,  cat:"Shopping",       icon:"👕",color:"#C45898",dow:2},
-  {id:"t17",date:"2026-02-25",name:"Harvey's",         amount:14.50,  cat:"Coffee & Dining",icon:"🍔",color:"#D97A3A",dow:1},
-  {id:"t18",date:"2026-02-25",name:"Tim Hortons",      amount:4.25,   cat:"Coffee & Dining",icon:"☕",color:"#D97A3A",dow:1},
-  {id:"t19",date:"2026-02-24",name:"Amazon.ca",        amount:29.99,  cat:"Shopping",       icon:"📦",color:"#C45898",dow:0},
-  {id:"t20",date:"2026-02-22",name:"Payroll Deposit",  amount:-DEMO.income,cat:"Income",         icon:"💰",color:"#6FE494",dow:6},
-  {id:"t21",date:"2026-02-21",name:"Loblaws",          amount:73.18,  cat:"Groceries",      icon:"🛒",color:"#2E8B2E",dow:5},
-  {id:"t22",date:"2026-02-21",name:"Uber Eats",        amount:31.20,  cat:"Coffee & Dining",icon:"🍕",color:"#D97A3A",dow:5},
-  {id:"t23",date:"2026-02-19",name:"Winners",          amount:45.00,  cat:"Shopping",       icon:"🛍️",color:"#C45898",dow:3},
-  {id:"t24",date:"2026-02-18",name:"Apple.com/bill",   amount:3.99,   cat:"Subscriptions",  icon:"☁️",color:"#8A5FC8",dow:2},
-  {id:"t25",date:"2026-02-17",name:"Starbucks",        amount:7.10,   cat:"Coffee & Dining",icon:"☕",color:"#D97A3A",dow:1},
-  {id:"t26",date:"2026-02-15",name:"Bell Canada",      amount:65.00,  cat:"Utilities",      icon:"📱",color:"#CFA03E",dow:6},
-  {id:"t27",date:"2026-02-14",name:"Kelsey's",         amount:54.20,  cat:"Coffee & Dining",icon:"🍷",color:"#D97A3A",dow:5},
-  {id:"t28",date:"2026-02-12",name:"Shopify/Etsy",     amount:38.00,  cat:"Shopping",       icon:"🎁",color:"#C45898",dow:3},
-  {id:"t29",date:"2026-02-10",name:"Costco Gas",       amount:55.80,  cat:"Gas & Transport",icon:"⛽",color:"#CFA03E",dow:1},
-  {id:"t30",date:"2026-02-08",name:"Payroll Deposit",  amount:-DEMO.income,cat:"Income",         icon:"💰",color:"#6FE494",dow:6},
-];
+// Demo transactions, dated RELATIVE to now (last ~30 days) so they always land inside the Activity
+// screen's default "This Month" period. They were pinned to Feb–Mar 2026, which fell outside every
+// period filter once real time moved past them (the Activity list showed nothing). Same realistic
+// Canadian merchants/amounts; only the dates are computed, freshly on each buildDemoState() call.
+// Each row: [id, daysAgo, name, amount, category, icon, color]. Payrolls sit ~bi-weekly (1/12/26).
+function buildDemoTxns() {
+  const now = new Date();
+  const at = (daysAgo) => { const d = new Date(now); d.setDate(d.getDate() - daysAgo); return { date: d.toISOString().slice(0,10), dow: d.getDay() }; };
+  const rows = [
+    ["t1",  0,  "Loblaws",         67.43,        "Groceries",       "🛒","#2E8B2E"],
+    ["t2",  0,  "Tim Hortons",     4.85,         "Coffee & Dining", "☕","#D97A3A"],
+    ["t3",  0,  "Tim Hortons",     5.10,         "Coffee & Dining", "☕","#D97A3A"],
+    ["t4",  1,  "Payroll Deposit", -DEMO.income, "Income",          "💰","#6FE494"],
+    ["t5",  1,  "Shell Gas",       62.10,        "Gas & Transport", "⛽","#CFA03E"],
+    ["t6",  2,  "Starbucks",       6.75,         "Coffee & Dining", "☕","#D97A3A"],
+    ["t7",  3,  "Netflix",         18.99,        "Subscriptions",   "🎬","#8A5FC8"],
+    ["t8",  3,  "Amazon.ca",       34.99,        "Shopping",        "📦","#C45898"],
+    ["t9",  4,  "Uber Eats",       28.40,        "Coffee & Dining", "🍕","#D97A3A"],
+    ["t10", 5,  "LCBO",            24.15,        "Shopping",        "🛍️","#C45898"],
+    ["t11", 6,  "Walmart",         89.22,        "Groceries",       "🛒","#2E8B2E"],
+    ["t12", 7,  "Hydro One",       124.00,       "Utilities",       "⚡","#CFA03E"],
+    ["t13", 6,  "Starbucks",       6.50,         "Coffee & Dining", "☕","#D97A3A"],
+    ["t14", 7,  "Spotify",         11.99,        "Subscriptions",   "🎵","#8A5FC8"],
+    ["t15", 7,  "Rexall Pharmacy", 18.40,        "Health",          "💊","#4A8FCC"],
+    ["t16", 8,  "H&M",             67.00,        "Shopping",        "👕","#C45898"],
+    ["t17", 9,  "Harvey's",        14.50,        "Coffee & Dining", "🍔","#D97A3A"],
+    ["t18", 9,  "Tim Hortons",     4.25,         "Coffee & Dining", "☕","#D97A3A"],
+    ["t19", 10, "Amazon.ca",       29.99,        "Shopping",        "📦","#C45898"],
+    ["t20", 12, "Payroll Deposit", -DEMO.income, "Income",          "💰","#6FE494"],
+    ["t21", 13, "Loblaws",         73.18,        "Groceries",       "🛒","#2E8B2E"],
+    ["t22", 13, "Uber Eats",       31.20,        "Coffee & Dining", "🍕","#D97A3A"],
+    ["t23", 15, "Winners",         45.00,        "Shopping",        "🛍️","#C45898"],
+    ["t24", 16, "Apple.com/bill",  3.99,         "Subscriptions",   "☁️","#8A5FC8"],
+    ["t25", 17, "Starbucks",       7.10,         "Coffee & Dining", "☕","#D97A3A"],
+    ["t26", 19, "Bell Canada",     65.00,        "Utilities",       "📱","#CFA03E"],
+    ["t27", 20, "Kelsey's",        54.20,        "Coffee & Dining", "🍷","#D97A3A"],
+    ["t28", 22, "Shopify/Etsy",    38.00,        "Shopping",        "🎁","#C45898"],
+    ["t29", 24, "Costco Gas",      55.80,        "Gas & Transport", "⛽","#CFA03E"],
+    ["t30", 26, "Payroll Deposit", -DEMO.income, "Income",          "💰","#6FE494"],
+  ];
+  return rows.map(([id, daysAgo, name, amount, cat, icon, color]) => ({ id, name, amount, cat, icon, color, ...at(daysAgo) }));
+}
 
 const MOCK_ACCOUNTS = [
   {id:"a1",name:"TD Chequing ••4521",type:"checking",balance:DEMO.balance,institution:"TD Bank"},
@@ -787,6 +797,11 @@ const MOCK_ACCOUNTS_US = [
   {id:"u5",name:"Fidelity 401(k) ••8812",type:"investment",balance:23400.00,institution:"Fidelity",ticker:"Target 2055",gain:3890,gainPct:19.9},
 ];
 
+// App Store screenshot / review account. On login this email loads a populated demo state directly
+// (see the hydrate effect) instead of reading the DB — so it always lands on a full dashboard,
+// bypassing the hydrate-vs-onboarding race that kept clobbering a DB-seeded account.
+const SCREENSHOT_EMAIL = "snap@flourish.app";
+
 // Sprint Z #15: the demo/sample state, shared by the onboarding "Try Demo" button and the
 // empty-dashboard "Try with demo data" CTA. demo:true → never synced to the DB and surfaces the
 // persistent demo banner. Lets an App Store reviewer exercise the full app with no real bank login.
@@ -797,7 +812,7 @@ function buildDemoState() {
     bills:[{name:"Rent",amount:"1650",date:"1"},{name:"Hydro",amount:"95",date:"11"},{name:"Phone",amount:"65",date:"15"},{name:"Netflix",amount:"18.99",date:"22"}],
     debts:[{name:"TD Visa",balance:"3420",rate:"19.99",min:"68"},{name:"Car Loan",balance:"8200",rate:"6.99",min:"280"}],
     accounts:MOCK_ACCOUNTS,
-    transactions:MOCK_TXN,
+    transactions:buildDemoTxns(),
     bankConnected:true,
     demo:true,
   };
@@ -4642,7 +4657,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             </div>}
 
             {/* ── Bottom row: actions + tap affordance ── */}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginTop:16,flexWrap:"wrap"}}>
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
                 {onWhatIf&&<button onClick={e=>{e.stopPropagation();onWhatIf();}} style={{background:"rgba(255,255,255,0.08)",border:`1px solid rgba(255,255,255,0.12)`,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:10,padding:"6px 12px",borderRadius:99,cursor:"pointer",minHeight:36}}>What if? →</button>}
               </div>
@@ -9705,6 +9720,92 @@ function DesktopSidebar({data,setScreen}){
 
 
 // ─── AI COACH ─────────────────────────────────────────────────────────────────
+// ─── Lightweight markdown for AI Coach replies (no dependency) ────────────────
+// The model organically emits GFM — tables, **bold**, `code`, lists, # headings — which showed as
+// raw syntax in the chat bubble. This renders them as React nodes (never dangerouslySetInnerHTML, so
+// model output stays auto-escaped). Unrecognised syntax falls back to plain text — i.e. prior behaviour.
+function mdInline(text, kb) {
+  const out = [];
+  let rest = String(text ?? "");
+  let k = 0;
+  const re = /\*\*([^*]+)\*\*|`([^`]+)`|\*([^*]+)\*|_([^_]+)_/;
+  let m;
+  while ((m = re.exec(rest))) {
+    if (m.index > 0) out.push(rest.slice(0, m.index));
+    if (m[1] != null) out.push(<strong key={kb+"b"+k}>{m[1]}</strong>);
+    else if (m[2] != null) out.push(<code key={kb+"c"+k} style={{fontFamily:"ui-monospace,Menlo,monospace",fontSize:"0.9em",background:C.cardAlt,padding:"1px 5px",borderRadius:5}}>{m[2]}</code>);
+    else if (m[3] != null) out.push(<em key={kb+"i"+k}>{m[3]}</em>);
+    else if (m[4] != null) out.push(<em key={kb+"u"+k}>{m[4]}</em>);
+    rest = rest.slice(m.index + m[0].length);
+    k++;
+  }
+  if (rest) out.push(rest);
+  return out;
+}
+function mdIsTableSep(line) {
+  return line.includes("-") && /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(line);
+}
+function mdSplitRow(line) {
+  let s = line.trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|")) s = s.slice(0, -1);
+  return s.split("|").map(c => c.trim());
+}
+function renderCoachMarkdown(src) {
+  const lines = String(src ?? "").split("\n");
+  const blocks = [];
+  let i = 0, b = 0;
+  const brd = C.border;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i++; continue; }
+    // GFM pipe table: header row immediately followed by a |---|---| separator
+    if (line.includes("|") && i + 1 < lines.length && mdIsTableSep(lines[i + 1])) {
+      const header = mdSplitRow(line);
+      const rows = [];
+      i += 2;
+      while (i < lines.length && lines[i].trim() && lines[i].includes("|")) { rows.push(mdSplitRow(lines[i])); i++; }
+      blocks.push(
+        <div key={"k"+b++} style={{overflowX:"auto",margin:"7px 0"}}>
+          <table style={{borderCollapse:"collapse",width:"100%",fontSize:12.5}}>
+            <thead><tr>{header.map((h,ci)=>(
+              <th key={ci} style={{textAlign:"left",padding:"6px 10px",borderBottom:`1.5px solid ${brd}`,color:C.cream,fontWeight:800}}>{mdInline(h,"th"+i+ci)}</th>
+            ))}</tr></thead>
+            <tbody>{rows.map((r,ri)=>(
+              <tr key={ri}>{header.map((_,ci)=>(
+                <td key={ci} style={{padding:"6px 10px",borderBottom:`1px solid ${brd}`,color:C.mutedHi,verticalAlign:"top"}}>{mdInline(r[ci]||"","td"+i+ri+ci)}</td>
+              ))}</tr>
+            ))}</tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
+    // headings # ## ###
+    const h = line.match(/^(#{1,3})\s+(.*)$/);
+    if (h) { blocks.push(<div key={"k"+b++} style={{fontWeight:800,color:C.cream,fontSize:h[1].length===1?16:h[1].length===2?15:14,margin:"9px 0 3px"}}>{mdInline(h[2],"h"+i)}</div>); i++; continue; }
+    // unordered list
+    if (/^\s*[-*]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) { items.push(lines[i].replace(/^\s*[-*]\s+/, "")); i++; }
+      blocks.push(<ul key={"k"+b++} style={{margin:"4px 0",paddingLeft:20}}>{items.map((it,ii)=><li key={ii} style={{marginBottom:3}}>{mdInline(it,"li"+i+ii)}</li>)}</ul>);
+      continue;
+    }
+    // ordered list
+    if (/^\s*\d+\.\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) { items.push(lines[i].replace(/^\s*\d+\.\s+/, "")); i++; }
+      blocks.push(<ol key={"k"+b++} style={{margin:"4px 0",paddingLeft:22}}>{items.map((it,ii)=><li key={ii} style={{marginBottom:3}}>{mdInline(it,"oli"+i+ii)}</li>)}</ol>);
+      continue;
+    }
+    // paragraph — consecutive plain lines (intra-paragraph newlines preserved via pre-wrap)
+    const para = [];
+    while (i < lines.length && lines[i].trim() && !/^\s*[-*]\s+/.test(lines[i]) && !/^\s*\d+\.\s+/.test(lines[i]) && !/^#{1,3}\s+/.test(lines[i]) && !(lines[i].includes("|") && i + 1 < lines.length && mdIsTableSep(lines[i + 1]))) { para.push(lines[i]); i++; }
+    blocks.push(<div key={"k"+b++} style={{whiteSpace:"pre-wrap",margin:"3px 0"}}>{mdInline(para.join("\n"),"p"+i)}</div>);
+  }
+  return blocks.length ? blocks : String(src ?? "");
+}
+
 function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}, setScreen, setAppData, onExitDemo}){
   // ── ALL HOOKS FIRST — constants moved below to prevent TDZ ───────────────
   const [messages, setMessages] = useState(()=>{
@@ -10037,8 +10138,8 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
                   fontSize:13,
                   lineHeight:1.65,
                   fontFamily:"inherit",
-                  whiteSpace:"pre-wrap",
-                }}>{m.content}</div>
+                  whiteSpace:m.role==="user"?"pre-wrap":"normal",
+                }}>{m.role==="user"?m.content:renderCoachMarkdown(m.content)}</div>
             }
           </div>
         ))}
@@ -12752,6 +12853,26 @@ export default function FlourishApp(){
     console.log("[persist] hydrate effect fired", { userId: user?.id || null, hydratedUid: hydratedUidRef.current });
     setHydrated(false);  // (re)hydrating → hold the onboarding/disclosure gates until this resolves
     if (!user) return;   // anonymous: no DB; the save gate is closed (hydratedUid !== a null user)
+    // Screenshot / App-Review account: synthesize a populated dashboard client-side and bypass the DB
+    // entirely — no fetchUserData, no persistence, and every entry gate (loader / AI disclosure /
+    // onboarding / first-visit) pre-cleared. Regenerated fresh on every login, so it can't be
+    // clobbered by the hydrate-vs-onboarding race. demo:false so it isn't bannered/gated as sample
+    // data; we deliberately never set hydratedUidRef, so the save gate stays closed and this state
+    // is never written to the DB.
+    if ((user.email || "").toLowerCase() === SCREENSHOT_EMAIL) {
+      const dd = buildDemoState();
+      // Auto-build a budget so the Budget screen shows a populated plan, not the empty "Build Your
+      // Budget Plan" state. generateBudgetSuggestions returns the exact data.budgets shape
+      // (category→amount); per-category spend then tracks live off the demo transactions.
+      const { suggestions: demoBudgets } = generateBudgetSuggestions(dd);
+      setAppData({ ...dd, bankConnected: true, demo: false, budgets: demoBudgets,
+        transactions: markTransfers(dd.transactions || [], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance) });
+      setOnboarded(true);
+      setAiDisclosureSeen(true);
+      setFirstVisitDone(true);
+      setHydrated(true);
+      return;
+    }
     let cancelled = false;
     // (4) Shared-device safety: if local data belongs to a DIFFERENT user, wipe it BEFORE
     // hydrating so user B never sees user A's finances. Anonymous local data (userId null) is
