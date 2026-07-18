@@ -1034,18 +1034,15 @@ function AutopilotCard({data, setScreen}) {
   return (
     <div style={{background:autoBg,borderRadius:26,overflow:"hidden",border:autoBorder,boxShadow:autoShadow,backdropFilter:"blur(12px)"}}>
       {/* Header */}
-      <div style={{padding:"18px 20px 0",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div>
-          <div style={{color:autoMuted,fontSize:9,textTransform:"uppercase",letterSpacing:3,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:5}}>Autopilot · {today}</div>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.cream,lineHeight:1.2}}>Today's Money Plan</div>
-            <span style={{background:C.teal+"33",color:C.tealBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,letterSpacing:1,textTransform:"uppercase",padding:"3px 7px",borderRadius:99,border:`1px solid ${C.teal}44`}}>Adaptive</span>
+      <div style={{padding:"18px 20px 0"}}>
+        <div style={{color:autoMuted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:5,whiteSpace:"nowrap"}}>Autopilot · {today}</div>
+        <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.cream,lineHeight:1.2,marginBottom:8}}>Today's Money Plan</div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <div style={{background:plan.mode==="low"?"rgba(110,240,160,0.15)":plan.mode==="medium"?"rgba(255,193,69,0.15)":"rgba(255,100,100,0.15)",border:`1px solid ${plan.mode==="low"?C.green+"55":plan.mode==="medium"?C.gold+"55":C.red+"55"}`,borderRadius:99,padding:"4px 10px",flexShrink:0,whiteSpace:"nowrap"}}>
+            <span style={{color:plan.mode==="low"?C.greenBright:plan.mode==="medium"?C.goldBright:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>
+              {plan.modeLabel}
+            </span>
           </div>
-        </div>
-        <div style={{background:plan.mode==="low"?"rgba(110,240,160,0.15)":plan.mode==="medium"?"rgba(255,193,69,0.15)":"rgba(255,100,100,0.15)",border:`1px solid ${plan.mode==="low"?C.green+"55":plan.mode==="medium"?C.gold+"55":C.red+"55"}`,borderRadius:99,padding:"4px 10px"}}>
-          <span style={{color:plan.mode==="low"?C.greenBright:plan.mode==="medium"?C.goldBright:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>
-            {plan.modeLabel}
-          </span>
         </div>
       </div>
 
@@ -2522,7 +2519,10 @@ function Bar({v,max,color=C.green,h=7}){
   </div>;
 }
 function Chip({label,color,size=11,icon}){
-  return <span style={{background:color+"18",color,borderRadius:99,padding:"4px 11px",fontSize:size,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"inline-flex",alignItems:"center",gap:4,border:`1px solid ${color}30`,letterSpacing:0.1}}>{icon&&<span style={{fontSize:size}}>{icon}</span>}{label}</span>;
+  // Padding scales with size so a Chip aligns to hand-rolled pills at the same fontSize (was a fixed
+  // "4px 11px", which made <Chip size={9}> taller than its neighbours and broke the shared baseline).
+  const chipPad = size <= 9 ? "1px 7px" : size === 10 ? "2px 8px" : "4px 11px";
+  return <span style={{background:color+"18",color,borderRadius:99,padding:chipPad,fontSize:size,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"inline-flex",alignItems:"center",gap:4,border:`1px solid ${color}30`,letterSpacing:0.1}}>{icon&&<span style={{fontSize:size}}>{icon}</span>}{label}</span>;
 }
 function Toggle({on,onChange,label}){
   // Sprint 6b: a real switch for assistive tech + keyboard — role/aria-checked announce state,
