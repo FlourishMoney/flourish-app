@@ -145,6 +145,7 @@ export function detectRecurringBills(txns, opts = {}) {
   const removedSet = new Set((overrides.removed || []).map(s => String(s).toLowerCase()));
   const typedMap = overrides.typed || {};
   const cadenceMap = overrides.cadence || {}; // Sprint Q item 2: user cadence corrections (keyed by name)
+  const amountsMap = overrides.amounts || {}; // user amount override for a detected bill (persists across resyncs; wins over the freshly-detected average)
 
   // Categories that indicate a bill (not groceries, dining, etc.). Named distinctly from
   // the module-level BILL_CATS (the budget-exclusion set) to end the prior shadowing.
@@ -275,12 +276,13 @@ export function detectRecurringBills(txns, opts = {}) {
 
     bills.push({
       name:    displayName,
-      amount:  (avg||0).toFixed(2),
+      amount:  (amountsMap[_dnl] != null ? Number(amountsMap[_dnl]) : (avg||0)).toFixed(2),
       date:    String(dayMode),
       type:    finalType,   // Tier 4: "fixed" | "variable"
       freq:    finalFreq, // Sprint 4 (item 8) + Sprint Q item 2: detected cadence, or user override
       nextDueDate: _nextDue, // Sprint Q item 1: cadence phase anchor
       auto:    true,   // flag so UI can show "detected" badge
+      origin:  "observed", // Plaid-observed (vs origin:"manual" for user-entered future bills)
       avgNote: txList.length >= 3 ? `avg of last ${Math.min(txList.length,3)}` : "estimated",
     });
   });

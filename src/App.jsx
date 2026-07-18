@@ -16,6 +16,7 @@ import { normaliseTxns, detectIncomeFromTxns, detectRecurringBills, markTransfer
 import { retainAccounts, retainLiabilities } from "./lib/multibank.js";
 import { SafeSpendEngine } from "./lib/safeSpendEngine.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
+import { reconcileBills } from "./lib/billReconcile.js";
 import { AutopilotEngine, calcHealthScore, computePaydayGap, computeDailySpendLimit, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
@@ -685,7 +686,7 @@ function removeBillWithOverride(setAppData, idx, name) {
     return {
       ...prev,
       bills: (prev.bills || []).filter((_, x) => x !== idx),
-      userBillOverrides: { removed: Array.from(new Set([...(ov.removed || []), norm])).filter(Boolean), typed: ov.typed || {}, cadence: ov.cadence || {} },
+      userBillOverrides: { removed: Array.from(new Set([...(ov.removed || []), norm])).filter(Boolean), typed: ov.typed || {}, cadence: ov.cadence || {}, amounts: ov.amounts || {} },
     };
   });
 }
@@ -5566,6 +5567,189 @@ function ScreenHeader({title, subtitle, onBack, cta, onCta, ctaColor}) {
   );
 }
 
+// ─── MANUAL BILL FORM — reusable add/edit/delete for user-entered FUTURE bills ────────────────────
+// Lets users enter bills before Plaid observes them, so the forecast isn't blind. Writes the manual
+// shape { id, name, amount, dayOfMonth, recurring, variable, origin:"manual", createdAt } PLUS the
+// forecast-compat fields (date/type/freq/isoDate) so ForecastEngine places it via billOccursOnDate.
+// Rendered as a modal in Plan Ahead (onClose provided) and inline in the Money Meeting (no onClose).
+function ManualBillForm({data, setAppData, onClose}){
+  const manualBills = (data.bills||[]).filter(b => b.origin==="manual");
+  const [editId, setEditId] = useState(null);   // null = idle, "new" = adding, else the bill id
+  const [name, setName]         = useState("");
+  const [amount, setAmount]     = useState("");
+  const [day, setDay]           = useState("1");
+  const [recurring, setRecurring] = useState(true);
+  const [variable, setVariable]   = useState(false);
+
+  const reset  = () => { setEditId(null); setName(""); setAmount(""); setDay("1"); setRecurring(true); setVariable(false); };
+  const openAdd  = () => { reset(); setEditId("new"); };
+  const openEdit = (b) => { setEditId(b.id); setName(b.name||""); setAmount(String(b.amount??"")); setDay(String(b.dayOfMonth||b.date||1)); setRecurring(b.recurring!==false); setVariable(!!b.variable); };
+
+  // ISO date of the next future occurrence of a day-of-month (clamped to month length) — for one-offs.
+  const nextOccurrenceISO = (dom) => {
+    const now = new Date();
+    const clampFor = (y,m) => Math.min(dom, new Date(y, m+1, 0).getDate());
+    let d = new Date(now.getFullYear(), now.getMonth(), clampFor(now.getFullYear(), now.getMonth()), 12);
+    if (d < now) d = new Date(now.getFullYear(), now.getMonth()+1, clampFor(now.getFullYear(), now.getMonth()+1), 12);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  };
+
+  const canSave = name.trim() && parseFloat(amount) > 0;
+  const save = () => {
+    const amt = parseFloat(amount);
+    const dom = Math.min(Math.max(1, parseInt(day)||1), 31);
+    if (!name.trim() || !(amt > 0) || !setAppData) return;
+    const shape = {
+      name: name.trim(), amount: amt, dayOfMonth: dom, recurring, variable,
+      origin: "manual",
+      date: String(dom),                                          // ForecastEngine day-of-month
+      type: variable ? "variable" : (recurring ? "fixed" : "one_off"),
+      ...(recurring ? { freq: "monthly" } : { isoDate: nextOccurrenceISO(dom) }),
+    };
+    setAppData(prev => {
+      const list = prev.bills || [];
+      if (editId && editId !== "new") return { ...prev, bills: list.map(b => b.id===editId ? { ...b, ...shape } : b) };
+      const id = "mb_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+      return { ...prev, bills: [...list, { id, createdAt: new Date().toISOString(), ...shape }] };
+    });
+    reset();
+  };
+  const del = (id) => setAppData && setAppData(prev => ({ ...prev, bills: (prev.bills||[]).filter(b => b.id!==id) }));
+
+  // Plaid-detected (origin:"observed") bills, with their index in data.bills for the shared remove path.
+  // "Observed" = anything NOT explicitly manual. Manual bills are always tagged origin:"manual" (with an
+  // id); everything else — Plaid-detected bills, demo/seed bills, and any bill created before the origin
+  // tag existed — has origin undefined and belongs here. (The old bug filtered on origin==="observed",
+  // so untagged legacy bills matched neither section and vanished from both.)
+  const observedBills = (data.bills||[]).map((b,i)=>({b,i})).filter(x => x.b.origin!=="manual");
+  // Correct a detected bill's amount. Written BOTH in-place (persists — the resync keeps prev.bills) AND
+  // into userBillOverrides.amounts (keyed by lowercased name, so it also wins if detection re-runs and
+  // rebuilds the bill — see detectRecurringBills). Name/day stay as detected (real transaction data).
+  const overrideObserved = (bill, raw) => {
+    const amt = parseFloat(raw);
+    const norm = String(bill.name||"").toLowerCase().trim();
+    if (!(amt > 0) || !setAppData || amt === parseFloat(bill.amount)) return;
+    setAppData(prev => {
+      const ov = prev.userBillOverrides || {};
+      return {
+        ...prev,
+        bills: (prev.bills||[]).map(b => (b.origin!=="manual" && String(b.name||"").toLowerCase().trim()===norm) ? { ...b, amount: amt, amountOverride: true } : b),
+        userBillOverrides: { removed: ov.removed||[], typed: ov.typed||{}, cadence: ov.cadence||{}, amounts: { ...(ov.amounts||{}), [norm]: amt } },
+      };
+    });
+  };
+
+  const fld = {width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"};
+  const lbl = {color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontWeight:700,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"};
+
+  const form = (
+    <div style={{background:C.card,border:`1px solid ${C.teal}44`,borderRadius:14,padding:"14px 16px",marginBottom:12}}>
+      <div style={{display:"flex",flexDirection:"column",gap:11}}>
+        <div><div style={lbl}>Name</div><input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Hydro" style={fld}/></div>
+        <div style={{display:"flex",gap:10}}>
+          <div style={{flex:1,minWidth:0}}><div style={lbl}>Amount</div>
+            <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+              <span style={{color:C.muted,fontSize:13,padding:"0 4px 0 10px"}}>$</span>
+              <input value={amount} onChange={e=>setAmount(e.target.value)} type="number" inputMode="decimal" placeholder="0" style={{...fld,border:"none",background:"none",padding:"10px 10px 10px 2px",minWidth:0}}/>
+            </div>
+          </div>
+          <div style={{flex:1,minWidth:0}}><div style={lbl}>Day of month</div>
+            <select value={day} onChange={e=>setDay(e.target.value)} style={{...fld,cursor:"pointer"}}>
+              {Array.from({length:31},(_,i)=>i+1).map(d=><option key={d} value={String(d)}>{d}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div style={{color:C.cream,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Recurring</div>
+          <Toggle label="Recurring" on={recurring} onChange={setRecurring}/>
+        </div>
+        <div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div style={{color:C.cream,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Variable amount</div>
+            <Toggle label="Variable amount" on={variable} onChange={setVariable}/>
+          </div>
+          <div style={{color:C.muted,fontSize:11,marginTop:4,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Amount changes month to month, like hydro. We'll refine it once your bank confirms the real amount.</div>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:2}}>
+          <button onClick={save} disabled={!canSave} style={{flex:1,background:canSave?`linear-gradient(135deg,${C.teal},${C.tealBright})`:"rgba(255,255,255,0.06)",border:"none",borderRadius:10,padding:"11px",color:canSave?(C.isDark?"#04141A":"#fff"):C.muted,fontSize:13,fontWeight:800,cursor:canSave?"pointer":"default",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{editId&&editId!=="new"?"Save changes":"Add bill"}</button>
+          <button onClick={reset} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 16px",color:C.mutedHi,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const content = (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div style={{color:C.cream,fontSize:16,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your bills</div>
+        {onClose&&<button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer",lineHeight:1,padding:0,fontFamily:"inherit"}}>×</button>}
+      </div>
+
+      {/* ── Detected from your bank (origin:"observed") — override amount / remove; name & day are read-only ── */}
+      {observedBills.length>0 && (
+        <div style={{marginBottom:18}}>
+          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:2}}>
+            <span style={{fontSize:13}}>🔗</span>
+            <div style={{color:C.blueBright,fontSize:12,fontWeight:800,textTransform:"uppercase",letterSpacing:0.8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Detected from your bank</div>
+          </div>
+          <div style={{color:C.muted,fontSize:11,marginBottom:9,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your bank told us these. Correct an amount if it's wrong, or remove one from the forecast.</div>
+          <div style={{display:"flex",flexDirection:"column",gap:7}}>
+            {observedBills.map(x=>(
+              <div key={"obs"+x.i} style={{display:"flex",alignItems:"center",gap:8,background:C.blueDim,border:`1px solid ${C.blue}33`,borderRadius:12,padding:"10px 12px"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.b.name}</div>
+                  <div style={{color:C.muted,fontSize:11,marginTop:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>day {x.b.date} · {x.b.freq||"monthly"}{x.b.amountOverride?<span style={{color:C.blueBright}}> · edited</span>:""}</div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:9,overflow:"hidden",width:96,flexShrink:0}}>
+                  <span style={{color:C.muted,fontSize:12,padding:"0 2px 0 8px"}}>$</span>
+                  <input key={x.b.name+"_"+x.b.amount} defaultValue={parseFloat(x.b.amount||0).toFixed(2)} type="number" inputMode="decimal" aria-label={`${x.b.name} amount`}
+                    onKeyDown={e=>{if(e.key==="Enter")e.currentTarget.blur();}} onBlur={e=>overrideObserved(x.b, e.currentTarget.value)}
+                    style={{width:"100%",minWidth:0,background:"none",border:"none",padding:"8px 6px 8px 2px",color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
+                </div>
+                <button aria-label="Remove" onClick={()=>removeBillWithOverride(setAppData, x.i, x.b.name)} style={{background:"none",border:`1px solid ${C.red}44`,borderRadius:8,padding:"6px 9px",color:C.red,fontSize:12,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>✕</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Added by you (origin:"manual") — full add / edit / delete ── */}
+      <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:2}}>
+        <span style={{fontSize:13}}>✍️</span>
+        <div style={{color:C.tealBright,fontSize:12,fontWeight:800,textTransform:"uppercase",letterSpacing:0.8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Added by you</div>
+      </div>
+      <div style={{color:C.muted,fontSize:11,marginBottom:9,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Bills you enter before they're due, so the forecast isn't blind to them.</div>
+      {editId ? form : (
+        <button onClick={openAdd} style={{width:"100%",background:C.teal+"18",border:`1px dashed ${C.teal}55`,borderRadius:12,padding:"11px",color:C.tealBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>+ Add a bill</button>
+      )}
+      {manualBills.length===0 && !editId && (
+        <div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>No manual bills yet. Add bills before they're due so your forecast sees them coming.</div>
+      )}
+      <div style={{display:"flex",flexDirection:"column",gap:7}}>
+        {manualBills.map(b=>(
+          <div key={b.id} style={{display:"flex",alignItems:"center",gap:10,background:C.card,border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 12px"}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.name}</div>
+              <div style={{color:C.muted,fontSize:11,marginTop:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                {b.variable&&<span style={{color:C.gold}}>~</span>}${parseFloat(b.amount||0).toFixed(0)} · day {b.dayOfMonth||b.date} · {b.recurring!==false?"monthly":"once"}{b.variable?" · variable":""}
+              </div>
+            </div>
+            <button onClick={()=>openEdit(b)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",color:C.mutedHi,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Edit</button>
+            <button aria-label="Delete" onClick={()=>del(b.id)} style={{background:"none",border:`1px solid ${C.red}44`,borderRadius:8,padding:"6px 9px",color:C.red,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  if(!onClose) return content; // inline (Money Meeting)
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"0 0 0"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{width:"100%",maxWidth:440,maxHeight:"88vh",overflowY:"auto",background:C.bg,borderRadius:"24px 24px 0 0",border:`1px solid ${C.border}`,padding:"20px 20px 28px"}}>{content}</div>
+    </div>
+  );
+}
+
 function PlanAhead({data, setAppData, setScreen}){
   const [range,setRange]=useState(14);
   const [showBillManager,setShowBillManager]=useState(false);
@@ -5586,7 +5770,7 @@ function PlanAhead({data, setAppData, setScreen}){
 
   const hasBills = (data.bills||[]).length > 0;
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    {showBillManager&&setAppData&&<BillManager data={data} setAppData={setAppData} onClose={()=>setShowBillManager(false)}/>}
+    {showBillManager&&setAppData&&<ManualBillForm data={data} setAppData={setAppData} onClose={()=>setShowBillManager(false)}/>}
     {!hasBills&&<EmptyState icon="📅" title="No bills tracked yet" body="Add your recurring bills to see a personalized cash-flow forecast." action="Add Bills →" onAction={()=>setShowBillManager(true)} color={C.teal}/>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <ScreenHeader title="Plan Ahead" subtitle="Your financial crystal ball" onBack={setScreen?()=>setScreen("home"):null}/>
@@ -5651,7 +5835,7 @@ function PlanAhead({data, setAppData, setScreen}){
                     <span style={{color:C.muted,fontSize:10}}>{isDrilled?"▲":"▼"}</span>
                   </div>
                   {day.income>0&&<div style={{color:C.green,fontWeight:700,fontSize:13,marginTop:3}}>💰 +${day.income.toLocaleString()} paycheck</div>}
-                  {day.bills.map((b,j)=><div key={j} style={{color:C.gold,fontSize:12,marginTop:2}}>📅 {b.name}: −${parseFloat(b.amount).toFixed(0)}</div>)}
+                  {day.bills.map((b,j)=><div key={j} style={{color:C.gold,fontSize:12,marginTop:2}}>📅 {b.name}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:4,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}: −{b.variable?"~":""}${parseFloat(b.amount).toFixed(0)}</div>)}
                   {isToday&&!day.income&&!day.bills.length&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>Tap to see balance breakdown</div>}
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}>
@@ -5668,7 +5852,7 @@ function PlanAhead({data, setAppData, setScreen}){
                 <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,marginBottom:10}}>Cash flow breakdown</div>
                 {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.muted,fontSize:11}}>Opening balance</span><span style={{color:C.muted,fontSize:11}}>${(prevBalance||0).toFixed(0)}</span></div>}
                 {day.income>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>💰 Paycheck</span><span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+${(day.income||0).toFixed(0)}</span></div>}
-                {day.bills.map((b,j)=><div key={j} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>📅 {b.name}</span><span style={{color:C.gold,fontWeight:700,fontSize:12}}>−${parseFloat(b.amount||0).toFixed(0)}</span></div>)}
+                {day.bills.map((b,j)=><div key={j} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>📅 {b.name}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:5,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}</span><span style={{color:C.gold,fontWeight:700,fontSize:12}}>−{b.variable?"~":""}${parseFloat(b.amount||0).toFixed(0)}</span></div>)}
                 {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>🛒 Est. daily spend <span style={{color:C.muted,fontSize:9}}>(30d avg)</span></span><span style={{color:C.muted,fontSize:12}}>−${(avgDailySpend).toFixed(0)}</span></div>}
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${C.border}`,paddingTop:8,marginTop:4}}>
                   <span style={{color:C.cream,fontWeight:700,fontSize:13}}>{isToday?"Current balance":"Projected balance (est.)"}</span>
@@ -7770,7 +7954,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
 // Household/partner sharing is hidden until a real multi-user backend exists (audit: it was mock — fake
 // "FLRSH1" code, any join "succeeds", overview showed only the local user). Code retained; flip to re-enable.
 const HOUSEHOLD_ENABLED = false;
-function Family({data,household,setHousehold,setScreen}){
+function Family({data,setAppData,household,setHousehold,setScreen}){
   const [tab,setTab]=useState("meeting");
   const [householdTab,setHouseholdTab]=useState("join");
   const [householdCode,setHouseholdCode]=useState("");
@@ -8064,22 +8248,26 @@ function Family({data,household,setHousehold,setScreen}){
                 const days=Math.round((due-today2)/(1000*60*60*24));
                 return{...b,days};
               }).sort((a,b)=>a.days-b.days);
-              return allBills.length===0?<div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0"}}>No bills tracked yet — add them in Settings</div>:
-              <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:8}}>
+              return <>
+                {allBills.length===0
+                  ? <div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0"}}>No bills tracked yet — add upcoming bills below.</div>
+                  : <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:8}}>
                 {allBills.slice(0,6).map((b,i)=>{
                   const urgency=b.days<=3?C.redBright:b.days<=7?C.goldBright:C.greenBright;
                   return<div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:C.bg,borderRadius:10,border:`1px solid ${urgency}22`}}>
                     <div style={{width:6,height:6,borderRadius:"50%",background:urgency,flexShrink:0}}/>
-                    <span style={{color:C.cream,fontSize:12,flex:1,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{b.name}</span>
+                    <span style={{color:C.cream,fontSize:12,flex:1,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{b.name}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:5,fontWeight:700}}>MANUAL</span>}</span>
                     <span style={{color:C.muted,fontSize:11}}>{b.days===0?"today":b.days===1?"tomorrow":`${b.days}d`}</span>
-                    <span style={{color:urgency,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${parseFloat(b.amount||0).toFixed(0)}</span>
+                    <span style={{color:urgency,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.variable?"~":""}${parseFloat(b.amount||0).toFixed(0)}</span>
                   </div>;
                 })}
                 <div style={{display:"flex",justifyContent:"space-between",padding:"6px 10px",marginTop:2}}>
                   <span style={{color:C.muted,fontSize:11}}>Total coming up</span>
                   <span style={{color:C.cream,fontSize:12,fontWeight:700}}>${allBills.reduce((a,b)=>a+parseFloat(b.amount||0),0).toFixed(0)}/mo</span>
                 </div>
-              </div>;
+              </div>}
+                {setAppData&&<div style={{marginTop:12,borderTop:`1px solid ${C.border}`,paddingTop:12}}><ManualBillForm data={data} setAppData={setAppData}/></div>}
+              </>;
             }
         if(item.id==="varbills"){
           const varBills=(data.bills||[]).filter(b=>b.type==="variable");
@@ -13150,9 +13338,19 @@ export default function FlourishApp(){
               if (!detectedIncome || hasRealIncome) return prev.incomes;
               return [{id:1,label:detectedIncome.label,amount:String(detectedIncome.typical),freq:"biweekly",type:"employment",isVariable:detectedIncome.isVariable,typicalAmount:String(detectedIncome.typical),lowAmount:String(detectedIncome.low),highAmount:String(detectedIncome.high),autoDetected:true}];
             })(),
-            bills: detectedBills?.length > 0 && (!prev.bills?.some(b=>b.name))
-              ? detectedBills.map(b=>({name:b.name,amount:b.amount,date:b.date,type:b.type||"fixed",freq:b.freq||"monthly",auto:true}))
-              : prev.bills,
+            bills: (() => {
+              const base = detectedBills?.length > 0 && (!prev.bills?.some(b=>b.name))
+                ? detectedBills.map(b=>({name:b.name,amount:b.amount,date:b.date,type:b.type||"fixed",freq:b.freq||"monthly",auto:true,origin:"observed"}))
+                : (prev.bills || []);
+              // Reconcile user-entered manual bills against this month's observed transactions so a
+              // variable bill (e.g. hydro) LEARNS its real amount once Plaid sees the payment — the
+              // forecast then uses the corrected figure. reconcileBills is the tested pure function.
+              const manual = base.filter(b => b.origin === "manual");
+              if (manual.length === 0) return base;
+              const { updatedManualBills } = reconcileBills(manual, markedTxns, new Date());
+              const byId = new Map(updatedManualBills.map(b => [b.id, b]));
+              return base.map(b => (b.origin === "manual" && byId.has(b.id)) ? { ...b, amount: byId.get(b.id).amount } : b);
+            })(),
           };
         });
         if (fullResync) stampFullSync(); // Sprint Z/B1: weekly self-heal done
@@ -13481,7 +13679,7 @@ export default function FlourishApp(){
       // Phase D10: removed stale 5-message gate (D7 dropped FREE_TIER_LIMITS.coachMessagesPerDay to 1; line below handles all gated cases).
       return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;
     }
-    if(screen==="family")return <Family data={dataWithHousehold} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
+    if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
     if(screen==="goals")return <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen}/>;
     if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
