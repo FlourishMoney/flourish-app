@@ -13187,8 +13187,10 @@ export default function FlourishApp(){
   // flags — and completing it overwrites their cloud data (this is what repeatedly clobbered the
   // seeded screenshot account). `hydrated` also flips true on a hydrate ERROR (see the effect's
   // finally), so a failed fetch falls through to these gates instead of hanging here. Demo has no
-  // `user`, so it is unaffected.
-  if(user && !hydrated)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
+  // `user`, so it is unaffected. Gated on !onboarded so a returning user with a warm cache
+  // (onboarded already true) renders immediately and hydrate refreshes their data in the background —
+  // only the ambiguous empty-cache case (where onboarded=false might just mean "not hydrated yet") waits.
+  if(user && !hydrated && !onboarded)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
 
   // ── AI disclosure gate (Apple 5.1.2(i)) — must precede onboarding + all AI features ──
   if(!aiDisclosureSeen)return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={declineAIDisclosure} onViewLegal={s=>setScreen(s)}/>;
