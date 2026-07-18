@@ -12497,6 +12497,10 @@ export default function FlourishApp(){
       .map(s => s === "employed" ? "t4" : s);
   }
   const [onboarded,setOnboarded]=useState(()=>saved?.onboarded||false);
+  // False until the DB hydrate resolves for the logged-in user. Gates the onboarding/AI-disclosure
+  // screens so they can't render from empty-localStorage defaults (fresh install / new device) before
+  // applyBlob loads the real flags — the race that let onboarding overwrite cloud data.
+  const [hydrated,setHydrated]=useState(false);
   const [firstVisitDone,setFirstVisitDone]=useState(()=>{
     try{return localStorage.getItem("flourish_first_visit_done")==="1";}catch{return false;}
   });
@@ -12746,6 +12750,7 @@ export default function FlourishApp(){
   // decision for the current user, so an empty pre-hydrate state can never race up to the DB.
   useEffect(()=>{
     console.log("[persist] hydrate effect fired", { userId: user?.id || null, hydratedUid: hydratedUidRef.current });
+    setHydrated(false);  // (re)hydrating → hold the onboarding/disclosure gates until this resolves
     if (!user) return;   // anonymous: no DB; the save gate is closed (hydratedUid !== a null user)
     let cancelled = false;
     // (4) Shared-device safety: if local data belongs to a DIFFERENT user, wipe it BEFORE
@@ -12802,6 +12807,10 @@ export default function FlourishApp(){
         console.error("[persist] hydrate read failed — save gate stays CLOSED, keeping local cache:", e?.message || e);
       } finally {
         try { localStorage.setItem(STAMP_KEY, user.id); } catch {} // stamp the device for this user
+        // Release the gate whether hydrate succeeded OR failed — a failed fetch must fall through to
+        // the normal gates (localStorage cache), never hang on the loader. !cancelled so a superseded
+        // run (user changed mid-flight) doesn't flip the flag for the newer one.
+        if (!cancelled) setHydrated(true);
       }
     })();
     return ()=>{ cancelled = true; };
@@ -13171,6 +13180,15 @@ export default function FlourishApp(){
   // "Try the demo" button), so auto-accepting hid the 5.1.2(i) screen from the exact audience it
   // exists for. Demo users now fall through to the disclosure gate below like everyone else.
   if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={()=>{ const dd=buildDemoState(); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); }}/>;
+
+  // Hold the onboarding + disclosure gates until the DB hydrate resolves. Both `onboarded` and
+  // `aiDisclosureSeen` initialise from localStorage, which is EMPTY on a fresh install / new device,
+  // so without this a returning user is dropped into onboarding before applyBlob loads their real
+  // flags — and completing it overwrites their cloud data (this is what repeatedly clobbered the
+  // seeded screenshot account). `hydrated` also flips true on a hydrate ERROR (see the effect's
+  // finally), so a failed fetch falls through to these gates instead of hanging here. Demo has no
+  // `user`, so it is unaffected.
+  if(user && !hydrated)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
 
   // ── AI disclosure gate (Apple 5.1.2(i)) — must precede onboarding + all AI features ──
   if(!aiDisclosureSeen)return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={declineAIDisclosure} onViewLegal={s=>setScreen(s)}/>;
