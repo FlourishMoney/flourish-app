@@ -17,6 +17,7 @@ import { retainAccounts, retainLiabilities } from "./lib/multibank.js";
 import { SafeSpendEngine } from "./lib/safeSpendEngine.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
+import { computeNextMeeting } from "./lib/meetingSchedule.js";
 import { AutopilotEngine, calcHealthScore, computePaydayGap, computeDailySpendLimit, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
@@ -7964,6 +7965,12 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
   const [mood,setMood]=useState(null);
   const [done2,setDone2]=useState(false);
   const [expandedItem,setExpandedItem]=useState(null);
+  const [editingSchedule,setEditingSchedule]=useState(false);
+  // Money Meeting schedule (profile.meetingSchedule, nested like profile.retirement). The next date is
+  // DERIVED every render — never stored — so it can't go stale when cadence changes or a meeting slips.
+  const meetingSchedule = data.profile?.meetingSchedule || { cadence:"biweekly", dayOfWeek:0, lastMeetingAt:null, enabled:false };
+  const nextMeeting = computeNextMeeting(meetingSchedule, new Date());
+  const setSchedule = (patch) => setAppData && setAppData(prev => ({ ...prev, profile: { ...(prev.profile||{}), meetingSchedule: { cadence:"biweekly", dayOfWeek:0, lastMeetingAt:null, enabled:false, ...(prev.profile?.meetingSchedule||{}), ...patch } } }));
   const [kids,setKids]=useState(()=>{
     try{
       const saved=safeLoadLS("flourish_kids", null)||[];
@@ -8212,9 +8219,47 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
           ))}
         </div>
         <Card style={{background:C.purpleDim,border:`1px solid ${C.purple}44`}}>
-          <div style={{color:C.purpleBright,fontWeight:800,fontSize:16,marginBottom:8}}>{isCouple?"💑 Weekly Money Meeting":"🧘 Weekly Check-In"}</div>
-          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65}}>{isCouple?`The #1 habit of couples who build wealth: a 15-minute weekly money talk. No fights, no blame — just a structured check-in.${data.profile.partnerName?` Ready to go with ${data.profile.partnerName}?`:""}`:
-            "10 minutes a week. Honest reflection on where your money went and where you're heading."}</div>
+          <div style={{color:C.purpleBright,fontWeight:800,fontSize:16,marginBottom:8}}>{isCouple?"💑 Money Meeting":"🧘 Check-In"}</div>
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65}}>{isCouple?`The #1 habit of couples who build wealth: a short, structured money talk. No fights, no blame.${data.profile.partnerName?` Ready to go with ${data.profile.partnerName}?`:""}`:
+            "A few honest minutes on where your money went and where you're heading."}</div>
+          {/* ── Schedule — profile.meetingSchedule; next date is derived (computeNextMeeting), never stored ── */}
+          {setAppData&&<div style={{marginTop:14,borderTop:`1px solid ${C.purple}33`,paddingTop:12}}>
+            {!meetingSchedule.enabled ? (
+              <button onClick={()=>{setSchedule({enabled:true});setEditingSchedule(true);}} style={{background:C.purple+"22",border:`1px solid ${C.purple}55`,borderRadius:99,padding:"8px 16px",color:C.purpleBright,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📅 Set a schedule</button>
+            ) : editingSchedule ? (
+              <div>
+                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontWeight:700,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How often</div>
+                <div style={{display:"flex",gap:6,marginBottom:12}}>
+                  {[["weekly","Weekly"],["biweekly","Biweekly"],["monthly","Monthly"]].map(([v,l])=>(
+                    <button key={v} onClick={()=>setSchedule({cadence:v})} style={{flex:1,background:meetingSchedule.cadence===v?C.purple+"33":C.cardAlt,border:`1px solid ${meetingSchedule.cadence===v?C.purple:C.border}`,borderRadius:10,padding:"8px 4px",color:meetingSchedule.cadence===v?C.purpleBright:C.muted,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{l}</button>
+                  ))}
+                </div>
+                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontWeight:700,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Which day</div>
+                <div style={{display:"flex",gap:5,marginBottom:12}}>
+                  {["Su","Mo","Tu","We","Th","Fr","Sa"].map((l,i)=>(
+                    <button key={i} onClick={()=>setSchedule({dayOfWeek:i})} style={{flex:1,background:(meetingSchedule.dayOfWeek||0)===i?C.purple+"33":C.cardAlt,border:`1px solid ${(meetingSchedule.dayOfWeek||0)===i?C.purple:C.border}`,borderRadius:9,padding:"8px 0",color:(meetingSchedule.dayOfWeek||0)===i?C.purpleBright:C.muted,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{l}</button>
+                  ))}
+                </div>
+                <div style={{color:C.mutedHi,fontSize:12,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Next: <strong style={{color:C.cream}}>{nextMeeting.nextDate.toLocaleDateString(undefined,{weekday:"long",month:"short",day:"numeric"})}</strong></div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>setEditingSchedule(false)} style={{flex:1,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:10,padding:"10px",color:C.isDark?"#0A0618":"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Done</button>
+                  <button onClick={()=>{setSchedule({enabled:false});setEditingSchedule(false);}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.mutedHi,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Turn off</button>
+                </div>
+              </div>
+            ) : (
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+                <div style={{minWidth:0}}>
+                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Next meeting</div>
+                  <div style={{color:C.cream,fontSize:14,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>{nextMeeting.nextDate.toLocaleDateString(undefined,{weekday:"long",month:"short",day:"numeric"})}{nextMeeting.daysUntil===0?" · today":nextMeeting.daysUntil===1?" · tomorrow":nextMeeting.daysUntil>0?` · in ${nextMeeting.daysUntil} days`:""}</div>
+                  <div style={{color:C.muted,fontSize:11,marginTop:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{meetingSchedule.cadence[0].toUpperCase()+meetingSchedule.cadence.slice(1)} · {["Sundays","Mondays","Tuesdays","Wednesdays","Thursdays","Fridays","Saturdays"][meetingSchedule.dayOfWeek||0]}</div>
+                </div>
+                <button onClick={()=>setEditingSchedule(true)} style={{background:"none",border:`1px solid ${C.purple}55`,borderRadius:8,padding:"6px 12px",color:C.purpleBright,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0}}>Change</button>
+              </div>
+            )}
+            {meetingSchedule.enabled && nextMeeting.overdue && !editingSchedule && (
+              <div style={{marginTop:10,background:C.goldDim,border:`1px solid ${C.gold}44`,borderRadius:12,padding:"10px 12px",color:C.goldBright,fontSize:12,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💜 It's been a while since your last money meeting — no pressure, whenever you're both ready.</div>
+            )}
+          </div>}
         </Card>
         <Card>
           <div style={{color:C.cream,fontWeight:700,marginBottom:10}}>Today's agenda</div>
@@ -8411,7 +8456,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
             {["😰","😟","😐","🙂","😊","🤩"].map(e=><button key={e} onClick={()=>setMood(e)} style={{fontSize:28,background:mood===e?C.purple+"33":"none",border:`2px solid ${mood===e?C.purple:"transparent"}`,borderRadius:12,padding:6,cursor:"pointer",transition:"all .2s"}}>{e}</button>)}
           </div>
         </Card>}
-        <Btn label={doneCount===meetingMetrics.length?"Complete ✓":`Finish (${doneCount}/${meetingMetrics.length} done)`} onClick={()=>setDone2(true)} color={doneCount===meetingMetrics.length?C.purple:C.muted}/>
+        <Btn label={doneCount===meetingMetrics.length?"Complete ✓":`Finish (${doneCount}/${meetingMetrics.length} done)`} onClick={()=>{setDone2(true);setSchedule({lastMeetingAt:new Date().toISOString()});}} color={doneCount===meetingMetrics.length?C.purple:C.muted}/>
       </>}
 
       {done2&&<div>
