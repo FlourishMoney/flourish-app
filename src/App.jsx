@@ -18,7 +18,8 @@ import { SafeSpendEngine } from "./lib/safeSpendEngine.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting } from "./lib/meetingSchedule.js";
-import { getNotificationPermission, requestNotificationPermission } from "./lib/notifications.js";
+import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType, listScheduled } from "./lib/notifications.js";
+import { planNotifications } from "./lib/notificationPlanner.js";
 import { AutopilotEngine, calcHealthScore, computePaydayGap, computeDailySpendLimit, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
@@ -808,6 +809,34 @@ const SCREENSHOT_EMAIL = "snap@flourish.app";
 // Defaults for profile.notifications (nested like profile.meetingSchedule). All types default on, but
 // nothing fires until permission is granted — these toggles govern WHAT gets scheduled once it is.
 const NOTIF_DEFAULTS = { permissionAsked:false, billDue:true, lowBalance:true, unusualAmount:true, meetingReminder:true };
+
+// Reconcile the OS-scheduled notifications to match current data + toggles + permission. Runs
+// (debounced) whenever notification-relevant data changes. Strategy: cancel-all-of-type, then
+// reschedule the desired set. Because planNotifications derives every fire time from stored data
+// (never from `now`) and ids are stable (notifId), this is idempotent — an edit overwrites, a removed
+// bill's reminder disappears, and re-running with unchanged data produces the identical schedule.
+async function reconcileNotifications(data) {
+  const TYPES = ["billDue", "lowBalance", "unusualAmount", "meetingReminder"];
+  const perm = await getNotificationPermission();
+  const toggles = { ...NOTIF_DEFAULTS, ...(data?.profile?.notifications || {}) };
+  // Never schedule without permission — and clear anything stale if permission was revoked.
+  if (!perm.granted) { for (const ty of TYPES) await cancelAllOfType(ty); return; }
+  const desired = planNotifications(data, new Date());
+  for (const ty of TYPES) {
+    await cancelAllOfType(ty);
+    if (!toggles[ty]) continue;                    // toggle off → leave the type cleared
+    for (const n of desired.filter(d => d.type === ty)) {
+      await scheduleNotification({ id: n.id, type: n.type, title: n.title, body: n.body, at: n.at });
+    }
+  }
+  // TEMP DEBUG — remove before App Store submission. Log the resulting queue so it can be read in
+  // Safari Web Inspector without waiting for a notification to fire.
+  try {
+    const pending = await listScheduled();
+    console.log(`[notif] ${pending.length} scheduled after reconcile`);
+    pending.forEach(n => console.log(`[notif]   #${n.id} [${n.extra?.type || "?"}] "${n.title}" — ${n.body} @ ${n.schedule?.at ? new Date(n.schedule.at).toLocaleString() : "?"}`));
+  } catch {}
+}
 
 // Sprint Z #15: the demo/sample state, shared by the onboarding "Try Demo" button and the
 // empty-dashboard "Try with demo data" CTA. demo:true → never synced to the DB and surfaces the
@@ -5586,6 +5615,7 @@ function ManualBillForm({data, setAppData, onClose}){
   const [day, setDay]           = useState("1");
   const [recurring, setRecurring] = useState(true);
   const [variable, setVariable]   = useState(false);
+  const [showNotifOffer, setShowNotifOffer] = useState(false); // contextual permission ask (first manual bill)
 
   const reset  = () => { setEditId(null); setName(""); setAmount(""); setDay("1"); setRecurring(true); setVariable(false); };
   const openAdd  = () => { reset(); setEditId("new"); };
@@ -5605,6 +5635,9 @@ function ManualBillForm({data, setAppData, onClose}){
     const amt = parseFloat(amount);
     const dom = Math.min(Math.max(1, parseInt(day)||1), 31);
     if (!name.trim() || !(amt > 0) || !setAppData) return;
+    // Capture BEFORE the write: the contextual notification ask fires only on the FIRST manual bill.
+    const firstManualBill = (!editId || editId === "new") && manualBills.length === 0
+      && isCapacitorIOS() && !(data.profile?.notifications?.permissionAsked);
     const shape = {
       name: name.trim(), amount: amt, dayOfMonth: dom, recurring, variable,
       origin: "manual",
@@ -5619,6 +5652,7 @@ function ManualBillForm({data, setAppData, onClose}){
       return { ...prev, bills: [...list, { id, createdAt: new Date().toISOString(), ...shape }] };
     });
     reset();
+    if (firstManualBill) setShowNotifOffer(true); // the ONE contextual moment to ask about reminders
   };
   const del = (id) => setAppData && setAppData(prev => ({ ...prev, bills: (prev.bills||[]).filter(b => b.id!==id) }));
 
@@ -5748,11 +5782,30 @@ function ManualBillForm({data, setAppData, onClose}){
     </div>
   );
 
-  if(!onClose) return content; // inline (Money Meeting)
-  return (
-    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"0 0 0"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
-      <div style={{width:"100%",maxWidth:440,maxHeight:"88vh",overflowY:"auto",background:C.bg,borderRadius:"24px 24px 0 0",border:`1px solid ${C.border}`,padding:"20px 20px 28px"}}>{content}</div>
+  // Contextual permission ask (fires only after the FIRST manual bill; see save()). Accepting is the
+  // moment we call requestNotificationPermission — the one proactive ask. Either choice marks
+  // permissionAsked so it never re-offers; the user can still enable later from Settings.
+  const markAsked = () => setAppData && setAppData(prev => ({ ...prev, profile: { ...(prev.profile||{}), notifications: { ...NOTIF_DEFAULTS, ...(prev.profile?.notifications||{}), permissionAsked: true } } }));
+  const offer = showNotifOffer ? (
+    <div style={{position:"fixed",inset:0,zIndex:10000,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:24}} onClick={e=>{if(e.target===e.currentTarget){setShowNotifOffer(false);markAsked();}}}>
+      <div style={{maxWidth:400,width:"100%",background:C.bg,borderRadius:22,border:`1px solid ${C.border}`,padding:24,textAlign:"center"}}>
+        <div style={{fontSize:40,marginBottom:8}}>🔔</div>
+        <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:20,color:C.cream,marginBottom:8}}>Want a heads-up before it's due?</div>
+        <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:18}}>Flourish can remind you the day before each bill is due, so a payment never slips. You choose which alerts to keep in Settings.</div>
+        <button onClick={async()=>{ setShowNotifOffer(false); markAsked(); await requestNotificationPermission(); }} style={{width:"100%",background:`linear-gradient(135deg,${C.teal},${C.tealBright})`,color:C.isDark?"#04141A":"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"13px",borderRadius:99,border:"none",cursor:"pointer",marginBottom:10}}>Turn on reminders</button>
+        <button onClick={()=>{ setShowNotifOffer(false); markAsked(); }} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.mutedHi,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer"}}>Not now</button>
+      </div>
     </div>
+  ) : null;
+
+  if(!onClose) return <>{content}{offer}</>; // inline (Money Meeting)
+  return (
+    <>
+      <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"0 0 0"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+        <div style={{width:"100%",maxWidth:440,maxHeight:"88vh",overflowY:"auto",background:C.bg,borderRadius:"24px 24px 0 0",border:`1px solid ${C.border}`,padding:"20px 20px 28px"}}>{content}</div>
+      </div>
+      {offer}
+    </>
   );
 }
 
@@ -9640,6 +9693,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
   // Notifications (Stage 1): read-only permission check on mount (NEVER prompts). The system prompt is
   // only fired by enableNotifications() → requestNotificationPermission(), i.e. an explicit button tap.
   const [notifPerm, setNotifPerm] = useState({ status: "unsupported", granted: false });
+  const [debugNotifs, setDebugNotifs] = useState(null); // TEMP DEBUG — remove before App Store submission
   useEffect(() => { let live = true; getNotificationPermission().then(p => { if (live) setNotifPerm(p); }); return () => { live = false; }; }, []);
   const notifs = { ...NOTIF_DEFAULTS, ...(data.profile?.notifications || {}) };
   const setNotif = (patch) => setAppData && setAppData(prev => ({ ...prev, profile: { ...(prev.profile || {}), notifications: { ...NOTIF_DEFAULTS, ...(prev.profile?.notifications || {}), ...patch } } }));
@@ -9804,6 +9858,24 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
       <div style={{color:C.muted,fontSize:11,marginTop:12,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontStyle:"italic"}}>
         {notifPerm.granted ? "Notifications are on — these control which alerts you receive." : "Pick the alerts you'd like — they start once notifications are enabled."}
       </div>
+      {/* TEMP DEBUG — remove before App Store submission. Inspect the actual scheduled queue on device. */}
+      {notifPerm.granted && (
+        <div style={{marginTop:14,borderTop:`1px dashed ${C.border}`,paddingTop:12}}>
+          <button onClick={async()=>{ const list = await listScheduled(); setDebugNotifs(list); }} style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 12px",color:C.mutedHi,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"ui-monospace,Menlo,monospace"}}>Show scheduled</button>
+          {debugNotifs!==null && (
+            <div style={{marginTop:10,fontFamily:"ui-monospace,Menlo,Consolas,monospace",fontSize:10,lineHeight:1.5,color:C.mutedHi,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
+              <div style={{color:C.cream,fontWeight:700,marginBottom:6}}>{debugNotifs.length} notification{debugNotifs.length===1?"":"s"} scheduled</div>
+              {debugNotifs.length===0
+                ? <div style={{color:C.muted}}>(none scheduled)</div>
+                : debugNotifs.map((n,i)=>(
+                    <div key={i} style={{padding:"6px 0",borderTop:i>0?`1px solid ${C.border}`:"none"}}>
+                      {`#${n.id} · ${n.extra?.type||"?"}\ntitle: ${n.title||""}\nbody:  ${n.body||""}\nfires: ${n.schedule?.at ? new Date(n.schedule.at).toLocaleString() : "?"}`}
+                    </div>
+                  ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
     <button onClick={handleShare} style={{background:"linear-gradient(135deg,#0D3320 0%,#0A2518 100%)",borderRadius:18,padding:"20px 22px",border:"1px solid rgba(0,204,133,0.25)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"inherit",width:"100%",marginBottom:10,boxShadow:"0 4px 24px rgba(0,204,133,0.12)"}}>
       <div style={{display:"flex",alignItems:"center",gap:14}}>
@@ -13240,6 +13312,26 @@ export default function FlourishApp(){
       getSaver().schedule({ userId:user.id, blob: buildDbBlob({onboarded,appData,household,isPremium,checkInBonus}, {userId:user.id, nowIso}) });
     }
   }, [onboarded,appData,household,isPremium,checkInBonus,user]);
+
+  // ── Notification sync (Stage 2) — ONE effect covers EVERY reschedule trigger ──
+  // A lightweight signature over the notification-relevant slices (bills, account balances, txns,
+  // meetingSchedule, notification toggles). It changes on bill add/edit/remove, on resync (txns/bills),
+  // on meeting completion / schedule change, and on toggle change — so this single debounced effect
+  // reschedules on all of them, and can't miss one the way scattered calls could. Debounced 1.5s so a
+  // burst of edits (typing an amount) reschedules once. reconcileNotifications self-gates on permission.
+  const notifSignature = useMemo(() => JSON.stringify({
+    b: (appData?.bills || []).map(x => [x.id || x.name, x.amount, x.date, x.origin, x.variable, x.freq, x.type]),
+    a: (appData?.accounts || []).map(x => [x.id, x.balance]),
+    t: (appData?.transactions || []).length,
+    t0: (appData?.transactions || [])[0]?.id || null,
+    m: appData?.profile?.meetingSchedule || null,
+    n: appData?.profile?.notifications || null,
+  }), [appData]);
+  useEffect(() => {
+    if (!appData) return;
+    const t = setTimeout(() => { reconcileNotifications(appData); }, 1500);
+    return () => clearTimeout(t);
+  }, [notifSignature]);
 
   // ── Sprint 2 + Z2 #12: persist the pending cloud save on tab hide/close ──
   // localStorage already holds the durable copy, so a missed flush only delays sync. The normal saver
