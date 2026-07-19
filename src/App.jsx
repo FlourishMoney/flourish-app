@@ -18,6 +18,7 @@ import { SafeSpendEngine } from "./lib/safeSpendEngine.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting } from "./lib/meetingSchedule.js";
+import { getNotificationPermission, requestNotificationPermission } from "./lib/notifications.js";
 import { AutopilotEngine, calcHealthScore, computePaydayGap, computeDailySpendLimit, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
@@ -803,6 +804,10 @@ const MOCK_ACCOUNTS_US = [
 // (see the hydrate effect) instead of reading the DB — so it always lands on a full dashboard,
 // bypassing the hydrate-vs-onboarding race that kept clobbering a DB-seeded account.
 const SCREENSHOT_EMAIL = "snap@flourish.app";
+
+// Defaults for profile.notifications (nested like profile.meetingSchedule). All types default on, but
+// nothing fires until permission is granted — these toggles govern WHAT gets scheduled once it is.
+const NOTIF_DEFAULTS = { permissionAsked:false, billDue:true, lowBalance:true, unusualAmount:true, meetingReminder:true };
 
 // Sprint Z #15: the demo/sample state, shared by the onboarding "Try Demo" button and the
 // empty-dashboard "Try with demo data" CTA. demo:true → never synced to the DB and surfaces the
@@ -9632,6 +9637,18 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     if (v) onAcceptAIConsent?.(); // Sprint Z3 #2: turning AI on re-grants server consent (clears any prior revoke)
   };
 
+  // Notifications (Stage 1): read-only permission check on mount (NEVER prompts). The system prompt is
+  // only fired by enableNotifications() → requestNotificationPermission(), i.e. an explicit button tap.
+  const [notifPerm, setNotifPerm] = useState({ status: "unsupported", granted: false });
+  useEffect(() => { let live = true; getNotificationPermission().then(p => { if (live) setNotifPerm(p); }); return () => { live = false; }; }, []);
+  const notifs = { ...NOTIF_DEFAULTS, ...(data.profile?.notifications || {}) };
+  const setNotif = (patch) => setAppData && setAppData(prev => ({ ...prev, profile: { ...(prev.profile || {}), notifications: { ...NOTIF_DEFAULTS, ...(prev.profile?.notifications || {}), ...patch } } }));
+  const enableNotifications = async () => {
+    const res = await requestNotificationPermission();
+    setNotifPerm({ status: res.status, granted: res.granted });
+    if (res.prompted) setNotif({ permissionAsked: true }); // remember we've used the one-time system ask
+  };
+
   // Phase D6: bank list driven by Supabase plaid_items via getUserItems
   const [bankItems, setBankItems] = useState(null);
   const [bankRefreshKey, setBankRefreshKey] = useState(0);
@@ -9752,6 +9769,41 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
       {pendingAIConsent&&<AIConsentModal
         onEnable={()=>{ applyAICoachEnabled(true); setPendingAIConsent(false); }}
         onCancel={()=>setPendingAIConsent(false)}/>}
+    </div>
+    {/* ── Notifications (Stage 1: permission + per-type toggles; NOTHING is scheduled yet) ── */}
+    <div style={{background:C.card,borderRadius:18,padding:"16px 18px",border:`1px solid ${C.border}`,marginBottom:14}}>
+      <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:10}}>Notifications</div>
+      {!notifPerm.granted && (
+        <div style={{background:notifPerm.status==="denied"?C.orange+"14":C.teal+"14",border:`1px solid ${(notifPerm.status==="denied"?C.orange:C.teal)}33`,borderRadius:12,padding:"12px 14px",marginBottom:14}}>
+          <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            {notifPerm.status==="denied"
+              ? <>Notifications are turned <strong style={{color:C.cream}}>off in iOS Settings</strong>. To get bill reminders and money alerts, enable them under <strong style={{color:C.cream}}>Settings → Flourish → Notifications</strong>.</>
+              : notifPerm.status==="unsupported"
+                ? <>Notifications work in the Flourish iOS app. Your choices below are saved and take effect there.</>
+                : <>Notifications are <strong style={{color:C.cream}}>off</strong>. Turn them on to get bill reminders and money alerts — you pick which ones below.</>}
+          </div>
+          {(notifPerm.status==="prompt"||notifPerm.status==="prompt-with-rationale") && (
+            <button onClick={enableNotifications} style={{marginTop:10,background:`linear-gradient(135deg,${C.teal},${C.tealBright})`,border:"none",borderRadius:99,padding:"9px 18px",color:C.isDark?"#04141A":"#fff",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Enable notifications</button>
+          )}
+        </div>
+      )}
+      {[
+        ["billDue","Bill reminders","Before a bill is due"],
+        ["lowBalance","Low balance alerts","When your balance runs low"],
+        ["unusualAmount","Unusual charge alerts","When a charge looks out of the ordinary"],
+        ["meetingReminder","Money meeting reminders","When your next meeting is coming up"],
+      ].map(([key,title,desc],i)=>(
+        <div key={key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",...(i>0?{borderTop:`1px solid ${C.border}`,marginTop:12,paddingTop:12}:{})}}>
+          <div style={{flex:1,minWidth:0,paddingRight:10}}>
+            <div style={{color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:2}}>{title}</div>
+            <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{desc}</div>
+          </div>
+          <Toggle label={title} on={notifs[key]} onChange={v=>setNotif({[key]:v})}/>
+        </div>
+      ))}
+      <div style={{color:C.muted,fontSize:11,marginTop:12,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontStyle:"italic"}}>
+        {notifPerm.granted ? "Notifications are on — these control which alerts you receive." : "Pick the alerts you'd like — they start once notifications are enabled."}
+      </div>
     </div>
     <button onClick={handleShare} style={{background:"linear-gradient(135deg,#0D3320 0%,#0A2518 100%)",borderRadius:18,padding:"20px 22px",border:"1px solid rgba(0,204,133,0.25)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"inherit",width:"100%",marginBottom:10,boxShadow:"0 4px 24px rgba(0,204,133,0.12)"}}>
       <div style={{display:"flex",alignItems:"center",gap:14}}>

@@ -4,6 +4,8 @@
 <dict>
     <key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>Flourish sends bill reminders and money alerts — an upcoming bill, a low balance, or an unusual charge — so nothing catches you off guard. You choose which alerts you receive in Settings.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
