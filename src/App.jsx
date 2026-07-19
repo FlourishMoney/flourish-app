@@ -18,7 +18,7 @@ import { SafeSpendEngine } from "./lib/safeSpendEngine.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting } from "./lib/meetingSchedule.js";
-import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType, listScheduled } from "./lib/notifications.js";
+import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType } from "./lib/notifications.js";
 import { planNotifications } from "./lib/notificationPlanner.js";
 import { AutopilotEngine, calcHealthScore, computePaydayGap, computeDailySpendLimit, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
 import { captureError } from "./lib/errorReporting.js";
@@ -829,13 +829,6 @@ async function reconcileNotifications(data) {
       await scheduleNotification({ id: n.id, type: n.type, title: n.title, body: n.body, at: n.at });
     }
   }
-  // TEMP DEBUG — remove before App Store submission. Log the resulting queue so it can be read in
-  // Safari Web Inspector without waiting for a notification to fire.
-  try {
-    const pending = await listScheduled();
-    console.log(`[notif] ${pending.length} scheduled after reconcile`);
-    pending.forEach(n => console.log(`[notif]   #${n.id} [${n.extra?.type || "?"}] "${n.title}" — ${n.body} @ ${n.schedule?.at ? new Date(n.schedule.at).toLocaleString() : "?"}`));
-  } catch {}
 }
 
 // Sprint Z #15: the demo/sample state, shared by the onboarding "Try Demo" button and the
@@ -9693,7 +9686,6 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
   // Notifications (Stage 1): read-only permission check on mount (NEVER prompts). The system prompt is
   // only fired by enableNotifications() → requestNotificationPermission(), i.e. an explicit button tap.
   const [notifPerm, setNotifPerm] = useState({ status: "unsupported", granted: false });
-  const [debugNotifs, setDebugNotifs] = useState(null); // TEMP DEBUG — remove before App Store submission
   useEffect(() => { let live = true; getNotificationPermission().then(p => { if (live) setNotifPerm(p); }); return () => { live = false; }; }, []);
   const notifs = { ...NOTIF_DEFAULTS, ...(data.profile?.notifications || {}) };
   const setNotif = (patch) => setAppData && setAppData(prev => ({ ...prev, profile: { ...(prev.profile || {}), notifications: { ...NOTIF_DEFAULTS, ...(prev.profile?.notifications || {}), ...patch } } }));
@@ -9858,24 +9850,6 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
       <div style={{color:C.muted,fontSize:11,marginTop:12,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontStyle:"italic"}}>
         {notifPerm.granted ? "Notifications are on — these control which alerts you receive." : "Pick the alerts you'd like — they start once notifications are enabled."}
       </div>
-      {/* TEMP DEBUG — remove before App Store submission. Inspect the actual scheduled queue on device. */}
-      {notifPerm.granted && (
-        <div style={{marginTop:14,borderTop:`1px dashed ${C.border}`,paddingTop:12}}>
-          <button onClick={async()=>{ const list = await listScheduled(); setDebugNotifs(list); }} style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 12px",color:C.mutedHi,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"ui-monospace,Menlo,monospace"}}>Show scheduled</button>
-          {debugNotifs!==null && (
-            <div style={{marginTop:10,fontFamily:"ui-monospace,Menlo,Consolas,monospace",fontSize:10,lineHeight:1.5,color:C.mutedHi,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
-              <div style={{color:C.cream,fontWeight:700,marginBottom:6}}>{debugNotifs.length} notification{debugNotifs.length===1?"":"s"} scheduled</div>
-              {debugNotifs.length===0
-                ? <div style={{color:C.muted}}>(none scheduled)</div>
-                : debugNotifs.map((n,i)=>(
-                    <div key={i} style={{padding:"6px 0",borderTop:i>0?`1px solid ${C.border}`:"none"}}>
-                      {`#${n.id} · ${n.extra?.type||"?"}\ntitle: ${n.title||""}\nbody:  ${n.body||""}\nfires: ${n.schedule?.at ? new Date(n.schedule.at).toLocaleString() : "?"}`}
-                    </div>
-                  ))}
-            </div>
-          )}
-        </div>
-      )}
     </div>
     <button onClick={handleShare} style={{background:"linear-gradient(135deg,#0D3320 0%,#0A2518 100%)",borderRadius:18,padding:"20px 22px",border:"1px solid rgba(0,204,133,0.25)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"inherit",width:"100%",marginBottom:10,boxShadow:"0 4px 24px rgba(0,204,133,0.12)"}}>
       <div style={{display:"flex",alignItems:"center",gap:14}}>
