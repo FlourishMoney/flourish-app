@@ -14,7 +14,7 @@ import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict,
   BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectRecurringBills, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
 import { retainAccounts, retainLiabilities } from "./lib/multibank.js";
-import { SafeSpendEngine } from "./lib/safeSpendEngine.js";
+import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting } from "./lib/meetingSchedule.js";
@@ -1163,7 +1163,9 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
   const { forecast } = ForecastEngine.generate(data, 30, activeScenario);
   // Baseline forecast (without scenario) for comparison overlay
   const { forecast: baselineForecast } = activeScenario ? ForecastEngine.generate(data, 30) : { forecast: null };
-  const safeFloor = SafeSpendEngine.calculate(data).balance * 0.12;
+  // Shared low-balance definition — proportional band with an absolute floor. Bare balance*0.12
+  // collapses to 0 for a user with no cash, hiding the warning from exactly the people who need it.
+  const safeFloor = lowBalanceThreshold(SafeSpendEngine.calculate(data));
 
   // Filter to meaningful events
   const events = forecast.filter(f => f.isPayday || f.bills.length > 0 || f.day === 0 || f.day === 30);
@@ -1321,7 +1323,9 @@ function FinancialTimeline({data}) {
   const [expandedDay, setExpandedDay] = useState(null);
   // ── Delegate to ForecastEngine — no duplicate forecasting logic ──
   const { forecast } = ForecastEngine.generate(data, 30);
-  const safeFloor = SafeSpendEngine.calculate(data).balance * 0.12;
+  // Shared low-balance definition — proportional band with an absolute floor. Bare balance*0.12
+  // collapses to 0 for a user with no cash, hiding the warning from exactly the people who need it.
+  const safeFloor = lowBalanceThreshold(SafeSpendEngine.calculate(data));
   const { monthlyIncome } = FinancialCalcEngine.cashFlow(data, getCatOv());
   const avgDaily = FinancialCalcEngine.avgDailySpend(data);
 
@@ -3513,6 +3517,22 @@ function Onboarding({onComplete,onViewLegal,userId}){
                   </div>
                 </div>
               </div>
+
+              {/* Pay day — only meaningful for monthly / twice-a-month cadences. Without this the
+                  forecast has no signal for WHEN monthly pay lands and every such income defaulted to
+                  the 1st, phasing the whole cash-flow projection wrong for anyone paid mid-month. */}
+              {(inc.freq==="monthly"||inc.freq==="semimonthly")&&(
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px"}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{color:C.mutedHi,fontSize:13,fontWeight:600}}>{inc.freq==="monthly"?"Day of the month you're paid":"First pay day of the month"}</div>
+                    <div style={{color:C.muted,fontSize:11,marginTop:1,lineHeight:1.4}}>{inc.freq==="semimonthly"?"We'll plan the second one about 15 days later.":"Pick 31 and short months use the last day."}</div>
+                  </div>
+                  <input value={inc.anchorDay??""}
+                    onChange={e=>{const raw=e.target.value.replace(/[^0-9]/g,"");const n=parseInt(raw,10);setIncomes(incomes.map(x=>x.id===inc.id?{...x,anchorDay:raw===""?undefined:Math.min(Math.max(Number.isFinite(n)?n:1,1),31)}:x));}}
+                    type="number" inputMode="numeric" min={1} max={31} placeholder="1" aria-label="Day of month paid"
+                    style={{width:66,flexShrink:0,background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 8px",color:C.cream,fontSize:15,fontFamily:"inherit",outline:"none",textAlign:"center"}}/>
+                </div>
+              )}
 
               {/* Step 4 — Variable toggle */}
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:inc.isVariable?C.purple+"11":C.cardAlt,border:`1px solid ${inc.isVariable?C.purple+"44":C.border}`,borderRadius:12,padding:"10px 14px",transition:"all .2s"}}>
@@ -5807,7 +5827,7 @@ function PlanAhead({data, setAppData, setScreen}){
   const [showBillManager,setShowBillManager]=useState(false);
   const [expandedPlanDay, setExpandedPlanDay] = useState(null);
   // ── ForecastEngine powers the plan ahead view
-  const { forecast: _forecast, willGoNegative: willGoNeg, overdraftRisk, lowBalanceWarnings } = ForecastEngine.generate(data, Math.max(range, 30));
+  const { forecast: _forecast, willGoNegative: willGoNeg, overdraftRisk, lowBalanceWarnings, canProject, dataIssues } = ForecastEngine.generate(data, Math.max(range, 30));
   const days = _forecast.slice(0, range).map(f => ({
     d: f.date, dayNum: f.date.getDate(),
     isPayday: f.isPayday, bills: f.bills,
@@ -5824,6 +5844,19 @@ function PlanAhead({data, setAppData, setScreen}){
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     {showBillManager&&setAppData&&<ManualBillForm data={data} setAppData={setAppData} onClose={()=>setShowBillManager(false)}/>}
     {!hasBills&&<EmptyState icon="📅" title="No bills tracked yet" body="Add your recurring bills to see a personalized cash-flow forecast." action="Add Bills →" onAction={()=>setShowBillManager(true)} color={C.teal}/>}
+    {/* Data-quality gate. A forecast built from unparseable amounts would render a confident number
+        that is simply wrong — worse than showing nothing, because it can imply safety. Say so plainly
+        and name the offending fields so the user can go fix them. */}
+    {!canProject&&<div style={{background:C.orange+"14",border:`1px solid ${C.orange}55`,borderRadius:14,padding:"13px 15px"}}>
+      <div style={{color:C.orangeBright,fontSize:13.5,fontWeight:700,marginBottom:4}}>We can't project this right now</div>
+      <div style={{color:C.mutedHi,fontSize:12.5,lineHeight:1.6}}>
+        Some of your amounts aren't readable as numbers, so any balance we showed you here would be guesswork. Fix {dataIssues.length===1?"this entry":"these entries"} and the forecast will come straight back:
+      </div>
+      <ul style={{margin:"7px 0 0",paddingLeft:18,color:C.mutedHi,fontSize:12.5,lineHeight:1.65}}>
+        {dataIssues.slice(0,5).map((it,ix)=><li key={ix}><span style={{color:C.cream}}>{it.field}</span>{it.value&&it.value!=="undefined"?` — "${it.value}"`:""}</li>)}
+      </ul>
+      {dataIssues.length>5&&<div style={{color:C.muted,fontSize:11.5,marginTop:5}}>…and {dataIssues.length-5} more.</div>}
+    </div>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <ScreenHeader title="Plan Ahead" subtitle="Your financial crystal ball" onBack={setScreen?()=>setScreen("home"):null}/>
       <div style={{display:"flex",gap:6,background:C.surface,borderRadius:12,padding:3,flexShrink:0,marginBottom:16}}>{[7,14].map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"6px 16px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .22s"}}>{r}d</button>)}</div>
@@ -13499,7 +13532,11 @@ export default function FlourishApp(){
               // Only auto-set income if user hasn't entered any real income yet
               const hasRealIncome = (prev.incomes||[]).some(i => parseFloat(i.amount||0) > 0);
               if (!detectedIncome || hasRealIncome) return prev.incomes;
-              return [{id:1,label:detectedIncome.label,amount:String(detectedIncome.typical),freq:"biweekly",type:"employment",isVariable:detectedIncome.isVariable,typicalAmount:String(detectedIncome.typical),lowAmount:String(detectedIncome.low),highAmount:String(detectedIncome.high),autoDetected:true}];
+              // amount/typicalAmount/low/high are all PER-DEPOSIT fields — use the perDeposit* outputs,
+              // never monthlyAvg (see the units contract on detectIncomeFromTxns).
+              // anchorDay is the modal observed deposit day — carried through so a monthly/semimonthly
+              // cadence projects on the real pay day instead of silently defaulting to the 1st.
+              return [{id:1,label:detectedIncome.label,amount:String(detectedIncome.perDeposit),freq:"biweekly",type:"employment",isVariable:detectedIncome.isVariable,typicalAmount:String(detectedIncome.perDeposit),lowAmount:String(detectedIncome.perDepositLow),highAmount:String(detectedIncome.perDepositHigh),...(detectedIncome.anchorDay?{anchorDay:detectedIncome.anchorDay}:{}),autoDetected:true}];
             })(),
             bills: (() => {
               const base = detectedBills?.length > 0 && (!prev.bills?.some(b=>b.name))

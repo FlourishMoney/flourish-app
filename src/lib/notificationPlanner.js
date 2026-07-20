@@ -67,8 +67,10 @@ export function planNotifications(data, now = new Date()) {
   try {
     const ss = SafeSpendEngine.calculate(data, now);
     const threshold = ss.safetyBuf > 0 ? ss.safetyBuf : 100;     // existing "spending buffer", else $100
-    const { forecast } = ForecastEngine.generate(data, 7, null, now);
-    const low = forecast.find(f => f.day >= 1 && f.day <= 7 && f.balance < threshold);
+    const { forecast, canProject } = ForecastEngine.generate(data, 7, null, now);
+    // Never push a balance warning derived from unparseable amounts — a notification is asserted with
+    // full confidence and cannot be qualified the way an on-screen banner can.
+    const low = canProject && forecast.find(f => f.day >= 1 && f.day <= 7 && f.balance < threshold);
     if (low) {
       const d = low.date;
       const at = at9am(d.getFullYear(), d.getMonth(), d.getDate() - 1);  // morning BEFORE the shortfall

@@ -204,7 +204,8 @@ const D = (iso) => new Date(iso + "T12:00:00");
   t.eq(pn.detectRecurringBills([]).length, 0, "detectRecurringBills empty → []");
   // detectIncomeFromTxns
   const inc = pn.detectIncomeFromTxns([{ name: "PAYROLL", amount: -2000, cat: "INCOME", date: "2026-05-15" }, { name: "PAYROLL", amount: -2000, cat: "INCOME", date: "2026-06-15" }]);
-  t.eq(inc.typical, 2000, "detectIncome typical");
+  t.eq(inc.perDeposit, 2000, "detectIncome perDeposit = one paycheque (median deposit), not the monthly total");
+  t.eq(inc.monthlyAvg, 2000, "detectIncome monthlyAvg = avg calendar-month total (one $2000 cheque in each of 2 months)");
   t.eq(pn.detectIncomeFromTxns([{ name: "CC PAYMENT", amount: -500, cat: "TRANSFER", date: "2026-06-01" }]), null, "detectIncome excludes transfers/CC payments");
   t.eq(pn._levenshtein("netflix", "netflix"), 0, "levenshtein identical → 0");
   t.ok(pn._levenshtein("bell", "bell insurance") > 3, "levenshtein distinguishes Bell vs Bell Insurance");

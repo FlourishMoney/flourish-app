@@ -452,15 +452,15 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
   // No Plaid liabilities → use manual debts unchanged (back-compat for users without bank-connected liabilities)
   if (!hasAnyPlaid) {
     return manual
-      .filter(d => parseFloat(d.balance || 0) > 0)
+      .filter(d => num(d.balance) > 0)
       .map(d => {
-        const real = parseFloat(d.rate || 0);
+        const real = num(d.rate);
         return {
           name: d.name || "Debt",
-          balance: parseFloat(d.balance || 0),
+          balance: num(d.balance),
           rate: real > 0 ? real : DEFAULT_APR_CREDIT,
           rateEstimated: !(real > 0), // Sprint 4b: flag fabricated APRs so the UI can label them
-          min: parseFloat(d.min || 0) || Math.max(25, parseFloat(d.balance || 0) * 0.02),
+          min: num(d.min) || Math.max(25, num(d.balance) * 0.02),
           source: "manual",
           debtType: "manual",
         };
@@ -471,7 +471,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
   const creditEntries = plaidCredit
     .filter(c => (c.balance || 0) > 0)
     .map(c => {
-      const real = parseFloat(c.apr || 0);
+      const real = num(c.apr);
       return {
         name: c.name || "Credit Card",
         balance: c.balance || 0,
@@ -487,7 +487,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
   const mortgageEntries = plaidMortgage
     .filter(m => (m.balance || 0) > 0)
     .map(m => {
-      const real = parseFloat(m.interestRate || 0);
+      const real = num(m.interestRate);
       return {
         name: m.name || "Mortgage",
         balance: m.balance || 0,
@@ -503,7 +503,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
   const studentEntries = plaidStudent
     .filter(s => (s.balance || 0) > 0)
     .map(s => {
-      const real = parseFloat(s.interestRate || 0);
+      const real = num(s.interestRate);
       return {
         name: s.name || "Student Loan",
         balance: s.balance || 0,
@@ -518,15 +518,15 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
 
   // Add manual debts that are NOT fromBank (user-entered standalones — IOUs, unconnected cards, etc.)
   const manualStandalones = manual
-    .filter(d => !d.fromBank && parseFloat(d.balance || 0) > 0)
+    .filter(d => !d.fromBank && num(d.balance) > 0)
     .map(d => {
-      const real = parseFloat(d.rate || 0);
+      const real = num(d.rate);
       return {
         name: d.name || "Debt",
-        balance: parseFloat(d.balance || 0),
+        balance: num(d.balance),
         rate: real > 0 ? real : DEFAULT_APR_CREDIT,
         rateEstimated: !(real > 0),
-        min: parseFloat(d.min || 0) || Math.max(25, parseFloat(d.balance || 0) * 0.02),
+        min: num(d.min) || Math.max(25, num(d.balance) * 0.02),
         source: "manual",
         debtType: "manual",
       };
@@ -566,7 +566,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
 // Canonical income frequency → monthly converter (Tier 4 bug 1). Single source of
 // truth; handles `annually` (a/12). Unknown freq is treated as monthly (a).
 export function toMonthly(amount, frequency) {
-  const a = parseFloat(amount || 0) || 0;
+  const a = num(amount) || 0;
   switch (frequency) {
     case "weekly":      return a * 4.333; // 52/12
     case "biweekly":    return a * 2.167; // 26/12
@@ -582,7 +582,7 @@ export function toMonthly(amount, frequency) {
 // impact lands in the forecast on their date + the SafeSpend upcoming-window instead).
 export function billMonthlyAmount(bill) {
   if (!bill) return 0;
-  const a = parseFloat(bill.amount || 0) || 0;
+  const a = num(bill.amount) || 0;
   if (a <= 0) return 0;
   if (bill.type === "one_off") return 0;
   switch (bill.freq) {
@@ -613,8 +613,42 @@ function _isoToDate(s) {
 export function dateToISO(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-function _daysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
-function _domDate(y, m, day) { return new Date(y, m, Math.min(day, _daysInMonth(y, m)), 12, 0, 0); }
+// ── Money parsing — the ONE place a user-supplied amount becomes a number ─────
+// The `parseFloat(x || 0)` idiom formerly used across this codebase is a FALSE safeguard: `x || 0` only catches
+// null / undefined / "", so a perfectly ordinary "$1,200" still yields NaN. NaN then propagates
+// silently through sums and — because every comparison against NaN is false — disables the very
+// guards meant to catch trouble (`running < 0` is false for NaN, so an overdraft check reports safe).
+//
+// parseMoney reports whether the value was genuinely numeric so callers can SIGNAL bad data instead of
+// quietly substituting a zero. num() is the terse form for places that only need a safe number.
+// Absent / empty is legitimately zero and is NOT an error; "abc" or "12abc" is an error, and "12abc"
+// deliberately does not truncate to 12 — silently keeping half a number is its own kind of lie.
+export function parseMoney(v) {
+  if (v == null || String(v).trim() === "") return { value: 0, ok: true };
+  if (typeof v === "number") return Number.isFinite(v) ? { value: v, ok: true } : { value: 0, ok: false };
+  const cleaned = String(v).replace(/[$,\s]/g, "").replace(/[−–—]/g, "-");
+  const n = parseFloat(cleaned);
+  return /^-?(\d+\.?\d*|\.\d+)$/.test(cleaned) && Number.isFinite(n)
+    ? { value: n, ok: true }
+    : { value: 0, ok: false };
+}
+export function num(v, fallback = 0) {
+  const r = parseMoney(v);
+  return r.ok ? r.value : fallback;
+}
+
+export function daysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
+
+// THE single source of truth for "a day-of-month that may not exist in this month".
+// 31 -> Feb 28 (or 29 in a leap year), Apr 30. Bills, income anchors, and any future recurrence rule
+// must all call this: two implementations of the same date rule is exactly how they drift apart, which
+// is what let bills clamp correctly while monthly income silently vanished in short months.
+export function clampDayToMonth(day, y, m) {
+  return Math.min(Math.max(1, day), daysInMonth(y, m));
+}
+
+const _daysInMonth = daysInMonth;
+function _domDate(y, m, day) { return new Date(y, m, clampDayToMonth(day, y, m), 12, 0, 0); }
 
 // Next occurrence Date on/after `today`. Returns null for non-datable bills.
 export function billNextDue(bill, today = new Date()) {
@@ -675,15 +709,15 @@ export function billOccursOnDate(bill, d, today = new Date()) {
     const d2 = ((d1 + 14) % 28) + 1;
     // clamp to month length (parity with billNextDue's _domDate) so a day 29–31 anchor still
     // matches in short months — otherwise the occurrence would be silently dropped.
-    const dim = _daysInMonth(target.getFullYear(), target.getMonth());
+    const ty = target.getFullYear(), tm = target.getMonth();
     const day = target.getDate();
-    return day === Math.min(d1, dim) || day === Math.min(d2, dim);
+    return day === clampDayToMonth(d1, ty, tm) || day === clampDayToMonth(d2, ty, tm);
   }
   // monthly / quarterly / annual — match day-of-month, and (quarterly/annual) the right month
   const aDay = _isoToDate(bill.nextDueDate);
   const dueDay = (aDay ? aDay.getDate() : 0) || parseInt(bill.date);
   if (!dueDay) return false;
-  if (target.getDate() !== Math.min(dueDay, _daysInMonth(target.getFullYear(), target.getMonth()))) return false;
+  if (target.getDate() !== clampDayToMonth(dueDay, target.getFullYear(), target.getMonth())) return false;
   if (freq === "monthly") return true;
   const stepM = freq === "quarterly" ? 3 : 12;
   const monthsApart = (target.getFullYear() - first.getFullYear()) * 12 + (target.getMonth() - first.getMonth());
@@ -851,8 +885,8 @@ export function isCCPayment(txn, debts=[]) {
   if(cat === "TRANSFER" || cat.includes("TRANSFER")) {
     if(debts.length > 0) {
       const matchesDet = debts.some(d => {
-        const min = parseFloat(d.min||0);
-        const bal = parseFloat(d.balance||0);
+        const min = num(d.min);
+        const bal = num(d.balance);
         return (min > 0 && Math.abs(txn.amount - min) < 5) ||
                (bal > 0 && Math.abs(txn.amount - bal) < 5);
       });
@@ -945,14 +979,14 @@ export const FinancialCalcEngine = {
     // negative balances and are already captured in liabilities.
     const assets = baseAccts
       .filter(a => isCashAccount(a) || isInvestmentAccount(a))
-      .reduce((s,a) => s + Math.max(0, parseFloat(a.balance||0)), 0);
+      .reduce((s,a) => s + Math.max(0, num(a.balance)), 0);
     const isBankCredit = a => {
       const t = (a.type||"").toLowerCase(), s = (a.subtype||"").toLowerCase();
       return t==="credit" || t==="credit card" || s==="credit card" || t==="line of credit";
     };
     const bankCreditAccounts = baseAccts.filter(isBankCredit);
     const bankCreditLiabilities = bankCreditAccounts
-      .reduce((s,a) => s + Math.abs(parseFloat(a.balance||0)), 0);
+      .reduce((s,a) => s + Math.abs(num(a.balance)), 0);
     // Sprint Z3 #8: dedupe Plaid debts by ACCOUNT_ID, not name. fromBank debts are already represented by
     // the credit ACCOUNTS above, and any debt whose account_id matches a bank-credit account is that same
     // account — skip it. Manual debts (no account_id, not fromBank) ALWAYS count: a name coincidence with a
@@ -961,7 +995,7 @@ export const FinancialCalcEngine = {
     const bankCreditAcctIds = new Set(accounts.filter(isBankCredit).map(a => a.id));
     const manualNonBankDebts = debts
       .filter(d => !d.fromBank && !(d.account_id && bankCreditAcctIds.has(d.account_id)))
-      .reduce((s,d) => s + Math.max(0, parseFloat(d.balance||0)), 0);
+      .reduce((s,d) => s + Math.max(0, num(d.balance)), 0);
     const liabilities = bankCreditLiabilities + manualNonBankDebts;
     return { assets, liabilities, netWorth: assets - liabilities, bankCreditLiabilities, manualNonBankDebts, mixedCurrencyDetected };
   },
@@ -969,7 +1003,9 @@ export const FinancialCalcEngine = {
   /** Monthly cash flow = income − bills − discretionary spend (no double-counting).
    *  catOverrides { txnId: category } reassign txn categories; currentDate scopes the spend month. */
   cashFlow(data, catOverrides = {}, currentDate = new Date()) {
-    const incomes = (data.incomes || []).filter(i => parseFloat(i.amount) > 0);
+    // num(), not parseFloat: `parseFloat("$1,200") > 0` is NaN > 0 === false, which silently dropped
+    // a perfectly valid income from the monthly-income total.
+    const incomes = (data.incomes || []).filter(i => num(i.amount) > 0);
     const bills   = data.bills || [];
     const accounts = data.accounts || [];
     const getEffCat = (t) => catOverrides[t.id] || t.cat;
@@ -1012,7 +1048,7 @@ export const FinancialCalcEngine = {
   /** Debt ratio = total debt / annual income (uses only monthlyIncome, override-independent — threaded for API uniformity) */
   debtRatio(data, catOverrides = {}, currentDate = new Date()) {
     const { monthlyIncome } = FinancialCalcEngine.cashFlow(data, catOverrides, currentDate);
-    const totalDebt = (data.debts||[]).reduce((s,d) => s + parseFloat(d.balance||0), 0);
+    const totalDebt = (data.debts||[]).reduce((s,d) => s + num(d.balance), 0);
     return monthlyIncome > 0 ? totalDebt / (monthlyIncome * 12) : 0;
   },
 
@@ -1022,7 +1058,7 @@ export const FinancialCalcEngine = {
     const { totalExpenses } = FinancialCalcEngine.cashFlow(data, catOverrides, currentDate);
     const liquidSavings = accounts
       .filter(a => ["savings","checking","depository"].includes(a.type))
-      .reduce((s,a) => s + parseFloat(a.balance||0), 0) || 0;
+      .reduce((s,a) => s + num(a.balance), 0) || 0;
     return totalExpenses > 0 ? liquidSavings / totalExpenses : 0;
   },
 

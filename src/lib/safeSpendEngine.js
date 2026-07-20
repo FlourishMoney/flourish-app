@@ -15,7 +15,30 @@ import {
   isCashAccount,
   billOccursOnDate,
   isBillArchived,
+  num,
 } from "./financialCalculations.js";
+
+// ── Low-balance threshold — THE definition of "this balance is low" ──────────
+// The larger of a proportional band and an absolute floor. Proportional-only degrades to nonsense at
+// the bottom of the range: at balance 0 the old `running < balance * 0.12 && running >= 0` reduced to
+// `running < 0 && running >= 0`, which is never true, so the users with no cash — the ones who most
+// need the warning — were the only ones who never got it. A negative balance was worse still, making
+// the threshold negative.
+//
+// The floor is `safetyBuf` (SafeSpendEngine's existing spending-buffer concept: ~10 days of the user's
+// own average daily spend), NOT a new flat constant. That resolves the real tension here — a flat
+// number is either too high for someone who spends little (firing constantly) or too low for someone
+// who spends a lot (never a real warning), whereas a personal 10-day runway is calibrated per user by
+// construction. $100 applies only when there is no spending history to derive a runway from.
+// notificationPlanner already anchored on exactly this (`safetyBuf > 0 ? safetyBuf : 100`), so this
+// keeps the on-screen warning and the push notification talking about the same idea.
+export const LOW_BALANCE_FALLBACK_FLOOR = 100;
+export function lowBalanceThreshold(ss) {
+  const bal   = Number.isFinite(ss?.balance)   ? ss.balance   : 0;
+  const buf   = Number.isFinite(ss?.safetyBuf) ? ss.safetyBuf : 0;
+  const floor = buf > 0 ? buf : LOW_BALANCE_FALLBACK_FLOOR;
+  return Math.max(bal * 0.12, floor);
+}
 
 export const SafeSpendEngine = {
   calculate(data, todayDate = new Date()) {
@@ -25,19 +48,19 @@ export const SafeSpendEngine = {
 
     const balance  = accounts
       .filter(a => isCashAccount(a))
-      .reduce((s,a) => s + parseFloat(a.balance||0), 0) ||
+      .reduce((s,a) => s + num(a.balance), 0) ||
       0;
 
     // Detect bills already paid this month by matching transactions (current month per todayDate).
     const _normName = s => (s||"").toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim();
     const txnList = (data.transactions||[])
       .filter(t => { try { const d=new Date(t.date+"T12:00:00"); return d.getMonth()===todayDate.getMonth()&&d.getFullYear()===todayDate.getFullYear(); } catch{return false;} })
-      .map(t => ({ name: _normName(t.name), amount: Math.abs(parseFloat(t.amount||0)) }));
+      .map(t => ({ name: _normName(t.name), amount: Math.abs(num(t.amount)) }));
     // Bug 3: match on full normalized-name containment AND amount tolerance (±5% / ±$2),
     // so loose prefixes ("Rent"↔"Rentals", "Bell"↔"Bell Media") no longer false-positive.
     const isBillPaid = (bill) => {
       const billName = _normName(bill.vendorPattern||bill.name);
-      const billAmt  = parseFloat(bill.amount||0);
+      const billAmt  = num(bill.amount);
       if(billName.length < 3) return false;
       // Sprint 4 (item 6): a $0 placeholder bill is "not applicable" — we can't confirm payment.
       if(billAmt <= 0) return false;
@@ -50,7 +73,7 @@ export const SafeSpendEngine = {
     // Tier 5: count occurrences of each bill in the next 10 days (freq-aware + one-off + skip archived).
     const occurrencesInWindow = (b) => {
       if (isBillArchived(b, todayDate)) return 0;
-      if (parseFloat(b.amount||0) <= 0) return 0;
+      if (num(b.amount) <= 0) return 0;
       // Sprint Q items 1 & 3: count ACTUAL occurrences in the 10-day window via the nextDueDate
       // anchor. A monthly+ bill already paid this month is done; sub-monthly bills recur multiple
       // times a month, so the anchor (not "paid this month") governs them.
@@ -67,11 +90,11 @@ export const SafeSpendEngine = {
       }
       return count;
     };
-    const upcomingBills = bills.reduce((s,b) => s + parseFloat(b.amount||0) * occurrencesInWindow(b), 0);
+    const upcomingBills = bills.reduce((s,b) => s + num(b.amount) * occurrencesInWindow(b), 0);
 
     // Minimum debt payments due this month
     const debtPayments = debts
-      .reduce((s,d) => s + parseFloat(d.min||0), 0);
+      .reduce((s,d) => s + num(d.min), 0);
 
     // Safety buffer: 10 days of average daily spend (Sprint Q item 3: NaN-guarded)
     const avgDaily   = FinancialCalcEngine.avgDailySpend(data);

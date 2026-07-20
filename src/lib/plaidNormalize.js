@@ -47,7 +47,21 @@ export function normaliseTxns(plaidTxns, today = new Date()) {
   });
 }
 
-// Detect income deposits from transactions — returns {monthlyAvg, low, high, typical, isVariable, label}.
+// Detect income deposits from transactions. Returns null, or:
+//   { monthlyAvg, monthlyLow, monthlyHigh, perDeposit, perDepositLow, perDepositHigh,
+//     depositsPerMonth, isVariable, label }
+//
+// UNITS ARE PART OF THE CONTRACT. `monthly*` are per-CALENDAR-MONTH totals; `perDeposit*` are single
+// paycheque amounts. income.amount is a PER-DEPOSIT field — forecastEngine's perDeposit() and
+// financialCalculations' toMonthly() both read it that way — so anything populating it must use
+// perDeposit, never monthlyAvg.
+//
+// This previously shipped a field named `typical` that was Math.round(avg) of the MONTHLY totals, i.e.
+// byte-identical to monthlyAvg, and every caller stored it in income.amount. A biweekly earner on
+// $2,000/cheque was detected as ~$4,333 and then forecast at $4,333 × 26/yr — roughly 2.2× their real
+// income. `typical` / `low` / `high` are deliberately GONE rather than aliased: an un-migrated caller
+// now throws on undefined instead of silently doubling someone's income.
+//
 // CRITICAL: TRANSFER is excluded — credit card payments show as TRANSFER_IN and must never count as income.
 export function detectIncomeFromTxns(txns) {
   if (!txns || txns.length === 0) return null;
@@ -78,20 +92,58 @@ export function detectIncomeFromTxns(txns) {
   const monthlyTotals = Object.values(byMonth);
   if (monthlyTotals.length === 0) return null;
 
-  const avg = monthlyTotals.reduce((a,b) => a+b, 0) / monthlyTotals.length;
-  const low = Math.min(...monthlyTotals);
-  const high = Math.max(...monthlyTotals);
-  const isVariable = monthlyTotals.length > 1 && (high - low) / avg > 0.15;
+  const monthlyMean = monthlyTotals.reduce((a,b) => a+b, 0) / monthlyTotals.length;
+  const monthlyLow  = Math.min(...monthlyTotals);
+  const monthlyHigh = Math.max(...monthlyTotals);
+
+  // ── Per-deposit amounts — this is what income.amount wants ───────────────────
+  // MEDIAN of the individual deposits, not a mean and not monthlyTotal/count. A partial first or last
+  // month (Plaid's window rarely aligns to month boundaries), a bonus, or a retro-pay deposit all skew
+  // a mean; a median barely moves and is by construction the size of a real cheque the user received.
+  const deposits = incomeTxns.map(t => Math.abs(t.amount)).sort((a, b) => a - b);
+  const median = (sorted) => {
+    const m = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[m] : (sorted[m - 1] + sorted[m]) / 2;
+  };
+  const perDeposit     = median(deposits);
+  const perDepositLow  = deposits[0];
+  const perDepositHigh = deposits[deposits.length - 1];
+
+  // isVariable describes the PER-DEPOSIT amount — that is what income.amount holds and what the UI
+  // calls "your typical paycheque". Measuring spread on MONTHLY totals (the old behaviour) flagged
+  // every biweekly earner as variable, because a 3-cheque month is ~50% above a 2-cheque month even
+  // when every single cheque is identical.
+  const isVariable = deposits.length > 1 && perDeposit > 0 &&
+                     (perDepositHigh - perDepositLow) / perDeposit > 0.15;
+
+  // ── Anchor day-of-month (for monthly / semimonthly cadences) ─────────────────
+  // MODE, not mean and not median. Deposits shift EARLIER for weekends and holidays but never later,
+  // so the most frequently observed day is the true scheduled day, and ties break to the LATEST day
+  // for that same reason. A mean is catastrophically wrong across a month boundary — pay on the 1st
+  // that occasionally lands on the 31st averages to the 16th.
+  const dayCounts = {};
+  incomeTxns.forEach(t => {
+    const dom = parseInt(String(t.date).substring(8, 10), 10);
+    if(dom >= 1 && dom <= 31) dayCounts[dom] = (dayCounts[dom] || 0) + 1;
+  });
+  const anchorDay = Object.keys(dayCounts).length
+    ? Number(Object.entries(dayCounts)
+        .sort((a, b) => (b[1] - a[1]) || (Number(b[0]) - Number(a[0])))[0][0])
+    : null;
 
   const nameCount = {};
   incomeTxns.forEach(t => { nameCount[t.name] = (nameCount[t.name]||0)+1; });
   const topName = Object.entries(nameCount).sort((a,b)=>b[1]-a[1])[0]?.[0] || "Employment";
 
   return {
-    monthlyAvg: Math.round(avg),
-    low: Math.round(low),
-    high: Math.round(high),
-    typical: Math.round(avg),
+    monthlyAvg:       Math.round(monthlyMean),   // average total across a calendar month
+    monthlyLow:       Math.round(monthlyLow),
+    monthlyHigh:      Math.round(monthlyHigh),
+    perDeposit:       Math.round(perDeposit),    // single paycheque — the one income.amount wants
+    perDepositLow:    Math.round(perDepositLow),
+    perDepositHigh:   Math.round(perDepositHigh),
+    depositsPerMonth: Math.round((incomeTxns.length / monthlyTotals.length) * 100) / 100,
+    anchorDay,                                   // modal day-of-month, or null when there is no signal
     isVariable,
     label: topName,
   };
