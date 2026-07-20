@@ -142,19 +142,36 @@ exports.handler = async (event) => {
     }
   }
 
-  // ── Sprint Z3 #2: server-enforced consent GATE — block ALL AI paths if consent was revoked ───
-  // Direct profiles read (NOT inferred from getUserPlan). FAIL-OPEN on a read error (logged) so a
-  // transient DB blip doesn't take AI down for everyone; a CONFIRMED revoke is always enforced.
+  // ── Sprint Z3 #2: server-enforced consent GATE — require AFFIRMATIVE consent before any AI path ───
+  // Direct profiles read (NOT inferred from getUserPlan). The gate turns on a distinction the previous
+  // version collapsed:
+  //   "we couldn't check"        (read error / thrown query) → FAIL OPEN (logged). A transient DB blip
+  //                              must not take AI down for everyone — a defensible availability tradeoff.
+  //   "we checked, and there is  → BLOCK. A SUCCESSFUL read is authoritative. Consent requires a
+  //    no consent on file"          POSITIVE ai_third_party_consent_at with no later revoke; a missing
+  //                                 profiles row, a null consent_at, or a revoke all mean "not granted".
+  // The old gate selected only revoked_at, so a user who never consented (consent_at null, revoked_at
+  // null) and a user with no row at all sailed through — indistinguishable from a real grant.
   try {
     const admin = getAdminClient();
     const { data: prof, error: cErr } = await admin
       .from("profiles")
-      .select("ai_third_party_consent_revoked_at")
+      .select("ai_third_party_consent_at, ai_third_party_consent_revoked_at")
       .eq("user_id", user_id)
       .maybeSingle();
-    if (cErr) console.error("[coach] consent check read error (failing open):", cErr.message);
-    else if (prof && prof.ai_third_party_consent_revoked_at) {
-      return { statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: "ai_consent_required" }) };
+    if (cErr) {
+      // Couldn't check — fail open. NOT the same as "checked and found no consent".
+      console.error("[coach] consent check read error (failing open):", cErr.message);
+    } else {
+      // Checked. accept_consent writes consent_at and clears revoked_at; revoke_consent writes
+      // revoked_at. So a live grant is: consent_at present AND not superseded by a later revoke. The
+      // timestamp comparison is belt-and-suspenders in case a revoke ever coexists with a grant.
+      const grantedAt = prof && prof.ai_third_party_consent_at;
+      const revokedAt = prof && prof.ai_third_party_consent_revoked_at;
+      const hasConsent = !!grantedAt && (!revokedAt || new Date(revokedAt) < new Date(grantedAt));
+      if (!hasConsent) {
+        return { statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: "ai_consent_required" }) };
+      }
     }
   } catch (e) {
     console.error("[coach] consent check threw (failing open):", e.message);

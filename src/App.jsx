@@ -12,9 +12,10 @@ import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
   BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf } from "./lib/financialCalculations.js";
-import { normaliseTxns, detectIncomeFromTxns, detectRecurringBills, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
+import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
 import { retainAccounts, retainLiabilities } from "./lib/multibank.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
+import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting } from "./lib/meetingSchedule.js";
@@ -388,7 +389,7 @@ function getPersonalizedTaxCredits(profile) {
       );
     }
     if (province === "AB") {
-      tips.push({title:"Alberta Has No Provincial Income Tax Credits",body:"Alberta has no provincial income tax on top of federal — your effective tax rate is already lower than most provinces. Focus on maximizing federal credits: RRSP, TFSA, FHSA, and GST/HST credit.",savings:"Lower baseline rate",flag:"🏙️ AB",priority:"medium",action:"Maximize Federal Credits"});
+      tips.push({title:"Alberta Child and Family Benefit",body:"Alberta does charge provincial income tax — but at a low 8% on your first $61,200 (2026), rising to 15% over $370,220, with the highest basic personal amount of any province ($22,769 tax-free). Families with children under 18 can also claim the refundable Alberta Child and Family Benefit, paid tax-free every quarter.",savings:"Up to $750/yr (8% bracket)",flag:"🏙️ AB",priority:"medium",action:"Claim the ACFB"});
     }
     if (province === "BC") {
       tips.push({title:"BC Climate Action Tax Credit",body:"BC residents with moderate incomes receive a quarterly climate action tax credit — automatic when you file your taxes. Single individuals can receive up to $447/year.",savings:"Up to $447/yr",flag:"🏙️ BC",priority:"medium",action:"File Your Taxes"});
@@ -602,6 +603,30 @@ async function getJwt() {
     return session?.access_token || null;
   } catch { return null; }
 }
+
+// ── AI-consent self-heal session state (see lib/consentHeal.js) ──────────────
+// Module-level, NOT component state, so "at most once per session" survives the AICoach component
+// unmounting and remounting within a single page load. A full reload is a new session and resets it.
+let _coachConsentHealAttempted = false;
+const coachHealAttempted = () => _coachConsentHealAttempted;
+const markCoachHealAttempted = () => { _coachConsentHealAttempted = true; };
+// The localStorage flag acceptAIDisclosure sets — the sole signal that the user previously accepted.
+const readLocalAIConsent = () => {
+  try { return localStorage.getItem("flourish_ai_third_party_consent") === "1"; } catch { return false; }
+};
+
+// US states that levy NO personal income tax on WAGES for the 2026 tax year (verified against the Tax
+// Foundation 2026 tables and state revenue departments). Classified for a wage-earner audience —
+// salary is untaxed in all nine:
+//   AK, FL, NV, SD, TX, WY — no personal income tax of any kind.
+//   TN — Hall tax (interest/dividends) fully repealed in 2021; nothing since.
+//   NH — never taxed wages; its last levy, the Interest & Dividends tax, was repealed effective
+//        Jan 1 2025, so for 2026 it taxes no personal income at all.
+//   WA — no wage tax; taxes only high-value long-term capital gains via a 7% EXCISE tax (upheld as
+//        non-income by the WA Supreme Court, Quinn v. State). Untaxed for a wage earner.
+// The old check whitelisted only TX/FL/WA, so residents of the other six were wrongly told state
+// income tax applied.
+const NO_STATE_WAGE_TAX = new Set(["AK", "FL", "NV", "NH", "SD", "TN", "TX", "WA", "WY"]);
 
 
 // Sprint Z #1 (B1 safety net): the server persists the per-item cursor, so a delta dropped before
@@ -6019,6 +6044,9 @@ function detectPayroll(transactions, existingIncomes) {
       name: g.name,
       avgAmount: Math.round(g.amounts.reduce((s,a)=>s+a,0)/g.amounts.length),
       count: g.amounts.length,
+      // Cadence from the dates this group already collected — they were being discarded here, which
+      // is why the write site below had nothing to go on and hardcoded "biweekly".
+      freq: detectCadence(g.dates),
     }))
     .sort((a,b) => b.avgAmount - a.avgAmount)
     .slice(0,3);
@@ -6056,7 +6084,8 @@ function IncomeDetectionBanner({transactions, incomes, setAppData}){
       if (isDuplicate) return prev; // already tracked — don't add
       return {
         ...prev,
-        incomes: [...existing, {id:Date.now(),label:c0.name,amount:String(c0.avgAmount),freq:"biweekly",type:"employment",isVariable:false,autoDetected:true}]
+        // Observed cadence, with the same conservative "monthly" fallback as the other write site.
+        incomes: [...existing, {id:Date.now(),label:c0.name,amount:String(c0.avgAmount),freq:c0.freq||"monthly",type:"employment",isVariable:false,autoDetected:true}]
       };
     });
     dismiss();
@@ -10170,7 +10199,7 @@ function renderCoachMarkdown(src) {
   return blocks.length ? blocks : String(src ?? "");
 }
 
-function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}, setScreen, setAppData, onExitDemo}){
+function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}, setScreen, setAppData, onExitDemo, postCoachConsent, onNeedConsent}){
   // ── ALL HOOKS FIRST — constants moved below to prevent TDZ ───────────────
   const [messages, setMessages] = useState(()=>{
     try {
@@ -10310,7 +10339,7 @@ ${partnerEmpLabel ? `- Partner employment: ${partnerIsSelfEmp ? "SELF-EMPLOYED P
 - ${age&&age>=73?"RMDs ARE REQUIRED — penalty is 25% of missed amount. Calculate and plan withdrawals carefully":""}
 - ${!profile.isHomeowner&&(!age||age<40)?"FIRST-TIME BUYER: mortgage interest deduction, property tax deduction, $10k IRA penalty-free withdrawal, check state programs":""}
 - ${profile.hasKids?`PARENT: Child Tax Credit ($2,200/child under 17 — OBBBA 2025), Dependent Care FSA ($5,000 pre-tax for 2025; rises to $7,500 for 2026 per OBBBA), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?"AOTC for college ($2,500/yr, 40% refundable)":""}`:""}
-- State ${prov||"unknown"}: ${profile.province==="TX"||profile.province==="FL"||profile.province==="WA"?"NO state income tax — higher effective savings rate possible":"state income tax applies — factor into net income calculations"}`}
+- State ${prov||"unknown"}: ${NO_STATE_WAGE_TAX.has(profile.province)?"NO state income tax on wages — higher effective savings rate possible":"state income tax applies — factor into net income calculations"}`}
 
 When user agrees to a specific goal or plan: FLOURISH_UPDATE:{"action":"update_goal","name":"<n>","target":<n>,"saved":<n>,"monthly":<n>}
 To add new goal: FLOURISH_UPDATE:{"action":"add_goal","name":"<n>","target":<n>,"saved":<n>,"monthly":<n>}
@@ -10368,18 +10397,51 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
     setMessages(newMessages);
     setLoading(true);
     try {
-      const _jwt = await getJwt();
-      const res = await fetch(`${API_BASE}/api/coach`, {
-        method:"POST",
-        headers:{"Content-Type":"application/json", Authorization:`Bearer ${_jwt}`},
-        body: JSON.stringify({
-          type: "chat",
-          payload: {
-            context: buildContext(),
-            messages: newMessages.map(m=>({role:m.role, content:m.content})),
-          },
-        }),
-      });
+      const doFetch = async ()=>{
+        const _jwt = await getJwt();
+        return fetch(`${API_BASE}/api/coach`, {
+          method:"POST",
+          headers:{"Content-Type":"application/json", Authorization:`Bearer ${_jwt}`},
+          body: JSON.stringify({
+            type: "chat",
+            payload: {
+              context: buildContext(),
+              messages: newMessages.map(m=>({role:m.role, content:m.content})),
+            },
+          }),
+        });
+      };
+      let res = await doFetch();
+
+      // ── AI-consent self-heal (see lib/consentHeal.js) ──
+      // A 403 ai_consent_required means the SERVER has no consent on file. If the user accepted the
+      // disclosure locally, the write was likely lost → re-post it once and retry. If they never
+      // accepted, or a retry still fails, route to disclosure. Never silently re-consent.
+      if(res.status === 403){
+        const j = await res.json().catch(()=>({}));
+        if(j.error === "ai_consent_required"){
+          const action = decideConsentAction({
+            status: 403, errorCode: j.error,
+            localAccepted: readLocalAIConsent(),
+            healedThisSession: coachHealAttempted(),
+          });
+          if(action === "heal"){
+            markCoachHealAttempted();                       // burn the one attempt BEFORE retrying
+            const posted = await postCoachConsent?.("accept_consent");
+            if(posted?.ok) res = await doFetch();           // retry once
+          }
+          // Still blocked (heal failed, or action was "disclose") → surface disclosure, do not loop.
+          if(res.status === 403){
+            onNeedConsent?.();
+            setMessages(prev=>prev.slice(0,-1));
+            setInput(text);
+            setError("Please review the AI disclosure to keep using the Coach.");
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
       if(res.status === 429){
         const j = await res.json().catch(()=>({}));
         setMessages(prev=>[...prev, {role:"assistant", isSystem:true, content: j.message || "You've hit today's Coach message limit. It resets tomorrow."}]);
@@ -11089,6 +11151,18 @@ function FirstVisitScreen({data, onDismiss}) {
 
 // Phase D3: AI disclosure screen (Apple 5.1.2(i) compliance — first-time gate before AI features)
 function AIDisclosureScreen({onAccept, onDecline, onViewLegal}){
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+  // onAccept now records consent server-side and returns false if that write failed for a logged-in
+  // user. In that case we do NOT dismiss — we surface the failure so the tap is a real retry, rather
+  // than proceeding as though consent were recorded (which is what created the lockout).
+  const handleAccept = async ()=>{
+    setSaving(true); setFailed(false);
+    let ok = false;
+    try { ok = await onAccept?.(); } catch { ok = false; }
+    if (ok === false) { setFailed(true); setSaving(false); }
+    // on success the screen unmounts (aiDisclosureSeen flips), so no need to clear saving
+  };
   return (
     <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"max(24px, env(safe-area-inset-top)) 24px 24px"}}>
       <div style={{maxWidth:480,width:"100%"}}>
@@ -11123,7 +11197,8 @@ function AIDisclosureScreen({onAccept, onDecline, onViewLegal}){
           <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Anthropic does not train AI models on your data. You can disable AI features anytime in <strong style={{color:C.cream}}>Settings → Privacy & AI</strong>. Read the <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,font:"inherit",color:C.greenBright,textDecoration:"underline",cursor:"pointer"}}>full Privacy Policy</button> for details.</div>
         </div>
 
-        <button onClick={onAccept} style={{width:"100%",background:`linear-gradient(135deg,${C.green} 0%,${C.greenBright} 100%)`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",marginBottom:10}}>I Understand &amp; Accept</button>
+        {failed&&<div style={{background:C.red+"14",border:`1px solid ${C.red}55`,borderRadius:12,padding:"10px 14px",marginBottom:10,color:C.redBright||C.cream,fontSize:12.5,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>We couldn't save your choice — check your connection and tap Accept again.</div>}
+        <button onClick={handleAccept} disabled={saving} style={{width:"100%",background:`linear-gradient(135deg,${C.green} 0%,${C.greenBright} 100%)`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:saving?"default":"pointer",opacity:saving?0.7:1,marginBottom:10}}>{saving?"Saving…":"I Understand & Accept"}</button>
         <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"12px",color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:10}}>Learn More</button>
         {/* Apple 5.1.2(i) opt-out. AI is not core functionality (all math runs in JS on-device — AI
             only writes the prose), so consent to third-party sharing must not be a condition of
@@ -12983,24 +13058,34 @@ export default function FlourishApp(){
   });
   // Sprint Z3 #2: tell the server about a consent decision so /api/coach's gate is authoritative
   // (client localStorage alone can be bypassed). JWT-guarded → the anonymous DEMO path (no user) skips it.
-  // accept_consent clears any prior revoke; revoke_consent sets it. Returns true if the server ack'd.
+  // accept_consent clears any prior revoke; revoke_consent sets it. Returns { ok, hadJwt }:
+  //   hadJwt=false is the anonymous/demo path (no server user to record for) — callers treat that as
+  //   "nothing to do", NOT as a failure. hadJwt=true with ok=false is a genuine failed write that
+  //   callers must NOT treat as recorded consent (see canProceedAfterAccept).
   const postCoachConsent = async (consentAction)=>{
     try {
       const jwt = await getJwt();
-      if (!jwt) return false;
+      if (!jwt) return { ok:false, hadJwt:false };
       const res = await fetch(`${API_BASE}/api/coach`, { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${jwt}` }, body: JSON.stringify({ action: consentAction }) });
       if (!res.ok) console.error(`[consent] server ${consentAction} failed:`, res.status);
-      return res.ok;
-    } catch (e) { console.error(`[consent] server ${consentAction} threw:`, e?.message || e); return false; }
+      return { ok: res.ok, hadJwt:true };
+    } catch (e) { console.error(`[consent] server ${consentAction} threw:`, e?.message || e); return { ok:false, hadJwt:true }; }
   };
-  const acceptAIDisclosure = ()=>{
+  // AWAIT the server record before committing to local acceptance. Fire-and-forget was the root of the
+  // lockout: if the write was lost, the client believed consent was granted, never re-showed the
+  // disclosure, and the server gate then blocked forever. Now a logged-in user whose write fails does
+  // NOT proceed — acceptAIDisclosure returns false and the disclosure screen surfaces the failure so
+  // they can retry. Returns true if the user may proceed. The demo path (no JWT) proceeds normally.
+  const acceptAIDisclosure = async ()=>{
+    const res = await postCoachConsent("accept_consent"); // server record FIRST
+    if (!canProceedAfterAccept(res)) return false;        // had a JWT but the write failed → do not proceed
     try {
       localStorage.setItem("flourish_ai_disclosure_seen", "1");
       localStorage.setItem("flourish_ai_third_party_consent", "1"); // Sprint Z2 #8: explicit consent to share summary+messages with Anthropic
       if (!localStorage.getItem("flourish_ai_disclosed_at")) localStorage.setItem("flourish_ai_disclosed_at", new Date().toISOString());
     } catch {}
     setAiDisclosureSeen(true);
-    postCoachConsent("accept_consent"); // fire-and-forget — stays synchronous for the demo path (demo has no JWT → no-op)
+    return true;
   };
   // Apple 5.1.2(i): "Don't use AI" — log the disclosure choice (audit trail) but disable AI and stay in the app.
   const declineAIDisclosure = ()=>{
@@ -13031,9 +13116,19 @@ export default function FlourishApp(){
   // Sprint Z3 #2: re-enabling AI = re-granting third-party consent. The Settings "AI Coach" toggle ON
   // calls this so it clears any prior SERVER revoke — otherwise a revoked user toggling AI back on would
   // stay 403-blocked, since the AIDisclosureScreen never re-shows once disclosure_seen=1.
-  const acceptAIConsentServer = ()=>{
+  const acceptAIConsentServer = async ()=>{
+    const res = await postCoachConsent("accept_consent"); // server record FIRST
+    // Only record local consent if the server actually took it (or there's no server user, i.e. demo).
+    // Otherwise the toggle would read "on" while the gate has nothing on file.
+    if (!canProceedAfterAccept(res)) return false;
     try { localStorage.setItem("flourish_ai_third_party_consent", "1"); } catch {}
-    postCoachConsent("accept_consent"); // fire-and-forget
+    return true;
+  };
+  // Self-heal fallback target: re-show the AI disclosure so the user can re-consent (which re-posts to
+  // the server via acceptAIDisclosure). Clearing disclosure_seen makes the gate authoritative again.
+  const requireAIDisclosure = ()=>{
+    try { localStorage.removeItem("flourish_ai_disclosure_seen"); } catch {}
+    setAiDisclosureSeen(false);
   };
   const [appData,setAppData]=useState(()=>saved?.appData||null);
   // Sprint Q item 1: one-time, idempotent backfill of nextDueDate onto legacy sub-monthly/quarterly/
@@ -13534,9 +13629,15 @@ export default function FlourishApp(){
               if (!detectedIncome || hasRealIncome) return prev.incomes;
               // amount/typicalAmount/low/high are all PER-DEPOSIT fields — use the perDeposit* outputs,
               // never monthlyAvg (see the units contract on detectIncomeFromTxns).
+              // freq comes from the OBSERVED deposit cadence, never a hardcoded guess: pairing a
+              // correct per-deposit amount with a wrong multiplier still projects the wrong income
+              // (a monthly earner stamped "biweekly" is forecast at ~2.2x). Where the cadence can't be
+              // determined — a single deposit — fall back to "monthly", the CONSERVATIVE choice: it
+              // understates income rather than overstating it, and an under-forecast prompts caution
+              // while an over-forecast invites overspending.
               // anchorDay is the modal observed deposit day — carried through so a monthly/semimonthly
               // cadence projects on the real pay day instead of silently defaulting to the 1st.
-              return [{id:1,label:detectedIncome.label,amount:String(detectedIncome.perDeposit),freq:"biweekly",type:"employment",isVariable:detectedIncome.isVariable,typicalAmount:String(detectedIncome.perDeposit),lowAmount:String(detectedIncome.perDepositLow),highAmount:String(detectedIncome.perDepositHigh),...(detectedIncome.anchorDay?{anchorDay:detectedIncome.anchorDay}:{}),autoDetected:true}];
+              return [{id:1,label:detectedIncome.label,amount:String(detectedIncome.perDeposit),freq:detectedIncome.freq||"monthly",type:"employment",isVariable:detectedIncome.isVariable,typicalAmount:String(detectedIncome.perDeposit),lowAmount:String(detectedIncome.perDepositLow),highAmount:String(detectedIncome.perDepositHigh),...(detectedIncome.anchorDay?{anchorDay:detectedIncome.anchorDay}:{}),autoDetected:true}];
             })(),
             bills: (() => {
               const base = detectedBills?.length > 0 && (!prev.bills?.some(b=>b.name))
@@ -13875,7 +13976,7 @@ export default function FlourishApp(){
       // Phase D7: gate via library (handles trial unlimited + post-trial daily caps + tiers)
       const freeCoachAllowed = canUseCoach();
       const showCoach = isPremium || freeCoachAllowed;
-      if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium || isTrialActive()} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen} setAppData={setAppData} onExitDemo={exitDemo}/>;
+      if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium || isTrialActive()} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen} setAppData={setAppData} onExitDemo={exitDemo} postCoachConsent={postCoachConsent} onNeedConsent={requireAIDisclosure}/>;
       // Phase D10: removed stale 5-message gate (D7 dropped FREE_TIER_LIMITS.coachMessagesPerDay to 1; line below handles all gated cases).
       return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;
     }

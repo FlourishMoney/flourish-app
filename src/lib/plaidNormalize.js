@@ -47,6 +47,66 @@ export function normaliseTxns(plaidTxns, today = new Date()) {
   });
 }
 
+// ── Cadence detection ────────────────────────────────────────────────────────
+// Derive a pay frequency from observed deposit DATES. Both Plaid write sites used to stamp
+// freq:"biweekly" unconditionally, so a monthly earner was projected at ~2.2x their real income —
+// the amount was right after the per-deposit fix, but the multiplier was not.
+//
+// PRIMARY SIGNAL: the gap between consecutive deposits, which separates the dangerous confusions
+// cleanly — monthly (~30d) vs biweekly (14d) is a 2.17x income error and the gaps are nowhere near
+// each other, so that call is reliable.
+//
+// THE ONE GENUINELY AMBIGUOUS CASE is biweekly (every 14 days) vs semimonthly (twice a calendar
+// month, ~15.2d average). Gap length CANNOT separate these, and gap regularity cannot either — pay on
+// the 1st and 15th yields gaps of 14,17,14,14,14 across Jan-Mar, i.e. four of five gaps are exactly
+// 14, indistinguishable from a fixed fortnightly cycle.
+//
+// The property that actually differs is DAY-OF-MONTH STABILITY:
+//   semimonthly → anchored to TWO calendar days (1st/15th, or 15th/month-end) that never drift.
+//   biweekly    → anchored to a 14-day cycle, so its day-of-month walks backwards through the month
+//                 and visits many distinct days over a few months.
+// So: cluster the observed days-of-month (tolerance 2 for weekend shifts, with month-end treated as a
+// single anchor so the 28th/30th/31st count as one). Two or fewer anchors means semimonthly.
+// This needs ~4 deposits to be meaningful; below that we fall back to gap length alone.
+//
+// Worth stating plainly: getting biweekly vs semimonthly wrong is a PHASE error, not an amount error
+// (26 vs 24 pay periods a year — under 8% apart), so the cost of an ambiguous call here is small. The
+// large error, monthly vs biweekly, is the one the gap signal resolves reliably.
+export function detectCadence(dates) {
+  const ds = (dates || [])
+    .map(d => (d instanceof Date ? d : new Date(String(d) + "T12:00:00")))
+    .filter(d => !isNaN(d.getTime()))
+    .sort((a, b) => a - b);
+  if (ds.length < 2) return null;                 // one deposit tells us nothing about frequency
+
+  const gaps = [];
+  for (let i = 1; i < ds.length; i++) gaps.push(Math.round((ds[i] - ds[i - 1]) / 86400000));
+  const sorted = [...gaps].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const medianGap = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+
+  if (medianGap <= 10) return "weekly";
+  if (medianGap >= 21) return "monthly";
+
+  // 11..20 day band — biweekly vs semimonthly.
+  // With fewer than 4 deposits there aren't enough days-of-month to see drift, so use gap length:
+  // a fortnightly cycle sits at 14, semimonthly averages ~15.2.
+  if (ds.length < 4) return medianGap <= 14 ? "biweekly" : "semimonthly";
+
+  // Cluster days-of-month. Month-end collapses to one anchor ("EOM") because the 28th of February and
+  // the 31st of March are the same pay day; tolerance 2 absorbs weekend shifts without merging
+  // genuinely distinct anchors (a looser tolerance wrongly merges the 27th into the 30th).
+  const dim = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  const anchors = [];
+  let sawMonthEnd = false;
+  for (const d of ds) {
+    const day = d.getDate();
+    if (day >= dim(d) - 2) { sawMonthEnd = true; continue; }
+    if (!anchors.some(a => Math.abs(a - day) <= 2)) anchors.push(day);
+  }
+  return (anchors.length + (sawMonthEnd ? 1 : 0)) <= 2 ? "semimonthly" : "biweekly";
+}
+
 // Detect income deposits from transactions. Returns null, or:
 //   { monthlyAvg, monthlyLow, monthlyHigh, perDeposit, perDepositLow, perDepositHigh,
 //     depositsPerMonth, isVariable, label }
@@ -144,6 +204,7 @@ export function detectIncomeFromTxns(txns) {
     perDepositHigh:   Math.round(perDepositHigh),
     depositsPerMonth: Math.round((incomeTxns.length / monthlyTotals.length) * 100) / 100,
     anchorDay,                                   // modal day-of-month, or null when there is no signal
+    freq: detectCadence(incomeTxns.map(t => t.date)), // observed cadence, or null when undeterminable
     isVariable,
     label: topName,
   };

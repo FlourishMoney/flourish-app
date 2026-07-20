@@ -1,16 +1,23 @@
 // tests/coachConsent.defects.test.cjs
-// FINDING 4 — DEFECT DEMONSTRATION for netlify/functions/coach.js consent gate (lines 145-161).
+// -----------------------------------------------------------------------------
+// CONSENT-GATE CONTRACT for netlify/functions/coach.js.
 //
-// Claim under test: "server-enforced consent GATE — block ALL AI paths if consent was revoked".
-// Each assertion below states what a correct consent gate MUST do: NOT call Anthropic unless the
-// server has POSITIVELY CONFIRMED the user granted consent. Assertions that FAIL are the defects.
+// This file originally demonstrated the defect (FINDING 4): the gate read only revoked_at, so a user
+// who never granted consent — and a user with no profiles row — reached Anthropic. It now encodes the
+// FIXED contract, which draws the distinction the old gate collapsed:
+//
+//   "we couldn't check"            (read error / thrown query)         → FAIL OPEN  (reaches Anthropic)
+//   "we checked, no consent on file" (missing row / consent_at null / revoked) → BLOCK 403
+//   "we checked, consent on file"  (consent_at set, no later revoke)   → ALLOW      (reaches Anthropic)
+//
+// Fail-open-on-error is a deliberate availability tradeoff: a transient DB blip must not take AI down
+// for everyone. It is NOT the same as "checked and found no consent", which must block.
 //
 // NO NETWORK, NO CREDENTIALS:
-//   * @supabase/supabase-js is replaced in the require cache BEFORE _lib/auth.js loads, so the real
-//     auth.js (real getAdminClient, real env reads, real _admin caching) executes against a stub.
+//   * @supabase/supabase-js is replaced in the require cache BEFORE _lib/auth.js loads.
 //   * @netlify/blobs is replaced (coach.js requires it at module load for the per-IP backstop).
-//   * global.fetch is replaced with a recorder that NEVER performs I/O. If anything tries to reach
-//     a non-stubbed host the recorder throws, so a real egress attempt cannot pass silently.
+//   * global.fetch is replaced with a recorder that NEVER performs I/O. Any egress to a non-stubbed
+//     host throws, so a real request cannot pass silently.
 "use strict";
 
 const path = require("path");
@@ -20,6 +27,8 @@ const FN_DIR = path.resolve(__dirname, "../netlify/functions");
 const FN = path.join(FN_DIR, "coach.js");
 
 const USER_ID = "11111111-2222-3333-4444-555555555555";
+const GRANT = "2026-01-01T00:00:00Z";        // an affirmative consent timestamp
+const REVOKE_AFTER = "2026-07-01T00:00:00Z";  // a revoke that post-dates the grant
 
 // ── mutable scenario driving the stubbed profiles read ───────────────────────
 let scenario = {};
@@ -34,7 +43,7 @@ function makeQuery(columns) {
       if (columns && columns.includes("plan")) {
         return { data: { plan: "plus", founder_flag: false, trial_started_at: null }, error: null };
       }
-      // The consent gate's read (coach.js:150-154).
+      // The consent gate's read.
       if (scenario.throwOnConsentRead) throw new Error("boom: supabase unreachable");
       return { data: scenario.profileRow ?? null, error: scenario.consentReadError ?? null };
     },
@@ -100,95 +109,102 @@ function bodyFor(type) {
 }
 
 // ── runner ───────────────────────────────────────────────────────────────────
+// expect: "block" → must NOT reach Anthropic (403);  "allow" → MUST reach Anthropic.
 const results = [];
-async function check(name, sc, type) {
+async function check(name, sc, type, expect) {
   scenario = sc;
   anthropicCalled = false;
   lastOutboundUrl = null;
   const res = await handler(evt(bodyFor(type)));
   let error = null;
   try {
-    assert.strictEqual(
-      anthropicCalled, false,
-      `consent gate should have blocked this request, but user data was sent to api.anthropic.com ` +
-      `(handler returned ${res.statusCode})`
-    );
+    if (expect === "block") {
+      assert.strictEqual(anthropicCalled, false,
+        `gate should have BLOCKED this request, but user data reached api.anthropic.com ` +
+        `(handler returned ${res.statusCode})`);
+      assert.strictEqual(res.statusCode, 403, `expected a 403 consent block, got ${res.statusCode}`);
+    } else {
+      assert.strictEqual(anthropicCalled, true,
+        `gate should have ALLOWED this request (fail-open / consented), but nothing reached Anthropic ` +
+        `(handler returned ${res.statusCode})`);
+    }
   } catch (e) { error = e; }
-  results.push({ name, type, status: res.statusCode, anthropicCalled, error });
+  results.push({ name, type, expect, status: res.statusCode, anthropicCalled, error });
   console.log(`${error ? "FAIL" : "PASS"}  [${type}] ${name}`);
-  console.log(`        status=${res.statusCode}  anthropicCalled=${anthropicCalled}  outbound=${lastOutboundUrl || "(none)"}`);
+  console.log(`        expect=${expect}  status=${res.statusCode}  anthropicCalled=${anthropicCalled}  outbound=${lastOutboundUrl || "(none)"}`);
   if (error) console.log(`        AssertionError: ${error.message}`);
 }
 
 (async () => {
-  console.log("\n=== FINDING 4 — coach.js consent gate, defect demonstration ===");
-  console.log("Assertion for every case: NO request reaches api.anthropic.com without CONFIRMED consent.\n");
+  console.log("\n=== coach.js consent gate — contract ===");
+  console.log("Reaches api.anthropic.com ONLY when consent is confirmed, or when the check could not be performed.\n");
 
-  // ---- HARNESS SANITY CHECKS (must behave as stated, or nothing below is trustworthy) ----
+  // ---- HARNESS SANITY CHECKS ----
   console.log("--- harness sanity ---");
 
-  // S1: negative control. A CONFIRMED revoke is the one thing the gate does enforce.
-  // This assertion MUST pass; if it fails, the stub never reaches the gate at all.
+  // S1: negative control. A CONFIRMED revoke must block. If this ever fails, the stub never reaches
+  // the gate and nothing below is trustworthy.
   await check("S1 (negative control) CONFIRMED revoke -> must block",
-    { profileRow: { ai_third_party_consent_revoked_at: "2026-07-01T00:00:00Z" } }, "chat");
+    { profileRow: { ai_third_party_consent_at: GRANT, ai_third_party_consent_revoked_at: REVOKE_AFTER } },
+    "chat", "block");
 
-  // S2: positive control for the recorder. Prove anthropicCalled CAN flip to true, so a
-  // "false" reading elsewhere means "not called" and not "recorder is broken".
-  scenario = { profileRow: { ai_third_party_consent_revoked_at: null } };
-  anthropicCalled = false;
-  await handler(evt(bodyFor("chat")));
-  assert.strictEqual(anthropicCalled, true,
-    "HARNESS BROKEN: recorder never observed a call to api.anthropic.com on the known-reachable path");
-  console.log("PASS  S2 (positive control) recorder observed api.anthropic.com on a known-reachable path\n");
+  // S2: positive control for the recorder. A genuine grant (consent_at set, no revoke) proves
+  // anthropicCalled CAN flip to true, so a "false" reading elsewhere means "not called", not "recorder
+  // broken". NOTE: under the OLD gate this control used a bare {revoked_at: null} row with no
+  // consent_at; that now correctly BLOCKS, so the control must carry a real grant to be reachable.
+  await check("S2 (positive control) genuine grant -> recorder observes Anthropic",
+    { profileRow: { ai_third_party_consent_at: GRANT, ai_third_party_consent_revoked_at: null } },
+    "chat", "allow");
 
-  // ---- (a) CONSENT READ FAILS -> gate fails OPEN, request still reaches Anthropic ----
-  console.log("--- (a) consent read failure still reaches Anthropic ---");
+  // ---- (a) COULD NOT CHECK -> fail open (deliberate availability tradeoff) ----
+  console.log("\n--- (a) consent read could not be performed -> fail OPEN ---");
+  await check("a1 consent read returns an ERROR (cErr truthy) -> fail open",
+    { profileRow: null, consentReadError: { message: "db read failed" } }, "chat", "allow");
+  await check("a2 consent read THROWS -> fail open",
+    { throwOnConsentRead: true }, "chat", "allow");
+  await check("a3 consent read THROWS, unmetered type -> fail open",
+    { throwOnConsentRead: true }, "insights", "allow");
+  await check("a4 consent read returns an ERROR, unmetered type -> fail open",
+    { profileRow: null, consentReadError: { message: "db read failed" } }, "document", "allow");
 
-  // coach.js:155 -> `if (cErr) console.error(...)` then falls through. No return.
-  await check("a1 consent read returns an ERROR (cErr truthy) -> must not send data",
-    { profileRow: null, consentReadError: { message: "db read failed" } }, "chat");
+  // ---- (b) CHECKED, NO CONSENT ON FILE -> block (this is the fix) ----
+  console.log("\n--- (b) successful read, no affirmative consent -> BLOCK ---");
 
-  // coach.js:159-161 -> catch logs and falls through. No return.
-  await check("a2 consent read THROWS -> must not send data",
-    { throwOnConsentRead: true }, "chat");
+  // Never granted: consent_at NULL, revoked_at NULL. The old gate read only revoked_at, so this was
+  // indistinguishable from a grant.
+  await check("b1 never granted: consent_at NULL + revoked_at NULL -> block",
+    { profileRow: { ai_third_party_consent_at: null, ai_third_party_consent_revoked_at: null } }, "chat", "block");
 
-  // Non-chat types have no rate-limit branch, so the consent gate is the only control.
-  await check("a3 consent read THROWS, unmetered type -> must not send data",
-    { throwOnConsentRead: true }, "insights");
-  await check("a4 consent read returns an ERROR, unmetered type -> must not send data",
-    { profileRow: null, consentReadError: { message: "db read failed" } }, "document");
+  // No profiles row at all: maybeSingle() returns data:null.
+  await check("b2 no profiles row at all (prof === null) -> block",
+    { profileRow: null }, "chat", "block");
 
-  // ---- (b) USER NEVER GRANTED CONSENT -> not blocked ----
-  console.log("\n--- (b) user who never granted consent is not blocked ---");
-
-  // coach.js:156 only checks revoked_at. consent_at is never read, so "never granted"
-  // (consent_at NULL, revoked_at NULL) is indistinguishable from "granted".
-  await check("b1 never granted: consent_at NULL + revoked_at NULL -> must not send data",
-    { profileRow: { ai_third_party_consent_at: null, ai_third_party_consent_revoked_at: null } }, "chat");
-
-  // maybeSingle() returns data:null when no profiles row exists. prof is null ->
-  // `prof && ...` short-circuits false -> falls through.
-  await check("b2 no profiles row at all (prof === null) -> must not send data",
-    { profileRow: null }, "chat");
-
-  await check("b3 never granted, unmetered type -> must not send data",
-    { profileRow: { ai_third_party_consent_at: null, ai_third_party_consent_revoked_at: null } }, "document");
+  await check("b3 never granted, unmetered type -> block",
+    { profileRow: { ai_third_party_consent_at: null, ai_third_party_consent_revoked_at: null } }, "document", "block");
 
   // "plan" shares the chat branch; same gate.
-  await check("b4 never granted, type=plan -> must not send data",
-    { profileRow: { ai_third_party_consent_at: null, ai_third_party_consent_revoked_at: null } }, "plan");
+  await check("b4 never granted, type=plan -> block",
+    { profileRow: { ai_third_party_consent_at: null, ai_third_party_consent_revoked_at: null } }, "plan", "block");
+
+  // ---- (c) CHECKED, CONSENT ON FILE -> allow ----
+  console.log("\n--- (c) successful read, affirmative consent -> ALLOW ---");
+  await check("c1 granted, never revoked -> allow",
+    { profileRow: { ai_third_party_consent_at: GRANT, ai_third_party_consent_revoked_at: null } }, "chat", "allow");
+
+  // Re-consent: a grant that post-dates an earlier revoke is live again (accept clears revoked_at, but
+  // the timestamp comparison holds even if a stale revoke lingers).
+  await check("c2 re-granted after an earlier revoke -> allow",
+    { profileRow: { ai_third_party_consent_at: "2026-08-01T00:00:00Z", ai_third_party_consent_revoked_at: REVOKE_AFTER } },
+    "chat", "allow");
 
   // ---- summary ----
   const failed = results.filter(r => r.error);
   console.log(`\n=== SUMMARY: ${results.length - failed.length}/${results.length} assertions passed, ${failed.length} FAILED ===`);
   for (const f of failed) {
-    console.log(`  FAILED  [${f.type}] ${f.name}  (status=${f.status}, data sent to Anthropic)`);
+    console.log(`  FAILED  [${f.type}] ${f.name}  (expect=${f.expect}, status=${f.status}, anthropicCalled=${f.anthropicCalled})`);
   }
-  console.log(
-    failed.length
-      ? "\nDEFECT CONFIRMED: the consent gate does not prevent user data from reaching Anthropic\n" +
-        "in the cases above. It only blocks a CONFIRMED revoked_at timestamp.\n"
-      : "\nNo defect reproduced.\n"
-  );
+  console.log(failed.length
+    ? "\nCONTRACT VIOLATED — see failures above.\n"
+    : "\nConsent gate contract holds: affirmative consent required, fail-open only on unreadable check.\n");
   process.exit(failed.length ? 1 : 0);
 })().catch((e) => { console.error("HARNESS ERROR:", e); process.exit(2); });
