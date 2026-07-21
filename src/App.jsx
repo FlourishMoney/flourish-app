@@ -13,7 +13,7 @@ import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
   BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
-import { retainAccounts, retainLiabilities } from "./lib/multibank.js";
+import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multibank.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
@@ -3115,7 +3115,10 @@ function DashCustomize({ layout, onChange, onClose }) {
   );
 }
 // ─── ONBOARDING ───────────────────────────────────────────────────────────────
-function Onboarding({onComplete,onViewLegal,userId}){
+// `connectedAccounts` is the SINGLE SOURCE OF TRUTH for connected accounts, read straight from
+// appData. `onAccountsConnected` promotes newly-fetched accounts into appData immediately — see the
+// note on the derived `connAccts` alias below.
+function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccountsConnected}){
   const [step,setStep]=useState(0);
   // profile.province holds CA province code when country=CA, US state code when country=US.
   // Defaults: ON for CA, CA (California) for US.
@@ -3151,7 +3154,13 @@ function Onboarding({onComplete,onViewLegal,userId}){
   // consent surface for every Plaid path. It replaced an inline card + checkbox whose copy had
   // drifted (it asserted a 30-day erasure the Privacy Policy does not state).
   const [showBankConsent,setShowBankConsent]=useState(false);
-  const [connAccts,setConnAccts]=useState([]);
+  // Sprint D Fix: connAccts is NO LONGER A STORE. It was component-local useState, so accounts fetched
+  // during onboarding lived only here and reached appData solely via finish() — any unmount (reload,
+  // backgrounding, abandoning the flow) discarded them while the plaid_items row persisted server-side,
+  // leaving accounts:[] / bankConnected:false with no recovery. It is now a READ-ONLY DERIVED VIEW of
+  // appData.accounts, so the two can no longer diverge. Writes go through onAccountsConnected, which
+  // promotes into appData immediately. The name is kept only to avoid churning the render sites below.
+  const connAccts = Array.isArray(connectedAccounts) ? connectedAccounts : [];
   const [plaidTxns,setPlaidTxns]=useState([]);
   const [linkToken,setLinkToken]=useState(null);
   const [detectedBills,setDetectedBills]=useState(null); // null=not yet detected, []=detected but empty
@@ -3206,14 +3215,22 @@ function Onboarding({onComplete,onViewLegal,userId}){
         institution:ex.institution_name,
       }));
 
+      // Requirement 6: fetch transactions on connect so payroll detection has input. DECOUPLED from
+      // the account promote on purpose — a transaction failure must never discard a good get_accounts
+      // (that coupling is exactly what broke the Settings path).
+      let fetchedTxns = [];
+      try {
+        const td = await fetchItemTxns(ex.item_id, jwt, false);
+        fetchedTxns = normaliseTxns(td.transactions||[]);
+      } catch (txErr) {
+        console.error("[plaid] onboarding transaction fetch failed — accounts still promoted:", txErr?.message||txErr);
+        captureError(txErr, { area: "plaid" });
+      }
+
       setTimeout(()=>{
-        // Append to existing connected accounts (multi-bank support)
-        setConnAccts(prev => {
-          const existingIds = new Set(prev.map(a=>a.id));
-          const newAccts = mappedAccounts.filter(a=>!existingIds.has(a.id));
-          return [...prev, ...newAccts];
-        });
-        setPlaidTxns([]);
+        // Promote into appData IMMEDIATELY (single source of truth). Previously this wrote to local
+        // state that only reached appData at finish() — and was lost on any unmount before then.
+        onAccountsConnected?.(mappedAccounts, fetchedTxns);
         setDetectedBills([]);
         setBankStage("done");
       },400);
@@ -3257,9 +3274,9 @@ function Onboarding({onComplete,onViewLegal,userId}){
       const stmtName = file.name.replace(/\.[^.]+$/,"");
       // Sprint Z3 #3: give this statement an account_id and TAG every transaction with it BEFORE
       // appending — otherwise the rows have no account_id and vanish when the Activity tab is filtered
-      // by the statement account. Compute the id ONCE so the txns and the account below share it (a
-      // statement upload is serialized — the input is disabled while parsing — so closure connAccts
-      // equals the setConnAccts `prev`).
+      // by the statement account. Compute the id ONCE so the txns and the account below share it
+      // (connAccts is now a derived read of appData.accounts, and statement upload is serialized —
+      // the input is disabled while parsing — so it reflects current truth here).
       // Reuse the existing account's id on re-upload (keeps prior txns consistent); for a NEW statement
       // use a collision-free index = max existing stmt_acct_ index + 1. A plain count would REUSE a live
       // id when re-uploading an older statement after a newer one → cross-statement transaction bleed.
@@ -3277,10 +3294,9 @@ function Onboarding({onComplete,onViewLegal,userId}){
         }
         return out.map((t,i)=> String(t.id||"").startsWith("stmt_") ? {...t, id:`stmt_${i}`} : t);
       });
-      setConnAccts(prev => {
-        const kept = (prev||[]).filter(a => !(a.institution==="Statement" && a.name===stmtName)); // re-upload same file → replace its account
-        return [...kept, {id:newAccountId,name:stmtName,type:'checking',balance:0,institution:'Statement'}]; // balance 0, not DEMO.balance
-      });
+      // Statement accounts promote into appData too — same single source of truth. mergeById in the
+      // parent replaces an account with the same id, so re-uploading the same file updates in place.
+      onAccountsConnected?.([{id:newAccountId,name:stmtName,type:'checking',balance:0,institution:'Statement'}], []); // balance 0, not DEMO.balance
       setStmtStatus('done');
       setStmtMsg(`${txns.length} transactions imported ✓`);
       setTimeout(() => setBankStage('done'), 900);
@@ -3290,14 +3306,21 @@ function Onboarding({onComplete,onViewLegal,userId}){
     }
   };
 
-  const skipBank=()=>{setConnAccts([]);setBankStage("skipped");};
+  // "Skip" only advances the stage. It must NOT clear accounts any more: they now live in appData, so
+  // clearing here would destroy a bank the user already connected (it was safe only while connAccts
+  // was throwaway local state).
+  const skipBank=()=>{setBankStage("skipped");};
   const addBill=()=>setBills([...bills,{name:"",amount:"",date:"1"}]);
   const rmBill=i=>setBills(bills.filter((_,x)=>x!==i));
   const upBill=(i,f,v)=>setBills(bills.map((b,x)=>x===i?{...b,[f]:v}:b));
   const addDebt=()=>setDebts([...debts,{name:"",balance:"",rate:"",min:""}]);
   const rmDebt=i=>setDebts(debts.filter((_,x)=>x!==i));
   const upDebt=(i,f,v)=>setDebts(debts.map((d,x)=>x===i?{...d,[f]:v}:d));
-  const finish=()=>onComplete({profile:{...p,creditScoreUpdated:p.creditKnown?Date.now():null},incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),accounts:connAccts,transactions:plaidTxns.length?plaidTxns:[],bankConnected:connAccts.some(a=>a.institution!=="Manual")});
+  // finish() NO LONGER carries accounts or bankConnected — both are promoted into appData the moment
+  // get_accounts succeeds, so re-sending them here would let a stale local copy overwrite the truth.
+  // `transactions` still carries statement-upload rows (plaidTxns); the parent MERGES rather than
+  // replaces, so bank transactions promoted earlier survive.
+  const finish=()=>onComplete({profile:{...p,creditScoreUpdated:p.creditKnown?Date.now():null},incomes:incomes.filter(i=>i.amount),bills:bills.filter(b=>b.name&&b.amount),debts:debts.filter(d=>d.name&&d.balance),transactions:plaidTxns.length?plaidTxns:[]});
 
   const banks=(CC[p.country]?.banks||CC.CA.banks);
 
@@ -13737,6 +13760,79 @@ export default function FlourishApp(){
     try{localStorage.setItem("flourish_theme_manual","1");}catch{}
   };
 
+  // ── Sprint D Fix: THE single promote path for connected bank data ───────────────────────────────
+  // Every successful account fetch — onboarding, Settings add-bank, and the server-truth
+  // reconciliation — funnels through here, so appData is the one store and the paths cannot diverge.
+  // Functional updater throughout: a racing save can never capture pre-import state, and this can
+  // never clobber a hydrate that landed first (it only ever merges INTO current state).
+  const promoteConnectedAccounts = useCallback((accounts, transactions = []) => {
+    const incoming = Array.isArray(accounts) ? accounts : [];
+    const incomingTxns = Array.isArray(transactions) ? transactions : [];
+    if (incoming.length === 0 && incomingTxns.length === 0) return;
+    setAppData(prev => {
+      const d = prev || {};
+      // Requirement 5: dedupe by account id + derive bankConnected + sync CC→debts. One pure
+      // implementation, shared with the tests (multibank.promoteAccounts).
+      const { accounts, bankConnected, debts } = promoteAccounts(d.accounts, d.debts, incoming);
+      const nextTxns = markTransfers(
+        mergeById(d.transactions || [], incomingTxns),
+        t => isInternalTransfer(t) || isCCPayment(t, d.debts || []), isCashAdvance);
+      return { ...d, accounts, bankConnected, debts, transactions: nextTxns };
+    });
+  }, []);
+
+  // ── Sprint D Fix (req 2+3): SERVER-TRUTH RECONCILIATION ─────────────────────────────────────────
+  // Heals any user whose plaid_items exist server-side but whose appData.accounts is empty — the
+  // exact broken state produced by the old onboarding/Settings paths. No reconnect, no re-auth: the
+  // access_tokens live server-side and get_accounts only needs item_id + JWT.
+  //
+  // ORDERING (req 3 — must not race the restore fix shipped today):
+  //   • `hydrated` is set true ONLY in the hydrate effect's finally block, and
+  //   • hydratedUidRef.current === user.id is set ONLY after a CLEAN hydrate.
+  //   Requiring BOTH means this cannot start until hydrate has fully settled for THIS user. On a
+  //   hydrate READ ERROR the ref stays null, so this stays parked rather than writing over a cache we
+  //   could not verify. reconciledUidRef makes it at-most-once per user per session.
+  //   It only ever MERGES via promoteConnectedAccounts' functional updater, so it can neither clobber
+  //   a restored blob nor be clobbered by a racing save.
+  const reconciledUidRef = useRef(null);
+  useEffect(()=>{
+    if (!user || !hydrated) return;                          // hydrate not settled
+    if (hydratedUidRef.current !== user.id) return;           // hydrate not CLEAN for this user
+    if (reconciledUidRef.current === user.id) return;         // already reconciled this session
+    if (appData?.demo) return;                                // never touch demo/screenshot state
+    if ((appData?.accounts||[]).length > 0) return;           // nothing to heal
+    reconciledUidRef.current = user.id;
+    let cancelled = false;
+    (async ()=>{
+      try {
+        const jwt = await getJwt();
+        if (!jwt) return;
+        const list = await callPlaid("list_items", {}, { jwt });
+        const items = list?.items || [];
+        if (cancelled || items.length === 0) return;          // no server items → genuinely not connected
+        console.log("[plaid] reconcile: server has", items.length, "item(s) but appData.accounts is empty — healing");
+        for (const it of items) {
+          try {
+            const acct = await callPlaid("get_accounts", { item_id: it.item_id }, { jwt });
+            const inst = it.institution_name || "Your Bank";
+            const mapped = (acct?.accounts||[]).map(a=>({
+              id:a.id, name:`${inst} ••${a.mask||"????"}`, type:a.type, subtype:a.subtype||null,
+              balance:normalizeAccountBalance(a), currency:a.balance?.currency||"CAD", institution:inst,
+            }));
+            if (!cancelled && mapped.length) promoteConnectedAccounts(mapped, []);
+          } catch (e) {
+            console.error("[plaid] reconcile: get_accounts failed for item", it.item_id, e?.message||e);
+            captureError(e, { area: "plaid" });               // one bad item must not abort the rest
+          }
+        }
+      } catch (e) {
+        console.error("[plaid] reconcile failed:", e?.message||e);
+        captureError(e, { area: "plaid" });
+      }
+    })();
+    return ()=>{ cancelled = true; };
+  }, [user, hydrated, appData?.accounts?.length, appData?.demo, promoteConnectedAccounts]);
+
   // ── Plaid reconnect success handler (must be before early returns — Rules of Hooks) ──
   const onReconnectSuccess = useCallback(async (publicToken, metadata)=>{
     const jwt = await getJwt();
@@ -13744,10 +13840,19 @@ export default function FlourishApp(){
       .then(async ex=>{
         // Phase 1.2: exchange_token persists the item server-side atomically; no
         // access_token returns to the client. Fetch accounts + transactions via item_id + JWT.
-        return Promise.all([
+        // Requirement 4: allSettled, NOT all. Promise.all is all-or-nothing, so a transaction failure
+        // discarded a perfectly good get_accounts and the entire atomic write below never ran —
+        // leaving accounts:[]/bankConnected:false while the plaid_items row persisted server-side.
+        const [acctRes, txnRes] = await Promise.allSettled([
           callPlaid("get_accounts",{ item_id: ex.item_id }, {jwt}),
           fetchItemTxns(ex.item_id, jwt, false), // Sprint Z #3: drains truncation on a large connect
         ]);
+        if (acctRes.status === "rejected") throw acctRes.reason;   // accounts are essential
+        if (txnRes.status === "rejected") {                        // transactions are not — degrade, don't discard
+          console.error("[plaid] transaction fetch failed on connect — accounts still promoted:", txnRes.reason?.message||txnRes.reason);
+          captureError(txnRes.reason, { area: "plaid" });
+        }
+        return [acctRes.value, txnRes.status === "fulfilled" ? txnRes.value : { transactions: [], removed: [] }];
       })
       .then(async ([acctData, txnData])=>{
         const instName = metadata?.institution?.name||"Your Bank";
@@ -13762,38 +13867,22 @@ export default function FlourishApp(){
         }));
         const transactions = normaliseTxns(txnData.transactions||[]);
         const enrichedReconnectTxns = await enrichTxns(transactions, [], accounts, callPlaid, jwt, (err)=>captureError(err,{area:"enrich"}));
-        setAppData(d=>{
-          // Auto-add credit card accounts to debts — don't overwrite existing debt entries
-          const creditAccts = accounts.filter(a =>
-            a.type === "credit" || a.type === "credit card" ||
-            a.subtype === "credit card" || a.type === "line of credit"
-          );
-          const existingDebtAcctIds = new Set((d.debts||[]).map(debt => debt.account_id).filter(Boolean)); // Sprint Z3 #8: by account_id, not name
-          const newCCDebts = creditAccts
-            .filter(a => !existingDebtAcctIds.has(a.id))
-            .map(a => ({
-              name: a.name || "Credit Card",
-              balance: Math.abs(a.balance || 0).toFixed(2),
-              rate: "",
-              min: "",
-              fromBank: true,
-              account_id: a.id, // Sprint Z #13
-            }));
-          return {
-            ...d,
-            // Phase D2: merge by id so existing banks aren't replaced when adding another
-            accounts: mergeById(d.accounts, accounts),
-            // Sprint Z #1: merge added/modified + apply removals (removed is empty on a fresh item, but keep the contract consistent).
-            transactions: removeByIds(mergeById(d.transactions, markTransfers(enrichedReconnectTxns, t => isInternalTransfer(t) || isCCPayment(t, d.debts || []), isCashAdvance)), txnData.removed||[]),
-            bankConnected: true,
-            debts: [...(d.debts||[]).filter(deb => deb.name || deb.balance), ...newCCDebts],
-          };
-        });
+        // Route through the ONE promote path (dedupes by id, derives bankConnected, syncs CC→debts).
+        promoteConnectedAccounts(accounts, enrichedReconnectTxns);
+        // Sprint Z #1: apply removals separately (removed is empty on a fresh item; keeps the contract).
+        if ((txnData.removed||[]).length) setAppData(d=>({ ...d, transactions: removeByIds(d.transactions||[], txnData.removed) }));
         setNeedsReconnect(false);
         setReconnectToken(null);
       })
-      .catch(err=>{ console.error("Reconnect failed", err); });
-  },[]);
+      .catch(err=>{
+        // Requirement 4: SURFACE the failure. Swallowing it left the user staring at an unchanged
+        // screen, so they tapped Connect again — creating the duplicate plaid_items row while the
+        // first orphan persisted server-side.
+        console.error("Reconnect failed", err);
+        captureError(err, { area: "plaid" });
+        alertModal({ message: "We couldn't finish connecting your bank. Your bank was not added — please try again." });
+      });
+  },[promoteConnectedAccounts]);
   const { openPlaidLink: openReconnectLink } = usePlaidLinkSDK(reconnectToken, onReconnectSuccess);
   useEffect(()=>{ if(reconnectToken) openReconnectLink(); },[reconnectToken]); // eslint-disable-line
 
@@ -13849,7 +13938,24 @@ export default function FlourishApp(){
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={()=>setShowPaywall(true)} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
-  if(!onboarded)return <Onboarding onComplete={d=>{setAppData({...d, transactions: markTransfers(d.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, d.debts || []), isCashAdvance)});setOnboarded(true);}} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
+  if(!onboarded)return <Onboarding
+    connectedAccounts={appData?.accounts||[]}
+    onAccountsConnected={promoteConnectedAccounts}
+    onComplete={d=>{
+      // MERGE, never replace: accounts / bankConnected / bank transactions were already promoted into
+      // appData by promoteConnectedAccounts. A wholesale replace here would wipe them (finish() no
+      // longer carries them). Functional updater so a racing save can't be clobbered.
+      setAppData(prev=>{
+        const merged = { ...(prev||{}), ...d };
+        merged.accounts = prev?.accounts || [];
+        merged.bankConnected = prev?.bankConnected || false;
+        merged.transactions = markTransfers(
+          mergeById(prev?.transactions||[], d.transactions||[]),
+          t => isInternalTransfer(t) || isCCPayment(t, merged.debts || []), isCashAdvance);
+        return merged;
+      });
+      setOnboarded(true);
+    }} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
   if(!firstVisitDone&&appData)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}/>;
   if(showPaywall && !isCapacitorIOS())return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setPlan("premium");setIsPremium(true);setShowPaywall(false);}} onPromoUpgrade={()=>{applyBetaCodeFounderUpgrade();setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;
