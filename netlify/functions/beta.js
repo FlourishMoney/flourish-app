@@ -9,6 +9,9 @@
  * Env vars needed:
  *   SUPABASE_URL         — your Supabase project URL
  *   SUPABASE_SECRET_KEY  — your Supabase service_role secret key (NOT the anon key)
+ *   BETA_CODES           — REQUIRED. Comma-separated list of valid beta/access codes. If unset, the
+ *                          function fails CLOSED (every code is rejected). There is deliberately no
+ *                          hardcoded fallback — a missing config must never mean "accept known codes".
  */
 
 "use strict";
@@ -16,6 +19,27 @@
 const { getAdminClient } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
 
 const BETA_CAP = 30;
+
+// Valid access codes come ONLY from process.env.BETA_CODES (comma-separated, trimmed, upper-cased).
+// Returns [] when the env var is missing or empty, which makes validateBetaCode reject everything —
+// FAIL CLOSED. Previously this fell back to a hardcoded launch list, so an unset env var silently
+// accepted those specific codes; that list also then lived in source. Both are gone.
+function loadBetaCodes() {
+  const raw = process.env.BETA_CODES;
+  if (!raw || !raw.trim()) return [];
+  return raw.split(",").map(c => c.trim().toUpperCase()).filter(Boolean);
+}
+
+// True only if `code` matches a configured code. Logs (once per call) when no codes are configured so
+// a misconfiguration is loud in the function logs rather than a silent lock-out with no explanation.
+function validateBetaCode(code) {
+  const codes = loadBetaCodes();
+  if (codes.length === 0) {
+    console.error("[beta] BETA_CODES env var is unset or empty — rejecting all access codes (fail closed). Set BETA_CODES in the Netlify environment.");
+    return false;
+  }
+  return codes.includes(String(code || "").trim().toUpperCase());
+}
 
 // Phase D2: origin-aware CORS — locks to known origins, falls back to production.
 const ALLOWED_ORIGINS = new Set([
@@ -77,13 +101,10 @@ exports.handler = async (event) => {
     action = body.action || "count";
   } catch {}
 
-  // Sprint Z #5: beta/promo-code validation moved server-side — codes no longer ship in the client
-  // bundle. Configurable via the BETA_CODES env var (comma-separated); falls back to the launch list.
+  // Sprint Z #5: beta/promo-code validation lives server-side — codes never ship in the client bundle.
+  // Valid codes come ONLY from BETA_CODES; unset env var → validateBetaCode returns false (fail closed).
   if (action === "validate") {
-    const code = String(body.code || "").trim().toUpperCase();
-    const codes = (process.env.BETA_CODES || "BETA100,FLOURISH2026,FOUNDER,APPLE_REVIEW_2026")
-      .split(",").map(c => c.trim().toUpperCase()).filter(Boolean);
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: codes.includes(code) }) };
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: validateBetaCode(body.code) }) };
   }
 
   // Phase E1: waitlist email capture (replaces public signup CTAs).
@@ -160,9 +181,7 @@ exports.handler = async (event) => {
     if (!password || typeof password !== "string" || password.length < 8) {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "weak_password" }) };
     }
-    const codes = (process.env.BETA_CODES || "BETA100,FLOURISH2026,FOUNDER,APPLE_REVIEW_2026")
-      .split(",").map(c => c.trim().toUpperCase()).filter(Boolean);
-    if (!codes.includes(code)) {
+    if (!validateBetaCode(code)) {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "invalid_code" }) };
     }
 
