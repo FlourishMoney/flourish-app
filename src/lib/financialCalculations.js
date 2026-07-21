@@ -647,6 +647,25 @@ export function clampDayToMonth(day, y, m) {
   return Math.min(Math.max(1, day), daysInMonth(y, m));
 }
 
+// The two in-month paydays for a semimonthly income, clamped and GUARANTEED distinct.
+// `dayA`/`dayB` are the intended days of month (e.g. the anchor and anchor+15). Both are clamped into
+// month (y, m). Bug this fixes: when a high anchor's +15 overflows month-end, dayA and dayB both clamp
+// to the last day and collapse into a SINGLE payday — half the month's income. On that collision the
+// second deposit is relocated to its half-month partner on the other side (dayB±15) so the income
+// still pays TWICE. Returns a sorted array of two day-numbers (or one only in a degenerate case that
+// valid semimonthly inputs cannot reach). Low anchors and the 1st-and-15th default are unchanged: they
+// never collide, so they fall straight through.
+export function semimonthlyDays(dayA, dayB, y, m) {
+  const a = clampDayToMonth(dayA, y, m);
+  let b = clampDayToMonth(dayB, y, m);
+  if (b === a) {
+    // Overflow collision — take the half-month partner on the opposite side of dayA.
+    b = clampDayToMonth(dayB > dayA ? dayA - 15 : dayA + 15, y, m);
+  }
+  if (b === a) return [a];
+  return a < b ? [a, b] : [b, a];
+}
+
 const _daysInMonth = daysInMonth;
 function _domDate(y, m, day) { return new Date(y, m, clampDayToMonth(day, y, m), 12, 0, 0); }
 

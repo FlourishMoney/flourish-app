@@ -16,6 +16,9 @@ import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBill
 import { retainAccounts, retainLiabilities } from "./lib/multibank.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
+import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
+import { paydayLineAmount } from "./lib/forecastView.js";
+import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting } from "./lib/meetingSchedule.js";
@@ -1287,7 +1290,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
                         <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
                           <span style={{width:6,height:6,borderRadius:"50%",background:C.green,display:"inline-block"}}/>💰 Paycheck
                         </span>
-                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>+${(ev.income||0).toFixed(0)}</span>
+                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>+${paydayLineAmount(ev).toFixed(0)}</span>
                       </div>
                     )}
                     {/* Bills */}
@@ -1351,7 +1354,9 @@ function FinancialTimeline({data}) {
   // Shared low-balance definition — proportional band with an absolute floor. Bare balance*0.12
   // collapses to 0 for a user with no cash, hiding the warning from exactly the people who need it.
   const safeFloor = lowBalanceThreshold(SafeSpendEngine.calculate(data));
-  const { monthlyIncome } = FinancialCalcEngine.cashFlow(data, getCatOv());
+  // Sprint C Fix 3: the payday drill-down now derives its amount from the forecast event
+  // (paydayLineAmount(ev)), so the monthly cashFlow total is no longer read here — removing it
+  // prevents the monthly figure from ever being shown against a single per-deposit payday again.
   const avgDaily = FinancialCalcEngine.avgDailySpend(data);
 
   const events = forecast.filter(f => f.day === 0 || f.isPayday || f.bills.length > 0 || f.day === 30);
@@ -1407,7 +1412,7 @@ function FinancialTimeline({data}) {
                     {ev.isPayday&&(
                       <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
                         <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💰 Paycheck</span>
-                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+${(monthlyIncome||0).toFixed(0)}</span>
+                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+${paydayLineAmount(ev).toFixed(0)}</span>
                       </div>
                     )}
                     {ev.bills.map((b,bi)=>(
@@ -2235,16 +2240,17 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
   const cc = CC[data.profile?.country || "CA"];
   const opportunities = [];
 
-  // Subscription audit
-  const subTxns = txns.filter(t => t.cat === "Subscriptions" && t.amount > 0);  // expenses are positive
-  const subTotal = subTxns.reduce((s,t) => s + Math.abs(t.amount), 0);
-  if (subTotal > 40) {
-    const dupes = subTxns.length > 3 ? subTxns.slice(-2).map(t=>t.merchant||t.name).join(", ") : subTxns.map(t=>t.merchant||t.name).join(", ");
+  // Subscription audit — Sprint C Fix 5: a REAL monthly figure (one estimate per active merchant),
+  // not a raw sum of every subscription charge over the ~90-day window. Distinct active merchants,
+  // not transaction rows. The 30% savings badge inherits the corrected total.
+  const subs = analyzeSubscriptions(txns);
+  if (subs.monthlyTotal > 40) {
+    const savings = Math.round(subs.monthlyTotal * 0.3);
     opportunities.push({
       id:"subs", icon:"📱", color:C.teal,
-      title:`$${(subTotal||0).toFixed(0)}/mo in subscriptions`,
-      detail:`${subTxns.length} active subscriptions detected. Cancelling unused ones could free $${Math.round(subTotal*0.3)}/mo.`,
-      action:"Review", screen:"spend", badge:"Save $"+Math.round(subTotal*0.3)+"/mo"
+      title:`$${subs.monthlyTotal}/mo in subscriptions`,
+      detail:`${subs.activeCount} active subscription${subs.activeCount===1?"":"s"} detected. Cancelling unused ones could free $${savings}/mo.`,
+      action:"Review", screen:"spend", badge:"Save $"+savings+"/mo"
     });
   }
 
@@ -2338,7 +2344,9 @@ function MoneyWrapped({data, onClose}) {
   const topCat = Object.entries(cats).sort((a,b)=>b[1]-a[1])[0] || ["Food","340"];
   const lowestCat = Object.entries(cats).sort((a,b)=>a[1]-b[1])[0] || ["Transport","45"];
   const biggestTxn = txns.sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount))[0];
-  const netWorthChange = Math.round(_wrappedNW);
+  // Sprint C Fix 2: no trustworthy annual baseline exists (see moneyWrapped.js), so present net worth
+  // as CURRENT STATE — a signed figure with no leading "+", never "changed by … this year".
+  const nwHeadline = formatWrappedNetWorth(_wrappedNW);
   const {score} = calcHealthScore(data, getCatOv());
   const year = new Date().getFullYear();
 
@@ -2349,9 +2357,9 @@ function MoneyWrapped({data, onClose}) {
       content:(
         <div style={{textAlign:"center",padding:"0 8px"}}>
           <div style={{fontSize:56,marginBottom:16}}>🌱</div>
-          <div style={{color:"#ffffff99",fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:3,textTransform:"uppercase",marginBottom:8}}>Your {year} in review</div>
+          <div style={{color:"#ffffff99",fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:3,textTransform:"uppercase",marginBottom:8}}>Your money, right now</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:38,fontWeight:900,color:"#fff",lineHeight:1.1,marginBottom:12}}>Money Wrapped</div>
-          <div style={{color:"#ffffff88",fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7}}>A year of growth, decisions,<br/>and financial wisdom.</div>
+          <div style={{color:"#ffffff88",fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7}}>A snapshot of your spending,<br/>saving, and financial habits.</div>
         </div>
       )
     },
@@ -2360,9 +2368,9 @@ function MoneyWrapped({data, onClose}) {
       bg:`linear-gradient(160deg,${C.teal} 0%,#0A3A4A 100%)`,
       content:(
         <div style={{textAlign:"center"}}>
-          <div style={{color:"#ffffff88",fontSize:11,letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",marginBottom:12}}>Your net worth changed by</div>
-          <div style={{fontFamily:"'Playfair Display',serif",fontSize:64,fontWeight:900,color:netWorthChange>=0?"#6EF0A0":"#FF7070",letterSpacing:-2,lineHeight:1,marginBottom:8}}>{netWorthChange>=0?"+":""}{netWorthChange>=0?`$${((netWorthChange||0)/1000).toFixed(1)}k`:`-$${(Math.abs(netWorthChange||0)/1000).toFixed(1)}k`}</div>
-          <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:24}}>{netWorthChange>=0?"You grew richer this year 🚀":"You're building the foundation 🏗️"}</div>
+          <div style={{color:"#ffffff88",fontSize:11,letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",marginBottom:12}}>{nwHeadline.label}</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:64,fontWeight:900,color:nwHeadline.positive?"#6EF0A0":"#FF7070",letterSpacing:-2,lineHeight:1,marginBottom:8}}>{nwHeadline.display}</div>
+          <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:24}}>{nwHeadline.caption}</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
             {[
               {label:"Invested",   val:`$${((invBal||0)/1000).toFixed(1)}k`, icon:"📈"},

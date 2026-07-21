@@ -8,7 +8,7 @@
 // cashFlow, so no catOverrides needed.
 // -----------------------------------------------------------------------------
 
-import { FinancialCalcEngine, isBillArchived, billOccursOnDate, clampDayToMonth, parseMoney } from "./financialCalculations.js";
+import { FinancialCalcEngine, isBillArchived, billOccursOnDate, clampDayToMonth, semimonthlyDays, parseMoney } from "./financialCalculations.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./safeSpendEngine.js";
 
 export const ForecastEngine = {
@@ -125,17 +125,18 @@ generate(data, days = 90, scenario = null, today = new Date()) {
       // weekly/biweekly arm phases off, so there is one anchor concept here, not two competing ones —
       // weekly/biweekly consume the anchor's full date, monthly/semimonthly consume its day-of-month.
       const d1 = anchorDayOf(inc, amt);
-      // Semimonthly pays twice: the anchor and ~15 days later. With no explicit anchor this is the
-      // historical 1st-and-15th; with an anchor of 15 it becomes the common 15th-and-month-end.
+      // Semimonthly's second target day: the anchor +15 (explicit anchor), or the historical 1st-and-
+      // 15th default (second = 15) when none is set. Sprint C Fix 4: semimonthlyDays clamps BOTH days
+      // and, when a high anchor's +15 overflows to the same clamped day, relocates the second so the
+      // income still pays TWICE — the clamp-collision that dropped one of two deposits for anchors at
+      // month-end. Monthly is a single clamped day as before.
       const d2n = freq==="semimonthly" ? (parseInt(inc.anchorDay,10) > 0 ? d1 + 15 : 15) : null;
       for(let k = 1; k <= days; k++) {
         const d2 = new Date(today); d2.setDate(today.getDate()+k);
         const y = d2.getFullYear(), m = d2.getMonth(), dom = d2.getDate();
-        // CLAMP, don't compare exactly. An anchor of 31 must land on Feb 28/29 and on the 30th of a
-        // 30-day month — the same rule bills use (financialCalculations clampDayToMonth). Exact
-        // equality silently dropped a whole month's pay five months a year.
-        const hit = dom === clampDayToMonth(d1, y, m) ||
-                    (d2n !== null && dom === clampDayToMonth(d2n, y, m));
+        const hit = freq==="semimonthly"
+          ? semimonthlyDays(d1, d2n, y, m).includes(dom)
+          : dom === clampDayToMonth(d1, y, m);
         if(hit) addIncome(d2, amt);
       }
     }

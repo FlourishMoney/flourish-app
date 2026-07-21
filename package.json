@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:coach": "node tests/coach_qa.cjs",
-    "test:math": "node tests/math.test.cjs && node tests/pipeline.test.cjs && node tests/math-invariants.test.cjs && node tests/reconcileBills.test.cjs && node tests/meetingSchedule.test.cjs && node tests/incomeDetect.test.cjs && node tests/detectCadence.test.cjs && node tests/consentHeal.test.cjs && node tests/forecastIncomes.test.cjs && node tests/forecastAnchorDay.test.cjs && node tests/forecastNaN.test.cjs && node tests/lowBalanceThreshold.test.cjs && node tests/forecastEngine.defects.test.cjs"
+    "test:math": "node tests/math.test.cjs && node tests/pipeline.test.cjs && node tests/math-invariants.test.cjs && node tests/reconcileBills.test.cjs && node tests/meetingSchedule.test.cjs && node tests/incomeDetect.test.cjs && node tests/detectCadence.test.cjs && node tests/consentHeal.test.cjs && node tests/forecastIncomes.test.cjs && node tests/forecastAnchorDay.test.cjs && node tests/forecastNaN.test.cjs && node tests/lowBalanceThreshold.test.cjs && node tests/safeSpendCurrency.test.cjs && node tests/moneyWrapped.test.cjs && node tests/forecastView.test.cjs && node tests/semimonthlyClamp.test.cjs && node tests/subscriptions.test.cjs && node tests/forecastEngine.defects.test.cjs"
   },
   "dependencies": {
     "@capacitor/cli": "^8.4.2",

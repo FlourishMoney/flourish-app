@@ -16,6 +16,7 @@ import {
   billOccursOnDate,
   isBillArchived,
   num,
+  baseCurrencyOf,
 } from "./financialCalculations.js";
 
 // ── Low-balance threshold — THE definition of "this balance is low" ──────────
@@ -46,10 +47,17 @@ export const SafeSpendEngine = {
     const bills    = data.bills    || [];
     const debts    = data.debts    || [];
 
-    const balance  = accounts
-      .filter(a => isCashAccount(a))
-      .reduce((s,a) => s + num(a.balance), 0) ||
-      0;
+    // Sprint C Fix 1: never sum cash across currencies 1:1 — there is no FX source (excluding is
+    // correct, converting is not). Include only BASE-currency cash; foreign cash is excluded and
+    // surfaced so the UI can say "US$X not included in your CAD safe-to-spend". Mirrors the net-worth
+    // logic in financialCalculations (baseCurrencyOf + "account.currency defaults CAD"), so a
+    // single-currency user sees an IDENTICAL balance to before — every account is in-base.
+    const base = baseCurrencyOf(data);
+    const isBaseCurrency = a => String(a.currency || "CAD").toUpperCase() === base;
+    const cashAccounts = accounts.filter(a => isCashAccount(a));
+    const balance  = cashAccounts.filter(isBaseCurrency).reduce((s,a) => s + num(a.balance), 0) || 0;
+    const excludedForeignCash = cashAccounts.filter(a => !isBaseCurrency(a)).reduce((s,a) => s + num(a.balance), 0);
+    const mixedCurrencyDetected = cashAccounts.some(a => !isBaseCurrency(a));
 
     // Detect bills already paid this month by matching transactions (current month per todayDate).
     const _normName = s => (s||"").toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim();
@@ -117,6 +125,10 @@ export const SafeSpendEngine = {
       safeAmount, riskLevel, noIncome,
       overdraft: upcomingBills > balance,
       soonBills: bills.filter(b => occurrencesInWindow(b) > 0),
+      // Sprint C Fix 1: base currency + what was left out, so the UI can disclose the exclusion.
+      baseCurrency: base,
+      mixedCurrencyDetected,
+      excludedForeignCash,
     };
   }
 };
