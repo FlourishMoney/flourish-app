@@ -28,7 +28,7 @@ import { AutopilotEngine, calcHealthScore, computePaydayGap, computeDailySpendLi
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
-import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty } from "./lib/persistence.js";
+import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
 
 // Capacitor iOS platform detection — true only when running as a native iOS app via Capacitor.
 // Returns false on web/dev. Used to gate iOS-specific behavior: iOS launches free during v1
@@ -13354,17 +13354,28 @@ export default function FlourishApp(){
       clearAllUserLocal();
       setAppData(null); setOnboarded(false); setHousehold(null); setIsPremium(isCapacitorIOS()); setCheckInBonus(0);
     }
+    // Bug A: capture the local recency stamp BEFORE the network round-trip. The save effect stamps
+    // savedAt on EVERY run, so reading it after the await sees a value written DURING the fetch —
+    // which made local always outrank the remote and skipped applyBlob for a valid server row.
+    const preSnap    = loadState() || {};
+    const preSavedAt = preSnap.savedAt || null;
+    const preHasReal = hasRealLocalData(preSnap.appData);
     (async ()=>{
       try {
         const remote = await fetchUserData(supabase, user.id); // throws on read error; null on clean no-row
         console.log("[persist] hydrate fetched", { hasRow: !!remote, cancelled });
         if (cancelled) return;
         const snap = loadState() || {};
-        const localSavedAt = snap.savedAt || null;
+        const decision = decideHydrate({
+          remoteUpdatedAt: remote?.updatedAt || null,
+          localSavedAt: preSavedAt,
+          localHasRealData: preHasReal,
+        });
+        // Instrumentation gap this bug hid in: log the decision AND whether the row was applied.
+        console.log("[persist] hydrate decision", { ...decision, remoteUpdatedAt: remote?.updatedAt || null, localSavedAt: preSavedAt, localHasRealData: preHasReal });
         if (remote) {
-          const dbNewer = !localSavedAt || new Date(remote.updatedAt).getTime() >= new Date(localSavedAt).getTime();
-          if (dbNewer) applyBlob(remote.blob);            // DB wins
-          else if (!snap.appData?.demo) getSaver().schedule({ userId: user.id, blob: buildDbBlob(snap, { userId: user.id, nowIso: new Date().toISOString() }) }); // local newer → push up (Sprint Z #15: never push demo data; upsert's safety net also refuses it)
+          if (decision.apply) { applyBlob(remote.blob); console.log("[persist] applyBlob APPLIED remote row"); }  // DB wins
+          else if (decision.pushLocal && !snap.appData?.demo) { console.log("[persist] applyBlob SKIPPED — local newer, pushing local up"); getSaver().schedule({ userId: user.id, blob: buildDbBlob(snap, { userId: user.id, nowIso: new Date().toISOString() }) }); } // local newer → push up (Sprint Z #15: never push demo data; upsert's safety net also refuses it)
         } else if (snap.appData && !snap.appData.demo) {
           // clean "no row" + we have REAL local data (not demo) → MIGRATION upload (only here, never on read error)
           const _mig = await upsertUserData(supabase, user.id, buildDbBlob(snap, { userId: user.id, nowIso: new Date().toISOString() }));
@@ -13417,7 +13428,13 @@ export default function FlourishApp(){
     // Sprint Z3: stamp the local blob's owner ONLY when logged in; when logged out, PRESERVE the prior
     // owner (don't null it) so the shared-device wipe keeps a 2nd owner signal beyond STAMP_KEY — a
     // cross-user financial-data leak must not hinge on a single flag surviving sign-out.
-    saveState({onboarded,appData,household,isPremium,checkInBonus, savedAt:nowIso, ...(user?.id ? { userId: user.id } : {})});
+    // Bug A (root cause): only stamp savedAt when there is REAL data. Stamping an empty/logged-out
+    // state as "now" made it outrank a valid remote row on the next hydrate — a returning user landed
+    // in a blank onboarding while their data sat on the server. saveState MERGES, so omitting savedAt
+    // preserves the previous genuine stamp. savedAt has exactly ONE reader (the hydrate comparison),
+    // so gating it cannot affect the save path.
+    const stampSavedAt = hasRealLocalData(appData);
+    saveState({onboarded,appData,household,isPremium,checkInBonus, ...(stampSavedAt ? { savedAt:nowIso } : {}), ...(user?.id ? { userId: user.id } : {})});
     const gateOpen = !!user && hydratedUidRef.current === user?.id && !appData?.demo; // never sync demo/sample data to the DB
     console.log("[persist] save effect fired", { user: !!user, userId: user?.id || null, hydratedUid: hydratedUidRef.current, gateOpen });
     if (gateOpen) {
@@ -13476,11 +13493,14 @@ export default function FlourishApp(){
     const flush = ()=>{
       try {
         const saver = saverRef.current;
-        if (saver?.hasPending?.()) {
-          // Send the pending blob via keepalive; if dispatched, consume it so the normal (abortable)
-          // saveFn doesn't double-write. If it can't go (no token / empty), fall through to flush().
-          if (beaconPersist(saver.peek?.())) { saver.discard?.(); return; }
-        }
+        // Bug B: the beacon is BEST-EFFORT ONLY and must never consume the pending write. It is
+        // fire-and-forget (`.catch(()=>{})`) and `keepalive` is unreliable in iOS/WKWebView, so a mere
+        // DISPATCH is not evidence of a write. Previously we discarded the payload on dispatch and
+        // returned — so a beacon that failed in flight silently lost that save forever, which is how
+        // the server row froze while the user kept using the app.
+        // The awaited flush stays authoritative (it reports errors and feeds Sentry). The upsert is
+        // idempotent (same blob, on_conflict=user_id merge), so a duplicate write is harmless.
+        if (saver?.hasPending?.()) beaconPersist(saver.peek?.());
         saver?.flush?.();
       } catch {}
     };

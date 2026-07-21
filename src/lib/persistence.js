@@ -122,6 +122,31 @@ export function isBlobEmpty(blob) {
   return !(has(a.bills) || has(a.incomes) || has(a.debts) || has(a.goals) || has(a.accounts) || has(a.transactions) || profileHasData);
 }
 
+// Does this local state hold REAL user data (not empty, not demo)? Mirrors isBlobEmpty so the local
+// recency stamp and the DB overwrite guard can never disagree about what "empty" means.
+export function hasRealLocalData(appData) {
+  return !isBlobEmpty({ core: { appData } });
+}
+
+// PURE hydrate decision: when a remote row exists, which side wins?
+//
+// `localSavedAt` MUST be captured BEFORE the network fetch. The save effect stamps it on every run,
+// so reading it after the await sees a value written DURING the round-trip — that race made local
+// always look newer and silently skipped applyBlob for a perfectly valid remote row.
+//
+// The `localHasRealData` short-circuit is the belt: an empty local cache has nothing worth
+// preserving, so a valid remote row always wins even if the stamp was poisoned. That is exactly the
+// case that dropped a returning user into a blank onboarding while their data sat on the server.
+export function decideHydrate({ remoteUpdatedAt, localSavedAt, localHasRealData }) {
+  if (!remoteUpdatedAt)  return { apply: false, pushLocal: !!localHasRealData, reason: "no-remote-row" };
+  if (!localHasRealData) return { apply: true,  pushLocal: false, reason: "local-empty" };
+  if (!localSavedAt)     return { apply: true,  pushLocal: false, reason: "no-local-stamp" };
+  const dbNewer = new Date(remoteUpdatedAt).getTime() >= new Date(localSavedAt).getTime();
+  return dbNewer
+    ? { apply: true,  pushLocal: false, reason: "db-newer" }
+    : { apply: false, pushLocal: true,  reason: "local-newer" };
+}
+
 // ── Supabase I/O (caller injects the client; this file imports nothing) ──────────
 // Returns { blob, updatedAt } on a found row, null on a clean "no row", and THROWS on a
 // real read error — so the caller migrate-uploads ONLY on the clean-null case (never
