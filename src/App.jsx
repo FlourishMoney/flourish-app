@@ -10027,6 +10027,9 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     )}
     <div style={{textAlign:"center",color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:12,letterSpacing:0.3}}>
       Flourish v1.0 · flourishmoney.app · © 2026 GrowSmart Inc.
+      {/* Build SHA baked in at vite build time (see vite.config.js). Lets you eyeball whether this
+          iOS/web build matches deployed main — a different SHA than flourishmoney.app means drift. */}
+      <br/>Build {import.meta.env.VITE_BUILD_SHA || "dev"}
     </div>
   </div>;
 }

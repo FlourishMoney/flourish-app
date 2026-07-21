@@ -7,8 +7,19 @@ dist/
 
 # Local build / deploy artifacts (not for git)
 *.zip
-audit-bundle.txt
+audit-bundle*.txt
 api/
 flourish-deploy/
 *.bak
 src/App.jsx.bak
+
+# Local Netlify folder
+.netlify
+
+# Local marketing assets and generated App Store screenshots (regenerable, not source).
+# *-screenshot.png matches the desktop/mobile screenshots and none of the tracked app icons.
+marketing/
+*-screenshot.png
+
+# Seed helper contains a real screenshot-account password — must never be committed.
+scripts/seed-screenshot-account.mjs
