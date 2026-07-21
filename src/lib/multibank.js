@@ -25,12 +25,44 @@
 //   • bankConnected— DERIVED from the merged set (Manual/Statement are not bank connections), never
 //                    from a caller-supplied flag or a component-local array
 //   • debts        — prior debts plus any new credit-card accounts, keyed by account_id (no dupes)
+// Stable identity for the SAME real-world account seen through DIFFERENT Plaid items. Plaid issues a
+// fresh account_id per item, so id-matching cannot collapse a duplicate connection — institution +
+// mask + type can. Returns null when there is no mask (Manual/Statement rows), so those fall back to
+// id-only matching and can never be wrongly merged with each other.
+export function accountStableKey(a) {
+  if (!a || !a.mask) return null;
+  return `${String(a.institution||"").toLowerCase()}|${String(a.mask)}|${String(a.type||"").toLowerCase()}`;
+}
+
 export function promoteAccounts(prevAccounts, prevDebts, incoming) {
-  const inc = Array.isArray(incoming) ? incoming : [];
+  const rawInc = Array.isArray(incoming) ? incoming : [];
   const prevA = Array.isArray(prevAccounts) ? prevAccounts : [];
   const prevD = Array.isArray(prevDebts) ? prevDebts : [];
+  // Collapse duplicates WITHIN the incoming batch first (two items returning the same real account),
+  // newest wins — the caller passes newest-item-first after the server-side collapse.
+  const seenKeys = new Set(), seenIds = new Set(), inc = [];
+  for (const a of rawInc) {
+    if (!a) continue;
+    const k = accountStableKey(a);
+    if (k && seenKeys.has(k)) continue;
+    if (a.id && seenIds.has(a.id)) continue;
+    if (k) seenKeys.add(k);
+    if (a.id) seenIds.add(a.id);
+    inc.push(a);
+  }
   const incIds = new Set(inc.map(a => a && a.id).filter(Boolean));
-  const accounts = [...prevA.filter(a => a && a.id && !incIds.has(a.id)), ...inc];
+  const incKeys = new Set(inc.map(accountStableKey).filter(Boolean));
+  // Drop a prior account when the incoming batch supersedes it by id OR by stable key (the latter is
+  // the duplicate-item case: same real account, different account_id).
+  const accounts = [
+    ...prevA.filter(a => {
+      if (!a || !a.id) return false;
+      if (incIds.has(a.id)) return false;
+      const k = accountStableKey(a);
+      return !(k && incKeys.has(k));
+    }),
+    ...inc,
+  ];
   const isCard = (a) => a && (a.type === "credit" || a.type === "credit card" ||
                               a.subtype === "credit card" || a.type === "line of credit");
   const existingDebtAcctIds = new Set(prevD.map(x => x && x.account_id).filter(Boolean));

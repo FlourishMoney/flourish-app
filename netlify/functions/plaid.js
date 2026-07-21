@@ -486,6 +486,48 @@ exports.handler = async (event) => {
       return ok({ removed: true });
     }
 
+    // 11b. collapse_duplicate_items — auth-required: one active item per institution.
+    // Re-linking a bank that is already connected creates a SECOND plaid_items row (exchange_token
+    // upserts on user_id+item_id, and Plaid issues a fresh item_id every Link), so a user who
+    // retried a failed connect ends up with duplicates. Two items for one bank double-count every
+    // balance once accounts import. Keep the NEWEST row per institution and revoke the rest through
+    // the same path delete_item uses (Plaid /item/remove + row delete), so the duplicate genuinely
+    // goes away server-side rather than being hidden in the UI.
+    // Returns { collapsed: [{item_id, institution_name}], kept: [{item_id, institution_name}] }.
+    if (action === "collapse_duplicate_items") {
+      const { user_id, error: authError } = await getUserFromRequest(event);
+      if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
+      const admin = getAdminClient();
+      const { data: rows, error: listErr } = await admin
+        .from("plaid_items")
+        .select("item_id, access_token, institution_id, institution_name, created_at")
+        .eq("user_id", user_id)
+        .order("created_at", { ascending: false });   // newest first
+      if (listErr) {
+        console.error("[collapse_duplicate_items]", listErr.message);
+        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Failed to load items." }) };
+      }
+      const seen = new Set();
+      const kept = [], collapsed = [];
+      for (const r of rows || []) {
+        // institution_id is often null (neither client call site sends it), so fall back to a
+        // normalised institution_name. Rows with neither are never collapsed — we cannot prove
+        // they are duplicates, and wrongly removing a real bank is far worse than a duplicate.
+        const key = (r.institution_id || "").trim().toLowerCase()
+                 || (r.institution_name || "").trim().toLowerCase();
+        if (!key) { kept.push({ item_id: r.item_id, institution_name: r.institution_name }); continue; }
+        if (!seen.has(key)) { seen.add(key); kept.push({ item_id: r.item_id, institution_name: r.institution_name }); continue; }
+        // Duplicate (older, since we ordered newest-first) → revoke + delete.
+        try { await plaid("/item/remove", { access_token: r.access_token }); }
+        catch (revErr) { console.warn("[collapse: item/remove failed]", r.item_id, revErr.message); }
+        const { error: delErr } = await admin
+          .from("plaid_items").delete().eq("user_id", user_id).eq("item_id", r.item_id);
+        if (delErr) { console.error("[collapse: row delete failed]", r.item_id, delErr.message); kept.push({ item_id: r.item_id, institution_name: r.institution_name }); continue; }
+        collapsed.push({ item_id: r.item_id, institution_name: r.institution_name });
+      }
+      return ok({ collapsed, kept });
+    }
+
     // 12. migrate_items — auth-required: bulk-migrate localStorage tokens to Supabase
     // Body: { tokens: [{token, institution_name}, ...] }
     // For each token: call /item/get to derive item_id, upsert plaid_items row.

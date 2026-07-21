@@ -3962,6 +3962,17 @@ async function backgroundRefresh(isPremium, setAppData, fullResync = false) {
     const enrichedTxns = await enrichTxns(normalisedTxns, [], rawFreshAccounts, callPlaid, jwt, (err)=>captureError(err,{area:"enrich"}));
 
     setAppData(prev => {
+      // Sprint D Fix — THE CLOBBER GUARD. The bail above only fires when items FAILED. A refresh where
+      // every item "succeeded" but returned ZERO accounts fell straight through to retainAccounts,
+      // which drops any Plaid-shaped account absent from a clean refresh — wiping accounts we had just
+      // healed and sending num_accounts back to 0 with a current updated_at. "Every bank succeeded and
+      // this user has no accounts at all" is far likelier an API quirk than reality, so treat it as
+      // uncertainty and KEEP (the rule this module already states). Guarded HERE, at the call site,
+      // because retainAccounts' own contract is asserted by pipeline.test.cjs #10(3) and must not change.
+      if (rawFreshAccounts.length === 0 && (prev?.accounts||[]).length > 0) {
+        console.error("[backgroundRefresh] refresh returned ZERO accounts while", prev.accounts.length, "cached — keeping cached state");
+        return prev;
+      }
       const mapAcct = a => ({
         id: a.id,
         name: a.name,
@@ -13795,6 +13806,7 @@ export default function FlourishApp(){
   //   It only ever MERGES via promoteConnectedAccounts' functional updater, so it can neither clobber
   //   a restored blob nor be clobbered by a racing save.
   const reconciledUidRef = useRef(null);
+  const linkIntentRef = useRef(null);   // "add" | "reconnect" — set before opening Plaid Link
   useEffect(()=>{
     if (!user || !hydrated) return;                          // hydrate not settled
     if (hydratedUidRef.current !== user.id) return;           // hydrate not CLEAN for this user
@@ -13807,23 +13819,65 @@ export default function FlourishApp(){
       try {
         const jwt = await getJwt();
         if (!jwt) return;
-        const list = await callPlaid("list_items", {}, { jwt });
-        const items = list?.items || [];
+        let items = (await callPlaid("list_items", {}, { jwt }))?.items || [];
         if (cancelled || items.length === 0) return;          // no server items → genuinely not connected
-        console.log("[plaid] reconcile: server has", items.length, "item(s) but appData.accounts is empty — healing");
-        for (const it of items) {
+        // NOTE: console.error, not console.log — vite's esbuild `pure` list strips console.log from
+        // production builds, which is why this path was completely unobservable in prod.
+        console.error("[plaid] reconcile: server has", items.length, "item(s), appData.accounts empty — healing");
+
+        // Collapse duplicate institutions FIRST so we never fetch (and double-count) the same bank
+        // twice. Server-side, so the duplicate row genuinely goes away.
+        if (items.length > 1) {
           try {
-            const acct = await callPlaid("get_accounts", { item_id: it.item_id }, { jwt });
-            const inst = it.institution_name || "Your Bank";
-            const mapped = (acct?.accounts||[]).map(a=>({
-              id:a.id, name:`${inst} ••${a.mask||"????"}`, type:a.type, subtype:a.subtype||null,
-              balance:normalizeAccountBalance(a), currency:a.balance?.currency||"CAD", institution:inst,
-            }));
-            if (!cancelled && mapped.length) promoteConnectedAccounts(mapped, []);
+            const res = await callPlaid("collapse_duplicate_items", {}, { jwt });
+            if ((res?.collapsed||[]).length) {
+              console.error("[plaid] reconcile: collapsed", res.collapsed.length, "duplicate item(s)");
+              items = (await callPlaid("list_items", {}, { jwt }))?.items || items;
+            }
           } catch (e) {
-            console.error("[plaid] reconcile: get_accounts failed for item", it.item_id, e?.message||e);
-            captureError(e, { area: "plaid" });               // one bad item must not abort the rest
+            console.error("[plaid] reconcile: collapse failed (continuing with dedupe guard):", e?.message||e);
+            captureError(e, { area: "plaid" });               // non-fatal: the stable-key dedupe still guards
           }
+        }
+        if (cancelled) return;
+
+        // allSettled: one item failing must never zero the others (the fast-fail class already fixed
+        // on the Settings path).
+        const results = await Promise.allSettled(
+          items.map(it => callPlaid("get_accounts", { item_id: it.item_id }, { jwt })
+            .then(acct => ({ it, acct })))
+        );
+        if (cancelled) return;
+        const mapped = [];
+        results.forEach((r, i) => {
+          if (r.status === "rejected") {
+            console.error("[plaid] reconcile: get_accounts failed for item", items[i]?.item_id, r.reason?.message||r.reason);
+            captureError(r.reason, { area: "plaid" });
+            return;
+          }
+          const { it, acct } = r.value;
+          const inst = it.institution_name || "Your Bank";
+          (acct?.accounts||[]).forEach(a => mapped.push({
+            id:a.id, name:`${inst} ••${a.mask||"????"}`, type:a.type, subtype:a.subtype||null,
+            balance:normalizeAccountBalance(a), currency:a.balance?.currency||"CAD", institution:inst,
+            mask:a.mask||null,     // kept raw so the stable dedupe key doesn't have to parse the name
+            _item:it.item_id,      // LOAD-BEARING: retainAccounts DROPS unstamped Plaid-shaped accounts
+                                   // on a clean refresh, so healed accounts were wiped on the next sync.
+          }));
+        });
+        if (!mapped.length) { console.error("[plaid] reconcile: no accounts returned by any item"); return; }
+
+        // Transactions, best-effort and decoupled — payroll detection needs them, but a txn failure
+        // must never cost us the accounts.
+        let txns = [];
+        const txnRes = await Promise.allSettled(items.map(it => fetchItemTxns(it.item_id, jwt, false)));
+        txnRes.forEach((r,i) => {
+          if (r.status === "fulfilled") txns = txns.concat(normaliseTxns(r.value?.transactions||[]));
+          else { console.error("[plaid] reconcile: transactions failed for item", items[i]?.item_id, r.reason?.message||r.reason); captureError(r.reason, { area:"plaid" }); }
+        });
+        if (!cancelled) {
+          promoteConnectedAccounts(mapped, txns);
+          console.error("[plaid] reconcile: healed", mapped.length, "account(s),", txns.length, "txn(s)");
         }
       } catch (e) {
         console.error("[plaid] reconcile failed:", e?.message||e);
@@ -13836,6 +13890,22 @@ export default function FlourishApp(){
   // ── Plaid reconnect success handler (must be before early returns — Rules of Hooks) ──
   const onReconnectSuccess = useCallback(async (publicToken, metadata)=>{
     const jwt = await getJwt();
+    // Sprint D Fix: block re-linking an ALREADY-CONNECTED institution. exchange_token upserts on
+    // (user_id, item_id) and Plaid issues a fresh item_id on every Link, so a re-link silently creates
+    // a SECOND row — which double-counts every balance once accounts import. Only guards a fresh
+    // "add"; a genuine reconnect (update mode) must be allowed through.
+    const instName = (metadata?.institution?.name || "").trim();
+    if (linkIntentRef.current === "add" && instName) {
+      try {
+        const existing = await getUserItems();
+        const dupe = (existing||[]).find(it => (it.institution_name||"").trim().toLowerCase() === instName.toLowerCase());
+        if (dupe) {
+          console.error("[plaid] blocked duplicate link for already-connected institution:", instName);
+          alertModal({ message: `${instName} is already connected. To refresh it, use Reconnect in Settings → Connected Banks.` });
+          return;   // never exchange → no duplicate plaid_items row is created
+        }
+      } catch (e) { console.error("[plaid] duplicate-institution check failed (continuing):", e?.message||e); }
+    }
     callPlaid("exchange_token",{ public_token: publicToken, institution_name: metadata?.institution?.name||"Your Bank" }, {jwt})
       .then(async ex=>{
         // Phase 1.2: exchange_token persists the item server-side atomically; no
@@ -13978,6 +14048,7 @@ export default function FlourishApp(){
   // to a fresh-link flow if no items exist.
   const doReconnectBank = async ()=>{
     if(reconnectLoading) return;
+    linkIntentRef.current = "reconnect";  // a genuine reconnect must NOT be blocked as a duplicate
     setReconnectLoading(true);
     try {
       const country = appData?.profile?.country || "CA";
@@ -14006,6 +14077,7 @@ export default function FlourishApp(){
   const doAddNewBank = async ()=>{
     // FRESH LINK: always creates new connection, never update mode
     if(reconnectLoading) return;
+    linkIntentRef.current = "add";   // gates the duplicate-institution guard in onReconnectSuccess
     setReconnectLoading(true);
     const country = appData?.profile?.country || "CA";
     const jwt = await getJwt();
@@ -14028,9 +14100,21 @@ export default function FlourishApp(){
     const jwt = await getJwt();
     if(!jwt) return;
     const items = await getUserItems();
+    // Sprint D Fix: VERIFY the server actually removed each item. Previously every failure was
+    // swallowed by console.warn (which production strips) and the UI claimed success regardless —
+    // so a failed delete left the plaid_items row ACTIVE while the user believed they'd disconnected.
+    // That is how two "removed" Scotiabank items stayed active.
+    const failed = [];
     for (const it of items) {
       try { await callPlaid("delete_item", { item_id: it.item_id }, { jwt }); }
-      catch(e) { console.warn("delete_item:", e.message); }
+      catch(e) { console.error("[plaid] delete_item failed:", it.item_id, e?.message||e); captureError(e,{area:"plaid"}); failed.push(it); }
+    }
+    // Confirm against server truth rather than trusting the loop.
+    let remaining = [];
+    try { remaining = await getUserItems(); } catch { remaining = failed; }
+    if (remaining.length > 0) {
+      alertModal({ message: `We couldn't fully disconnect ${remaining.length === 1 ? "your bank" : "all your banks"}. Please try again — your bank is still connected.` });
+      return;   // do NOT claim disconnection or clear local accounts while the server still has items
     }
     setNeedsReconnect(false);
     setAppData(d=>({...d, accounts:[{id:"m1",name:"Chequing",type:"checking",balance:0,institution:"Manual"}], transactions: d.transactions||[], bankConnected:false }));
