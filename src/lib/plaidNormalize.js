@@ -302,8 +302,57 @@ export const MIN_BILL_OCCURRENCES = 3;          // 3 occurrences ⇒ 2 gaps that
 export const BILL_SPREAD_MAX_KEYWORD  = 1.20;   // recognised biller: allow real seasonal swing (hydro $80→$220 ≈ 0.93)
 export const BILL_SPREAD_MAX_CATEGORY = 0.40;   // category-only evidence: amounts must be tight to prove it's a bill
 
-export function detectRecurringBills(txns, opts = {}) {
-  if (!txns || txns.length === 0) return [];
+// Transactions eligible to be evidence for a recurring bill. Only expenses (positive = money out);
+// inter-account moves (cash advances, card payments, balance transfers) are excluded so they never
+// surface as bills. PENDING is excluded too — cashFlow / SafeSpendEngine / the pipeline all drop
+// pending, and a pending charge must not prematurely create or distort a bill (it can shift
+// amount/date or vanish on settle).
+//
+// Exported so bill RE-EVALUATION judges a stored bill against exactly the transactions the detector
+// would have used. If these two ever diverge, re-evaluation starts deleting bills on evidence the
+// detector never saw — so there is deliberately only one definition.
+const BILL_TRANSFER_RX = /cash advance|payment to|transfer to|balance transfer|e-?transfer|pymt|autopay/i;
+export function billCandidateExpenses(txns, debts = []) {
+  return (txns || []).filter(t =>
+    t &&
+    t.amount > 0 &&
+    !t.pending &&
+    t.cat !== "Income" &&
+    t.cat !== "Transfer" &&
+    t.cat !== "Fees" &&
+    !t.isTransfer &&
+    !isInternalTransfer(t) &&
+    !isCashAdvance(t) &&
+    !isCCPayment(t, debts) &&
+    !BILL_TRANSFER_RX.test(t.name || "")
+  );
+}
+
+// Group candidate expenses by the detector's merchant key (raw name, lowercased/trimmed).
+export function groupByMerchant(expenses) {
+  // Null-prototype: with a plain `{}` a merchant named "constructor" or "__proto__" made
+  // `!byMerchant[key]` false (it resolved an inherited member), the array was never created, and
+  // `.push` threw — taking down bill detection entirely. Pre-dates the extraction of this function,
+  // but bill healing now depends on it too, so it is fixed here rather than left as a latent crash.
+  const byMerchant = Object.create(null);
+  (expenses || []).forEach(t => {
+    const key = String(t.name || "").toLowerCase().trim();
+    if (!byMerchant[key]) byMerchant[key] = [];
+    byMerchant[key].push(t);
+  });
+  return byMerchant;
+}
+
+// Returns { bills, admitted }:
+//   bills    — the display list, after the near-duplicate collapse at the end of this function
+//   admitted — EVERY merchant that passed the admission gates, BEFORE that collapse
+//
+// The distinction matters to bill healing. The collapse is a display decision: "Bell" is hidden
+// when "Bell Mobility" is already listed. A merchant suppressed that way still passed the
+// occurrence, cadence and spread gates — so treating the display list as "what currently
+// qualifies" would let healing delete a stored bill the rules had actually accepted.
+export function detectRecurringBillsDetailed(txns, opts = {}) {
+  if (!txns || txns.length === 0) return { bills: [], admitted: [] };
 
   // Tier 4: consult user overrides — never re-add a removed merchant; honor manual type.
   const { overrides = {}, debts = [] } = opts;
@@ -340,32 +389,10 @@ export function detectRecurringBills(txns, opts = {}) {
     "fortis","toronto hydro","bc hydro","epcor","alectra",
   ];
 
-  // Only look at expenses (positive = money out). Exclude inter-account moves (cash advances,
-  // card payments, balance transfers) so they never surface as bills.
-  // Sprint Z3 Phase D #2: also exclude PENDING txns. cashFlow / SafeSpendEngine / the pipeline all
-  // drop pending; a pending charge must not prematurely create or distort a recurring bill (it can
-  // shift amount/date or vanish on settle). A bill needs two POSTED occurrences.
-  const TRANSFER_RX = /cash advance|payment to|transfer to|balance transfer|e-?transfer|pymt|autopay/i;
-  const expenses = txns.filter(t =>
-    t.amount > 0 &&
-    !t.pending &&
-    t.cat !== "Income" &&
-    t.cat !== "Transfer" &&
-    t.cat !== "Fees" &&
-    !t.isTransfer &&
-    !isInternalTransfer(t) &&
-    !isCashAdvance(t) &&
-    !isCCPayment(t, debts) &&
-    !TRANSFER_RX.test(t.name || "")
-  );
+  const expenses = billCandidateExpenses(txns, debts);
 
   // Group by normalized merchant name
-  const byMerchant = {};
-  expenses.forEach(t => {
-    const key = t.name.toLowerCase().trim();
-    if (!byMerchant[key]) byMerchant[key] = [];
-    byMerchant[key].push(t);
-  });
+  const byMerchant = groupByMerchant(expenses);
 
   const bills = [];
 
@@ -498,7 +525,12 @@ export function detectRecurringBills(txns, opts = {}) {
     });
     if (!dupe) kept.push(b);
   }
-  return kept;
+  return { bills: kept, admitted: bills };
+}
+
+// The long-standing contract: the display list only. Unchanged for every existing caller.
+export function detectRecurringBills(txns, opts = {}) {
+  return detectRecurringBillsDetailed(txns, opts).bills;
 }
 
 // ─── markTransfers (Sprint MATH-LOCK Group C: moved from financialCalculations.js) ───────────
