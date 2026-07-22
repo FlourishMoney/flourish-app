@@ -12,14 +12,14 @@ import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
   BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, daysUntilDueDay } from "./lib/financialCalculations.js";
-import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, detectRecurringBillsDetailed, billCandidateExpenses, groupByMerchant, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
+import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
 import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multibank.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
 import { paydayLineAmount } from "./lib/forecastView.js";
 import { shouldPromptIncome, applyDetectedIncome, cadenceLabel } from "./lib/incomeReconcile.js";
-import { pruneDisqualifiedBills, autoBillKeys, merchantKey, merchantEvidence, isAutoDetectedBill, MIN_OCCURRENCES_TO_JUDGE } from "./lib/billReeval.js";
+import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill } from "./lib/billReeval.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
@@ -13835,43 +13835,31 @@ export default function FlourishApp(){
     const txns = appData.transactions || [];
     if (txns.length === 0) return;
     const debts = appData.debts || [];
-    // Evidence is measured over the detector's OWN grouping of its OWN candidate expenses, so the
-    // bar cannot be cleared by a merchant the detector never evaluated as one group.
-    const occurrences = merchantEvidence(groupByMerchant(billCandidateExpenses(txns, debts)));
-    // `admitted` (pre-dedupe), NOT the display list: a merchant hidden by the near-duplicate
-    // collapse still passed every gate and must not read as disqualified.
-    const { admitted } = detectRecurringBillsDetailed(txns, {
-      overrides: appData.userBillOverrides || {}, debts,
-    });
-    const qualified = admitted.map(b => merchantKey(b.name));
-    const { removed } = pruneDisqualifiedBills(appData.bills, {
-      occurrences, qualified, minOccurrences: MIN_OCCURRENCES_TO_JUDGE,
-    });
-    // Per-bill verdict. A bill surviving is usually correct but is occasionally the thing being
-    // debugged, and the reason is never guessable from the screen — "kept" because the merchant is
-    // still a bill reads identically to "kept" because there was too little evidence to judge it.
-    // console.log is stripped from the production bundle; console.error is not.
-    const qualSet = new Set(qualified);
-    const verdicts = (appData.bills || []).filter(isAutoDetectedBill).map(b => {
+    // The ONE gate that survives a truncated window: are this merchant's amounts too erratic to be
+    // a bill? Occurrence count and cadence both read differently on 90 days than on full history,
+    // so healing does not consult them — see src/lib/plaidNormalize.js billSpreadVerdicts.
+    const verdicts = mergeSpreadVerdicts(
+      billSpreadVerdicts(groupByMerchant(billCandidateExpenses(txns, debts)))
+    );
+    const { removed } = pruneDisqualifiedBills(appData.bills, { verdicts });
+    // Print the actual numbers. A bill surviving is usually correct but is occasionally the thing
+    // being debugged, and "kept" is never self-explanatory from the screen. Showing spread against
+    // the bound that applied also makes a wrong deletion diagnosable after the fact rather than
+    // mysterious. console.log is stripped from the production bundle; console.error is not.
+    const lines = (appData.bills || []).filter(isAutoDetectedBill).map(b => {
       const k = merchantKey(b.name);
-      const n = occurrences.get(k) || 0;
-      const why = !k ? "unnameable"
-                : n < MIN_OCCURRENCES_TO_JUDGE ? `only ${n}/${MIN_OCCURRENCES_TO_JUDGE} — not judged`
-                : qualSet.has(k) ? `${n}x — still a bill`
-                : `${n}x — REJECTED`;
-      return `${b.name} (${why})`;
+      const v = k ? verdicts.get(k) : null;
+      if (!k) return `${b.name} (unnameable — kept)`;
+      if (!v)  return `${b.name} (no current transactions — kept)`;
+      return `${b.name} (${v.n}x spread ${v.spread.toFixed(2)} vs ${v.limit.toFixed(2)}` +
+             `${v.isKeyword ? " keyword" : " category"} — ${v.rejected ? "REJECTED" : "kept"})`;
     });
-    if (verdicts.length) console.error("[bills] heal check:", verdicts.join(" | "));
-    if (removed.length === 0) return;                    // nothing disqualified → no write
+    if (lines.length) console.error("[bills] heal check:", lines.join(" | "));
+    if (removed.length === 0) return;                    // nothing rejected → no write
     console.error("[bills] healed — removed", removed.length,
-                  "bill(s) the current rules reject:", removed.map(b => b.name).join(", "));
+                  "bill(s) whose amounts are too erratic:", removed.map(b => b.name).join(", "));
     // Recompute against `prev` so a concurrent edit elsewhere is not lost to a stale closure.
-    setAppData(prev => ({
-      ...prev,
-      bills: pruneDisqualifiedBills(prev.bills, {
-        occurrences, qualified, minOccurrences: MIN_OCCURRENCES_TO_JUDGE,
-      }).bills,
-    }));
+    setAppData(prev => ({ ...prev, bills: pruneDisqualifiedBills(prev.bills, { verdicts }).bills }));
   }, [billHealSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Detect needs_reconnect from any Plaid API error in child components ──

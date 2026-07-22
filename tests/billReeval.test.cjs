@@ -1,16 +1,21 @@
 // tests/billReeval.test.cjs — healing bills stored by the OLD, looser detector.
 //
-// The bug being locked down: bills detected under older rules were persisted to appData.bills and
-// never re-examined, so tightening the detector changed nothing for a user who had already
-// connected a bank — the phantom bill survived the fix.
+// The bug: bills detected under older rules were persisted to appData.bills and never re-examined,
+// so tightening the detector changed nothing for a user who had already connected a bank.
 //
-// The FIRST attempt at this fix re-ran detection and replaced the auto-detected set. An adversarial
-// audit reproduced three separate ways that destroys real data, all from one root error: treating
-// "not currently re-detectable" as "not a bill". appData.transactions is not a faithful mirror of
-// history — the DB blob strips Plaid rows, account removal drops rows, refetch is capped at 90 days.
+// This fix has been through three adversarial audit rounds and two redesigns. The history matters,
+// because each section below exists to stop a specific reproduced failure:
 //
-// So the contract is now: DELETE ONLY ON POSITIVE DISQUALIFICATION, and never rewrite a survivor.
-// Sections 10-13 are regression tests for the specific audit findings and must not be relaxed.
+//   attempt 1  re-ran detection and REPLACED the auto-detected set. Nine defects, four data-loss.
+//              Root error: treating "not currently re-detectable" as "not a bill", when
+//              appData.transactions is not a faithful mirror of history (the DB blob strips Plaid
+//              rows, account removal drops rows, a refetch is capped at 90 days).
+//   attempt 2  prune-only, gated on an occurrence count. Safe, but a count bar cannot distinguish
+//              the detector's four rejection reasons, so it had to be set high enough (5) to
+//              suppress the least trustworthy one — and then almost nothing was ever judged.
+//   attempt 3  prune on the ONE gate that survives a truncated window: amount spread.
+//
+// CONTRACT: delete only on a positive spread rejection; never rewrite or re-add a survivor.
 "use strict";
 
 const { create } = require("./_runner.cjs");
@@ -23,14 +28,27 @@ const manualBill     = { id: "m1", name: "Hydro", amount: "95.00", date: "12", o
 const auto = (name, extra = {}) =>
   ({ name, amount: "20.99", date: "15", type: "fixed", freq: "monthly", auto: true, origin: "observed", ...extra });
 
-// occurrence maps are keyed by CANONICAL merchant key
-const occ = (obj) => new Map(Object.entries(obj));
+// A verdict map keyed by CANONICAL merchant key. `rej` builds a rejecting verdict, `ok` a passing one.
+const vmap = (obj) => new Map(Object.entries(obj));
+const rej  = (n = 4) => ({ n, spread: 1.50, limit: 0.40, isKeyword: false, rejected: true });
+const ok   = (n = 4) => ({ n, spread: 0.05, limit: 0.40, isKeyword: false, rejected: false });
+
+// Build transactions for one merchant with the given amounts, one per month.
+const txnsFor = (name, amts, cat = "Shopping") => amts.map((a, i) => ({
+  id: `${name}-${i}`, name, merchant_name: name, amount: a,
+  date: `2026-0${3 + i}-12`, cat, category: [cat], pending: false,
+}));
 
 (async () => {
-  const { pruneDisqualifiedBills, isAutoDetectedBill, merchantKey, merchantEvidence, autoBillKeys, MIN_OCCURRENCES_TO_JUDGE } =
-    await import("../src/lib/billReeval.js");
-  const { detectRecurringBills, detectRecurringBillsDetailed, billCandidateExpenses, groupByMerchant, MIN_BILL_OCCURRENCES } =
-    await import("../src/lib/plaidNormalize.js");
+  const { pruneDisqualifiedBills, isAutoDetectedBill, merchantKey, mergeSpreadVerdicts,
+          autoBillKeys, MIN_OCCURRENCES_TO_JUDGE } = await import("../src/lib/billReeval.js");
+  const { detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts,
+          MIN_BILL_OCCURRENCES, BILL_SPREAD_MAX_KEYWORD, BILL_SPREAD_MAX_CATEGORY } =
+          await import("../src/lib/plaidNormalize.js");
+
+  // Whole-pipeline helper: transactions in, verdicts out, exactly as the app computes them.
+  const verdictsFor = (txns, debts = []) =>
+    mergeSpreadVerdicts(billSpreadVerdicts(groupByMerchant(billCandidateExpenses(txns, debts))));
 
   // ── 1. what is eligible to be judged ──────────────────────────────────────────────────────────
   t.ok(isAutoDetectedBill({ auto: true }),               "1a auto:true is auto-detected");
@@ -41,39 +59,21 @@ const occ = (obj) => new Map(Object.entries(obj));
   t.ok(!isAutoDetectedBill({ auto: false, origin: "" }), "1f explicit auto:false is not auto-detected");
 
   // ── 2. canonical merchant key survives the detector's own naming drift ────────────────────────
-  // stripPosPrefix + the title-case fix renamed the SAME merchant, so a bill stored under the old
-  // spelling must still resolve to the merchant seen in transactions.
   t.eq(merchantKey("Fpos Reid'S Dairy Company"), merchantKey("Reid's Dairy Company"),
        "2a old and new spellings resolve to one key");
   t.eq(merchantKey("FPOS REID'S DAIRY COMPANY"), merchantKey("Reid's Dairy Company"),
        "2b raw transaction name resolves to the same key");
   t.eq(merchantKey("  Netflix   Inc  "), "netflix inc", "2c whitespace collapsed and trimmed");
   t.eq(merchantKey(null), "",                            "2d null is empty, never matches");
-  // The detector strips account numbers BEFORE the POS prefix when building its display name. If
-  // this key did not do the same, a raw "HYDRO ONE 123456789" would never match the stored bill
-  // "Hydro One", so that merchant could never reach the evidence bar and never be healed.
   t.eq(merchantKey("HYDRO ONE 123456789"), merchantKey("Hydro One"), "2e account number stripped");
-  t.eq(merchantKey("POS BELL CANADA 887766"), merchantKey("Bell Canada"), "2f account number + POS prefix");
+  t.eq(merchantKey("POS BELL CANADA 887766"), merchantKey("Bell Canada"), "2f account number + POS");
   t.eq(merchantKey("Store 24"), "store 24", "2g a short number is NOT an account number");
-  {
-    // End-to-end: the key derived from a RAW transaction must equal the key derived from the
-    // DISPLAY NAME the detector produces for that same transaction.
-    const txns = ["2026-04-09", "2026-05-09", "2026-06-09"].map((d, i) => ({
-      id: `h${i}`, name: "FPOS HYDRO ONE 123456789", merchant_name: "FPOS HYDRO ONE 123456789",
-      amount: 142.00, date: d, cat: "Utilities", category: ["Utilities"], pending: false,
-    }));
-    const detected = detectRecurringBills(txns, {});
-    t.eq(detected.length, 1, "2h the detector accepts this merchant");
-    t.eq(merchantKey(detected[0].name), merchantKey(txns[0].name),
-         "2i display-name key === raw-transaction key (occurrences and qualified align)");
-  }
 
-  // ── 3. the reported bug: a disqualified phantom IS removed ────────────────────────────────────
+  // ── 3. the reported bug: an erratic phantom IS removed ────────────────────────────────────────
   {
     const prev = [auto("Fpos Reid'S Dairy Company"), auto("Netflix")];
     const { bills, removed } = pruneDisqualifiedBills(prev, {
-      occurrences: occ({ "reid's dairy company": 7, "netflix": 3 }),
-      qualified: ["netflix"], minOccurrences: 3,
+      verdicts: vmap({ "reid's dairy company": rej(7), "netflix": ok(3) }),
     });
     t.eq(bills.map(b => b.name), ["Netflix"],                     "3a phantom removed");
     t.eq(removed.map(b => b.name), ["Fpos Reid'S Dairy Company"], "3b removal is reported");
@@ -83,23 +83,27 @@ const occ = (obj) => new Map(Object.entries(obj));
   {
     const prev = [onboardingBill, manualBill, auto("Costco Wholesale")];
     const { bills } = pruneDisqualifiedBills(prev, {
-      occurrences: occ({ "rent": 9, "hydro": 9, "costco wholesale": 5 }),
-      qualified: [], minOccurrences: 3,
+      verdicts: vmap({ rent: rej(9), hydro: rej(9), "costco wholesale": rej(5) }),
     });
-    t.eq(bills.map(b => b.name), ["Rent", "Hydro"], "4a onboarding + manual survive total disqualification");
-    t.ok(bills[0] === onboardingBill,              "4b onboarding bill is the SAME object (not rebuilt)");
-    t.ok(bills[1] === manualBill,                  "4c manual bill is the SAME object (not rebuilt)");
+    t.eq(bills.map(b => b.name), ["Rent", "Hydro"], "4a onboarding + manual survive a total rejection");
+    t.ok(bills[0] === onboardingBill,              "4b onboarding bill is the SAME object");
+    t.ok(bills[1] === manualBill,                  "4c manual bill is the SAME object");
   }
 
   // ── 5. ABSENCE OF EVIDENCE CHANGES NOTHING — the core safety property ─────────────────────────
+  // This is what makes the slim DB blob, a disconnected account and the 90-day fetch cap harmless.
   {
     const prev = [auto("Netflix"), auto("Hydro One"), auto("Spotify")];
-    t.eq(pruneDisqualifiedBills(prev, { occurrences: occ({}), qualified: [], minOccurrences: 3 }).removed.length,
-         0, "5a no transactions at all → nothing removed");
-    t.eq(pruneDisqualifiedBills(prev, { occurrences: occ({ netflix: 2 }), qualified: [], minOccurrences: 3 }).removed.length,
-         0, "5b below the evidence bar → nothing removed");
-    t.eq(pruneDisqualifiedBills(prev, { occurrences: occ({ netflix: 3 }), qualified: [], minOccurrences: 3 }).removed.map(b => b.name),
-         ["Netflix"], "5c at the bar and rejected → removed, and ONLY that one");
+    t.eq(pruneDisqualifiedBills(prev, { verdicts: vmap({}) }).removed.length, 0,
+         "5a no verdicts at all → nothing removed");
+    t.eq(pruneDisqualifiedBills(prev, {}).removed.length, 0,
+         "5b no opts at all → nothing removed");
+    t.eq(pruneDisqualifiedBills(prev, { verdicts: vmap({ netflix: ok() }) }).removed.length, 0,
+         "5c a passing verdict removes nothing");
+    t.eq(pruneDisqualifiedBills(prev, { verdicts: vmap({ netflix: rej() }) }).removed.map(b => b.name),
+         ["Netflix"], "5d only the rejected merchant is removed");
+    t.eq(pruneDisqualifiedBills(prev, { verdicts: vmap({ netflix: { n: 4 } }) }).removed.length, 0,
+         "5e a malformed verdict (no `rejected`) is not a rejection");
   }
 
   // ── 6. survivors are returned untouched, in order ─────────────────────────────────────────────
@@ -108,9 +112,7 @@ const occ = (obj) => new Map(Object.entries(obj));
       amount: "212.00", nextDueDate: "2026-08-11", arrears: "40.00", freq: "biweekly",
     });
     const prev = [auto("A"), onboardingBill, rich, manualBill];
-    const { bills } = pruneDisqualifiedBills(prev, {
-      occurrences: occ({ a: 5, "hydro one": 5 }), qualified: ["a", "hydro one"], minOccurrences: 3,
-    });
+    const { bills } = pruneDisqualifiedBills(prev, { verdicts: vmap({ a: ok(), "hydro one": ok() }) });
     t.eq(bills.map(b => b.name), ["A", "Rent", "Hydro One", "Hydro"], "6a order preserved exactly");
     t.ok(bills[2] === rich,                    "6b survivor is the same object");
     t.eq(bills[2].nextDueDate, "2026-08-11",   "6c nextDueDate anchor preserved");
@@ -121,209 +123,187 @@ const occ = (obj) => new Map(Object.entries(obj));
   // ── 7. idempotent: a second pass removes nothing more ─────────────────────────────────────────
   {
     const prev = [auto("Phantom"), auto("Netflix")];
-    const args = { occurrences: occ({ phantom: 6, netflix: 3 }), qualified: ["netflix"], minOccurrences: 3 };
+    const args = { verdicts: vmap({ phantom: rej(6), netflix: ok(3) }) };
     const once  = pruneDisqualifiedBills(prev, args);
     const twice = pruneDisqualifiedBills(once.bills, args);
     t.eq(once.removed.length, 1,  "7a first pass removes the phantom");
     t.eq(twice.removed.length, 0, "7b second pass is a no-op → the effect cannot loop");
-    t.eq(autoBillKeys(twice.bills), autoBillKeys(once.bills), "7c and the key set is stable");
+    t.eq(autoBillKeys(twice.bills), autoBillKeys(once.bills), "7c key set is stable");
   }
 
   // ── 8. degenerate inputs ──────────────────────────────────────────────────────────────────────
-  t.eq(pruneDisqualifiedBills(undefined, {}).bills, [],   "8a undefined prev → empty");
-  t.eq(pruneDisqualifiedBills(null, {}).removed, [],      "8b null prev → nothing removed");
-  t.eq(pruneDisqualifiedBills([auto("X")], {}).removed, [], "8c no opts → nothing removed (safe default)");
-  t.eq(pruneDisqualifiedBills([auto("")], { occurrences: occ({ "": 9 }), qualified: [] }).removed, [],
-       "8d unnameable bill is never removed");
-  t.eq(pruneDisqualifiedBills([auto("A")], { occurrences: { a: 5 }, qualified: new Set(), minOccurrences: 3 }).removed.length,
-       1, "8e plain object + Set inputs accepted");
+  t.eq(pruneDisqualifiedBills(undefined, {}).bills, [],       "8a undefined prev → empty");
+  t.eq(pruneDisqualifiedBills(null, {}).removed, [],          "8b null prev → nothing removed");
+  t.eq(pruneDisqualifiedBills([auto("")], { verdicts: vmap({ "": rej() }) }).removed, [],
+       "8c unnameable bill is never removed");
+  t.eq(pruneDisqualifiedBills([auto("A")], { verdicts: { a: rej() } }).removed.length, 1,
+       "8d a plain object of verdicts is accepted");
 
-  // ── 9. merchantEvidence takes the MAX per canonical key, not the pooled sum ───────────────────
-  // Pooling would credit a merchant with evidence the detector never saw as a single group. MAX
-  // asks the honest question: did any one group the detector actually evaluated carry enough?
+  // ── 9. mergeSpreadVerdicts: variants of one merchant ──────────────────────────────────────────
+  // If ANY variant looks like a bill, the merchant keeps the benefit of the doubt.
   {
-    const m = merchantEvidence({
-      "fpos reid's dairy company": [1, 2],          // one raw group, 2 rows
-      "reid's dairy company":      [1, 2, 3, 4],    // another spelling, 4 rows
-      "netflix":                   [1],
-    });
-    t.eq(m.get("reid's dairy company"), 4, "9a MAX across spellings, not 6 (the sum)");
-    t.eq(m.get("netflix"), 1,              "9b other merchant counted separately");
-    t.eq(merchantEvidence(null).size, 0,   "9c null input is empty, not a throw");
+    const merged = mergeSpreadVerdicts(vmap({
+      "netflix.com":     { n: 3, spread: 1.9, limit: 0.4, isKeyword: false, rejected: true },
+      "pos netflix.com": { n: 5, spread: 0.0, limit: 0.4, isKeyword: false, rejected: false },
+    }));
+    t.eq(merged.get("netflix.com").rejected, false, "9a one passing variant spares the merchant");
+    t.eq(merged.get("netflix.com").n, 5,            "9b n reported from the largest variant");
+    const all = mergeSpreadVerdicts(vmap({
+      "costco":          { n: 3, spread: 1.9, limit: 0.4, isKeyword: false, rejected: true },
+      "pos costco 4471": { n: 4, spread: 2.2, limit: 0.4, isKeyword: false, rejected: true },
+    }));
+    t.eq(all.get("costco").rejected, true, "9c every variant rejecting DOES reject the merchant");
+    t.eq(mergeSpreadVerdicts(vmap({ x: { n: 1, rejected: true } })).size, 0,
+         "9d a single-row variant yields no verdict at all");
+    t.eq(mergeSpreadVerdicts(null).size, 0, "9e null input is empty, not a throw");
   }
 
   // ══ REGRESSION TESTS FOR THE AUDIT FINDINGS ══════════════════════════════════════════════════
 
-  // ── 10. AUDIT: post-hydrate slim blob must not wipe the bill list ─────────────────────────────
+  // ── 10. AUDIT 1: post-hydrate slim blob must not wipe the bill list ───────────────────────────
   // buildDbBlob strips Plaid transactions but not bills. After hydrate, bills is full and
-  // transactions is a residue of statement/orphaned rows. The old design deleted everything here.
+  // transactions is a residue of statement/orphaned rows. Attempt 1 deleted everything here.
   {
-    const residue = [
-      { name: "COSTCO WHOLESALE", amount: 212.4, date: "2026-04-11", cat: "Shopping", pending: false },
-    ];
+    const residue = txnsFor("COSTCO WHOLESALE", [212.40]);
     const stored = [onboardingBill, auto("Rent Payment"), auto("Hydro One"), auto("Netflix")];
-    const occurrences = merchantEvidence(groupByMerchant(billCandidateExpenses(residue, [])));
-    const qualified = detectRecurringBills(residue, {}).map(b => merchantKey(b.name));
-    const { bills, removed } = pruneDisqualifiedBills(stored, {
-      occurrences, qualified, minOccurrences: MIN_BILL_OCCURRENCES,
-    });
-    t.eq(removed.length, 0,   "10a one residue transaction removes NOTHING");
-    t.eq(bills.length, 4,     "10b every stored bill survives a slim hydrate");
+    const { bills, removed } = pruneDisqualifiedBills(stored, { verdicts: verdictsFor(residue) });
+    t.eq(removed.length, 0, "10a one residue transaction removes NOTHING");
+    t.eq(bills.length, 4,   "10b every stored bill survives a slim hydrate");
   }
 
-  // ── 11. AUDIT: removing a bank account must not delete its bills ──────────────────────────────
-  // removeAccount drops that account's transactions but leaves its bills. Those bills simply stop
-  // being re-detectable, which must not be read as disqualification.
+  // ── 11. AUDIT 1: removing a bank account must not delete its bills ────────────────────────────
   {
-    const stored = [auto("Hydro One"), auto("Netflix")];
-    const { removed } = pruneDisqualifiedBills(stored, {
-      occurrences: merchantEvidence({}), qualified: [], minOccurrences: MIN_BILL_OCCURRENCES,
-    });
+    const { removed } = pruneDisqualifiedBills([auto("Hydro One"), auto("Netflix")],
+      { verdicts: verdictsFor([]) });
     t.eq(removed.length, 0, "11a disconnecting the bank deletes no bills");
   }
 
-  // ── 12. AUDIT: a direct amount edit must not be reverted ──────────────────────────────────────
-  // Settings ▸ Bills writes {...b, amount} straight into appData.bills and records NO override, so
-  // re-deriving the bill would overwrite the user's figure on every keystroke.
+  // ── 12. AUDIT 1: a direct amount edit must not be reverted ────────────────────────────────────
+  // Settings > Bills writes {...b, amount} into appData.bills and records NO override.
   {
-    const edited = auto("Netflix", { amount: "24.50" });   // user typed this; detector says 20.99
-    const { bills, removed } = pruneDisqualifiedBills([edited], {
-      occurrences: occ({ netflix: 4 }), qualified: ["netflix"], minOccurrences: 3,
-    });
-    t.eq(removed.length, 0,          "12a a still-qualifying bill is not touched");
-    t.eq(bills[0].amount, "24.50",   "12b the user's typed amount survives");
-    t.ok(bills[0] === edited,        "12c the object is not rebuilt at all");
+    const edited = auto("Netflix", { amount: "24.50" });
+    const { bills, removed } = pruneDisqualifiedBills([edited], { verdicts: vmap({ netflix: ok() }) });
+    t.eq(removed.length, 0,        "12a a passing bill is not touched");
+    t.eq(bills[0].amount, "24.50", "12b the user's typed amount survives");
+    t.ok(bills[0] === edited,      "12c the object is not rebuilt at all");
   }
 
-  // ── 13. AUDIT: nextDueDate must not be stripped ───────────────────────────────────────────────
-  // billNextDue prefers nextDueDate.getDate() over parseInt(bill.date); for weekly/biweekly an
-  // absent anchor means "due today". Dropping it re-phases the bill and moves Due Soon.
+  // ── 13. AUDIT 1: nextDueDate must not be stripped ─────────────────────────────────────────────
   {
     const weekly = auto("Gym", { freq: "weekly", nextDueDate: "2026-07-24" });
-    const { bills } = pruneDisqualifiedBills([weekly], {
-      occurrences: occ({ gym: 8 }), qualified: ["gym"], minOccurrences: 3,
-    });
+    const { bills } = pruneDisqualifiedBills([weekly], { verdicts: vmap({ gym: ok(8) }) });
     t.eq(bills[0].nextDueDate, "2026-07-24", "13a weekly bill keeps its cadence anchor");
   }
 
-  // ── 15. AUDIT ROUND 2: evidence must be counted over the DETECTOR'S grouping ──────────────────
-  // merchantKey canonicalises further than the detector's raw-name grouping. Counting a flat list
-  // through merchantKey pools variants the detector keeps apart, so a merchant it never evaluated
-  // as one group could clear the evidence bar and be deleted with nothing having disqualified it.
-  {
-    const rows = (name, dates) => dates.map((d, i) => ({
-      id: `${name}${i}`, name, merchant_name: name, amount: 20.99, date: d,
-      cat: "Entertainment", category: ["Entertainment"], pending: false,
-    }));
-    const txns = [
-      ...rows("NETFLIX.COM",     ["2026-04-17", "2026-05-17"]),
-      ...rows("POS NETFLIX.COM", ["2026-06-17", "2026-07-17"]),
-    ];
-    const groups = groupByMerchant(billCandidateExpenses(txns, []));
-    const ev = merchantEvidence(groups);
-    t.eq(ev.get("netflix.com"), 2, "15a MAX across variants, not the pooled sum of 4");
-    const { admitted } = detectRecurringBillsDetailed(txns, {});
-    const { removed } = pruneDisqualifiedBills([auto("Netflix.com")], {
-      occurrences: ev, qualified: admitted.map(b => merchantKey(b.name)),
-      minOccurrences: MIN_OCCURRENCES_TO_JUDGE,
-    });
-    t.eq(removed.length, 0, "15b split descriptors delete nothing");
-  }
-
-  // ── 16. AUDIT ROUND 2: the near-duplicate collapse must not read as disqualification ──────────
-  // detectRecurringBills returns a DISPLAY list: "Bell" is suppressed when "Bell Mobility" is
-  // listed. The suppressed merchant passed every gate, so healing must consult `admitted`.
-  {
-    const mk = (name, amount, dates) => dates.map((d, i) => ({
-      id: `${name}${i}`, name, merchant_name: name, amount, date: d,
-      cat: "Bills", category: ["Bills"], pending: false,
-    }));
-    const dates = ["2026-03-08", "2026-04-08", "2026-05-08", "2026-06-08", "2026-07-08"];
-    const txns = [...mk("BELL MOBILITY", 95, dates), ...mk("BELL", 90, dates)];
-    const { bills, admitted } = detectRecurringBillsDetailed(txns, {});
-    t.ok(bills.length < admitted.length,                       "16a the collapse did suppress one");
-    t.ok(admitted.some(b => merchantKey(b.name) === "bell"),   "16b but it WAS admitted by the gates");
-    const ev = merchantEvidence(groupByMerchant(billCandidateExpenses(txns, [])));
-    t.eq(pruneDisqualifiedBills([auto("Bell")], {
-           occurrences: ev, qualified: admitted.map(b => merchantKey(b.name)),
-           minOccurrences: MIN_OCCURRENCES_TO_JUDGE,
-         }).removed.length, 0, "16c the suppressed bill is NOT deleted");
-    // The old, wrong source would have deleted it — pin that the display list really does omit it.
-    t.eq(pruneDisqualifiedBills([auto("Bell")], {
-           occurrences: ev, qualified: bills.map(b => merchantKey(b.name)),
-           minOccurrences: MIN_OCCURRENCES_TO_JUDGE,
-         }).removed.length, 1, "16d (and that using the display list WOULD have deleted it)");
-  }
-
-  // ── 17. AUDIT ROUND 2: deleting requires stronger evidence than detecting ─────────────────────
-  // A 90-day fetch shows a monthly bill only ~3 times, and the cadence test compares the MEAN
-  // visible gap to a band — not monotone under truncation. A bar of 5 puts monthly bills out of
-  // judging range entirely, so truncation can never delete one.
-  {
-    t.ok(MIN_OCCURRENCES_TO_JUDGE > MIN_BILL_OCCURRENCES,
-         "17a the bar to delete is strictly higher than the bar to create");
-    t.eq(MIN_OCCURRENCES_TO_JUDGE, 5, "17b and it is 5 (a monthly bill cannot reach it in 90 days)");
-    const monthly = auto("Enbridge Gas");
-    t.eq(pruneDisqualifiedBills([monthly], {
-           occurrences: occ({ "enbridge gas": 3 }), qualified: [],
-         }).removed.length, 0, "17c 3 occurrences (a truncated monthly bill) is never judged");
-    t.eq(pruneDisqualifiedBills([monthly], {
-           occurrences: occ({ "enbridge gas": 4 }), qualified: [],
-         }).removed.length, 0, "17d nor is 4");
-    t.eq(pruneDisqualifiedBills([auto("Corner Store")], {
-           occurrences: occ({ "corner store": 5 }), qualified: [],
-         }).removed.length, 1, "17e frequent spend at 5+ IS judged, and healed");
-  }
-
-  // ── 18. AUDIT ROUND 3: a merchant name must never resolve through Object.prototype ────────────
-  // A bare `occurrences[k]` returned the Object constructor for a bill named "Constructor":
-  // truthy, and `function < 5` is NaN-false, so it cleared the evidence bar against an EMPTY map
-  // and was deleted with no evidence whatsoever. Likewise a plain-object accumulator made
-  // groupByMerchant throw on "__proto__", taking down detection entirely.
+  // ── 14. AUDIT 3: a merchant name must never resolve through Object.prototype ──────────────────
   {
     ["Constructor", "constructor", "__proto__", "toString", "valueOf", "hasOwnProperty"].forEach(n => {
-      t.eq(pruneDisqualifiedBills([auto(n)], { occurrences: {}, qualified: [], minOccurrences: 5 }).removed.length,
-           0, `18a "${n}" is not deleted against empty plain-object evidence`);
+      t.eq(pruneDisqualifiedBills([auto(n)], { verdicts: {} }).removed.length, 0,
+           `14a "${n}" is not deleted against an empty plain-object verdict map`);
     });
-    t.eq(pruneDisqualifiedBills([auto("Acme")], { occurrences: { acme: "lots" }, qualified: [], minOccurrences: 5 }).removed.length,
-         0, "18b a non-numeric count is not evidence");
     t.throws(() => groupByMerchant([{ name: "__proto__", amount: 1 }]),
-             "18c groupByMerchant survives a merchant named __proto__", false);
-    t.throws(() => groupByMerchant([{ name: "constructor", amount: 1 }]),
-             "18d groupByMerchant survives a merchant named constructor", false);
+             "14b groupByMerchant survives a merchant named __proto__", false);
     t.eq(groupByMerchant([{ name: "__proto__", amount: 1 }])["__proto__"].length, 1,
-         "18e and still groups it correctly");
+         "14c and still groups it correctly");
   }
 
-  // ── 14. end-to-end against the REAL detector — the user's actual screen ───────────────────────
+  // ══ THE SPREAD RULE ITSELF ═══════════════════════════════════════════════════════════════════
+
+  // ── 15. deleting uses the gate that survives a truncated window ───────────────────────────────
+  // A 90-day fetch shows a monthly bill ~3 times. Occurrence count and cadence both read
+  // differently on 90 days than on full history; a stable amount does not.
   {
-    const txns = [];
-    const add = (name, amount, date, cat) =>
-      txns.push({ id: `${name}-${date}`, name, merchant_name: name, amount, date, cat,
-                  category: [cat], pending: false });
-    // Erratic warehouse spend, three occurrences — enough to JUDGE, and the spread gate rejects it.
-    add("COSTCO WHOLESALE", 212.40, "2026-04-11", "Shopping");
-    add("COSTCO WHOLESALE",  47.10, "2026-05-09", "Shopping");
-    add("COSTCO WHOLESALE", 389.55, "2026-06-14", "Shopping");
-    // A real subscription: same amount, same day, three months.
-    add("NETFLIX", 20.99, "2026-04-17", "Entertainment");
-    add("NETFLIX", 20.99, "2026-05-17", "Entertainment");
-    add("NETFLIX", 20.99, "2026-06-17", "Entertainment");
+    t.eq(MIN_OCCURRENCES_TO_JUDGE, 2, "15a two rows is only what a spread needs to exist");
+    t.ok(MIN_OCCURRENCES_TO_JUDGE <= MIN_BILL_OCCURRENCES,
+         "15b healing no longer needs MORE occurrences than detection");
+    // Identical amounts read identically from 3 occurrences or 30 — the whole point.
+    const short = verdictsFor(txnsFor("ACME SUB", [12.99, 12.99, 12.99]));
+    const long  = verdictsFor(txnsFor("ACME SUB", [12.99, 12.99, 12.99, 12.99, 12.99, 12.99]));
+    t.eq(short.get("acme sub").rejected, false, "15c stable amounts pass on 3 occurrences");
+    t.eq(long.get("acme sub").rejected,  false, "15d and on 6 — truncation changes nothing");
+    t.approx(short.get("acme sub").spread, long.get("acme sub").spread, 0.001,
+             "15e the spread figure itself is unchanged by truncation");
+  }
 
-    const occurrences = merchantEvidence(groupByMerchant(billCandidateExpenses(txns, [])));
+  // ── 16. the two bounds, and which merchants get which ─────────────────────────────────────────
+  {
+    const kw  = verdictsFor(txnsFor("ENBRIDGE GAS", [180, 220, 250], "Utilities")).get("enbridge gas");
+    const cat = verdictsFor(txnsFor("COSTCO WHOLESALE", [212.40, 47.10])).get("costco wholesale");
+    t.eq(kw.isKeyword, true,                       "16a a recognised biller gets the keyword bound");
+    t.eq(kw.limit, BILL_SPREAD_MAX_KEYWORD,        "16b which is 1.20");
+    t.eq(cat.isKeyword, false,                     "16c an unrecognised merchant gets the category bound");
+    t.eq(cat.limit, BILL_SPREAD_MAX_CATEGORY,      "16d which is 0.40");
+  }
+
+  // ── 17. THE LIVE CASE — the four bills from production, and Petro-Canada ──────────────────────
+  // These are the merchants actually on the user's Today screen. Enbridge and Intact are REAL
+  // bills and must survive; Costco and Petro-Canada are phantoms and must go.
+  {
+    const verdict = (name, amts, cat) => {
+      const v = verdictsFor(txnsFor(name, amts, cat)).get(merchantKey(name));
+      const { removed } = pruneDisqualifiedBills([auto(name)], { verdicts: verdictsFor(txnsFor(name, amts, cat)) });
+      return { v, deleted: removed.length === 1 };
+    };
+    // REAL BILLS — must be kept.
+    t.eq(verdict("ENBRIDGE GAS", [180, 220, 250], "Utilities").deleted, false,
+         "17a Enbridge over a winter quarter is KEPT");
+    t.eq(verdict("ENBRIDGE GAS", [80, 150, 220], "Utilities").deleted, false,
+         "17b Enbridge across a full seasonal swing (spread 0.93) is still KEPT");
+    t.eq(verdict("INTACT INSURANCE", [145, 145, 145], "Bills").deleted, false,
+         "17c Intact Insurance at a flat premium is KEPT");
+    t.eq(verdict("INTACT INSURANCE", [145, 145, 168], "Bills").deleted, false,
+         "17d Intact after a mid-term premium change is KEPT");
+    t.eq(verdict("KLARNA", [42, 42, 42, 42], "Shopping").deleted, false,
+         "17e Klarna on one instalment plan (equal amounts) is KEPT");
+    // PHANTOMS — must go.
+    t.eq(verdict("COSTCO WHOLESALE", [212.40, 47.10], "Shopping").deleted, true,
+         "17f Costco at two wildly different amounts is REMOVED");
+    t.eq(verdict("PETRO-CANADA", [64, 88, 41, 72, 95], "Gas & Transport").deleted, true,
+         "17g Petro-Canada fuel stops are REMOVED");
+    t.eq(verdict("KLARNA", [42, 118, 29, 205], "Shopping").deleted, true,
+         "17h Klarna across several plans of differing size IS removed");
+  }
+
+  // ── 18. how far a REAL bill must swing before it is deleted ───────────────────────────────────
+  // The bound is what protects Enbridge and Intact, so pin the actual breaking point. If someone
+  // later loosens BILL_SPREAD_MAX_KEYWORD, this fails and says exactly what it cost.
+  {
+    const deletedAt = (name, third, cat) => {
+      const v = verdictsFor(txnsFor(name, [100, 100, third], cat));
+      return pruneDisqualifiedBills([auto(name)], { verdicts: v }).removed.length === 1;
+    };
+    t.eq(deletedAt("ENBRIDGE GAS", 295, "Utilities"), false,
+         "18a a keyword biller at 2.95x its usual amount is still KEPT");
+    t.eq(deletedAt("ENBRIDGE GAS", 305, "Utilities"), true,
+         "18b it takes ~3x before a recognised biller is judged erratic");
+    t.eq(deletedAt("INTACT INSURANCE", 295, "Bills"), false,
+         "18c same headroom protects the insurance premium");
+    t.eq(deletedAt("SOME MERCHANT", 145, "Shopping"), false,
+         "18d an unrecognised merchant tolerates 1.45x");
+    t.eq(deletedAt("SOME MERCHANT", 160, "Shopping"), true,
+         "18e but not 1.6x — category evidence alone demands tight amounts");
+  }
+
+  // ── 19. end-to-end through the real detector, mixed merchants in one set ──────────────────────
+  {
+    const txns = [
+      ...txnsFor("COSTCO WHOLESALE", [212.40, 47.10, 389.55], "Shopping"),
+      ...txnsFor("NETFLIX", [20.99, 20.99, 20.99], "Entertainment"),
+      ...txnsFor("ENBRIDGE GAS", [180, 205, 240], "Utilities"),
+    ];
+    const verdicts = verdictsFor(txns);
     const qualified = detectRecurringBills(txns, {}).map(b => merchantKey(b.name));
-    t.ok(!qualified.includes("costco wholesale"), "14a real detector rejects erratic warehouse spend");
-    t.ok(qualified.includes("netflix"),           "14b real detector still accepts the subscription");
-    t.eq(occurrences.get("costco wholesale"), 3,  "14c Costco has enough occurrences to be judged");
+    t.ok(!qualified.includes("costco wholesale"), "19a the detector rejects the warehouse spend");
+    t.ok(qualified.includes("netflix"),           "19b and still accepts the subscription");
 
-    const stored = [onboardingBill, auto("Costco Wholesale", { amount: "216.35" }), auto("Netflix")];
-    const { bills, removed } = pruneDisqualifiedBills(stored, {
-      occurrences, qualified, minOccurrences: MIN_BILL_OCCURRENCES,
-    });
-    t.eq(removed.map(b => b.name), ["Costco Wholesale"], "14d healing drops only the phantom");
-    t.eq(bills.map(b => b.name), ["Rent", "Netflix"],    "14e user's bill and the subscription remain");
+    const stored = [onboardingBill, auto("Costco Wholesale", { amount: "216.35" }),
+                    auto("Netflix"), auto("Enbridge Gas", { amount: "205.00" })];
+    const { bills, removed } = pruneDisqualifiedBills(stored, { verdicts });
+    t.eq(removed.map(b => b.name), ["Costco Wholesale"], "19c only the phantom is dropped");
+    t.eq(bills.map(b => b.name), ["Rent", "Netflix", "Enbridge Gas"],
+         "19d the user's bill, the subscription and the utility all remain");
     const total = bills.reduce((s, b) => s + parseFloat(b.amount || 0), 0);
-    t.approx(total, 1820.99, 0.01, "14f Due Soon total no longer includes the phantom");
+    t.approx(total, 2025.99, 0.01, "19e Due Soon no longer includes the phantom");
   }
 
   t.summary("billReeval");

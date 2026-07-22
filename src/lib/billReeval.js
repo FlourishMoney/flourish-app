@@ -62,75 +62,77 @@ export function merchantKey(name) {
     .trim();
 }
 
-// Deleting a bill demands strictly stronger evidence than creating one (MIN_BILL_OCCURRENCES = 3).
+// Two occurrences are the minimum from which an amount spread can be computed at all.
 //
-// The detector's cadence test compares the MEAN visible gap against a band, and a mean is not
-// monotone under history truncation: a transaction fetch is capped at 90 days, so a long-running
-// monthly bill can show only its last three occurrences, and the mean of those two gaps can fall
-// outside the band even though the full history sat comfortably inside it. An adversarial sweep
-// measured 3.8% of bills accepted on full history being rejected on the 90-day view.
-//
-// A bar of 5 makes that unreachable for exactly the bills at risk: within a 90-day window a monthly
-// bill can only ever show ~3 occurrences, so it is never judged at all — while the frequent
-// discretionary spend that produces phantom bills (groceries, fuel, warehouse trips) clears 5
-// easily and is still healed. The bar separates the two populations rather than trading them off.
-export const MIN_OCCURRENCES_TO_JUDGE = 5;
+// This is NOT a proxy for "enough history to judge" — that framing is what the previous, higher bar
+// tried and failed to express. A count bar cannot tell the difference between the detector's four
+// rejection reasons, so it had to be set high enough to suppress the least trustworthy one
+// (cadence), which in a 90-day window meant almost nothing was ever judged. Healing now asks the
+// spread question directly, so the count only has to be large enough for a spread to exist.
+export const MIN_OCCURRENCES_TO_JUDGE = 2;
 
-// Evidence per canonical merchant key, measured over the DETECTOR'S OWN grouping.
+// Collapse the detector's per-raw-key spread verdicts onto canonical merchant keys.
 //
-// This takes grouped transactions (groupByMerchant), not a flat list, and that is load-bearing.
-// The detector groups on the raw lowercased name and applies its occurrence gate per raw group;
-// merchantKey deliberately canonicalises further (account numbers, POS prefixes). Counting a flat
-// list through merchantKey would merge variants the detector keeps apart — four rows split as
-// "netflix.com" x2 and "pos netflix.com" x2 are two sub-threshold groups the detector skips, but
-// would pool into one count of 4 here. The bill would clear the evidence bar with nothing having
-// disqualified it, and be deleted.
+// A merchant's descriptor varies across rows ("NETFLIX.COM" / "POS NETFLIX.COM" / "HYDRO ONE 1002"),
+// so the detector's raw grouping can hold several variants of one merchant. A bill is treated as
+// spread-rejected only when EVERY variant carrying enough rows to measure is rejected: if any
+// variant looks like a bill, the merchant keeps the benefit of the doubt. Ties are broken toward
+// keeping the bill, which is the direction that cannot lose a user's data.
 //
-// Taking the MAX across variants asks the right question: did any single group the detector
-// actually evaluated carry enough occurrences to judge this merchant?
-export function merchantEvidence(byMerchant) {
+// `n` and `spread` are carried through for the diagnostic, taken from the largest variant — the
+// one the detector was most likely to have judged.
+export function mergeSpreadVerdicts(rawVerdicts, minOccurrences = MIN_OCCURRENCES_TO_JUDGE) {
   const out = new Map();
-  Object.entries(byMerchant || {}).forEach(([rawKey, list]) => {
+  const src = rawVerdicts instanceof Map ? rawVerdicts : new Map(Object.entries(rawVerdicts || {}));
+  src.forEach((v, rawKey) => {
+    if (!v || v.n < minOccurrences) return;                 // too few rows to measure — no verdict
     const k = merchantKey(rawKey);
     if (!k) return;
-    const n = Array.isArray(list) ? list.length : 0;
-    out.set(k, Math.max(out.get(k) || 0, n));
+    const prev = out.get(k);
+    if (!prev) { out.set(k, { ...v }); return; }
+    out.set(k, {
+      n:        Math.max(prev.n, v.n),
+      spread:   v.n >= prev.n ? v.spread : prev.spread,      // report the largest variant's figure
+      limit:    v.n >= prev.n ? v.limit  : prev.limit,
+      isKeyword: prev.isKeyword || v.isKeyword,
+      rejected: prev.rejected && v.rejected,                 // ALL variants must reject
+    });
   });
   return out;
 }
 
-// Filter `prevBills`, dropping auto-detected bills the current rules positively disqualify.
+// Filter `prevBills`, dropping auto-detected bills whose merchant's amounts are too erratic to be
+// a bill under the current spread bound.
 //
-//   occurrences    Map (or plain object) of canonical merchant key -> occurrence count
-//   qualified      the canonical keys the current detector DID accept
-//   minOccurrences evidence bar — below this the merchant is not judged at all
+//   verdicts  Map of canonical merchant key -> { n, spread, limit, rejected }
+//             (mergeSpreadVerdicts over billSpreadVerdicts — the detector's own bound)
+//
+// A bill is dropped ONLY on a rejected verdict. No verdict — the merchant is absent from the
+// current transactions, or has too few rows to measure — means no change, which is what makes the
+// slim DB blob, a disconnected account and a 90-day fetch cap all harmless here.
 //
 // Returns { bills, removed }. `bills` preserves input order and object identity.
 export function pruneDisqualifiedBills(prevBills, opts = {}) {
   const prev = Array.isArray(prevBills) ? prevBills : [];
-  const { occurrences = new Map(), qualified = [], minOccurrences = MIN_OCCURRENCES_TO_JUDGE } = opts;
+  const { verdicts = new Map() } = opts;
 
-  // Own properties only, and only finite numbers. A bare `occurrences[k]` reads Object.prototype,
-  // so a merchant named "Constructor" resolved to the Object constructor — truthy, and
-  // `function < 5` is NaN-false, so the bill cleared the evidence bar against an EMPTY map and was
-  // deleted with no evidence at all. Today's only caller passes a Map, but this function's whole
-  // job is deciding whether to delete a user's record; it must not have a shape that can say
-  // "enough evidence" when there is none.
-  const countOf = (k) => {
-    const raw = occurrences instanceof Map
-      ? occurrences.get(k)
-      : (Object.prototype.hasOwnProperty.call(occurrences || {}, k) ? occurrences[k] : 0);
-    return Number.isFinite(raw) ? raw : 0;
+  // Own properties only. A bare `verdicts[k]` reads Object.prototype, so a merchant named
+  // "Constructor" resolved to the Object constructor — truthy, and `.rejected` on it is undefined,
+  // which happens to be safe, but the shape must not be able to manufacture a verdict at all.
+  const verdictOf = (k) => {
+    const v = verdicts instanceof Map
+      ? verdicts.get(k)
+      : (Object.prototype.hasOwnProperty.call(verdicts || {}, k) ? verdicts[k] : null);
+    return v && typeof v === "object" ? v : null;
   };
-  const qual = qualified instanceof Set ? qualified : new Set(qualified || []);
 
   const removed = [];
   const bills = prev.filter(b => {
     if (!isAutoDetectedBill(b)) return true;              // user-owned — never judged
     const k = merchantKey(b.name);
     if (!k) return true;                                  // unnameable — leave alone
-    if (countOf(k) < minOccurrences) return true;         // not enough evidence to judge
-    if (qual.has(k)) return true;                         // still a bill under current rules
+    const v = verdictOf(k);
+    if (!v || v.rejected !== true) return true;           // no positive rejection → keep
     removed.push(b);
     return false;
   });

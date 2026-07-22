@@ -328,6 +328,61 @@ export function billCandidateExpenses(txns, debts = []) {
   );
 }
 
+// Module scope so bill HEALING evaluates the identical spread bound the detector applies. Formerly
+// declared inside detectRecurringBills; hoisted unchanged.
+const DETECT_BILL_CATS = new Set([
+  "Utilities","Bills","Services","Health","Education","Home",
+  "Gas & Transport","Entertainment","Shopping",
+]);
+
+// Also catch by name keywords regardless of category
+const BILL_KEYWORDS = [
+  "hydro","electric","gas","water","internet","wifi","rogers","bell","telus",
+  "shaw","videotron","fido","koodo","virgin","netflix","spotify","apple",
+  "google","amazon prime","disney","crave","insurance","allstate","intact",
+  "aviva","manulife","sunlife","great-west","rent","mortgage","condo","strata",
+  "gym","goodlife","ymca","planet fitness","adobe","microsoft","dropbox","icloud",
+  "hulu","paramount","phone","mobile","wireless","hydro one","enbridge","atco",
+  "fortis","toronto hydro","bc hydro","epcor","alectra",
+];
+
+// The amount-spread verdict per raw merchant key — the ONE detector gate that healing may delete on.
+//
+// The detector rejects a merchant for four different reasons, and they are not equally trustworthy
+// when history is short (a fetch is capped at 90 days, and the DB blob keeps no Plaid rows at all):
+//
+//   occurrence count  — a monthly bill shows only ~3 times in 90 days. Proves nothing.
+//   category/keyword  — `some()` over the visible rows; can flip if the categorised row ages out.
+//   cadence           — compares the MEAN visible gap to a band. A mean is not monotone under
+//                       truncation; this is the gate that made healing unsafe at any low count bar.
+//   amount spread     — stable amounts stay stable in ANY window. A bill charging the same figure
+//                       every month reads identically from 3 occurrences or 30.
+//
+// So healing asks only the last question: are this merchant's amounts too erratic to be a bill?
+// That is positive evidence about the merchant rather than an artefact of how much history is
+// visible, and it is exactly the gate that rejects a warehouse run or a fuel stop.
+//
+// Deliberately evaluated for merchants BELOW the detector's occurrence threshold too: a phantom
+// with two wildly different charges is still demonstrably not a bill, and the detector never
+// reaches its spread test because it returns at the count gate first.
+export function billSpreadVerdicts(byMerchant) {
+  const out = new Map();
+  Object.entries(byMerchant || {}).forEach(([key, txList]) => {
+    if (!Array.isArray(txList) || txList.length < 2) return;   // need 2 points for a spread
+    const amts = txList.map(t => t && t.amount).filter(n => Number.isFinite(n));
+    if (amts.length < 2) return;
+    // Mirrors the detector: average of the LAST 3 occurrences, range over all of them.
+    const recent = amts.slice(-3);
+    const avg = recent.reduce((s, n) => s + n, 0) / recent.length;
+    if (!(avg > 0)) return;
+    const spread = (Math.max(...amts) - Math.min(...amts)) / avg;
+    const isKeyword = BILL_KEYWORDS.some(kw => key.includes(kw));
+    const limit = isKeyword ? BILL_SPREAD_MAX_KEYWORD : BILL_SPREAD_MAX_CATEGORY;
+    out.set(key, { n: txList.length, spread, limit, isKeyword, rejected: spread > limit });
+  });
+  return out;
+}
+
 // Group candidate expenses by the detector's merchant key (raw name, lowercased/trimmed).
 export function groupByMerchant(expenses) {
   // Null-prototype: with a plain `{}` a merchant named "constructor" or "__proto__" made
@@ -373,22 +428,6 @@ export function detectRecurringBillsDetailed(txns, opts = {}) {
   // Groceries and Coffee & Dining stay OUT: those are per-visit spend with no subscription analogue.
   // Everything else is admitted on category and then must PROVE it is a bill by holding a stable
   // amount across occurrences — the precise instrument, rather than the blunt one.
-  const DETECT_BILL_CATS = new Set([
-    "Utilities","Bills","Services","Health","Education","Home",
-    "Gas & Transport","Entertainment","Shopping",
-  ]);
-
-  // Also catch by name keywords regardless of category
-  const BILL_KEYWORDS = [
-    "hydro","electric","gas","water","internet","wifi","rogers","bell","telus",
-    "shaw","videotron","fido","koodo","virgin","netflix","spotify","apple",
-    "google","amazon prime","disney","crave","insurance","allstate","intact",
-    "aviva","manulife","sunlife","great-west","rent","mortgage","condo","strata",
-    "gym","goodlife","ymca","planet fitness","adobe","microsoft","dropbox","icloud",
-    "hulu","paramount","phone","mobile","wireless","hydro one","enbridge","atco",
-    "fortis","toronto hydro","bc hydro","epcor","alectra",
-  ];
-
   const expenses = billCandidateExpenses(txns, debts);
 
   // Group by normalized merchant name
