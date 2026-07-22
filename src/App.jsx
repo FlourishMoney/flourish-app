@@ -11,7 +11,7 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
-  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf } from "./lib/financialCalculations.js";
+  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, daysUntilDueDay } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
 import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multibank.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
@@ -4417,7 +4417,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const scoreInsight=topPillar.label==="Emergency Fund"?`Build a 3-month emergency fund → +5 pts`:topPillar.label==="Debt Ratio"?`Pay $150/mo extra on highest-rate debt → +4 pts`:topPillar.label==="Budget"?`Cut discretionary 10% this month → +3 pts`:`Improve ${topPillar.label.toLowerCase()} to boost your score`;
 
   // ── Generative priority logic ────────────────────────────────────────────────
-  const urgentBill = soonBills.find(b=>parseInt(b.date)-today<=2);
+  // Sprint D Fix (Bug 1): daysUntilDueDay rolls a passed due-day to next month, so a bill due the
+  // 3rd viewed on the 22nd is ~12 days away — not -19, and no longer mis-selected as urgent.
+  const urgentBill = soonBills.find(b=>{ const d=daysUntilDueDay(b.date, new Date()); return d!==null && d<=2; });
   const isPayday   = today===15||today===1; // simple heuristic
   // 14-day forecast — shared with "Can I afford this?" widget. No per-keystroke calls.
   const { forecast: afford14Forecast } = ForecastEngine.generate(data, 14);
@@ -4475,7 +4477,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             Hey {data.profile?.name||"there"} 👋
           </div>
           <div style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>
-            {urgentBill?`⚠️ ${urgentBill.name} due in ${parseInt(urgentBill.date)-today} day${parseInt(urgentBill.date)-today===1?"":"s"}`:isPayday?"🎉 Payday — great time to save":"Here's your financial pulse"}
+            {urgentBill?`⚠️ ${urgentBill.name} due in ${daysUntilDueDay(urgentBill.date, new Date())} day${daysUntilDueDay(urgentBill.date, new Date())===1?"":"s"}`:isPayday?"🎉 Payday — great time to save":"Here's your financial pulse"}
           </div>
         </div>
       </div>
@@ -4969,7 +4971,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               <div style={{...anim(170),background:"rgba(232,184,75,0.08)",border:`1px solid ${C.gold}44`,borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("plan")}>
                 <div style={{width:44,height:44,borderRadius:14,background:C.gold+"18",border:`1px solid ${C.gold}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>📅</div>
                 <div style={{flex:1}}>
-                  <div style={{color:C.goldBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{urgentBill.name} due in {parseInt(urgentBill.date)-today} day{parseInt(urgentBill.date)-today===1?"":"s"}</div>
+                  <div style={{color:C.goldBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{urgentBill.name} due in {daysUntilDueDay(urgentBill.date, new Date())} day{daysUntilDueDay(urgentBill.date, new Date())===1?"":"s"}</div>
                   <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>${urgentBill.amount} coming out · Tap to see full forecast</div>
                 </div>
                 <span style={{color:C.goldBright,fontSize:18}}>→</span>
@@ -13748,20 +13750,10 @@ export default function FlourishApp(){
               // cadence projects on the real pay day instead of silently defaulting to the 1st.
               return [{id:1,label:detectedIncome.label,amount:String(detectedIncome.perDeposit),freq:detectedIncome.freq||"monthly",type:"employment",isVariable:detectedIncome.isVariable,typicalAmount:String(detectedIncome.perDeposit),lowAmount:String(detectedIncome.perDepositLow),highAmount:String(detectedIncome.perDepositHigh),...(detectedIncome.anchorDay?{anchorDay:detectedIncome.anchorDay}:{}),autoDetected:true}];
             })(),
-            // Sprint D Fix — the reconcile suggestion the Today card renders. Recomputed every sync:
-            // set when the bank differs MEANINGFULLY (>5% amount, different cadence, or a payday moved
-            // >2 days), null otherwise — so a stale card clears itself once the figures agree, and a
-            // detection the user already declined never re-prompts (signature match).
-            incomeSuggestion: (() => {
-              const hasRealIncome = (prev.incomes||[]).some(i => parseFloat(i.amount||0) > 0);
-              if (!detectedIncome || !hasRealIncome) return null;
-              const d = shouldPromptIncome({
-                detected: detectedIncome,
-                currentIncomes: prev.incomes,
-                dismissedSignature: prev.incomeSuggestionDismissed || null,
-              });
-              return d.prompt ? d.suggestion : null;
-            })(),
+            // Sprint D Fix (Bug 3): incomeSuggestion is NO LONGER computed here. This sync is gated on
+            // `transactions.length === 0`, so once the reconcile populated transactions it early-
+            // returned and the suggestion was never computed — the card could never appear. It now
+            // lives in a dedicated effect that runs whenever transactions are PRESENT.
             bills: (() => {
               const base = detectedBills?.length > 0 && (!prev.bills?.some(b=>b.name))
                 ? detectedBills.map(b=>({name:b.name,amount:b.amount,date:b.date,type:b.type||"fixed",freq:b.freq||"monthly",auto:true,origin:"observed"}))
@@ -13784,6 +13776,38 @@ export default function FlourishApp(){
     }, 1500);
     return ()=>clearTimeout(timer);
   },[onboarded, appData?.bankConnected, appData?.transactions?.length]);
+
+  // ── Sprint D Fix (Bug 3): income detection runs whenever transactions are PRESENT ───────────────
+  // It used to live inside the post-onboarding sync, which is gated on `transactions.length === 0`.
+  // Once the reconcile started populating transactions that sync early-returned, so
+  // detectIncomeFromTxns never ran and the reconcile card could never appear — the correction path
+  // was sealed shut by the very fix that restored the accounts.
+  //
+  // The signature dep means this settles: it only writes when the SUGGESTION actually changes, so
+  // setAppData → re-render → effect cannot loop.
+  const incomeDetectSig = useMemo(() => JSON.stringify({
+    n: (appData?.transactions || []).length,
+    i: (appData?.incomes || []).map(x => [x.amount, x.freq, x.anchorDay ?? null]),
+    d: appData?.incomeSuggestionDismissed || null,
+    demo: !!appData?.demo,
+  }), [appData?.transactions, appData?.incomes, appData?.incomeSuggestionDismissed, appData?.demo]);
+  useEffect(()=>{
+    if (!appData || appData.demo) return;
+    const txns = appData.transactions || [];
+    if (txns.length === 0) return;                       // nothing to detect from yet
+    const detected = detectIncomeFromTxns(txns);
+    const d = shouldPromptIncome({
+      detected,
+      currentIncomes: appData.incomes,
+      dismissedSignature: appData.incomeSuggestionDismissed || null,
+    });
+    const nextSig = d.prompt ? d.suggestion.signature : null;
+    const curSig  = appData.incomeSuggestion?.signature || null;
+    if (nextSig === curSig) return;                      // no change → no write → no loop
+    console.error("[income] detection:", detected ? `${detected.perDeposit}/${detected.freq}` : "none",
+                  "→", d.prompt ? `SUGGEST (${d.reasons?.join(",")})` : `no card (${d.reason})`);
+    setAppData(prev => ({ ...prev, incomeSuggestion: d.prompt ? d.suggestion : null }));
+  }, [incomeDetectSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Detect needs_reconnect from any Plaid API error in child components ──
   // Components can call window.__flourishReconnect() to trigger the banner

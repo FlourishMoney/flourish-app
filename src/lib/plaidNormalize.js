@@ -125,7 +125,7 @@ export function detectCadence(dates) {
 // CRITICAL: TRANSFER is excluded — credit card payments show as TRANSFER_IN and must never count as income.
 export function detectIncomeFromTxns(txns) {
   if (!txns || txns.length === 0) return null;
-  const incomeTxns = txns.filter(t => {
+  let incomeTxns = txns.filter(t => {
     if (t.amount >= 0) return false; // must be money IN (negative in Plaid convention)
     const name = (t.name || "").toLowerCase();
     const cat  = (t.cat  || "").toUpperCase();
@@ -141,6 +141,39 @@ export function detectIncomeFromTxns(txns) {
       name.includes("deposit")
     );
   });
+  // Sprint D Fix (Bug 3, second risk): the keyword/category filter above misses payroll that posts
+  // under the EMPLOYER'S NAME with no "payroll"/"deposit"/"salary" text and no Income category —
+  // common at Canadian banks. Fall back to shape rather than wording: a deposit that recurs at least
+  // 3 times, at a consistent amount (≤10% spread), on a detectable cadence IS income whatever it is
+  // called. Deliberately strict — a stable, repeating, same-size deposit is not a refund or a gift.
+  if (incomeTxns.length === 0) {
+    const deposits = (txns || []).filter(t => {
+      if (!t || t.amount >= 0) return false;                     // money IN only
+      const name = (t.name || "").toLowerCase();
+      const cat  = (t.cat  || "").toUpperCase();
+      if (cat.includes("TRANSFER") || t.isTransfer) return false;  // not an internal move
+      if (CC_PAYMENT_KEYWORDS.some(kw => name.includes(kw))) return false;
+      return true;
+    });
+    const groups = {};
+    for (const t of deposits) {
+      const k = (t.name || "").toLowerCase().trim();
+      if (!k) continue;
+      (groups[k] = groups[k] || []).push(t);
+    }
+    let best = null;
+    for (const list of Object.values(groups)) {
+      if (list.length < 3) continue;                              // needs a real repeat, not a one-off
+      const amounts = list.map(t => Math.abs(t.amount));
+      const mean = amounts.reduce((a, b) => a + b, 0) / amounts.length;
+      if (!(mean > 0)) continue;
+      const spread = (Math.max(...amounts) - Math.min(...amounts)) / mean;
+      if (spread > 0.10) continue;                                // pay is stable; refunds/gifts are not
+      if (!detectCadence(list.map(t => t.date))) continue;         // must land on a real cadence
+      if (!best || mean > best.mean) best = { list, mean };        // the largest such deposit is the paycheque
+    }
+    if (best) incomeTxns = best.list;
+  }
   if (incomeTxns.length === 0) return null;
 
   // Group by month
@@ -240,16 +273,35 @@ const CA_BANKING_ACRONYMS = new Set([
 // Title-case a bank merchant name for display (MATH-LOCK finding #1 — restores the long-corrupted
 // `/\b\w/g` intent), preserving the acronyms above. "NETFLIX SUBSCRIPTION" → "Netflix Subscription";
 // "TD VISA" → "TD Visa"; "CIBC MORTGAGE" → "CIBC Mortgage"; "MY TFSA CONTRIBUTION" → "My TFSA Contribution".
+// POS-terminal / acquirer prefixes banks staple onto a merchant name. They are noise, and leaving
+// them in produced display names like "Fpos Reid'S Dairy Company".
+const POS_PREFIX_RX = /^(?:fpos|pos|sq\s*\*|sqc\*|tst\*|tst\s|sp\s+|ic\*|pp\*|paypal\s*\*|dd\s*\*|ext\s)\s*/i;
+export function stripPosPrefix(s) {
+  let out = String(s || "").trim();
+  // Strip repeatedly — some banks stack them ("POS FPOS MERCHANT").
+  for (let i = 0; i < 3 && POS_PREFIX_RX.test(out); i++) out = out.replace(POS_PREFIX_RX, "").trim();
+  return out || String(s || "").trim();   // never return empty
+}
+
 export function titleCaseBillName(s) {
   return String(s || "").replace(/\S+/g, w =>
     CA_BANKING_ACRONYMS.has(w.toUpperCase())                    // known acronym (any length) → keep uppercase
       ? w.toUpperCase()
-      : w.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())  // else Title Case
+      // Title Case, but NOT after an apostrophe: /\b\w/ treated the "s" in "reid's" as a word start
+      // and produced "Reid'S". Capitalise a letter only at the start or after a non-letter that is
+      // not an apostrophe.
+      : w.toLowerCase().replace(/(^|[^a-z'])([a-z])/gi, (_m, pre, ch) => pre + ch.toUpperCase())
   );
 }
 
 // Scan transactions for recurring bills (same merchant, regular cadence). Returns
 // [{ name, amount, date, type, freq, nextDueDate, auto, avgNote }]. opts = { overrides, debts }.
+// ── Sprint D Fix (Bug 2) — recurring-bill admission thresholds ───────────────
+// Exported so the tests assert the real constants rather than duplicating magic numbers.
+export const MIN_BILL_OCCURRENCES = 3;          // 3 occurrences ⇒ 2 gaps that must agree (2 ⇒ 1 gap, trivially "regular")
+export const BILL_SPREAD_MAX_KEYWORD  = 1.20;   // recognised biller: allow real seasonal swing (hydro $80→$220 ≈ 0.93)
+export const BILL_SPREAD_MAX_CATEGORY = 0.40;   // category-only evidence: amounts must be tight to prove it's a bill
+
 export function detectRecurringBills(txns, opts = {}) {
   if (!txns || txns.length === 0) return [];
 
@@ -262,6 +314,16 @@ export function detectRecurringBills(txns, opts = {}) {
 
   // Categories that indicate a bill (not groceries, dining, etc.). Named distinctly from
   // the module-level BILL_CATS (the budget-exclusion set) to end the prior shadowing.
+  // Sprint D Fix (Bug 2a): categories in which a charge CAN be a bill. Costco (Shopping) used to be
+  // admitted here, but the fix for that is the AMOUNT-SPREAD GATE below, not deleting categories:
+  // removing Entertainment / Gas & Transport was measured to break real subscriptions that the
+  // keyword list does not cover — HBO Max, DAZN, Audible, PlayStation Plus, transit passes. The
+  // keyword list catches only the best-known billers (netflix/spotify/disney/amazon prime), so the
+  // category path is what carries the long tail.
+  //
+  // Groceries and Coffee & Dining stay OUT: those are per-visit spend with no subscription analogue.
+  // Everything else is admitted on category and then must PROVE it is a bill by holding a stable
+  // amount across occurrences — the precise instrument, rather than the blunt one.
   const DETECT_BILL_CATS = new Set([
     "Utilities","Bills","Services","Health","Education","Home",
     "Gas & Transport","Entertainment","Shopping",
@@ -308,8 +370,11 @@ export function detectRecurringBills(txns, opts = {}) {
   const bills = [];
 
   Object.entries(byMerchant).forEach(([key, txList]) => {
-    // Must appear at least 2 times in 90 days to be "recurring"
-    if (txList.length < 2) return;
+    // Sprint D Fix (Bug 2b): require 3 occurrences, not 2. With 2 there is exactly ONE gap, so the
+    // "every gap within band" cadence check below is trivially satisfied — two Costco trips 28-35
+    // days apart read as a perfect "monthly" bill. Three occurrences means two gaps that must AGREE,
+    // which is the weakest evidence that actually establishes a cadence rather than a coincidence.
+    if (txList.length < MIN_BILL_OCCURRENCES) return;
 
     // Tier 4: respect user removals — never re-detect a merchant the user deleted.
     if (removedSet.has(key)) return;
@@ -350,6 +415,21 @@ export function detectRecurringBills(txns, opts = {}) {
     // phone), else fixed (rent, subscriptions). A user override always wins.
     const amts     = txList.map(t => t.amount);
     const spread   = avg > 0 ? (Math.max(...amts) - Math.min(...amts)) / avg : 0;
+
+    // Sprint D Fix (Bug 2c) — THE ADMISSION GATE. `spread` was computed and then used ONLY to LABEL
+    // the bill fixed/variable; nothing ever required amount consistency, so a merchant charging $8.79
+    // one visit and $250 the next was admitted as a "variable bill". A recurring bill is defined as
+    // much by a STABLE AMOUNT as by a stable date — that is what separates hydro from groceries.
+    //
+    // Two bounds, because the evidence differs:
+    //   • keyword match (hydro/phone/insurance/streaming — a merchant we RECOGNISE as a biller):
+    //     lenient, since a real utility swings seasonally (e.g. $80 summer → $220 winter ⇒ ~0.93).
+    //   • category-only match: strict. Category alone is weak evidence, so the amounts must be tight
+    //     to prove this is a bill and not simply a frequently-visited merchant.
+    // Costco at $8.79/$250 gives a spread near 1.9 and is rejected by BOTH bounds.
+    const spreadLimit = isBillKeyword ? BILL_SPREAD_MAX_KEYWORD : BILL_SPREAD_MAX_CATEGORY;
+    if (spread > spreadLimit) return;   // amounts too erratic to be a bill — reject outright
+
     const billType = typedMap[key] || (spread > 0.15 ? "variable" : "fixed");
 
     // Estimate due date from most common day of month
@@ -362,7 +442,7 @@ export function detectRecurringBills(txns, opts = {}) {
     // MATH-LOCK finding #1: restores the case-normalization the original code intended but never ran
     // (a corrupted `/<BS>\w/g` was a silent no-op for years, so bank names shipped raw, e.g. all-caps).
     const displayName = titleCaseBillName(
-      txList[0].name.replace(/\s+\d{4,}.*$/, "").trim()  // strip trailing account numbers
+      stripPosPrefix(txList[0].name.replace(/\s+\d{4,}.*$/, "").trim())  // strip account numbers, then POS prefixes
     );
 
     // Tier 4: overrides are keyed by the cleaned display name (what the user removes/types).

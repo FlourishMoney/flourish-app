@@ -647,6 +647,25 @@ export function clampDayToMonth(day, y, m) {
   return Math.min(Math.max(1, day), daysInMonth(y, m));
 }
 
+// Days from `today` until the NEXT occurrence of a day-of-month due date. Never negative: a due day
+// that has already passed this month rolls to next month.
+//
+// Sprint D Fix (Bug 1): three sites did the naive `parseInt(bill.date) - today`, where both sides are
+// days-of-month — so on the 22nd a bill due the 3rd yielded -19 ("due in -19 days"), and because the
+// SELECTION used the same arithmetic, `-19 <= 2` was true and every past-due bill was picked as the
+// most urgent. Correct roll-forward logic already existed elsewhere; this is now the single
+// implementation all callers share. Pure integer arithmetic — no Date mutation, DST-safe.
+// Returns null for an undatable bill.
+export function daysUntilDueDay(dueDay, today = new Date()) {
+  const raw = parseInt(dueDay, 10);
+  if (!Number.isFinite(raw) || raw < 1) return null;
+  const y = today.getFullYear(), m = today.getMonth(), dom = today.getDate();
+  const dueThisMonth = clampDayToMonth(raw, y, m);       // day 31 → Feb 28, etc.
+  if (dueThisMonth >= dom) return dueThisMonth - dom;
+  const nm = m === 11 ? 0 : m + 1, ny = m === 11 ? y + 1 : y;
+  return (daysInMonth(y, m) - dom) + clampDayToMonth(raw, ny, nm);
+}
+
 // The two in-month paydays for a semimonthly income, clamped and GUARANTEED distinct.
 // `dayA`/`dayB` are the intended days of month (e.g. the anchor and anchor+15). Both are clamped into
 // month (y, m). Bug this fixes: when a high anchor's +15 overflows month-end, dayA and dayB both clamp

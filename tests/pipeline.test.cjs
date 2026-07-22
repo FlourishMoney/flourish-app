@@ -173,21 +173,27 @@ const D = (iso) => new Date(iso + "T12:00:00");
 
   // ── Sprint Z3 Phase D #2: PENDING txns excluded from bill detection ───────────────────────────────
   {
-    // a pending occurrence + a single posted occurrence must NOT yet create a recurring bill
+    // NOTE (Sprint D): the occurrence threshold moved from 2 to MIN_BILL_OCCURRENCES = 3, because two
+    // occurrences give a single gap and so satisfy the cadence check trivially (that let two Costco
+    // trips read as a monthly bill). These cases keep their ORIGINAL purpose — proving the pending
+    // filter neither admits a pending charge nor breaks normal detection — restated at the new
+    // threshold: a pending occurrence must not count toward the 3.
     const pendThenPost = pipeline([
-      { id: "nf_pend", date: "2026-05-22", name: "Netflix", amount: 18.99, category: "ENTERTAINMENT", account_id: "a1", pending: true },
-      { id: "nf_post", date: "2026-06-22", name: "Netflix", amount: 18.99, category: "ENTERTAINMENT", account_id: "a1", pending: false },
+      { id: "nf_pend", date: "2026-04-22", name: "Netflix", amount: 18.99, category: "ENTERTAINMENT", account_id: "a1", pending: true },
+      { id: "nf_p1",   date: "2026-05-22", name: "Netflix", amount: 18.99, category: "ENTERTAINMENT", account_id: "a1", pending: false },
+      { id: "nf_p2",   date: "2026-06-22", name: "Netflix", amount: 18.99, category: "ENTERTAINMENT", account_id: "a1", pending: false },
     ]);
     const billsPend = pn.detectRecurringBills(pendThenPost);
-    t.eq(billsPend.filter(b => b.name.toLowerCase().includes("netflix")).length, 0, "#2 pending: pending + 1 posted Netflix → NO bill (pending excluded, only 1 posted occurrence)");
+    t.eq(billsPend.filter(b => b.name.toLowerCase().includes("netflix")).length, 0, "#2 pending: pending + 2 posted Netflix → NO bill (the pending one does not count toward the 3 required)");
 
-    // two POSTED occurrences DO create the bill — the filter must not break normal detection
-    const twoPosted = pipeline([
-      { id: "nf_p1", date: "2026-05-22", name: "Netflix", amount: 18.99, category: "ENTERTAINMENT", account_id: "a1", pending: false },
-      { id: "nf_p2", date: "2026-06-22", name: "Netflix", amount: 18.99, category: "ENTERTAINMENT", account_id: "a1", pending: false },
+    // three POSTED occurrences DO create the bill — the pending filter must not break normal detection
+    const threePosted = pipeline([
+      { id: "nf_p1", date: "2026-04-22", name: "Netflix", amount: 18.99, category: "ENTERTAINMENT", account_id: "a1", pending: false },
+      { id: "nf_p2", date: "2026-05-22", name: "Netflix", amount: 18.99, category: "ENTERTAINMENT", account_id: "a1", pending: false },
+      { id: "nf_p3", date: "2026-06-22", name: "Netflix", amount: 18.99, category: "ENTERTAINMENT", account_id: "a1", pending: false },
     ]);
-    const billsPosted = pn.detectRecurringBills(twoPosted);
-    t.eq(billsPosted.filter(b => b.name.toLowerCase().includes("netflix")).length, 1, "#2 pending: two POSTED Netflix occurrences DO create the recurring bill");
+    const billsPosted = pn.detectRecurringBills(threePosted);
+    t.eq(billsPosted.filter(b => b.name.toLowerCase().includes("netflix")).length, 1, "#2 pending: three POSTED Netflix occurrences DO create the recurring bill");
   }
 
   // ── normalizeAccountBalance: available (not current) for cash; negative current for debt ─────────
