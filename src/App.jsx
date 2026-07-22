@@ -18,6 +18,7 @@ import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
 import { paydayLineAmount } from "./lib/forecastView.js";
+import { shouldPromptIncome, applyDetectedIncome, cadenceLabel } from "./lib/incomeReconcile.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
@@ -4293,6 +4294,43 @@ function DataTransparencyPanel({data, onClose}) {
   );
 }
 
+// ── Sprint D Fix — income reconcile card (Option B: detected wins, but ASKS first) ───────────────
+// Proactive but dismissible, never a blocking modal: one card, two choices, plain numbers.
+// "Update" adopts the bank's figures; "Keep mine" leaves the user's number alone AND records the
+// detection signature so the same detection never nags again (a materially different one later will).
+function IncomeReconcileCard({data, setAppData}){
+  const s = data?.incomeSuggestion;
+  if (!s || !s.detected || !s.current) return null;
+  const d = s.detected, c = s.current;
+  const money = n => `$${Math.round(Number(n)||0).toLocaleString()}`;
+  const accept = ()=> setAppData(prev => ({
+    ...prev,
+    incomes: applyDetectedIncome(prev.incomes, prev.incomeSuggestion || s),
+    incomeSuggestion: null,
+    incomeSuggestionDismissed: null,     // accepted → a future change may prompt again
+  }));
+  const decline = ()=> setAppData(prev => ({
+    ...prev,
+    incomeSuggestion: null,
+    incomeSuggestionDismissed: (prev.incomeSuggestion || s).signature,   // don't re-prompt for THIS detection
+  }));
+  return (
+    <div style={{background:C.teal+"12",border:`1px solid ${C.teal}44`,borderRadius:20,padding:"16px 18px",marginBottom:14}}>
+      <div style={{color:C.tealBright,fontSize:11,fontWeight:800,letterSpacing:1.2,textTransform:"uppercase",fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>Your pay looks different</div>
+      <div style={{color:C.cream,fontSize:14,lineHeight:1.65,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>
+        Your bank shows about <strong>{money(d.amount)}</strong> {cadenceLabel(d.freq)}.
+      </div>
+      <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:14}}>
+        Your plan currently uses <strong style={{color:C.cream}}>{money(c.amount)}</strong> {cadenceLabel(c.freq)}. Update to match your bank?
+      </div>
+      <div style={{display:"flex",gap:10}}>
+        <button onClick={accept} style={{flex:1,background:C.teal,border:"none",borderRadius:99,padding:"11px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:42}}>Update</button>
+        <button onClick={decline} style={{flex:1,background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:42}}>Keep mine</button>
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo}){
   const [mounted,setMounted]=useState(false);
   const [expandedTile,setExpandedTile]=useState(null);
@@ -5334,6 +5372,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         <div style={{...anim(120),background:C.isDark?"rgba(155,125,255,0.04)":"rgba(155,125,255,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.purple}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden",padding:"18px 18px 14px"}}>
           <DecisionEngine data={data} safe={safe} bal={bal} monthlyIncome={monthlyIncome} soonBills={soonBills} todayDate={new Date()} setScreen={setScreen}/>
         </div>
+
+        {/* Income reconcile — bank-detected pay differs from the plan's income (Option B) */}
+        <IncomeReconcileCard data={data} setAppData={setAppData}/>
 
         {/* DECISIONS — Opportunity detector */}
         {/* Same corner-clip as above — here it was eating the "N found" badge. */}
@@ -13689,7 +13730,10 @@ export default function FlourishApp(){
             ...prev,
             transactions: markedTxns,
             incomes: (() => {
-              // Only auto-set income if user hasn't entered any real income yet
+              // Sprint D Fix — Option B. The onboarding figure KEEPS driving the forecast; we never
+              // silently overwrite a number the user typed. When the bank disagrees meaningfully we
+              // raise a reconcile suggestion (below) and the user decides. Direct adoption still
+              // happens ONLY when the user has no income at all — nothing to overwrite.
               const hasRealIncome = (prev.incomes||[]).some(i => parseFloat(i.amount||0) > 0);
               if (!detectedIncome || hasRealIncome) return prev.incomes;
               // amount/typicalAmount/low/high are all PER-DEPOSIT fields — use the perDeposit* outputs,
@@ -13703,6 +13747,20 @@ export default function FlourishApp(){
               // anchorDay is the modal observed deposit day — carried through so a monthly/semimonthly
               // cadence projects on the real pay day instead of silently defaulting to the 1st.
               return [{id:1,label:detectedIncome.label,amount:String(detectedIncome.perDeposit),freq:detectedIncome.freq||"monthly",type:"employment",isVariable:detectedIncome.isVariable,typicalAmount:String(detectedIncome.perDeposit),lowAmount:String(detectedIncome.perDepositLow),highAmount:String(detectedIncome.perDepositHigh),...(detectedIncome.anchorDay?{anchorDay:detectedIncome.anchorDay}:{}),autoDetected:true}];
+            })(),
+            // Sprint D Fix — the reconcile suggestion the Today card renders. Recomputed every sync:
+            // set when the bank differs MEANINGFULLY (>5% amount, different cadence, or a payday moved
+            // >2 days), null otherwise — so a stale card clears itself once the figures agree, and a
+            // detection the user already declined never re-prompts (signature match).
+            incomeSuggestion: (() => {
+              const hasRealIncome = (prev.incomes||[]).some(i => parseFloat(i.amount||0) > 0);
+              if (!detectedIncome || !hasRealIncome) return null;
+              const d = shouldPromptIncome({
+                detected: detectedIncome,
+                currentIncomes: prev.incomes,
+                dismissedSignature: prev.incomeSuggestionDismissed || null,
+              });
+              return d.prompt ? d.suggestion : null;
             })(),
             bills: (() => {
               const base = detectedBills?.length > 0 && (!prev.bills?.some(b=>b.name))
