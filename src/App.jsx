@@ -9704,6 +9704,15 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
       });
     };
 
+    // FIX 1: A Plaid-linked account belongs to a server-side plaid_item, so this local ✕ must NOT
+    // remove it — a per-account local delete cannot revoke a Plaid item (one item = many accounts),
+    // and doing so only hides the account while the plaid_item + access token keep syncing/billing.
+    // Discriminator mirrors persistence.js manualTransactions: Plaid-backed = has _item, OR a real
+    // institution that is not the local "Manual"/"Statement" placeholder (so a legacy account not yet
+    // re-stamped with _item is still protected). Those route to Connected Banks; only genuinely local
+    // accounts (Manual, Statement) keep the destructive ✕.
+    const isPlaidLinked = (a) => !!a._item || (!!a.institution && !["Manual","Statement"].includes(a.institution));
+
     // Dedup by id for display (fixes existing duplicates on screen)
     const seenDisplay = new Set();
     const dedupedDisplay = (data.accounts||[]).filter(a => {
@@ -9739,11 +9748,14 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
               <span style={{color:a.balance>=0?C.greenBright:C.red,fontWeight:700,fontSize:13,flexShrink:0}}>
                 {a.balance>=0?"$":"–$"}{Math.abs(a.balance||0).toFixed(2)}
               </span>
-              <button onClick={()=>removeAccount(a.id)}
-                style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"4px 6px",minWidth:32,minHeight:36,flexShrink:0}}
-                title="Remove this account">
-                ✕
-              </button>
+              {isPlaidLinked(a)
+                ? <span style={{color:C.muted,fontSize:11,flexShrink:0,whiteSpace:"nowrap"}}
+                    title="This account belongs to a connected bank. Disconnect it under Settings → Connected Banks.">Manage in Connected Banks</span>
+                : <button onClick={()=>removeAccount(a.id)}
+                    style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"4px 6px",minWidth:32,minHeight:36,flexShrink:0}}
+                    title="Remove this account">
+                    ✕
+                  </button>}
             </div>
           ))
         }
@@ -10073,13 +10085,27 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
               if (!(await confirmModal({title:`Disconnect ${b.institution_name || "this bank"}?`,confirmLabel:"Disconnect",destructive:true}))) return;
               const jwt = await getJwt();
               if (!jwt) { alertModal({message:"Please sign in again."}); return; }
+              let removed = false;
               try {
                 await callPlaid("delete_item", { item_id: b.item_id }, { jwt });
+                removed = true;
               } catch (e) {
-                console.warn("[settings] delete_item failed:", e.message);
+                console.error("[settings] delete_item failed:", e.message);
+                alertModal({message:`We couldn't disconnect ${b.institution_name || "this bank"}. Please try again.`});
               }
               setBankRefreshKey(k => k + 1);
-              if (bankItems.length === 1) onDisconnectBank?.();
+              if (!removed) return;                        // only touch local state on a confirmed server delete
+              // FIX 2: last bank → the existing offboarding path (disconnectBank) revokes+verifies every
+              // item and resets local accounts, so don't also filter here (would double-clear).
+              if (bankItems.length === 1) { onDisconnectBank?.(); return; }
+              // One of several banks: delete_item removed the plaid_items row + revoked the token, but
+              // this bank's account objects still linger in appData.accounts. Drop the accounts tied to
+              // this item (matched on _item — the field that ties an account to its plaid_item, kept on
+              // the stored blob) so they don't orphan. bankConnected reflects any non-Manual remainder.
+              setAppData(prev => {
+                const kept = (prev.accounts || []).filter(a => a._item !== b.item_id);
+                return { ...prev, accounts: kept, bankConnected: kept.some(a => a.institution !== "Manual") };
+              });
             }} style={{background:"none",border:`1px solid ${C.orange}44`,borderRadius:8,padding:"4px 10px",color:C.orange,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Disconnect</button>
           </div>
         ))}
