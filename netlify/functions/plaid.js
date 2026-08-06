@@ -216,6 +216,45 @@ exports.handler = async (event) => {
         return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Could not save your bank connection. Please try again." }) };
       }
 
+      // Server-side dedupe backstop. A re-link of an already-connected bank mints a FRESH item_id, so
+      // the upsert above (onConflict user_id,item_id) never collides and would leave TWO rows for the
+      // same institution — double-counting balances once accounts import. Now that the just-linked
+      // item is safely saved, revoke + delete any OTHER item for the same institution so we converge
+      // to one row per bank, keeping the item the user just linked.
+      //
+      // Ordering is deliberate: the new item is persisted FIRST (above). A failure in this block can
+      // therefore only leave a stale duplicate for collapse_duplicate_items to clean up later — it can
+      // never lose the bank the user just connected. The whole block is best-effort and non-fatal.
+      //
+      // Match mirrors collapse_duplicate_items: institution_id when present, else normalised
+      // institution_name. `r.item_id === item_id` is skipped so an update-mode reconnect (same
+      // item_id, already updated in place by the upsert) is never remove-and-reinserted.
+      try {
+        const dedupeKey = (institution_id || "").trim().toLowerCase() || (institution_name || "").trim().toLowerCase();
+        if (dedupeKey) {
+          const { data: existingRows, error: listErr } = await admin
+            .from("plaid_items")
+            .select("item_id, access_token, institution_id, institution_name")
+            .eq("user_id", user_id);
+          if (listErr) {
+            console.error("[exchange_token dedupe] list failed (leaving any duplicate for collapse):", listErr.message);
+          } else {
+            for (const r of existingRows || []) {
+              if (r.item_id === item_id) continue;   // the item just linked/updated — never remove it
+              const rKey = (r.institution_id || "").trim().toLowerCase() || (r.institution_name || "").trim().toLowerCase();
+              if (!rKey || rKey !== dedupeKey) continue;
+              try { await plaid("/item/remove", { access_token: r.access_token }); }
+              catch (revErr) { console.warn("[exchange_token dedupe: item/remove failed]", r.item_id, revErr.message); }
+              const { error: delErr } = await admin
+                .from("plaid_items").delete().eq("user_id", user_id).eq("item_id", r.item_id);
+              if (delErr) console.error("[exchange_token dedupe: row delete failed]", r.item_id, delErr.message);
+            }
+          }
+        }
+      } catch (dedupeErr) {
+        console.error("[exchange_token dedupe] unexpected (non-fatal):", dedupeErr?.message || dedupeErr);
+      }
+
       // access_token intentionally NOT returned.
       return ok({ ok: true, item_id, institution_name });
     }
