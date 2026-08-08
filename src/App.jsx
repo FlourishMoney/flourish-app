@@ -3348,6 +3348,13 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       <Inp label="Your name" value={p.name} onChange={v=>setP({...p,name:v})} placeholder="First name"/>
       <Sel label="Country" value={p.country} onChange={v=>setP({...p,country:v,province:v==="CA"?"ON":"CA",creditScore:Math.min(p.creditScore,v==="US"?850:900)})} options={[{value:"CA",label:"🇨🇦 Canada"},{value:"US",label:"🇺🇸 United States"}]}/>
       <Sel label={p.country==="CA" ? "Province" : "State"} value={p.province} onChange={v=>setP({...p,province:v})} options={(CC[p.country]?.regions || []).map(r => ({ value: r.code, label: r.name }))}/>
+      {/* BUG 1: household basics. These keys already exist on `p` and finish() persists them; only the
+          inputs were missing, so status/hasKids/partnerName used to leave onboarding at their defaults.
+          Partner's name is gated on status so single users never see it. hasKids stays a boolean —
+          no kids-detail (ages/count) capture in this pass. */}
+      <Sel label="Status" value={p.status} onChange={v=>setP({...p,status:v})} options={[{value:"single",label:"Single"},{value:"couple",label:"Couple"}]}/>
+      {p.status!=="single"&&<Inp label="Partner's name" value={p.partnerName} onChange={v=>setP({...p,partnerName:v})} placeholder="Partner's first name"/>}
+      <Sel label="Do you have kids?" value={p.hasKids?"yes":"no"} onChange={v=>setP({...p,hasKids:v==="yes"})} options={[{value:"no",label:"No"},{value:"yes",label:"Yes"}]}/>
       <Btn label="Continue →" onClick={()=>setStep(2)} disabled={!p.name}/>
     </div>,
 
@@ -9634,7 +9641,26 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
       </div>
     );
   }
-  if(sectionKey==="profile") return (
+  if(sectionKey==="profile") {
+    // BUG 4: income editor helpers. They write the SAME appData.incomes that the onboarding editor and
+    // the detection paths (IncomeDetectionBanner addIncome, applyDetectedIncome) use, via FUNCTIONAL
+    // setAppData updates so this composes with them without clobbering a concurrent change. An amount
+    // edit mirrors `typicalAmount` (as the onboarding editor does) so a variable income keeps a sane
+    // typical value for the forecast.
+    const updateIncome = (id, field, val) => setAppData && setAppData(prev => ({
+      ...prev,
+      incomes: (prev.incomes || []).map(x => x.id === id
+        ? (field === "amount" ? { ...x, amount: val, typicalAmount: val } : { ...x, [field]: val })
+        : x),
+    }));
+    const removeIncome = (id) => setAppData && setAppData(prev => ({
+      ...prev, incomes: (prev.incomes || []).filter(x => x.id !== id),
+    }));
+    const addIncomeSource = () => setAppData && setAppData(prev => ({
+      ...prev,
+      incomes: [...(prev.incomes || []), { id: Date.now(), label: "", amount: "", freq: "biweekly", type: "employment", isVariable: false, owner: "self" }],
+    }));
+    return (
     <div style={s}>
       <div style={row}><span style={lbl}>Name</span>
         <input defaultValue={data.profile?.name||""} onBlur={e=>updateProfile("name",e.target.value)}
@@ -9661,21 +9687,44 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
           ))}
         </select>
       </div>
-      <div style={row}><span style={lbl}>Status</span>
-        <select defaultValue={data.profile?.status||"single"} onChange={e=>updateProfile("status",e.target.value)}
-          style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
-          <option value="single">Single</option><option value="couple">Couple</option>
-        </select>
-      </div>
-      <div style={row}><span style={lbl}>Has Kids</span>
-        <select defaultValue={data.profile?.hasKids?"yes":"no"} onChange={e=>updateProfile("hasKids",e.target.value==="yes")}
-          style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
-          <option value="no">No</option><option value="yes">Yes</option>
-        </select>
-      </div>
+      {/* BUG 4: the "& Income" half of this section. Status / Has Kids intentionally removed here
+          (BUG 2) — they now live ONLY in Family Settings. This edits appData.incomes directly. */}
+      <div style={{color:C.mutedHi,fontSize:12,fontWeight:700,marginTop:14,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Income</div>
+      {(data.incomes||[]).length===0
+        ? <div style={{color:C.muted,fontSize:12,padding:"8px 0"}}>No income sources yet.</div>
+        : (data.incomes||[]).map(inc=>(
+          <div key={inc.id} style={{padding:"10px 0",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+              <input value={inc.label||""} placeholder="Income source (e.g. Main job)" onChange={e=>updateIncome(inc.id,"label",e.target.value)}
+                style={{flex:1,minWidth:0,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+              <button onClick={()=>removeIncome(inc.id)} aria-label="Remove income" title="Remove this income"
+                style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"4px 6px",minWidth:32,minHeight:34,flexShrink:0}}>✕</button>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <div style={{flex:1.2,display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
+                <span style={{color:C.muted,padding:"0 8px",fontSize:13,flexShrink:0}}>$</span>
+                <input value={inc.amount||""} onChange={e=>updateIncome(inc.id,"amount",e.target.value)} type="number" inputMode="decimal" placeholder="0"
+                  style={{flex:1,minWidth:0,background:"none",border:"none",padding:"7px 8px 7px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+              </div>
+              <select value={inc.freq||"biweekly"} onChange={e=>updateIncome(inc.id,"freq",e.target.value)}
+                style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",cursor:"pointer"}}>
+                <option value="weekly">Weekly</option>
+                <option value="biweekly">Every 2 weeks</option>
+                <option value="semimonthly">Twice a month</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+          </div>
+        ))
+      }
+      <button onClick={addIncomeSource}
+        style={{width:"100%",marginTop:12,background:color+"18",border:`1px solid ${color}44`,borderRadius:10,padding:"10px",color,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        ＋ Add income source
+      </button>
       <div style={{color:C.muted,fontSize:11,marginTop:10}}>Changes save automatically.</div>
     </div>
   );
+  }
 
   if(sectionKey==="accounts") {
     const removeAccount = (accountId) => {
@@ -9808,10 +9857,14 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
           <option value="single">Single</option><option value="couple">Couple</option>
         </select>
       </div>
+      {/* BUG 3: Partner's Name only for non-single users. Reactive — the Status select above writes
+          profile.status via updateProfile, which re-renders and re-evaluates this guard. */}
+      {data.profile?.status!=="single" && (
       <div style={row}><span style={lbl}>Partner's Name</span>
         <input defaultValue={data.profile?.partnerName||""} placeholder="Partner's first name" onBlur={e=>updateProfile("partnerName",e.target.value)}
           style={{background:"none",border:"none",borderBottom:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,textAlign:"right",outline:"none",fontFamily:"inherit",padding:"2px 4px",width:140}}/>
       </div>
+      )}
       <div style={row}><span style={lbl}>Has Kids</span>
         <select defaultValue={data.profile?.hasKids?"yes":"no"} onChange={e=>updateProfile("hasKids",e.target.value==="yes")}
           style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
