@@ -12246,7 +12246,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
           <div className="fll-nav">
             <div className="fll-brand">
               <FlourishMark size={52} />
-              <span>Flourish</span>
+              <span>flourish</span>
             </div>
             <button className="fll-login" onClick={goLogin}>Log in</button>
           </div>
