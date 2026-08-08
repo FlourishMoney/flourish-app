@@ -12169,8 +12169,8 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-root *{ box-sizing:border-box; }
             .fll-wrap{ width:100%; max-width:1080px; margin:0 auto; padding:0 22px; }
             .fll-nav{ display:flex; align-items:center; justify-content:space-between; width:100%; max-width:1080px; margin:0 auto; padding:18px 22px; }
-            .fll-brand{ display:flex; align-items:center; gap:9px; }
-            .fll-brand span{ font-family:'Plus Jakarta Sans',sans-serif; font-weight:800; font-size:18px; color:#163a1c; letter-spacing:-0.3px; }
+            .fll-brand{ display:flex; align-items:center; gap:12px; }
+            .fll-brand span{ font-family:'Plus Jakarta Sans',sans-serif; font-weight:800; font-size:32px; color:#163a1c; letter-spacing:-0.3px; }
             .fll-login{ background:transparent; border:1px solid rgba(46,139,46,0.45); color:#1b5e20; border-radius:99px; padding:8px 18px; font-size:13px; font-weight:700; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-login:hover{ background:rgba(46,139,46,0.08); }
 
@@ -12245,7 +12245,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
           {/* Nav */}
           <div className="fll-nav">
             <div className="fll-brand">
-              <FlourishMark size={28} />
+              <FlourishMark size={52} />
               <span>Flourish</span>
             </div>
             <button className="fll-login" onClick={goLogin}>Log in</button>
