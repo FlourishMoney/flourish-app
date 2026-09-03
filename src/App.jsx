@@ -23,6 +23,7 @@ import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts,
 import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate } from "./lib/statementImport.js";
 import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
 import { tabForScreen } from "./lib/navigation.js";
+import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
@@ -1698,9 +1699,7 @@ Rules: do not invent or quote any number not in the calculated results above. Do
     let prose = {};
     try {
       // Phase D3: AI opt-out — skip the prose enhancement; existing catch provides neutral fallback
-      if (typeof window !== "undefined" && window.localStorage?.getItem("flourish_ai_coach_enabled") === "0") {
-        throw new Error("AI disabled");
-      }
+      ensureAiEnabled("AI disabled"); // Step 8: single gate — no request reaches /api/coach when AI is off
       const _jwt = await getJwt();
       const r = await fetch(`${API_BASE}/api/coach`, {
         method:"POST",
@@ -2757,9 +2756,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
     const prompt = "The user just completed their weekly money check-in. Using only the data provided, give ONE specific, encouraging action they can take this week to improve their Financial Health Score by 2-5 points. Keep it to 2 sentences max. Be warm and concrete.";
     try {
       // Phase D3: AI opt-out — skip the AI tip; existing catch provides neutral fallback
-      if (typeof window !== "undefined" && window.localStorage?.getItem("flourish_ai_coach_enabled") === "0") {
-        throw new Error("AI disabled");
-      }
+      ensureAiEnabled("AI disabled"); // Step 8: single gate — no request reaches /api/coach when AI is off
       const _jwt = await getJwt();
       const r = await fetch(`${API_BASE}/api/coach`, {
         method:"POST",
@@ -2978,9 +2975,7 @@ function sanitizeField(v, max = 200) {
 
 async function parseStatementWithAI(rawText) {
   // Phase D3: AI opt-out — refuse statement parsing if user disabled AI
-  if (typeof window !== "undefined" && window.localStorage?.getItem("flourish_ai_coach_enabled") === "0") {
-    throw new Error("AI features are disabled. Re-enable in Settings → Privacy & AI to parse statements, or upload a CSV instead.");
-  }
+  ensureAiEnabled("AI features are disabled. Re-enable in Settings → Privacy & AI to parse statements, or upload a CSV instead."); // Step 8: single gate
   // Tier 3.20: keep tab/newline/CR (statement layout), drop other control chars, and
   // defang the UNTRUSTED_USER_DATA tag name so PDF text can't break out of the boundary.
   let safeText = "";
@@ -10116,7 +10111,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div style={{flex:1}}>
           <div style={{color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:2}}>AI Coach enabled</div>
-          <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>Chat, simulator explanations, weekly tips. Turning off keeps your data on-device.</div>
+          <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>On: Flourish sends your calculated numbers to the coach so it can explain them and run your money meeting. Off: nothing leaves Flourish for AI. Every number, forecast and what-if still works.</div>
         </div>
         <Toggle label="AI Coach" on={aiCoachEnabled} onChange={(v)=>{
           // Turning ON without current consent would grant third-party sharing silently — re-disclose
@@ -10127,6 +10122,9 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
           applyAICoachEnabled(v);
         }} />
       </div>
+      {/* COPY-CHANGES §12: static trust lines */}
+      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginTop:10}}>Flourish is read-only. It cannot move, send or hold money.</div>
+      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginTop:4}}>Flourish is not a licensed financial adviser. It explains and coaches; you decide.</div>
       {/* Sprint Z2 #8: revoke third-party AI consent (not just disable AI) */}
       <div style={{borderTop:`1px solid ${C.border}`,marginTop:14,paddingTop:14}}>
         <div style={{color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:2}}>Third-party AI consent</div>
@@ -10687,6 +10685,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
     const text = input.trim();
     if(!text || loading) return;
     if(data.demo) return; // demo has no JWT; the UI gates this, but never let a fetch 401 from here
+    if(!aiEnabled()) return; // Step 8: single gate — never send chat when AI is off (belt to the render gate)
     if(!isPremium && freeMsgsLeft<=0){ onUpgrade(); return; }
     // Detect if user is asking about balance mismatch
     const isBalanceQuestion = (text.toLowerCase().includes("balance") && 
