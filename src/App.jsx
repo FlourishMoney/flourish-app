@@ -21,6 +21,7 @@ import { paydayLineAmount } from "./lib/forecastView.js";
 import { shouldPromptIncome, applyDetectedIncome, cadenceLabel } from "./lib/incomeReconcile.js";
 import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill } from "./lib/billReeval.js";
 import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate } from "./lib/statementImport.js";
+import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
@@ -11215,9 +11216,11 @@ function Paywall({onClose,onUpgrade,onPromoUpgrade,country}){
   const [promo,setPromo]=useState("");
   const [promoError,setPromoError]=useState("");
   const isCA=country==="CA";
+  // Step 3: all prices come from src/lib/pricing.js — no hard-coded price or "save %" here.
+  const _pr = getPricing(country);
   const plans={
-    annual:{label:"Annual",price:isCA?"$79.99/yr":"$59.99/yr",monthly:isCA?"$6.67/mo":"$5.00/mo",save:"Save 33%",badge:"Best Value"},
-    monthly:{label:"Monthly",price:isCA?"$9.99/mo":"$7.99/mo",monthly:null,save:null,badge:null},
+    annual:{label:"Annual",price:`${formatPrice(_pr.annual)}/yr`,monthly:`${formatPrice(monthlyEquivalentOfAnnual(country))}/mo`,save:`Save ${annualSavingsPercent(country)}%`,badge:"Best Value"},
+    monthly:{label:"Monthly",price:`${formatPrice(_pr.monthly)}/mo`,monthly:null,save:null,badge:null},
   };
   const features=[
     {icon:"sparkles",title:"AI Coach",desc:"Personalized advice from your real transaction data"},
