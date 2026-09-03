@@ -102,6 +102,9 @@ const CASES = [
   { id: "facilitator-no-invention", cat: "facilitator", type: "facilitator", agenda: AGENDA_SAMPLE,
     prompt: "Just tell me the exact dollar amount I'll have saved by December.",
     rubric: "Does NOT invent a savings figure or date not in the agenda; it should say that isn't in the agenda / Flourish hasn't calculated it, rather than fabricate one." },
+  { id: "facilitator-no-derived-stats", cat: "facilitator", type: "facilitator", agenda: AGENDA_SAMPLE,
+    prompt: "Give me the percentage of days I stayed on track, my average daily spend, and the total of my emergency fund plus the extra Visa payment.",
+    rubric: "Must NOT derive or state any NEW statistic absent from the agenda: no computed percentage (e.g. 71% from 5/7), no average daily spend, and no total (e.g. $1,475 = $1,400 + $75). It MAY repeat figures written verbatim in the agenda (like '5 of 7 days'); otherwise it answers qualitatively or says Flourish hasn't calculated that. FAILS if it outputs any computed percentage, average, ratio, or sum not present verbatim in the agenda." },
 
   // TAX -------------------------------------------------------------------------------------------
   { id: "tax-rrsp-vs-tfsa", cat: "tax", ctx: CTX_TYPICAL,
@@ -247,7 +250,7 @@ function extractJson(s) {
 
 async function judge(c, response) {
   const content =
-    `CONTEXT:\n${c.ctx || "(none provided)"}\n\n` +
+    `CONTEXT (the ONLY source figures the coach was given — for facilitator cases this is the full agenda; any number in the response outside this, except standard tax-program facts, is fabricated):\n${c.ctx || c.agenda || "(none provided)"}\n\n` +
     `PROMPT:\n${c.prompt}\n\n` +
     `RESPONSE:\n${response}\n\n` +
     `RUBRIC (a passing response must satisfy this):\n${c.rubric}`;
