@@ -3473,7 +3473,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         {/* Trust bar */}
         <div style={{background:C.tealDim,border:`1px solid ${C.teal}44`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
           <div style={{color:C.tealBright,fontWeight:700,marginBottom:8}}>🔒 Powered by Plaid</div>
-          {[["✅","Read-only. We can never move your money"],["✅","256-bit encryption, bank-level security"],["✅","Live balances + 90 days of transactions"],["✅","Disconnect any time from settings"]].map(([ico,t],i)=>(
+          {[["✅","Read-only. We can never move your money"],["✅","Encrypted in transit and at rest"],["✅","Live balances + 90 days of transactions"],["✅","Disconnect any time from settings"]].map(([ico,t],i)=>(
             <div key={i} style={{display:"flex",gap:8,padding:"3px 0",color:C.cream,fontSize:13}}><span>{ico}</span><span>{t}</span></div>
           ))}
         </div>
@@ -11328,7 +11328,7 @@ function Paywall({onClose,onUpgrade,onPromoUpgrade,country}){
 
         {/* Trust footer */}
         <div style={{marginTop:20,display:"flex",justifyContent:"center",gap:16}}>
-          {["🔒 Bank-level security","🇨🇦🇺🇸 Canada & USA","✓ PIPEDA compliant"].map((t,i)=>(
+          {["🔒 Read-only. No money movement.","🇨🇦 Built in Ontario","🔑 Your bank login is never stored"].map((t,i)=>(
             <div key={i} style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:4}}>{t}</div>
           ))}
         </div>
@@ -12402,7 +12402,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
             <p className="fll-sub">See exactly what's safe to spend before payday, test any money decision, and finally understand your finances — in plain English.</p>
             {renderCapture("hero")}
             {onTryDemo && <button className="fll-demo" onClick={onTryDemo}>or preview the app with sample data →</button>}
-            <div><span className="fll-trust">🔒 Bank-level security. Your data stays yours.</span></div>
+            <div><span className="fll-trust">🔒 Read-only. Flourish can't move your money.</span></div>
           </div>
 
           {/* Proof — real app screenshots */}
