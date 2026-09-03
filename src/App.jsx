@@ -11242,7 +11242,7 @@ function PrivacyPolicy({onBack}){
 
       <div style={h2}>5. Data Storage & Security</div>
       <div style={p}>Your data is stored on your device (locally via localStorage) and, if you create an account, in our secure cloud database provided by Supabase (hosted in data centres compliant with SOC 2 Type II). Data transmitted between your device and our servers is encrypted using TLS 1.2+. AI coaching queries are processed by Anthropic's API and are subject to Anthropic's data-handling policies — no conversation history is stored server-side by Flourish.</div>
-      <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Important:</strong> financial calculations (balances, safe-to-spend, debt payoff projections, investment growth) are computed in JavaScript on your device. Anthropic only generates plain-language explanations of numbers we calculate ourselves. Anthropic does not train AI models on data sent through their API.</div>
+      <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Important:</strong> financial calculations (balances, safe-to-spend, debt payoff projections, investment growth) are computed in JavaScript on your device. Anthropic only generates plain-language explanations of numbers we calculate ourselves. Anthropic does not train AI models on data sent through their API. You can turn the AI coach off in Settings. When it is off, no financial data is sent to Anthropic.</div>
 
       <div style={h2}>6. Data Sharing</div>
       <div style={p}>We share data with the following service providers solely to operate the App:</div>
@@ -11293,13 +11293,13 @@ function TermsOfService({onBack}){
       </div>
 
       <div style={h2}>1. About Flourish Money</div>
-      <div style={p}>Flourish Money ("App") is a personal finance management tool operated by <strong style={{color:C.cream}}>GrowSmart Inc.</strong> ("Company", "we", "us"). The App provides budgeting, spending tracking, financial health scoring, coaching from your own numbers, and goal-setting tools for personal use.</div>
+      <div style={p}>Flourish Money ("App") is a personal finance management tool operated by <strong style={{color:C.cream}}>GrowSmart Inc.</strong> ("Company", "we", "us"). The App provides budgeting, forecasting, spending tracking, a financial health score, AI coaching that works from figures the App calculates, and goal-setting tools. The App is read-only and cannot initiate payments or transfers.</div>
 
       <div style={h2}>2. Eligibility</div>
       <div style={p}>You must be at least 18 years old and a resident of Canada or the United States to use Flourish Money. By using the App, you represent and warrant that you meet these requirements.</div>
 
-      <div style={h2}>3. Not Financial Advice</div>
-      <div style={{...p,background:`${C.gold}11`,borderRadius:12,padding:"12px 14px",border:`1px solid ${C.gold}33`}}>⚠️ <strong style={{color:C.goldBright}}>Important:</strong> Flourish Money is an educational financial tool, not a licensed financial advisor. The AI Coach, insights, scores, and all content in the App are for informational purposes only and do not constitute financial, investment, tax, or legal advice. Always consult a qualified financial professional before making significant financial decisions.</div>
+      <div style={h2}>3. Not a Licensed Adviser</div>
+      <div style={{...p,background:`${C.gold}11`,borderRadius:12,padding:"12px 14px",border:`1px solid ${C.gold}33`}}>⚠️ <strong style={{color:C.goldBright}}>Important:</strong> Flourish Money is an educational financial tool, not a licensed financial advisor. The AI Coach, insights, scores, and all content in the App are for informational purposes only and do not constitute financial, investment, tax, or legal advice. Always consult a qualified financial professional before making significant financial decisions. The coach explains and helps you weigh figures calculated by the App. It does not perform financial calculations and does not provide investment, legal or individualized tax recommendations.</div>
 
       <div style={h2}>4. Account Registration</div>
       <div style={p}>Flourish Money requires a registered account. You sign up using an email and password. Optional two-factor authentication may be added in future versions. Authentication is handled through Supabase. You may delete your account and all associated data at any time from Settings. You are responsible for maintaining the confidentiality of your account credentials and for all activity that occurs under your account. You must notify us immediately at hello@flourishmoney.app of any unauthorized use.</div>
