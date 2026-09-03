@@ -2308,7 +2308,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
     <div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
         <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7}}>
-          <span style={{fontSize:15}}>🔍</span> Opportunities Detected
+          <span style={{fontSize:15}}>🔍</span> Room Flourish found
         </div>
         <span style={{background:C.goldDim,color:C.goldBright,fontSize:10,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"3px 8px",borderRadius:99}}>{opportunities.length} found</span>
       </div>
@@ -7483,7 +7483,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
   const { netWorth, liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <ScreenHeader title="Goals & Wealth" onBack={setScreen?()=>setScreen("home"):null} cta={CC[data?.profile?.country||"CA"]?.flag+" "+CC[data?.profile?.country||"CA"]?.currency} ctaColor={CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}/>
+    <ScreenHeader title="Do" subtitle="Budget, debts, goals, retirement. Amounts and dates, nothing vague." onBack={setScreen?()=>setScreen("home"):null} cta={CC[data?.profile?.country||"CA"]?.flag+" "+CC[data?.profile?.country||"CA"]?.currency} ctaColor={CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}/>
     <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
       {[["goals","My Goals"],["sim","Debt Sim"],["worth","Net Worth"],["retire","Retirement"],["forecast","Wealth"],["budget","Budget"],["personality","Personality"],["tax","Tax Tips"],["learn","Learn"]].map(([key,lbl])=>(
         <button key={key} onClick={()=>setTab(key)} style={{flexShrink:0,background:tab===key?C.purple+"22":C.cardAlt,border:`1px solid ${tab===key?C.purple:C.border}`,color:tab===key?C.purpleBright:C.muted,borderRadius:10,padding:"8px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>{lbl}</button>
@@ -8806,10 +8806,10 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
             }
             if(item.id==="debt"){
               const debts=(data.debts||[]).slice().sort((a,b)=>parseFloat(b.apr||0)-parseFloat(a.apr||0));
-              return debts.length===0?<div style={{color:C.greenBright,fontSize:12,textAlign:"center",padding:"8px 0"}}>No debts tracked. Nice work.</div>:
+              return debts.length===0?<div style={{color:C.greenBright,fontSize:12,textAlign:"center",padding:"8px 0"}}>No debts tracked.</div>:
               <div style={{display:"flex",flexDirection:"column",gap:5,marginTop:8}}>
                 <div style={{display:"flex",justifyContent:"space-between",padding:"4px 10px"}}>
-                  <span style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1}}>Debt (avalanche order)</span>
+                  <span style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1}}>Debts, highest rate first</span>
                   <span style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1}}>APR</span>
                 </div>
                 {debts.map((d,i)=>{
@@ -8827,7 +8827,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                     </div>
                   </div>;
                 })}
-                <div style={{color:C.muted,fontSize:10,fontStyle:"italic",padding:"4px 2px"}}>Avalanche method: pay minimums on all, attack highest APR first. Saves the most interest.</div>
+                <div style={{color:C.muted,fontSize:10,fontStyle:"italic",padding:"4px 2px"}}>Minimums on everything, extra on the highest rate. Payoff dates below are calculated by Flourish; drag the extra payment to move them.</div>
               </div>;
             }
             if(item.id==="goal"){
@@ -11129,7 +11129,7 @@ function CreditScreen({data,setScreen}){
 
   return(
     <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"20px 20px 80px",maxWidth:430,margin:"0 auto"}}>
-      <ScreenHeader title="Credit Score" subtitle="Estimated from your financial behaviour" onBack={setScreen?()=>setScreen("home"):null} cta="Ask Coach" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
+      <ScreenHeader title="Credit" subtitle="Estimated from your payment and utilization patterns. Not your bureau score." onBack={setScreen?()=>setScreen("home"):null} cta="Ask Coach" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
       {/* Score gauge */}
       <div style={{background:C.card,borderRadius:20,padding:"24px 20px 20px",border:`1px solid ${C.border}`,marginBottom:16,textAlign:"center"}}>
         <div style={{color:C.muted,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Credit Score Estimate</div>
@@ -14680,7 +14680,7 @@ export default function FlourishApp(){
         {sub==="goals"
           ? <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen}/>
           : sub==="credit"
-            ? (isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>)
+            ? (isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Factor-by-factor breakdown and a plan with amounts and dates. Calculated by Flourish, explained by your coach." onUpgrade={()=>setShowPaywall(true)}/>)
             : <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>}</>;
     }
     if(screen==="coach"){
