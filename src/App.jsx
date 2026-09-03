@@ -12564,7 +12564,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
               {[
                 [<DollarSign size={20} color="#2E8B2E" strokeWidth={2}/>, "Safe to Spend", "Know exactly what's safe to spend before your next payday — your bills, buffer, and balances in one honest number."],
                 [<Target size={20} color="#2E8B2E" strokeWidth={2}/>, "What-If Simulator", "Test any money decision — a big purchase, an extra debt payment — and see the real impact before you commit."],
-                [<Sparkles size={20} color="#2E8B2E" strokeWidth={2}/>, "AI Coach", "Ask anything and get clear, plain-English explanations. Coaching that helps you understand your money — not just track it."],
+                [<Sparkles size={20} color="#2E8B2E" strokeWidth={2}/>, "AI Coach", "Flourish does the math. The coach explains what your numbers mean, what needs attention first, and your options. It never invents a number and it isn't a licensed adviser."],
                 [<Shield size={20} color="#2E8B2E" strokeWidth={2}/>, "Built for Canada & the US", "RRSP & TFSA or 401(k) & HSA — flourish understands your country's accounts. Privacy-first: your data stays yours."],
               ].map(([icon, title, body]) => (
                 <div className="fll-card" key={title}>
