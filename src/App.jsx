@@ -8576,7 +8576,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
      metricColor:C.tealBright,
      prompt:"Was any category a surprise? What would you do differently?"},
     {id:"debt",icon:"📉",title:"Celebrate debt progress",desc:"Even $1 less is a win.",
-     metric:totalDebt>0?`Total debt: $${totalDebt.toLocaleString()} · Min payments: $${(data.debts||[]).reduce((a,d)=>a+parseFloat(d.min||0),0).toFixed(0)}/mo`:"No debt tracked — incredible! 🎉",
+     metric:totalDebt>0?`Total debt: $${totalDebt.toLocaleString()} · Min payments: $${(data.debts||[]).reduce((a,d)=>a+parseFloat(d.min||0),0).toFixed(0)}/mo`:"No debt tracked. Nice work.",
      metricColor:totalDebt>0?C.orangeBright:C.greenBright,
      prompt:"Did you make any extra payments? What felt hard this week?"},
     {id:"goal",icon:"🎯",title:"Check in on your shared goal",desc:"Emergency fund? Vacation? House?",
@@ -8805,7 +8805,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
             }
             if(item.id==="debt"){
               const debts=(data.debts||[]).slice().sort((a,b)=>parseFloat(b.apr||0)-parseFloat(a.apr||0));
-              return debts.length===0?<div style={{color:C.greenBright,fontSize:12,textAlign:"center",padding:"8px 0"}}>🎉 No debts tracked — incredible!</div>:
+              return debts.length===0?<div style={{color:C.greenBright,fontSize:12,textAlign:"center",padding:"8px 0"}}>No debts tracked. Nice work.</div>:
               <div style={{display:"flex",flexDirection:"column",gap:5,marginTop:8}}>
                 <div style={{display:"flex",justifyContent:"space-between",padding:"4px 10px"}}>
                   <span style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1}}>Debt (avalanche order)</span>
