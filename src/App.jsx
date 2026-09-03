@@ -1213,12 +1213,13 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
     <div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
         <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7}}>
-          <span style={{fontSize:15}}>⏳</span> Financial Time Machine
+          <span style={{fontSize:15}}>⏳</span> Time Machine
         </div>
         <button onClick={()=>setExpanded(e=>!e)} style={{background:"none",border:"none",color:C.teal,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer"}}>
           {expanded?"Collapse ↑":"30 days ↓"}
         </button>
       </div>
+      <div style={{color:C.muted,fontSize:11.5,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginTop:-4,marginBottom:12}}>Drag a what-if onto your forecast. Flourish recalculates the line.</div>
 
       {activeScenario && (
         <div style={{background:C.teal+"15",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",marginBottom:12,display:"flex",gap:8,alignItems:"center"}}>
@@ -6111,7 +6112,7 @@ function PlanAhead({data, setAppData, setScreen}){
       {dataIssues.length>5&&<div style={{color:C.muted,fontSize:11.5,marginTop:5}}>…and {dataIssues.length-5} more.</div>}
     </div>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <ScreenHeader title="Plan Ahead" subtitle="Your financial crystal ball" onBack={setScreen?()=>setScreen("home"):null}/>
+      <ScreenHeader title="Watch" subtitle="The next 90 days. What's coming in, what's going out, and what happens if." onBack={setScreen?()=>setScreen("home"):null}/>
       <div style={{display:"flex",gap:6,background:C.surface,borderRadius:12,padding:3,flexShrink:0,marginBottom:16}}>{[7,14].map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"6px 16px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .22s"}}>{r}d</button>)}</div>
     </div>
     {(()=>{
@@ -6997,10 +6998,10 @@ function SpendScreen({data, setAppData, setScreen}){
 
   const ALL_CATS = ["Food & Drink","Groceries","Transport","Shopping","Entertainment","Bills & Utilities","Health","Income","Subscriptions","Travel","Other"];
 
-    if(!isDemo && txns.length === 0) return <EmptyState icon="💳" title="No transactions yet" body="Your transactions are loading from your bank. Check back in a moment — or pull to refresh." action="Refresh" onAction={()=>window.location.reload()} color={C.orange}/>;
+    if(!isDemo && txns.length === 0) return <EmptyState icon="💳" title="No transactions yet" body="Link a bank or add one by hand." action="Refresh" onAction={()=>window.location.reload()} color={C.orange}/>;
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <ScreenHeader title="Transactions" subtitle={monthLabel} onBack={setScreen?()=>setScreen("home"):null} cta="Ask Coach" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
+    <ScreenHeader title="Transactions" subtitle={monthLabel} onBack={setScreen?()=>setScreen("home"):null} cta="Explain this" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
     {/* Mark as Bill modal */}
     {markBillTxn&&(
       <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)"}} onClick={()=>setMarkBillTxn(null)}>
@@ -7324,7 +7325,7 @@ function SpendScreen({data, setAppData, setScreen}){
               <div style={{fontSize:36,marginBottom:12}}>📂</div>
               <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif",marginBottom:8}}>No transactions yet</div>
               <div style={{color:C.muted,fontSize:13,lineHeight:1.6,maxWidth:260,margin:"0 auto"}}>
-                Connect your bank in Settings to import live transactions, or upload a bank statement.
+                Link a bank, add one by hand, or upload a statement.
               </div>
             </>
           ):(
