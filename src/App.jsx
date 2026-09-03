@@ -4681,6 +4681,32 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
       ═══════════════════════════════════════════════════════════════════ */}
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
 
+        {/* Step 7 / COPY-CHANGES §6: Today priorities — one thing to know (Forecast/SafeSpend),
+            one thing you could do (deterministic from the engine's safe number), Explain this → Learn.
+            Everything else stays below. Numbers are engine outputs; no AI is involved. */}
+        {isVisible('hero')&&(()=>{
+          const dailyRoom = Math.max(0, Math.floor((safe||0)/7));
+          const know = overdraftImmediate
+            ? "Your balance can't cover the bills due before payday. Tap Safe to Spend to see which bill does it."
+            : sevenDayOverdraft
+              ? "Your balance is on track to go negative within a week."
+              : (safe>0 ? `You have $${Math.floor(safe)} safe to spend before your next paycheque.` : "Non-essential spending is tight until your next paycheque.");
+          const doIt = safe>0
+            ? `Keeping today under $${dailyRoom} leaves room across the week.`
+            : "Hold off on non-essentials until your next paycheque lands.";
+          return (
+            <div style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"14px 16px",marginBottom:12}}>
+              <div style={{color:C.muted,fontSize:9.5,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>One thing to know</div>
+              <div style={{color:C.cream,fontSize:13.5,lineHeight:1.55,margin:"3px 0 10px"}}>{know}</div>
+              <div style={{color:C.muted,fontSize:9.5,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>One thing you could do</div>
+              <div style={{color:C.cream,fontSize:13.5,lineHeight:1.55,margin:"3px 0 4px"}}>{doIt}</div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:8}}>
+                <CalcByFlourish/>
+                <button onClick={()=>setScreen&&setScreen("coach")} style={{background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:99,padding:"6px 14px",color:C.greenBright,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Explain this →</button>
+              </div>
+            </div>
+          );
+        })()}
         {/* ── HERO: Safe to Spend ── full width ─────────────────────────── */}
         {isVisible('hero')&&(
         <div style={{...anim(60),cursor:"pointer",position:"relative",overflow:"hidden",borderRadius:28,
