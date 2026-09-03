@@ -4690,7 +4690,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             ? "Your balance can't cover the bills due before payday. Tap Safe to Spend to see which bill does it."
             : sevenDayOverdraft
               ? "Your balance is on track to go negative within a week."
-              : (safe>0 ? `You have $${Math.floor(safe)} safe to spend before your next paycheque.` : "Non-essential spending is tight until your next paycheque.");
+              : (safe>0 ? `You have $${Math.round(safe)} safe to spend before your next paycheque.` : "Non-essential spending is tight until your next paycheque.");
           const doIt = safe>0
             ? `Keeping today under $${dailyRoom} leaves room across the week.`
             : "Hold off on non-essentials until your next paycheque lands.";
