@@ -10474,6 +10474,18 @@ function renderCoachMarkdown(src) {
   return blocks.length ? blocks : String(src ?? "");
 }
 
+// Step 4 (COPY-CHANGES §2/§9): the two labels for surfaces that mix engine output and coach prose,
+// and the footer under every coach reply. Small, reusable.
+function CalcByFlourish({ style = {} }) {
+  return <span style={{display:"inline-flex",alignItems:"center",gap:4,color:C.greenBright,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:0.7,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>✓ Calculated by Flourish</span>;
+}
+function YourCoachTag({ style = {} }) {
+  return <span style={{display:"inline-flex",alignItems:"center",gap:4,color:C.purpleBright||C.purple,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:0.7,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>Your coach</span>;
+}
+function CoachReplyFooter({ style = {} }) {
+  return <div style={{color:C.muted,fontSize:9.5,lineHeight:1.4,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>Figures are Flourish calculations from your data. Not investment, legal or tax advice.</div>;
+}
+
 function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}, setScreen, setAppData, onExitDemo, postCoachConsent, onNeedConsent}){
   // ── ALL HOOKS FIRST — constants moved below to prevent TDZ ───────────────
   const [messages, setMessages] = useState(()=>{
@@ -10481,7 +10493,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
       const saved = safeLoadLS("flourish_coach_history", null);
       if (Array.isArray(saved) && saved.length > 0) return saved.slice(-40);
     } catch {}
-    return [{role:"assistant", content:"Hey! I'm your Flourish AI Coach 👋 I can see your spending patterns, balances, and financial data. What would you like to work on today?"}];
+    return [{role:"assistant", content:"I'm your Flourish coach. I work from the numbers Flourish has calculated: your safe-to-spend, forecast, spending patterns, debts and goals. I'll tell you what they mean, what needs attention first, and what your options are. I don't move money and I'm not a licensed adviser. Where do you want to start?"}];
   });
   const [sessionDate] = useState(()=>new Date().toLocaleDateString("en-CA",{month:"short",day:"numeric"}));
   const [input, setInput] = useState("");
@@ -10493,7 +10505,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
   // ── Constants and derived values (after all hooks) ────────────────────────
   const FREE_LIMIT=FREE_TIER_LIMITS.coachMessagesPerDay;
   const STORAGE_KEY = "flourish_coach_history";
-  const WELCOME = {role:"assistant", content:"Hey! I'm your Flourish AI Coach 👋 I can see your spending patterns, balances, and financial data. What would you like to work on today?"};
+  const WELCOME = {role:"assistant", content:"I'm your Flourish coach. I work from the numbers Flourish has calculated: your safe-to-spend, forecast, spending patterns, debts and goals. I'll tell you what they mean, what needs attention first, and what your options are. I don't move money and I'm not a licensed adviser. Where do you want to start?"};
   const freeMsgsLeft=isPremium?Infinity:Math.max(0,FREE_LIMIT-coachMsgCount);
 
   // Persist messages to localStorage whenever they change
@@ -10599,7 +10611,7 @@ Financial snapshot:
 - TFSA room: $${parseFloat(profile.tfsaRoom)||0}`:""}
 </UNTRUSTED_USER_DATA>
 
-Tax & advice context (use these to give accurate, personalised advice):
+Reference rules (name and explain these; do not compute new figures from them):
 ${country==="CA"?`- Employment: ${isSelfEmp?"SELF-EMPLOYED — mention HST/GST ($30k threshold), quarterly installments, home office, business deductions, CRA My Account":"T4 EMPLOYEE — standard employment deductions, RRSP, union dues, home office if remote"}
 ${partnerEmpLabel ? `- Partner employment: ${partnerIsSelfEmp ? "SELF-EMPLOYED PARTNER — consider income splitting, spousal RRSP contributions, household business deductions" : "EMPLOYED PARTNER — dual income household, spousal RRSP, household cash flow planning"}` : ""}
 - ${age&&age>=65?"SENIOR 65+: Age Amount credit, pension income splitting (Form T1032), OAS ($727/mo), GIS if low income, medical expense credit, RRIF withdrawals":""}
@@ -10629,7 +10641,7 @@ AFFORDABILITY RULE (Phase 1C):
 - Do NOT recommend buying something that exceeds safe-to-spend.
 
 STRICT NUMBER POLICY (non-negotiable trust rule):
-- Only cite dollar amounts, percentages, interest rates, dates, or timelines that appear in the "Financial snapshot" or "Tax & advice context" blocks above, or that the user typed in their message.
+- Only cite dollar amounts, percentages, interest rates, dates, or timelines that appear in the "Financial snapshot" or "Reference rules" blocks above, or that the user typed in their message.
 - Never invent, estimate, extrapolate, or project a number. If the user asks "how much will I have in 10 years" or "how long to pay off this debt" and that figure is not already provided, reply: "I can run a What-If simulation for that — want to try one?" and stop.
 - Reference tax constants stated above (CCB, FHSA, CTC, etc.) as-is. Do not round or adjust them.`;
   };
@@ -10792,7 +10804,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
           </button>
           {!isPremium&&<div onClick={onUpgrade} style={{background:freeMsgsLeft>0?C.purple+"22":C.red+"22",border:`1px solid ${freeMsgsLeft>0?C.purple+"44":C.red+"44"}`,borderRadius:10,padding:"5px 10px",cursor:"pointer",textAlign:"center"}}>
             <div style={{color:freeMsgsLeft>0?C.purpleBright:C.redBright,fontSize:12,fontWeight:800}}>{freeMsgsLeft}/{FREE_LIMIT}</div>
-            <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>free left</div>
+            <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>left this week</div>
           </div>}
         </div>
       </div>
@@ -10827,20 +10839,14 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
                   <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,flexShrink:0}}>{m.content}</span>
                   <div style={{flex:1,height:1,background:C.border}}/>
                 </div>
-              : <div style={{
-                  maxWidth:"82%",
-                  background:m.role==="user"
-                    ?`linear-gradient(135deg,${C.purple},${C.purpleBright})`
-                    :C.card,
-                  color:m.role==="user"?"#fff":C.cream,
-                  border:m.role==="user"?"none":`1px solid ${C.border}`,
-                  borderRadius:m.role==="user"?"18px 18px 4px 18px":"18px 18px 18px 4px",
-                  padding:"11px 15px",
-                  fontSize:13,
-                  lineHeight:1.65,
-                  fontFamily:"inherit",
-                  whiteSpace:m.role==="user"?"pre-wrap":"normal",
-                }}>{m.role==="user"?m.content:renderCoachMarkdown(m.content)}</div>
+              : m.role==="user"
+                ? <div style={{maxWidth:"82%",background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:"#fff",borderRadius:"18px 18px 4px 18px",padding:"11px 15px",fontSize:13,lineHeight:1.65,fontFamily:"inherit",whiteSpace:"pre-wrap"}}>{m.content}</div>
+                : <div style={{maxWidth:"82%",display:"flex",flexDirection:"column",gap:3}}>
+                    <YourCoachTag/>
+                    <div style={{background:C.card,color:C.cream,border:`1px solid ${C.border}`,borderRadius:"18px 18px 18px 4px",padding:"11px 15px",fontSize:13,lineHeight:1.65,fontFamily:"inherit"}}>{renderCoachMarkdown(m.content)}</div>
+                    {/* COPY-CHANGES §9: footer under every coach reply */}
+                    <CoachReplyFooter/>
+                  </div>
             }
           </div>
         ))}
@@ -14522,7 +14528,7 @@ export default function FlourishApp(){
       const showCoach = isPremium || freeCoachAllowed;
       if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium || isTrialActive()} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen} setAppData={setAppData} onExitDemo={exitDemo} postCoachConsent={postCoachConsent} onNeedConsent={requireAIDisclosure}/>;
       // Phase D10: removed stale 5-message gate (D7 dropped FREE_TIER_LIMITS.coachMessagesPerDay to 1; line below handles all gated cases).
-      return <PremiumGate feature="AI Coach" desc="Get personalized coaching from your real transaction data." onUpgrade={()=>setShowPaywall(true)}/>;
+      return <PremiumGate feature="AI Coach" desc="Coaching from your own numbers: what they mean and what to do next." onUpgrade={()=>setShowPaywall(true)}/>;
     }
     if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
     if(screen==="goals")return <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen}/>;

@@ -44,7 +44,7 @@ async function bumpIpUsage(ip) {
 }
 // TRUST_RULES + buildChatSystem live in _lib/coachPrompt.js so the Coach QA suite
 // (tests/coach_qa.cjs) tests the exact prompt this function ships.
-const { TRUST_RULES, buildChatSystem } = require("./_lib/coachPrompt");
+const { TRUST_RULES, buildChatSystem, systemBlocks } = require("./_lib/coachPrompt");
 const { isLiveCoachType } = require("./_lib/coachTypes");
 
 // Path B abuse ceiling: max `chat` messages per user per day. Generous on purpose
@@ -260,10 +260,10 @@ exports.handler = async (event) => {
       anthropicBody = {
         model: "claude-sonnet-4-6",
         max_tokens: 800,
-        system:
+        system: systemBlocks(
           "You are a financial scenario explainer for Flourish Money. You receive pre-computed simulation results from the app and translate them into plain, warm language. " +
           "Never change, adjust, or add numbers. Do not predict outcomes the app did not provide." +
-          TRUST_RULES,
+          TRUST_RULES),
         messages: [{ role: "user", content: payload.prompt || "Explain this financial scenario." }],
       };
       break;
@@ -272,10 +272,10 @@ exports.handler = async (event) => {
       anthropicBody = {
         model: "claude-sonnet-4-6",
         max_tokens: 400,
-        system:
+        system: systemBlocks(
           "You are a financial wellness coach doing a quick check-in. Be encouraging, identify one win and one opportunity. Keep it under 150 words." +
-          (payload.context ? `\n\n<UNTRUSTED_USER_DATA>\n${payload.context}\n</UNTRUSTED_USER_DATA>` : "") +
           TRUST_RULES,
+          payload.context ? `<UNTRUSTED_USER_DATA>\n${payload.context}\n</UNTRUSTED_USER_DATA>` : null),
         messages: [{ role: "user", content: payload.prompt || "Give me a quick financial check-in summary." }],
       };
       break;
@@ -285,7 +285,7 @@ exports.handler = async (event) => {
         model: "claude-sonnet-4-6",
         max_tokens: 800,
         temperature: 0,
-        system: "You are a tax document parser. Extract financial data and return only valid JSON. No markdown." + TRUST_RULES,
+        system: systemBlocks("You are a tax document parser. Extract financial data and return only valid JSON. No markdown." + TRUST_RULES),
         messages: payload.messages || [{ role: "user", content: payload.prompt || "Parse this document." }],
       };
       break;
