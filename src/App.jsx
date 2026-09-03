@@ -22,6 +22,7 @@ import { shouldPromptIncome, applyDetectedIncome, cadenceLabel } from "./lib/inc
 import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill } from "./lib/billReeval.js";
 import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate } from "./lib/statementImport.js";
 import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
+import { tabForScreen } from "./lib/navigation.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
@@ -10486,6 +10487,20 @@ function CoachReplyFooter({ style = {} }) {
   return <div style={{color:C.muted,fontSize:9.5,lineHeight:1.4,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>Figures are Flourish calculations from your data. Not investment, legal or tax advice.</div>;
 }
 
+// Step 6: segmented control for the tabs that hold more than one screen (Watch, Do). Switching a
+// segment just sets `screen` to the underlying screen id, so every existing screen and deep-link
+// keeps working — this is navigation only.
+function SegTabs({ tabs, value, onChange }) {
+  return (
+    <div style={{display:"flex",gap:6,padding:"12px 16px 4px",maxWidth:640,margin:"0 auto",width:"100%",boxSizing:"border-box"}}>
+      {tabs.map(([id,label])=>{
+        const on = value===id;
+        return <button key={id} onClick={()=>onChange(id)} style={{flex:1,padding:"9px 10px",borderRadius:11,border:`1px solid ${on?C.green+"66":C.border}`,background:on?C.green+"1E":"transparent",color:on?C.greenBright:C.muted,fontSize:13,fontWeight:on?700:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .15s"}}>{label}</button>;
+      })}
+    </div>
+  );
+}
+
 function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{}, onUpgrade=()=>{}, setScreen, setAppData, onExitDemo, postCoachConsent, onNeedConsent}){
   // ── ALL HOOKS FIRST — constants moved below to prevent TDZ ───────────────
   const [messages, setMessages] = useState(()=>{
@@ -11580,12 +11595,16 @@ function AIConsentModal({ onEnable, onCancel }){
 }
 
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
+// Step 6: five-tab information architecture (Today, Watch, Do, Learn, Meet). Watch holds Plan +
+// Activity, Do holds Budget + Goals + Credit — via segmented controls in the router. No screen or
+// engine is removed; the old ids (plan/spend/budget/goals/credit) still route, re-homed under the
+// new tabs, so every deep-link keeps working.
 const NAV=[
   {id:"home",  icon:"home",     label:"Today"},
-  {id:"plan",  icon:"calendar", label:"Plan"},
-  {id:"spend", icon:"card",     label:"Activity"},
-  {id:"coach", icon:"sparkles", label:"Guidance"},
-  {id:"family",icon:"users",    label:"Family"},
+  {id:"watch", icon:"calendar", label:"Watch"},
+  {id:"do",    icon:"chartUp",  label:"Do"},
+  {id:"coach", icon:"sparkles", label:"Learn"},
+  {id:"family",icon:"users",    label:"Meet"},
 ];
 
 // ── PERSISTENCE HELPERS ───────────────────────────────────────────────────────
@@ -14516,9 +14535,24 @@ export default function FlourishApp(){
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;
     if(screen==="home")return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }}/>;
-    if(screen==="plan")return <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
-    if(screen==="spend")return <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
-  if(screen==="budget")return <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>;
+    // Watch = Plan + Activity (segmented). Time Machine / What-If live inside Plan. Old ids route here.
+    if(screen==="watch"||screen==="plan"||screen==="spend"){
+      const sub = screen==="spend" ? "spend" : "plan";
+      return <><SegTabs tabs={[["plan","Plan"],["spend","Activity"]]} value={sub} onChange={setScreen}/>
+        {sub==="spend"
+          ? <SpendScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>
+          : <PlanAhead data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>}</>;
+    }
+    // Do = Budget + Goals + Credit (segmented). Old ids route here.
+    if(screen==="do"||screen==="budget"||screen==="goals"||screen==="credit"){
+      const sub = (screen==="goals"||screen==="credit"||screen==="budget") ? screen : "budget";
+      return <><SegTabs tabs={[["budget","Budget"],["goals","Goals"],["credit","Credit"]]} value={sub} onChange={setScreen}/>
+        {sub==="goals"
+          ? <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen}/>
+          : sub==="credit"
+            ? (isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>)
+            : <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>}</>;
+    }
     if(screen==="coach"){
       // Phase D3: AI gates — opt-out check first, then first-time disclosure
       if(!aiCoachEnabled) return <AIDisabledNotice onOpenSettings={()=>setShowSettings(true)} onClose={()=>setScreen("home")}/>;
@@ -14531,8 +14565,7 @@ export default function FlourishApp(){
       return <PremiumGate feature="AI Coach" desc="Coaching from your own numbers: what they mean and what to do next." onUpgrade={()=>setShowPaywall(true)}/>;
     }
     if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
-    if(screen==="goals")return <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen}/>;
-    if(screen==="credit")return isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Full credit score breakdown, factor analysis, and a personalized improvement plan." onUpgrade={()=>setShowPaywall(true)}/>;
+    // goals + credit are re-homed under the "Do" tab (segmented control) above.
     if(screen==="widget")return <WidgetScreen data={dataWithHousehold} onBack={()=>setScreen("home")}/>;
     // privacy and terms handled before auth gate above
     return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/>;
@@ -14540,12 +14573,10 @@ export default function FlourishApp(){
 
   const ALL_NAV=[
     {id:"home",  icon:"home",    label:"Today"},
-    {id:"plan",  icon:"calendar",label:"Plan"},
-    {id:"spend", icon:"card",    label:"Activity"},
-    {id:"budget",icon:"chartUp", label:"Budget"},
-    {id:"coach", icon:"sparkles",label:"Guidance"},
-    {id:"family",icon:"users",   label:"Family"},
-    {id:"goals", icon:"target",  label:"Goals"},
+    {id:"watch", icon:"calendar",label:"Watch"},
+    {id:"do",    icon:"chartUp", label:"Do"},
+    {id:"coach", icon:"sparkles",label:"Learn"},
+    {id:"family",icon:"users",   label:"Meet"},
   ];
 
   const globalStyles=`
@@ -14635,7 +14666,7 @@ input,button,select,textarea { font-family:inherit; }
         {/* Nav items */}
         <div style={{flex:1,padding:"0 12px",display:"flex",flexDirection:"column",gap:2}}>
           {ALL_NAV.map(n=>{
-            const active=(screen===n.id||(n.id==="goals"&&screen==="credit"))&&!showNotifs&&!showSettings;
+            const active=(tabForScreen(screen)===n.id)&&!showNotifs&&!showSettings;
             return(
               <button key={n.id} className="nav-item" onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen(n.id);}}
                 style={{background:active?C.green+"18":"transparent",border:`1px solid ${active?C.green+"33":"transparent"}`,borderRadius:12,padding:"11px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,color:active?C.greenBright:C.muted,fontWeight:active?700:400,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .18s",textAlign:"left",width:"100%"}}>
@@ -14686,7 +14717,7 @@ input,button,select,textarea { font-family:inherit; }
         <div style={{padding:"20px 36px 16px",background:C.isDark?`${C.bg}F8`:`${C.bg}EE`,backdropFilter:"blur(12px)",position:"sticky",top:0,zIndex:20,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid ${C.border}`}}>
           <div>
             <div style={{color:C.cream,fontWeight:700,fontSize:18,fontFamily:"'Playfair Display',serif"}}>
-              {showNotifs?"Notifications":showSettings?"Settings":screen==="home"?"Today":screen==="plan"?"Plan":screen==="spend"?"Activity":screen==="coach"?"Guidance":screen==="family"?"Family":screen==="goals"||screen==="credit"?"Goals & Wealth":"Today"}
+              {showNotifs?"Notifications":showSettings?"Settings":screen==="home"?"Today":(screen==="watch"||screen==="plan"||screen==="spend")?"Watch":(screen==="do"||screen==="budget"||screen==="goals"||screen==="credit")?"Do":screen==="coach"?"Learn":screen==="family"?"Meet":"Today"}
             </div>
             <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{new Date().toLocaleDateString(CC[appData?.profile?.country||"CA"]?.locale||"en-CA",{weekday:"long",month:"long",day:"numeric"})}</div>
           </div>
@@ -14776,7 +14807,7 @@ input,button,select,textarea { font-family:inherit; }
           <div style={{position:"fixed",bottom:"max(16px, env(safe-area-inset-bottom))",left:"50%",transform:"translateX(-50%)",zIndex:50,width:"calc(100% - 40px)",maxWidth:390}}>
             <div style={{background:C.isDark?"rgba(10,16,24,0.94)":"rgba(253,252,250,0.95)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",borderRadius:30,border:`1px solid ${C.border}`,boxShadow:"0 12px 48px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.02), inset 0 1px 0 rgba(255,255,255,0.06)",padding:"8px 8px",display:"flex",justifyContent:"space-around"}}>
             {ALL_NAV.map(n=>{
-              const active=(screen===n.id||(n.id==="goals"&&screen==="credit"))&&!showNotifs&&!showSettings;
+              const active=(tabForScreen(screen)===n.id)&&!showNotifs&&!showSettings;
               return(
                 <button key={n.id} onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen(n.id);}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"5px 8px",borderRadius:22,transition:"all .28s cubic-bezier(.16,1,.3,1)"}}>
                   <div style={{width:40,height:30,borderRadius:16,
