@@ -45,6 +45,47 @@ async function bumpIpUsage(ip) {
 // TRUST_RULES + buildChatSystem live in _lib/coachPrompt.js so the Coach QA suite
 // (tests/coach_qa.cjs) tests the exact prompt this function ships.
 const { TRUST_RULES, buildChatSystem, systemBlocks, buildSimulatorSystem, buildCheckinSystem, buildFacilitatorSystem } = require("./_lib/coachPrompt");
+const { validateFacilitatorProse, resolveFacilitatorOutput } = require("./_lib/facilitatorGuard");
+
+// Step 9 defense-in-depth: validate the facilitator's numeric claims against the agenda AFTER
+// generation (prompt hardening alone is not a guarantee). If the first reply cites a figure the
+// agenda does not state, retry once with a strict correction naming the figure; if that still fails,
+// return a safe qualitative fallback. Never displays or persists an unsupported-number response.
+async function guardFacilitatorOutput(data, payload, apiKey) {
+  const agendaText = payload.context || "";
+  const proseOf = (d) => ((d && d.content) || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+  const first = proseOf(data);
+  const firstCheck = validateFacilitatorProse(first, agendaText);
+  if (firstCheck.ok) return data;
+
+  const named = firstCheck.violations.map((v) => v.text).slice(0, 5).join("; ");
+  const baseMessages = payload.messages || [{ role: "user", content: payload.prompt || "Start the money meeting." }];
+  let retryProse = null;
+  try {
+    const r2 = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 600,
+        system: buildFacilitatorSystem(agendaText),
+        messages: [
+          ...baseMessages,
+          { role: "assistant", content: first },
+          { role: "user", content: `Your reply used figures the agenda does not state: ${named}. Rewrite it using ONLY numbers written verbatim in the agenda, in the same unit and about the same thing. Do not count, total, average, or compute any ratio or percentage. If an observation needs a number that isn't in the agenda, say it qualitatively. Keep it under 4 sentences.` },
+        ],
+      }),
+    });
+    const d2 = await r2.json();
+    if (r2.ok) retryProse = proseOf(d2);
+  } catch (e) {
+    console.error("[coach] facilitator guard retry failed:", e.message);
+  }
+
+  const resolved = resolveFacilitatorOutput(agendaText, first, retryProse);
+  if (resolved.kind === "first") return data; // defensive; first already failed
+  return { ...data, content: [{ type: "text", text: resolved.text }], _guard: resolved.kind };
+}
 const { isLiveCoachType } = require("./_lib/coachTypes");
 
 // Path B abuse ceiling: max `chat` messages per user per day. Generous on purpose
@@ -330,8 +371,11 @@ exports.handler = async (event) => {
       };
     }
 
-    console.log(`[coach] OK — stop="${data.stop_reason}" tokens=${data.usage?.output_tokens}`);
-    return { statusCode: 200, headers: corsHeaders, body: JSON.stringify(data) };
+    // Facilitator-only numeric guard (validate → retry once → safe fallback) before the reply ships.
+    const finalData = (type === "facilitator") ? await guardFacilitatorOutput(data, payload, apiKey) : data;
+
+    console.log(`[coach] OK — stop="${finalData.stop_reason}" tokens=${finalData.usage?.output_tokens}${finalData._guard ? ` guard=${finalData._guard}` : ""}`);
+    return { statusCode: 200, headers: corsHeaders, body: JSON.stringify(finalData) };
 
   } catch (err) {
     const ref = `coach_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
