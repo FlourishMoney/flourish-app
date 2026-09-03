@@ -3144,7 +3144,9 @@ function StatementReview({ batch, onConfirm, onCancel }) {
 
   const edit = (id, field, value) => setRows(prev => prev.map(r => {
     if (r.id !== id) return r;
-    const next = reval({ ...r, [field]: value });
+    // Item 3: an edited row is now USER-ENTERED data — mark it so import provenance records it was
+    // hand-corrected, not verbatim-transcribed. `raw` keeps the model's original extraction.
+    const next = reval({ ...r, [field]: value, edited: true });
     if (next.status === "failed") setSelected(s => { const n = new Set(s); n.delete(id); return n; });
     return next;
   }));
@@ -3179,8 +3181,11 @@ function StatementReview({ batch, onConfirm, onCancel }) {
                   <input value={r.date} onChange={e=>edit(r.id,"date",e.target.value)} placeholder="YYYY-MM-DD" style={{width:100,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:"5px 7px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none"}}/>
                   <input value={r.amount} onChange={e=>edit(r.id,"amount",e.target.value)} inputMode="decimal" placeholder="0.00" style={{width:80,background:C.cardAlt,border:`1px solid ${col(r.status)}66`,borderRadius:6,padding:"5px 7px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none",textAlign:"right"}}/>
                 </div>
-                {r.reasons && r.reasons.length > 0 && (
-                  <div style={{color:col(r.status),fontSize:10.5,marginTop:3,lineHeight:1.35}}>{r.status==="failed"?"Fix to import: ":"Heads-up: "}{r.reasons.join("; ")}</div>
+                {(r.edited || (r.reasons && r.reasons.length > 0)) && (
+                  <div style={{fontSize:10.5,marginTop:3,lineHeight:1.35}}>
+                    {r.edited && <span style={{color:C.tealBright||C.teal,fontWeight:700}}>✎ edited by you{r.reasons && r.reasons.length ? " · " : ""}</span>}
+                    {r.reasons && r.reasons.length > 0 && <span style={{color:col(r.status)}}>{r.status==="failed"?"Fix to import: ":"Heads-up: "}{r.reasons.join("; ")}</span>}
+                  </div>
                 )}
               </div>
             </div>

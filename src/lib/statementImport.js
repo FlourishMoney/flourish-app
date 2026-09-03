@@ -165,6 +165,8 @@ export function rowsToImport(classified, selectedIds, accountId = null) {
     const r = byId.get(id);
     if (!r) throw new Error(`unknown row ${id}`);
     if (!isSelectable(r)) throw new Error(`row ${id} failed validation and cannot be imported`);
+    const edited = !!r.edited;
+    const orig = r.raw || {};
     out.push({
       id: `stmt_${id}`,
       date: r.date,
@@ -173,6 +175,12 @@ export function rowsToImport(classified, selectedIds, accountId = null) {
       category: "OTHER",
       pending: false,
       source: IMPORT_SOURCE,
+      edited,
+      // An edited row is USER-ENTERED data: the typed amount was NOT verbatim-matched against the
+      // statement text, so never claim it was. Un-edited rows passed the verbatim source check.
+      // The model's original extraction is kept for provenance.
+      verbatimSourceMatch: !edited,
+      ...(edited ? { originalExtracted: { amount: orig.amount, date: orig.date, name: orig.name } } : {}),
       ...(accountId ? { account_id: accountId } : {}),
     });
   }

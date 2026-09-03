@@ -113,5 +113,28 @@ const t = create();
     t.throws(() => rowsToImport(b.rows, ["stmt_99"]), "7i unknown id rejected");
   }
 
+  // ── Item 3: an edited row becomes user-entered data with distinct provenance ──────────────────
+  {
+    const original = { date: "2026-08-02", name: "Grocery", amount: 54.20, source: "GROCERY 54.20" };
+    const batch = validateStatementImport({ rows: [original], anchors: {} });
+    const row = batch.rows[0];
+
+    // un-edited → verbatim-matched, no original snapshot
+    const clean = rowsToImport([row], [row.id]);
+    t.eq(clean[0].edited, false,             "P1 un-edited row is not marked edited");
+    t.eq(clean[0].verbatimSourceMatch, true, "P2 un-edited row passed the verbatim source match");
+    t.ok(!("originalExtracted" in clean[0]), "P3 un-edited row keeps no separate original");
+
+    // user hand-corrects the amount → edited provenance, NOT a verbatim-source claim, original kept
+    const edited = { ...row, amount: 45.00, edited: true }; // raw still holds the extracted 54.20
+    const out = rowsToImport([edited], [edited.id]);
+    t.eq(out[0].edited, true,                 "P4 edited row is marked edited");
+    t.eq(out[0].verbatimSourceMatch, false,   "P5 the edited amount is NOT represented as verbatim-matched");
+    t.eq(out[0].amount, 45.00,                "P6 imported amount is the user's corrected value");
+    t.eq(out[0].source, IMPORT_SOURCE,        "P7 still stamped source=statement-import");
+    t.eq(out[0].originalExtracted.amount, 54.20, "P8 the model's original extraction is kept for provenance");
+    t.eq(out[0].originalExtracted.name, "Grocery", "P9 original name kept too");
+  }
+
   t.summary("statementImport");
 })();
