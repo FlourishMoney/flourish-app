@@ -8504,7 +8504,9 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <ScreenHeader title="Family" subtitle="Money is a team sport" onBack={setScreen?()=>setScreen("home"):null}/>
     <div style={{display:"flex",gap:6}}>
-      {[["meeting",isCouple?"Money Meeting":"Check-In"],["kids","Kids Zone"],...(HOUSEHOLD_ENABLED?[["household","Household"]]:[])].map(([t,lbl])=>(
+      {/* Step 10: Kids entry point removed from primary UI. The /kids route and its code (KidsMiniSite,
+          the tab==="kids" block below) are intentionally kept for the future family add-on. */}
+      {[["meeting",isCouple?"Money Meeting":"Check-In"],...(HOUSEHOLD_ENABLED?[["household","Household"]]:[])].map(([t,lbl])=>(
         <button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.purple+"22":C.cardAlt,border:`1px solid ${tab===t?C.purple:C.border}`,color:tab===t?C.purpleBright:C.muted,borderRadius:12,padding:"10px",cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit"}}>
           {lbl}
         </button>
