@@ -44,7 +44,7 @@ async function bumpIpUsage(ip) {
 }
 // TRUST_RULES + buildChatSystem live in _lib/coachPrompt.js so the Coach QA suite
 // (tests/coach_qa.cjs) tests the exact prompt this function ships.
-const { TRUST_RULES, buildChatSystem, systemBlocks } = require("./_lib/coachPrompt");
+const { TRUST_RULES, buildChatSystem, systemBlocks, buildSimulatorSystem, buildCheckinSystem, buildFacilitatorSystem } = require("./_lib/coachPrompt");
 const { isLiveCoachType } = require("./_lib/coachTypes");
 
 // Path B abuse ceiling: max `chat` messages per user per day. Generous on purpose
@@ -260,10 +260,7 @@ exports.handler = async (event) => {
       anthropicBody = {
         model: "claude-sonnet-4-6",
         max_tokens: 800,
-        system: systemBlocks(
-          "You are a financial scenario explainer for Flourish Money. You receive pre-computed simulation results from the app and translate them into plain, warm language. " +
-          "Never change, adjust, or add numbers. Do not predict outcomes the app did not provide." +
-          TRUST_RULES),
+        system: buildSimulatorSystem(),
         messages: [{ role: "user", content: payload.prompt || "Explain this financial scenario." }],
       };
       break;
@@ -272,10 +269,7 @@ exports.handler = async (event) => {
       anthropicBody = {
         model: "claude-sonnet-4-6",
         max_tokens: 400,
-        system: systemBlocks(
-          "You are a financial wellness coach doing a quick check-in. Be encouraging, identify one win and one opportunity. Keep it under 150 words." +
-          TRUST_RULES,
-          payload.context ? `<UNTRUSTED_USER_DATA>\n${payload.context}\n</UNTRUSTED_USER_DATA>` : null),
+        system: buildCheckinSystem(payload.context),
         messages: [{ role: "user", content: payload.prompt || "Give me a quick financial check-in summary." }],
       };
       break;
@@ -286,10 +280,7 @@ exports.handler = async (event) => {
       anthropicBody = {
         model: "claude-sonnet-4-6",
         max_tokens: 600,
-        system: systemBlocks(
-          "You are the Flourish money-meeting facilitator. You receive a pre-computed weekly agenda (below) — wins, spending changes, upcoming risks, progress, and one or two decisions, each with BOTH outcomes ALREADY CALCULATED by Flourish. Facilitate: run the agenda in order, ask ONE question at a time, reflect back what each person says, and on a decision name the trade-off using ONLY the two computed outcomes shown. Never produce, change or estimate a number, date, rate or score — every figure is already in the agenda; if one is missing, say Flourish hasn't calculated it. Record a choice by emitting FLOURISH_UPDATE ONLY after the user explicitly confirms it, using numbers from the agenda. Close with one intention for the week. Calm and direct; about the numbers, not advice." +
-          TRUST_RULES,
-          payload.context ? `AGENDA (all figures pre-computed by Flourish):\n<UNTRUSTED_USER_DATA>\n${payload.context}\n</UNTRUSTED_USER_DATA>` : null),
+        system: buildFacilitatorSystem(payload.context),
         messages: payload.messages || [{ role: "user", content: payload.prompt || "Start the money meeting." }],
       };
       break;
