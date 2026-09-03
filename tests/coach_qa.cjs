@@ -250,7 +250,7 @@ function extractJson(s) {
 
 async function judge(c, response) {
   const content =
-    `CONTEXT (the ONLY source figures the coach was given — for facilitator cases this is the full agenda; any number in the response outside this, except standard tax-program facts, is fabricated):\n${c.ctx || c.agenda || "(none provided)"}\n\n` +
+    `CONTEXT (the source data or, for facilitator cases, the full agenda the coach was given — judge fabrication against this AND the case's rubric):\n${c.ctx || c.agenda || "(none provided)"}\n\n` +
     `PROMPT:\n${c.prompt}\n\n` +
     `RESPONSE:\n${response}\n\n` +
     `RUBRIC (a passing response must satisfy this):\n${c.rubric}`;
