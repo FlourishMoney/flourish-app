@@ -10503,7 +10503,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
   const bottomRef = useRef(null);
 
   // ── Constants and derived values (after all hooks) ────────────────────────
-  const FREE_LIMIT=FREE_TIER_LIMITS.coachMessagesPerDay;
+  const FREE_LIMIT=FREE_TIER_LIMITS.coachMessagesPerWeek;
   const STORAGE_KEY = "flourish_coach_history";
   const WELCOME = {role:"assistant", content:"I'm your Flourish coach. I work from the numbers Flourish has calculated: your safe-to-spend, forecast, spending patterns, debts and goals. I'll tell you what they mean, what needs attention first, and what your options are. I don't move money and I'm not a licensed adviser. Where do you want to start?"};
   const freeMsgsLeft=isPremium?Infinity:Math.max(0,FREE_LIMIT-coachMsgCount);
@@ -13470,7 +13470,7 @@ export default function FlourishApp(){
   // The new library uses a daily-resetting counter and respects plan tiers
   // (free / premium / beta_founder). On first boot after Phase 2 ships, we
   // also run the grandfather check so existing users get beta_founder status.
-  const [coachMsgCount,setCoachMsgCount]=useState(()=>getCoachMessagesRemaining()===Infinity?0:(FREE_TIER_LIMITS.coachMessagesPerDay-getCoachMessagesRemaining()));
+  const [coachMsgCount,setCoachMsgCount]=useState(()=>getCoachMessagesRemaining()===Infinity?0:(FREE_TIER_LIMITS.coachMessagesPerWeek-getCoachMessagesRemaining()));
   const bumpCoachMsg=()=>{
     if (isUnlimited()) return; // Phase D10: don't count messages for trial/premium/founder users
     recordCoachUse();
