@@ -10241,7 +10241,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
       <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:10}}>Privacy & AI</div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div style={{flex:1}}>
-          <div style={{color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:2}}>AI Coach enabled</div>
+          <div style={{color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:2}}>AI Coach</div>
           <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>On: Flourish sends your calculated numbers to the coach so it can explain them and run your money meeting. Off: nothing leaves Flourish for AI. Every number, forecast and what-if still works.</div>
         </div>
         <Toggle label="AI Coach" on={aiCoachEnabled} onChange={(v)=>{
@@ -10360,6 +10360,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     {(bankConnected || true)&&(
       <div style={{marginTop:10,padding:"14px 16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
         <div style={{color:C.cream,fontWeight:700,fontSize:13,marginBottom:8}}>Connected Banks</div>
+        <div style={{color:C.muted,fontSize:11.5,lineHeight:1.5,marginBottom:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Read-only connections through Plaid. Flourish cannot move your money. Unlink any time.</div>
         {/* Phase D6: bank list driven by Supabase plaid_items via getUserItems */}
         {bankItems === null ? (
           <div style={{color:C.muted,fontSize:12,padding:"8px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Loading banks…</div>
@@ -14893,7 +14894,7 @@ input,button,select,textarea { font-family:inherit; }
         {!isOnline&&(
           <div style={{position:"fixed",top:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,zIndex:9999,background:"#180800",borderBottom:`2px solid ${C.orange}44`,padding:"9px 20px",display:"flex",alignItems:"center",gap:10}}>
             <span style={{fontSize:14}}>📡</span>
-            <span style={{color:C.goldBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700}}>Offline — AI features paused. Your data is saved.</span>
+            <span style={{color:C.goldBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700}}>Offline. Coach paused, numbers saved.</span>
           </div>
         )}
         {/* ── TRIAL BANNER ─── Phase D7: only render for users on an active trial ── */}
