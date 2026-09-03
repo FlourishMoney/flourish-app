@@ -10509,7 +10509,7 @@ function DesktopSidebar({data,setScreen}){
     <div onClick={()=>setScreen("coach")} style={{background:`linear-gradient(135deg,${C.greenDim},${C.card})`,borderRadius:20,padding:"20px",border:`1px solid ${C.green}22`,cursor:"pointer",transition:"all .2s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=C.green+"44";e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=C.green+"22";e.currentTarget.style.transform="none";}}>
       <div style={{marginBottom:10,display:"flex",justifyContent:"center"}}><Icon id="sparkles" size={26} color={C.green} strokeWidth={1.35}/></div>
       <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif",marginBottom:6}}>Ask your AI Coach</div>
-      <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>Get personalized advice based on your real transactions and {data.profile?.country==="US"?"401k/IRA":"RRSP/TFSA"} situation.</div>
+      <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>Get coaching from your own numbers, based on your real transactions and {data.profile?.country==="US"?"401k/IRA":"RRSP/TFSA"} situation.</div>
       <div style={{color:C.green,fontSize:12,fontWeight:700,marginTop:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Start coaching session →</div>
     </div>
   </>;
@@ -11291,7 +11291,7 @@ function TermsOfService({onBack}){
       </div>
 
       <div style={h2}>1. About Flourish Money</div>
-      <div style={p}>Flourish Money ("App") is a personal finance management tool operated by <strong style={{color:C.cream}}>GrowSmart Inc.</strong> ("Company", "we", "us"). The App provides budgeting, spending tracking, financial health scoring, AI-powered coaching, and goal-setting tools for personal use.</div>
+      <div style={p}>Flourish Money ("App") is a personal finance management tool operated by <strong style={{color:C.cream}}>GrowSmart Inc.</strong> ("Company", "we", "us"). The App provides budgeting, spending tracking, financial health scoring, coaching from your own numbers, and goal-setting tools for personal use.</div>
 
       <div style={h2}>2. Eligibility</div>
       <div style={p}>You must be at least 18 years old and a resident of Canada or the United States to use Flourish Money. By using the App, you represent and warrant that you meet these requirements.</div>
@@ -11373,13 +11373,13 @@ function Paywall({onClose,onUpgrade,onPromoUpgrade,country}){
     monthly:{label:"Monthly",price:`${formatPrice(_pr.monthly)}/mo`,monthly:null,save:null,badge:null},
   };
   const features=[
-    {icon:"sparkles",title:"AI Coach",desc:"Personalized advice from your real transaction data"},
+    {icon:"sparkles",title:"AI Coach",desc:"Coaching from your own numbers, not generic tips"},
     {icon:"target",title:"Tax Tips & Benefits",desc:isCA?"RRSP, TFSA, CCB, GST credit, Trillium and more":"EITC, Child Tax Credit, 401k, HSA and more"},
     {icon:"shield",title:"Credit Coaching",desc:"Full factor breakdown + improvement plan"},
     {icon:"chartUp",title:"Investment Tracking",desc:isCA?"RRSP, TFSA, Questrade, Wealthsimple":"401k, IRA, Fidelity, Vanguard"},
     {icon:"house2",title:"Household Sharing",desc:"Connect with a partner, track shared goals"},
     {icon:"target",title:"Debt Simulator",desc:"See exactly when you'll be debt-free"},
-    {icon:"chartUp",title:"Spending Insights",desc:"AI-powered pattern detection & smart cut suggestions"},
+    {icon:"chartUp",title:"Spending Insights",desc:"Pattern detection from your transactions & smart cut suggestions"},
   ];
 
   return(
