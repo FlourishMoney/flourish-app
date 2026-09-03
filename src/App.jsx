@@ -11356,7 +11356,7 @@ function PremiumGate({feature,desc,onUpgrade}){
       <button onClick={onUpgrade} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.purple}40`}}>
         Unlock Flourish Plus →
       </button>
-      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>14-day free trial · Cancel anytime</div>
+      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>14 days free. Cancel any time.</div>
     </div>
   );
 }
@@ -11374,13 +11374,14 @@ function Paywall({onClose,onUpgrade,onPromoUpgrade,country}){
     monthly:{label:"Monthly",price:`${formatPrice(_pr.monthly)}/mo`,monthly:null,save:null,badge:null},
   };
   const features=[
-    {icon:"sparkles",title:"AI Coach",desc:"Coaching from your own numbers, not generic tips"},
-    {icon:"target",title:"Tax Tips & Benefits",desc:isCA?"RRSP, TFSA, CCB, GST credit, Trillium and more":"EITC, Child Tax Credit, 401k, HSA and more"},
-    {icon:"shield",title:"Credit Coaching",desc:"Full factor breakdown + improvement plan"},
-    {icon:"chartUp",title:"Investment Tracking",desc:isCA?"RRSP, TFSA, Questrade, Wealthsimple":"401k, IRA, Fidelity, Vanguard"},
-    {icon:"house2",title:"Household Sharing",desc:"Connect with a partner, track shared goals"},
-    {icon:"target",title:"Debt Simulator",desc:"See exactly when you'll be debt-free"},
-    {icon:"chartUp",title:"Spending Insights",desc:"Pattern detection from your transactions & smart cut suggestions"},
+    {icon:"sparkles",title:"Coach",desc:"Unlimited coaching from your own numbers: what they mean and what to do next"},
+    {icon:"target",title:"Benefits explained",desc:isCA?"CCB, GST/HST credit, Trillium, RRSP, TFSA, FHSA: which rule applies to you and why":"EITC, Child Tax Credit, 401k, HSA and more"},
+    {icon:"shield",title:"Credit plan",desc:"Factor breakdown with amounts and dates"},
+    {icon:"chartUp",title:"Contribution room",desc:isCA?"RRSP, TFSA and FHSA balances and room together":"401k, IRA, Fidelity, Vanguard"},
+    {icon:"house2",title:"Weekly money meeting",desc:"Agenda from your week, coach as facilitator, solo or couple"},
+    {icon:"target",title:"Debt payoff date",desc:"Calculated by Flourish. Drag the extra payment, watch the date move"},
+    {icon:"chartUp",title:"Pattern alerts",desc:"Payday spikes and subscription creep, calculated from your transactions"},
+    {icon:"bank",title:"Linked accounts",desc:"Read-only bank connections for live balances and transactions"},
   ];
 
   return(
@@ -11389,14 +11390,14 @@ function Paywall({onClose,onUpgrade,onPromoUpgrade,country}){
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}>
           <div style={{fontSize:20,fontWeight:800,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7}}><FlourishMark size={21}/><span>Flourish Plus</span></div>
-          <button onClick={onClose} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Stay on free plan</button>
+          <button onClick={onClose} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Keep the free plan</button>
         </div>
 
         {/* Hero */}
         <div style={{textAlign:"center",marginBottom:28}}>
           <div style={{marginBottom:10,display:"flex",justifyContent:"center"}}><Icon id="sparkles" size={40} color={C.purpleBright} strokeWidth={1.3}/></div>
-          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:28,color:C.cream,marginBottom:8,lineHeight:1.2}}>You're leaving money on the table</div>
-          <div style={{color:C.muted,fontSize:14,lineHeight:1.7}}>Most people on free leave unclaimed credits, untracked debt, and zero coaching behind. Plus fixes all of that.</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:28,color:C.cream,marginBottom:8,lineHeight:1.2}}>What Plus adds</div>
+          <div style={{color:C.muted,fontSize:14,lineHeight:1.7}}>Live numbers from linked accounts, unlimited coaching, and the weekly meeting with agenda and facilitator. Free keeps Today, Watch and Do with manual entry.</div>
         </div>
 
         {/* Plan selector */}
@@ -11449,11 +11450,10 @@ function Paywall({onClose,onUpgrade,onPromoUpgrade,country}){
 
         {/* CTA */}
         <button onClick={onUpgrade} style={{width:"100%",background:`linear-gradient(135deg,${C.purple} 0%,${C.purpleBright} 100%)`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:16,padding:"16px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 8px 32px ${C.purple}40`,marginBottom:12}}>
-          Start Free 14-Day Trial →
+          Start 14 days free →
         </button>
         <div style={{textAlign:"center",color:C.muted,fontSize:11,lineHeight:1.7}}>
-          14 days free, then {plans[selected].price}. Cancel anytime.<br/>
-          Payment processed securely. No hidden fees.
+          Free for 14 days, then {plans[selected].price}. Cancel any time from Settings.
         </div>
 
         {/* Trust footer */}
