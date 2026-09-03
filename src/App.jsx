@@ -24,6 +24,7 @@ import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parse
 import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
 import { tabForScreen } from "./lib/navigation.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
+import { meetAgendaFor, agendaToText } from "./lib/meetSnapshot.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
@@ -8269,6 +8270,100 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
 // Household/partner sharing is hidden until a real multi-user backend exists (audit: it was mock — fake
 // "FLRSH1" code, any join "succeeds", overview showed only the local user). Code retained; flip to re-enable.
 const HOUSEHOLD_ENABLED = false;
+// Step 9: the Meet screen — the deterministic agenda (meetAgendaFor) rendered on the family tab,
+// with the facilitator gated by plan + AI-on. Free/AI-off users always get the agenda; only unlimited
+// tiers with AI on can start the facilitator, which operates ONLY on the supplied agenda.
+function MeetAgenda({ data, isCouple, setScreen }){
+  const agenda = useMemo(() => meetAgendaFor(data), [data]);
+  const canFacilitate = isUnlimited();     // premium, beta_founder, or active trial
+  const aiOn = aiEnabled();
+  const [started, setStarted] = useState(false);
+  const [msgs, setMsgs] = useState([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const items = [...agenda.wins, ...agenda.changes, ...agenda.risks, ...agenda.progress];
+  const hasAgenda = items.length > 0 || agenda.decisions.length > 0;
+  const card = {background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px 16px",marginBottom:12};
+  const sTitle = {color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8};
+
+  const sendToFacilitator = async (userText) => {
+    setBusy(true);
+    const history = userText ? [...msgs, { role:"user", content:userText }] : msgs;
+    if (userText) setMsgs(history);
+    try {
+      const jwt = await getJwt();
+      const r = await fetch(`${API_BASE}/api/coach`, {
+        method:"POST", headers:{ "Content-Type":"application/json", Authorization:`Bearer ${jwt}` },
+        body: JSON.stringify({ type:"facilitator", payload:{ context: agendaToText(agenda),
+          messages: history.length ? history : [{ role:"user", content:"Start the money meeting." }] } }),
+      });
+      const d = await r.json();
+      const text = d.content?.[0]?.text || "Let's begin. First, the win — what went well this week?";
+      setMsgs([...history, { role:"assistant", content:text }]);
+    } catch { setMsgs([...history, { role:"assistant", content:"The facilitator is unavailable right now — your agenda is above." }]); }
+    setBusy(false);
+  };
+  const start = () => { if (!aiEnabled()) return; setStarted(true); sendToFacilitator(null); };
+  const send  = () => { const tx = input.trim(); if (!tx || busy) return; setInput(""); sendToFacilitator(tx); };
+
+  return (
+    <div>
+      <div style={{color:C.muted,fontSize:13,marginBottom:14,lineHeight:1.5}}>Flourish wrote this agenda from your week — it doesn't add up your numbers, it reads what the engines already calculated.{canFacilitate && aiOn ? " The coach keeps it calm and about the numbers." : ""}</div>
+
+      <div style={card}>
+        <div style={sTitle}>Flourish noticed</div>
+        {hasAgenda
+          ? items.map((it,i)=><div key={i} style={{color:C.cream,fontSize:13,lineHeight:1.6,marginBottom:5}}>• {it.text}</div>)
+          : <div style={{color:C.muted,fontSize:13}}>Not enough activity to summarise yet. Add a bill or goal on the Do tab, or link a bank for live numbers.</div>}
+        {items.length>0 && <CalcByFlourish style={{marginTop:8}}/>}
+      </div>
+
+      {agenda.decisions.map((dec,i)=>(
+        <div key={i} style={card}>
+          <div style={sTitle}>One decision this week</div>
+          <div style={{color:C.cream,fontSize:14,fontWeight:600,marginBottom:10,lineHeight:1.4}}>{dec.text}</div>
+          <div style={{display:"flex",gap:8}}>
+            {dec.options.map((o,j)=>(
+              <div key={j} style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px"}}>
+                <div style={{color:C.cream,fontSize:12,fontWeight:700,marginBottom:3}}>{o.label}</div>
+                <div style={{color:C.greenBright,fontSize:12,lineHeight:1.4}}>{o.outcome}</div>
+              </div>
+            ))}
+          </div>
+          <CalcByFlourish style={{marginTop:8}}/>
+        </div>
+      ))}
+
+      {!aiOn ? (
+        <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5}}>The AI coach is off, so here's just your agenda. Turn the coach on in Settings → Privacy &amp; AI to be walked through it — every number above still works either way.</div></div>
+      ) : !canFacilitate ? (
+        <div style={{...card,background:C.purple+"12",border:`1px solid ${C.purple}33`}}>
+          <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,marginBottom:2}}>The meeting facilitator is part of Plus</div>
+          <div style={{color:C.muted,fontSize:12,lineHeight:1.5}}>Your agenda is always free. Plus adds a coach to walk you{isCouple?" and your partner":""} through it, one item at a time.</div>
+        </div>
+      ) : !started ? (
+        <button onClick={start} disabled={!hasAgenda} style={{width:"100%",background:hasAgenda?`linear-gradient(135deg,${C.purple},${C.purpleBright})`:C.cardAlt,border:"none",borderRadius:14,padding:"13px",color:hasAgenda?"#fff":C.muted,fontWeight:800,fontSize:14,cursor:hasAgenda?"pointer":"default",fontFamily:"inherit"}}>{isCouple?"Start the meeting":"Start solo check-in"}</button>
+      ) : (
+        <div style={card}>
+          <div style={{color:C.muted,fontSize:11,marginBottom:8}}>The facilitator works only from the agenda above. Nothing here moves money; a choice is only recorded after you confirm it.</div>
+          {msgs.filter(m=>m.role!=="user").map((m,i)=>(
+            <div key={i} style={{marginBottom:10}}>
+              <YourCoachTag/>
+              <div style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 13px",fontSize:13,lineHeight:1.6,color:C.cream,marginTop:3}}>{renderCoachMarkdown(m.content)}</div>
+            </div>
+          ))}
+          {busy && <div style={{color:C.muted,fontSize:12,marginBottom:8}}>…</div>}
+          <div style={{display:"flex",gap:8}}>
+            <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")send();}} placeholder="Your answer…" style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+            <button onClick={send} disabled={busy} style={{background:C.purple,border:"none",borderRadius:10,padding:"9px 16px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Send</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Family({data,setAppData,household,setHousehold,setScreen}){
   const [tab,setTab]=useState("meeting");
   const [householdTab,setHouseholdTab]=useState("join");
@@ -8507,7 +8602,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
   const earned=(activeKid?.chores||[]).filter(c=>c.done).reduce((a,c)=>a+(c.reward||0),0);
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <ScreenHeader title="Family" subtitle="Money is a team sport" onBack={setScreen?()=>setScreen("home"):null}/>
+    <ScreenHeader title="Meet" subtitle="Your 15-minute money meeting" onBack={setScreen?()=>setScreen("home"):null}/>
     <div style={{display:"flex",gap:6}}>
       {/* Step 10: Kids entry point removed from primary UI. The /kids route and its code (KidsMiniSite,
           the tab==="kids" block below) are intentionally kept for the future family add-on. */}
@@ -8519,7 +8614,9 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
     </div>
 
     {/* ── MEETING TAB ── */}
-    {tab==="meeting"&&<>
+    {tab==="meeting"&&<MeetAgenda data={data} isCouple={isCouple} setScreen={setScreen}/>}
+    {/* Legacy solo/couple check-in flow — superseded by the agenda-driven Meet above (code kept). */}
+    {false&&<>
       {!started&&!done2&&<>
         {/* Live metrics snapshot */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
