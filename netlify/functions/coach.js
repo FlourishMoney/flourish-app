@@ -45,6 +45,7 @@ async function bumpIpUsage(ip) {
 // TRUST_RULES + buildChatSystem live in _lib/coachPrompt.js so the Coach QA suite
 // (tests/coach_qa.cjs) tests the exact prompt this function ships.
 const { TRUST_RULES, buildChatSystem } = require("./_lib/coachPrompt");
+const { isLiveCoachType } = require("./_lib/coachTypes");
 
 // Path B abuse ceiling: max `chat` messages per user per day. Generous on purpose
 // — this is a cost/DoS backstop, not the product limit. Plan-aware free=1/day
@@ -183,19 +184,22 @@ exports.handler = async (event) => {
     return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: "Server configuration error: missing API key" }) };
   }
 
+  // Step 2: reject any non-live type before dispatch (plan/insights/buckets/tax removed).
+  if (!isLiveCoachType(type)) {
+    return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "unknown_type", message: `Unsupported coach type: ${type}` }) };
+  }
+
   let anthropicBody;
 
   switch (type) {
 
     case "chat":
-    case "plan":
       if (!payload.messages || !Array.isArray(payload.messages)) {
         return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "payload.messages must be an array" }) };
       }
-      // Abuse control — count real coach chat AND plan messages (both make the same upstream call).
-      // Sprint Z2 #4: "plan" shares this branch with "chat"; the old `type === "chat"` guard let any
-      // authenticated caller send {type:"plan"} for an identical, fully UNMETERED Anthropic request.
-      if (type === "chat" || type === "plan") {
+      // Abuse control — count coach chat messages. (Step 2 removed the dead unmetered "plan" alias;
+      // only "chat" reaches this branch now, so metering is unconditional.)
+      {
         // Sprint Z #8: per-IP backstop FIRST, independent of Supabase. Counts every request, so it
         // still limits abuse even if the per-user counter/DB is down.
         const ip = clientIp(event);
@@ -273,38 +277,6 @@ exports.handler = async (event) => {
           (payload.context ? `\n\n<UNTRUSTED_USER_DATA>\n${payload.context}\n</UNTRUSTED_USER_DATA>` : "") +
           TRUST_RULES,
         messages: [{ role: "user", content: payload.prompt || "Give me a quick financial check-in summary." }],
-      };
-      break;
-
-    case "insights":
-      anthropicBody = {
-        model: "claude-sonnet-4-6",
-        max_tokens: 1200,
-        system:
-          "You are Flourish, a warm financial coach. Analyze real transaction data. Use exact numbers from the data. Respond ONLY with valid JSON." +
-          (payload.context ? `\n\n<UNTRUSTED_USER_DATA>\n${payload.context}\n</UNTRUSTED_USER_DATA>` : "") +
-          TRUST_RULES,
-        messages: [{ role: "user", content: payload.prompt || "Analyze this user's financial data." }],
-      };
-      break;
-
-    case "buckets":
-      anthropicBody = {
-        model: "claude-sonnet-4-6",
-        max_tokens: 900,
-        temperature: 0,
-        system: "You are a financial planning AI. Respond only with valid JSON. No markdown, no preamble." + TRUST_RULES,
-        messages: [{ role: "user", content: payload.prompt || "Generate savings bucket recommendations." }],
-      };
-      break;
-
-    case "tax":
-      anthropicBody = {
-        model: "claude-sonnet-4-6",
-        max_tokens: 600,
-        temperature: 0,
-        system: "You are a Canadian/US tax optimization AI. Respond only with valid JSON. No markdown. Use only the tax rates and thresholds provided in the prompt — do not substitute your own." + TRUST_RULES,
-        messages: [{ role: "user", content: payload.prompt || "Calculate tax optimization scenarios." }],
       };
       break;
 
