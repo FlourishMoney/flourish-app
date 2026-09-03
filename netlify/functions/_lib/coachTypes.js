@@ -8,13 +8,13 @@
 // before dispatch, so any removed/unknown type returns 400.
 "use strict";
 
-// The only types coach.js will service.
-const LIVE_COACH_TYPES = ["chat", "simulator", "checkin", "document"];
+// The only types coach.js will service. (Step 9 added "facilitator" for the Meet money meeting.)
+const LIVE_COACH_TYPES = ["chat", "simulator", "checkin", "document", "facilitator"];
 
 // Of the live types, these return PROSE the app renders as coach text; the app never reads a numeric
 // field from their response. (`document` is a transcription path validated + user-confirmed before
 // any number enters the data — see Step 2b — so it is intentionally NOT in this set.)
-const PROSE_ONLY_COACH_TYPES = ["chat", "simulator", "checkin"];
+const PROSE_ONLY_COACH_TYPES = ["chat", "simulator", "checkin", "facilitator"];
 
 // The What-If numeric figures are computed in JavaScript (src/lib/financialCalculations.js) and only
 // EXPLAINED by the model. The simulator asks the model for exactly these prose fields — none is a

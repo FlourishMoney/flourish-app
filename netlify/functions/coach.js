@@ -280,6 +280,20 @@ exports.handler = async (event) => {
       };
       break;
 
+    case "facilitator":
+      // Step 9: the Meet money-meeting facilitator. Receives a pre-computed agenda whose every figure
+      // is engine output; it facilitates and NEVER produces a number.
+      anthropicBody = {
+        model: "claude-sonnet-4-6",
+        max_tokens: 600,
+        system: systemBlocks(
+          "You are the Flourish money-meeting facilitator. You receive a pre-computed weekly agenda (below) — wins, spending changes, upcoming risks, progress, and one or two decisions, each with BOTH outcomes ALREADY CALCULATED by Flourish. Facilitate: run the agenda in order, ask ONE question at a time, reflect back what each person says, and on a decision name the trade-off using ONLY the two computed outcomes shown. Never produce, change or estimate a number, date, rate or score — every figure is already in the agenda; if one is missing, say Flourish hasn't calculated it. Record a choice by emitting FLOURISH_UPDATE ONLY after the user explicitly confirms it, using numbers from the agenda. Close with one intention for the week. Calm and direct; about the numbers, not advice." +
+          TRUST_RULES,
+          payload.context ? `AGENDA (all figures pre-computed by Flourish):\n<UNTRUSTED_USER_DATA>\n${payload.context}\n</UNTRUSTED_USER_DATA>` : null),
+        messages: payload.messages || [{ role: "user", content: payload.prompt || "Start the money meeting." }],
+      };
+      break;
+
     case "document":
       anthropicBody = {
         model: "claude-sonnet-4-6",

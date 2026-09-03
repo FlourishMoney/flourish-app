@@ -23,14 +23,14 @@ const t = create();
     t.ok(!isLiveCoachType(dead), `1a "${dead}" is not a live coach type`);
     t.ok(!LIVE_COACH_TYPES.includes(dead), `1b "${dead}" absent from LIVE_COACH_TYPES`);
   });
-  t.eq([...LIVE_COACH_TYPES].sort(), ["chat", "checkin", "document", "simulator"],
-       "1c exactly four live types remain");
-  ["chat", "simulator", "checkin", "document"].forEach(live =>
+  t.eq([...LIVE_COACH_TYPES].sort(), ["chat", "checkin", "document", "facilitator", "simulator"],
+       "1c exactly five live types remain (Step 9 added facilitator)");
+  ["chat", "simulator", "checkin", "document", "facilitator"].forEach(live =>
     t.ok(isLiveCoachType(live), `1d "${live}" is live`));
   t.ok(!isLiveCoachType("anything_else"), "1e an unknown type is rejected");
 
   // ── 2. prose-only types + the simulator field contract ────────────────────────────────────────
-  t.eq([...PROSE_ONLY_COACH_TYPES].sort(), ["chat", "checkin", "simulator"], "2a prose-only set");
+  t.eq([...PROSE_ONLY_COACH_TYPES].sort(), ["chat", "checkin", "facilitator", "simulator"], "2a prose-only set");
   t.ok(!PROSE_ONLY_COACH_TYPES.includes("document"), "2b document is not prose-only (it's validated)");
   // The model is asked for these prose fields and nothing else — none is a financial figure.
   const numeric = new Set(SCENARIO_NUMERIC_FIELDS);
