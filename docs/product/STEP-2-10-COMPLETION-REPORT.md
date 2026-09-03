@@ -26,13 +26,17 @@ Status legend: **COMPLETE** · **DEFERRED BY DECISION** (a DECISIONS.md override
 - Item 5: garbled founding-price comment corrected (`d50bc5e`).
 - **Tests:** `tests/pricing.test.cjs` (CA/US values, 31% annual saving, formatting).
 
-## Step 4 — Prompt caching — **COMPLETE (structure)** · **live cache measurement BLOCKED**
+## Step 4 — Prompt caching — **COMPLETE (structure) · MEASURED: cache does not engage (prefix too short)**
 - `coachPrompt.js` `systemBlocks(stable, variable)` puts stable rules first with `cache_control:{type:"ephemeral"}`; per-user financial context is a separate **uncached** block wrapped in `<UNTRUSTED_USER_DATA>`. All four system builders use it.
 - **Tests:** `tests/coachPrompt.test.cjs` (18/18) asserts the block shape, cache flag placement, and that context is never in the cached block.
-- **BLOCKED:** `.env.local` (gitignored ✓, Node v24 `--env-file` supported) contains **no `ANTHROPIC_API_KEY`** (only Supabase VITE vars). So the two-request live `cache_creation_input_tokens` / `cache_read_input_tokens` measurement could not be run. No fabrication.
-  - To run when a key is available (synthetic data only, key never in client/build/logs/commits):
-    `node --env-file=.env.local tests/coach_qa.cjs`
-  - Harness structurally verified: it loads, parses all cases, and exits cleanly reporting the missing key.
+- **Live cache measurement (2026-09-03).** Two identical requests sent sequentially on the exact production inputs — model `claude-sonnet-4-6`, `anthropic-version: 2023-06-01`, `buildChatSystem()` blocks (`cache_control` on the stable prefix), synthetic context, dev key via `--env-file=.env.local`:
+
+  | Request | input_tokens | cache_creation_input_tokens | cache_read_input_tokens |
+  |---|---|---|---|
+  | #1 | 976 | **0** | **0** |
+  | #2 | 976 | **0** | **0** |
+
+  **Diagnosis — cache legitimately does not engage.** The stable (cached) block is ~3,206 chars ≈ **~802 tokens**, and the whole system+message input is **976 tokens** — both below `claude-sonnet-4-6`'s **1,024-token minimum cacheable length**. So no cache block is created on request #1 (`cache_creation=0`) and request #2 has nothing to read (`cache_read=0`). The prefix is byte-identical and the requests were <1s apart (well within the 5-minute TTL), so prefix-identity and TTL are ruled out — the sole cause is the too-short prefix. **The prompt was NOT padded to force a hit** (per the brief). This is the measured result: the caching wiring is correct but currently inert at this prompt size; it will begin saving tokens only once the stable prefix exceeds 1,024 tokens (e.g., if the reference-rules/COACH_RULES block grows), with no code change needed.
 
 ## Step 5 — Free-tier coaching limit — **COMPLETE**
 - `src/lib/usageLimits.js`: `coachMessagesPerWeek: 2`, resetting weekly via `_weekKey()` (most-recent-Monday UTC). Trial/Plus unlimited. Legacy daily counters still read.
@@ -88,10 +92,21 @@ DOM-verified: `flourish_dash_tab="today"` renders `One thing to know` / `One thi
 
 ---
 
+## Live coach QA — RAN 2026-09-03 (synthetic data, dev key)
+`node --env-file=.env.local tests/coach_qa.cjs` — model `claude-sonnet-4-6`, 27 cases, LLM-judged. **Result: 24/27 passed · 3 failed · 0 errored · 56.7s.** All injection-defence (`inject-*`), scope-boundary (`scope-*`), number-guard (`guard-*`), tax, debt and most edge cases passed. Three judge failures (live-model behaviour, not code — no fix applied since Step 7/copy is closed):
+
+| Case | Type | Judge reason |
+|---|---|---|
+| `facilitator-runs-agenda` | facilitator | Invented a stat ("5 of 7 days within safe-to-spend") not present in the supplied agenda — a **number-invention** miss; most important to address in future prompt work, since the facilitator must cite only agenda figures. |
+| `checkin-basic` | checkin | Response exceeded the ~150-word limit in the rubric. |
+| `edge-negative-cashflow` | edge | Ended on an open reflective question instead of giving one concrete next action. |
+
+These are prompt-tuning findings for a later pass (not this branch, which froze copy at Step 7). Synthetic data only; no real financial snapshot was sent.
+
 ## Gate discipline
-Every commit ran `npm run test:math` (offline) + `npm run build` before landing; no test was weakened or deleted. Coach QA (`test:coach`) is live-API and excluded from the offline gate by design; its new cases are structurally verified and its live run is the one BLOCKED item, pending an `ANTHROPIC_API_KEY`.
+Every commit ran `npm run test:math` (offline) + `npm run build` before landing; no test was weakened or deleted. Coach QA (`test:coach`) is live-API and excluded from the offline gate by design; it has now been **run live (24/27)** and the two-request cache measurement completed (Step 4) — both previously-BLOCKED items are now measured.
 
 ## Pre-merge / pre-deploy checklist (open items)
-1. **BLOCKED:** live coach QA + prompt-cache token measurement — needs `ANTHROPIC_API_KEY` in `.env.local` (never a `VITE_`-prefixed name; never in client/build/logs/commits). Run: `node --env-file=.env.local tests/coach_qa.cjs`.
+1. **DONE (was BLOCKED):** live coach QA ran **24/27** and the two-request cache probe completed — see the two sections above. Residual, non-blocking follow-ups for a later prompt pass (copy is frozen on this branch): (a) 3 QA judge failures, notably the facilitator number-invention miss; (b) prompt caching is inert until the stable prefix exceeds 1,024 tokens (currently ~802). Netlify preview isolation (secrets to Production-only) remains the real pre-deploy security item.
 2. **DEFERRED BY DECISION:** §4 landing full-marketing copy (pain points, how-it-works, pricing grid) applies only once the waitlist page is replaced with the full marketing/billing landing (DECISIONS 7). Waitlist-page copy is done.
 3. **Legal review** of the Privacy Policy PIPEDA section (left flagged, untouched — DECISIONS 8).
