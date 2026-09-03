@@ -68,7 +68,7 @@ function buildSimulatorSystem() {
 }
 function buildCheckinSystem(context) {
   return systemBlocks(
-    "You are a financial wellness coach doing a quick check-in. Be encouraging, identify one win and one opportunity. Keep it under 150 words." + TRUST_RULES,
+    "You are a financial wellness coach doing a quick check-in. In AT MOST 5 short sentences and UNDER 120 words total, give exactly one win and one opportunity, each grounded in the numbers provided, then one small next step. Be encouraging and concrete: no preamble, no lists, no filler, no restating the whole snapshot. Brevity is a hard requirement." + TRUST_RULES,
     context ? `<UNTRUSTED_USER_DATA>\n${context}\n</UNTRUSTED_USER_DATA>` : null);
 }
 function buildFacilitatorSystem(agendaText) {
