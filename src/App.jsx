@@ -12128,7 +12128,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
         <div className="fll-capture fll-done">
           <div style={{ fontSize: 30, marginBottom: 6 }}>{waitlistStatus === "already" ? "👋" : "🎉"}</div>
           <div className="fll-done-t">{waitlistStatus === "already" ? "You're already on the list!" : "You're on the list"}</div>
-          <div className="fll-done-b">We'll email you the moment Flourish launches. No spam — just the launch news.</div>
+          <div className="fll-done-b">We'll email you the moment flourish launches. No spam — just the launch news.</div>
         </div>
       );
     }
@@ -12274,7 +12274,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
           {/* Proof — real app screenshots */}
           <div className="fll-section" style={{ paddingBottom: 6 }}>
             <div className="fll-eyebrow">The real app</div>
-            <h2 className="fll-h2">This is Flourish — no mockups.</h2>
+            <h2 className="fll-h2">This is flourish — no mockups.</h2>
             <p className="fll-lede">Real screens from the app you'll get on day one.</p>
             <div className="fll-proof">
               {[
@@ -12293,14 +12293,14 @@ function AuthScreen({ onAuth, onTryDemo }) {
 
           {/* Benefits */}
           <div className="fll-wrap fll-section">
-            <div className="fll-eyebrow">Why Flourish</div>
+            <div className="fll-eyebrow">Why flourish</div>
             <h2 className="fll-h2">Coaching that helps you understand your money.</h2>
             <div className="fll-benefits" style={{ marginTop: 24 }}>
               {[
                 [<DollarSign size={20} color="#2E8B2E" strokeWidth={2}/>, "Safe to Spend", "Know exactly what's safe to spend before your next payday — your bills, buffer, and balances in one honest number."],
                 [<Target size={20} color="#2E8B2E" strokeWidth={2}/>, "What-If Simulator", "Test any money decision — a big purchase, an extra debt payment — and see the real impact before you commit."],
                 [<Sparkles size={20} color="#2E8B2E" strokeWidth={2}/>, "AI Coach", "Ask anything and get clear, plain-English explanations. Coaching that helps you understand your money — not just track it."],
-                [<Shield size={20} color="#2E8B2E" strokeWidth={2}/>, "Built for Canada & the US", "RRSP & TFSA or 401(k) & HSA — Flourish understands your country's accounts. Privacy-first: your data stays yours."],
+                [<Shield size={20} color="#2E8B2E" strokeWidth={2}/>, "Built for Canada & the US", "RRSP & TFSA or 401(k) & HSA — flourish understands your country's accounts. Privacy-first: your data stays yours."],
               ].map(([icon, title, body]) => (
                 <div className="fll-card" key={title}>
                   <div className="fll-ico">{icon}</div>
@@ -12315,7 +12315,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
           <div className="fll-wrap fll-section" style={{ paddingTop: 6 }}>
             <div className="fll-cta2">
               <h2 className="fll-h2" style={{ marginBottom: 6 }}>Be first to know.</h2>
-              <p className="fll-lede" style={{ marginBottom: 22 }}>Join the waitlist and we'll email you the moment Flourish launches — on iOS, Android & Windows.</p>
+              <p className="fll-lede" style={{ marginBottom: 22 }}>Join the waitlist and we'll email you the moment flourish launches — on iOS, Android & Windows.</p>
               {renderCapture("bottom_cta")}
             </div>
           </div>
@@ -12428,7 +12428,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
               /* App Store reviewers: enter with sample data — no account or beta code needed (iOS only). */
               <div style={{ textAlign: "center", marginTop: 22 }}>
                 <button onClick={onTryDemo} style={{ background: "rgba(0,200,224,0.14)", border: "1px solid rgba(0,200,224,0.4)", color: "#00C8E0", borderRadius: 99, padding: "11px 22px", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>🧪 Try the demo — no account needed</button>
-                <div style={{ color: "#6B7A6E", fontSize: 11, marginTop: 8, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Explore Flourish with sample data</div>
+                <div style={{ color: "#6B7A6E", fontSize: 11, marginTop: 8, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Explore flourish with sample data</div>
               </div>
             )}
           </div>
