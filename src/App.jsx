@@ -3468,12 +3468,12 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
 
     // 2: Bank Connection
     <div>
-      <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Connect your bank</div>
-      <div style={{color:C.muted,fontSize:14,marginBottom:16}}>Live transactions unlock AI coaching and real overdraft warnings.</div>
+      <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Link your accounts (optional)</div>
+      <div style={{color:C.muted,fontSize:14,marginBottom:16}}>Read-only. Flourish sees balances and transactions and can't move money. Linked accounts give you live numbers; manual entry works fine to start.</div>
       {bankStage==="select"&&<>
         {/* Trust bar */}
         <div style={{background:C.tealDim,border:`1px solid ${C.teal}44`,borderRadius:16,padding:"14px 16px",marginBottom:14}}>
-          <div style={{color:C.tealBright,fontWeight:700,marginBottom:8}}>🔒 Powered by Plaid</div>
+          <div style={{color:C.tealBright,fontWeight:700,marginBottom:8}}>🔒 Read-only connection</div>
           {[["✅","Read-only. We can never move your money"],["✅","Encrypted in transit and at rest"],["✅","Live balances + 90 days of transactions"],["✅","Disconnect any time from settings"]].map(([ico,t],i)=>(
             <div key={i} style={{display:"flex",gap:8,padding:"3px 0",color:C.cream,fontSize:13}}><span>{ico}</span><span>{t}</span></div>
           ))}
@@ -3531,7 +3531,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
           {!stmtStatus&&<div style={{color:C.muted,fontSize:11,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Supports most Canadian & US bank exports. Flourish copies what's printed and shows you every row to confirm before anything is saved.</div>}
         </div>
 
-        <div style={{marginTop:14}}><Btn label="Skip — enter manually" onClick={skipBank} outline color={C.muted} small/></div>
+        <div style={{marginTop:14}}><Btn label="Enter it myself" onClick={skipBank} outline color={C.muted} small/></div>
       </>}
 
       {bankStage==="loading"&&<div style={{textAlign:"center",padding:"40px 0"}}>
@@ -3578,7 +3578,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
 
     // 3: Income (after bank — auto-detection runs first)
     <div>
-      <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:30,color:C.cream,marginBottom:6,letterSpacing:-0.5}}>Your income</div>
+      <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:30,color:C.cream,marginBottom:6,letterSpacing:-0.5}}>{p.country==="US"?"Your income":"Your paycheques"}</div>
       <div style={{color:C.muted,fontSize:14,marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
         {incomes[0]?.autoDetected
           ? "We detected your income from your transactions. Confirm or adjust below."
@@ -3814,7 +3814,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
 
     // 6: Credit Score
     <div>
-      <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Your credit score</div>
+      <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Your credit score (optional)</div>
       <div style={{color:C.muted,fontSize:14,marginBottom:16}}>Optional — but unlocks personalised coaching on how to improve it.</div>
       <div style={{background:C.tealDim,border:`1px solid ${C.teal}44`,borderRadius:16,padding:"14px 16px",marginBottom:20}}>
         <div style={{color:C.tealBright,fontWeight:700,marginBottom:6}}>🔒 How Flourish uses this</div>
@@ -3842,7 +3842,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       {!p.creditKnown&&<div style={{background:C.cardAlt,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}`,marginBottom:16}}>
         <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>No problem. Flourish will estimate your score range from your debt utilization and payment patterns once you're connected. You can add it later in Settings.</div>
       </div>}
-      <Btn label="Open My Dashboard →" onClick={finish}/>
+      <Btn label="Show me today's number →" onClick={finish}/>
     </div>,
   ];
 
