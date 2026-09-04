@@ -5,7 +5,7 @@ const { create } = require("./_runner.cjs");
 const t = create();
 
 (async () => {
-  const { buildMeetSnapshot, meetAgendaFor, agendaToText } = await import("../src/lib/meetSnapshot.js");
+  const { buildMeetSnapshot, meetAgendaFor, agendaToText, facilitatorGateState } = await import("../src/lib/meetSnapshot.js");
 
   // debts + goals are read straight from appData by buildMeetSnapshot (no re-computation).
   const data = {
@@ -64,6 +64,13 @@ const t = create();
   t.ok(/paid off in .+ instead of /.test(dec.options[0].outcome), "6a debt outcome shows before/after payoff");
   t.ok(/buffer grows to \$/.test(dec.options[1].outcome), "6b savings outcome shows what the buffer becomes");
   t.ok(!/this period/.test(dec.text), "6c decision question uses an actual date range, not 'this period'");
+
+  // Item 3 — facilitator gate: three states, and only 'ready' shows the input.
+  t.eq(facilitatorGateState({ demo: true, canFacilitate: true, aiOn: true }), "trial", "7a demo (unauthenticated) → trial line, no input");
+  t.eq(facilitatorGateState({ demo: false, canFacilitate: false, aiOn: true }), "trial", "7b signed-in free tier → trial line, no input");
+  t.eq(facilitatorGateState({ demo: false, canFacilitate: true, aiOn: false }), "ai-off", "7c eligible tier but AI off → coach-off line, no input");
+  t.eq(facilitatorGateState({ demo: false, canFacilitate: true, aiOn: true }), "ready", "7d signed-in trial/premium/beta_founder + AI on → input shown");
+  t.eq(facilitatorGateState({ demo: true, canFacilitate: true, aiOn: false }), "trial", "7e demo takes precedence over AI-off");
 
   t.summary("meetSnapshot");
 })();

@@ -24,7 +24,7 @@ import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parse
 import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
 import { tabForScreen } from "./lib/navigation.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
-import { meetAgendaFor, agendaToText } from "./lib/meetSnapshot.js";
+import { meetAgendaFor, agendaToText, facilitatorGateState } from "./lib/meetSnapshot.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
@@ -8304,6 +8304,8 @@ function MeetAgenda({ data, isCouple, setScreen }){
   const agenda = useMemo(() => meetAgendaFor(data), [data]);
   const canFacilitate = isUnlimited();     // premium, beta_founder, or active trial
   const aiOn = aiEnabled();
+  // Item 3: only a signed-in eligible tier with AI on sees the input; demo/free → trial line, AI off → off line.
+  const facilitatorGate = facilitatorGateState({ demo: !!data.demo, canFacilitate, aiOn });
   const [started, setStarted] = useState(false);
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
@@ -8336,7 +8338,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
 
   return (
     <div>
-      <div style={{color:C.muted,fontSize:13,marginBottom:14,lineHeight:1.5}}>Flourish wrote this agenda from your week — it doesn't add up your numbers, it reads what the engines already calculated.{canFacilitate && aiOn ? " The coach keeps it calm and about the numbers." : ""}</div>
+      <div style={{color:C.muted,fontSize:13,marginBottom:14,lineHeight:1.5}}>Flourish wrote this agenda from your week — it doesn't add up your numbers, it reads what the engines already calculated.{facilitatorGate === "ready" ? " The coach keeps it calm and about the numbers." : ""}</div>
 
       <div style={card}>
         <div style={sTitle}>Flourish noticed</div>
@@ -8362,13 +8364,10 @@ function MeetAgenda({ data, isCouple, setScreen }){
         </div>
       ))}
 
-      {!aiOn ? (
-        <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5}}>The AI coach is off, so here's just your agenda. Turn the coach on in Settings → Privacy &amp; AI to be walked through it — every number above still works either way.</div></div>
-      ) : !canFacilitate ? (
-        <div style={{...card,background:C.purple+"12",border:`1px solid ${C.purple}33`}}>
-          <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,marginBottom:2}}>The meeting facilitator is part of Plus</div>
-          <div style={{color:C.muted,fontSize:12,lineHeight:1.5}}>Your agenda is always free. Plus adds a coach to walk you{isCouple?" and your partner":""} through it, one item at a time.</div>
-        </div>
+      {facilitatorGate === "trial" ? (
+        <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5}}>Start your trial to run the meeting with your coach.</div></div>
+      ) : facilitatorGate === "ai-off" ? (
+        <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5}}>Coach is off in Settings. Your agenda is above.</div></div>
       ) : !started ? (
         <button onClick={start} disabled={!hasAgenda} style={{width:"100%",background:hasAgenda?`linear-gradient(135deg,${C.purple},${C.purpleBright})`:C.cardAlt,border:"none",borderRadius:14,padding:"13px",color:hasAgenda?"#fff":C.muted,fontWeight:800,fontSize:14,cursor:hasAgenda?"pointer":"default",fontFamily:"inherit"}}>{isCouple?"Start the meeting":"Start solo check-in"}</button>
       ) : (

@@ -98,6 +98,16 @@ export function meetAgendaFor(data) {
   return buildMeetingAgenda(buildMeetSnapshot(data));
 }
 
+// Which facilitator state the Meet screen shows (item 3). Pure, so it can be unit-tested:
+//   'trial'  — unauthenticated/demo OR free tier: no input; "Start your trial to run the meeting..."
+//   'ai-off' — eligible but AI off: no input; "Coach is off in Settings. Your agenda is above."
+//   'ready'  — signed-in trial/premium/beta_founder with AI on: the ONLY state that shows the input.
+export function facilitatorGateState({ demo, canFacilitate, aiOn }) {
+  if (demo || !canFacilitate) return "trial";
+  if (!aiOn) return "ai-off";
+  return "ready";
+}
+
 // Serialize the agenda to the plain text the facilitator operates on (its ONLY source of figures).
 export function agendaToText(agenda) {
   const lines = [];
