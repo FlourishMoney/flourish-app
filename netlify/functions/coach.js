@@ -46,6 +46,7 @@ async function bumpIpUsage(ip) {
 // (tests/coach_qa.cjs) tests the exact prompt this function ships.
 const { TRUST_RULES, buildChatSystem, systemBlocks, buildSimulatorSystem, buildCheckinSystem, buildFacilitatorSystem } = require("./_lib/coachPrompt");
 const { validateFacilitatorProse, resolveFacilitatorOutput } = require("./_lib/facilitatorGuard");
+const { buildSnapshotFactText, validateSnapshotProse, resolveSnapshotOutput } = require("./_lib/snapshotGuard");
 
 // Step 9 defense-in-depth: validate the facilitator's numeric claims against the agenda AFTER
 // generation (prompt hardening alone is not a guarantee). If the first reply cites a figure the
@@ -83,6 +84,51 @@ async function guardFacilitatorOutput(data, payload, apiKey) {
   }
 
   const resolved = resolveFacilitatorOutput(agendaText, first, retryProse);
+  if (resolved.kind === "first") return data; // defensive; first already failed
+  return { ...data, content: [{ type: "text", text: resolved.text }], _guard: resolved.kind };
+}
+
+// Same defense-in-depth for chat + checkin: validate the coach's numeric claims against the snapshot
+// the client sent (plus numbers the user typed), retry once naming the unsupported figure, else a safe
+// qualitative fallback. The client-side reply footer renders below whatever text this returns.
+async function guardSnapshotOutput(data, payload, apiKey, type) {
+  const proseOf = (d) => ((d && d.content) || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+  const userText = type === "checkin"
+    ? (payload.prompt || "")
+    : (payload.messages || []).filter((m) => m.role === "user").map((m) => m.content).join("\n");
+  const factText = buildSnapshotFactText(payload.context, userText);
+  const first = proseOf(data);
+  const firstCheck = validateSnapshotProse(first, factText);
+  if (firstCheck.ok) return data;
+
+  const named = firstCheck.violations.map((v) => v.text).slice(0, 5).join("; ");
+  const system = type === "checkin" ? buildCheckinSystem(payload.context) : buildChatSystem(payload.context);
+  const baseMessages = type === "checkin"
+    ? [{ role: "user", content: payload.prompt || "Give me a quick financial check-in summary." }]
+    : (payload.messages || []);
+  let retryProse = null;
+  try {
+    const r2 = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: type === "checkin" ? 400 : 1024,
+        system,
+        messages: [
+          ...baseMessages,
+          { role: "assistant", content: first },
+          { role: "user", content: `Your reply used figures not present in my data: ${named}. Rewrite it citing ONLY numbers written verbatim in the snapshot above, or numbers I typed in my message, in the same unit and about the same thing. Do not compute a surplus, total, average, ratio or percentage from my numbers, and do not state a program limit or rate that isn't in the snapshot. If a figure isn't there, say so or describe it qualitatively. Keep it concise.` },
+        ],
+      }),
+    });
+    const d2 = await r2.json();
+    if (r2.ok) retryProse = proseOf(d2);
+  } catch (e) {
+    console.error("[coach] snapshot guard retry failed:", e.message);
+  }
+
+  const resolved = resolveSnapshotOutput(factText, first, retryProse);
   if (resolved.kind === "first") return data; // defensive; first already failed
   return { ...data, content: [{ type: "text", text: resolved.text }], _guard: resolved.kind };
 }
@@ -371,8 +417,12 @@ exports.handler = async (event) => {
       };
     }
 
-    // Facilitator-only numeric guard (validate → retry once → safe fallback) before the reply ships.
-    const finalData = (type === "facilitator") ? await guardFacilitatorOutput(data, payload, apiKey) : data;
+    // Deterministic numeric guard before the reply ships: facilitator against the agenda; chat and
+    // checkin against the snapshot the client sent (validate → retry once → safe fallback). Simulator
+    // and document-import are unchanged.
+    let finalData = data;
+    if (type === "facilitator") finalData = await guardFacilitatorOutput(data, payload, apiKey);
+    else if (type === "chat" || type === "checkin") finalData = await guardSnapshotOutput(data, payload, apiKey, type);
 
     console.log(`[coach] OK — stop="${finalData.stop_reason}" tokens=${finalData.usage?.output_tokens}${finalData._guard ? ` guard=${finalData._guard}` : ""}`);
     return { statusCode: 200, headers: corsHeaders, body: JSON.stringify(finalData) };
