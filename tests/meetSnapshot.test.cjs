@@ -43,5 +43,21 @@ const t = create();
   t.eq(agendaToText(empty), agendaToText(meetAgendaFor({})), "4a empty agenda deterministic");
   t.eq(empty.decisions.length, 0, "4b nothing invented from empty data");
 
+  // Item 1 — empty "Flourish noticed" state. A steady, demo-like week (debts + accounts + income but
+  // NO goals and NO forecast risks) yields ZERO noticed items (wins+changes+risks+progress) while a
+  // decision is still surfaced — so the UI's empty state must key off the noticed items, NOT the whole
+  // agenda (a decision present must not suppress the calm "Nothing stood out this week." message).
+  const steady = {
+    debts: [{ name: "TD Visa", balance: 3420, rate: 19.99, min: 68 }, { name: "Car Loan", balance: 8200, rate: 6.99, min: 280 }],
+    accounts: [{ type: "checking", balance: 1243.88 }, { type: "savings", balance: 1840 }, { type: "credit", balance: -3420 }],
+    incomes: [{ amount: "2840", freq: "biweekly", type: "employment" }],
+    bills: [{ name: "Hydro", amount: "95", date: "11" }],
+    goals: [], transactions: [], profile: { country: "CA" },
+  };
+  const sa = meetAgendaFor(steady);
+  const noticed = [...sa.wins, ...sa.changes, ...sa.risks, ...sa.progress];
+  t.eq(noticed.length, 0, "5a steady demo-like week → zero 'Flourish noticed' items (calm empty state)");
+  t.ok(sa.decisions.length >= 1, "5b ...but a decision is still surfaced (empty state must not depend on decisions)");
+
   t.summary("meetSnapshot");
 })();

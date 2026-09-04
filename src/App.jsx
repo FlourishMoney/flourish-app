@@ -8340,9 +8340,9 @@ function MeetAgenda({ data, isCouple, setScreen }){
 
       <div style={card}>
         <div style={sTitle}>Flourish noticed</div>
-        {hasAgenda
+        {items.length>0
           ? items.map((it,i)=><div key={i} style={{color:C.cream,fontSize:13,lineHeight:1.6,marginBottom:5}}>• {it.text}</div>)
-          : <div style={{color:C.muted,fontSize:13}}>Not enough activity to summarise yet. Add a bill or goal on the Do tab, or link a bank for live numbers.</div>}
+          : <div style={{color:C.muted,fontSize:13}}>Nothing stood out this week. Your numbers held steady.</div>}
         {items.length>0 && <CalcByFlourish style={{marginTop:8}}/>}
       </div>
 
