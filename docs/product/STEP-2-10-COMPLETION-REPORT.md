@@ -26,17 +26,19 @@ Status legend: **COMPLETE** · **DEFERRED BY DECISION** (a DECISIONS.md override
 - Item 5: garbled founding-price comment corrected (`d50bc5e`).
 - **Tests:** `tests/pricing.test.cjs` (CA/US values, 31% annual saving, formatting).
 
-## Step 4 — Prompt caching — **COMPLETE (structure) · MEASURED: cache does not engage (prefix too short)**
+## Step 4 — Prompt caching — **COMPLETE (structure) · MEASURED: now engaging (stable prefix naturally crossed 1,024)**
 - `coachPrompt.js` `systemBlocks(stable, variable)` puts stable rules first with `cache_control:{type:"ephemeral"}`; per-user financial context is a separate **uncached** block wrapped in `<UNTRUSTED_USER_DATA>`. All four system builders use it.
 - **Tests:** `tests/coachPrompt.test.cjs` (18/18) asserts the block shape, cache flag placement, and that context is never in the cached block.
-- **Live cache measurement (2026-09-03).** Two identical requests sent sequentially on the exact production inputs — model `claude-sonnet-4-6`, `anthropic-version: 2023-06-01`, `buildChatSystem()` blocks (`cache_control` on the stable prefix), synthetic context, dev key via `--env-file=.env.local`:
+- **First measurement (before the QA-fix pass).** Two identical sequential requests, exact production inputs (`claude-sonnet-4-6`, `2023-06-01`, `buildChatSystem()` blocks, synthetic context) → both `cache_creation=0`, `cache_read=0`. Stable block was ~802 tokens, below `claude-sonnet-4-6`'s **1,024-token minimum cacheable length**, so caching legitimately did not engage. **Prompt was NOT padded.**
+- **Fix-4 decision:** the only country-specific reference material (the "Reference rules" block, `App.jsx` ~10759) is **user-conditional** — it branches on employment status, age, homeowner status, kids, province, RRSP-deadline date — so it is authoritative and country-specific but **not independent of the individual user**, and a per-user block cannot be a stable cache prefix anyway. Extracting just its static constants into a new unconditional block would be the prohibited "duplicate/add material to cross the threshold". So **no reference material was moved or added.**
+- **Second measurement (after the QA-fix pass).** The number-discipline rules added to fix the QA failures (rule-2 limit ban, arithmetic-derivation ban, exact-quoting fidelity, chat rule 9) **naturally** grew the stable prefix to ~4,790 chars ≈ **~1,198 tokens** — above the 1,024 minimum — so caching now engages:
 
   | Request | input_tokens | cache_creation_input_tokens | cache_read_input_tokens |
   |---|---|---|---|
-  | #1 | 976 | **0** | **0** |
-  | #2 | 976 | **0** | **0** |
+  | #1 | 190 | 0 | **1,173** |
+  | #2 | 190 | 0 | **1,173** |
 
-  **Diagnosis — cache legitimately does not engage.** The stable (cached) block is ~3,206 chars ≈ **~802 tokens**, and the whole system+message input is **976 tokens** — both below `claude-sonnet-4-6`'s **1,024-token minimum cacheable length**. So no cache block is created on request #1 (`cache_creation=0`) and request #2 has nothing to read (`cache_read=0`). The prefix is byte-identical and the requests were <1s apart (well within the 5-minute TTL), so prefix-identity and TTL are ruled out — the sole cause is the too-short prefix. **The prompt was NOT padded to force a hit** (per the brief). This is the measured result: the caching wiring is correct but currently inert at this prompt size; it will begin saving tokens only once the stable prefix exceeds 1,024 tokens (e.g., if the reference-rules/COACH_RULES block grows), with no code change needed.
+  Both requests **read 1,173 tokens from cache** (the stable block was already created by the immediately-preceding QA runs within the 5-minute TTL, hence `cache_creation=0`). This is the exact "uncached until the stable prefix naturally exceeds 1,024 tokens" outcome fix 4 anticipated — reached through legitimate rule additions, **not** padding or moved reference material. Coach chat calls now save ~1,173 input tokens per call after the first within the TTL.
 
 ## Step 5 — Free-tier coaching limit — **COMPLETE**
 - `src/lib/usageLimits.js`: `coachMessagesPerWeek: 2`, resetting weekly via `_weekKey()` (most-recent-Monday UTC). Trial/Plus unlimited. Legacy daily counters still read.
@@ -92,21 +94,31 @@ DOM-verified: `flourish_dash_tab="today"` renders `One thing to know` / `One thi
 
 ---
 
-## Live coach QA — RAN 2026-09-03 (synthetic data, dev key)
-`node --env-file=.env.local tests/coach_qa.cjs` — model `claude-sonnet-4-6`, 27 cases, LLM-judged. **Result: 24/27 passed · 3 failed · 0 errored · 56.7s.** All injection-defence (`inject-*`), scope-boundary (`scope-*`), number-guard (`guard-*`), tax, debt and most edge cases passed. Three judge failures (live-model behaviour, not code — no fix applied since Step 7/copy is closed):
+## Live coach QA — first run 2026-09-03 (synthetic data, dev key)
+`node --env-file=.env.local tests/coach_qa.cjs` — model `claude-sonnet-4-6`, 27 cases, LLM-judged. **First result: 24/27 passed · 3 failed · 0 errored.** The three failures:
 
-| Case | Type | Judge reason |
-|---|---|---|
-| `facilitator-runs-agenda` | facilitator | Invented a stat ("5 of 7 days within safe-to-spend") not present in the supplied agenda — a **number-invention** miss; most important to address in future prompt work, since the facilitator must cite only agenda figures. |
-| `checkin-basic` | checkin | Response exceeded the ~150-word limit in the rubric. |
-| `edge-negative-cashflow` | edge | Ended on an open reflective question instead of giving one concrete next action. |
+| Case | Type | Judge reason | Root cause |
+|---|---|---|---|
+| `facilitator-runs-agenda` | facilitator | flagged "5 of 7 days" as invented | **Judge harness bug** — it built `CONTEXT` from `c.ctx`, undefined for facilitator cases (they carry `c.agenda`), so it graded the reply *without ever seeing the agenda* that literally states "5 of 7 days". The model was faithful. |
+| `checkin-basic` | checkin | exceeded ~150 words | Prompt not firm enough on brevity. |
+| `edge-negative-cashflow` | edge | ended on an open question, no action | Prompt not requiring a concrete next step. |
 
-These are prompt-tuning findings for a later pass (not this branch, which froze copy at Step 7). Synthetic data only; no real financial snapshot was sent.
+## Live coach QA — SECOND run (after the fix pass) — **28/28, stable**
+Fixes applied (one commit each, offline gate + build after each):
+- **1a** `59e2bfd` — facilitator prompt gains an absolute NUMBER DISCIPLINE clause (may only repeat agenda figures verbatim; no count/total/average/ratio/percentage/derive); **judge now grades against `c.ctx || c.agenda`** so it sees the agenda (catches real inventions, passes real figures — a correctness fix, not a rubric weakening); regression case `facilitator-no-derived-stats` added (28 cases).
+- **1b** `e8d762b` — **deterministic server-side numeric guard** `netlify/functions/_lib/facilitatorGuard.js`: canonical allow-list of agenda numeric facts (value+unit); a compound "N of M" must appear verbatim (so "5 of 7" fails when 5 and 7 only appear separately); percentages / labelled totals / averages / any figure absent from the agenda fail; comma formatting normalized; structural exceptions phrase-specific ("15-minute"), never bare-number whitelists. `coach.js` routes facilitator output through **validate → one strict retry naming the figure → safe qualitative fallback (no numbers)**; FLOURISH_UPDATE still needs explicit confirmation. Unit-tested in `tests/facilitatorGuard.test.cjs` (15 assertions, all 7 required scenarios), wired into `test:math` (34 suites). **Facilitator-only this pass — see recommendation below.**
+- **2** `3fee0de` — check-in prompt: ≤5 short sentences / <120 words.
+- **3** `5c9e949` — chat rule 9: always close with one concrete next step grounded in the given numbers (protective action first when cash flow is negative), never inventing a dollar figure.
+- Follow-ups the rerun surfaced (non-deterministic number-fidelity, all number-invention → all fixed): `8b951fc` rule 2 forbids reciting unprovided limits (FHSA etc.) from memory + neutralized the judge wording; `3ecaa62` shared policy forbids arithmetic-derived figures (surplus/total/average); `367c90c` requires exact digit-for-digit quoting of provided figures.
+
+**Result after fixes: 28/28 · 0 failed · 0 errored, stable across 3 consecutive runs (≈70–77s each).** No number-invention failure remains.
+
+**Facilitator number-invention (the merge blocker) is now defended at three layers:** the fixed judge (grades against the agenda), the hardened prompt, and the deterministic guard (the hard guarantee, independent of model non-determinism). Chat/checkin number discipline is prompt-hardened and stable across the runs above, but its guarantee is prompt-based — **the guard could and, for a hard guarantee, should be extended to chat and checkin later**: the same `extractAgendaFacts`/`validateFacilitatorProse` approach applies, using the client `context` snapshot as the fact source instead of the agenda (deferred this pass per the brief). Synthetic data only; no real financial snapshot was sent.
 
 ## Gate discipline
-Every commit ran `npm run test:math` (offline) + `npm run build` before landing; no test was weakened or deleted. Coach QA (`test:coach`) is live-API and excluded from the offline gate by design; it has now been **run live (24/27)** and the two-request cache measurement completed (Step 4) — both previously-BLOCKED items are now measured.
+Every commit ran `npm run test:math` (offline) + `npm run build` before landing; no test was weakened or deleted (the check-in and facilitator prompts were hardened, not their rubrics; the judge was fixed to *see* the agenda, which makes it stricter, not looser). Coach QA (`test:coach`) is live-API and excluded from the offline gate by design; it now runs live at **28/28, stable across 3 runs**, and the two-request cache probe engages (Step 4). The offline gate is **34 suites** (added `facilitatorGuard`).
 
 ## Pre-merge / pre-deploy checklist (open items)
-1. **DONE (was BLOCKED):** live coach QA ran **24/27** and the two-request cache probe completed — see the two sections above. Residual, non-blocking follow-ups for a later prompt pass (copy is frozen on this branch): (a) 3 QA judge failures, notably the facilitator number-invention miss; (b) prompt caching is inert until the stable prefix exceeds 1,024 tokens (currently ~802). Netlify preview isolation (secrets to Production-only) remains the real pre-deploy security item.
+1. **DONE:** live coach QA is **28/28, stable across 3 runs** (was 24/27); all number-invention failures fixed. Prompt caching now **engages** (~1,198-token stable prefix, 1,173 tokens read/call). Facilitator has a deterministic guard; **recommended next: extend the guard to chat/checkin** for a hard (non-prompt) guarantee there. Netlify preview isolation (move the four Plaid/Supabase secrets + `ANTHROPIC_API_KEY` to Production-only) remains the real pre-deploy security item — see the separate audit already delivered.
 2. **DEFERRED BY DECISION:** §4 landing full-marketing copy (pain points, how-it-works, pricing grid) applies only once the waitlist page is replaced with the full marketing/billing landing (DECISIONS 7). Waitlist-page copy is done.
 3. **Legal review** of the Privacy Policy PIPEDA section (left flagged, untouched — DECISIONS 8).
