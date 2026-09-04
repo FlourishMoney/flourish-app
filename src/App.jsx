@@ -4798,11 +4798,11 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               // fades it toward the hero background, which collapses in light theme — greenBright is dark
               // ink (#007E4A) on a near-white hero, so +"44" measured 1.44:1 against a 4.5:1 requirement.
               const breakdownRows = [
-                {label:"In your accounts", value:`$${(_ss.balance||0).toFixed(0)}`, sign:"", color:heroColorBright},
-                ...(_ss.upcomingBills>0 ? [{label:"Upcoming bills", value:`$${_ss.upcomingBills.toFixed(0)}`, sign:"−", color:C.gold}] : []),
-                ...(_ss.debtPayments>0 ? [{label:"Min. debt payments", value:`$${_ss.debtPayments.toFixed(0)}`, sign:"−", color:C.gold}] : []),
-                ...(_ss.safetyBuf>0 ? [{label:"Spending buffer", value:`$${_ss.safetyBuf.toFixed(0)}`, sign:"−", color:C.mutedHi}] : []),
-                ...(_ss.savingsAlloc>0 ? [{label:"Savings set aside", value:`$${_ss.savingsAlloc.toFixed(0)}`, sign:"−", color:C.mutedHi}] : []),
+                {label:"In your accounts", value:formatMoney(_ss.balance||0), sign:"", color:heroColorBright},
+                ...(_ss.upcomingBills>0 ? [{label:"Upcoming bills", value:formatMoney(_ss.upcomingBills), sign:"−", color:C.gold}] : []),
+                ...(_ss.debtPayments>0 ? [{label:"Min. debt payments", value:formatMoney(_ss.debtPayments), sign:"−", color:C.gold}] : []),
+                ...(_ss.safetyBuf>0 ? [{label:"Spending buffer", value:formatMoney(_ss.safetyBuf), sign:"−", color:C.mutedHi}] : []),
+                ...(_ss.savingsAlloc>0 ? [{label:"Savings set aside", value:formatMoney(_ss.savingsAlloc), sign:"−", color:C.mutedHi}] : []),
               ];
               return (
                 <div style={{marginBottom:14}}>
@@ -4814,7 +4814,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                   ))}
                   <div style={{borderTop:`1px solid ${heroColor}22`,marginTop:5,paddingTop:5,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                     <span style={{color:C.cream,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>= Safe until next payday</span>
-                    <span style={{color:heroColorBright,fontSize:13,fontWeight:900,fontFamily:"'Playfair Display',serif"}}>${Math.max(0,safe).toFixed(0)}</span>
+                    <span style={{color:heroColorBright,fontSize:13,fontWeight:900,fontFamily:"'Playfair Display',serif"}}>{formatMoney(Math.max(0,safe))}</span>
                   </div>
                   {!data.bankConnected&&<div style={{color:C.gold,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>📊 Estimated · Connect bank for real numbers</div>}
                 </div>
