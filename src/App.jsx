@@ -25,6 +25,7 @@ import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPric
 import { tabForScreen } from "./lib/navigation.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState } from "./lib/meetSnapshot.js";
+import { todayKnowItem } from "./lib/todayPriorities.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
@@ -4687,18 +4688,18 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             Everything else stays below. Numbers are engine outputs; no AI is involved. */}
         {isVisible('hero')&&(()=>{
           const dailyRoom = Math.max(0, Math.floor((safe||0)/7));
-          const know = overdraftImmediate
-            ? "Your balance can't cover the bills due before payday. Tap Safe to Spend to see which bill does it."
-            : sevenDayOverdraft
-              ? "Your balance is on track to go negative within a week."
-              : (safe>0 ? `You have $${Math.round(safe)} safe to spend before your next paycheque.` : "Non-essential spending is tight until your next paycheque.");
+          // Item 4: the "know" line is the highest-priority forecast/bill item — NEVER the safe-to-spend
+          // hero figure. If no such item exists, hide the line and keep "one thing you could do".
+          const know = todayKnowItem({ overdraftImmediate, sevenDayOverdraft, nextBill: (soonBills||[])[0] });
           const doIt = safe>0
             ? `Keeping today under $${dailyRoom} leaves room across the week.`
             : "Hold off on non-essentials until your next paycheque lands.";
           return (
             <div style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"14px 16px",marginBottom:12}}>
+              {know && <>
               <div style={{color:C.muted,fontSize:9.5,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>One thing to know</div>
               <div style={{color:C.cream,fontSize:13.5,lineHeight:1.55,margin:"3px 0 10px"}}>{know}</div>
+              </>}
               <div style={{color:C.muted,fontSize:9.5,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>One thing you could do</div>
               <div style={{color:C.cream,fontSize:13.5,lineHeight:1.55,margin:"3px 0 4px"}}>{doIt}</div>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:8}}>
