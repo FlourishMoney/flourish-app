@@ -4,6 +4,8 @@
 // or null to HIDE the line. The safe-to-spend hero figure is deliberately NOT an input here, so the
 // "know" line can never repeat the hero. Priority: immediate overdraft → 7-day overdraft → next bill.
 
+import { formatMoney } from "./format.js";
+
 function _ordinal(day) {
   const n = parseInt(day, 10);
   if (!Number.isFinite(n)) return String(day);
@@ -16,7 +18,7 @@ export function todayKnowItem({ overdraftImmediate, sevenDayOverdraft, nextBill 
   if (sevenDayOverdraft) return "Your balance is on track to go negative within a week.";
   if (nextBill && nextBill.name) {
     const amt = Number(nextBill.amount);
-    const money = Number.isFinite(amt) ? ` $${Math.round(amt).toLocaleString("en-US")}` : "";
+    const money = Number.isFinite(amt) ? ` ${formatMoney(amt)}` : "";
     const due = (nextBill.date != null && String(nextBill.date) !== "") ? ` is due the ${_ordinal(nextBill.date)}` : " is due soon";
     return `${nextBill.name}${money}${due}.`;
   }

@@ -9,6 +9,7 @@ import { ForecastEngine } from "./forecastEngine.js";
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { selectHighestRateDebt, debtPayoffMonths, savingsBufferAfter, computeSavingsOpportunity } from "./decisionEngine.js";
 import { buildMeetingAgenda } from "./meetingAgenda.js";
+import { formatMoney } from "./format.js";
 
 const _round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const _num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
@@ -81,10 +82,10 @@ export function buildMeetSnapshot(data = {}) {
         if (pay && pay.date) periodEnd = new Date(pay.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
       } catch { /* no payday found → generic period label */ }
       snap.decisions = [{
-        question: `Put an extra $${extra} toward ${top.name || "your top debt"}, or into savings${periodEnd ? `, before ${periodEnd}` : " this period"}?`,
+        question: `Put an extra ${formatMoney(extra)} toward ${top.name || "your top debt"}, or into savings${periodEnd ? `, before ${periodEnd}` : " this period"}?`,
         options: [
-          { label: `Extra $${extra} to ${top.name || "the debt"}`, outcome: after < before ? `paid off in ${_fmtMonths(after)} instead of ${_fmtMonths(before)}` : `paid off in ${_fmtMonths(after)}` },
-          { label: `Add $${extra} to savings`, outcome: `buffer grows to $${Math.round(buf.after).toLocaleString("en-US")}` },
+          { label: `Extra ${formatMoney(extra)} to ${top.name || "the debt"}`, outcome: after < before ? `paid off in ${_fmtMonths(after)} instead of ${_fmtMonths(before)}` : `paid off in ${_fmtMonths(after)}` },
+          { label: `Add ${formatMoney(extra)} to savings`, outcome: `buffer grows to ${formatMoney(buf.after)}` },
         ],
       }];
     }

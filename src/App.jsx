@@ -26,6 +26,7 @@ import { tabForScreen } from "./lib/navigation.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
+import { formatMoney, formatNumber } from "./lib/format.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
@@ -2656,13 +2657,14 @@ function Sel({label,value,onChange,options}){
 // Quality Sprint review: honor prefers-reduced-motion for JS-driven animations too (the CSS media
 // query only covers CSS animations/transitions).
 const _prefersReducedMotion = () => typeof window!=="undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-function CountUp({to,prefix="",decimals=0,dur=900}){
+function CountUp({to,prefix="",decimals=0,dur=900,sep=false}){
   const [v,setV]=useState(0);
   useEffect(()=>{
     if(_prefersReducedMotion()){ setV(to); return; } // jump straight to the value — no count-up
     let s=0;const step=to/(dur/16);const t=setInterval(()=>{s=Math.min(s+step,to);setV(s);if(s>=to)clearInterval(t);},16);return()=>clearInterval(t);
   },[to]);
-  return <span>{prefix}{(v||0).toFixed(decimals)}</span>;
+  // sep: thousands separators via the shared formatter (used by the Today safe-to-spend hero).
+  return <span>{prefix}{sep ? formatNumber(v||0, {cents: decimals>0}) : (v||0).toFixed(decimals)}</span>;
 }
 
 
@@ -4692,7 +4694,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           // hero figure. If no such item exists, hide the line and keep "one thing you could do".
           const know = todayKnowItem({ overdraftImmediate, sevenDayOverdraft, nextBill: (soonBills||[])[0] });
           const doIt = safe>0
-            ? `Keeping today under $${dailyRoom} leaves room across the week.`
+            ? `Keeping today under ${formatMoney(dailyRoom)} leaves room across the week.`
             : "Hold off on non-essentials until your next paycheque lands.";
           return (
             <div style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"14px 16px",marginBottom:12}}>
@@ -4746,7 +4748,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               <span style={{fontSize:24,color:heroColorBright,verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
               <span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`,
                 transition:"opacity .3s",opacity:isRefreshing?0.4:1}}>
-                <CountUp to={safe} decimals={0} dur={300}/>
+                <CountUp to={safe} decimals={0} dur={300} sep/>
               </span>
               {/* Shimmer bar — signals live update in progress */}
               {isRefreshing&&(
@@ -8331,7 +8333,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
       const d = await r.json();
       const text = d.content?.[0]?.text || "Let's begin. First, the win — what went well this week?";
       setMsgs([...history, { role:"assistant", content:text }]);
-    } catch { setMsgs([...history, { role:"assistant", content:"The facilitator is unavailable right now — your agenda is above." }]); }
+    } catch { setMsgs([...history, { role:"assistant", content:"The facilitator is unavailable right now. Your agenda is above." }]); }
     setBusy(false);
   };
   const start = () => { if (!aiEnabled()) return; setStarted(true); sendToFacilitator(null); };
@@ -12529,8 +12531,8 @@ function AuthScreen({ onAuth, onTryDemo }) {
               </span>
               Coming soon
             </span>
-            <h1 className="fll-h1">Understand your money — <em>coaching, not just tracking.</em></h1>
-            <p className="fll-sub">See exactly what's safe to spend before payday, test any money decision, and finally understand your finances — in plain English.</p>
+            <h1 className="fll-h1">Understand your money, <em>coaching, not just tracking.</em></h1>
+            <p className="fll-sub">See exactly what's safe to spend before payday, test any money decision, and finally understand your finances, in plain English.</p>
             {renderCapture("hero")}
             {onTryDemo && <button className="fll-demo" onClick={onTryDemo}>or preview the app with sample data →</button>}
             <div><span className="fll-trust">🔒 Read-only. Flourish can't move your money.</span></div>
@@ -12539,7 +12541,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
           {/* Proof — real app screenshots */}
           <div className="fll-section" style={{ paddingBottom: 6 }}>
             <div className="fll-eyebrow">The real app</div>
-            <h2 className="fll-h2">This is flourish — no mockups.</h2>
+            <h2 className="fll-h2">This is flourish. No mockups.</h2>
             <p className="fll-lede">Real screens from the app you'll get on day one.</p>
             <div className="fll-proof">
               {[
