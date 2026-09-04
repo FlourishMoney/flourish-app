@@ -59,5 +59,11 @@ const t = create();
   t.eq(noticed.length, 0, "5a steady demo-like week → zero 'Flourish noticed' items (calm empty state)");
   t.ok(sa.decisions.length >= 1, "5b ...but a decision is still surfaced (empty state must not depend on decisions)");
 
+  // Item 2 — parallel decision outcomes + real date range.
+  const dec = sa.decisions[0];
+  t.ok(/paid off in .+ instead of /.test(dec.options[0].outcome), "6a debt outcome shows before/after payoff");
+  t.ok(/buffer grows to \$/.test(dec.options[1].outcome), "6b savings outcome shows what the buffer becomes");
+  t.ok(!/this period/.test(dec.text), "6c decision question uses an actual date range, not 'this period'");
+
   t.summary("meetSnapshot");
 })();

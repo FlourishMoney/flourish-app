@@ -7,7 +7,7 @@
 
 import { ForecastEngine } from "./forecastEngine.js";
 import { SafeSpendEngine } from "./safeSpendEngine.js";
-import { selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity } from "./decisionEngine.js";
+import { selectHighestRateDebt, debtPayoffMonths, savingsBufferAfter, computeSavingsOpportunity } from "./decisionEngine.js";
 import { buildMeetingAgenda } from "./meetingAgenda.js";
 
 const _round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -15,6 +15,12 @@ const _num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0
 function _fmtDate(d) {
   try { return new Date(d).toLocaleDateString("en-CA", { weekday: "short", day: "numeric" }); }
   catch { return String(d); }
+}
+// Presentation-only formatting of an engine-computed month count (240 = the amortization ceiling).
+function _fmtMonths(m) {
+  if (m >= 240) return "20+ yrs";
+  if (m >= 24) return `${Math.round(m / 12)} yrs`;
+  return `${m} mo`;
 }
 
 // Assemble the snapshot from engine outputs. Sections with no data are omitted; buildMeetingAgenda
@@ -57,18 +63,28 @@ export function buildMeetSnapshot(data = {}) {
     }));
   }
 
-  // One decision — top-rate debt vs savings — with BOTH outcomes computed by the engines.
+  // One decision — top-rate debt vs savings — with BOTH outcomes engine-computed and PARALLEL:
+  // the debt option shows before/after payoff (debtPayoffMonths, extra 0 vs extra), the savings option
+  // shows what the buffer becomes (savingsBufferAfter). "this period" → the actual pay-period end date.
   try {
     const safe = (SafeSpendEngine.calculate(data) || {}).safeAmount || 0;
     const top = selectHighestRateDebt(debts);
     const extra = computeSavingsOpportunity(safe); // engine: suggested spare $ this period
     if (top && extra > 0) {
-      const months = computeDebtPayoffImpact(top, extra); // engine: months to payoff with the extra
+      const before = debtPayoffMonths(top, 0);      // engine: payoff at the minimum
+      const after  = debtPayoffMonths(top, extra);  // engine: payoff with the extra
+      const buf    = savingsBufferAfter(data.accounts, extra); // engine helper: { current, after }
+      let periodEnd = "";
+      try {
+        const fc2 = ForecastEngine.generate(data, 31) || {};
+        const pay = (fc2.forecast || []).find(f => f.day > 0 && f.isPayday);
+        if (pay && pay.date) periodEnd = new Date(pay.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
+      } catch { /* no payday found → generic period label */ }
       snap.decisions = [{
-        question: `Put an extra $${extra} toward ${top.name || "your top debt"}, or into savings this period?`,
+        question: `Put an extra $${extra} toward ${top.name || "your top debt"}, or into savings${periodEnd ? `, before ${periodEnd}` : " this period"}?`,
         options: [
-          { label: `Extra $${extra} to ${top.name || "the debt"}`, outcome: months > 0 ? `pays it off in ${months} month${months === 1 ? "" : "s"}` : "keeps it shrinking" },
-          { label: `Add $${extra} to savings`, outcome: `$${extra} more toward your buffer` },
+          { label: `Extra $${extra} to ${top.name || "the debt"}`, outcome: after < before ? `paid off in ${_fmtMonths(after)} instead of ${_fmtMonths(before)}` : `paid off in ${_fmtMonths(after)}` },
+          { label: `Add $${extra} to savings`, outcome: `buffer grows to $${Math.round(buf.after).toLocaleString("en-US")}` },
         ],
       }];
     }
