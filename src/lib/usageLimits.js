@@ -14,12 +14,12 @@
 //                     no daily caps; permanent (or until policy change).
 //
 // CURRENT FREE-TIER LIMITS
-//   Coach messages: 5 per day
-//   Simulations:    3 per day
+//   Coach messages: 2 per week (resets Monday 00:00 UTC)
+//   Simulations:    1 per day
 //
 // STORAGE
 //   Plan tier:        localStorage key  "flourish_plan"
-//   Coach counter:    localStorage key  "flourish_coach_usage"  (daily-resetting)
+//   Coach counter:    localStorage key  "flourish_coach_usage"  (weekly-resetting, Mon 00:00 UTC)
 //   Simulator counter:localStorage key  "flourish_sim_usage"    (daily-resetting)
 //
 // KNOWN LIMITATION
@@ -34,7 +34,7 @@ const COACH_USAGE_KEY = "flourish_coach_usage";
 const SIM_USAGE_KEY   = "flourish_sim_usage";
 
 export const FREE_TIER_LIMITS = {
-  coachMessagesPerDay: 1,
+  coachMessagesPerWeek: 2,   // free tier — resets Monday 00:00 UTC (DECISIONS.md item 2)
   simulationsPerDay:   1,
 };
 
@@ -69,14 +69,13 @@ export function isPremiumOrFounder() {
   return p === "premium" || p === "beta_founder";
 }
 
-// ── Daily counters (internal) ────────────────────────────────────────────────
-// Counter shape: { date: "YYYY-MM-DD", count: <number> }
-// On read, if stored date != today, the counter is treated as 0.
+// ── Period counters (internal) ───────────────────────────────────────────────
+// Counter shape: { period: "<key>", count: <number> }, where <key> is a day (sim) or the current
+// week's Monday (coach). On read, if the stored period != the current one, the counter is 0.
+// Legacy counters stored as { date } are still read, for backward compatibility.
 
 function _todayStr() {
-  // Sprint 3: UTC day boundary — consistent with the trial's UTC timestamp + epoch-ms math,
-  // and deterministic regardless of the user's timezone or device-clock TZ (no off-by-one,
-  // and you can't reset the daily Coach/Sim counters by changing timezone). Resets at 00:00 UTC.
+  // UTC day boundary — deterministic regardless of timezone; resets at 00:00 UTC.
   const d = new Date();
   const y  = d.getUTCFullYear();
   const m  = String(d.getUTCMonth() + 1).padStart(2, "0");
@@ -84,32 +83,43 @@ function _todayStr() {
   return `${y}-${m}-${dd}`;
 }
 
-function _readCounter(key) {
+// The current week's fixed reset point: the most recent Monday at 00:00 UTC, as a YYYY-MM-DD key.
+// Every day of the week maps to the same key, so the coach counter resets once a week on Monday.
+export function _weekKey() {
+  const d = new Date();
+  const daysSinceMonday = (d.getUTCDay() + 6) % 7; // Mon=0 … Sun=6
+  const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - daysSinceMonday));
+  const y  = monday.getUTCFullYear();
+  const m  = String(monday.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(monday.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
+function _readCounter(key, period) {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return 0;
     const obj = JSON.parse(raw);
-    if (obj && obj.date === _todayStr() && Number.isFinite(obj.count)) {
-      return obj.count;
-    }
+    const stored = obj && (obj.period != null ? obj.period : obj.date); // accept legacy {date}
+    if (obj && stored === period && Number.isFinite(obj.count)) return obj.count;
   } catch {}
   return 0;
 }
 
-function _writeCounter(key, count) {
+function _writeCounter(key, period, count) {
   try {
-    localStorage.setItem(key, JSON.stringify({ date: _todayStr(), count }));
+    localStorage.setItem(key, JSON.stringify({ period, count }));
   } catch {}
 }
 
 // ── Coach message gate ───────────────────────────────────────────────────────
-export function getCoachMessagesUsedToday() {
-  return _readCounter(COACH_USAGE_KEY);
+export function getCoachMessagesUsedThisWeek() {
+  return _readCounter(COACH_USAGE_KEY, _weekKey());
 }
 
 export function getCoachMessagesRemaining() {
   if (isUnlimited()) return Infinity;
-  return Math.max(0, FREE_TIER_LIMITS.coachMessagesPerDay - getCoachMessagesUsedToday());
+  return Math.max(0, FREE_TIER_LIMITS.coachMessagesPerWeek - getCoachMessagesUsedThisWeek());
 }
 
 export function canUseCoach() {
@@ -118,12 +128,12 @@ export function canUseCoach() {
 
 export function recordCoachUse() {
   if (isUnlimited()) return; // don't bother counting for unlimited tiers
-  _writeCounter(COACH_USAGE_KEY, getCoachMessagesUsedToday() + 1);
+  _writeCounter(COACH_USAGE_KEY, _weekKey(), getCoachMessagesUsedThisWeek() + 1);
 }
 
 // ── Simulator gate ───────────────────────────────────────────────────────────
 export function getSimulationsUsedToday() {
-  return _readCounter(SIM_USAGE_KEY);
+  return _readCounter(SIM_USAGE_KEY, _todayStr());
 }
 
 export function getSimulationsRemaining() {
@@ -137,7 +147,7 @@ export function canRunSimulation() {
 
 export function recordSimulationUse() {
   if (isUnlimited()) return;
-  _writeCounter(SIM_USAGE_KEY, getSimulationsUsedToday() + 1);
+  _writeCounter(SIM_USAGE_KEY, _todayStr(), getSimulationsUsedToday() + 1);
 }
 
 // ── Beta founder grandfathering — DISABLED (Tier 1.5, 2026-06-06) ─────────────

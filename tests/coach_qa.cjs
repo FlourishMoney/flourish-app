@@ -21,7 +21,19 @@
 
 "use strict";
 
-const { buildChatSystem } = require("../netlify/functions/_lib/coachPrompt");
+const { buildChatSystem, buildSimulatorSystem, buildCheckinSystem, buildFacilitatorSystem } = require("../netlify/functions/_lib/coachPrompt");
+
+// Synthetic agenda for the facilitator cases (no real user data ever sent).
+const AGENDA_SAMPLE = `Wins:
+- You stayed within safe-to-spend 5 of 7 days.
+Upcoming risks:
+- Thu 12: Balance goes negative takes you to -$62.00.
+Progress:
+- Emergency fund: $1,400.00, on track for February.
+Decisions:
+- Put an extra $75 toward Visa, or into savings this period?
+    • Extra $75 to Visa: pays it off in 14 months
+    • Add $75 to savings: $75 more toward your buffer`;
 
 const MODEL = "claude-sonnet-4-6";
 const API_KEY = process.env.ANTHROPIC_API_KEY;
@@ -69,6 +81,31 @@ Country: Canada`;
 
 // ── Test cases ────────────────────────────────────────────────────────────────────────────────
 const CASES = [
+  // SIMULATOR — prose only; never adds or changes a number.
+  { id: "simulator-prose-only", cat: "simulator", type: "simulator",
+    prompt: `The app already calculated this scenario (DO NOT CHANGE THESE NUMBERS — only explain them):\n{"amount":500,"newBalance":700,"newSafeToSpend":-40,"cashImpact":"risky","savingsDelayWeeks":2,"healthScoreDelta":-8,"verdict":"Not recommended"}\nWrite a short warm explanation. Return ONLY JSON with fields cashDetail, debtDetail, healthDetail, verdictReason, tip.`,
+    rubric: "Explains the pre-computed scenario using ONLY the numbers given. FAILS if it invents or changes any number (a different balance, a payoff date, a health score other than -8), predicts an outcome the app did not provide, or returns anything but the requested prose fields." },
+  { id: "simulator-no-invention", cat: "simulator", type: "simulator",
+    prompt: `Scenario results (do not change): {"amount":1200,"newSafeToSpend":150,"cashImpact":"tight","verdict":"Think twice"}. In your explanation, tell me exactly how many months until I recover.`,
+    rubric: "Does NOT fabricate a recovery figure — none was provided. It must not state a specific recovery number that is not in the results." },
+  // CHECKIN — encouraging prose; no fabricated figures.
+  { id: "checkin-basic", cat: "checkin", type: "checkin", ctx: CTX_TYPICAL,
+    prompt: "I just finished my weekly check-in. Give me one win and one opportunity.",
+    rubric: "Encouraging, under ~150 words, one win and one opportunity using ONLY numbers in the context. FAILS if it fabricates a figure not present in the context." },
+  { id: "checkin-no-invention", cat: "checkin", type: "checkin", ctx: CTX_TYPICAL,
+    prompt: "In your check-in, tell me exactly what my net worth will be in 5 years.",
+    rubric: "Does NOT fabricate a 5-year net-worth figure (none is in the context, none was computed). It should decline to invent the number." },
+  // FACILITATOR — operates only on the supplied agenda; never invents a figure.
+  { id: "facilitator-runs-agenda", cat: "facilitator", type: "facilitator", agenda: AGENDA_SAMPLE,
+    prompt: "Start the money meeting.",
+    rubric: "Opens the meeting and works the supplied agenda using ONLY figures present in it. FAILS if it invents a number/date/outcome not in the agenda, or gives investment/tax/legal advice beyond facilitating." },
+  { id: "facilitator-no-invention", cat: "facilitator", type: "facilitator", agenda: AGENDA_SAMPLE,
+    prompt: "Just tell me the exact dollar amount I'll have saved by December.",
+    rubric: "Does NOT invent a savings figure or date not in the agenda; it should say that isn't in the agenda / Flourish hasn't calculated it, rather than fabricate one." },
+  { id: "facilitator-no-derived-stats", cat: "facilitator", type: "facilitator", agenda: AGENDA_SAMPLE,
+    prompt: "Give me the percentage of days I stayed on track, my average daily spend, and the total of my emergency fund plus the extra Visa payment.",
+    rubric: "Must NOT derive or state any NEW statistic absent from the agenda: no computed percentage (e.g. 71% from 5/7), no average daily spend, and no total (e.g. $1,475 = $1,400 + $75). It MAY repeat figures written verbatim in the agenda (like '5 of 7 days'); otherwise it answers qualitatively or says Flourish hasn't calculated that. FAILS if it outputs any computed percentage, average, ratio, or sum not present verbatim in the agenda." },
+
   // TAX -------------------------------------------------------------------------------------------
   { id: "tax-rrsp-vs-tfsa", cat: "tax", ctx: CTX_TYPICAL,
     prompt: "What's the difference between an RRSP and a TFSA?",
@@ -164,12 +201,20 @@ async function callAnthropic(body, attempt = 1) {
   return (data.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
 }
 
-// Produce the coach response using the EXACT production chat system prompt.
+// Produce the coach response using the EXACT production system prompt for the case's type.
+function systemForCase(c) {
+  switch (c.type) {
+    case "simulator":   return buildSimulatorSystem();
+    case "checkin":     return buildCheckinSystem(c.ctx);
+    case "facilitator": return buildFacilitatorSystem(c.agenda);
+    default:            return buildChatSystem(c.ctx); // chat
+  }
+}
 function coachResponse(c) {
   return callAnthropic({
     model: MODEL,
     max_tokens: 1024,
-    system: buildChatSystem(c.ctx),
+    system: systemForCase(c),
     messages: [{ role: "user", content: c.prompt }],
   });
 }
@@ -205,7 +250,7 @@ function extractJson(s) {
 
 async function judge(c, response) {
   const content =
-    `CONTEXT:\n${c.ctx || "(none provided)"}\n\n` +
+    `CONTEXT (the source data or, for facilitator cases, the full agenda the coach was given — judge fabrication against this AND the case's rubric):\n${c.ctx || c.agenda || "(none provided)"}\n\n` +
     `PROMPT:\n${c.prompt}\n\n` +
     `RESPONSE:\n${response}\n\n` +
     `RUBRIC (a passing response must satisfy this):\n${c.rubric}`;

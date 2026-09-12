@@ -44,7 +44,95 @@ async function bumpIpUsage(ip) {
 }
 // TRUST_RULES + buildChatSystem live in _lib/coachPrompt.js so the Coach QA suite
 // (tests/coach_qa.cjs) tests the exact prompt this function ships.
-const { TRUST_RULES, buildChatSystem } = require("./_lib/coachPrompt");
+const { TRUST_RULES, buildChatSystem, systemBlocks, buildSimulatorSystem, buildCheckinSystem, buildFacilitatorSystem } = require("./_lib/coachPrompt");
+const { validateFacilitatorProse, resolveFacilitatorOutput } = require("./_lib/facilitatorGuard");
+const { buildSnapshotFactText, validateSnapshotProse, resolveSnapshotOutput } = require("./_lib/snapshotGuard");
+
+// Step 9 defense-in-depth: validate the facilitator's numeric claims against the agenda AFTER
+// generation (prompt hardening alone is not a guarantee). If the first reply cites a figure the
+// agenda does not state, retry once with a strict correction naming the figure; if that still fails,
+// return a safe qualitative fallback. Never displays or persists an unsupported-number response.
+async function guardFacilitatorOutput(data, payload, apiKey) {
+  const agendaText = payload.context || "";
+  const proseOf = (d) => ((d && d.content) || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+  const first = proseOf(data);
+  const firstCheck = validateFacilitatorProse(first, agendaText);
+  if (firstCheck.ok) return data;
+
+  const named = firstCheck.violations.map((v) => v.text).slice(0, 5).join("; ");
+  const baseMessages = payload.messages || [{ role: "user", content: payload.prompt || "Start the money meeting." }];
+  let retryProse = null;
+  try {
+    const r2 = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 600,
+        system: buildFacilitatorSystem(agendaText),
+        messages: [
+          ...baseMessages,
+          { role: "assistant", content: first },
+          { role: "user", content: `Your reply used figures the agenda does not state: ${named}. Rewrite it using ONLY numbers written verbatim in the agenda, in the same unit and about the same thing. Do not count, total, average, or compute any ratio or percentage. If an observation needs a number that isn't in the agenda, say it qualitatively. Keep it under 4 sentences.` },
+        ],
+      }),
+    });
+    const d2 = await r2.json();
+    if (r2.ok) retryProse = proseOf(d2);
+  } catch (e) {
+    console.error("[coach] facilitator guard retry failed:", e.message);
+  }
+
+  const resolved = resolveFacilitatorOutput(agendaText, first, retryProse);
+  if (resolved.kind === "first") return data; // defensive; first already failed
+  return { ...data, content: [{ type: "text", text: resolved.text }], _guard: resolved.kind };
+}
+
+// Same defense-in-depth for chat + checkin: validate the coach's numeric claims against the snapshot
+// the client sent (plus numbers the user typed), retry once naming the unsupported figure, else a safe
+// qualitative fallback. The client-side reply footer renders below whatever text this returns.
+async function guardSnapshotOutput(data, payload, apiKey, type) {
+  const proseOf = (d) => ((d && d.content) || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+  const userText = type === "checkin"
+    ? (payload.prompt || "")
+    : (payload.messages || []).filter((m) => m.role === "user").map((m) => m.content).join("\n");
+  const factText = buildSnapshotFactText(payload.context, userText);
+  const first = proseOf(data);
+  const firstCheck = validateSnapshotProse(first, factText);
+  if (firstCheck.ok) return data;
+
+  const named = firstCheck.violations.map((v) => v.text).slice(0, 5).join("; ");
+  const system = type === "checkin" ? buildCheckinSystem(payload.context) : buildChatSystem(payload.context);
+  const baseMessages = type === "checkin"
+    ? [{ role: "user", content: payload.prompt || "Give me a quick financial check-in summary." }]
+    : (payload.messages || []);
+  let retryProse = null;
+  try {
+    const r2 = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: type === "checkin" ? 400 : 1024,
+        system,
+        messages: [
+          ...baseMessages,
+          { role: "assistant", content: first },
+          { role: "user", content: `Your reply used figures not present in my data: ${named}. Rewrite it citing ONLY numbers written verbatim in the snapshot above, or numbers I typed in my message, in the same unit and about the same thing. Do not compute a surplus, total, average, ratio or percentage from my numbers, and do not state a program limit or rate that isn't in the snapshot. If a figure isn't there, say so or describe it qualitatively. Keep it concise.` },
+        ],
+      }),
+    });
+    const d2 = await r2.json();
+    if (r2.ok) retryProse = proseOf(d2);
+  } catch (e) {
+    console.error("[coach] snapshot guard retry failed:", e.message);
+  }
+
+  const resolved = resolveSnapshotOutput(factText, first, retryProse);
+  if (resolved.kind === "first") return data; // defensive; first already failed
+  return { ...data, content: [{ type: "text", text: resolved.text }], _guard: resolved.kind };
+}
+const { isLiveCoachType } = require("./_lib/coachTypes");
 
 // Path B abuse ceiling: max `chat` messages per user per day. Generous on purpose
 // — this is a cost/DoS backstop, not the product limit. Plan-aware free=1/day
@@ -183,19 +271,22 @@ exports.handler = async (event) => {
     return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: "Server configuration error: missing API key" }) };
   }
 
+  // Step 2: reject any non-live type before dispatch (plan/insights/buckets/tax removed).
+  if (!isLiveCoachType(type)) {
+    return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "unknown_type", message: `Unsupported coach type: ${type}` }) };
+  }
+
   let anthropicBody;
 
   switch (type) {
 
     case "chat":
-    case "plan":
       if (!payload.messages || !Array.isArray(payload.messages)) {
         return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "payload.messages must be an array" }) };
       }
-      // Abuse control — count real coach chat AND plan messages (both make the same upstream call).
-      // Sprint Z2 #4: "plan" shares this branch with "chat"; the old `type === "chat"` guard let any
-      // authenticated caller send {type:"plan"} for an identical, fully UNMETERED Anthropic request.
-      if (type === "chat" || type === "plan") {
+      // Abuse control — count coach chat messages. (Step 2 removed the dead unmetered "plan" alias;
+      // only "chat" reaches this branch now, so metering is unconditional.)
+      {
         // Sprint Z #8: per-IP backstop FIRST, independent of Supabase. Counts every request, so it
         // still limits abuse even if the per-user counter/DB is down.
         const ip = clientIp(event);
@@ -256,10 +347,7 @@ exports.handler = async (event) => {
       anthropicBody = {
         model: "claude-sonnet-4-6",
         max_tokens: 800,
-        system:
-          "You are a financial scenario explainer for Flourish Money. You receive pre-computed simulation results from the app and translate them into plain, warm language. " +
-          "Never change, adjust, or add numbers. Do not predict outcomes the app did not provide." +
-          TRUST_RULES,
+        system: buildSimulatorSystem(),
         messages: [{ role: "user", content: payload.prompt || "Explain this financial scenario." }],
       };
       break;
@@ -268,43 +356,19 @@ exports.handler = async (event) => {
       anthropicBody = {
         model: "claude-sonnet-4-6",
         max_tokens: 400,
-        system:
-          "You are a financial wellness coach doing a quick check-in. Be encouraging, identify one win and one opportunity. Keep it under 150 words." +
-          (payload.context ? `\n\n<UNTRUSTED_USER_DATA>\n${payload.context}\n</UNTRUSTED_USER_DATA>` : "") +
-          TRUST_RULES,
+        system: buildCheckinSystem(payload.context),
         messages: [{ role: "user", content: payload.prompt || "Give me a quick financial check-in summary." }],
       };
       break;
 
-    case "insights":
-      anthropicBody = {
-        model: "claude-sonnet-4-6",
-        max_tokens: 1200,
-        system:
-          "You are Flourish, a warm financial coach. Analyze real transaction data. Use exact numbers from the data. Respond ONLY with valid JSON." +
-          (payload.context ? `\n\n<UNTRUSTED_USER_DATA>\n${payload.context}\n</UNTRUSTED_USER_DATA>` : "") +
-          TRUST_RULES,
-        messages: [{ role: "user", content: payload.prompt || "Analyze this user's financial data." }],
-      };
-      break;
-
-    case "buckets":
-      anthropicBody = {
-        model: "claude-sonnet-4-6",
-        max_tokens: 900,
-        temperature: 0,
-        system: "You are a financial planning AI. Respond only with valid JSON. No markdown, no preamble." + TRUST_RULES,
-        messages: [{ role: "user", content: payload.prompt || "Generate savings bucket recommendations." }],
-      };
-      break;
-
-    case "tax":
+    case "facilitator":
+      // Step 9: the Meet money-meeting facilitator. Receives a pre-computed agenda whose every figure
+      // is engine output; it facilitates and NEVER produces a number.
       anthropicBody = {
         model: "claude-sonnet-4-6",
         max_tokens: 600,
-        temperature: 0,
-        system: "You are a Canadian/US tax optimization AI. Respond only with valid JSON. No markdown. Use only the tax rates and thresholds provided in the prompt — do not substitute your own." + TRUST_RULES,
-        messages: [{ role: "user", content: payload.prompt || "Calculate tax optimization scenarios." }],
+        system: buildFacilitatorSystem(payload.context),
+        messages: payload.messages || [{ role: "user", content: payload.prompt || "Start the money meeting." }],
       };
       break;
 
@@ -313,7 +377,7 @@ exports.handler = async (event) => {
         model: "claude-sonnet-4-6",
         max_tokens: 800,
         temperature: 0,
-        system: "You are a tax document parser. Extract financial data and return only valid JSON. No markdown." + TRUST_RULES,
+        system: systemBlocks("You are a tax document parser. Extract financial data and return only valid JSON. No markdown." + TRUST_RULES),
         messages: payload.messages || [{ role: "user", content: payload.prompt || "Parse this document." }],
       };
       break;
@@ -353,8 +417,15 @@ exports.handler = async (event) => {
       };
     }
 
-    console.log(`[coach] OK — stop="${data.stop_reason}" tokens=${data.usage?.output_tokens}`);
-    return { statusCode: 200, headers: corsHeaders, body: JSON.stringify(data) };
+    // Deterministic numeric guard before the reply ships: facilitator against the agenda; chat and
+    // checkin against the snapshot the client sent (validate → retry once → safe fallback). Simulator
+    // and document-import are unchanged.
+    let finalData = data;
+    if (type === "facilitator") finalData = await guardFacilitatorOutput(data, payload, apiKey);
+    else if (type === "chat" || type === "checkin") finalData = await guardSnapshotOutput(data, payload, apiKey, type);
+
+    console.log(`[coach] OK — stop="${finalData.stop_reason}" tokens=${finalData.usage?.output_tokens}${finalData._guard ? ` guard=${finalData._guard}` : ""}`);
+    return { statusCode: 200, headers: corsHeaders, body: JSON.stringify(finalData) };
 
   } catch (err) {
     const ref = `coach_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;

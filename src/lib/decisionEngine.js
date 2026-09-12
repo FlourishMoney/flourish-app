@@ -61,6 +61,34 @@ export function computeSavingsOpportunity(safe) {
   return Math.max(0, Math.floor(safe * 0.25));
 }
 
+// Months to pay off `debt` while paying `extraPayment` extra per month — same amortization as
+// computeDebtPayoffImpact's inner loop (min payment = max($25, 2% of balance), 240-month ceiling,
+// default 19.99% APR). Exposed so Meet can show BEFORE (extra 0) and AFTER payoff, from one source.
+export function debtPayoffMonths(debt, extraPayment = 0) {
+  if (!debt) return 0;
+  const rate = parseFloat(debt.rate || 19.99) / 100 / 12;
+  const balance = parseFloat(debt.balance || 0);
+  const minPay = Math.max(25, balance * 0.02);
+  const pay = minPay + Math.max(0, Number(extraPayment) || 0);
+  if (pay <= 0 || balance <= 0) return 0;
+  let m = 0, b = balance;
+  while (b > 0 && m < 240) { b = b * (1 + rate) - pay; m++; }
+  return m; // 240 = did not clear within the 20-year ceiling
+}
+
+// The savings buffer before and after moving `extra` into it. The buffer is the sum of savings-type
+// account balances (data.accounts). Pure — the single source for Meet's "what the buffer becomes"
+// outcome, parallel to the debt option's before/after payoff. Returns { current, after } in dollars.
+export function savingsBufferAfter(accounts, extra) {
+  const cur = (accounts || []).reduce((s, a) => {
+    const t = String((a && (a.type || a.subtype)) || "").toLowerCase();
+    return t === "savings" ? s + (parseFloat(a.balance) || 0) : s;
+  }, 0);
+  const add = Math.max(0, Math.floor(Number(extra) || 0));
+  const round2 = (n) => Math.round(n * 100) / 100;
+  return { current: round2(cur), after: round2(cur + add) };
+}
+
 // Cash-tight warning: safe-to-spend below 15% of monthly income.
 export function detectLowCashWarning(safe, monthlyIncome) {
   return safe < monthlyIncome * 0.15;
