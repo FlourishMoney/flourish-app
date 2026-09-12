@@ -23,3 +23,7 @@ marketing/
 
 # Seed helper contains a real screenshot-account password — must never be committed.
 scripts/seed-screenshot-account.mjs
+
+# Claude Code local session files — never commit.
+.claude/
+Claude outputs/
