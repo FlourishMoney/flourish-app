@@ -225,7 +225,10 @@ const D = (iso) => new Date(iso + "T12:00:00");
   }, JUN);
   t.eq(sd.balance, 2000, "safeSpend balance from cash accounts");
   t.eq(sd.upcomingBills, 1000, "safeSpend counts bill due in 10-day window");
-  t.eq(sd.safeAmount, 850, "safeSpend = 2000 - 1000 - 50 - 0 - 100(savings)");
+  // Truth-fix item 3: savingsAlloc now scales to the DYNAMIC horizon. From JUN (Jun 15) the $3000
+  // monthly income (no anchor → lands the 1st) next deposits Jul 1 = 16 days out, so savingsAlloc =
+  // 3000*0.10/30*16 = 160 (was *10 = 100). safeSpend = 2000 - 1000 - 50 - 0 - 160 = 790 (was 850).
+  t.eq(sd.safeAmount, 790, "safeSpend = 2000 - 1000(bill) - 50(debt) - 0(buffer) - 160(savings, 16-day horizon)");
   t.eq(sd.noIncome, false, "safeSpend noIncome false with income");
   t.eq(ss.SafeSpendEngine.calculate({ accounts: [], bills: [], debts: [], incomes: [], transactions: [] }, JUN).noIncome, true, "safeSpend noIncome true when no income");
 
@@ -241,14 +244,14 @@ const D = (iso) => new Date(iso + "T12:00:00");
   t.eq(fcast.firstNegativeDay.day, 9, "forecast first-negative on rent day (Jun 10 = day 9)");
 
   // ── decisionEngine: helpers + engines ───────────────────────────────────────────────────────────
-  t.eq(de.computePaydayGap(D("2026-01-10")).daysToPayday, 5, "paydayGap day10 → 5 to the 15th");
-  t.eq(de.computePaydayGap(D("2026-01-20")).daysToPayday, 12, "paydayGap day20 (Jan, 31d) → 12 to the 1st");
-  // Sprint Z2 #9: month-end wraparound uses the ACTUAL days-in-month, not a hardcoded 31.
-  t.eq(de.computePaydayGap(D("2026-02-20")).daysToPayday, 9,  "paydayGap Feb 20 (28d, non-leap) → 9");
-  t.eq(de.computePaydayGap(D("2024-02-20")).daysToPayday, 10, "paydayGap Feb 20 2024 (29d, leap) → 10");
-  t.eq(de.computePaydayGap(D("2026-04-20")).daysToPayday, 11, "paydayGap Apr 20 (30d) → 11");
-  t.eq(de.computeDailySpendLimit(280, 7).safeToday, 40, "dailySpendLimit 280/7 → 40");
+  // computePaydayGap deleted (Truth-fix item 2): it hardcoded payday as the 1st/15th. Payday timing is
+  // now owned by incomeSchedule (see tests/incomeSchedule.test.cjs) and read off the user's real cadence.
+  // Truth-fix item 7: the divisor is now floored at 14 (a real floor, not a fallback), so a 7-day
+  // window no longer inflates the daily number. 280/14 = 20 (was 280/7 = 40 before the floor).
+  t.eq(de.computeDailySpendLimit(280, 7).safeToday, 20, "dailySpendLimit 280 over a 7-day window → 20 (divisor floored at 14)");
+  t.eq(de.computeDailySpendLimit(280, 1).daysLeft, 14, "dailySpendLimit floors a next-day deposit's divisor at 14 (not 1)");
   t.eq(de.computeDailySpendLimit(280, 0).daysLeft, 14, "dailySpendLimit floors days at 14");
+  t.eq(de.computeDailySpendLimit(280, 20).daysLeft, 20, "a genuinely long window (20d) is used as-is, above the floor");
   t.eq(de.selectHighestRateDebt([{ name: "A", rate: "6" }, { name: "B", rate: "20" }]).name, "B", "selectHighestRateDebt picks highest APR");
   t.eq(de.selectHighestRateDebt([]), null, "selectHighestRateDebt empty → null");
   t.ok(de.computeDebtPayoffImpact({ rate: "19.99", balance: "3000" }, 150) > 0, "computeDebtPayoffImpact > 0 for positive APR/principal");

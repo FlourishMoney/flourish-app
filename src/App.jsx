@@ -26,14 +26,18 @@ import { tabForScreen } from "./lib/navigation.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
-import { formatMoney, formatNumber } from "./lib/format.js";
+import { formatMoney, formatNumber, ordinalSuffix } from "./lib/format.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting } from "./lib/meetingSchedule.js";
 import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType } from "./lib/notifications.js";
 import { planNotifications } from "./lib/notificationPlanner.js";
-import { AutopilotEngine, calcHealthScore, computePaydayGap, computeDailySpendLimit, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
+import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
+import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
+import { safeToSpendView } from "./lib/safeToSpendView.js";
+import { suggestedDailyView } from "./lib/suggestedDaily.js";
+import { DEMO, DEMO_INCOMES, buildDemoTxns } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
@@ -513,11 +517,9 @@ function getCatDisplay(catName) {
   return CAT_DISPLAY[catName] || { emoji:"📌", color:"#888888" };
 }
 
-const DEMO = {
-  balance:     1_243.88,
-  income:      1_847.50,
-  netWorthAdd:   1_840,   // mock savings/TFSA for net worth calc
-};
+// DEMO, DEMO_INCOMES and buildDemoTxns moved to lib/demoFixture.js (Truth-fix item 8): one testable,
+// internally consistent source where the payroll deposits match the $2,840 income so the demo exercises
+// the real anchor path.
 
 // ─── PLAID API HELPERS ────────────────────────────────────────────────────────
 async function callPlaid(action, params={}, options={}) {
@@ -780,48 +782,6 @@ function usePlaidLinkSDK(linkToken, onSuccess) {
   return { openPlaidLink, plaidReady: sdkReady && !!linkToken, plaidSdkError: sdkError };
 }
 
-// Demo transactions, dated RELATIVE to now (last ~30 days) so they always land inside the Activity
-// screen's default "This Month" period. They were pinned to Feb–Mar 2026, which fell outside every
-// period filter once real time moved past them (the Activity list showed nothing). Same realistic
-// Canadian merchants/amounts; only the dates are computed, freshly on each buildDemoState() call.
-// Each row: [id, daysAgo, name, amount, category, icon, color]. Payrolls sit ~bi-weekly (1/12/26).
-function buildDemoTxns() {
-  const now = new Date();
-  const at = (daysAgo) => { const d = new Date(now); d.setDate(d.getDate() - daysAgo); return { date: d.toISOString().slice(0,10), dow: d.getDay() }; };
-  const rows = [
-    ["t1",  0,  "Loblaws",         67.43,        "Groceries",       "🛒","#2E8B2E"],
-    ["t2",  0,  "Tim Hortons",     4.85,         "Coffee & Dining", "☕","#D97A3A"],
-    ["t3",  0,  "Tim Hortons",     5.10,         "Coffee & Dining", "☕","#D97A3A"],
-    ["t4",  1,  "Payroll Deposit", -DEMO.income, "Income",          "💰","#6FE494"],
-    ["t5",  1,  "Shell Gas",       62.10,        "Gas & Transport", "⛽","#CFA03E"],
-    ["t6",  2,  "Starbucks",       6.75,         "Coffee & Dining", "☕","#D97A3A"],
-    ["t7",  3,  "Netflix",         18.99,        "Subscriptions",   "🎬","#8A5FC8"],
-    ["t8",  3,  "Amazon.ca",       34.99,        "Shopping",        "📦","#C45898"],
-    ["t9",  4,  "Uber Eats",       28.40,        "Coffee & Dining", "🍕","#D97A3A"],
-    ["t10", 5,  "LCBO",            24.15,        "Shopping",        "🛍️","#C45898"],
-    ["t11", 6,  "Walmart",         89.22,        "Groceries",       "🛒","#2E8B2E"],
-    ["t12", 7,  "Hydro One",       124.00,       "Utilities",       "⚡","#CFA03E"],
-    ["t13", 6,  "Starbucks",       6.50,         "Coffee & Dining", "☕","#D97A3A"],
-    ["t14", 7,  "Spotify",         11.99,        "Subscriptions",   "🎵","#8A5FC8"],
-    ["t15", 7,  "Rexall Pharmacy", 18.40,        "Health",          "💊","#4A8FCC"],
-    ["t16", 8,  "H&M",             67.00,        "Shopping",        "👕","#C45898"],
-    ["t17", 9,  "Harvey's",        14.50,        "Coffee & Dining", "🍔","#D97A3A"],
-    ["t18", 9,  "Tim Hortons",     4.25,         "Coffee & Dining", "☕","#D97A3A"],
-    ["t19", 10, "Amazon.ca",       29.99,        "Shopping",        "📦","#C45898"],
-    ["t20", 12, "Payroll Deposit", -DEMO.income, "Income",          "💰","#6FE494"],
-    ["t21", 13, "Loblaws",         73.18,        "Groceries",       "🛒","#2E8B2E"],
-    ["t22", 13, "Uber Eats",       31.20,        "Coffee & Dining", "🍕","#D97A3A"],
-    ["t23", 15, "Winners",         45.00,        "Shopping",        "🛍️","#C45898"],
-    ["t24", 16, "Apple.com/bill",  3.99,         "Subscriptions",   "☁️","#8A5FC8"],
-    ["t25", 17, "Starbucks",       7.10,         "Coffee & Dining", "☕","#D97A3A"],
-    ["t26", 19, "Bell Canada",     65.00,        "Utilities",       "📱","#CFA03E"],
-    ["t27", 20, "Kelsey's",        54.20,        "Coffee & Dining", "🍷","#D97A3A"],
-    ["t28", 22, "Shopify/Etsy",    38.00,        "Shopping",        "🎁","#C45898"],
-    ["t29", 24, "Costco Gas",      55.80,        "Gas & Transport", "⛽","#CFA03E"],
-    ["t30", 26, "Payroll Deposit", -DEMO.income, "Income",          "💰","#6FE494"],
-  ];
-  return rows.map(([id, daysAgo, name, amount, cat, icon, color]) => ({ id, name, amount, cat, icon, color, ...at(daysAgo) }));
-}
 
 const MOCK_ACCOUNTS = [
   {id:"a1",name:"TD Chequing ••4521",type:"checking",balance:DEMO.balance,institution:"TD Bank"},
@@ -874,7 +834,7 @@ async function reconcileNotifications(data) {
 function buildDemoState() {
   return {
     profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true,lifeStages:["t4"],partnerLifeStages:["t4"]},
-    incomes:[{id:1,label:"Full-time Job",amount:"2840",freq:"biweekly",type:"employment"},{id:2,label:"Canada Child Benefit",amount:"560",freq:"monthly",type:"ccb"}],
+    incomes:DEMO_INCOMES,
     bills:[{name:"Rent",amount:"1650",date:"1"},{name:"Hydro",amount:"95",date:"11"},{name:"Phone",amount:"65",date:"15"},{name:"Netflix",amount:"18.99",date:"22"}],
     debts:[{name:"TD Visa",balance:"3420",rate:"19.99",min:"68"},{name:"Car Loan",balance:"8200",rate:"6.99",min:"280"}],
     accounts:MOCK_ACCOUNTS,
@@ -930,15 +890,17 @@ function Icon({ id, size=20, color="currentColor", strokeWidth=1.5, style={} }){
 
 
 // ── DECISION ENGINE ─────────────────────────────────────────────────────────────
-function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, setScreen}) {
+function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, dailyPace, setScreen}) {
   const bills = data.bills || [];
   const debts = data.debts || [];
 
   // Sprint MATH-LOCK Group F: pure decision math lives in lib/decisionEngine.js (tested there); this
   // component calls the helpers, then builds the themed advice cards (colors/labels) below.
-  const { daysToPayday } = computePaydayGap(todayDate instanceof Date ? todayDate : new Date()); // Sprint Z2 #9: Date in
-  const incomeAmt = (data.incomes||[]).reduce((s,i)=>s+toMonthly(i.amount,i.freq),0); // Bug 5: no fake income fallback
-  const { daysLeft, safePerDay, safeToday } = computeDailySpendLimit(safe, daysToPayday);
+  const todayD = todayDate instanceof Date ? todayDate : new Date();
+  const daysToPayday = daysToNextFutureDeposit(data.incomes, data.transactions, todayD); // Truth-fix item 2: real next-deposit date, not a 1st/15th guess
+  const nextDep = nextFutureDeposit(data.incomes, data.transactions, todayD); // Truth-fix item 4: real next deposit (date + per-deposit amount)
+  // Consolidation 1: the suggested daily figure is owned by suggestedDailyView and passed in as dailyPace,
+  // so Today and Decisions show the SAME number (this card used to divide safe by a 14-floored divisor here).
   const topDebt = selectHighestRateDebt(debts);
   const extraPayment = 150;
   const monthsSaved = computeDebtPayoffImpact(topDebt, extraPayment);
@@ -947,13 +909,17 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
 
   // Build decision cards
   const decisions = [];
-  if (safeToday > 0) {
+  if (dailyPace.daily > 0) {
     decisions.push({
       type: "daily",
       icon: "💡",
       color: C.teal,
-      title: `Spend max $${safeToday} today`,
-      detail: `Keeps you safe until ${daysToPayday <= 1 ? "tomorrow's" : `your payday in ${daysToPayday}d`} deposit of $${incomeAmt.toLocaleString()}`,
+      title: `Suggested spend today: ${dailyPace.dailyText}`,
+      detail: nextDep
+        ? ((daysToPayday != null && daysToPayday <= 1)
+            ? `Keeps you safe until tomorrow's deposit of ${formatMoney(nextDep.amount)}.`
+            : `Keeps you safe until your next deposit of ${formatMoney(nextDep.amount)} on ${nextDep.date.toLocaleDateString("en-CA", { month: "short", day: "numeric" })}.`)
+        : "Keeps you safe until your next paycheque.",
       action: "See forecast", screen: "plan"
     });
   }
@@ -963,7 +929,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
       icon: "⚠️",
       color: C.orange,
       title: "Cash is running tight",
-      detail: `Your balance is below 15% of monthly income. Hold non-essential spending for ${daysToPayday} days.`,
+      detail: `Your balance is below 15% of monthly income. Hold non-essential spending for ${daysToPayday != null ? daysToPayday : "a few"} days.`,
       action: "See Plan", screen: "plan"
     });
   }
@@ -2117,7 +2083,9 @@ const bars = [
 function WealthForecast({data}) {
   const [extra, setExtra] = useState(0);
   const [horizon, setHorizon] = useState(20);
-  const toMonthlyAmt = (amt, freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a; };
+  // Consolidation 2: toMonthlyAmt removed — it duplicated financialCalculations.toMonthly with IDENTICAL
+  // multipliers and the same frequency set, differing only in coercion (parseFloat(amt||0) vs num). Call
+  // sites below now use the shared toMonthly (which via num() also parses "$1,200"/"1,000" instead of NaN).
 
   // Use REAL data from Retirement tab only — never invent savings rates
   const ret = data.profile?.retirement || {};
@@ -2130,9 +2098,9 @@ function WealthForecast({data}) {
   const startingBal = rrspBal + tfsaBal + invBal;
 
   // Monthly contributions using frequency
-  const rrspMo    = toMonthlyAmt(ret[isCA?"rrspMonthly":"401kMonthly"]||0, ret[isCA?"rrspFreq":"401kFreq"]||"monthly");
-  const tfsaMo    = toMonthlyAmt(ret[isCA?"tfsaMonthly":"iraMonthly"]||0, ret[isCA?"tfsaFreq":"iraFreq"]||"monthly");
-  const pensionMo = toMonthlyAmt(ret[isCA?"pensionMonthly":"otherRetire"]||0, ret[isCA?"pensionFreq":"otherRetireFreq"]||"monthly");
+  const rrspMo    = toMonthly(ret[isCA?"rrspMonthly":"401kMonthly"]||0, ret[isCA?"rrspFreq":"401kFreq"]||"monthly");
+  const tfsaMo    = toMonthly(ret[isCA?"tfsaMonthly":"iraMonthly"]||0, ret[isCA?"tfsaFreq":"iraFreq"]||"monthly");
+  const pensionMo = toMonthly(ret[isCA?"pensionMonthly":"otherRetire"]||0, ret[isCA?"pensionFreq":"otherRetireFreq"]||"monthly");
   const monthlyContrib = rrspMo + tfsaMo + pensionMo;
   const monthlyInvest = monthlyContrib + extra;
 
@@ -4501,6 +4469,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const _ss         = SafeSpendEngine.calculate(data);
   const bal         = _ss.balance;
   const safe        = _ss.safeAmount;
+  const ssView      = safeToSpendView(_ss); // Truth-fix item 5: the ONE safe-to-spend presentation view-model (rows + headline reconcile)
+  const dailyPace   = suggestedDailyView(ssView.headline, data.incomes, data.transactions, new Date()); // Consolidation 1: the ONE suggested daily pace (Today + Decisions read this)
   const hasCashAccount = (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0; // Sprint 1: gate safe-to-spend empty state
   // overdraft: either bills in next 10 days exceed balance (immediate)
   // OR forecast shows negative balance within 7 days (imminent)
@@ -4541,7 +4511,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   // Sprint D Fix (Bug 1): daysUntilDueDay rolls a passed due-day to next month, so a bill due the
   // 3rd viewed on the 22nd is ~12 days away — not -19, and no longer mis-selected as urgent.
   const urgentBill = soonBills.find(b=>{ const d=daysUntilDueDay(b.date, new Date()); return d!==null && d<=2; });
-  const isPayday   = today===15||today===1; // simple heuristic
+  const isPayday   = isDepositToday(data.incomes, data.transactions, new Date()); // Truth-fix item 2: real cadence, not a 1st/15th guess
   // 14-day forecast — shared with "Can I afford this?" widget. No per-keystroke calls.
   const { forecast: afford14Forecast } = ForecastEngine.generate(data, 14);
   const nextPaydayDay = afford14Forecast.find(f => f.isPayday && f.day > 0)?.day || null;
@@ -4689,12 +4659,13 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             one thing you could do (deterministic from the engine's safe number), Explain this → Learn.
             Everything else stays below. Numbers are engine outputs; no AI is involved. */}
         {isVisible('hero')&&(()=>{
-          const dailyRoom = Math.max(0, Math.floor((safe||0)/7));
           // Item 4: the "know" line is the highest-priority forecast/bill item — NEVER the safe-to-spend
           // hero figure. If no such item exists, hide the line and keep "one thing you could do".
           const know = todayKnowItem({ overdraftImmediate, sevenDayOverdraft, nextBill: (soonBills||[])[0] });
+          // Consolidation 1: the daily number is the ONE suggested pace (same as Decisions), never a
+          // second division of safe. The weekly framing is that daily figure, not safe/7.
           const doIt = safe>0
-            ? `Keeping today under ${formatMoney(dailyRoom)} leaves room across the week.`
+            ? `Keeping today under ${dailyPace.dailyText} leaves room across the week.`
             : "Hold off on non-essentials until your next paycheque lands.";
           return (
             <div style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"14px 16px",marginBottom:12}}>
@@ -4748,7 +4719,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               <span style={{fontSize:24,color:heroColorBright,verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
               <span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`,
                 transition:"opacity .3s",opacity:isRefreshing?0.4:1}}>
-                <CountUp to={safe} decimals={0} dur={300} sep/>
+                <CountUp to={ssView.headline} decimals={0} dur={300} sep/>
               </span>
               {/* Shimmer bar — signals live update in progress */}
               {isRefreshing&&(
@@ -4782,8 +4753,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             })()}
             {/* ── Inline math proof — one line, no tap required ── */}
             {hasCashAccount && (()=>{
-              // Bug 6: breakdown rows come straight from SafeSpendEngine so they SUM to the headline.
-              const _ss = SafeSpendEngine.calculate(data);
+              // Truth-fix item 5: rows AND the headline come from the ONE presentation view-model (ssView),
+              // so the visible equation reconciles exactly and this surface does no rounding of its own.
               // Overdraft: show a focused warning instead of the math
               if (overdraft) return (
                 <div style={{marginBottom:14}}>
@@ -4794,16 +4765,10 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                   </div>
                 </div>
               );
-              // Colours here are opaque by construction. Alpha-suffixing an accent (heroColorBright+"44")
-              // fades it toward the hero background, which collapses in light theme — greenBright is dark
-              // ink (#007E4A) on a near-white hero, so +"44" measured 1.44:1 against a 4.5:1 requirement.
-              const breakdownRows = [
-                {label:"In your accounts", value:formatMoney(_ss.balance||0), sign:"", color:heroColorBright},
-                ...(_ss.upcomingBills>0 ? [{label:"Upcoming bills", value:formatMoney(_ss.upcomingBills), sign:"−", color:C.gold}] : []),
-                ...(_ss.debtPayments>0 ? [{label:"Min. debt payments", value:formatMoney(_ss.debtPayments), sign:"−", color:C.gold}] : []),
-                ...(_ss.safetyBuf>0 ? [{label:"Spending buffer", value:formatMoney(_ss.safetyBuf), sign:"−", color:C.mutedHi}] : []),
-                ...(_ss.savingsAlloc>0 ? [{label:"Savings set aside", value:formatMoney(_ss.savingsAlloc), sign:"−", color:C.mutedHi}] : []),
-              ];
+              // Colour is a surface concern (theme); the numbers are the helper's. greenBright is dark
+              // ink on a near-white hero, so accents stay opaque for contrast.
+              const rowColor = (r) => r.kind === "balance" ? heroColorBright : (r.key === "upcomingBills" || r.key === "debtPayments") ? C.gold : C.mutedHi;
+              const breakdownRows = ssView.rows.map(r => ({ label:r.label, value:r.value, sign:r.sign, color:rowColor(r) }));
               return (
                 <div style={{marginBottom:14}}>
                   {breakdownRows.map((r,i)=>(
@@ -4813,8 +4778,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                     </div>
                   ))}
                   <div style={{borderTop:`1px solid ${heroColor}22`,marginTop:5,paddingTop:5,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{color:C.cream,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>= Safe until next payday</span>
-                    <span style={{color:heroColorBright,fontSize:13,fontWeight:900,fontFamily:"'Playfair Display',serif"}}>{formatMoney(Math.max(0,safe))}</span>
+                    <span style={{color:C.cream,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{ssView.totalLabel}</span>
+                    <span style={{color:heroColorBright,fontSize:13,fontWeight:900,fontFamily:"'Playfair Display',serif"}}>{ssView.headlineText}</span>
                   </div>
                   {!data.bankConnected&&<div style={{color:C.gold,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>📊 Estimated · Connect bank for real numbers</div>}
                 </div>
@@ -5519,7 +5484,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         {/* padding is load-bearing: with borderRadius + overflow:hidden and none, the 22px corner arc
             clips whatever sits top-right — here the "Decision Engine" label. Matches the sibling above. */}
         <div style={{...anim(120),background:C.isDark?"rgba(155,125,255,0.04)":"rgba(155,125,255,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.purple}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden",padding:"18px 18px 14px"}}>
-          <DecisionEngine data={data} safe={safe} bal={bal} monthlyIncome={monthlyIncome} soonBills={soonBills} todayDate={new Date()} setScreen={setScreen}/>
+          <DecisionEngine data={data} safe={safe} bal={bal} monthlyIncome={monthlyIncome} soonBills={soonBills} todayDate={new Date()} dailyPace={dailyPace} setScreen={setScreen}/>
         </div>
 
         {/* Income reconcile — bank-detected pay differs from the plan's income (Option B) */}
@@ -6091,10 +6056,10 @@ function PlanAhead({data, setAppData, setScreen}){
     income: f.income, balance: f.balance, idx: f.day
   }));
   const { balance: bal } = SafeSpendEngine.calculate(data);
-  // Use actual per-paycheque amount based on income frequency
-  const _retFreq = (data.incomes||[])[0]?.freq||"biweekly";
-  const _retMoInc = FinancialCalcEngine.cashFlow(data, getCatOv()).monthlyIncome;
-  const income = _retFreq==="monthly"?_retMoInc:_retFreq==="semimonthly"?_retMoInc/2:_retFreq==="weekly"?_retMoInc/4.333:_retMoInc/2.167;
+  // Item 4 in a second surface: the balance-bar scale is "balance + one real paycheque". Read the primary
+  // income's REAL per-deposit amount from incomeSchedule (never the blended monthly divided by a cadence);
+  // 0 when it can't be determined (this is only a chart scale, not a displayed figure).
+  const income = perDepositAmount((data.incomes||[])[0]) || 0;
   const minBalance = Math.min(...days.map(d => d.balance));
 
   const hasBills = (data.bills||[]).length > 0;
@@ -6122,8 +6087,9 @@ function PlanAhead({data, setAppData, setScreen}){
       const _fbal = SafeSpendEngine.calculate(data).balance;
       const _favg = FinancialCalcEngine.avgDailySpend(data);
       const _ffreq = (data.incomes||[])[0]?.freq||"biweekly";
-      const _fIncome = FinancialCalcEngine.cashFlow(data, getCatOv()).monthlyIncome;
-      const _fPay = _ffreq==="monthly"?_fIncome:_ffreq==="semimonthly"?_fIncome/2:_ffreq==="weekly"?_fIncome/4.333:_fIncome/2.167;
+      // Est. paycheque: the primary income's REAL per-deposit amount, read from incomeSchedule — never the
+      // blended monthlyIncome divided by incomes[0]'s cadence (item 4's bug). null => show an explicit unknown.
+      const _fPay = perDepositAmount((data.incomes||[])[0]);
       return (
         <div style={{background:C.isDark?"rgba(255,255,255,0.03)":C.surface,borderRadius:14,padding:"12px 16px",border:`1px solid ${C.border}`}}>
           <div style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:8}}>
@@ -6135,7 +6101,7 @@ function PlanAhead({data, setAppData, setScreen}){
               ["Starting balance", `$${(_fbal||0).toFixed(0)}`],
               ["Est. daily spend", `$${(_favg||0).toFixed(0)}/day`],
               ["Pay frequency", _ffreq],
-              ["Est. paycheque", `$${(_fPay||0).toFixed(0)}`],
+              ["Est. paycheque", _fPay!=null ? formatMoney(_fPay) : "—"],
             ].map(([lbl,val])=>(
               <div key={lbl} style={{background:C.card,borderRadius:10,padding:"7px 10px",border:`1px solid ${C.border}`}}>
                 <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>{lbl}</div>
@@ -7827,11 +7793,11 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         {totalInvested>0&&<div style={{marginTop:12,display:"flex",gap:10}}>
           <div style={{flex:1,background:C.purple+"15",borderRadius:12,padding:"10px 14px",border:`1px solid ${C.purple}22`}}>
             <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Invested</div>
-            <div style={{color:C.purpleBright,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',serif"}}>${totalInvested.toLocaleString()}</div>
+            <div style={{color:C.purpleBright,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{formatMoney(totalInvested)}</div>
           </div>
           <div style={{flex:1,background:C.green+"15",borderRadius:12,padding:"10px 14px",border:`1px solid ${C.green}22`}}>
             <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Gain</div>
-            <div style={{color:C.greenBright,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',serif"}}>+${totalGain.toLocaleString()}</div>
+            <div style={{color:C.greenBright,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',serif"}}>+{formatMoney(totalGain)}</div>
           </div>
         </div>}
       </div>
@@ -8632,15 +8598,20 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <ScreenHeader title="Meet" subtitle="Your 15-minute money meeting" onBack={setScreen?()=>setScreen("home"):null}/>
-    <div style={{display:"flex",gap:6}}>
-      {/* Step 10: Kids entry point removed from primary UI. The /kids route and its code (KidsMiniSite,
-          the tab==="kids" block below) are intentionally kept for the future family add-on. */}
-      {[["meeting",isCouple?"Money Meeting":"Check-In"],...(HOUSEHOLD_ENABLED?[["household","Household"]]:[])].map(([t,lbl])=>(
-        <button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.purple+"22":C.cardAlt,border:`1px solid ${tab===t?C.purple:C.border}`,color:tab===t?C.purpleBright:C.muted,borderRadius:12,padding:"10px",cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit"}}>
-          {lbl}
-        </button>
-      ))}
-    </div>
+    {(()=>{
+      // Step 10: Kids entry point removed from primary UI. The /kids route and its code (KidsMiniSite,
+      // the tab==="kids" block below) are intentionally kept for the future family add-on.
+      const meetTabs=[["meeting",isCouple?"Money Meeting":"Check-In"],...(HOUSEHOLD_ENABLED?[["household","Household"]]:[])];
+      // Truth-fix item 1: a single selected tab reads as a dead control. Hide the row unless it holds ≥2 tabs.
+      if(meetTabs.length<2) return null;
+      return <div style={{display:"flex",gap:6}}>
+        {meetTabs.map(([t,lbl])=>(
+          <button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.purple+"22":C.cardAlt,border:`1px solid ${tab===t?C.purple:C.border}`,color:tab===t?C.purpleBright:C.muted,borderRadius:12,padding:"10px",cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit"}}>
+            {lbl}
+          </button>
+        ))}
+      </div>;
+    })()}
 
     {/* ── MEETING TAB ── */}
     {tab==="meeting"&&<MeetAgenda data={data} isCouple={isCouple} setScreen={setScreen}/>}
@@ -9315,96 +9286,6 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
       })()}
     </>}
 
-    {/* ── HOUSEHOLD TAB ── */}
-    {tab==="household"&&(()=>{
-      const genCode=()=>"FLRSH"+Math.random().toString(36).substring(2,5).toUpperCase();
-      if(household){return(
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <div style={{background:`linear-gradient(135deg,${C.green}18,${C.greenDim})`,borderRadius:20,padding:"22px",border:`1px solid ${C.green}33`,textAlign:"center"}}>
-            <div style={{marginBottom:10,display:"flex",justifyContent:"center"}}><Icon id="house2" size={34} color={C.muted} strokeWidth={1.4}/></div>
-            <div style={{color:C.greenBright,fontWeight:900,fontSize:20,fontFamily:"'Playfair Display',serif",marginBottom:6}}>Household Connected</div>
-            <div style={{background:C.bg,borderRadius:14,padding:"14px 20px",display:"inline-block",marginBottom:12}}>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:2,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>Household Code</div>
-              <div style={{color:C.greenBright,fontWeight:900,fontSize:28,fontFamily:"'Playfair Display',serif",letterSpacing:4}}>{household.code}</div>
-            </div>
-            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>Share this code with your partner. They enter it in their Flourish app to join.</div>
-          </div>
-          {household.partnerName&&<div style={{background:C.card,borderRadius:16,padding:"16px 20px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12}}>
-            <div style={{width:40,height:40,borderRadius:99,background:C.pink+"22",border:`1px solid ${C.pink}33`,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon id="user" size={18} color={C.mutedHi} strokeWidth={1.5}/></div>
-            <div>
-              <div style={{color:C.cream,fontWeight:700,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{household.partnerName}</div>
-              <div style={{color:C.green,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✓ Connected to your household</div>
-            </div>
-          </div>}
-          {/* Combined metrics */}
-          <Card>
-            <div style={{color:C.cream,fontWeight:700,marginBottom:12}}>📊 Household Overview</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-              {[
-                {label:"Your Balance",value:`$${(_ss.balance||0).toFixed(0)}`,color:C.greenBright},
-                {label:"Monthly Income",value:`$${(monthlyIncome||0).toFixed(0)}`,color:C.tealBright},
-                {label:"Total Debt",value:totalDebt>0?`$${totalDebt.toLocaleString()}`:"None 🎉",color:totalDebt>0?C.orangeBright:C.greenBright},
-                {label:"Health Score",value:`${healthScore}/100`,color:healthScore>=70?C.greenBright:C.goldBright},
-              ].map(m=>(
-                <div key={m.label} style={{background:C.cardAlt,borderRadius:12,padding:"10px 12px",border:`1px solid ${C.border}`}}>
-                  <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{m.label}</div>
-                  <div style={{color:m.color,fontWeight:900,fontSize:15,fontFamily:"'Playfair Display',serif",marginTop:2}}>{m.value}</div>
-                </div>
-              ))}
-            </div>
-          </Card>
-          <div style={{background:C.card,borderRadius:16,padding:"16px 20px",border:`1px solid ${C.border}`}}>
-            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12,fontWeight:600}}>Shared Goals</div>
-            {(household.sharedGoals||["Emergency fund: $5,000","Vacation: $2,000","Pay off credit card"]).map((g,i)=>(
-              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<2?`1px solid ${C.border}`:"none"}}>
-                <div style={{width:8,height:8,borderRadius:99,background:C.green,flexShrink:0}}/>
-                <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{g}</div>
-              </div>
-            ))}
-          </div>
-          <button onClick={()=>setHousehold(null)} style={{background:"none",border:`1px solid ${C.red}33`,borderRadius:12,padding:"10px",color:C.red,fontSize:13,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Leave Household</button>
-        </div>
-      );}
-      return(
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <div style={{background:C.purpleDim,borderRadius:20,padding:"20px",border:`1px solid ${C.purple}33`,textAlign:"center"}}>
-            <div style={{marginBottom:10,display:"flex",justifyContent:"center"}}><Icon id="house2" size={38} color={C.green} strokeWidth={1.4}/></div>
-            <div style={{color:C.purpleBright,fontWeight:900,fontSize:20,fontFamily:"'Playfair Display',serif",marginBottom:8}}>Household Sharing</div>
-            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7,marginBottom:0}}>Connect with a partner. See combined net worth, track shared goals, and run Money Meetings together — each person keeps their own account.</div>
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            {[["join","Join Existing"],["create","Create New"]].map(([t,lbl])=>(
-              <button key={t} onClick={()=>setHouseholdTab(t)} style={{flex:1,background:householdTab===t?C.purple+"22":C.cardAlt,border:`1px solid ${householdTab===t?C.purple:C.border}`,color:householdTab===t?C.purpleBright:C.muted,borderRadius:10,padding:"10px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>{lbl}</button>
-            ))}
-          </div>
-          {householdTab==="create"&&<>
-            <div style={{background:C.card,borderRadius:16,padding:"20px",border:`1px solid ${C.border}`,textAlign:"center"}}>
-              <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>Your household code:</div>
-              <div style={{color:C.greenBright,fontWeight:900,fontSize:34,fontFamily:"'Playfair Display',serif",letterSpacing:5,marginBottom:8}}>FLRSH1</div>
-              <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Share with your partner to connect</div>
-            </div>
-            <div>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Partner Name (optional)</div>
-              <input value={householdCode} onChange={e=>setHouseholdCode(e.target.value)} placeholder="e.g. Jordan" style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px",color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",boxSizing:"border-box"}}/>
-            </div>
-            <button onClick={()=>setHousehold({code:"FLRSH1",partnerName:householdCode||"Partner",sharedGoals:["Emergency fund: $5,000","Vacation: $2,000","Pay off credit card"]})}
-              style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.green}35`}}>
-              Create Household →
-            </button>
-          </>}
-          {householdTab==="join"&&<>
-            <div>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Enter Household Code</div>
-              <input value={householdCode} onChange={e=>setHouseholdCode(e.target.value.toUpperCase())} placeholder="e.g. FLRSH1" maxLength={6} style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px",color:C.cream,fontSize:18,fontFamily:"'Playfair Display',serif",letterSpacing:4,boxSizing:"border-box",textTransform:"uppercase",textAlign:"center"}}/>
-            </div>
-            <button onClick={()=>setHousehold({code:householdCode||"FLRSH1",partnerName:data.profile?.partnerName||"Partner",sharedGoals:["Emergency fund: $5,000","Vacation: $2,000","Pay off credit card"]})}
-              style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.purple}35`}}>
-              Join Household →
-            </button>
-          </>}
-        </div>
-      );
-    })()}
   </div>;
 }
 
@@ -9415,6 +9296,7 @@ function WidgetScreen({data,onBack}){
   const [wContent,setWContent]=useState({safe:true,balance:true,health:true,nextBill:true,streak:false,cashFlow:false});
   const _ss=SafeSpendEngine.calculate(data);
   const safe=_ss.safeAmount;
+  const ssView=safeToSpendView(_ss); // Truth-fix item 5: the widget shows the SAME safe-to-spend value as Today
   const bal=_ss.balance;
   const overdraft=_ss.overdraft;
   const soonBills=_ss.soonBills||[];
@@ -9446,7 +9328,7 @@ function WidgetScreen({data,onBack}){
         </div>
         <div>
           <div style={{color:heroColorBright+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:3}}>Safe to Spend</div>
-          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:32,color:heroColorBright,letterSpacing:-1,lineHeight:1}}>${Math.round(safe)}</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:32,color:heroColorBright,letterSpacing:-1,lineHeight:1}}>{formatMoney(ssView.headline)}</div>
           <div style={{color:"rgba(237,233,226,0.55)",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>{today}</div>
         </div>
       </div>
@@ -9498,7 +9380,7 @@ function WidgetScreen({data,onBack}){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
           <div>
             <div style={{color:heroColorBright+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:3}}>Safe to Spend</div>
-            <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:38,color:heroColorBright,letterSpacing:-1,lineHeight:1}}>${Math.round(safe)}</div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:38,color:heroColorBright,letterSpacing:-1,lineHeight:1}}>{formatMoney(ssView.headline)}</div>
           </div>
           {medTiles.length>0&&<div style={{textAlign:"right"}}>
             <div style={{color:"rgba(237,233,226,0.4)",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:1}}>{medTiles[0].label}</div>
@@ -9527,7 +9409,7 @@ function WidgetScreen({data,onBack}){
         </div>
         <div style={{background:`rgba(${overdraft?"255,79,106":"0,204,133"},0.08)`,borderRadius:16,padding:"14px 16px",border:`1px solid ${heroColor}28`}}>
           <div style={{color:heroColorBright+"77",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:4}}>Safe to Spend Today</div>
-          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:46,color:heroColorBright,letterSpacing:-2,lineHeight:1}}>${Math.round(safe)}</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:46,color:heroColorBright,letterSpacing:-2,lineHeight:1}}>{formatMoney(ssView.headline)}</div>
           {wContent.balance&&<div style={{color:"rgba(237,233,226,0.45)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Balance: ${bal.toFixed(2)}</div>}
         </div>
         {largeTiles.length>0&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -10456,9 +10338,9 @@ function DesktopSidebar({data,setScreen}){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
         <div>
           <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Investment Portfolio</div>
-          <div style={{color:C.tealBright,fontWeight:900,fontSize:26,fontFamily:"'Playfair Display',serif",marginTop:3}}>${totalInvested.toLocaleString()}</div>
+          <div style={{color:C.tealBright,fontWeight:900,fontSize:26,fontFamily:"'Playfair Display',serif",marginTop:3}}>{formatMoney(totalInvested)}</div>
         </div>
-        <div style={{background:C.teal+"18",border:`1px solid ${C.teal}33`,borderRadius:99,padding:"5px 12px",color:C.tealBright,fontSize:11,fontWeight:700}}>+${totalGain.toLocaleString()} total</div>
+        <div style={{background:C.teal+"18",border:`1px solid ${C.teal}33`,borderRadius:99,padding:"5px 12px",color:C.tealBright,fontSize:11,fontWeight:700}}>+{formatMoney(totalGain)} total</div>
       </div>
       {investments.map((inv,i)=>(
         <div key={i} style={{background:C.cardAlt,borderRadius:12,padding:"12px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -10467,7 +10349,7 @@ function DesktopSidebar({data,setScreen}){
             <div style={{color:C.muted,fontSize:11,marginTop:2}}>{inv.ticker}</div>
           </div>
           <div style={{textAlign:"right"}}>
-            <div style={{color:C.cream,fontWeight:700,fontSize:14}}>${inv.balance?.toLocaleString()}</div>
+            <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{formatMoney(inv.balance)}</div>
             <div style={{color:C.greenBright,fontSize:11,fontWeight:600}}>+{inv.gainPct}%</div>
           </div>
         </div>
@@ -10482,7 +10364,7 @@ function DesktopSidebar({data,setScreen}){
         <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:i<soonBills.length-1?`1px solid ${C.border}`:"none"}}>
           <div>
             <div style={{color:C.cream,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name}</div>
-            <div style={{color:C.muted,fontSize:11}}>Due the {b.date}{b.date==="1"?"st":b.date==="2"?"nd":b.date==="3"?"rd":"th"}</div>
+            <div style={{color:C.muted,fontSize:11}}>Due the {b.date}{ordinalSuffix(b.date)}</div>
           </div>
           <div style={{color:C.gold,fontWeight:700,fontSize:14}}>${b.amount}</div>
         </div>
@@ -11351,7 +11233,7 @@ function PremiumGate({feature,desc,onUpgrade}){
       <div style={{background:C.purpleDim,borderRadius:16,padding:"14px 20px",border:`1px solid ${C.purple}33`,maxWidth:280}}>
         <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish Plus includes:</div>
         <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
-          {["AI Coach with real data","Full credit coaching","Tax tips & benefits checker","Investment tracking","Household sharing","Debt simulator"].map((f,i)=>(
+          {["AI Coach with real data","Full credit coaching","Tax tips & benefits checker","Investment tracking","Weekly money meeting","Debt simulator"].map((f,i)=>(
             <div key={i} style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"left",display:"flex",alignItems:"center",gap:7}}><Icon id="check" size={14} color={C.green} strokeWidth={2.0}/>{f}</div>
           ))}
         </div>
@@ -11478,13 +11360,12 @@ function Paywall({onClose,onUpgrade,onPromoUpgrade,country}){
 function FirstVisitScreen({data, onDismiss}) {
   const [showBreakdown, setShowBreakdown] = useState(false);
 
-  const { safeAmount } = SafeSpendEngine.calculate(data);
-  const { monthlyIncome, monthlyBills } = FinancialCalcEngine.cashFlow(data, getCatOv());
-  const toMo = toMonthly; // Bug 1: canonical converter
-  const incomeAmt = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
-  const billsAmt = (data.bills||[]).reduce((s,b)=>s+billMonthlyAmount(b),0);
-  const safeFloor = incomeAmt * 0.15;
-  const bufferAmt = Math.max(0, incomeAmt - billsAmt - safeFloor);
+  // Truth-fix item 6: rebuild the breakdown from the SAME five SafeSpendEngine rows as the Today card,
+  // through the ONE presentation view-model, so First Visit and Today can never disagree. The old
+  // breakdown stacked a monthly income calc (income − bills − 15%) against a balance-driven "available"
+  // — three rows that summed to something else entirely, and a dead bufferAmt. All gone.
+  const ssView = safeToSpendView(SafeSpendEngine.calculate(data));
+  const incomeAmt = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMonthly(i.amount,i.freq),0); // kept only to gate the explanatory line
   const name = data.profile?.name || "there";
   // Bug fix: the breathing-room number is balance-driven (SafeSpendEngine reads account balances),
   // so gate it on real balance data — a connected cash account — NOT on income. Gating on income
@@ -11511,7 +11392,7 @@ function FirstVisitScreen({data, onDismiss}) {
             <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,lineHeight:1}}>
               <span style={{fontSize:22,color:C.greenBright+"88",verticalAlign:"top",marginTop:12,display:"inline-block"}}>$</span>
               <span style={{fontSize:88,color:C.greenBright,letterSpacing:-4,textShadow:`0 0 80px ${C.green}40`}}>
-                {Math.max(0,safeAmount).toFixed(0)}
+                {ssView.headlineNumber}
               </span>
             </div>
             <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>to spend freely today</div>
@@ -11541,18 +11422,20 @@ function FirstVisitScreen({data, onDismiss}) {
         {showBreakdown&&(
           <div style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:18,padding:"16px 20px",marginBottom:24,textAlign:"left"}}>
             <div style={{color:C.muted,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How this is calculated</div>
-            {[
-              ["💰","Monthly income", incomeAmt>0?`$${incomeAmt.toFixed(0)}`:"Not entered yet", incomeAmt>0?C.greenBright:C.muted],
-              ["📅","Bills this period",billsAmt>0?`−$${billsAmt.toFixed(0)}`:"None tracked",billsAmt>0?C.gold:C.muted],
-              ["🛡️","Safety buffer (15%)",incomeAmt>0?`−$${safeFloor.toFixed(0)}`:"—",C.teal],
-              ["✅","Available to spend",`$${Math.max(0,safeAmount).toFixed(0)}`,C.greenBright],
-            ].map(([icon,label,val,col],i,arr)=>(
-              <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:i<arr.length-1?`1px solid ${C.border}22`:"none"}}>
-                <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{icon} {label}</span>
-                <span style={{color:col,fontWeight:700,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{val}</span>
-              </div>
-            ))}
-            {!data.bankConnected&&<div style={{marginTop:12,color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>📌 Connect your bank to make this number live and precise.</div>}<div style={{marginTop:8,color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,fontWeight:600}}>Unlike Mint or YNAB — we tell you what you <em>can</em> spend, not just what you already did.</div>
+            {ssView.rows.map((r)=>{
+              const col = r.kind==="balance" ? C.greenBright : (r.key==="upcomingBills"||r.key==="debtPayments") ? C.gold : C.teal;
+              return (
+                <div key={r.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${C.border}22`}}>
+                  <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign?`${r.sign} `:""}{r.label}</span>
+                  <span style={{color:col,fontWeight:700,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{r.value}</span>
+                </div>
+              );
+            })}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0 2px",borderTop:`1px solid ${C.border}`,marginTop:4}}>
+              <span style={{color:C.cream,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{ssView.totalLabel}</span>
+              <span style={{color:C.greenBright,fontWeight:900,fontSize:14,fontFamily:"'Playfair Display',serif"}}>{ssView.headlineText}</span>
+            </div>
+            {!data.bankConnected&&<div style={{marginTop:12,color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>📌 Connect your bank to make this number live and precise.</div>}
           </div>
         )}
 
