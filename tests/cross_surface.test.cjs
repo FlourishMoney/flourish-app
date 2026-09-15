@@ -17,7 +17,7 @@ const { create } = require("./_runner.cjs");
   const { safeToSpendView } = await import("../src/lib/safeToSpendView.js");
   const { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday } = await import("../src/lib/incomeSchedule.js");
   const { FinancialCalcEngine, toMonthly } = await import("../src/lib/financialCalculations.js");
-  const { computeDailySpendLimit } = await import("../src/lib/decisionEngine.js");
+  const { suggestedDailyView } = await import("../src/lib/suggestedDaily.js");
   const t = create();
 
   const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -32,9 +32,9 @@ const { create } = require("./_runner.cjs");
     const today = isDepositToday(snap.incomes, snap.transactions, date);
     const fc = ForecastEngine.generate(snap, 45, null, date);
     const cf = FinancialCalcEngine.cashFlow(snap, {}, date);
-    const daily = computeDailySpendLimit(view.headline, days);
+    const pace = suggestedDailyView(view.headline, snap.incomes, snap.transactions, date); // the ONE daily pace helper
     const firstPayday = fc.forecast.find(f => f.day > 0 && f.income > 0) || null;
-    return { ss, view, nd, days, today, fc, cf, daily, firstPayday };
+    return { ss, view, nd, days, today, fc, cf, pace, firstPayday };
   }
 
   // The invariants that must hold for ANY snapshot/date — the heart of "one fact, one source".
@@ -70,11 +70,25 @@ const { create } = require("./_runner.cjs");
     }
 
     // safe-to-spend and the suggested daily number are DIFFERENT facts: the daily is the headline paced
-    // over a floored horizon, so it is strictly smaller for any non-trivial headline, never the same number.
-    t.ok(f.daily.daysLeft >= 14, `${label}: the suggested-daily divisor is floored at 14 (item 7)`);
+    // over a floored horizon, strictly smaller for any non-trivial headline, never the same number.
+    t.ok(f.pace.daysLeft >= 14, `${label}: the suggested-daily divisor is floored at 14 (item 7)`);
     if (f.view.headline > 14) {
-      t.ok(f.daily.safeToday < f.view.headline, `${label}: suggested daily < safe-to-spend — two different financial facts, never conflated`);
+      t.ok(f.pace.daily < f.view.headline, `${label}: suggested daily < safe-to-spend — two different facts, never conflated`);
     }
+
+    // Consolidation 1/3: ONE suggested daily pace. A weekly figure is EXACTLY daily*7 (never a second
+    // division of safe), and the number is single-valued given the facts — every surface reads this helper.
+    t.eq(f.pace.weekly, f.pace.daily * 7, `${label}: weekly pace == daily * 7 exactly (no second division of safe)`);
+    if (f.view.headline > 14) {
+      t.ok(f.pace.daily <= Math.floor(f.view.headline / 7), `${label}: daily pace uses the floored divisor (<= the old safe/7 number) — one number on every surface`);
+    }
+    const paceAgain = suggestedDailyView(f.view.headline, snap.incomes, snap.transactions, date);
+    t.eq(paceAgain.daily, f.pace.daily, `${label}: the daily pace is single-valued — Today and Decisions get the same figure`);
+
+    // Consolidation 2/3: ONE normalised monthly income — produced solely by the shared toMonthly converter.
+    t.eq(f.cf.monthlyIncome, (snap.incomes || []).reduce((s, i) => s + toMonthly(i.amount, i.freq), 0),
+      `${label}: one normalised monthly income (only toMonthly produces it)`);
+
     return f;
   }
 

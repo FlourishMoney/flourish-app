@@ -33,9 +33,10 @@ import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting } from "./lib/meetingSchedule.js";
 import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType } from "./lib/notifications.js";
 import { planNotifications } from "./lib/notificationPlanner.js";
-import { AutopilotEngine, calcHealthScore, computeDailySpendLimit, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
+import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
+import { suggestedDailyView } from "./lib/suggestedDaily.js";
 import { DEMO, DEMO_INCOMES, buildDemoTxns } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
@@ -889,7 +890,7 @@ function Icon({ id, size=20, color="currentColor", strokeWidth=1.5, style={} }){
 
 
 // ── DECISION ENGINE ─────────────────────────────────────────────────────────────
-function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, setScreen}) {
+function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, dailyPace, setScreen}) {
   const bills = data.bills || [];
   const debts = data.debts || [];
 
@@ -898,7 +899,8 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
   const todayD = todayDate instanceof Date ? todayDate : new Date();
   const daysToPayday = daysToNextFutureDeposit(data.incomes, data.transactions, todayD); // Truth-fix item 2: real next-deposit date, not a 1st/15th guess
   const nextDep = nextFutureDeposit(data.incomes, data.transactions, todayD); // Truth-fix item 4: real next deposit (date + per-deposit amount)
-  const { daysLeft, safePerDay, safeToday } = computeDailySpendLimit(safe, daysToPayday);
+  // Consolidation 1: the suggested daily figure is owned by suggestedDailyView and passed in as dailyPace,
+  // so Today and Decisions show the SAME number (this card used to divide safe by a 14-floored divisor here).
   const topDebt = selectHighestRateDebt(debts);
   const extraPayment = 150;
   const monthsSaved = computeDebtPayoffImpact(topDebt, extraPayment);
@@ -907,12 +909,12 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
 
   // Build decision cards
   const decisions = [];
-  if (safeToday > 0) {
+  if (dailyPace.daily > 0) {
     decisions.push({
       type: "daily",
       icon: "💡",
       color: C.teal,
-      title: `Suggested spend today: ${formatMoney(safeToday)}`,
+      title: `Suggested spend today: ${dailyPace.dailyText}`,
       detail: nextDep
         ? ((daysToPayday != null && daysToPayday <= 1)
             ? `Keeps you safe until tomorrow's deposit of ${formatMoney(nextDep.amount)}.`
@@ -2081,7 +2083,9 @@ const bars = [
 function WealthForecast({data}) {
   const [extra, setExtra] = useState(0);
   const [horizon, setHorizon] = useState(20);
-  const toMonthlyAmt = (amt, freq) => { const a=parseFloat(amt||0); return freq==="weekly"?a*4.333:freq==="biweekly"?a*2.167:freq==="semimonthly"?a*2:freq==="annually"?a/12:a; };
+  // Consolidation 2: toMonthlyAmt removed — it duplicated financialCalculations.toMonthly with IDENTICAL
+  // multipliers and the same frequency set, differing only in coercion (parseFloat(amt||0) vs num). Call
+  // sites below now use the shared toMonthly (which via num() also parses "$1,200"/"1,000" instead of NaN).
 
   // Use REAL data from Retirement tab only — never invent savings rates
   const ret = data.profile?.retirement || {};
@@ -2094,9 +2098,9 @@ function WealthForecast({data}) {
   const startingBal = rrspBal + tfsaBal + invBal;
 
   // Monthly contributions using frequency
-  const rrspMo    = toMonthlyAmt(ret[isCA?"rrspMonthly":"401kMonthly"]||0, ret[isCA?"rrspFreq":"401kFreq"]||"monthly");
-  const tfsaMo    = toMonthlyAmt(ret[isCA?"tfsaMonthly":"iraMonthly"]||0, ret[isCA?"tfsaFreq":"iraFreq"]||"monthly");
-  const pensionMo = toMonthlyAmt(ret[isCA?"pensionMonthly":"otherRetire"]||0, ret[isCA?"pensionFreq":"otherRetireFreq"]||"monthly");
+  const rrspMo    = toMonthly(ret[isCA?"rrspMonthly":"401kMonthly"]||0, ret[isCA?"rrspFreq":"401kFreq"]||"monthly");
+  const tfsaMo    = toMonthly(ret[isCA?"tfsaMonthly":"iraMonthly"]||0, ret[isCA?"tfsaFreq":"iraFreq"]||"monthly");
+  const pensionMo = toMonthly(ret[isCA?"pensionMonthly":"otherRetire"]||0, ret[isCA?"pensionFreq":"otherRetireFreq"]||"monthly");
   const monthlyContrib = rrspMo + tfsaMo + pensionMo;
   const monthlyInvest = monthlyContrib + extra;
 
@@ -4466,6 +4470,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const bal         = _ss.balance;
   const safe        = _ss.safeAmount;
   const ssView      = safeToSpendView(_ss); // Truth-fix item 5: the ONE safe-to-spend presentation view-model (rows + headline reconcile)
+  const dailyPace   = suggestedDailyView(ssView.headline, data.incomes, data.transactions, new Date()); // Consolidation 1: the ONE suggested daily pace (Today + Decisions read this)
   const hasCashAccount = (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0; // Sprint 1: gate safe-to-spend empty state
   // overdraft: either bills in next 10 days exceed balance (immediate)
   // OR forecast shows negative balance within 7 days (imminent)
@@ -4654,12 +4659,13 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             one thing you could do (deterministic from the engine's safe number), Explain this → Learn.
             Everything else stays below. Numbers are engine outputs; no AI is involved. */}
         {isVisible('hero')&&(()=>{
-          const dailyRoom = Math.max(0, Math.floor((safe||0)/7));
           // Item 4: the "know" line is the highest-priority forecast/bill item — NEVER the safe-to-spend
           // hero figure. If no such item exists, hide the line and keep "one thing you could do".
           const know = todayKnowItem({ overdraftImmediate, sevenDayOverdraft, nextBill: (soonBills||[])[0] });
+          // Consolidation 1: the daily number is the ONE suggested pace (same as Decisions), never a
+          // second division of safe. The weekly framing is that daily figure, not safe/7.
           const doIt = safe>0
-            ? `Keeping today under ${formatMoney(dailyRoom)} leaves room across the week.`
+            ? `Keeping today under ${dailyPace.dailyText} leaves room across the week.`
             : "Hold off on non-essentials until your next paycheque lands.";
           return (
             <div style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"14px 16px",marginBottom:12}}>
@@ -5478,7 +5484,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         {/* padding is load-bearing: with borderRadius + overflow:hidden and none, the 22px corner arc
             clips whatever sits top-right — here the "Decision Engine" label. Matches the sibling above. */}
         <div style={{...anim(120),background:C.isDark?"rgba(155,125,255,0.04)":"rgba(155,125,255,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.purple}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden",padding:"18px 18px 14px"}}>
-          <DecisionEngine data={data} safe={safe} bal={bal} monthlyIncome={monthlyIncome} soonBills={soonBills} todayDate={new Date()} setScreen={setScreen}/>
+          <DecisionEngine data={data} safe={safe} bal={bal} monthlyIncome={monthlyIncome} soonBills={soonBills} todayDate={new Date()} dailyPace={dailyPace} setScreen={setScreen}/>
         </div>
 
         {/* Income reconcile — bank-detected pay differs from the plan's income (Option B) */}
