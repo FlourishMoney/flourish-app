@@ -18,7 +18,7 @@
 // same numeric fields). No React, no rounding is done by the caller.
 // -----------------------------------------------------------------------------
 
-import { formatMoney } from "./format.js";
+import { formatMoney, formatNumber } from "./format.js";
 
 const _floor = (n) => Math.floor(Number(n) || 0);
 const _ceil = (n) => Math.ceil(Number(n) || 0);
@@ -50,7 +50,8 @@ export function safeToSpendView(ss) {
     rows,                 // balance + non-zero deductions, formatted; rows reconcile to headline
     totalDeductions,
     headline,             // integer displayed headline (>= 0)
-    headlineText: formatMoney(headline),
+    headlineText: formatMoney(headline),     // "$2,111" — for surfaces that show the whole string
+    headlineNumber: formatNumber(headline),  // "2,111" — for surfaces that render their own "$" glyph
     totalLabel: "= Safe until next payday",
   };
 }

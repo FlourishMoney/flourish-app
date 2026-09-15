@@ -11395,13 +11395,12 @@ function Paywall({onClose,onUpgrade,onPromoUpgrade,country}){
 function FirstVisitScreen({data, onDismiss}) {
   const [showBreakdown, setShowBreakdown] = useState(false);
 
-  const { safeAmount } = SafeSpendEngine.calculate(data);
-  const { monthlyIncome, monthlyBills } = FinancialCalcEngine.cashFlow(data, getCatOv());
-  const toMo = toMonthly; // Bug 1: canonical converter
-  const incomeAmt = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
-  const billsAmt = (data.bills||[]).reduce((s,b)=>s+billMonthlyAmount(b),0);
-  const safeFloor = incomeAmt * 0.15;
-  const bufferAmt = Math.max(0, incomeAmt - billsAmt - safeFloor);
+  // Truth-fix item 6: rebuild the breakdown from the SAME five SafeSpendEngine rows as the Today card,
+  // through the ONE presentation view-model, so First Visit and Today can never disagree. The old
+  // breakdown stacked a monthly income calc (income − bills − 15%) against a balance-driven "available"
+  // — three rows that summed to something else entirely, and a dead bufferAmt. All gone.
+  const ssView = safeToSpendView(SafeSpendEngine.calculate(data));
+  const incomeAmt = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMonthly(i.amount,i.freq),0); // kept only to gate the explanatory line
   const name = data.profile?.name || "there";
   // Bug fix: the breathing-room number is balance-driven (SafeSpendEngine reads account balances),
   // so gate it on real balance data — a connected cash account — NOT on income. Gating on income
@@ -11428,7 +11427,7 @@ function FirstVisitScreen({data, onDismiss}) {
             <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,lineHeight:1}}>
               <span style={{fontSize:22,color:C.greenBright+"88",verticalAlign:"top",marginTop:12,display:"inline-block"}}>$</span>
               <span style={{fontSize:88,color:C.greenBright,letterSpacing:-4,textShadow:`0 0 80px ${C.green}40`}}>
-                {Math.max(0,safeAmount).toFixed(0)}
+                {ssView.headlineNumber}
               </span>
             </div>
             <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>to spend freely today</div>
@@ -11458,17 +11457,19 @@ function FirstVisitScreen({data, onDismiss}) {
         {showBreakdown&&(
           <div style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:18,padding:"16px 20px",marginBottom:24,textAlign:"left"}}>
             <div style={{color:C.muted,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How this is calculated</div>
-            {[
-              ["💰","Monthly income", incomeAmt>0?`$${incomeAmt.toFixed(0)}`:"Not entered yet", incomeAmt>0?C.greenBright:C.muted],
-              ["📅","Bills this period",billsAmt>0?`−$${billsAmt.toFixed(0)}`:"None tracked",billsAmt>0?C.gold:C.muted],
-              ["🛡️","Safety buffer (15%)",incomeAmt>0?`−$${safeFloor.toFixed(0)}`:"—",C.teal],
-              ["✅","Available to spend",`$${Math.max(0,safeAmount).toFixed(0)}`,C.greenBright],
-            ].map(([icon,label,val,col],i,arr)=>(
-              <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:i<arr.length-1?`1px solid ${C.border}22`:"none"}}>
-                <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{icon} {label}</span>
-                <span style={{color:col,fontWeight:700,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{val}</span>
-              </div>
-            ))}
+            {ssView.rows.map((r)=>{
+              const col = r.kind==="balance" ? C.greenBright : (r.key==="upcomingBills"||r.key==="debtPayments") ? C.gold : C.teal;
+              return (
+                <div key={r.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${C.border}22`}}>
+                  <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign?`${r.sign} `:""}{r.label}</span>
+                  <span style={{color:col,fontWeight:700,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{r.value}</span>
+                </div>
+              );
+            })}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0 2px",borderTop:`1px solid ${C.border}`,marginTop:4}}>
+              <span style={{color:C.cream,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{ssView.totalLabel}</span>
+              <span style={{color:C.greenBright,fontWeight:900,fontSize:14,fontFamily:"'Playfair Display',serif"}}>{ssView.headlineText}</span>
+            </div>
             {!data.bankConnected&&<div style={{marginTop:12,color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>📌 Connect your bank to make this number live and precise.</div>}
           </div>
         )}

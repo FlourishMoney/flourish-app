@@ -23,6 +23,7 @@ const { create } = require("./_runner.cjs");
   t.eq(v.deductions.find(d => d.key === "debtPayments").display, 348, "a whole-dollar deduction is unchanged");
   t.eq(v.headline, 2111, "headline = 3083 - 65 - 348 - 335 - 224 = 2111 (from the DISPLAYED components)");
   t.eq(v.headlineText, "$2,111", "headline is formatted with the shared formatter");
+  t.eq(v.headlineNumber, "2,111", "headlineNumber has separators but no symbol (for surfaces with their own $)");
 
   // Reconciliation invariant: the displayed rows sum EXACTLY to the displayed headline.
   const rowSum = v.rows.reduce((s, r) => s + (r.kind === "balance" ? r.display : -r.display), 0);
