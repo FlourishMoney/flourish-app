@@ -26,7 +26,7 @@ import { tabForScreen } from "./lib/navigation.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
-import { formatMoney, formatNumber } from "./lib/format.js";
+import { formatMoney, formatNumber, ordinalSuffix } from "./lib/format.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
@@ -10403,7 +10403,7 @@ function DesktopSidebar({data,setScreen}){
         <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:i<soonBills.length-1?`1px solid ${C.border}`:"none"}}>
           <div>
             <div style={{color:C.cream,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name}</div>
-            <div style={{color:C.muted,fontSize:11}}>Due the {b.date}{b.date==="1"?"st":b.date==="2"?"nd":b.date==="3"?"rd":"th"}</div>
+            <div style={{color:C.muted,fontSize:11}}>Due the {b.date}{ordinalSuffix(b.date)}</div>
           </div>
           <div style={{color:C.gold,fontWeight:700,fontSize:14}}>${b.amount}</div>
         </div>
@@ -11473,7 +11473,7 @@ function FirstVisitScreen({data, onDismiss}) {
                 <span style={{color:col,fontWeight:700,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{val}</span>
               </div>
             ))}
-            {!data.bankConnected&&<div style={{marginTop:12,color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>📌 Connect your bank to make this number live and precise.</div>}<div style={{marginTop:8,color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,fontWeight:600}}>Unlike Mint or YNAB — we tell you what you <em>can</em> spend, not just what you already did.</div>
+            {!data.bankConnected&&<div style={{marginTop:12,color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>📌 Connect your bank to make this number live and precise.</div>}
           </div>
         )}
 
