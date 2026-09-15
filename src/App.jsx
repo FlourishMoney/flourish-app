@@ -33,7 +33,8 @@ import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting } from "./lib/meetingSchedule.js";
 import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType } from "./lib/notifications.js";
 import { planNotifications } from "./lib/notificationPlanner.js";
-import { AutopilotEngine, calcHealthScore, computePaydayGap, computeDailySpendLimit, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
+import { AutopilotEngine, calcHealthScore, computeDailySpendLimit, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
+import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday } from "./lib/incomeSchedule.js";
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
@@ -936,7 +937,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
 
   // Sprint MATH-LOCK Group F: pure decision math lives in lib/decisionEngine.js (tested there); this
   // component calls the helpers, then builds the themed advice cards (colors/labels) below.
-  const { daysToPayday } = computePaydayGap(todayDate instanceof Date ? todayDate : new Date()); // Sprint Z2 #9: Date in
+  const daysToPayday = daysToNextFutureDeposit(data.incomes, data.transactions, todayDate instanceof Date ? todayDate : new Date()); // Truth-fix item 2: real next-deposit date, not a 1st/15th guess
   const incomeAmt = (data.incomes||[]).reduce((s,i)=>s+toMonthly(i.amount,i.freq),0); // Bug 5: no fake income fallback
   const { daysLeft, safePerDay, safeToday } = computeDailySpendLimit(safe, daysToPayday);
   const topDebt = selectHighestRateDebt(debts);
@@ -4541,7 +4542,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   // Sprint D Fix (Bug 1): daysUntilDueDay rolls a passed due-day to next month, so a bill due the
   // 3rd viewed on the 22nd is ~12 days away — not -19, and no longer mis-selected as urgent.
   const urgentBill = soonBills.find(b=>{ const d=daysUntilDueDay(b.date, new Date()); return d!==null && d<=2; });
-  const isPayday   = today===15||today===1; // simple heuristic
+  const isPayday   = isDepositToday(data.incomes, data.transactions, new Date()); // Truth-fix item 2: real cadence, not a 1st/15th guess
   // 14-day forecast — shared with "Can I afford this?" widget. No per-keystroke calls.
   const { forecast: afford14Forecast } = ForecastEngine.generate(data, 14);
   const nextPaydayDay = afford14Forecast.find(f => f.isPayday && f.day > 0)?.day || null;

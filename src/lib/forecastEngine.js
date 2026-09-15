@@ -8,8 +8,9 @@
 // cashFlow, so no catOverrides needed.
 // -----------------------------------------------------------------------------
 
-import { FinancialCalcEngine, isBillArchived, billOccursOnDate, clampDayToMonth, semimonthlyDays, parseMoney } from "./financialCalculations.js";
+import { FinancialCalcEngine, isBillArchived, billOccursOnDate, parseMoney } from "./financialCalculations.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./safeSpendEngine.js";
+import { depositDatesFor } from "./incomeSchedule.js";
 
 export const ForecastEngine = {
 generate(data, days = 90, scenario = null, today = new Date()) {
@@ -64,82 +65,13 @@ generate(data, days = 90, scenario = null, today = new Date()) {
   };
 
   const txns    = data.transactions || [];
-  const horizon = new Date(today); horizon.setDate(horizon.getDate() + days); // Sprint Z #7: DST-safe calendar offset
-
-  // Most recent real deposit belonging to THIS income (8% amount tolerance OR name match), so the
-  // cadence is phased off an actual paycheque rather than off "today". Matched per-income, not once
-  // globally — each earner in a household has their own pay phase.
-  const findAnchor = (inc, incAmt) => {
-    const incLabel = (inc.label||"").toLowerCase();
-    return txns
-      .filter(t => {
-        if(t.amount >= 0) return false; // income is negative (money in)
-        const name = (t.name||"").toLowerCase();
-        const amtOk  = incAmt > 0 && Math.abs(Math.abs(t.amount)-incAmt)/incAmt < 0.08;
-        const nameOk = incLabel.length > 3 && name.includes(incLabel.substring(0,6));
-        const isInc  = t.cat==="Income" || name.includes("payroll") ||
-                       name.includes("direct deposit") || name.includes("deposit");
-        return (amtOk||nameOk) && isInc;
-      })
-      .map(t => new Date(t.date+"T12:00:00"))
-      .filter(d => !isNaN(d.getTime()))
-      .sort((a,b) => b-a)[0] || null;
-  };
-
-  // Day-of-month this income lands on. Explicit user/Plaid-derived anchorDay wins; otherwise fall back
-  // to the day of this income's most recent observed deposit; only then to the 1st. Returning 1 when
-  // there is genuinely no signal is a last resort, not the default it used to be in practice —
-  // anchorDay was read but never written anywhere, so EVERY monthly income silently landed on the 1st.
-  const anchorDayOf = (inc, amt) => {
-    const explicit = parseInt(inc.anchorDay, 10);
-    if(Number.isFinite(explicit) && explicit >= 1 && explicit <= 31) return explicit;
-    const observed = findAnchor(inc, amt);
-    if(observed) return observed.getDate();
-    return 1;
-  };
-
+  // ── Payday projection — anchor detection + cadence stepping now live in incomeSchedule ───────
+  // depositDatesFor() is the single owner of "on which dates does this income land" (Truth-fix item 2,
+  // moved down from here, not copied): weekly/biweekly phase off the real anchor, monthly/semimonthly
+  // match the anchor day. This loop only SUMS each income's projected deposit dates into the
+  // date->amount map, so the forecast's output is identical to before the extraction.
   for(const { inc, amt } of incomes) {
-    const freq     = inc.freq || "biweekly";
-    const freqDays = freq==="weekly" ? 7 : freq==="biweekly" ? 14 : null;
-
-    if(freqDays) {
-      const anchor = findAnchor(inc, amt);
-      if(anchor) {
-        // Advance from the last real deposit until we pass the horizon.
-        let next = new Date(anchor);
-        next.setDate(next.getDate() + freqDays);
-        while(next <= horizon) {
-          addIncome(next, amt);
-          next = new Date(next); next.setDate(next.getDate() + freqDays);
-        }
-      } else {
-        // No anchor found — fallback: count forward from today at frequency.
-        for(let k = freqDays; k <= days; k += freqDays) {
-          const d2 = new Date(today); d2.setDate(today.getDate()+k);
-          addIncome(d2, amt);
-        }
-      }
-    } else if(freq==="monthly" || freq==="semimonthly") {
-      // Anchor day precedence: an explicit anchorDay, else the day-of-month of this income's most
-      // recent real deposit, else the 1st. findAnchor is the SAME observed-deposit lookup the
-      // weekly/biweekly arm phases off, so there is one anchor concept here, not two competing ones —
-      // weekly/biweekly consume the anchor's full date, monthly/semimonthly consume its day-of-month.
-      const d1 = anchorDayOf(inc, amt);
-      // Semimonthly's second target day: the anchor +15 (explicit anchor), or the historical 1st-and-
-      // 15th default (second = 15) when none is set. Sprint C Fix 4: semimonthlyDays clamps BOTH days
-      // and, when a high anchor's +15 overflows to the same clamped day, relocates the second so the
-      // income still pays TWICE — the clamp-collision that dropped one of two deposits for anchors at
-      // month-end. Monthly is a single clamped day as before.
-      const d2n = freq==="semimonthly" ? (parseInt(inc.anchorDay,10) > 0 ? d1 + 15 : 15) : null;
-      for(let k = 1; k <= days; k++) {
-        const d2 = new Date(today); d2.setDate(today.getDate()+k);
-        const y = d2.getFullYear(), m = d2.getMonth(), dom = d2.getDate();
-        const hit = freq==="semimonthly"
-          ? semimonthlyDays(d1, d2n, y, m).includes(dom)
-          : dom === clampDayToMonth(d1, y, m);
-        if(hit) addIncome(d2, amt);
-      }
-    }
+    for(const d of depositDatesFor(inc, amt, txns, today, days)) addIncome(d, amt);
   }
 
   // Tier 5 / Sprint Q item 1: freq-aware bill placement anchored on nextDueDate (not today /

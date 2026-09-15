@@ -241,12 +241,8 @@ const D = (iso) => new Date(iso + "T12:00:00");
   t.eq(fcast.firstNegativeDay.day, 9, "forecast first-negative on rent day (Jun 10 = day 9)");
 
   // ── decisionEngine: helpers + engines ───────────────────────────────────────────────────────────
-  t.eq(de.computePaydayGap(D("2026-01-10")).daysToPayday, 5, "paydayGap day10 → 5 to the 15th");
-  t.eq(de.computePaydayGap(D("2026-01-20")).daysToPayday, 12, "paydayGap day20 (Jan, 31d) → 12 to the 1st");
-  // Sprint Z2 #9: month-end wraparound uses the ACTUAL days-in-month, not a hardcoded 31.
-  t.eq(de.computePaydayGap(D("2026-02-20")).daysToPayday, 9,  "paydayGap Feb 20 (28d, non-leap) → 9");
-  t.eq(de.computePaydayGap(D("2024-02-20")).daysToPayday, 10, "paydayGap Feb 20 2024 (29d, leap) → 10");
-  t.eq(de.computePaydayGap(D("2026-04-20")).daysToPayday, 11, "paydayGap Apr 20 (30d) → 11");
+  // computePaydayGap deleted (Truth-fix item 2): it hardcoded payday as the 1st/15th. Payday timing is
+  // now owned by incomeSchedule (see tests/incomeSchedule.test.cjs) and read off the user's real cadence.
   t.eq(de.computeDailySpendLimit(280, 7).safeToday, 40, "dailySpendLimit 280/7 → 40");
   t.eq(de.computeDailySpendLimit(280, 0).daysLeft, 14, "dailySpendLimit floors days at 14");
   t.eq(de.selectHighestRateDebt([{ name: "A", rate: "6" }, { name: "B", rate: "20" }]).name, "B", "selectHighestRateDebt picks highest APR");

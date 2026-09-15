@@ -16,16 +16,9 @@ import { ForecastEngine } from "./forecastEngine.js";
 // Pure helpers extracted from the DecisionEngine UI component. The component calls these, then builds
 // the themed advice cards (colors / labels / toLocaleString) — those stay in the component.
 
-// Days until the next payday (income on the 15th or the 1st, whichever is sooner).
-// Sprint Z2 #9: `today` is a Date; days-in-month is DERIVED from it so the month-end wraparound is
-// exact (Feb 28/29, 30-day months) instead of a hardcoded 31. Defaults to now; tests inject a Date.
-export function computePaydayGap(today = new Date()) {
-  const dom = today.getDate();
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-  const paydayGuess = dom < 15 ? 15 : 1;
-  const daysToPayday = paydayGuess >= dom ? paydayGuess - dom : (daysInMonth - dom + paydayGuess);
-  return { paydayGuess, daysToPayday };
-}
+// Payday timing moved to lib/incomeSchedule.js (Truth-fix item 2): the old computePaydayGap hardcoded
+// payday as the 1st/15th of the month — a second source of truth divorced from the user's real cadence.
+// Callers now read daysToNextFutureDeposit(incomes, transactions, today) from incomeSchedule instead.
 
 // Daily safe-to-spend until payday. daysLeft floors at 14 to avoid a tiny window inflating the limit.
 export function computeDailySpendLimit(safe, daysToPayday) {
