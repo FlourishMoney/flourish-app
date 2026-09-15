@@ -225,7 +225,10 @@ const D = (iso) => new Date(iso + "T12:00:00");
   }, JUN);
   t.eq(sd.balance, 2000, "safeSpend balance from cash accounts");
   t.eq(sd.upcomingBills, 1000, "safeSpend counts bill due in 10-day window");
-  t.eq(sd.safeAmount, 850, "safeSpend = 2000 - 1000 - 50 - 0 - 100(savings)");
+  // Truth-fix item 3: savingsAlloc now scales to the DYNAMIC horizon. From JUN (Jun 15) the $3000
+  // monthly income (no anchor → lands the 1st) next deposits Jul 1 = 16 days out, so savingsAlloc =
+  // 3000*0.10/30*16 = 160 (was *10 = 100). safeSpend = 2000 - 1000 - 50 - 0 - 160 = 790 (was 850).
+  t.eq(sd.safeAmount, 790, "safeSpend = 2000 - 1000(bill) - 50(debt) - 0(buffer) - 160(savings, 16-day horizon)");
   t.eq(sd.noIncome, false, "safeSpend noIncome false with income");
   t.eq(ss.SafeSpendEngine.calculate({ accounts: [], bills: [], debts: [], incomes: [], transactions: [] }, JUN).noIncome, true, "safeSpend noIncome true when no income");
 

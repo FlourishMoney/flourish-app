@@ -3,7 +3,8 @@
 // Flourish — Safe-to-Spend engine (Sprint MATH-LOCK Group D).
 //
 // "What is truly safe to spend right now?"
-//   safeAmount = balance − upcomingBills(10d) − debtPayments − savingsBuffer − safetyBuffer
+//   safeAmount = balance − upcomingBills(H) − debtPayments − savingsBuffer(H) − safetyBuffer(H)
+//   where H = days until the next FUTURE deposit (dynamic horizon; item 3), 10 as a no-income fallback
 //
 // PURE: `todayDate` is injected (default = now preserves behavior; tests pass a frozen date).
 // Reads only cashFlow().monthlyIncome (override-independent, verified Group B), so it passes {}
@@ -18,6 +19,7 @@ import {
   num,
   baseCurrencyOf,
 } from "./financialCalculations.js";
+import { daysToNextFutureDeposit } from "./incomeSchedule.js";
 
 // ── Low-balance threshold — THE definition of "this balance is low" ──────────
 // The larger of a proportional band and an absolute floor. Proportional-only degrades to nonsense at
@@ -59,6 +61,14 @@ export const SafeSpendEngine = {
     const excludedForeignCash = cashAccounts.filter(a => !isBaseCurrency(a)).reduce((s,a) => s + num(a.balance), 0);
     const mixedCurrencyDetected = cashAccounts.some(a => !isBaseCurrency(a));
 
+    // Truth-fix item 3 (Option A): the reservation horizon is DYNAMIC — the days until the next FUTURE
+    // deposit (from incomeSchedule, the one source), not a fixed 10. "Safe to spend until next payday"
+    // must actually reserve everything between today and that payday, or it over-promises coverage it
+    // never set aside (payday 14 days out but only 10 reserved = 4 unfunded days). When no deposit can be
+    // projected (no income), fall back to the historical 10-day window so income-less behaviour is unchanged.
+    const _daysToDeposit = daysToNextFutureDeposit(data.incomes, data.transactions, todayDate);
+    const horizonDays = (_daysToDeposit != null && _daysToDeposit > 0) ? _daysToDeposit : 10;
+
     // Detect bills already paid this month by matching transactions (current month per todayDate).
     const _normName = s => (s||"").toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim();
     const txnList = (data.transactions||[])
@@ -91,7 +101,7 @@ export const SafeSpendEngine = {
       // `for (dd=todayDate; dd<=in10Days; dd.setDate+1)`. Equivalent 11-day window; setDate keeps it
       // calendar-correct across DST.
       let count = 0;
-      for (let i = 0; i <= 10; i++) {
+      for (let i = 0; i <= horizonDays; i++) { // Truth-fix item 3: window runs to the next deposit, not a fixed 10 days
         const checkDate = new Date(todayDate);
         checkDate.setDate(checkDate.getDate() + i);
         if (billOccursOnDate(b, checkDate, todayDate)) count++;
@@ -104,15 +114,16 @@ export const SafeSpendEngine = {
     const debtPayments = debts
       .reduce((s,d) => s + num(d.min), 0);
 
-    // Safety buffer: 10 days of average daily spend (Sprint Q item 3: NaN-guarded)
+    // Safety buffer: `horizonDays` of average daily spend (Truth-fix item 3: scales to the next deposit,
+    // not a fixed 10; Sprint Q item 3: NaN-guarded).
     const avgDaily   = FinancialCalcEngine.avgDailySpend(data);
-    const safetyBuf  = Math.round((Number.isFinite(avgDaily) ? avgDaily : 0) * 10);
+    const safetyBuf  = Math.round((Number.isFinite(avgDaily) ? avgDaily : 0) * horizonDays);
 
     // Savings allocation: 10% of monthly income. cashFlow's catOverrides omitted: only monthlyIncome
     // is read here and it's override-independent (verified Group B). todayDate threaded for consistency.
     const { monthlyIncome } = FinancialCalcEngine.cashFlow(data, {}, todayDate);
     const mIncome    = Number.isFinite(monthlyIncome) ? monthlyIncome : 0;
-    const savingsAlloc = Math.round(mIncome * 0.10 / 30 * 10); // 10 days' worth
+    const savingsAlloc = Math.round(mIncome * 0.10 / 30 * horizonDays); // Truth-fix item 3: horizonDays' worth, not 10
     const noIncome   = !(mIncome > 0); // Sprint Q item 3: signal "set up income" instead of a misleading number
 
     const safeAmount = Math.max(0, balance - upcomingBills - debtPayments - safetyBuf - savingsAlloc);
