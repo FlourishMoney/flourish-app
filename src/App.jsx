@@ -35,6 +35,7 @@ import { getNotificationPermission, requestNotificationPermission, scheduleNotif
 import { planNotifications } from "./lib/notificationPlanner.js";
 import { AutopilotEngine, calcHealthScore, computeDailySpendLimit, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday } from "./lib/incomeSchedule.js";
+import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
@@ -4507,6 +4508,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const _ss         = SafeSpendEngine.calculate(data);
   const bal         = _ss.balance;
   const safe        = _ss.safeAmount;
+  const ssView      = safeToSpendView(_ss); // Truth-fix item 5: the ONE safe-to-spend presentation view-model (rows + headline reconcile)
   const hasCashAccount = (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0; // Sprint 1: gate safe-to-spend empty state
   // overdraft: either bills in next 10 days exceed balance (immediate)
   // OR forecast shows negative balance within 7 days (imminent)
@@ -4754,7 +4756,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               <span style={{fontSize:24,color:heroColorBright,verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
               <span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`,
                 transition:"opacity .3s",opacity:isRefreshing?0.4:1}}>
-                <CountUp to={safe} decimals={0} dur={300} sep/>
+                <CountUp to={ssView.headline} decimals={0} dur={300} sep/>
               </span>
               {/* Shimmer bar — signals live update in progress */}
               {isRefreshing&&(
@@ -4788,8 +4790,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             })()}
             {/* ── Inline math proof — one line, no tap required ── */}
             {hasCashAccount && (()=>{
-              // Bug 6: breakdown rows come straight from SafeSpendEngine so they SUM to the headline.
-              const _ss = SafeSpendEngine.calculate(data);
+              // Truth-fix item 5: rows AND the headline come from the ONE presentation view-model (ssView),
+              // so the visible equation reconciles exactly and this surface does no rounding of its own.
               // Overdraft: show a focused warning instead of the math
               if (overdraft) return (
                 <div style={{marginBottom:14}}>
@@ -4800,16 +4802,10 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                   </div>
                 </div>
               );
-              // Colours here are opaque by construction. Alpha-suffixing an accent (heroColorBright+"44")
-              // fades it toward the hero background, which collapses in light theme — greenBright is dark
-              // ink (#007E4A) on a near-white hero, so +"44" measured 1.44:1 against a 4.5:1 requirement.
-              const breakdownRows = [
-                {label:"In your accounts", value:formatMoney(_ss.balance||0), sign:"", color:heroColorBright},
-                ...(_ss.upcomingBills>0 ? [{label:"Upcoming bills", value:formatMoney(_ss.upcomingBills), sign:"−", color:C.gold}] : []),
-                ...(_ss.debtPayments>0 ? [{label:"Min. debt payments", value:formatMoney(_ss.debtPayments), sign:"−", color:C.gold}] : []),
-                ...(_ss.safetyBuf>0 ? [{label:"Spending buffer", value:formatMoney(_ss.safetyBuf), sign:"−", color:C.mutedHi}] : []),
-                ...(_ss.savingsAlloc>0 ? [{label:"Savings set aside", value:formatMoney(_ss.savingsAlloc), sign:"−", color:C.mutedHi}] : []),
-              ];
+              // Colour is a surface concern (theme); the numbers are the helper's. greenBright is dark
+              // ink on a near-white hero, so accents stay opaque for contrast.
+              const rowColor = (r) => r.kind === "balance" ? heroColorBright : (r.key === "upcomingBills" || r.key === "debtPayments") ? C.gold : C.mutedHi;
+              const breakdownRows = ssView.rows.map(r => ({ label:r.label, value:r.value, sign:r.sign, color:rowColor(r) }));
               return (
                 <div style={{marginBottom:14}}>
                   {breakdownRows.map((r,i)=>(
@@ -4819,8 +4815,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                     </div>
                   ))}
                   <div style={{borderTop:`1px solid ${heroColor}22`,marginTop:5,paddingTop:5,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{color:C.cream,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>= Safe until next payday</span>
-                    <span style={{color:heroColorBright,fontSize:13,fontWeight:900,fontFamily:"'Playfair Display',serif"}}>{formatMoney(Math.max(0,safe))}</span>
+                    <span style={{color:C.cream,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{ssView.totalLabel}</span>
+                    <span style={{color:heroColorBright,fontSize:13,fontWeight:900,fontFamily:"'Playfair Display',serif"}}>{ssView.headlineText}</span>
                   </div>
                   {!data.bankConnected&&<div style={{color:C.gold,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>📊 Estimated · Connect bank for real numbers</div>}
                 </div>
