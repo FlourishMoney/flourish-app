@@ -36,6 +36,7 @@ import { planNotifications } from "./lib/notificationPlanner.js";
 import { AutopilotEngine, calcHealthScore, computeDailySpendLimit, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
+import { DEMO, DEMO_INCOMES, buildDemoTxns } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
@@ -515,11 +516,9 @@ function getCatDisplay(catName) {
   return CAT_DISPLAY[catName] || { emoji:"📌", color:"#888888" };
 }
 
-const DEMO = {
-  balance:     1_243.88,
-  income:      1_847.50,
-  netWorthAdd:   1_840,   // mock savings/TFSA for net worth calc
-};
+// DEMO, DEMO_INCOMES and buildDemoTxns moved to lib/demoFixture.js (Truth-fix item 8): one testable,
+// internally consistent source where the payroll deposits match the $2,840 income so the demo exercises
+// the real anchor path.
 
 // ─── PLAID API HELPERS ────────────────────────────────────────────────────────
 async function callPlaid(action, params={}, options={}) {
@@ -782,48 +781,6 @@ function usePlaidLinkSDK(linkToken, onSuccess) {
   return { openPlaidLink, plaidReady: sdkReady && !!linkToken, plaidSdkError: sdkError };
 }
 
-// Demo transactions, dated RELATIVE to now (last ~30 days) so they always land inside the Activity
-// screen's default "This Month" period. They were pinned to Feb–Mar 2026, which fell outside every
-// period filter once real time moved past them (the Activity list showed nothing). Same realistic
-// Canadian merchants/amounts; only the dates are computed, freshly on each buildDemoState() call.
-// Each row: [id, daysAgo, name, amount, category, icon, color]. Payrolls sit ~bi-weekly (1/12/26).
-function buildDemoTxns() {
-  const now = new Date();
-  const at = (daysAgo) => { const d = new Date(now); d.setDate(d.getDate() - daysAgo); return { date: d.toISOString().slice(0,10), dow: d.getDay() }; };
-  const rows = [
-    ["t1",  0,  "Loblaws",         67.43,        "Groceries",       "🛒","#2E8B2E"],
-    ["t2",  0,  "Tim Hortons",     4.85,         "Coffee & Dining", "☕","#D97A3A"],
-    ["t3",  0,  "Tim Hortons",     5.10,         "Coffee & Dining", "☕","#D97A3A"],
-    ["t4",  1,  "Payroll Deposit", -DEMO.income, "Income",          "💰","#6FE494"],
-    ["t5",  1,  "Shell Gas",       62.10,        "Gas & Transport", "⛽","#CFA03E"],
-    ["t6",  2,  "Starbucks",       6.75,         "Coffee & Dining", "☕","#D97A3A"],
-    ["t7",  3,  "Netflix",         18.99,        "Subscriptions",   "🎬","#8A5FC8"],
-    ["t8",  3,  "Amazon.ca",       34.99,        "Shopping",        "📦","#C45898"],
-    ["t9",  4,  "Uber Eats",       28.40,        "Coffee & Dining", "🍕","#D97A3A"],
-    ["t10", 5,  "LCBO",            24.15,        "Shopping",        "🛍️","#C45898"],
-    ["t11", 6,  "Walmart",         89.22,        "Groceries",       "🛒","#2E8B2E"],
-    ["t12", 7,  "Hydro One",       124.00,       "Utilities",       "⚡","#CFA03E"],
-    ["t13", 6,  "Starbucks",       6.50,         "Coffee & Dining", "☕","#D97A3A"],
-    ["t14", 7,  "Spotify",         11.99,        "Subscriptions",   "🎵","#8A5FC8"],
-    ["t15", 7,  "Rexall Pharmacy", 18.40,        "Health",          "💊","#4A8FCC"],
-    ["t16", 8,  "H&M",             67.00,        "Shopping",        "👕","#C45898"],
-    ["t17", 9,  "Harvey's",        14.50,        "Coffee & Dining", "🍔","#D97A3A"],
-    ["t18", 9,  "Tim Hortons",     4.25,         "Coffee & Dining", "☕","#D97A3A"],
-    ["t19", 10, "Amazon.ca",       29.99,        "Shopping",        "📦","#C45898"],
-    ["t20", 12, "Payroll Deposit", -DEMO.income, "Income",          "💰","#6FE494"],
-    ["t21", 13, "Loblaws",         73.18,        "Groceries",       "🛒","#2E8B2E"],
-    ["t22", 13, "Uber Eats",       31.20,        "Coffee & Dining", "🍕","#D97A3A"],
-    ["t23", 15, "Winners",         45.00,        "Shopping",        "🛍️","#C45898"],
-    ["t24", 16, "Apple.com/bill",  3.99,         "Subscriptions",   "☁️","#8A5FC8"],
-    ["t25", 17, "Starbucks",       7.10,         "Coffee & Dining", "☕","#D97A3A"],
-    ["t26", 19, "Bell Canada",     65.00,        "Utilities",       "📱","#CFA03E"],
-    ["t27", 20, "Kelsey's",        54.20,        "Coffee & Dining", "🍷","#D97A3A"],
-    ["t28", 22, "Shopify/Etsy",    38.00,        "Shopping",        "🎁","#C45898"],
-    ["t29", 24, "Costco Gas",      55.80,        "Gas & Transport", "⛽","#CFA03E"],
-    ["t30", 26, "Payroll Deposit", -DEMO.income, "Income",          "💰","#6FE494"],
-  ];
-  return rows.map(([id, daysAgo, name, amount, cat, icon, color]) => ({ id, name, amount, cat, icon, color, ...at(daysAgo) }));
-}
 
 const MOCK_ACCOUNTS = [
   {id:"a1",name:"TD Chequing ••4521",type:"checking",balance:DEMO.balance,institution:"TD Bank"},
@@ -876,7 +833,7 @@ async function reconcileNotifications(data) {
 function buildDemoState() {
   return {
     profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true,lifeStages:["t4"],partnerLifeStages:["t4"]},
-    incomes:[{id:1,label:"Full-time Job",amount:"2840",freq:"biweekly",type:"employment"},{id:2,label:"Canada Child Benefit",amount:"560",freq:"monthly",type:"ccb"}],
+    incomes:DEMO_INCOMES,
     bills:[{name:"Rent",amount:"1650",date:"1"},{name:"Hydro",amount:"95",date:"11"},{name:"Phone",amount:"65",date:"15"},{name:"Netflix",amount:"18.99",date:"22"}],
     debts:[{name:"TD Visa",balance:"3420",rate:"19.99",min:"68"},{name:"Car Loan",balance:"8200",rate:"6.99",min:"280"}],
     accounts:MOCK_ACCOUNTS,
