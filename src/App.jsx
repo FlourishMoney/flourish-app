@@ -9289,6 +9289,7 @@ function WidgetScreen({data,onBack}){
   const [wContent,setWContent]=useState({safe:true,balance:true,health:true,nextBill:true,streak:false,cashFlow:false});
   const _ss=SafeSpendEngine.calculate(data);
   const safe=_ss.safeAmount;
+  const ssView=safeToSpendView(_ss); // Truth-fix item 5: the widget shows the SAME safe-to-spend value as Today
   const bal=_ss.balance;
   const overdraft=_ss.overdraft;
   const soonBills=_ss.soonBills||[];
@@ -9320,7 +9321,7 @@ function WidgetScreen({data,onBack}){
         </div>
         <div>
           <div style={{color:heroColorBright+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:3}}>Safe to Spend</div>
-          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:32,color:heroColorBright,letterSpacing:-1,lineHeight:1}}>${Math.round(safe)}</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:32,color:heroColorBright,letterSpacing:-1,lineHeight:1}}>{formatMoney(ssView.headline)}</div>
           <div style={{color:"rgba(237,233,226,0.55)",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>{today}</div>
         </div>
       </div>
@@ -9372,7 +9373,7 @@ function WidgetScreen({data,onBack}){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
           <div>
             <div style={{color:heroColorBright+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:3}}>Safe to Spend</div>
-            <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:38,color:heroColorBright,letterSpacing:-1,lineHeight:1}}>${Math.round(safe)}</div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:38,color:heroColorBright,letterSpacing:-1,lineHeight:1}}>{formatMoney(ssView.headline)}</div>
           </div>
           {medTiles.length>0&&<div style={{textAlign:"right"}}>
             <div style={{color:"rgba(237,233,226,0.4)",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:1}}>{medTiles[0].label}</div>
@@ -9401,7 +9402,7 @@ function WidgetScreen({data,onBack}){
         </div>
         <div style={{background:`rgba(${overdraft?"255,79,106":"0,204,133"},0.08)`,borderRadius:16,padding:"14px 16px",border:`1px solid ${heroColor}28`}}>
           <div style={{color:heroColorBright+"77",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:4}}>Safe to Spend Today</div>
-          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:46,color:heroColorBright,letterSpacing:-2,lineHeight:1}}>${Math.round(safe)}</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:46,color:heroColorBright,letterSpacing:-2,lineHeight:1}}>{formatMoney(ssView.headline)}</div>
           {wContent.balance&&<div style={{color:"rgba(237,233,226,0.45)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Balance: ${bal.toFixed(2)}</div>}
         </div>
         {largeTiles.length>0&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
