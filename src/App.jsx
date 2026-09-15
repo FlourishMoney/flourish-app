@@ -8632,15 +8632,20 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <ScreenHeader title="Meet" subtitle="Your 15-minute money meeting" onBack={setScreen?()=>setScreen("home"):null}/>
-    <div style={{display:"flex",gap:6}}>
-      {/* Step 10: Kids entry point removed from primary UI. The /kids route and its code (KidsMiniSite,
-          the tab==="kids" block below) are intentionally kept for the future family add-on. */}
-      {[["meeting",isCouple?"Money Meeting":"Check-In"],...(HOUSEHOLD_ENABLED?[["household","Household"]]:[])].map(([t,lbl])=>(
-        <button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.purple+"22":C.cardAlt,border:`1px solid ${tab===t?C.purple:C.border}`,color:tab===t?C.purpleBright:C.muted,borderRadius:12,padding:"10px",cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit"}}>
-          {lbl}
-        </button>
-      ))}
-    </div>
+    {(()=>{
+      // Step 10: Kids entry point removed from primary UI. The /kids route and its code (KidsMiniSite,
+      // the tab==="kids" block below) are intentionally kept for the future family add-on.
+      const meetTabs=[["meeting",isCouple?"Money Meeting":"Check-In"],...(HOUSEHOLD_ENABLED?[["household","Household"]]:[])];
+      // Truth-fix item 1: a single selected tab reads as a dead control. Hide the row unless it holds ≥2 tabs.
+      if(meetTabs.length<2) return null;
+      return <div style={{display:"flex",gap:6}}>
+        {meetTabs.map(([t,lbl])=>(
+          <button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.purple+"22":C.cardAlt,border:`1px solid ${tab===t?C.purple:C.border}`,color:tab===t?C.purpleBright:C.muted,borderRadius:12,padding:"10px",cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit"}}>
+            {lbl}
+          </button>
+        ))}
+      </div>;
+    })()}
 
     {/* ── MEETING TAB ── */}
     {tab==="meeting"&&<MeetAgenda data={data} isCouple={isCouple} setScreen={setScreen}/>}
@@ -9315,96 +9320,6 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
       })()}
     </>}
 
-    {/* ── HOUSEHOLD TAB ── */}
-    {tab==="household"&&(()=>{
-      const genCode=()=>"FLRSH"+Math.random().toString(36).substring(2,5).toUpperCase();
-      if(household){return(
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <div style={{background:`linear-gradient(135deg,${C.green}18,${C.greenDim})`,borderRadius:20,padding:"22px",border:`1px solid ${C.green}33`,textAlign:"center"}}>
-            <div style={{marginBottom:10,display:"flex",justifyContent:"center"}}><Icon id="house2" size={34} color={C.muted} strokeWidth={1.4}/></div>
-            <div style={{color:C.greenBright,fontWeight:900,fontSize:20,fontFamily:"'Playfair Display',serif",marginBottom:6}}>Household Connected</div>
-            <div style={{background:C.bg,borderRadius:14,padding:"14px 20px",display:"inline-block",marginBottom:12}}>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:2,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>Household Code</div>
-              <div style={{color:C.greenBright,fontWeight:900,fontSize:28,fontFamily:"'Playfair Display',serif",letterSpacing:4}}>{household.code}</div>
-            </div>
-            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>Share this code with your partner. They enter it in their Flourish app to join.</div>
-          </div>
-          {household.partnerName&&<div style={{background:C.card,borderRadius:16,padding:"16px 20px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12}}>
-            <div style={{width:40,height:40,borderRadius:99,background:C.pink+"22",border:`1px solid ${C.pink}33`,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon id="user" size={18} color={C.mutedHi} strokeWidth={1.5}/></div>
-            <div>
-              <div style={{color:C.cream,fontWeight:700,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{household.partnerName}</div>
-              <div style={{color:C.green,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✓ Connected to your household</div>
-            </div>
-          </div>}
-          {/* Combined metrics */}
-          <Card>
-            <div style={{color:C.cream,fontWeight:700,marginBottom:12}}>📊 Household Overview</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-              {[
-                {label:"Your Balance",value:`$${(_ss.balance||0).toFixed(0)}`,color:C.greenBright},
-                {label:"Monthly Income",value:`$${(monthlyIncome||0).toFixed(0)}`,color:C.tealBright},
-                {label:"Total Debt",value:totalDebt>0?`$${totalDebt.toLocaleString()}`:"None 🎉",color:totalDebt>0?C.orangeBright:C.greenBright},
-                {label:"Health Score",value:`${healthScore}/100`,color:healthScore>=70?C.greenBright:C.goldBright},
-              ].map(m=>(
-                <div key={m.label} style={{background:C.cardAlt,borderRadius:12,padding:"10px 12px",border:`1px solid ${C.border}`}}>
-                  <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{m.label}</div>
-                  <div style={{color:m.color,fontWeight:900,fontSize:15,fontFamily:"'Playfair Display',serif",marginTop:2}}>{m.value}</div>
-                </div>
-              ))}
-            </div>
-          </Card>
-          <div style={{background:C.card,borderRadius:16,padding:"16px 20px",border:`1px solid ${C.border}`}}>
-            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12,fontWeight:600}}>Shared Goals</div>
-            {(household.sharedGoals||["Emergency fund: $5,000","Vacation: $2,000","Pay off credit card"]).map((g,i)=>(
-              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<2?`1px solid ${C.border}`:"none"}}>
-                <div style={{width:8,height:8,borderRadius:99,background:C.green,flexShrink:0}}/>
-                <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{g}</div>
-              </div>
-            ))}
-          </div>
-          <button onClick={()=>setHousehold(null)} style={{background:"none",border:`1px solid ${C.red}33`,borderRadius:12,padding:"10px",color:C.red,fontSize:13,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Leave Household</button>
-        </div>
-      );}
-      return(
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <div style={{background:C.purpleDim,borderRadius:20,padding:"20px",border:`1px solid ${C.purple}33`,textAlign:"center"}}>
-            <div style={{marginBottom:10,display:"flex",justifyContent:"center"}}><Icon id="house2" size={38} color={C.green} strokeWidth={1.4}/></div>
-            <div style={{color:C.purpleBright,fontWeight:900,fontSize:20,fontFamily:"'Playfair Display',serif",marginBottom:8}}>Household Sharing</div>
-            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7,marginBottom:0}}>Connect with a partner. See combined net worth, track shared goals, and run Money Meetings together — each person keeps their own account.</div>
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            {[["join","Join Existing"],["create","Create New"]].map(([t,lbl])=>(
-              <button key={t} onClick={()=>setHouseholdTab(t)} style={{flex:1,background:householdTab===t?C.purple+"22":C.cardAlt,border:`1px solid ${householdTab===t?C.purple:C.border}`,color:householdTab===t?C.purpleBright:C.muted,borderRadius:10,padding:"10px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>{lbl}</button>
-            ))}
-          </div>
-          {householdTab==="create"&&<>
-            <div style={{background:C.card,borderRadius:16,padding:"20px",border:`1px solid ${C.border}`,textAlign:"center"}}>
-              <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>Your household code:</div>
-              <div style={{color:C.greenBright,fontWeight:900,fontSize:34,fontFamily:"'Playfair Display',serif",letterSpacing:5,marginBottom:8}}>FLRSH1</div>
-              <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Share with your partner to connect</div>
-            </div>
-            <div>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Partner Name (optional)</div>
-              <input value={householdCode} onChange={e=>setHouseholdCode(e.target.value)} placeholder="e.g. Jordan" style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px",color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",boxSizing:"border-box"}}/>
-            </div>
-            <button onClick={()=>setHousehold({code:"FLRSH1",partnerName:householdCode||"Partner",sharedGoals:["Emergency fund: $5,000","Vacation: $2,000","Pay off credit card"]})}
-              style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.green}35`}}>
-              Create Household →
-            </button>
-          </>}
-          {householdTab==="join"&&<>
-            <div>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Enter Household Code</div>
-              <input value={householdCode} onChange={e=>setHouseholdCode(e.target.value.toUpperCase())} placeholder="e.g. FLRSH1" maxLength={6} style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px",color:C.cream,fontSize:18,fontFamily:"'Playfair Display',serif",letterSpacing:4,boxSizing:"border-box",textTransform:"uppercase",textAlign:"center"}}/>
-            </div>
-            <button onClick={()=>setHousehold({code:householdCode||"FLRSH1",partnerName:data.profile?.partnerName||"Partner",sharedGoals:["Emergency fund: $5,000","Vacation: $2,000","Pay off credit card"]})}
-              style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.purple}35`}}>
-              Join Household →
-            </button>
-          </>}
-        </div>
-      );
-    })()}
   </div>;
 }
 
@@ -11351,7 +11266,7 @@ function PremiumGate({feature,desc,onUpgrade}){
       <div style={{background:C.purpleDim,borderRadius:16,padding:"14px 20px",border:`1px solid ${C.purple}33`,maxWidth:280}}>
         <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish Plus includes:</div>
         <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
-          {["AI Coach with real data","Full credit coaching","Tax tips & benefits checker","Investment tracking","Household sharing","Debt simulator"].map((f,i)=>(
+          {["AI Coach with real data","Full credit coaching","Tax tips & benefits checker","Investment tracking","Weekly money meeting","Debt simulator"].map((f,i)=>(
             <div key={i} style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"left",display:"flex",alignItems:"center",gap:7}}><Icon id="check" size={14} color={C.green} strokeWidth={2.0}/>{f}</div>
           ))}
         </div>
