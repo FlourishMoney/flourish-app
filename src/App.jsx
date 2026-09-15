@@ -7786,11 +7786,11 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         {totalInvested>0&&<div style={{marginTop:12,display:"flex",gap:10}}>
           <div style={{flex:1,background:C.purple+"15",borderRadius:12,padding:"10px 14px",border:`1px solid ${C.purple}22`}}>
             <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Invested</div>
-            <div style={{color:C.purpleBright,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',serif"}}>${totalInvested.toLocaleString()}</div>
+            <div style={{color:C.purpleBright,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{formatMoney(totalInvested)}</div>
           </div>
           <div style={{flex:1,background:C.green+"15",borderRadius:12,padding:"10px 14px",border:`1px solid ${C.green}22`}}>
             <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Gain</div>
-            <div style={{color:C.greenBright,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',serif"}}>+${totalGain.toLocaleString()}</div>
+            <div style={{color:C.greenBright,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',serif"}}>+{formatMoney(totalGain)}</div>
           </div>
         </div>}
       </div>
@@ -10330,9 +10330,9 @@ function DesktopSidebar({data,setScreen}){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
         <div>
           <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Investment Portfolio</div>
-          <div style={{color:C.tealBright,fontWeight:900,fontSize:26,fontFamily:"'Playfair Display',serif",marginTop:3}}>${totalInvested.toLocaleString()}</div>
+          <div style={{color:C.tealBright,fontWeight:900,fontSize:26,fontFamily:"'Playfair Display',serif",marginTop:3}}>{formatMoney(totalInvested)}</div>
         </div>
-        <div style={{background:C.teal+"18",border:`1px solid ${C.teal}33`,borderRadius:99,padding:"5px 12px",color:C.tealBright,fontSize:11,fontWeight:700}}>+${totalGain.toLocaleString()} total</div>
+        <div style={{background:C.teal+"18",border:`1px solid ${C.teal}33`,borderRadius:99,padding:"5px 12px",color:C.tealBright,fontSize:11,fontWeight:700}}>+{formatMoney(totalGain)} total</div>
       </div>
       {investments.map((inv,i)=>(
         <div key={i} style={{background:C.cardAlt,borderRadius:12,padding:"12px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -10341,7 +10341,7 @@ function DesktopSidebar({data,setScreen}){
             <div style={{color:C.muted,fontSize:11,marginTop:2}}>{inv.ticker}</div>
           </div>
           <div style={{textAlign:"right"}}>
-            <div style={{color:C.cream,fontWeight:700,fontSize:14}}>${inv.balance?.toLocaleString()}</div>
+            <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{formatMoney(inv.balance)}</div>
             <div style={{color:C.greenBright,fontSize:11,fontWeight:600}}>+{inv.gainPct}%</div>
           </div>
         </div>
