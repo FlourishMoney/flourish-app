@@ -34,7 +34,7 @@ import { computeNextMeeting } from "./lib/meetingSchedule.js";
 import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType } from "./lib/notifications.js";
 import { planNotifications } from "./lib/notificationPlanner.js";
 import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
-import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday } from "./lib/incomeSchedule.js";
+import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView } from "./lib/suggestedDaily.js";
 import { DEMO, DEMO_INCOMES, buildDemoTxns } from "./lib/demoFixture.js";
@@ -6056,10 +6056,10 @@ function PlanAhead({data, setAppData, setScreen}){
     income: f.income, balance: f.balance, idx: f.day
   }));
   const { balance: bal } = SafeSpendEngine.calculate(data);
-  // Use actual per-paycheque amount based on income frequency
-  const _retFreq = (data.incomes||[])[0]?.freq||"biweekly";
-  const _retMoInc = FinancialCalcEngine.cashFlow(data, getCatOv()).monthlyIncome;
-  const income = _retFreq==="monthly"?_retMoInc:_retFreq==="semimonthly"?_retMoInc/2:_retFreq==="weekly"?_retMoInc/4.333:_retMoInc/2.167;
+  // Item 4 in a second surface: the balance-bar scale is "balance + one real paycheque". Read the primary
+  // income's REAL per-deposit amount from incomeSchedule (never the blended monthly divided by a cadence);
+  // 0 when it can't be determined (this is only a chart scale, not a displayed figure).
+  const income = perDepositAmount((data.incomes||[])[0]) || 0;
   const minBalance = Math.min(...days.map(d => d.balance));
 
   const hasBills = (data.bills||[]).length > 0;
@@ -6087,8 +6087,9 @@ function PlanAhead({data, setAppData, setScreen}){
       const _fbal = SafeSpendEngine.calculate(data).balance;
       const _favg = FinancialCalcEngine.avgDailySpend(data);
       const _ffreq = (data.incomes||[])[0]?.freq||"biweekly";
-      const _fIncome = FinancialCalcEngine.cashFlow(data, getCatOv()).monthlyIncome;
-      const _fPay = _ffreq==="monthly"?_fIncome:_ffreq==="semimonthly"?_fIncome/2:_ffreq==="weekly"?_fIncome/4.333:_fIncome/2.167;
+      // Est. paycheque: the primary income's REAL per-deposit amount, read from incomeSchedule — never the
+      // blended monthlyIncome divided by incomes[0]'s cadence (item 4's bug). null => show an explicit unknown.
+      const _fPay = perDepositAmount((data.incomes||[])[0]);
       return (
         <div style={{background:C.isDark?"rgba(255,255,255,0.03)":C.surface,borderRadius:14,padding:"12px 16px",border:`1px solid ${C.border}`}}>
           <div style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:8}}>
@@ -6100,7 +6101,7 @@ function PlanAhead({data, setAppData, setScreen}){
               ["Starting balance", `$${(_fbal||0).toFixed(0)}`],
               ["Est. daily spend", `$${(_favg||0).toFixed(0)}/day`],
               ["Pay frequency", _ffreq],
-              ["Est. paycheque", `$${(_fPay||0).toFixed(0)}`],
+              ["Est. paycheque", _fPay!=null ? formatMoney(_fPay) : "—"],
             ].map(([lbl,val])=>(
               <div key={lbl} style={{background:C.card,borderRadius:10,padding:"7px 10px",border:`1px solid ${C.border}`}}>
                 <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>{lbl}</div>

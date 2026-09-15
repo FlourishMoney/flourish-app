@@ -15,7 +15,7 @@ const { create } = require("./_runner.cjs");
   const { SafeSpendEngine } = await import("../src/lib/safeSpendEngine.js");
   const { ForecastEngine } = await import("../src/lib/forecastEngine.js");
   const { safeToSpendView } = await import("../src/lib/safeToSpendView.js");
-  const { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday } = await import("../src/lib/incomeSchedule.js");
+  const { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } = await import("../src/lib/incomeSchedule.js");
   const { FinancialCalcEngine, toMonthly } = await import("../src/lib/financialCalculations.js");
   const { suggestedDailyView } = await import("../src/lib/suggestedDaily.js");
   const t = create();
@@ -67,6 +67,8 @@ const { create } = require("./_runner.cjs");
       if (inc.freq === "biweekly" || inc.freq === "weekly") {
         t.ok(f.cf.monthlyIncome !== f.nd.amount, `${label}: monthly income != per-deposit amount (never call a monthly figure a deposit)`);
       }
+      // The per-deposit amount a surface would show equals incomeSchedule's value — never a monthly division.
+      t.eq(perDepositAmount(inc), f.nd.amount, `${label}: the per-deposit amount == incomeSchedule's next-deposit amount (single stream)`);
     }
 
     // safe-to-spend and the suggested daily number are DIFFERENT facts: the daily is the headline paced
@@ -162,6 +164,16 @@ const { create } = require("./_runner.cjs");
     const f = assertConsistent("two-streams", two, date);
     t.eq(iso(f.nd.date), "2026-07-03", "two-streams: the sooner deposit (CCB, Jul 3) wins");
     t.eq(f.nd.amount, 500, "two-streams: reports that stream's per-deposit amount");
+    // item 3: the displayed "Est. paycheque" names incomes[0] and must equal ITS real per-deposit amount,
+    // NOT a share of the blended monthly total (the surviving item-4 bug this fix removes).
+    const pay = perDepositAmount(two.incomes[0]);
+    t.eq(pay, 2000, "two-streams: the primary paycheque is incomes[0]'s REAL per-deposit (2000)");
+    t.ok(Math.abs(pay - (f.cf.monthlyIncome / 2.167)) > 100,
+      "two-streams: it is NOT the blended monthly / cadence (~2231) — a manufactured paycheque is gone");
+    t.eq(pay, perDepositAmount(two.incomes[0]), "two-streams: the paycheque equals incomeSchedule's per-deposit for the named stream");
+    // When no per-deposit can be determined, incomeSchedule says so (null) — a surface must show an unknown, never estimate.
+    t.eq(perDepositAmount(undefined), null, "no income record → per-deposit is unknown (null), never a derived guess");
+    t.eq(perDepositAmount({ amount: "0" }), null, "a non-positive amount → unknown (null)");
   }
 
   // ── Edge case: an income with NO matching anchor in history (fallback, estimated confidence) ────

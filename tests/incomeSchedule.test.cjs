@@ -10,7 +10,7 @@ const { create } = require("./_runner.cjs");
 
 (async () => {
   const sched = await import("../src/lib/incomeSchedule.js");
-  const { findAnchor, anchorDayOf, depositDatesFor, nextFutureDeposit, daysToNextFutureDeposit, isDepositToday } = sched;
+  const { findAnchor, anchorDayOf, depositDatesFor, nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } = sched;
   const t = create();
 
   const paid = (date, amount, name = "ACME PAYROLL") => ({ name, amount: -amount, cat: "Income", date });
@@ -96,6 +96,14 @@ const { create } = require("./_runner.cjs");
     t.eq(n && n.confidence, "estimated", "confidence is 'estimated' when there is no anchor to phase off");
     t.eq(n && ymd(n.date), "2026-06-19", "no-anchor biweekly counts forward from today (Jun 5 + 14 = Jun 19)");
   }
+
+  // ── perDepositAmount: the REAL per-deposit figure from the record, never a monthly division ─────
+  t.eq(perDepositAmount({ amount: "2840", freq: "biweekly" }), 2840, "perDepositAmount reads the per-deposit amount straight from the record");
+  t.eq(perDepositAmount({ amount: "2,840" }), 2840, "perDepositAmount parses a comma amount via num");
+  t.eq(perDepositAmount({ amount: "2000", freq: "biweekly" }), 2000, "perDepositAmount is the stream's OWN per-deposit, independent of any other stream (no blended division)");
+  t.eq(perDepositAmount({ amount: "0" }), null, "perDepositAmount: a non-positive amount → null (unknown, not an estimate)");
+  t.eq(perDepositAmount(null), null, "perDepositAmount: no record → null");
+  t.eq(perDepositAmount({}), null, "perDepositAmount: no amount field → null");
 
   t.summary("incomeSchedule.test");
 })();

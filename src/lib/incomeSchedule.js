@@ -56,6 +56,15 @@ export function anchorDayOf(inc, incAmt, transactions) {
   return 1;
 }
 
+// The real per-deposit amount for a single income record — read straight from the record (whose
+// `amount` field already stores the per-deposit figure), NEVER derived by dividing a monthly total.
+// Returns null when it cannot be determined (no record, or a non-positive/unparseable amount) so a
+// surface can show an explicit unknown instead of a manufactured estimate.
+export function perDepositAmount(income) {
+  const a = num(income && income.amount);
+  return a > 0 ? a : null;
+}
+
 // All deposit dates for ONE income within (today, today+days]. This is the exact stepping that used
 // to live inline in forecastEngine.generate — weekly/biweekly advance from the real anchor (fallback:
 // count forward from today at cadence when no anchor), monthly/semimonthly match the anchor day(s).
