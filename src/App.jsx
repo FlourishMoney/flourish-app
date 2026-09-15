@@ -937,8 +937,9 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
 
   // Sprint MATH-LOCK Group F: pure decision math lives in lib/decisionEngine.js (tested there); this
   // component calls the helpers, then builds the themed advice cards (colors/labels) below.
-  const daysToPayday = daysToNextFutureDeposit(data.incomes, data.transactions, todayDate instanceof Date ? todayDate : new Date()); // Truth-fix item 2: real next-deposit date, not a 1st/15th guess
-  const incomeAmt = (data.incomes||[]).reduce((s,i)=>s+toMonthly(i.amount,i.freq),0); // Bug 5: no fake income fallback
+  const todayD = todayDate instanceof Date ? todayDate : new Date();
+  const daysToPayday = daysToNextFutureDeposit(data.incomes, data.transactions, todayD); // Truth-fix item 2: real next-deposit date, not a 1st/15th guess
+  const nextDep = nextFutureDeposit(data.incomes, data.transactions, todayD); // Truth-fix item 4: real next deposit (date + per-deposit amount)
   const { daysLeft, safePerDay, safeToday } = computeDailySpendLimit(safe, daysToPayday);
   const topDebt = selectHighestRateDebt(debts);
   const extraPayment = 150;
@@ -954,7 +955,11 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
       icon: "💡",
       color: C.teal,
       title: `Spend max $${safeToday} today`,
-      detail: `Keeps you safe until ${daysToPayday <= 1 ? "tomorrow's" : `your payday in ${daysToPayday}d`} deposit of $${incomeAmt.toLocaleString()}`,
+      detail: nextDep
+        ? ((daysToPayday != null && daysToPayday <= 1)
+            ? `Keeps you safe until tomorrow's deposit of ${formatMoney(nextDep.amount)}.`
+            : `Keeps you safe until your next deposit of ${formatMoney(nextDep.amount)} on ${nextDep.date.toLocaleDateString("en-CA", { month: "short", day: "numeric" })}.`)
+        : "Keeps you safe until your next paycheque.",
       action: "See forecast", screen: "plan"
     });
   }
@@ -964,7 +969,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
       icon: "⚠️",
       color: C.orange,
       title: "Cash is running tight",
-      detail: `Your balance is below 15% of monthly income. Hold non-essential spending for ${daysToPayday} days.`,
+      detail: `Your balance is below 15% of monthly income. Hold non-essential spending for ${daysToPayday != null ? daysToPayday : "a few"} days.`,
       action: "See Plan", screen: "plan"
     });
   }
