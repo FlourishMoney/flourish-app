@@ -954,7 +954,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, s
       type: "daily",
       icon: "💡",
       color: C.teal,
-      title: `Spend max $${safeToday} today`,
+      title: `Suggested spend today: ${formatMoney(safeToday)}`,
       detail: nextDep
         ? ((daysToPayday != null && daysToPayday <= 1)
             ? `Keeps you safe until tomorrow's deposit of ${formatMoney(nextDep.amount)}.`

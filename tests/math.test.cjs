@@ -243,8 +243,12 @@ const D = (iso) => new Date(iso + "T12:00:00");
   // ── decisionEngine: helpers + engines ───────────────────────────────────────────────────────────
   // computePaydayGap deleted (Truth-fix item 2): it hardcoded payday as the 1st/15th. Payday timing is
   // now owned by incomeSchedule (see tests/incomeSchedule.test.cjs) and read off the user's real cadence.
-  t.eq(de.computeDailySpendLimit(280, 7).safeToday, 40, "dailySpendLimit 280/7 → 40");
+  // Truth-fix item 7: the divisor is now floored at 14 (a real floor, not a fallback), so a 7-day
+  // window no longer inflates the daily number. 280/14 = 20 (was 280/7 = 40 before the floor).
+  t.eq(de.computeDailySpendLimit(280, 7).safeToday, 20, "dailySpendLimit 280 over a 7-day window → 20 (divisor floored at 14)");
+  t.eq(de.computeDailySpendLimit(280, 1).daysLeft, 14, "dailySpendLimit floors a next-day deposit's divisor at 14 (not 1)");
   t.eq(de.computeDailySpendLimit(280, 0).daysLeft, 14, "dailySpendLimit floors days at 14");
+  t.eq(de.computeDailySpendLimit(280, 20).daysLeft, 20, "a genuinely long window (20d) is used as-is, above the floor");
   t.eq(de.selectHighestRateDebt([{ name: "A", rate: "6" }, { name: "B", rate: "20" }]).name, "B", "selectHighestRateDebt picks highest APR");
   t.eq(de.selectHighestRateDebt([]), null, "selectHighestRateDebt empty → null");
   t.ok(de.computeDebtPayoffImpact({ rate: "19.99", balance: "3000" }, 150) > 0, "computeDebtPayoffImpact > 0 for positive APR/principal");

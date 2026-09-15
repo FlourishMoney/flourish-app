@@ -22,7 +22,13 @@ import { ForecastEngine } from "./forecastEngine.js";
 
 // Daily safe-to-spend until payday. daysLeft floors at 14 to avoid a tiny window inflating the limit.
 export function computeDailySpendLimit(safe, daysToPayday) {
-  const daysLeft = daysToPayday > 0 ? daysToPayday : 14;
+  // Truth-fix item 7: a REAL floor, not a fallback. `daysToPayday > 0 ? daysToPayday : 14` used the raw
+  // days-to-deposit whenever it was positive, so a deposit landing tomorrow (daysToPayday=1) divided the
+  // whole safe amount into a SINGLE day and licensed spending the entire buffer at once. Floor the
+  // divisor at 14 (~one biweekly pay cycle) so the daily pace always assumes at least a fortnight of
+  // coverage. Because the divisor is deliberately floored above the true days-to-deposit, safe/divisor
+  // is conservative PACING, not the most a person may safely spend — hence "Suggested spend", not a max.
+  const daysLeft = Math.max(14, daysToPayday > 0 ? daysToPayday : 14);
   const safePerDay = safe > 0 ? safe / daysLeft : 0;
   const safeToday = Math.floor(safePerDay);
   return { daysLeft, safePerDay, safeToday };
