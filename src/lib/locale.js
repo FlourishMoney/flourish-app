@@ -40,9 +40,24 @@ export function shelterLabel(country) {
 }
 
 /**
- * The BCP-47 tag for date and number formatting. Several modules hard-coded "en-CA", which formats
- * a US visitor's dates by Canadian conventions. Falls back to en-CA, matching the app's default
+ * The BCP-47 tag for date and number formatting. Falls back to en-CA, matching the app's default
  * profile country.
+ *
+ * READ THIS BEFORE USING IT TO "FIX" A HARD-CODED "en-CA". An earlier version of this comment
+ * claimed those hard-coded tags "format a US visitor's dates by Canadian conventions". That was
+ * asserted, not measured, and it is false for every option-shape this app actually passes. Measured:
+ *
+ *   {weekday:"long", month:"long", day:"numeric"}   en-CA === en-US   "Wednesday, September 16"
+ *   {month:"short",  day:"numeric"}                 en-CA === en-US   "Sep 16"
+ *   {weekday:"short",month:"short",day:"numeric"}   en-CA === en-US   "Wed, Sep 16"
+ *   {month:"long",   year:"numeric"}                en-CA === en-US   "September 2026"
+ *   {month:"long",   day:"numeric", year:"numeric"} en-CA === en-US   "September 16, 2026"
+ *   {weekday:"short",day:"numeric"}                 DIFFERS: en-CA "Wed 16" vs en-US "16 Wed"
+ *
+ * The only shape that differs is the one where en-CA produces the BETTER string for both audiences
+ * — so meetSnapshot's hard-coded "en-CA" at that shape is correct and must be left alone. Swapping
+ * tags wholesale would degrade US output, not improve it. Use this helper where you have checked the
+ * output of the specific shape; do not sweep for "en-CA".
  */
 export function localeTag(country) {
   return isUS(country) ? "en-US" : "en-CA";
