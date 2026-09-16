@@ -11,7 +11,7 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
-  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, daysUntilDueDay, num } from "./lib/financialCalculations.js";
+  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
 import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multibank.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
@@ -26,8 +26,8 @@ import { tabForScreen } from "./lib/navigation.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
-import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown } from "./lib/format.js";
-import { payWord, savingsAccountTerm } from "./lib/locale.js";
+import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown, formatCompactMoney } from "./lib/format.js";
+import { payWord, savingsAccountTerm, retirementAccountsLabel } from "./lib/locale.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
@@ -115,7 +115,9 @@ const CC = {
       {title:"GST/HST Credit → Groceries & Essentials Benefit",body:`Filing your taxes means CRA automatically checks if you qualify for quarterly GST/HST credits. 2025–26 maximum: $${TAX_DATA.CA.GSTHST_MAX_SINGLE.value}/yr single, $${TAX_DATA.CA.GSTHST_MAX_COUPLE.value}/yr couple. As of July 2026 it becomes ${TAX_DATA.CA.CGEB.note} through ${TAX_DATA.CA.CGEB.through}, plus a one-time top-up paid June 5, 2026. Under ~$55k income? You likely qualify. File every year even if you owe nothing.`,savings:`Up to $${TAX_DATA.CA.GSTHST_MAX_SINGLE.value}/yr`,flag:"🇨🇦",priority:"medium",action:"File Your Taxes"},
       {title:"Canada Child Benefit (CCB)",body:"Tax-free monthly payments for children under 18. Maximum 2025–26: $7,997/yr per child under 6 ($666/mo) and $6,748/yr per child aged 6–17 ($562/mo). A family with two kids under 6 at modest income can receive nearly $16,000/year tax-free. Apply on CRA My Account or at birth registration.",savings:"Up to $7,997/child under 6",flag:"🇨🇦",priority:"high",action:"Apply on CRA"},
       {title:"Home Office Deduction",body:"Work from home? Employees must use the detailed method with a signed T2200 from their employer (the $2/day flat rate ended after 2022). Claim your workspace percentage of rent, utilities, and internet. Self-employed? Claim actual rent, internet, hydro proportionally.",savings:"Varies — % of home expenses",flag:"🇨🇦",priority:"medium",action:"Track Home Office Days"},
-      {title:"Ontario Trillium Benefit",body:"Ontario residents: combines the Ontario Sales Tax Credit, Ontario Energy Credit, and Northern Ontario Energy Credit into one monthly payment. Low-to-mid income earners often miss this.",savings:"Up to $1,654/yr (OEPTC+OSTC)",flag:"🏙️ ON",priority:"medium",action:"Apply on CRA"},
+      // The Ontario Trillium Benefit is NOT a base Canadian tip — it is Ontario-only, and sitting here
+      // meant a household in British Columbia was told to apply for it. It is added by the
+      // province === "ON" block further down, which was always the intended path.
       {title:"Disability Tax Credit (DTC)",body:"If you or a dependent has a severe disability, the DTC provides up to ~$1,470/year in federal tax reduction (14.5% × $10,138 base amount for 2025), plus retroactive claims. Often missed — a doctor fills out T2201.",savings:"~$1,470 federal tax reduction",flag:"🇨🇦",priority:"medium",action:"Get T2201 Form"},
       {title:"Child Care Expense Deduction",body:"Daycare, after-school programs, summer camp — most childcare costs are deductible from the lower-income spouse's return. CRA limits: $8,000/child under 7, $5,000/child aged 7–16. Claimed at a 30% rate, one toddler in daycare saves ~$2,400.",savings:"$1,200–$4,000",flag:"🇨🇦",priority:"high",action:"Gather Receipts"},
       {title:"RESP — Free Government Money",body:"Open an RESP for your child and the government adds 20% on the first $2,500/year = $500 free per child. Canada Learning Bond adds another $500 for lower-income families.",savings:"$500–$1,000/yr free",flag:"🇨🇦",priority:"high",action:"Open an RESP"},
@@ -289,7 +291,12 @@ function getPersonalizedTaxCredits(profile) {
     if (t.includes("home office") && isStudent && !hasStage("t4","w2","selfemployed","incorporated","contractor")) return false;
     if ((t.includes("working income") || t.includes("cwb")) && isSenior && !hasStage("t4","w2","selfemployed","incorporated","contractor")) return false;
     // Self-employment tips — only for self-employed
-    if ((t.includes("hst") || t.includes("gst registration") || t.includes("schedule c") || t.includes("quarterly estimated") || t.includes("sep-ira") || t.includes("solo 401")) && !isSelfEmp) return false;
+    // Self-employment tips only. This used to test t.includes("hst"), which also caught the two
+    // consumer-facing GST/HST CREDIT tips — so every Canadian who is not self-employed silently lost
+    // the one base tip that interpolates live CRA figures, and it is aimed at exactly the low-income
+    // households least likely to know they qualify. "registration" is the actual self-employment
+    // concept, and it matches the one tip that means it ("HST Registration Threshold").
+    if ((t.includes("registration") || t.includes("schedule c") || t.includes("quarterly estimated") || t.includes("sep-ira") || t.includes("solo 401")) && !isSelfEmp) return false;
     // Senior tips — only for seniors
     if ((t.includes("age amount") || t.includes("pension income split") || t.includes("oas") || t.includes("gis") || t.includes("rmd") || t.includes("social security taxation")) && !isSenior) return false;
     return true;
@@ -2006,7 +2013,7 @@ const personas = {
   builder: {
     name:"The Wealth Builder", emoji:"🏗️", color:C.green,
     traits:["Saving for retirement","Goal-oriented mindset","Building long-term wealth"],
-    insight:"You're building real wealth. Make sure your RRSP/TFSA are maximized each year.",
+    insight:`You're building real wealth. Make sure your ${retirementAccountsLabel(data?.profile?.country)} are maximized each year.`,
     shareText:"I'm a Wealth Builder 🏗️ on @flourishmoney"
   }
 };
@@ -3346,7 +3353,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       }
       return out.map((t,i)=> String(t.id||"").startsWith("stmt_") ? {...t, id:`stmt_${i}`} : t);
     });
-    onAccountsConnected?.([{id:newAccountId,name:stmtName,type:'checking',balance:0,institution:'Statement'}], []);
+    onAccountsConnected?.([{id:newAccountId,name:stmtName,type:'checking',balance:0,institution:'Statement',currency:baseCurrencyOf({profile:p})}], []);
     return taggedTxns.length;
   };
 
@@ -4084,7 +4091,7 @@ async function backgroundRefresh(isPremium, setAppData, fullResync = false) {
         type: a.type,
         subtype: a.subtype||null,
         balance: normalizeAccountBalance(a),
-        currency: a.balance?.currency || "CAD", // Sprint Z3 #6: carry the account's currency for currency-mix safety
+        currency: a.balance?.currency || null, // Sprint Z3 #6 + currency-default fix: null = "not stated", never a guessed CAD
         institution: prev.accounts?.find(p=>p.id===a.id)?.institution||"Bank",
         _item: a._item || null,
       });
@@ -4190,7 +4197,7 @@ function DataTransparencyPanel({data, onClose}) {
   // currency + num() it uses, so the listed accounts always sum to the stated total.
   const _auditSS      = SafeSpendEngine.calculate(data);
   const _auditBase    = baseCurrencyOf(data);
-  const chequingAccts = accounts.filter(a => isCashAccount(a) && String(a.currency||"CAD").toUpperCase() === _auditBase);
+  const chequingAccts = accounts.filter(a => isCashAccount(a) && accountCurrencyOf(a, data) === _auditBase);
   const creditAccts   = accounts.filter(a => a.type === "credit" || a.type === "credit card" || a.subtype === "credit card" || a.type === "line of credit");
   const totalBalance  = _auditSS.balance;
   const creditOwed    = creditAccts.reduce((s,a) => s + Math.abs(num(a.balance)), 0);
@@ -4767,10 +4774,10 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             </div>
             ) : (
             <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.88,marginBottom:18,position:"relative",display:"inline-block"}}>
-              <span style={{fontSize:24,color:heroColorBright,verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
+              {ssView.isShort&&<span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,fontWeight:900}}>-</span>}<span style={{fontSize:24,color:heroColorBright,verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
               <span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`,
                 transition:"opacity .3s",opacity:isRefreshing?0.4:1}}>
-                <CountUp to={ssView.headline} decimals={0} dur={300} sep/>
+                <CountUp to={Math.abs(ssView.headline)} decimals={0} dur={300} sep/>
               </span>
               {/* Shimmer bar — signals live update in progress */}
               {isRefreshing&&(
@@ -5008,7 +5015,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           {[
             {label:"Due Soon",value:`$${(soonTotal||0).toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
             {label:totalDebt>0?"Total Debt":"Debt Free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
-            {label:"Net Worth",value:`${netWorth>=0?"+":""}$${(Math.abs(netWorth)/1000).toFixed(1)}k`,sub:"total net worth",color:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
+            {label:"Net Worth",value:`${netWorth>=0?"+":""}${formatCompactMoney(netWorth)}`,sub:"total net worth",color:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
           ].map((s,i)=>(
             <div key={i} onClick={()=>{if(s.tab&&setGoalsTab)setGoalsTab(s.tab);setScreen(s.screen);}} style={{...glass(s.color),borderRadius:20,padding:"14px 12px 12px",textAlign:"center",position:"relative",overflow:"hidden",cursor:"pointer",transition:"transform .2s, box-shadow .2s"}}
               onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 12px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)`;}}
@@ -5165,7 +5172,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
             <div>
               <div style={{...label11(C.muted),marginBottom:4}}>Net Worth Trend</div>
-              <div style={{color:C.tealBright,fontWeight:900,fontSize:26,fontFamily:"'Playfair Display',Georgia,serif",lineHeight:1,letterSpacing:-1}}>{netWorth>=0?"+":""}<span style={{fontSize:14,verticalAlign:"super",marginRight:1}}>$</span><CountUp to={Math.abs(netWorth)} decimals={0}/></div>
+              <div style={{color:C.tealBright,fontWeight:900,fontSize:26,fontFamily:"'Playfair Display',Georgia,serif",lineHeight:1,letterSpacing:-1}}>{netWorth>=0?"+":"-"}<span style={{fontSize:14,verticalAlign:"super",marginRight:1}}>$</span><CountUp to={Math.abs(netWorth)} decimals={0} sep/></div>
             </div>
             <div style={{background:C.teal+"20",border:`1px solid ${C.teal}33`,borderRadius:99,padding:"4px 12px",color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>
               {nwHistory.length>1
@@ -7837,9 +7844,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       // Sprint Z3 #6: the breakdown below MUST match the engine net-worth headline, which excludes
       // foreign-currency accounts (no FX in v1). Compute the tiles/rows from base-currency accounts only,
       // and drop debts owned by a foreign account — otherwise the rows would sum 1:1 and contradict the total.
-      const baseAccts = allAccts.filter(a => String(a.currency||"CAD").toUpperCase() === baseCur);
-      const foreignAcctIds = new Set(allAccts.filter(a => String(a.currency||"CAD").toUpperCase() !== baseCur).map(a => a.id));
-      const foreignCur = allAccts.map(a => String(a.currency||"CAD").toUpperCase()).find(c => c !== baseCur) || "Foreign-currency";
+      const baseAccts = allAccts.filter(a => accountCurrencyOf(a, data) === baseCur);
+      const foreignAcctIds = new Set(allAccts.filter(a => accountCurrencyOf(a, data) !== baseCur).map(a => a.id));
+      const foreignCur = allAccts.map(a => accountCurrencyOf(a, data)).find(c => c !== baseCur) || "Foreign-currency";
       const investments=baseAccts.filter(a=>isInvestmentAccount(a));
       const totalInvested=investments.reduce((s,a)=>s+(a.balance||0),0);
       const totalGain=investments.reduce((s,a)=>s+(a.gain||0),0);
@@ -7857,7 +7864,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       return <>
       <div style={{background:`linear-gradient(135deg,${C.tealDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"22px",border:`1px solid ${C.teal}44`}}>
         <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Your Net Worth</div>
-        <div style={{fontSize:44,fontWeight:900,color:C.tealBright,fontFamily:"'Playfair Display',serif",letterSpacing:-1}}>{realNetWorth>=0?"+":""}$<CountUp to={Math.abs(realNetWorth)} decimals={0}/></div>
+        <div style={{fontSize:44,fontWeight:900,color:C.tealBright,fontFamily:"'Playfair Display',serif",letterSpacing:-1}}>{realNetWorth>=0?"+":"-"}$<CountUp to={Math.abs(realNetWorth)} decimals={0} sep/></div>
         <div style={{color:C.muted,fontSize:12,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Assets minus liabilities · includes investments</div>
         <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
           {data.bankConnected
@@ -11486,11 +11493,11 @@ function FirstVisitScreen({data, onDismiss}) {
             Before that: a loader (bank still syncing) or the ready state — never a $0/placeholder calc. */}
         <div style={{marginBottom:8}}>
           {hasCashAccount ? (<>
-            <div style={{color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,fontWeight:700,letterSpacing:0.3}}>You're covered. Here's your breathing room.</div>
+            {!ssView.isShort&&<div style={{color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,fontWeight:700,letterSpacing:0.3}}>You're covered. Here's your breathing room.</div>}
             <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,lineHeight:1}}>
-              <span style={{fontSize:22,color:C.greenBright+"88",verticalAlign:"top",marginTop:12,display:"inline-block"}}>$</span>
+              {ssView.isShort&&<span style={{fontSize:88,color:C.greenBright,letterSpacing:-4}}>-</span>}<span style={{fontSize:22,color:C.greenBright+"88",verticalAlign:"top",marginTop:12,display:"inline-block"}}>$</span>
               <span style={{fontSize:88,color:C.greenBright,letterSpacing:-4,textShadow:`0 0 80px ${C.green}40`}}>
-                {ssView.headlineNumber}
+                {formatNumber(Math.abs(ssView.headline))}
               </span>
             </div>
             <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>to spend freely today</div>
@@ -13966,7 +13973,7 @@ export default function FlourishApp(){
             type:a.type,
             subtype:a.subtype||null,
             balance:normalizeAccountBalance(a),
-            currency:a.balance?.currency||"CAD", // Sprint Z3 #6
+            currency:a.balance?.currency||null, // Sprint Z3 #6 (null = not stated)
             institution:a.institution||"Bank",
             _item:a._item||null,
           }));
@@ -14321,7 +14328,7 @@ export default function FlourishApp(){
           const inst = it.institution_name || "Your Bank";
           (acct?.accounts||[]).forEach(a => mapped.push({
             id:a.id, name:`${inst} ••${a.mask||"????"}`, type:a.type, subtype:a.subtype||null,
-            balance:normalizeAccountBalance(a), currency:a.balance?.currency||"CAD", institution:inst,
+            balance:normalizeAccountBalance(a), currency:a.balance?.currency||null, institution:inst,
             mask:a.mask||null,     // kept raw so the stable dedupe key doesn't have to parse the name
             _item:it.item_id,      // LOAD-BEARING: retainAccounts DROPS unstamped Plaid-shaped accounts
                                    // on a clean refresh, so healed accounts were wiped on the next sync.
@@ -14394,7 +14401,7 @@ export default function FlourishApp(){
           type:a.type,
           subtype:a.subtype||null,
           balance:normalizeAccountBalance(a),
-          currency:a.balance?.currency||"CAD", // Sprint Z3 #6
+          currency:a.balance?.currency||null, // Sprint Z3 #6 (null = not stated)
           institution:instName,
         }));
         const transactions = normaliseTxns(txnData.transactions||[]);

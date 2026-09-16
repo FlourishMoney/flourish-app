@@ -39,12 +39,29 @@ const { create } = require("./_runner.cjs");
 
   // Headline floors at 0 (never negative).
   const v3 = safeToSpendView({ balance: 100, upcomingBills: 200, debtPayments: 0, safetyBuf: 0, savingsAlloc: 0, safeAmount: 0 });
-  t.eq(v3.headline, 0, "headline never goes negative");
+  // THE ASSERTION THIS SUITE OMITTED. It built the over-committed fixture by hand and then checked
+  // only that the headline was clamped — never the one invariant the suite exists to defend. That is
+  // how a breakdown that prints 100 − 200 = 0 shipped past a suite whose header claims the rows always
+  // sum to the headline.
+  {
+    const rowSum3 = v3.rows.reduce((s, r) => s + (r.kind === "balance" ? r.display : -r.display), 0);
+    t.eq(rowSum3, v3.headline, "the rows reconcile to the headline WHEN DEDUCTIONS EXCEED THE BALANCE too — the case the suite built and never checked");
+  }
 
   // Non-finite inputs coerce to 0 (never NaN in the UI).
   const v4 = safeToSpendView({ balance: "oops", upcomingBills: undefined, debtPayments: null, safetyBuf: NaN, savingsAlloc: 50 });
   t.eq(v4.balanceDisplay, 0, "a non-numeric balance coerces to 0");
-  t.eq(v4.headline, 0, "and the headline stays 0, not NaN");
+  // CHANGED, and deliberately: this asserted 0 only because the headline used to be clamped. Its real
+  // intent is "never NaN in the UI", which is preserved and tightened. With balance "oops" (-> $0) and
+  // savingsAlloc 50, $0 − $50 = −$50 is the honest answer, and the rows say so.
+  t.ok(Number.isFinite(v4.headline), "the headline is always a finite number, never NaN");
+  t.eq(v4.headline, -50, "…and with a $0 balance against $50 set aside it is -50, not a clamped 0");
+  {
+    const rowSum4 = v4.rows.reduce((s, r) => s + (r.kind === "balance" ? r.display : -r.display), 0);
+    t.eq(rowSum4, v4.headline, "…and even that degenerate case reconciles");
+  }
+  t.eq(v4.isShort, true, "…and is flagged as over-committed so no surface calls it breathing room");
+  t.eq(v4.shortfall, 50, "…with the shortfall named");
 
   // ── The minus glyph rule, on the other side of the line ────────────────────────────────────────
   // A breakdown row's "−" is an OPERATOR beside the label, so it is U+2212 and the value it sits next

@@ -18,6 +18,7 @@ const { create } = require("./_runner.cjs");
 (async () => {
   const { SafeSpendEngine } = await import("../src/lib/safeSpendEngine.js");
   const { ForecastEngine } = await import("../src/lib/forecastEngine.js");
+  const { FinancialCalcEngine } = await import("../src/lib/financialCalculations.js");
   const t = create();
 
   const TODAY = new Date(2026, 5, 15, 12, 0, 0); // Mon Jun 15 2026
@@ -94,6 +95,39 @@ const { create } = require("./_runner.cjs");
     const rLegacy = SafeSpendEngine.calculate(legacy, TODAY);
     t.eq(rLegacy.balance, 2000, "unstamped accounts default CAD → legacy CAD user unchanged");
     t.eq(rLegacy.mixedCurrencyDetected, false, "unstamped == base, so no false mixed-currency flag");
+  }
+
+  // ── 4b. THE US MIRROR OF 4 — the case the "default CAD" rule got catastrophically wrong ─────────
+  // Assertion 4's fixture is profile.country "CA", so its base IS CAD and it passes either way; it
+  // pins "a legacy single-currency user is unchanged", which stays true. What it never covered is the
+  // SAME situation for an American. Under the old hardcoded default every unstamped account failed
+  // the base-currency test, so balance, net worth and every total silently collapsed to zero — which
+  // is precisely what a US user saw after uploading a bank statement, because the statement importer
+  // creates its account with no currency at all.
+  {
+    const usLegacy = {
+      profile: { country: "US" },
+      accounts: [cash("a", 1500), cash("b", 500)], // no currency field — exactly like 4's legacy case
+      bills: [], debts: [], transactions: [],
+    };
+    const r = SafeSpendEngine.calculate(usLegacy, TODAY);
+    t.eq(r.baseCurrency, "USD", "4b-i a US profile resolves base currency USD");
+    t.eq(r.balance, 2000, "4b-ii unstamped accounts count as the user's OWN currency — was 0 under the hardcoded CAD default");
+    t.eq(r.excludedForeignCash, 0, "4b-iii nothing is excluded as foreign — was the entire 2000");
+    t.eq(r.mixedCurrencyDetected, false, "4b-iv and no false 'held in another currency' notice");
+    t.eq(FinancialCalcEngine.netWorth(usLegacy).netWorth, 2000, "4b-v netWorth carried the identical default, and is fixed with it");
+  }
+  {
+    // The rule must still EXCLUDE genuinely foreign cash — the default is for "not stated", not for
+    // "stated and different". A US user holding a declared CAD account still has it left out.
+    const usMixed = {
+      profile: { country: "US" },
+      accounts: [cash("us", 1000), cash("ca", 5000, "CAD")],
+      bills: [], debts: [], transactions: [],
+    };
+    const r = SafeSpendEngine.calculate(usMixed, TODAY);
+    t.eq(r.balance, 1000, "4b-vi an unstamped account counts, a DECLARED foreign one still does not");
+    t.eq(r.excludedForeignCash, 5000, "4b-vii …and the excluded foreign cash is still surfaced");
   }
 
   // ── 5. Non-cash foreign accounts don't leak into the cash sum ────────────────────────────────────

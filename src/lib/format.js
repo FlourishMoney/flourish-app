@@ -42,6 +42,17 @@ export function formatBalance(n) {
   return formatMoney(roundBalanceDown(n));
 }
 
+// Compact money for a stat tile: "$14.5k". Exists because the net-worth tile hand-wrote
+// `${n>=0?"+":""}$${(Math.abs(n)/1000).toFixed(1)}k` — emitting a sign ONLY on the positive branch,
+// so a household at -$14,500 read "$14.5k" in teal under "total net worth", one "+" away from the
+// string a household $14,500 UP would see. The sign belongs to the formatter, never to a ternary at
+// the call site. Always uses k, matching the tiles this replaces.
+export function formatCompactMoney(n) {
+  const v = Number(n);
+  const safe = Number.isFinite(v) ? v : 0;
+  return (safe < 0 ? "-$" : "$") + (Math.abs(safe) / 1000).toFixed(1) + "k";
+}
+
 // Ordinal suffix for a day-of-month: 1->st, 2->nd, 3->rd, but 11/12/13->th (and 21->st, 22->nd, 31->st).
 // The 11-13 exception is why `day==="1"?"st":...:"th"` produced "22th"/"11st" — this handles every day.
 export function ordinalSuffix(day) {

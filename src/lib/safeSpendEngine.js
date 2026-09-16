@@ -18,6 +18,7 @@ import {
   isBillArchived,
   num,
   baseCurrencyOf,
+  accountCurrencyOf,
 } from "./financialCalculations.js";
 import { daysToNextFutureDeposit } from "./incomeSchedule.js";
 
@@ -55,7 +56,7 @@ export const SafeSpendEngine = {
     // logic in financialCalculations (baseCurrencyOf + "account.currency defaults CAD"), so a
     // single-currency user sees an IDENTICAL balance to before — every account is in-base.
     const base = baseCurrencyOf(data);
-    const isBaseCurrency = a => String(a.currency || "CAD").toUpperCase() === base;
+    const isBaseCurrency = a => accountCurrencyOf(a, data) === base;
     const cashAccounts = accounts.filter(a => isCashAccount(a));
     const balance  = cashAccounts.filter(isBaseCurrency).reduce((s,a) => s + num(a.balance), 0) || 0;
     const excludedForeignCash = cashAccounts.filter(a => !isBaseCurrency(a)).reduce((s,a) => s + num(a.balance), 0);

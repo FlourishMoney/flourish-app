@@ -10,7 +10,7 @@
 const { create } = require("./_runner.cjs");
 
 (async () => {
-  const { payWord, isUS } = await import("../src/lib/locale.js");
+  const { payWord, isUS, retirementAccountsLabel } = await import("../src/lib/locale.js");
   const t = create();
 
   t.eq(payWord("CA"), "paycheque", "1a Canada gets the Canadian spelling");
@@ -36,6 +36,14 @@ const { create } = require("./_runner.cjs");
   t.eq(isUS("US"), true, "4a isUS");
   t.eq(isUS("CA"), false, "4b");
   t.eq(isUS(undefined), false, "4c an unknown country is not the US");
+
+  // The Money Personality "Wealth Builder" insight told every user to max their RRSP/TFSA — Canadian
+  // registered accounts a US household cannot open — on two surfaces with no country gate.
+  t.eq(retirementAccountsLabel("CA"), "RRSP/TFSA", "4d Canada's registered accounts");
+  t.eq(retirementAccountsLabel("US"), "401(k)/IRA", "4e …and the US equivalents the product already teaches");
+  t.eq(retirementAccountsLabel(undefined), "RRSP/TFSA", "4f an absent country falls back to Canada, like every other helper here");
+  t.ok(!retirementAccountsLabel("US").includes("RRSP") && !retirementAccountsLabel("CA").includes("401"),
+    "4g neither label leaks the other country's accounts");
 
   // The two spellings must actually differ, and neither may leak the other's letters — a guard against
   // someone "simplifying" this to a single string and quietly making every user read the same word.

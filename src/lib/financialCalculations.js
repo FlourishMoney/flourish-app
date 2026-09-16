@@ -999,6 +999,25 @@ export function baseCurrencyOf(data) {
   return String(data?.profile?.baseCurrency || (data?.profile?.country === "US" ? "USD" : "CAD")).toUpperCase();
 }
 
+// The currency an account is held in. An ABSENT currency means "not stated", and the only safe
+// reading of that is the user's OWN currency — not a hardcoded CAD.
+//
+// Five call sites plus netWorth used `String(a.currency || "CAD")`. For a Canadian that is invisibly
+// correct. For an American it is catastrophic and silent: every unstamped account fails the
+// base-currency test, so the balance, net worth and every total collapse to $0 with a "held in
+// another currency" notice — which is exactly what a US user got after uploading a bank statement,
+// because the statement importer creates its account with no currency at all. Defaulting to the
+// user's base currency means an unstamped account is counted as theirs, and a CAD user's behaviour
+// is bit-for-bit unchanged (their base IS CAD).
+export function accountCurrencyOf(account, data) {
+  return String((account && account.currency) || baseCurrencyOf(data)).toUpperCase();
+}
+
+// Is this account held in the user's own currency? (Unstamped counts as yes — see above.)
+export function isBaseCurrencyAccount(account, data) {
+  return accountCurrencyOf(account, data) === baseCurrencyOf(data);
+}
+
 export const FinancialCalcEngine = {
   /** Net Worth = all assets − all liabilities */
   netWorth(data) {
@@ -1010,7 +1029,7 @@ export const FinancialCalcEngine = {
     // Plaid (balance.iso_currency_code) and defaults CAD for legacy/unstamped accounts — so a
     // single-currency CAD user sees IDENTICAL totals to before (every account stays in-base).
     const base = baseCurrencyOf(data);
-    const isBase = a => String(a.currency || "CAD").toUpperCase() === base;
+    const isBase = a => accountCurrencyOf(a, data) === base;
     const mixedCurrencyDetected = accounts.some(a => !isBase(a));
     const baseAccts = accounts.filter(isBase); // foreign-currency accounts are excluded from every sum
     // Assets: only positive-balance accounts (cash + investment). Credit accounts have
@@ -1050,7 +1069,7 @@ export const FinancialCalcEngine = {
     // Sprint Z3 #6: exclude transactions from foreign-currency accounts (no FX in v1) so monthly spend
     // isn't summed 1:1 across currencies. account.currency defaults CAD → single-currency users unchanged.
     const base = baseCurrencyOf(data);
-    const foreignAcctIds = new Set(accounts.filter(a => String(a.currency || "CAD").toUpperCase() !== base).map(a => a.id));
+    const foreignAcctIds = new Set(accounts.filter(a => accountCurrencyOf(a, data) !== base).map(a => a.id));
     const mixedCurrencyDetected = foreignAcctIds.size > 0;
     // Filter to the current month only.
     const txns = (data.transactions || []).filter(t => {

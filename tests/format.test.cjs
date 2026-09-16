@@ -4,7 +4,7 @@ const { create } = require("./_runner.cjs");
 const t = create();
 
 (async () => {
-  const { formatMoney, formatNumber, ordinalSuffix, roundBalanceDown, formatBalance } = await import("../src/lib/format.js");
+  const { formatMoney, formatNumber, ordinalSuffix, roundBalanceDown, formatBalance, formatCompactMoney } = await import("../src/lib/format.js");
 
   t.eq(formatMoney(2082), "$2,082", "1a thousands separator, whole dollars");
   t.eq(formatMoney(95), "$95", "1b small amount");
@@ -71,6 +71,18 @@ const t = create();
   t.eq(formatMoney(-2082.5, { cents: true }), "-$2,082.50", "6h and so does the cents form");
   t.eq(formatMoney(45), "$45", "6i a positive value carries no sign at all");
   t.eq(formatMoney(-0), "$0", "6j negative zero is not shown as negative");
+
+  // ── 7. formatCompactMoney — the net-worth tile's sign ──────────────────────────────────────────
+  // The tile hand-wrote `${n>=0?"+":""}$${(Math.abs(n)/1000).toFixed(1)}k`, emitting a sign only on
+  // the POSITIVE branch. A household at -$14,500 read "$14.5k" in teal under "total net worth" —
+  // one "+" away from the string a household $14,500 UP would see.
+  t.eq(formatCompactMoney(14500), "$14.5k", "7a a positive compact amount");
+  t.eq(formatCompactMoney(-14500), "-$14.5k", "7b a NEGATIVE one carries the sign — the whole point");
+  t.ok(formatCompactMoney(-14500) !== formatCompactMoney(14500), "7c …so opposite positions never read the same");
+  t.eq(formatCompactMoney(-14500).charCodeAt(0), 45, "7d and the sign is the ASCII hyphen, per the minus-glyph rule");
+  t.eq(formatCompactMoney(0), "$0.0k", "7e zero");
+  t.eq(formatCompactMoney(NaN), "$0.0k", "7f non-finite -> zero, never NaNk");
+  t.eq(formatCompactMoney(-450000), "-$450.0k", "7g a large negative, e.g. a mortgage-heavy household");
 
   t.summary("format");
 })();

@@ -71,3 +71,14 @@ export function localeTag(country) {
 export function savingsAccountTerm(country) {
   return isUS(country) ? "a high-yield savings account" : "a HISA";
 }
+
+/**
+ * The tax-sheltered retirement accounts this country's users actually hold. The Money Personality
+ * "Wealth Builder" coach insight told every user to max their "RRSP/TFSA" — Canadian registered
+ * accounts a US household cannot open — on two surfaces with no country gate. Both names are
+ * accounts this product already teaches (CC.CA.taxTips covers the RRSP and TFSA, CC.US.taxTips
+ * covers the 401(k) and the Roth IRA), so nothing new is invented here.
+ */
+export function retirementAccountsLabel(country) {
+  return isUS(country) ? "401(k)/IRA" : "RRSP/TFSA";
+}
