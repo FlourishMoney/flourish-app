@@ -38,6 +38,7 @@ import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPay
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView } from "./lib/suggestedDaily.js";
+import { forecastWalk } from "./lib/forecastWalk.js";
 import { demoCoachExchanges, demoFacilitatorLine } from "./lib/demoCoach.js";
 import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
@@ -918,7 +919,10 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
         ? ((daysToPayday != null && daysToPayday <= 1)
             ? `Keeps you safe until tomorrow's deposit of ${formatMoney(nextDep.amount)}.`
             : `Keeps you safe until your next deposit of ${formatMoney(nextDep.amount)} on ${nextDep.date.toLocaleDateString("en-CA", { month: "short", day: "numeric" })}.`)
-        : `Keeps you safe until your next ${payWord(data.profile?.country)}.`,
+        // "deposit", not "paycheque" — the same fix as the forecast rows, and this branch is the one
+        // that fires when NO deposit could be projected at all, i.e. exactly when the app knows least
+        // about what is coming. Its sibling branch two lines up already says "deposit".
+        : "Keeps you safe until your next deposit.",
       action: "See forecast", screen: "plan"
     });
   }
@@ -1259,57 +1263,47 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
                     <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>
                       {ev.day===0?"Today's snapshot":"Cash flow breakdown"}
                     </div>
-                    {/* Previous balance */}
-                    {ev.day>0&&(()=>{
-                      const prevEv = forecast[ev.day-1];
-                      return prevEv ? (
-                        <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}>
-                          <span style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Opening balance</span>
-                          <span style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{formatBalance(prevEv.balance)}</span>
-                        </div>
-                      ) : null;
-                    })()}
-                    {/* Income */}
-                    {ev.isPayday&&(
-                      <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}22`}}>
-                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
-                          <span style={{width:6,height:6,borderRadius:"50%",background:C.green,display:"inline-block"}}/>💰 Deposit
-                        </span>
-                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>+{formatMoney(paydayLineAmount(ev))}</span>
-                      </div>
-                    )}
-                    {/* Bills */}
-                    {ev.bills.length>0&&ev.bills.map((b,bi)=>(
-                      <div key={bi} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}22`}}>
-                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
-                          <span style={{width:6,height:6,borderRadius:"50%",background:C.gold,display:"inline-block"}}/>📅 {b.name}
-                        </span>
-                        <span style={{color:C.gold,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>−{formatMoney(num(b.amount))}</span>
-                      </div>
-                    ))}
-                    {/* Daily spend estimate */}
-                    {ev.day>0&&(
-                      <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}22`}}>
-                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
-                          <span style={{width:6,height:6,borderRadius:"50%",background:C.muted,display:"inline-block"}}/>🛒 Est. daily spend
-                          <span style={{color:C.muted,fontSize:9}}>(30d avg)</span>
-                        </span>
-                        <span style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>−{formatMoney(avgDaily)}</span>
-                      </div>
-                    )}
-                    {/* Divider + balance result */}
-                    <div style={{borderTop:`1px solid ${C.border}`,marginTop:4,paddingTop:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <span style={{color:C.cream,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                        {ev.day===0?"Current balance":"Projected balance (est.)"}
-                      </span>
+                    {/* The walk is owned by lib/forecastWalk.js and carries CENTS, so the equation a
+                        user opened this panel to check is exactly true. The collapsed row above stays
+                        whole dollars, floored — the balance rule — and the caption below says so. */}
+                    {(() => {
+                      const w = forecastWalk({
+                        opening: (forecast[ev.day-1]||{}).balance,
+                        income: ev.isPayday ? paydayLineAmount(ev) : 0,
+                        bills: ev.bills, avgDailySpend: avgDaily,
+                        closing: baseBalance, isToday: ev.day===0,
+                      });
+                      const COLOR = { opening:C.muted, income:C.greenBright, bill:C.gold, spend:C.muted };
+                      const DOT   = { opening:null, income:C.green, bill:C.gold, spend:C.muted };
+                      const ICON  = { income:"💰 ", bill:"📅 ", spend:"🛒 " };
+                      return (<>
+                        {(w.hasWalk ? w.rows : w.billRows).map((r,ri)=>(
+                          <div key={ri} style={{display:"flex",justifyContent:"space-between",padding:r.key==="opening"?"5px 0":"6px 0",borderBottom:`1px solid ${C.border}22`}}>
+                            <span style={{color:r.key==="opening"?C.muted:C.mutedHi,fontSize:r.key==="opening"?11:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
+                              {DOT[r.key]&&<span style={{width:6,height:6,borderRadius:"50%",background:DOT[r.key],display:"inline-block"}}/>}
+                              {ICON[r.key]||""}{r.key==="bill"?r.label:r.label}
+                              {r.key==="spend"&&<span style={{color:C.muted,fontSize:9}}>(30d avg)</span>}
+                            </span>
+                            <span style={{color:COLOR[r.key],fontWeight:r.key==="opening"||r.key==="spend"?400:700,fontSize:r.key==="opening"?11:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign}{r.value}</span>
+                          </div>
+                        ))}
+                        <div style={{borderTop:`1px solid ${C.border}`,marginTop:4,paddingTop:8,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                          <div>
+                            <span style={{color:C.cream,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                              {ev.day===0?"Current balance":"Projected balance (est.)"}
+                            </span>
+                            {w.roundedFromText&&<div style={{color:C.muted,fontSize:9,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Shown as {w.headlineText} above — a balance rounds down</div>}
+                          </div>
                       <div style={{textAlign:"right"}}>
                         <span style={{color:isLow?C.redBright:baseBalance<0?C.redBright:C.greenBright,fontWeight:900,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
-                          {formatBalance(baseBalance)}
+                          {w.closingText}
                         </span>
                         {isLow&&baseBalance>=0&&<div style={{color:C.goldBright,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>below safety floor</div>}
                         {baseBalance<0&&<div style={{color:C.redBright,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>overdrawn</div>}
                       </div>
-                    </div>
+                        </div>
+                      </>);
+                    })()}
                     {isLow&&(
                       <div style={{marginTop:8,background:baseBalance<0?C.red+"18":C.gold+"11",borderRadius:8,padding:"7px 10px",color:baseBalance<0?C.redBright:C.goldBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
                         {baseBalance<0
@@ -4721,7 +4715,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           // second division of safe. The weekly framing is that daily figure, not safe/7.
           const doIt = safe>0
             ? `Keeping today under ${dailyPace.dailyText} leaves room across the week.`
-            : `Hold off on non-essentials until your next ${payWord(data.profile?.country)} lands.`;
+            // Same class as the DecisionEngine fallback above: a claim about WHICH income arrives
+            // next, made by a surface that has not established it. "deposit" is true either way.
+            : "Hold off on non-essentials until your next deposit lands.";
           return (
             <div style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"14px 16px",marginBottom:12}}>
               {know && <>
@@ -6218,15 +6214,35 @@ function PlanAhead({data, setAppData, setScreen}){
             {isDrilled&&(
               <div style={{borderTop:`1px solid ${C.border}`,padding:"12px 18px 14px",background:"rgba(0,0,0,0.2)"}}>
                 <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,marginBottom:10}}>Cash flow breakdown</div>
-                {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.muted,fontSize:11}}>Opening balance</span><span style={{color:C.muted,fontSize:11}}>{formatBalance(prevBalance)}</span></div>}
-                {day.income>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>💰 Deposit</span><span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+{formatMoney(day.income)}</span></div>}
-                {day.bills.map((b,j)=><div key={j} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>📅 {b.name}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:5,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}</span><span style={{color:C.gold,fontWeight:700,fontSize:12}}>−{b.variable?"~":""}{formatMoney(b.amount)}</span></div>)}
-                {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>🛒 Est. daily spend <span style={{color:C.muted,fontSize:9}}>(30d avg)</span></span><span style={{color:C.muted,fontSize:12}}>−{formatMoney(avgDailySpend)}</span></div>}
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${C.border}`,paddingTop:8,marginTop:4}}>
-                  <span style={{color:C.cream,fontWeight:700,fontSize:13}}>{isToday?"Current balance":"Projected balance (est.)"}</span>
-                  <span style={{color:neg?C.redBright:low?C.goldBright:C.greenBright,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{formatBalance(day.balance)}</span>
-                </div>
-                {day.idx>0&&<div style={{marginTop:6,color:C.muted,fontSize:10,lineHeight:1.7}}>{formatBalance(prevBalance)}{day.income>0&&<span style={{color:C.green}}> +{formatMoney(day.income)}</span>}{billsTotal>0&&<span style={{color:C.gold}}> −{formatMoney(billsTotal)} bills</span>}<span style={{color:C.muted}}> −{formatMoney(avgDailySpend)} spend</span></div>}
+                {/* Same owner as the Time Machine drill-down (lib/forecastWalk.js): cents throughout,
+                    so the equation is exactly true; the collapsed row above stays floored whole dollars. */}
+                {(() => {
+                  const w = forecastWalk({ opening: prevBalance, income: day.income, bills: day.bills,
+                                           avgDailySpend, closing: day.balance, isToday });
+                  const COLOR = { opening:C.muted, income:C.greenBright, bill:C.gold, spend:C.muted };
+                  return (<>
+                    {(w.hasWalk ? w.rows : w.billRows).map((r,ri)=>(
+                      <div key={ri} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}>
+                        <span style={{color:r.key==="opening"?C.muted:C.mutedHi,fontSize:r.key==="opening"?11:12}}>
+                          {r.key==="income"?"💰 ":r.key==="bill"?"📅 ":r.key==="spend"?"🛒 ":""}{r.label}
+                          {r.key==="bill"&&r.bill&&r.bill.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:5,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}
+                          {r.key==="spend"&&<span style={{color:C.muted,fontSize:9}}> (30d avg)</span>}
+                        </span>
+                        <span style={{color:COLOR[r.key],fontWeight:r.key==="opening"||r.key==="spend"?400:700,fontSize:r.key==="opening"?11:12}}>{r.sign}{r.key==="bill"&&r.bill&&r.bill.variable?"~":""}{r.value}</span>
+                      </div>
+                    ))}
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",borderTop:`1px solid ${C.border}`,paddingTop:8,marginTop:4}}>
+                      <div>
+                        <span style={{color:C.cream,fontWeight:700,fontSize:13}}>{isToday?"Current balance":"Projected balance (est.)"}</span>
+                        {w.roundedFromText&&<div style={{color:C.muted,fontSize:9,marginTop:2}}>Shown as {w.headlineText} above — a balance rounds down</div>}
+                      </div>
+                      <span style={{color:neg?C.redBright:low?C.goldBright:C.greenBright,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{w.closingText}</span>
+                    </div>
+                    {w.hasWalk&&<div style={{marginTop:6,color:C.muted,fontSize:10,lineHeight:1.7}}>
+                      {w.openingText}{w.incomeCents>0&&<span style={{color:C.green}}> +{w.incomeText}</span>}{w.billsCents>0&&<span style={{color:C.gold}}> −{formatMoney(w.billsCents/100,{cents:true})} bills</span>}<span style={{color:C.muted}}> −{w.spendText} spend</span>
+                    </div>}
+                  </>);
+                })()}
               </div>
             )}
           </div>

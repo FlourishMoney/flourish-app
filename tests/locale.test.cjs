@@ -68,6 +68,17 @@ const { create } = require("./_runner.cjs");
     });
     t.eq(offenders.join("\n"), "", "no surface pairs a summed per-day income figure with a pay-word claim");
 
+    // Same defect, second shape: a sentence about what arrives NEXT. "Keeps you safe until your next
+    // paycheque" sat beside a sibling branch already saying "deposit", and it fires precisely when no
+    // deposit could be projected — i.e. when the app knows least about what is coming.
+    const nextClaims = [];
+    app.forEach((line, i) => {
+      if (/until your next/i.test(line) && payish.test(line)) nextClaims.push(`${i + 1}: ${line.trim().slice(0, 90)}`);
+    });
+    t.eq(nextClaims.join("\n"), "", "no sentence about the NEXT income event names it as a pay cheque");
+    const nextDeposit = raw.split("\n").filter(l => /until your next deposit/i.test(l) && !l.includes("/*")).length;
+    t.ok(nextDeposit >= 3, `…and the surfaces that make that claim say "deposit" (found ${nextDeposit})`);
+
     // …and the replacement really is in place on both surfaces, so this guard cannot pass vacuously.
     const depositRows = raw.split("\n").filter(l => /\b(?:ev|day)\.income\b/.test(l) && /\bdeposit\b/.test(l) && !l.includes("/*")).length;
     t.ok(depositRows >= 3, `both forecast surfaces label a per-day income figure "deposit" (found ${depositRows} rows)`);
