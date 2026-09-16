@@ -33,10 +33,17 @@ export const DEMO_INCOMES = [
 //
 // So the PHASE is anchored, not the outputs. Every figure is still computed by the engines exactly as
 // it is for a real user; we only fix where in the cycle the sample data sits: the paycheque 13 days
-// out, the benefit behind it, and every bill beyond the horizon so rent is already paid for the
-// period. Offsets are kept in 14..27 days so a bill's day-of-month can never collide with today's
-// (which would land it on day 0) in a 28-to-31-day month.
-export const DEMO_PHASE = { ccb: 20, netflix: 16, phone: 18, hydro: 22, rent: 26 };
+// out, the benefit behind it, rent already paid for the period — and ONE bill deliberately inside the
+// reservation window.
+//
+// That last part is the demonstration, not an accident. The product's claim is that a balance is not
+// spendable because money is already committed; a breakdown with no "Upcoming bills" row demonstrates
+// nothing. Phone sits at +6 days so the visitor sees a five-row breakdown and a populated "one thing
+// to know" line, at the cost of a lower headline ($1,944 rather than $2,009) — the better trade.
+//
+// The "beyond the horizon" offsets stay in 14..27 days: below 14 they would fall inside the window,
+// and at 28..31 a bill's day-of-month could collide with today's in a short month and land on day 0.
+export const DEMO_PHASE = { ccb: 20, phone: 6, netflix: 16, hydro: 22, rent: 26 };
 
 const _addDays = (now, n) => { const d = new Date(now); d.setDate(d.getDate() + n); return d; };
 const _iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

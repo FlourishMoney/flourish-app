@@ -58,8 +58,22 @@ const { create } = require("./_runner.cjs");
                     days, ss.upcomingBills, ss.safetyBuf, ss.savingsAlloc, view.balanceText].join("|"));
   }
   t.eq(signatures.size, 1, `anchored demo fixture yields IDENTICAL figures on all ${DATES.length} dates (was: $2,009 one day, $359 two days later)`);
-  t.eq([...signatures][0], "$2,009|$143|2840|Full-time Job|13|0|435|291|$3,083",
-    "…and that one signature is the published demo: $2,009 safe, $143/day, $2,840 paycheque 13 days out, $3,083 balance");
+  t.eq([...signatures][0], "$1,944|$138|2840|Full-time Job|13|65|435|291|$3,083",
+    "…and that one signature is the published demo: $1,944 safe, $138/day, $2,840 paycheque 13 days out, $3,083 balance, $65 of committed bills");
+
+  // The demo must SHOW the product's claim — that a balance is not spendable because money is already
+  // committed. That needs a bill inside the reservation window, i.e. a five-row breakdown.
+  {
+    const d = new Date("2026-09-16T12:00:00");
+    const snap = snapFor(d);
+    const ss = SafeSpendEngine.calculate(snap, d);
+    const view = safeToSpendView(ss);
+    t.eq(view.rows.length, 5, "the demo breakdown has five rows (balance + four deductions), not a bare balance");
+    t.ok(view.rows.some(r => r.key === "upcomingBills"), "…including an Upcoming bills row — the committed-money demonstration");
+    t.eq(ss.soonBills.length, 1, "…and exactly one bill is inside the window, so Today's \"one thing to know\" line has something to name");
+    const rowSum = view.rows.reduce((s, r) => s + (r.kind === "balance" ? r.display : -r.display), 0);
+    t.eq(rowSum, view.headline, "…and the five displayed rows still reconcile exactly to the headline");
+  }
 
   // ── 2. The scripted coach prints only engine outputs ───────────────────────────────────────────
   for (const s of DATES) {

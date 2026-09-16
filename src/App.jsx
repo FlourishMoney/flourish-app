@@ -6171,7 +6171,7 @@ function PlanAhead({data, setAppData, setScreen}){
                   <span style={{color:C.cream,fontWeight:700,fontSize:13}}>{isToday?"Current balance":"Projected balance (est.)"}</span>
                   <span style={{color:neg?C.redBright:low?C.goldBright:C.greenBright,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{formatBalance(day.balance)}</span>
                 </div>
-                {day.idx>0&&<div style={{marginTop:6,color:C.muted,fontSize:10,lineHeight:1.7}}>{formatBalance(prevBalance)}{day.income>0&&<span style={{color:C.green}}> +{formatMoney(day.income)}</span>}{billsTotal>0&&<span style={{color:C.gold}}> −{formatMoney(billsTotal)} bills</span>}<span style={{color:C.muted}}> −{formatMoney(avgDailySpend)} spend</span><span style={{color:neg?C.redBright:C.greenBright}}> = {formatBalance(day.balance)}</span></div>}
+                {day.idx>0&&<div style={{marginTop:6,color:C.muted,fontSize:10,lineHeight:1.7}}>{formatBalance(prevBalance)}{day.income>0&&<span style={{color:C.green}}> +{formatMoney(day.income)}</span>}{billsTotal>0&&<span style={{color:C.gold}}> −{formatMoney(billsTotal)} bills</span>}<span style={{color:C.muted}}> −{formatMoney(avgDailySpend)} spend</span></div>}
               </div>
             )}
           </div>
