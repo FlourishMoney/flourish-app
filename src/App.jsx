@@ -1238,7 +1238,12 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
                           {ev.day===0?"Today":ev.day===1?"Tomorrow":ev.date.toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}
                           <span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
                         </div>
-                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(ev.income||0)} ${payWord(data.profile?.country)}`}</div>}
+                        {/* "deposit", not "paycheque": ev.income is the SUM of every income landing that day, and the
+                            forecast carries no source label, so this row cannot know which income it was. It said
+                            "paycheque" over a $560 child benefit. "Deposit" is true for every income type, needs no
+                            engine change, and matches the Decision Engine card below ("your next deposit of $2,840").
+                            Naming the actual source is the better answer and needs the engine to carry it. */}
+                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(ev.income||0)} deposit`}</div>}
                         {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −{formatMoney(num(b.amount))}</div>)}
                         {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                       </div>
@@ -1272,7 +1277,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
                     {ev.isPayday&&(
                       <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}22`}}>
                         <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
-                          <span style={{width:6,height:6,borderRadius:"50%",background:C.green,display:"inline-block"}}/>💰 {payWord(data.profile?.country,{capital:true})}
+                          <span style={{width:6,height:6,borderRadius:"50%",background:C.green,display:"inline-block"}}/>💰 Deposit
                         </span>
                         <span style={{color:C.greenBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>+{formatMoney(paydayLineAmount(ev))}</span>
                       </div>
@@ -1379,7 +1384,7 @@ function FinancialTimeline({data}) {
                         <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:2}}>
                           {label}<span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
                         </div>
-                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(ev.income||0)} ${payWord(data.profile?.country)}`}</div>}
+                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(ev.income||0)} deposit`}</div>}
                         {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −{formatMoney(num(b.amount))}</div>)}
                         {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                       </div>
@@ -1395,7 +1400,7 @@ function FinancialTimeline({data}) {
                     <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>Day breakdown</div>
                     {ev.isPayday&&(
                       <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
-                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💰 {payWord(data.profile?.country,{capital:true})}</span>
+                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💰 Deposit</span>
                         <span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+{formatMoney(paydayLineAmount(ev))}</span>
                       </div>
                     )}
@@ -6187,7 +6192,9 @@ function PlanAhead({data, setAppData, setScreen}){
                     <div style={{color:isToday?C.greenBright:C.mutedHi,fontWeight:isToday?700:500,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{isToday?"Today ✦":day.d.toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}</div>
                     <span style={{color:C.muted,fontSize:10}}>{isDrilled?"▲":"▼"}</span>
                   </div>
-                  {day.income>0&&<div style={{color:C.green,fontWeight:700,fontSize:13,marginTop:3}}>💰 +${day.income.toLocaleString()} {payWord(data.profile?.country)}</div>}
+                  {/* "deposit", not "paycheque" — same reason as the Time Machine row: day.income is a summed
+                    figure with no source attached, so the surface must not name the income that produced it. */}
+                {day.income>0&&<div style={{color:C.green,fontWeight:700,fontSize:13,marginTop:3}}>💰 +{formatMoney(day.income)} deposit</div>}
                   {day.bills.map((b,j)=><div key={j} style={{color:C.gold,fontSize:12,marginTop:2}}>📅 {b.name}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:4,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}: −{b.variable?"~":""}{formatMoney(b.amount)}</div>)}
                   {isToday&&!day.income&&!day.bills.length&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>Tap to see balance breakdown</div>}
                 </div>
@@ -6204,7 +6211,7 @@ function PlanAhead({data, setAppData, setScreen}){
               <div style={{borderTop:`1px solid ${C.border}`,padding:"12px 18px 14px",background:"rgba(0,0,0,0.2)"}}>
                 <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,marginBottom:10}}>Cash flow breakdown</div>
                 {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.muted,fontSize:11}}>Opening balance</span><span style={{color:C.muted,fontSize:11}}>{formatBalance(prevBalance)}</span></div>}
-                {day.income>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>💰 {payWord(data.profile?.country,{capital:true})}</span><span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+{formatMoney(day.income)}</span></div>}
+                {day.income>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>💰 Deposit</span><span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+{formatMoney(day.income)}</span></div>}
                 {day.bills.map((b,j)=><div key={j} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>📅 {b.name}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:5,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}</span><span style={{color:C.gold,fontWeight:700,fontSize:12}}>−{b.variable?"~":""}{formatMoney(b.amount)}</span></div>)}
                 {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>🛒 Est. daily spend <span style={{color:C.muted,fontSize:9}}>(30d avg)</span></span><span style={{color:C.muted,fontSize:12}}>−{formatMoney(avgDailySpend)}</span></div>}
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${C.border}`,paddingTop:8,marginTop:4}}>

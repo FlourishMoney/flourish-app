@@ -43,5 +43,35 @@ const { create } = require("./_runner.cjs");
   t.ok(!payWord("US").includes("que"), "5b the US spelling carries no -que");
   t.ok(payWord("CA").endsWith("que"), "5c the Canadian spelling ends in -que");
 
+  // ── 6. A FORECAST ROW MUST NOT NAME THE INCOME IT CANNOT KNOW ──────────────────────────────────
+  // Spelling the word correctly is only half of it. forecastEngine sums EVERY income landing on a date
+  // into one bare number (incomeByDate) and attaches no source label, so `ev.income` / `day.income` is
+  // an aggregate whose origin is genuinely unknown to the surface. Both the Time Machine row and the
+  // Watch forecast row used to render it as "+$560 paycheque" — over a $560 Canada Child Benefit.
+  // They now say "deposit", which is true for every income type and matches the Decision Engine card
+  // directly below ("your next deposit of $2,840"). Naming the ACTUAL source is the better answer and
+  // requires the engine to carry it; until it does, this guard keeps the claim from creeping back.
+  {
+    const fs = require("fs"), path = require("path");
+    const raw = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+    // Blank out every comment before scanning — the comments at these very sites EXPLAIN the rule and
+    // must quote the word they banned. Newlines are preserved so reported line numbers stay true.
+    const blanked = raw
+      .replace(/\{?\/\*[\s\S]*?\*\/\}?/g, (m) => m.replace(/[^\n]/g, " "))
+      .replace(/^\s*\/\/.*$/gm, (m) => m.replace(/[^\n]/g, " "));
+    const app = blanked.split("\n");
+    const payish = /paycheque|paycheck|payWord\s*\(/i;
+    const perDayIncome = /\b(?:ev|day)\.income\b/;
+    const offenders = [];
+    app.forEach((line, i) => {
+      if (perDayIncome.test(line) && payish.test(line)) offenders.push(`${i + 1}: ${line.trim().slice(0, 90)}`);
+    });
+    t.eq(offenders.join("\n"), "", "no surface pairs a summed per-day income figure with a pay-word claim");
+
+    // …and the replacement really is in place on both surfaces, so this guard cannot pass vacuously.
+    const depositRows = raw.split("\n").filter(l => /\b(?:ev|day)\.income\b/.test(l) && /\bdeposit\b/.test(l) && !l.includes("/*")).length;
+    t.ok(depositRows >= 3, `both forecast surfaces label a per-day income figure "deposit" (found ${depositRows} rows)`);
+  }
+
   t.summary("locale.test");
 })();
