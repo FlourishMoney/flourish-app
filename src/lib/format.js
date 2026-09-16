@@ -13,6 +13,19 @@ export function formatMoney(n, { cents = false } = {}) {
   return (safe < 0 ? "-$" : "$") + formatNumber(Math.abs(safe), { cents });
 }
 
+// "A balance rounds DOWN" — the ONE definition of that rule in the codebase. Whole dollars, floored, so
+// a displayed balance can never overstate what is there (for a negative balance floor is MORE negative —
+// the conservative direction for an overdraft). Non-finite input -> 0. safeToSpendView's balance and every
+// rendered forecast balance go through this; no surface keeps its own Math.floor / toFixed for a balance.
+export function roundBalanceDown(n) {
+  return Math.floor(Number(n) || 0);
+}
+
+// A displayed balance: whole dollars, rounded down by the one rule above, formatted through formatMoney.
+export function formatBalance(n) {
+  return formatMoney(roundBalanceDown(n));
+}
+
 // Ordinal suffix for a day-of-month: 1->st, 2->nd, 3->rd, but 11/12/13->th (and 21->st, 22->nd, 31->st).
 // The 11-13 exception is why `day==="1"?"st":...:"th"` produced "22th"/"11st" — this handles every day.
 export function ordinalSuffix(day) {

@@ -26,7 +26,7 @@ import { tabForScreen } from "./lib/navigation.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
-import { formatMoney, formatNumber, ordinalSuffix } from "./lib/format.js";
+import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown } from "./lib/format.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
@@ -1230,14 +1230,14 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
                           {ev.day===0?"Today":ev.day===1?"Tomorrow":ev.date.toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}
                           <span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
                         </div>
-                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(ev.income||0).toFixed(0)} paycheck`}</div>}
+                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(ev.income||0).toFixed(0)} ${data.profile?.country==="US"?"paycheck":"paycheque"}`}</div>}
                         {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${parseFloat(b.amount||0).toFixed(0)}</div>)}
                         {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                       </div>
                       <div style={{textAlign:"right",flexShrink:0,minWidth:80}}>
-                        <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${(baseBalance||0).toFixed(0)}`}</div>
-                        {activeScenario && baselineForecast && baselineForecast[ev.day] && Math.round(baselineForecast[ev.day].balance) !== Math.round(baseBalance) && (
-                          <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1,textDecoration:"line-through",opacity:0.6}}>${baselineForecast[ev.day].balance.toFixed(0)}</div>
+                        <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{formatBalance(baseBalance)}</div>
+                        {activeScenario && baselineForecast && baselineForecast[ev.day] && roundBalanceDown(baselineForecast[ev.day].balance) !== roundBalanceDown(baseBalance) && (
+                          <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1,textDecoration:"line-through",opacity:0.6}}>{formatBalance(baselineForecast[ev.day].balance)}</div>
                         )}
                         <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
                       </div>
@@ -1256,7 +1256,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
                       return prevEv ? (
                         <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}>
                           <span style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Opening balance</span>
-                          <span style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${(prevEv.balance||0).toFixed(0)}</span>
+                          <span style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{formatBalance(prevEv.balance)}</span>
                         </div>
                       ) : null;
                     })()}
@@ -1295,7 +1295,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
                       </span>
                       <div style={{textAlign:"right"}}>
                         <span style={{color:isLow?C.redBright:baseBalance<0?C.redBright:C.greenBright,fontWeight:900,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
-                          {baseBalance<0?"−":""}${Math.abs(baseBalance||0).toFixed(0)}
+                          {formatBalance(baseBalance)}
                         </span>
                         {isLow&&baseBalance>=0&&<div style={{color:C.goldBright,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>below safety floor</div>}
                         {baseBalance<0&&<div style={{color:C.redBright,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>overdrawn</div>}
@@ -1371,12 +1371,12 @@ function FinancialTimeline({data}) {
                         <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:2}}>
                           {label}<span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
                         </div>
-                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(ev.income||0).toFixed(0)} paycheck`}</div>}
+                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(ev.income||0).toFixed(0)} ${data.profile?.country==="US"?"paycheck":"paycheque"}`}</div>}
                         {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${parseFloat(b.amount||0).toFixed(0)}</div>)}
                         {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                       </div>
                       <div style={{textAlign:"right",flexShrink:0}}>
-                        <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{`$${(ev.balance||0).toFixed(0)}`}</div>
+                        <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{formatBalance(ev.balance)}</div>
                         <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
                       </div>
                     </div>
@@ -1405,7 +1405,7 @@ function FinancialTimeline({data}) {
                     )}
                     <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0 0"}}>
                       <span style={{color:C.cream,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Projected balance</span>
-                      <span style={{color:isLow?C.redBright:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Playfair Display',serif"}}>${(ev.balance||0).toFixed(0)}</span>
+                      <span style={{color:isLow?C.redBright:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{formatBalance(ev.balance)}</span>
                     </div>
                     {isLow&&<div style={{marginTop:8,background:C.red+"11",borderRadius:8,padding:"6px 10px",color:C.redBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>⚠ Balance drops below safety floor here</div>}
                   </div>
@@ -1817,7 +1817,7 @@ Rules: do not invent or quote any number not in the calculated results above. Do
                   fontFamily: "'Plus Jakarta Sans',sans-serif",
                   cursor: "pointer",
                   transition: "all .15s",
-                }}>Unlock unlimited simulations →</button>
+                }}>Unlimited simulations with Plus →</button>
               )}
             </div>
 
@@ -3521,7 +3521,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       {bankStage==="skipped"&&<div style={{textAlign:"center",padding:"20px 0"}}>
         <div style={{fontSize:48,marginBottom:12}}>✏️</div>
         <div style={{color:C.cream,fontWeight:800,fontSize:18,marginBottom:8}}>Entering manually</div>
-        <div style={{color:C.muted,fontSize:13,lineHeight:1.6,marginBottom:20}}>No problem — you can connect your bank any time from Settings to unlock live data.</div>
+        <div style={{color:C.muted,fontSize:13,lineHeight:1.6,marginBottom:20}}>No problem. You can connect your bank any time from Settings for live data.</div>
         <Btn label="Continue →" onClick={()=>setStep(3)}/>
       </div>}
       {bankStage==="done"&&<div>
@@ -3773,7 +3773,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
                 <Inp label="Rate %" value={d.rate} onChange={v=>upDebt(i,"rate",v)} type="number" sm placeholder="e.g. 19.99"/>
               </div>
               <Inp label="Min Payment $" value={d.min} onChange={v=>upDebt(i,"min",v)} type="number" sm/>
-              {d.fromBank&&!d.rate&&<div style={{color:C.gold,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2,marginBottom:4}}>⚡ Add interest rate to unlock payoff simulator</div>}
+              {d.fromBank&&!d.rate&&<div style={{color:C.gold,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2,marginBottom:4}}>⚡ Add the interest rate to run the payoff simulator</div>}
             </div>
             {debts.length>1&&<button aria-label="Remove" onClick={()=>rmDebt(i)} style={{background:C.redDim,border:"none",color:C.red,borderRadius:8,padding:"6px 10px",cursor:"pointer",alignSelf:"flex-start",marginTop:18}}>✕</button>}
           </div>
@@ -3787,7 +3787,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
     // 6: Credit Score
     <div>
       <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Your credit score (optional)</div>
-      <div style={{color:C.muted,fontSize:14,marginBottom:16}}>Optional — but unlocks personalised coaching on how to improve it.</div>
+      <div style={{color:C.muted,fontSize:14,marginBottom:16}}>Optional. Add it and the coach can show you how to improve it.</div>
       <div style={{background:C.tealDim,border:`1px solid ${C.teal}44`,borderRadius:16,padding:"14px 16px",marginBottom:20}}>
         <div style={{color:C.tealBright,fontWeight:700,marginBottom:6}}>🔒 How Flourish uses this</div>
         {[["✅","Soft pull only — never affects your score"],["✅","Personalized tips tied to your real balances"],["✅","Tracks improvement over time"],["❌","Never shared with lenders or third parties"]].map(([ico,t],i)=><div key={i} style={{display:"flex",gap:8,padding:"3px 0",color:ico==="✅"?C.cream:C.muted,fontSize:13}}><span>{ico}</span><span>{t}</span></div>)}
@@ -3839,7 +3839,7 @@ const NOTIF_COLORS = {autopilot:"#00CC85",bill:"#E8B84B",win:"#00C8E0",score:"#0
 // INIT_NOTIFS — only generic onboarding notifications
 // Bill-due, debt, and spending notifications are generated dynamically from real user data
 const INIT_NOTIFS=[
-  {id:1,icon:"sparkles",title:"Welcome to Flourish 🌱",body:"Your financial dashboard is ready. Connect your bank to unlock live insights.",read:false,time:"Just now",type:"autopilot",color:NOTIF_COLORS.autopilot},
+  {id:1,icon:"sparkles",title:"Welcome to Flourish 🌱",body:"Your financial dashboard is ready. Connect your bank for live insights.",read:false,time:"Just now",type:"autopilot",color:NOTIF_COLORS.autopilot},
 ];
 
 // Generate real notifications from user's actual bills and data
@@ -4807,7 +4807,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                     ? "tomorrow"
                     : nextPaydayDay
                       ? `in ${nextPaydayDay} day${nextPaydayDay===1?"":"s"}`
-                      : "after your next paycheck";
+                      : `after your next ${data.profile?.country==="US"?"paycheck":"paycheque"}`;
                   if (remaining >= tightThreshold) {
                     setAffordResult({
                       state: "yes",
@@ -5365,7 +5365,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             <div style={{display:"flex",alignItems:"center",gap:12}}>
               <div style={{fontSize:24}}>✨</div>
               <div>
-                <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Unlock Flourish Plus</div>
+                <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Get Flourish Plus</div>
                 <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>AI Coach · Tax Tips · Credit Coaching</div>
               </div>
             </div>
@@ -6084,7 +6084,10 @@ function PlanAhead({data, setAppData, setScreen}){
       <div style={{display:"flex",gap:6,background:C.surface,borderRadius:12,padding:3,flexShrink:0,marginBottom:16}}>{[7,14].map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"6px 16px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .22s"}}>{r}d</button>)}</div>
     </div>
     {(()=>{
-      const _fbal = SafeSpendEngine.calculate(data).balance;
+      // Item 1: the starting balance is the SAME displayed value as Today's "In your accounts" — read from
+      // the one display owner (safeToSpendView.balanceText: whole dollars, rounded down, formatMoney) rather
+      // than re-formatting the raw engine balance here with toFixed (which rounded to nearest, no separator).
+      const _fbalText = safeToSpendView(SafeSpendEngine.calculate(data)).balanceText;
       const _favg = FinancialCalcEngine.avgDailySpend(data);
       const _ffreq = (data.incomes||[])[0]?.freq||"biweekly";
       // Est. paycheque: the primary income's REAL per-deposit amount, read from incomeSchedule — never the
@@ -6098,7 +6101,7 @@ function PlanAhead({data, setAppData, setScreen}){
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
             {[
-              ["Starting balance", `$${(_fbal||0).toFixed(0)}`],
+              ["Starting balance", _fbalText],
               ["Est. daily spend", `$${(_favg||0).toFixed(0)}/day`],
               ["Pay frequency", _ffreq],
               ["Est. paycheque", _fPay!=null ? formatMoney(_fPay) : "—"],
@@ -6114,7 +6117,7 @@ function PlanAhead({data, setAppData, setScreen}){
     })()}
     {willGoNeg&&<div style={{background:C.redDim,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.red}55`}}>
       <div style={{color:C.redBright,fontWeight:800,marginBottom:4}}>Projected Overdraft</div>
-      <div style={{color:C.cream,fontSize:13,lineHeight:1.5}}>Balance hits <strong style={{color:C.red}}>${(minBalance||0).toFixed(2)}</strong> before your next deposit. Reduce spending now.</div>
+      <div style={{color:C.cream,fontSize:13,lineHeight:1.5}}>Balance hits <strong style={{color:C.red}}>{formatBalance(minBalance)}</strong> before your next deposit. Reduce spending now.</div>
     </div>}
     {/* Bills summary — BillManager is the single bill entry point */}
     <Card style={{display:"flex",justifyContent:"space-between",alignItems:"center",border:`1px solid ${C.teal}33`,background:`linear-gradient(135deg,rgba(0,200,224,0.05) 0%,${C.card} 100%)`}}>
@@ -6142,12 +6145,12 @@ function PlanAhead({data, setAppData, setScreen}){
                     <div style={{color:isToday?C.greenBright:C.mutedHi,fontWeight:isToday?700:500,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{isToday?"Today ✦":day.d.toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}</div>
                     <span style={{color:C.muted,fontSize:10}}>{isDrilled?"▲":"▼"}</span>
                   </div>
-                  {day.income>0&&<div style={{color:C.green,fontWeight:700,fontSize:13,marginTop:3}}>💰 +${day.income.toLocaleString()} paycheck</div>}
+                  {day.income>0&&<div style={{color:C.green,fontWeight:700,fontSize:13,marginTop:3}}>💰 +${day.income.toLocaleString()} {data.profile?.country==="US"?"paycheck":"paycheque"}</div>}
                   {day.bills.map((b,j)=><div key={j} style={{color:C.gold,fontSize:12,marginTop:2}}>📅 {b.name}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:4,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}: −{b.variable?"~":""}${parseFloat(b.amount).toFixed(0)}</div>)}
                   {isToday&&!day.income&&!day.bills.length&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>Tap to see balance breakdown</div>}
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}>
-                  <div style={{fontSize:17,fontWeight:800,fontFamily:"Georgia,serif",color:neg?C.redBright:low?C.goldBright:C.greenBright}}>{neg?"−":""}${Math.abs(day.balance||0).toFixed(0)}</div>
+                  <div style={{fontSize:17,fontWeight:800,fontFamily:"Georgia,serif",color:neg?C.redBright:low?C.goldBright:C.greenBright}}>{formatBalance(day.balance)}</div>
                   <div style={{color:C.muted,fontSize:9}}>balance</div>
                 </div>
               </div>
@@ -6158,15 +6161,15 @@ function PlanAhead({data, setAppData, setScreen}){
             {isDrilled&&(
               <div style={{borderTop:`1px solid ${C.border}`,padding:"12px 18px 14px",background:"rgba(0,0,0,0.2)"}}>
                 <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,marginBottom:10}}>Cash flow breakdown</div>
-                {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.muted,fontSize:11}}>Opening balance</span><span style={{color:C.muted,fontSize:11}}>${(prevBalance||0).toFixed(0)}</span></div>}
-                {day.income>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>💰 {data.profile?.country==="US"?"Paycheck":"Paycheque"}</span><span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+${(day.income||0).toFixed(0)}</span></div>}
-                {day.bills.map((b,j)=><div key={j} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>📅 {b.name}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:5,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}</span><span style={{color:C.gold,fontWeight:700,fontSize:12}}>−{b.variable?"~":""}${parseFloat(b.amount||0).toFixed(0)}</span></div>)}
-                {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>🛒 Est. daily spend <span style={{color:C.muted,fontSize:9}}>(30d avg)</span></span><span style={{color:C.muted,fontSize:12}}>−${(avgDailySpend).toFixed(0)}</span></div>}
+                {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.muted,fontSize:11}}>Opening balance</span><span style={{color:C.muted,fontSize:11}}>{formatBalance(prevBalance)}</span></div>}
+                {day.income>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>💰 {data.profile?.country==="US"?"Paycheck":"Paycheque"}</span><span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+{formatMoney(day.income)}</span></div>}
+                {day.bills.map((b,j)=><div key={j} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>📅 {b.name}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:5,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}</span><span style={{color:C.gold,fontWeight:700,fontSize:12}}>−{b.variable?"~":""}{formatMoney(b.amount)}</span></div>)}
+                {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>🛒 Est. daily spend <span style={{color:C.muted,fontSize:9}}>(30d avg)</span></span><span style={{color:C.muted,fontSize:12}}>−{formatMoney(avgDailySpend)}</span></div>}
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${C.border}`,paddingTop:8,marginTop:4}}>
                   <span style={{color:C.cream,fontWeight:700,fontSize:13}}>{isToday?"Current balance":"Projected balance (est.)"}</span>
-                  <span style={{color:neg?C.redBright:low?C.goldBright:C.greenBright,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{neg?"−":""}${Math.abs(day.balance||0).toFixed(0)}</span>
+                  <span style={{color:neg?C.redBright:low?C.goldBright:C.greenBright,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{formatBalance(day.balance)}</span>
                 </div>
-                {day.idx>0&&<div style={{marginTop:6,color:C.muted,fontSize:10,lineHeight:1.7}}>${(prevBalance||0).toFixed(0)}{day.income>0&&<span style={{color:C.green}}> +${(day.income||0).toFixed(0)}</span>}{billsTotal>0&&<span style={{color:C.gold}}> −${billsTotal.toFixed(0)} bills</span>}<span style={{color:C.muted}}> −${(avgDailySpend).toFixed(0)} spend</span><span style={{color:neg?C.redBright:C.greenBright}}> = ${(day.balance||0).toFixed(0)}</span></div>}
+                {day.idx>0&&<div style={{marginTop:6,color:C.muted,fontSize:10,lineHeight:1.7}}>{formatBalance(prevBalance)}{day.income>0&&<span style={{color:C.green}}> +{formatMoney(day.income)}</span>}{billsTotal>0&&<span style={{color:C.gold}}> −{formatMoney(billsTotal)} bills</span>}<span style={{color:C.muted}}> −{formatMoney(avgDailySpend)} spend</span><span style={{color:neg?C.redBright:C.greenBright}}> = {formatBalance(day.balance)}</span></div>}
               </div>
             )}
           </div>
@@ -7691,7 +7694,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         <div style={{background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:14,padding:"12px 14px",marginBottom:12,display:"flex",gap:10,alignItems:"flex-start"}}>
           <span style={{fontSize:16,flexShrink:0}}>⚡</span>
           <div>
-            <div style={{color:C.goldBright,fontWeight:700,fontSize:13,marginBottom:2}}>Add interest rates to unlock the simulator</div>
+            <div style={{color:C.goldBright,fontWeight:700,fontSize:13,marginBottom:2}}>Add interest rates to run the simulator</div>
             <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.6}}>Your credit card rate is on your statement or card agreement — typically 19.99%–29.99%. Add it in Settings → Debts to see your exact debt-free date and total interest saved.</div>
           </div>
         </div>
@@ -9238,7 +9241,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
           "13+":[
             {emoji:"💰",title:"Budget like a boss",body:"50% needs, 30% wants, 20% savings. Without a budget, money just disappears. A budget isn't restriction — it's a plan for the life you actually want.",key:"A budget gives your money direction."},
             {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet — and paying extra for the privilege. Use debt only for things that gain value.",key:"Debt is expensive. Use it wisely or not at all."},
-            {emoji:"📊",title:"Start investing at your first job",body:"$50/month invested at 7% starting at age 16 = $245,000 at retirement. The same $50 starting at 30 = $68,000. Starting early nearly triples your outcome.",key:"Invest with your very first paycheck."},
+            {emoji:"📊",title:"Start investing at your first job",body:"$50/month invested at 7% starting at age 16 = $245,000 at retirement. The same $50 starting at 30 = $68,000. Starting early nearly triples your outcome.",key:`Invest with your very first ${data.profile?.country==="US"?"paycheck":"paycheque"}.`},
           ],
         };
         return(<>
@@ -10965,7 +10968,7 @@ function CreditScreen({data,setScreen}){
   // Empty state — no bank and no credit score entered
   if(!data.bankConnected && !profile.creditKnown) return (
     <EmptyState icon="💳" title="Connect your bank for credit coaching"
-      body="Flourish analyses your spending patterns and debt utilization to build a personalized credit improvement plan. Connect your bank to unlock this."
+      body="Flourish analyses your spending patterns and debt utilization to build a personalized credit improvement plan. Connect your bank to use this."
       action="Connect Bank" onAction={()=>window.dispatchEvent(new CustomEvent("flourish:settings"))} color={C.blue}/>
   );
   // Monthly income using frequency-aware conversion (same as FinancialCalcEngine)
@@ -11239,7 +11242,7 @@ function PremiumGate({feature,desc,onUpgrade}){
         </div>
       </div>
       <button onClick={onUpgrade} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.purple}40`}}>
-        Unlock Flourish Plus →
+        Start 14 days free →
       </button>
       <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>14 days free. Cancel any time.</div>
     </div>
@@ -11730,7 +11733,7 @@ function KidsGoal({goal, jars, code, theme, primary, playSound}){
   );
 }
 
-function KidsMiniSite(){
+function KidsMiniSite({country}){ // `country` threaded from the render site (profile.country) so a US family reads "paycheck"
   const params=new URLSearchParams(window.location.search);
   const code=params.get("code")||"";
 
@@ -11869,7 +11872,7 @@ function KidsMiniSite(){
     "13+":[
       {emoji:"💰",title:"Budget like a boss",body:"50% needs, 30% wants, 20% savings. Without a budget, money just disappears. A budget is a plan for the life you actually want.",key:"A budget gives your money direction."},
       {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet — and paying extra for the privilege.",key:"Debt is expensive. Use it wisely or not at all."},
-      {emoji:"📊",title:"Start investing at your first job",body:"$50/month at 7% starting at 16 = $245,000 at retirement. Starting at 30 = only $68,000. Starting early nearly triples your outcome.",key:"Invest with your very first paycheck."},
+      {emoji:"📊",title:"Start investing at your first job",body:"$50/month at 7% starting at 16 = $245,000 at retirement. Starting at 30 = only $68,000. Starting early nearly triples your outcome.",key:`Invest with your very first ${country==="US"?"paycheck":"paycheque"}.`},
     ],
   };
 
@@ -13063,7 +13066,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
               fontWeight:800,fontSize:14,cursor:totalEdited<=discret?"pointer":"not-allowed",fontFamily:"inherit",transition:"all .2s"}}>
             {saved?"✅ Budget Plan Saved!":"✓ Save My Budget Plan"}
           </button>
-          {totalEdited>discret&&<div style={{color:C.muted,fontSize:11,textAlign:"center",marginTop:-8}}>Apply the suggested cuts above to unlock saving</div>}
+          {totalEdited>discret&&<div style={{color:C.muted,fontSize:11,textAlign:"center",marginTop:-8}}>Apply the suggested cuts above to start saving</div>}
 
         </div>
       )}
@@ -14343,7 +14346,7 @@ export default function FlourishApp(){
   const legalShell={background:C.bg,minHeight:"100dvh",padding:"max(20px, env(safe-area-inset-top)) 16px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"};
   if(screen==="privacy")return <div style={legalShell}><PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="terms")return <div style={legalShell}><TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
-  if(screen==="kids")return <KidsMiniSite/>;
+  if(screen==="kids")return <KidsMiniSite country={appData?.profile?.country}/>;
 
   // ── Auth gate ───────────────────────────────────────────────────
   if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;

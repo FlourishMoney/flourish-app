@@ -18,13 +18,14 @@
 // same numeric fields). No React, no rounding is done by the caller.
 // -----------------------------------------------------------------------------
 
-import { formatMoney, formatNumber } from "./format.js";
+import { formatMoney, formatNumber, roundBalanceDown } from "./format.js";
 
-const _floor = (n) => Math.floor(Number(n) || 0);
+// "The balance rounds DOWN" is not defined here — it is the single shared rule roundBalanceDown in
+// format.js (also behind formatBalance), so Today, Watch and the timelines cannot drift apart.
 const _ceil = (n) => Math.ceil(Number(n) || 0);
 
 export function safeToSpendView(ss) {
-  const balanceDisplay = _floor(ss && ss.balance);
+  const balanceDisplay = roundBalanceDown(ss && ss.balance);
 
   // Order + labels match the Today card exactly, so both screens render identical rows.
   const deductions = [
@@ -46,6 +47,7 @@ export function safeToSpendView(ss) {
 
   return {
     balanceDisplay,
+    balanceText: formatMoney(balanceDisplay), // "$3,083" — the ONE displayed balance string (Today row, Watch starting balance)
     deductions,           // all four, with display values (whether zero or not)
     rows,                 // balance + non-zero deductions, formatted; rows reconcile to headline
     totalDeductions,
