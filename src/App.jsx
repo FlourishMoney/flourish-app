@@ -37,6 +37,7 @@ import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPay
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView } from "./lib/suggestedDaily.js";
+import { demoCoachExchanges, demoFacilitatorLine } from "./lib/demoCoach.js";
 import { DEMO, DEMO_INCOMES, buildDemoTxns } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
@@ -8336,7 +8337,15 @@ function MeetAgenda({ data, isCouple, setScreen }){
         </div>
       ))}
 
-      {facilitatorGate === "trial" ? (
+      {data.demo ? (
+        /* Demo mode: one scripted facilitator line, read from the agenda already above. Local only —
+           no /api/coach call. The real "trial" paywall below is unchanged for signed-in free-tier users. */
+        <div style={{...card,background:C.cardAlt}}>
+          <div style={{color:C.goldBright,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Example · sample data</div>
+          <div style={{color:C.cream,fontSize:12.5,lineHeight:1.6}}>{demoFacilitatorLine(data, new Date()) || "Your facilitator works through the agenda above with you, one item at a time."}</div>
+          <div style={{color:C.muted,fontSize:11,lineHeight:1.5,marginTop:8}}>A scripted preview. Create a free account to run this meeting on your own numbers.</div>
+        </div>
+      ) : facilitatorGate === "trial" ? (
         <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5}}>Start your trial to run the meeting with your coach.</div></div>
       ) : facilitatorGate === "ai-off" ? (
         <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5}}>Coach is off in Settings. Your agenda is above.</div></div>
@@ -10824,7 +10833,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
             <div style={{color:C.cream,fontWeight:800,fontSize:15}}>AI Coach</div>
             <div style={{color:isOnline?C.green:C.muted,fontSize:11,fontWeight:600,display:"flex",alignItems:"center",gap:4}}>
               <div style={{width:6,height:6,borderRadius:"50%",background:isOnline?C.green:C.muted}}/>
-              {isOnline?"Live · Your real data":"Offline"}
+              {data.demo?"Example · Sample data":isOnline?"Live · Your real data":"Offline"}
             </div>
           </div>
           <button onClick={async ()=>{
@@ -10846,13 +10855,26 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
           a sign-up prompt rather than letting it fail into a misleading "couldn't reach the coach"
           error. onExitDemo clears demo and drops to the auth screen to sign up / log in. */}
       {data.demo ? (
-        <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"24px 28px",gap:14}}>
-          <div style={{width:56,height:56,borderRadius:16,background:`linear-gradient(135deg,${C.purple}33,${C.purple}11)`,border:`1px solid ${C.purple}44`,display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <Icon id="sparkles" size={26} color={C.purpleBright} strokeWidth={1.5}/>
+        /* Demo mode: a SCRIPTED conversation, rendered entirely locally. No /api/coach request is made
+           and no tokens are spent — demoCoachExchanges is a pure fixture whose figures are read from the
+           same engines the rest of the demo reads, so the coach never contradicts the Today card. The
+           real coach path below is untouched for signed-in users. */
+        <div style={{flex:1,overflowY:"auto",padding:"14px 16px 20px",display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{background:C.gold+"14",border:`1px solid ${C.gold}44`,borderRadius:12,padding:"10px 12px"}}>
+            <div style={{color:C.goldBright,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Example conversation · sample data</div>
+            <div style={{color:C.mutedHi,fontSize:11.5,lineHeight:1.55,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>A scripted preview of how your coach answers. Every figure is calculated by Flourish from this demo's numbers, so it matches the rest of the demo — but this is not a live chat.</div>
           </div>
-          <div style={{color:C.cream,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',Georgia,serif",lineHeight:1.3,maxWidth:300}}>Your AI Coach is part of the full experience</div>
-          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,maxWidth:300,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>You're viewing sample data. Sign up or log in to chat with your coach about your real numbers.</div>
-          {onExitDemo&&<button onClick={onExitDemo} style={{marginTop:6,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:99,padding:"13px 24px",color:C.isDark?"#160B2E":"#FFFFFF",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Create free account →</button>}
+          {demoCoachExchanges(data, new Date()).map((x,i)=>(
+            <div key={i} style={{display:"flex",flexDirection:"column",gap:7}}>
+              <div style={{alignSelf:"flex-end",maxWidth:"86%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:"14px 14px 4px 14px",padding:"9px 12px",color:C.cream,fontSize:13,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{x.q}</div>
+              <div style={{alignSelf:"flex-start",maxWidth:"94%",background:C.purpleDim,border:`1px solid ${C.purple}44`,borderRadius:"14px 14px 14px 4px",padding:"10px 13px",color:C.cream,fontSize:13,lineHeight:1.62,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{x.a}</div>
+            </div>
+          ))}
+          <CalcByFlourish style={{marginTop:2}}/>
+          <div style={{borderTop:`1px solid ${C.border}`,marginTop:6,paddingTop:14,textAlign:"center"}}>
+            <div style={{color:C.mutedHi,fontSize:12.5,lineHeight:1.6,marginBottom:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>That's the coach working on sample data. Create a free account to ask it about your own.</div>
+            {onExitDemo&&<button onClick={onExitDemo} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:99,padding:"13px 24px",color:C.isDark?"#160B2E":"#FFFFFF",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Create free account →</button>}
+          </div>
         </div>
       ) : (<>
       {/* Tier 2.9: persistent AI disclosure (Apple 5.1.2(i)) — inline, non-dismissible */}
