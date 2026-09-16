@@ -27,3 +27,32 @@ export function payWord(country, { plural = false, capital = false } = {}) {
   const word = plural ? `${base}s` : base;
   return capital ? word.charAt(0).toUpperCase() + word.slice(1) : word;
 }
+
+/**
+ * The tax-sheltered investment account this country's users actually have, for the Autopilot
+ * "Move to …" label. decisionEngine hard-coded "TFSA / Investment", so a US household was told to
+ * move money into a Canadian registered account. Both names are accounts this product already
+ * teaches (CC.CA.taxTips covers the TFSA, CC.US.taxTips covers the Roth IRA) — nothing new is
+ * invented here, and the Canadian string is unchanged.
+ */
+export function shelterLabel(country) {
+  return isUS(country) ? "Roth IRA / Investment" : "TFSA / Investment";
+}
+
+/**
+ * The BCP-47 tag for date and number formatting. Several modules hard-coded "en-CA", which formats
+ * a US visitor's dates by Canadian conventions. Falls back to en-CA, matching the app's default
+ * profile country.
+ */
+export function localeTag(country) {
+  return isUS(country) ? "en-US" : "en-CA";
+}
+
+/**
+ * What this country calls a high-interest savings account. "HISA" is Canadian banking vocabulary;
+ * an American reader has most likely never seen the acronym. The savings-opportunity card said
+ * "A HISA at 4%+ earns $90/yr" to everyone.
+ */
+export function savingsAccountTerm(country) {
+  return isUS(country) ? "a high-yield savings account" : "a HISA";
+}

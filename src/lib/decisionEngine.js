@@ -11,6 +11,7 @@
 import { FinancialCalcEngine, isInvestmentAccount } from "./financialCalculations.js";
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { ForecastEngine } from "./forecastEngine.js";
+import { shelterLabel } from "./locale.js";
 
 // ── DecisionEngine "what to do today" math (Sprint MATH-LOCK Group F) ─────────────────────────────
 // Pure helpers extracted from the DecisionEngine UI component. The component calls these, then builds
@@ -203,7 +204,7 @@ export const AutopilotEngine = {
     if (mode !== "high" && surplus > monthlyIncome * 0.12) {
       const efMonths = FinancialCalcEngine.emergencyFundMonths(data, catOverrides, currentDate);
       const invAcct  = (data.accounts||[]).find(a => isInvestmentAccount(a));
-      savingsTarget  = efMonths < 3 ? "Emergency Fund" : invAcct ? "TFSA / Investment" : "Savings";
+      savingsTarget  = efMonths < 3 ? "Emergency Fund" : invAcct ? shelterLabel(data.profile?.country) : "Savings";
       // Adaptive: reduce savings amount if spending is volatile
       const volatilityFactor = spendingStability > 0.7 ? 1.0 : 0.7;
       savingsTransfer = Math.round(surplus * mult.savings * volatilityFactor);

@@ -26,8 +26,13 @@ import { nextFutureDeposit, daysToNextFutureDeposit } from "./incomeSchedule.js"
 import { selectHighestRateDebt } from "./decisionEngine.js";
 import { meetAgendaFor } from "./meetSnapshot.js";
 import { formatMoney } from "./format.js";
+import { localeTag } from "./locale.js";
 
-const _date = (d) => d.toLocaleDateString("en-CA", { month: "short", day: "numeric" });
+// Dates follow the demo household's country. (For {month:"short",day:"numeric"} en-CA and en-US
+// happen to render identically, so this changes no output today — but the hard-coded "en-CA" was a
+// Canadian assumption sitting in a module the US demo now runs through, and it would bite the moment
+// the format changed.)
+const _date = (d, country) => d.toLocaleDateString(localeTag(country), { month: "short", day: "numeric" });
 
 // Join a list into prose: "a, b and c".
 function _list(parts) {
@@ -63,7 +68,7 @@ export function demoCoachExchanges(data, today = new Date()) {
   out.push({
     q: "What's actually safe for me to spend right now?",
     a: `${f.view.headlineText}. You have ${f.view.balanceText} in cash, and I've held back ${_list(deductions)}.` +
-       (f.nd ? ` That's what's left to cover you until your next deposit on ${_date(f.nd.date)}.` : ""),
+       (f.nd ? ` That's what's left to cover you until your next deposit on ${_date(f.nd.date, data.profile?.country)}.` : ""),
   });
 
   // 2 — the daily pace, and why it is not a spending cap.
@@ -90,7 +95,7 @@ export function demoCoachExchanges(data, today = new Date()) {
   if (f.nd) {
     out.push({
       q: "When does money come in next?",
-      a: `${formatMoney(f.nd.amount)} on ${_date(f.nd.date)} — your ${f.nd.sourceLabel}, ${f.days} days away. ` +
+      a: `${formatMoney(f.nd.amount)} on ${_date(f.nd.date, data.profile?.country)} — your ${f.nd.sourceLabel}, ${f.days} days away. ` +
          `That's the date every number above is planning towards.`,
     });
   }

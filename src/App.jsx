@@ -27,7 +27,7 @@ import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
 import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown } from "./lib/format.js";
-import { payWord } from "./lib/locale.js";
+import { payWord, savingsAccountTerm } from "./lib/locale.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
@@ -39,7 +39,8 @@ import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositA
 import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView } from "./lib/suggestedDaily.js";
 import { demoCoachExchanges, demoFacilitatorLine } from "./lib/demoCoach.js";
-import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns } from "./lib/demoFixture.js";
+import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
+         demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
@@ -785,21 +786,10 @@ function usePlaidLinkSDK(linkToken, onSuccess) {
 }
 
 
-const MOCK_ACCOUNTS = [
-  {id:"a1",name:"TD Chequing ••4521",type:"checking",balance:DEMO.balance,institution:"TD Bank"},
-  {id:"a2",name:"TD Savings ••8803",type:"savings",balance:1840.00,institution:"TD Bank"},
-  {id:"a3",name:"TD Visa ••2291",type:"credit",balance:-3420.00,institution:"TD Bank"},
-  {id:"a4",name:"Questrade TFSA ••7723",type:"investment",balance:12480.00,institution:"Questrade",ticker:"XEQT",gain:2140,gainPct:20.7},
-  {id:"a5",name:"TD e-Series RRSP ••9910",type:"investment",balance:8650.00,institution:"TD Bank",ticker:"TDB902",gain:890,gainPct:11.4},
-];
-const MOCK_ACCOUNTS_US = [
-  {id:"u1",name:"Chase Checking ••2891",type:"checking",balance:DEMO.balance,institution:"Chase"},
-  {id:"u2",name:"Chase Savings ••5504",type:"savings",balance:1840.00,institution:"Chase"},
-  {id:"u3",name:"Chase Sapphire ••4471",type:"credit",balance:-3420.00,institution:"Chase"},
-  {id:"u4",name:"Fidelity Roth IRA ••0033",type:"investment",balance:14200.00,institution:"Fidelity",ticker:"FXAIX",gain:2980,gainPct:26.5},
-  {id:"u5",name:"Fidelity 401(k) ••8812",type:"investment",balance:23400.00,institution:"Fidelity",ticker:"Target 2055",gain:3890,gainPct:19.9},
-];
-
+// The demo household's accounts, debts and profile now live with the rest of the demo data in
+// lib/demoFixture.js, keyed by country. MOCK_ACCOUNTS_US used to sit here unreferenced, with the
+// Canadian balances copied verbatim onto American account names — the "relabelled copy" the US
+// fixture deliberately is not.
 // App Store screenshot / review account. On login this email loads a populated demo state directly
 // (see the hydrate effect) instead of reading the DB — so it always lands on a full dashboard,
 // bypassing the hydrate-vs-onboarding race that kept clobbering a DB-seeded account.
@@ -833,15 +823,21 @@ async function reconcileNotifications(data) {
 // Sprint Z #15: the demo/sample state, shared by the onboarding "Try Demo" button and the
 // empty-dashboard "Try with demo data" CTA. demo:true → never synced to the DB and surfaces the
 // persistent demo banner. Lets an App Store reviewer exercise the full app with no real bank login.
-function buildDemoState() {
+// `country` selects WHICH synthetic household is loaded — a US visitor gets a US one (checking, a
+// 401(k), a federal student loan, no child benefit), not the Canadian household with the words
+// swapped. It also sets profile.country, which is the single value every locale-gated string and
+// baseCurrencyOf() already read, so the whole demo session resolves to that country by construction
+// rather than by a second switch anywhere else. An unknown value falls back to CA inside the fixture.
+function buildDemoState(country = "CA") {
+  const cc = DEMO_COUNTRIES.includes(String(country || "").toUpperCase()) ? String(country).toUpperCase() : "CA";
   return {
-    profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true,lifeStages:["t4"],partnerLifeStages:["t4"]},
+    profile:demoProfileFor(cc),
     // Phase-anchored so a visitor always lands at the same point in the pay cycle (see demoFixture.js).
-    incomes:buildDemoIncomes(),
-    bills:buildDemoBills(),
-    debts:[{name:"TD Visa",balance:"3420",rate:"19.99",min:"68"},{name:"Car Loan",balance:"8200",rate:"6.99",min:"280"}],
-    accounts:MOCK_ACCOUNTS,
-    transactions:buildDemoTxns(),
+    incomes:buildDemoIncomes(new Date(), cc),
+    bills:buildDemoBills(new Date(), cc),
+    debts:demoDebtsFor(cc),
+    accounts:demoAccountsFor(cc),
+    transactions:buildDemoTxns(new Date(), cc),
     bankConnected:true,
     demo:true,
   };
@@ -2256,21 +2252,33 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
     });
   }
 
-  // Tax benefits (country-specific)
-  if (cc.currency === "CAD") {
-    opportunities.push({
-      id:"tax", icon:"🍁", color:C.red,
-      title:"Tax benefits you may qualify for",
-      detail:`Based on your profile you may be eligible for the Canada Workers Benefit, GST/HST credit, or Ontario Trillium Benefit.`,
-      action:"Tax Tips", screen:"goals", tab:"tax", badge:"Claim now"
-    });
-  } else {
-    opportunities.push({
-      id:"tax", icon:"🦅", color:C.blue,
-      title:"US tax credits available",
-      detail:`You may qualify for the Earned Income Tax Credit or Saver's Credit — worth up to $2,000/yr.`,
-      action:"Tax Tips", screen:"goals", tab:"tax", badge:"Claim now"
-    });
+  // Tax benefits — NAMED FROM WHAT THE PRODUCT WILL ACTUALLY SHOW, not asserted.
+  //
+  // Both branches used to hard-code their own list. The Canadian one named the Ontario Trillium
+  // Benefit to every Canadian including the ones in British Columbia, and the American one claimed
+  // "the Earned Income Tax Credit or Saver's Credit — worth up to $2,000/yr" — a figure backed by
+  // nothing in this repo: EITC's maximum in taxData.js is $8,231 and our own Saver's Credit tip says
+  // $1,000. It was a plausible-sounding number rather than a real one, on a card that tells someone
+  // they may be owed money.
+  //
+  // getPersonalizedTaxCredits is the one owner of "which credits apply to this profile" — it already
+  // filters by country, state/province, life stage and family situation, and it is what the Tax Tips
+  // tab renders. Reading it here means the card can only ever name credits the user is about to see,
+  // and the card disappears when there are none rather than inventing something to say.
+  {
+    const topCredits = getPersonalizedTaxCredits(data.profile)
+      .filter(t => t.priority === "high")
+      .slice(0, 3)
+      .map(t => t.title.replace(/\s*\([^)]*\)\s*$/, "").split(/\s+[—:]\s*/)[0].trim());
+    if (topCredits.length) {
+      const isCA = cc.currency === "CAD";
+      opportunities.push({
+        id:"tax", icon:isCA?"🍁":"🦅", color:isCA?C.red:C.blue,
+        title:isCA?"Tax benefits you may qualify for":"US tax credits available",
+        detail:`Worth checking for your situation: ${topCredits.join(", ")}.`,
+        action:"Tax Tips", screen:"goals", tab:"tax", badge:"Review"
+      });
+    }
   }
 
   // Low-yield savings
@@ -2280,7 +2288,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
     if (bal > 500) opportunities.push({
       id:"hisa", icon:"🏦", color:C.gold,
       title:`Earn more on your savings`,
-      detail:`$${(bal||0).toFixed(0)} in savings at typical 0.3% earns $${(bal*0.003).toFixed(0)}/yr. A HISA at 4%+ earns $${(bal*0.04).toFixed(0)}/yr.`,
+      detail:`$${(bal||0).toFixed(0)} in savings at typical 0.3% earns $${(bal*0.003).toFixed(0)}/yr. ${savingsAccountTerm(data.profile?.country).replace(/^a /,"A ")} at 4%+ earns $${(bal*0.04).toFixed(0)}/yr.`,
       action:"Learn More", screen:"goals", tab:"learn", badge:"+$"+(Math.round((bal*0.04)-(bal*0.003)))+"/yr"
     });
   }
@@ -3427,7 +3435,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       <FlourishLockup size={84} color={C.cream} style={{marginBottom:16}}/>
       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.mutedHi,fontSize:14,lineHeight:1.6,maxWidth:300,marginBottom:30}}>Know what's safe to spend, every day.</div>
       <button onClick={()=>setStep(1)} style={{background:"linear-gradient(135deg,"+C.green+" 0%,"+C.greenBright+" 100%)",color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:"0 8px 32px "+C.green+"33, inset 0 1px 0 rgba(255,255,255,0.30)",letterSpacing:0.3,transition:"all .2s"}}>Get Started →</button>
-      <button onClick={()=>onComplete(buildDemoState())} style={{marginTop:10,background:"none",border:"1px solid "+C.border,borderRadius:99,padding:"9px 22px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer",fontWeight:600}}>👀 Try Demo (no account needed)</button>
+      <button onClick={()=>onComplete(buildDemoState(p.country))} style={{marginTop:10,background:"none",border:"1px solid "+C.border,borderRadius:99,padding:"9px 22px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer",fontWeight:600}}>👀 Try Demo (no account needed)</button>
       <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:12}}>Free to start · Canada & USA · No credit card</div>
       <div style={{marginTop:18,padding:"10px 14px",background:C.card,borderRadius:12,border:"1px solid "+C.border,maxWidth:320,textAlign:"left"}}>
         <div style={{color:C.mutedHi,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>By continuing you agree to our <button onClick={()=>onViewLegal&&onViewLegal("terms")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Terms</button> and <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Privacy Policy</button>, and consent to data processing per PIPEDA (CA) and US privacy laws.</div>
@@ -12491,7 +12499,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
             <h1 className="fll-h1">Understand your money, <em>coaching, not just tracking.</em></h1>
             <p className="fll-sub">See exactly what's safe to spend before payday, test any money decision, and finally understand your finances, in plain English.</p>
             {renderCapture("hero")}
-            {onTryDemo && <button className="fll-demo" onClick={onTryDemo}>or preview the app with sample data →</button>}
+            {onTryDemo && <button className="fll-demo" onClick={() => onTryDemo(waitlistCountry)}>or preview the app with {waitlistCountry === "US" ? "🇺🇸 US" : "🇨🇦 Canadian"} sample data →</button>}
             <div><span className="fll-trust">🔒 Read-only. Flourish can't move your money.</span></div>
           </div>
 
@@ -12651,7 +12659,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
             {isCapacitorIOS() && onTryDemo && (
               /* App Store reviewers: enter with sample data — no account or beta code needed (iOS only). */
               <div style={{ textAlign: "center", marginTop: 22 }}>
-                <button onClick={onTryDemo} style={{ background: "rgba(0,200,224,0.14)", border: "1px solid rgba(0,200,224,0.4)", color: "#00C8E0", borderRadius: 99, padding: "11px 22px", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>🧪 Try the demo — no account needed</button>
+                <button onClick={() => onTryDemo(waitlistCountry)} style={{ background: "rgba(0,200,224,0.14)", border: "1px solid rgba(0,200,224,0.4)", color: "#00C8E0", borderRadius: 99, padding: "11px 22px", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>🧪 Try the demo — no account needed</button>
                 <div style={{ color: "#6B7A6E", fontSize: 11, marginTop: 8, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Explore flourish with sample data</div>
               </div>
             )}
@@ -14427,7 +14435,7 @@ export default function FlourishApp(){
   // It must NOT pre-accept the AI disclosure: demo is the path App Review takes (the iOS-only
   // "Try the demo" button), so auto-accepting hid the 5.1.2(i) screen from the exact audience it
   // exists for. Demo users now fall through to the disclosure gate below like everyone else.
-  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={()=>{ const dd=buildDemoState(); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); }}/>;
+  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); }}/>;
 
   // Hold the onboarding + disclosure gates until the DB hydrate resolves. Both `onboarded` and
   // `aiDisclosureSeen` initialise from localStorage, which is EMPTY on a fresh install / new device,
@@ -14624,7 +14632,7 @@ export default function FlourishApp(){
       onViewLegal={s=>{setShowSettings(false);setPendingPlaid(null);setScreen(s);}}
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;
-    if(screen==="home")return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }}/>;
+    if(screen==="home")return <Dashboard data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} setShowNotifs={setShowNotifs} isDesktop={isDesktop} onUpgrade={()=>setShowPaywall(true)} checkInBonus={checkInBonus} onCheckIn={()=>setShowCheckIn(true)} onWhatIf={(text, type, autoRun)=>{setWhatIfQuery(text||"");setWhatIfType(type||null);setWhatIfAutoRun(!!autoRun);setShowWhatIf(true);}} onWrapped={()=>setShowWrapped(true)} dashLayout={dashLayout} setDashLayout={setDashLayout} setGoalsTab={setGoalsTab} isRefreshing={isRefreshing} activeScenario={activeScenario} setActiveScenario={setActiveScenario} onTryDemo={()=>{ const dd=buildDemoState(appData?.profile?.country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); }}/>;
     // Watch = Plan + Activity (segmented). Time Machine / What-If live inside Plan. Old ids route here.
     if(screen==="watch"||screen==="plan"||screen==="spend"){
       const sub = screen==="spend" ? "spend" : "plan";
