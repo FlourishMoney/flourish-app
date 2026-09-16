@@ -39,6 +39,7 @@ import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositA
 import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView } from "./lib/suggestedDaily.js";
 import { forecastWalk } from "./lib/forecastWalk.js";
+import { affordabilityCheck } from "./lib/affordability.js";
 import { demoCoachExchanges, demoFacilitatorLine } from "./lib/demoCoach.js";
 import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
@@ -1054,7 +1055,9 @@ function AutopilotCard({data, setScreen}) {
       color:C.gold, detail:"progress toward your goal",
     },
     plan.buffer > 100 && {
-      icon:"🔒", label:"Untouched buffer", amount:formatMoney(plan.buffer||0),
+      // NOT "buffer" -- that word belongs to the "Spending buffer" line inside safe-to-spend.
+      // This is the residual after today's plan allocates everything: a different quantity.
+      icon:"🔒", label:"Left over", amount:formatMoney(plan.buffer||0),
       color:C.muted, detail:"stays in your account",
     },
   ].filter(Boolean);
@@ -4858,27 +4861,26 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               {(()=>{
                 // R1: Uses pre-calculated nextPaydayDay — no ForecastEngine call per keystroke
                 const checkAfford = (raw) => {
-                  const amt = parseFloat(raw.replace(/[^0-9.]/g,""));
-                  // R10: cap at $99,999 — avoids absurd results
-                  if (!amt || amt <= 0 || amt > 99999) { setAffordResult(null); return; }
-                  const remaining = safe - amt;
-                  // R2: Threshold is 10% of safe — scales with the user's actual situation
-                  const tightThreshold = Math.max(10, safe * 0.10);
+                  // The remainder is computed from ssView.headline -- the number RENDERED above this
+                  // card -- not the engine's raw safeAmount. Reading the raw value made the card
+                  // contradict its own headline by a dollar on every amount in both demos.
+                  const r = affordabilityCheck(ssView.headline, raw);
+                  if (!r) { setAffordResult(null); return; }
                   const waitMsg = nextPaydayDay === 1
                     ? "tomorrow"
                     : nextPaydayDay
                       ? `in ${nextPaydayDay} day${nextPaydayDay===1?"":"s"}`
-                      : `after your next ${payWord(data.profile?.country)}`;
-                  if (remaining >= tightThreshold) {
+                      : "after your next deposit"; // not "paycheque" -- this surface cannot know which income arrives
+                  if (r.state === "yes") {
                     setAffordResult({
                       state: "yes",
                       msg: "Yes — you can afford this",
-                      sub: `$${remaining.toFixed(0)} left in your safe limit today`,
+                      sub: `${r.remainingText} left in your safe limit today`,
                       color: C.green,
                     });
-                  } else if (remaining >= 0) {
+                  } else if (r.state === "tight") {
                     // R6: $0 remaining says "Nothing left" not "Only $0 left"
-                    const leftMsg = remaining < 1 ? "Nothing left after this" : `Only $${remaining.toFixed(0)} left`;
+                    const leftMsg = r.remaining < 1 ? "Nothing left after this" : `Only ${r.remainingText} left`;
                     setAffordResult({
                       state: "tight",
                       msg: "You can — but it's tight",
@@ -4889,7 +4891,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                     setAffordResult({
                       state: "no",
                       msg: "Not right now",
-                      sub: `This puts you $${Math.abs(remaining).toFixed(0)} over your limit. Wait ${waitMsg}.`,
+                      sub: `This puts you ${r.overByText} over your limit. Wait ${waitMsg}.`,
                       color: C.red,
                     });
                   }

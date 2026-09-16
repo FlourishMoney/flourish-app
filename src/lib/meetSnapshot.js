@@ -85,7 +85,7 @@ export function buildMeetSnapshot(data = {}) {
         question: `Put an extra ${formatMoney(extra)} toward ${top.name || "your top debt"}, or into savings${periodEnd ? `, before ${periodEnd}` : " this period"}?`,
         options: [
           { label: `Extra ${formatMoney(extra)} to ${top.name || "the debt"}`, outcome: after < before ? `paid off in ${_fmtMonths(after)} instead of ${_fmtMonths(before)}` : `paid off in ${_fmtMonths(after)}` },
-          { label: `Add ${formatMoney(extra)} to savings`, outcome: `buffer grows to ${formatMoney(buf.after)}` },
+          { label: `Add ${formatMoney(extra)} to savings`, outcome: `savings grows to ${formatMoney(buf.after)}` },   // "savings", not "buffer": buf.after IS the savings balance (savingsBufferAfter), and "Spending buffer" on Today is a different quantity
         ],
       }];
     }

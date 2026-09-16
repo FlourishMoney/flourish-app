@@ -66,7 +66,9 @@ const { create } = require("./_runner.cjs");
     // must quote the word they banned. Newlines are preserved so reported line numbers stay true.
     const blanked = raw
       .replace(/\{?\/\*[\s\S]*?\*\/\}?/g, (m) => m.replace(/[^\n]/g, " "))
-      .replace(/^\s*\/\/.*$/gm, (m) => m.replace(/[^\n]/g, " "));
+      // Trailing `//` comments too, not just line-leading ones — the widened "your next" scan below
+      // otherwise trips on its own explanatory comments. The lookbehind spares `https://`.
+      .replace(/(?<!:)\/\/[^\n]*/g, (m) => " ".repeat(m.length));
     const app = blanked.split("\n");
     const payish = /paycheque|paycheck|payWord\s*\(/i;
     const perDayIncome = /\b(?:ev|day)\.income\b/;
@@ -79,11 +81,14 @@ const { create } = require("./_runner.cjs");
     // Same defect, second shape: a sentence about what arrives NEXT. "Keeps you safe until your next
     // paycheque" sat beside a sibling branch already saying "deposit", and it fires precisely when no
     // deposit could be projected — i.e. when the app knows least about what is coming.
+    // GUARD GAP, closed: this used to test only /until your next/, and a THIRD instance of the same
+    // claim sat in the "Can I afford this?" widget as "after your next ${payWord(...)}" — the guard
+    // walked straight past it. The pattern is now "your next <pay-word>" in any preposition.
     const nextClaims = [];
     app.forEach((line, i) => {
-      if (/until your next/i.test(line) && payish.test(line)) nextClaims.push(`${i + 1}: ${line.trim().slice(0, 90)}`);
+      if (/your next/i.test(line) && payish.test(line)) nextClaims.push(`${i + 1}: ${line.trim().slice(0, 90)}`);
     });
-    t.eq(nextClaims.join("\n"), "", "no sentence about the NEXT income event names it as a pay cheque");
+    t.eq(nextClaims.join("\n"), "", "no sentence about the NEXT income event names it as a pay cheque, in ANY preposition");
     const nextDeposit = raw.split("\n").filter(l => /until your next deposit/i.test(l) && !l.includes("/*")).length;
     t.ok(nextDeposit >= 3, `…and the surfaces that make that claim say "deposit" (found ${nextDeposit})`);
 
@@ -119,6 +124,23 @@ const { create } = require("./_runner.cjs");
     // The render must read a FILTERED list, and the count badge must read the same one.
     t.eq((raw.match(/_eligibleBenefits/g) || []).length, 3, "7e one filtered list, read by both the count badge and the list itself");
     t.eq((raw.match(/cfg\.benefitsChecker\.(map|length)/g) || []).join(","), "", "7f …and nothing renders the unfiltered array any more");
+  }
+
+  // ── 8. ONE WORD, ONE MEANING: "buffer" ────────────────────────────────────────────────────────
+  // Three screens used it for three different quantities: the "Spending buffer" line inside
+  // safe-to-spend (~10 days of average spend, held back), the Meet card's "buffer grows to $2,326"
+  // (which is the SAVINGS BALANCE after a transfer), and Autopilot's "Untouched buffer" (the residual
+  // after the day's plan allocates everything). The headline line item keeps the word because it is a
+  // term in the calculation a user can see; the other two now say what they actually are.
+  {
+    const fs = require("fs"), path = require("path");
+    const read = (f) => fs.readFileSync(path.join(__dirname, "..", "src", f), "utf8");
+    const view = read("lib/safeToSpendView.js"), meet = read("lib/meetSnapshot.js"), app = read("App.jsx");
+    t.ok(/label: "Spending buffer"/.test(view), "8a the safe-to-spend line item keeps the word");
+    t.ok(!/buffer grows to/.test(meet), "8b the Meet card no longer calls the savings balance a buffer");
+    t.ok(/savings grows to/.test(meet), "8c …it says savings, which is what savingsBufferAfter returns");
+    t.ok(!/"Untouched buffer"/.test(app), "8d Autopilot no longer calls its residual a buffer");
+    t.ok(/label:"Left over"/.test(app), "8e …it says what it is");
   }
 
   t.summary("locale.test");
