@@ -42,6 +42,10 @@ export function safeToSpendView(ss) {
   // formatted and tagged so a surface can colour by kind/key. The rows always sum to `headline`.
   const rows = [
     { key: "balance", kind: "balance", label: "In your accounts", sign: "", display: balanceDisplay, value: formatMoney(balanceDisplay) },
+    // `sign` is U+2212, and `value` is the POSITIVE amount. That is deliberate and is the minus-glyph
+    // rule in format.js: the "−" here is an arithmetic operator printed beside the label, not part of
+    // the number, so the number itself stays a plain positive value a user can copy. A negative value
+    // (what formatMoney emits for n < 0) uses the ASCII hyphen instead.
     ...deductions.filter(d => d.display > 0).map(d => ({ key: d.key, kind: "deduction", label: d.label, sign: "−", display: d.display, value: d.value })),
   ];
 

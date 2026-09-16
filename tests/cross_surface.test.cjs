@@ -16,7 +16,7 @@ const { create } = require("./_runner.cjs");
   const { ForecastEngine } = await import("../src/lib/forecastEngine.js");
   const { safeToSpendView } = await import("../src/lib/safeToSpendView.js");
   const { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } = await import("../src/lib/incomeSchedule.js");
-  const { FinancialCalcEngine, toMonthly } = await import("../src/lib/financialCalculations.js");
+  const { FinancialCalcEngine, toMonthly, isCashAccount, baseCurrencyOf, num } = await import("../src/lib/financialCalculations.js");
   const { formatBalance } = await import("../src/lib/format.js");
   const { suggestedDailyView } = await import("../src/lib/suggestedDaily.js");
   const t = create();
@@ -196,6 +196,53 @@ const { create } = require("./_runner.cjs");
     const f = assertConsistent("no-anchor", noAnchor, date);
     t.eq(f.nd.confidence, "estimated", "no-anchor: confidence is 'estimated' (counted forward from today)");
     t.eq(iso(f.nd.date), "2026-06-29", "no-anchor: falls back to today + 14");
+  }
+
+  // ── WHICH ACCOUNTS MAKE UP THE BALANCE — the rule the transparency panel must obey ──────────────
+  // The "how is this calculated" panel listed accounts with a DENY-list (everything that is not credit
+  // or investment), ignored currency, and summed with parseFloat. On a simple demo household it agreed
+  // with the engine by luck; on a household with a loan/mortgage account or foreign cash it did not —
+  // on the single screen whose entire job is to be trusted. These pin the selection rule itself, so any
+  // surface that lists "accounts used for your balance" can be checked against it.
+  {
+    const MIXED = {
+      ...BASE,
+      profile: { country: "CA" },
+      accounts: [
+        { id: "c",  type: "checking",   balance: "3000.88" },
+        { id: "s",  type: "savings",    balance: "1000.50" },
+        { id: "us", type: "checking",   balance: "5000", currency: "USD" }, // real money, no FX source
+        { id: "m",  type: "mortgage",   balance: "-450000" },               // a LIABILITY, not spendable cash
+        { id: "l",  type: "loan",       balance: "-8200" },
+        { id: "i",  type: "investment", balance: "12480" },
+        { id: "cc", type: "credit",     balance: "-3420" },
+      ],
+    };
+    const date = new Date("2026-07-14T12:00:00");
+    const ss = SafeSpendEngine.calculate(MIXED, date);
+    const base = baseCurrencyOf(MIXED);
+
+    // The panel's own filter, written exactly as the surface writes it.
+    const listed = MIXED.accounts.filter(a => isCashAccount(a) && String(a.currency || "CAD").toUpperCase() === base);
+    t.eq(listed.map(a => a.id).join(","), "c,s", "balance accounts: the cash ALLOW-list — no mortgage, no loan, no investment, no foreign cash");
+    t.eq(listed.reduce((s, a) => s + num(a.balance), 0), ss.balance, "…and the listed accounts sum EXACTLY to the engine's balance (rows cannot disagree with their own total)");
+
+    // The old deny-list, reproduced here only to prove it really did diverge.
+    const denyList = MIXED.accounts.filter(a => a.type !== "credit" && a.type !== "investment");
+    const denySum = denyList.reduce((s, a) => s + parseFloat(a.balance || 0), 0);
+    t.ok(denySum !== ss.balance, "the old deny-list genuinely disagreed with the engine (it is not a formatting difference)");
+    t.eq(Math.round(denySum), -449199, "…it swept a mortgage and a loan into 'available balance' and showed a household with $4,001 as deeply negative");
+
+    // Rounding directions on this panel: cash DOWN, credit owed UP, net = the difference of the two
+    // DISPLAYED figures — so the subtraction printed on screen is arithmetically true.
+    const creditAccts = MIXED.accounts.filter(a => a.type === "credit" || a.type === "credit card" || a.subtype === "credit card" || a.type === "line of credit");
+    const creditOwed  = creditAccts.reduce((s, a) => s + Math.abs(num(a.balance)), 0);
+    const cashShown   = Math.floor(ss.balance);
+    const creditShown = Math.ceil(creditOwed);
+    t.eq(formatBalance(ss.balance), "$4,001", "displayed cash rounds DOWN from 4001.38 — never overstate what is there");
+    t.eq(cashShown - creditShown, 581, "net cash = displayed cash − displayed credit owed, so the on-screen equation adds up");
+    t.eq(ss.excludedForeignCash, 5000, "the excluded foreign cash is reported by the engine, so the panel can say what it left out");
+    t.eq(ss.mixedCurrencyDetected, true, "…and flagged, rather than silently dropped");
   }
 
   t.summary("cross_surface.test");

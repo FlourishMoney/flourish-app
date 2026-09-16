@@ -46,5 +46,18 @@ const { create } = require("./_runner.cjs");
   t.eq(v4.balanceDisplay, 0, "a non-numeric balance coerces to 0");
   t.eq(v4.headline, 0, "and the headline stays 0, not NaN");
 
+  // ── The minus glyph rule, on the other side of the line ────────────────────────────────────────
+  // A breakdown row's "−" is an OPERATOR beside the label, so it is U+2212 and the value it sits next
+  // to stays POSITIVE. (format.test pins the other half: a negative VALUE uses the ASCII hyphen.)
+  {
+    const v = safeToSpendView({ balance: 3083.88, upcomingBills: 65, debtPayments: 348, safetyBuf: 435, savingsAlloc: 291 });
+    const ded = v.rows.filter(r => r.kind === "deduction");
+    t.ok(ded.length > 0, "the sample has deduction rows to check");
+    t.eq([...new Set(ded.map(r => r.sign))].join(""), "−", "a deduction row's sign is U+2212, the arithmetic operator — not an ASCII hyphen");
+    t.eq(ded.filter(r => r.value.includes("-")).length, 0, "…and no row VALUE carries a sign: the operator is in the label, the number stays positive");
+    t.eq(ded.filter(r => r.display <= 0).length, 0, "…which is only honest because every displayed deduction is a positive amount");
+    t.eq(v.rows.find(r => r.kind === "balance").sign, "", "the balance row has no operator — it is the term being subtracted FROM");
+  }
+
   t.summary("safeToSpendView.test");
 })();

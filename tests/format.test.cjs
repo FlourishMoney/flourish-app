@@ -55,5 +55,22 @@ const t = create();
   t.eq(formatBalance(undefined), "$0", "5g undefined -> $0");
   t.eq(formatBalance(999.99), "$999", "5h no separator below 1000, still floored");
 
+  // ── 6. THE MINUS GLYPH RULE ────────────────────────────────────────────────────────────────────
+  // Two glyphs, and which one you get depends on whether the character is INSIDE a number or BESIDE
+  // one. Inside -> ASCII hyphen (copy-pasteable, parses as a number, reads correctly aloud).
+  // Beside -> U+2212, hand-written in a LABEL as an arithmetic operator, with a POSITIVE value next
+  // to it. These pin the rule so a future "tidy-up" cannot swap one for the other.
+  const ASCII = "-", MINUS = "−";
+  t.ok(formatMoney(-45).includes(ASCII), "6a a negative VALUE uses the ASCII hyphen");
+  t.ok(!formatMoney(-45).includes(MINUS), "6b …and never U+2212, which does not parse as a number when pasted");
+  t.eq(formatMoney(-45), "-$45", "6c the exact string: sign, then currency, then digits");
+  t.eq(formatMoney(-45).charCodeAt(0), 45, "6d …and its first character is code point 45, the ASCII hyphen");
+  t.eq(Number(formatMoney(-45).replace("$", "")), -45, "6e which means the emitted string still parses back to the number");
+  t.ok(Number.isNaN(Number(`${MINUS}45`)), "6f …whereas a U+2212 string does NOT parse — the reason for the rule");
+  t.eq(formatBalance(-50.4), "-$51", "6g formatBalance inherits the same ASCII sign");
+  t.eq(formatMoney(-2082.5, { cents: true }), "-$2,082.50", "6h and so does the cents form");
+  t.eq(formatMoney(45), "$45", "6i a positive value carries no sign at all");
+  t.eq(formatMoney(-0), "$0", "6j negative zero is not shown as negative");
+
   t.summary("format");
 })();

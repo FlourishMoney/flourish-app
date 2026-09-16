@@ -7,6 +7,22 @@ export function formatNumber(n, { cents = false } = {}) {
   return num.toLocaleString("en-US", { minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: cents ? 2 : 0 });
 }
 
+// THE MINUS GLYPH RULE — one rule, two glyphs, and which one you get depends on what the character IS,
+// not on what it looks like:
+//
+//   1. A negative VALUE uses the ASCII hyphen "-". That is every string formatMoney emits for n < 0
+//      ("-$45"). The number is part of the data: it gets copied, pasted into a spreadsheet, read aloud
+//      by a screen reader, searched for, and exported. U+2212 MINUS SIGN breaks all of those — a pasted
+//      "−45" is text, not a number, and VoiceOver reads it inconsistently. So: values are ASCII.
+//
+//   2. A U+2212 "−" appears only as an OPERATOR in a LABEL — the leading glyph on a breakdown row
+//      ("− Upcoming bills") and between the terms of a printed equation ("Cash ($3,083) − Credit owed").
+//      It is typography, not part of any number, it is never adjacent to a digit that belongs to it,
+//      and it is what makes a subtraction column read as arithmetic rather than as a list of dashes.
+//
+// The test is therefore: is this character INSIDE a number, or BESIDE one? Inside → ASCII hyphen, and it
+// comes from formatMoney, never from a hand-written "-$" or "−$". Beside → U+2212, hand-written in the
+// label, and the value next to it stays positive. Do not "normalise" one into the other.
 export function formatMoney(n, { cents = false } = {}) {
   const num = Number(n);
   const safe = Number.isFinite(num) ? num : 0;

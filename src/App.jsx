@@ -11,7 +11,7 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
-  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, daysUntilDueDay } from "./lib/financialCalculations.js";
+  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, daysUntilDueDay, num } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
 import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multibank.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
@@ -27,6 +27,7 @@ import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
 import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown } from "./lib/format.js";
+import { payWord } from "./lib/locale.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
@@ -921,7 +922,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
         ? ((daysToPayday != null && daysToPayday <= 1)
             ? `Keeps you safe until tomorrow's deposit of ${formatMoney(nextDep.amount)}.`
             : `Keeps you safe until your next deposit of ${formatMoney(nextDep.amount)} on ${nextDep.date.toLocaleDateString("en-CA", { month: "short", day: "numeric" })}.`)
-        : "Keeps you safe until your next paycheque.",
+        : `Keeps you safe until your next ${payWord(data.profile?.country)}.`,
       action: "See forecast", screen: "plan"
     });
   }
@@ -1027,23 +1028,23 @@ function AutopilotCard({data, setScreen}) {
 
   const lineItems = [
     plan.dailySpendLimit > 0 && {
-      icon:"💡", label:"Safe to spend per day", amount:`$${plan.dailySpendLimit}`,
+      icon:"💡", label:"Safe to spend per day", amount:formatMoney(plan.dailySpendLimit),
       color:C.green, detail:`for the next ${plan.daysLeft} day${plan.daysLeft!==1?"s":""}`,
     },
     plan.savingsTransfer > 0 && {
-      icon:"🐷", label:`Move to ${plan.savingsTarget}`, amount:`$${plan.savingsTransfer}`,
+      icon:"🐷", label:`Move to ${plan.savingsTarget}`, amount:formatMoney(plan.savingsTransfer),
       color:C.teal, detail:"builds your safety net",
     },
     plan.debtPayment > 0 && plan.debtTarget && {
-      icon:"🎯", label:`Extra toward ${plan.debtTarget.name}`, amount:`$${plan.debtPayment}`,
+      icon:"🎯", label:`Extra toward ${plan.debtTarget.name}`, amount:formatMoney(plan.debtPayment),
       color:C.purple, detail:`saves on ${plan.debtTarget.rate}% interest`,
     },
     plan.goalContribution > 0 && plan.goalTarget && {
-      icon:"🌱", label:plan.goalTarget.name||"Goal contribution", amount:`$${plan.goalContribution}`,
+      icon:"🌱", label:plan.goalTarget.name||"Goal contribution", amount:formatMoney(plan.goalContribution),
       color:C.gold, detail:"progress toward your goal",
     },
     plan.buffer > 100 && {
-      icon:"🔒", label:"Untouched buffer", amount:`$${(plan.buffer||0).toFixed(0)}`,
+      icon:"🔒", label:"Untouched buffer", amount:formatMoney(plan.buffer||0),
       color:C.muted, detail:"stays in your account",
     },
   ].filter(Boolean);
@@ -1107,9 +1108,14 @@ function AutopilotCard({data, setScreen}) {
                   </div>
                 </div>
                 <div style={{textAlign:"right"}}>
-                  <div style={{color:C.redBright,fontWeight:800,fontSize:13,fontFamily:"'Playfair Display',serif"}}>−${item.amount.toFixed(0)}</div>
+                  {/* A charge is a deduction, so it rounds UP; the balance it leaves behind is a balance,
+                      so it rounds DOWN. Both directions are the conservative ones, and both now come
+                      from the shared rule rather than a local toFixed. */}
+                  <div style={{color:C.redBright,fontWeight:800,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{formatMoney(-Math.ceil(num(item.amount)))}</div>
                   <div style={{color:item.runningBalance<0?C.redBright:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:item.runningBalance<0?700:400}}>
-                    {item.runningBalance<0?`$${Math.abs(item.runningBalance).toFixed(0)} overdrawn`:`$${item.runningBalance.toFixed(0)} left`}
+                    {item.runningBalance<0
+                      ?`${formatMoney(Math.abs(roundBalanceDown(item.runningBalance)))} overdrawn`
+                      :`${formatBalance(item.runningBalance)} left`}
                   </div>
                 </div>
               </div>
@@ -1232,8 +1238,8 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
                           {ev.day===0?"Today":ev.day===1?"Tomorrow":ev.date.toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}
                           <span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
                         </div>
-                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(ev.income||0).toFixed(0)} ${data.profile?.country==="US"?"paycheck":"paycheque"}`}</div>}
-                        {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${parseFloat(b.amount||0).toFixed(0)}</div>)}
+                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(ev.income||0)} ${payWord(data.profile?.country)}`}</div>}
+                        {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −{formatMoney(num(b.amount))}</div>)}
                         {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                       </div>
                       <div style={{textAlign:"right",flexShrink:0,minWidth:80}}>
@@ -1266,9 +1272,9 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
                     {ev.isPayday&&(
                       <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}22`}}>
                         <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
-                          <span style={{width:6,height:6,borderRadius:"50%",background:C.green,display:"inline-block"}}/>💰 {data.profile?.country==="US"?"Paycheck":"Paycheque"}
+                          <span style={{width:6,height:6,borderRadius:"50%",background:C.green,display:"inline-block"}}/>💰 {payWord(data.profile?.country,{capital:true})}
                         </span>
-                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>+${paydayLineAmount(ev).toFixed(0)}</span>
+                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>+{formatMoney(paydayLineAmount(ev))}</span>
                       </div>
                     )}
                     {/* Bills */}
@@ -1277,7 +1283,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
                         <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
                           <span style={{width:6,height:6,borderRadius:"50%",background:C.gold,display:"inline-block"}}/>📅 {b.name}
                         </span>
-                        <span style={{color:C.gold,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>−${parseFloat(b.amount||0).toFixed(0)}</span>
+                        <span style={{color:C.gold,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>−{formatMoney(num(b.amount))}</span>
                       </div>
                     ))}
                     {/* Daily spend estimate */}
@@ -1287,7 +1293,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
                           <span style={{width:6,height:6,borderRadius:"50%",background:C.muted,display:"inline-block"}}/>🛒 Est. daily spend
                           <span style={{color:C.muted,fontSize:9}}>(30d avg)</span>
                         </span>
-                        <span style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>−${(avgDaily).toFixed(0)}</span>
+                        <span style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>−{formatMoney(avgDaily)}</span>
                       </div>
                     )}
                     {/* Divider + balance result */}
@@ -1373,8 +1379,8 @@ function FinancialTimeline({data}) {
                         <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:2}}>
                           {label}<span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
                         </div>
-                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+$${(ev.income||0).toFixed(0)} ${data.profile?.country==="US"?"paycheck":"paycheque"}`}</div>}
-                        {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −${parseFloat(b.amount||0).toFixed(0)}</div>)}
+                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(ev.income||0)} ${payWord(data.profile?.country)}`}</div>}
+                        {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −{formatMoney(num(b.amount))}</div>)}
                         {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                       </div>
                       <div style={{textAlign:"right",flexShrink:0}}>
@@ -1389,20 +1395,20 @@ function FinancialTimeline({data}) {
                     <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>Day breakdown</div>
                     {ev.isPayday&&(
                       <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
-                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💰 {data.profile?.country==="US"?"Paycheck":"Paycheque"}</span>
-                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+${paydayLineAmount(ev).toFixed(0)}</span>
+                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💰 {payWord(data.profile?.country,{capital:true})}</span>
+                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+{formatMoney(paydayLineAmount(ev))}</span>
                       </div>
                     )}
                     {ev.bills.map((b,bi)=>(
                       <div key={bi} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
                         <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📅 {b.name}</span>
-                        <span style={{color:C.gold,fontWeight:700,fontSize:12}}>−${parseFloat(b.amount||0).toFixed(0)}</span>
+                        <span style={{color:C.gold,fontWeight:700,fontSize:12}}>−{formatMoney(num(b.amount))}</span>
                       </div>
                     ))}
                     {ev.day>0&&(
                       <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
                         <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🛒 Est. daily spend</span>
-                        <span style={{color:C.muted,fontSize:12}}>−${(avgDaily).toFixed(0)}</span>
+                        <span style={{color:C.muted,fontSize:12}}>−{formatMoney(avgDaily)}</span>
                       </div>
                     )}
                     <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0 0"}}>
@@ -3552,7 +3558,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
 
     // 3: Income (after bank — auto-detection runs first)
     <div>
-      <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:30,color:C.cream,marginBottom:6,letterSpacing:-0.5}}>{p.country==="US"?"Your income":"Your paycheques"}</div>
+      <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:30,color:C.cream,marginBottom:6,letterSpacing:-0.5}}>{p.country==="US"?"Your income":`Your ${payWord(p.country,{plural:true})}`}</div>
       <div style={{color:C.muted,fontSize:14,marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
         {incomes[0]?.autoDetected
           ? "We detected your income from your transactions. Confirm or adjust below."
@@ -3640,7 +3646,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
               {/* Step 3 — Amount + Frequency (always shown for both paths) */}
               <div style={{marginBottom:12}}>
                 <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>
-                  {inc.isVariable ? "Typical paycheque (take-home)" : inc.autoDetected ? "Paycheque amount (take-home)" : "Paycheque amount (take-home)"}
+                  {inc.isVariable ? `Typical ${payWord(p.country)} (take-home)` : `${payWord(p.country,{capital:true})} amount (take-home)`}
                 </div>
                 <div style={{display:"flex",gap:10}}>
                   {/* Amount */}
@@ -3686,7 +3692,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:inc.isVariable?C.purple+"11":C.cardAlt,border:`1px solid ${inc.isVariable?C.purple+"44":C.border}`,borderRadius:12,padding:"10px 14px",transition:"all .2s"}}>
                 <div>
                   <div style={{color:inc.isVariable?C.purpleBright||C.tealBright:C.mutedHi,fontSize:13,fontWeight:600}}>Variable income</div>
-                  <div style={{color:C.muted,fontSize:11,marginTop:1}}>{inc.isVariable?"Amount changes — we'll use your typical paycheque for planning":"Consistent amount every pay period"}</div>
+                  <div style={{color:C.muted,fontSize:11,marginTop:1}}>{inc.isVariable?`Amount changes — we'll use your typical ${payWord(p.country)} for planning`:"Consistent amount every pay period"}</div>
                 </div>
                 <button onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,isVariable:!inc.isVariable}:x))}
                   style={{width:46,height:26,borderRadius:99,background:inc.isVariable?C.purple||C.teal:C.cardAlt,border:`1px solid ${inc.isVariable?C.purple||C.teal:C.border}`,cursor:"pointer",position:"relative",transition:"all .2s",flexShrink:0}}>
@@ -4169,10 +4175,25 @@ function DataTransparencyPanel({data, onClose}) {
   );
   const totalSpend = included.reduce((s,t) => s+t.amount, 0);
 
-  // Balance audit
-  const chequingAccts = accounts.filter(a => a.type !== "credit" && a.type !== "investment");
+  // Balance audit — this panel exists to EXPLAIN the Today balance, so it must read the same owner,
+  // not recompute it. It previously picked accounts with a deny-list (everything that is not credit or
+  // investment), skipped the currency filter and parsed with parseFloat, so it could disagree with
+  // SafeSpendEngine for anyone holding a loan/mortgage account or foreign-currency cash — on the one
+  // screen whose whole job is trust. Now: the engine's own balance, and the same allow-list + base
+  // currency + num() it uses, so the listed accounts always sum to the stated total.
+  const _auditSS      = SafeSpendEngine.calculate(data);
+  const _auditBase    = baseCurrencyOf(data);
+  const chequingAccts = accounts.filter(a => isCashAccount(a) && String(a.currency||"CAD").toUpperCase() === _auditBase);
   const creditAccts   = accounts.filter(a => a.type === "credit" || a.type === "credit card" || a.subtype === "credit card" || a.type === "line of credit");
-  const totalBalance  = chequingAccts.reduce((s,a) => s + parseFloat(a.balance||0), 0);
+  const totalBalance  = _auditSS.balance;
+  const creditOwed    = creditAccts.reduce((s,a) => s + Math.abs(num(a.balance)), 0);
+  // This is the AUDIT screen, so the per-account rows show the raw cents the bank reported and the
+  // TOTALS carry the rounding rule — never floor-per-row, or the rows stop adding up to the total
+  // they are supposed to explain. Cash rounds down (never overstate what is there); credit owed
+  // rounds up (never understate what is due); net cash is the difference of those two DISPLAYED
+  // figures, so the subtraction printed on screen is arithmetically true.
+  const cashShown     = roundBalanceDown(totalBalance);
+  const creditShown   = Math.ceil(creditOwed);
 
   // Category breakdown
   const catBreakdown = {};
@@ -4327,16 +4348,35 @@ function DataTransparencyPanel({data, onClose}) {
                 <Row key={i}
                   label={a.name}
                   sub={`${a.institution||"Bank"} · ${a.type}`}
-                  value={`$${parseFloat(a.balance||0).toFixed(0)}`}
+                  value={formatMoney(num(a.balance),{cents:true})}
                   color={C.greenBright}
                   indent
                 />
               ))}
-              <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",marginTop:4}}>
-                <div style={{...s,fontSize:13,fontWeight:800,color:C.cream}}>Available balance</div>
-                <div style={{...s,fontSize:16,fontWeight:900,color:C.greenBright,fontFamily:"'Playfair Display',serif"}}>${totalBalance.toFixed(0)}</div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"12px 0",marginTop:4}}>
+                <div>
+                  <div style={{...s,fontSize:13,fontWeight:800,color:C.cream}}>Available balance</div>
+                  {cashShown !== totalBalance && (
+                    <div style={{...s,fontSize:10,color:C.muted,marginTop:2}}>
+                      Rounded down from {formatMoney(totalBalance,{cents:true})} — a balance always rounds down
+                    </div>
+                  )}
+                </div>
+                <div style={{...s,fontSize:16,fontWeight:900,color:C.greenBright,fontFamily:"'Playfair Display',serif"}}>{formatMoney(cashShown)}</div>
               </div>
             </>}
+
+            {/* Foreign cash is real money the engine deliberately leaves out (there is no FX source, and
+                converting at a guessed rate would be worse than excluding). Now that this panel uses the
+                engine's account filter, that exclusion would otherwise be SILENT here — on the one screen
+                whose job is to say what was left out and why. */}
+            {_auditSS.mixedCurrencyDetected && (
+              <div style={{marginTop:12,background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:12,padding:"10px 12px"}}>
+                <div style={{...s,fontSize:11,color:C.goldBright,lineHeight:1.65}}>
+                  🌐 {formatMoney(_auditSS.excludedForeignCash,{cents:true})} of cash is held in another currency and is not included above. Flourish has no exchange rate to convert it with, so it is left out of your {_auditBase} balance rather than counted at a guessed rate.
+                </div>
+              </div>
+            )}
 
             {creditAccts.length>0&&<>
               <div style={{...s,fontSize:11,color:C.redBright,fontWeight:700,margin:"16px 0 6px"}}>⚠️ Credit cards — liabilities, not balance</div>
@@ -4344,7 +4384,7 @@ function DataTransparencyPanel({data, onClose}) {
                 <Row key={i}
                   label={a.name}
                   sub={`${a.institution||"Bank"} · credit — excluded from balance, shown as debt`}
-                  value={`−$${Math.abs(parseFloat(a.balance||0)).toFixed(0)}`}
+                  value={formatMoney(-Math.abs(num(a.balance)),{cents:true})}
                   color={C.redBright}
                   indent
                 />
@@ -4368,11 +4408,11 @@ function DataTransparencyPanel({data, onClose}) {
                 <div style={{...s,fontSize:11,color:C.tealBright,fontWeight:700,marginBottom:4}}>📊 Net cash position</div>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <div style={{...s,fontSize:12,color:C.mutedHi}}>
-                    Cash (${totalBalance.toFixed(0)}) − Credit owed (${creditAccts.reduce((s,a)=>s+Math.abs(parseFloat(a.balance||0)),0).toFixed(0)})
+                    Cash ({formatMoney(cashShown)}) − Credit owed ({formatMoney(creditShown)})
                   </div>
                   <div style={{...s,fontSize:14,fontWeight:900,fontFamily:"'Playfair Display',serif",
-                    color:(totalBalance - creditAccts.reduce((s,a)=>s+Math.abs(parseFloat(a.balance||0)),0))>=0?C.greenBright:C.redBright}}>
-                    ${(totalBalance - creditAccts.reduce((s,a)=>s+Math.abs(parseFloat(a.balance||0)),0)).toFixed(0)}
+                    color:(cashShown - creditShown)>=0?C.greenBright:C.redBright}}>
+                    {formatMoney(cashShown - creditShown)}
                   </div>
                 </div>
               </div>
@@ -4668,7 +4708,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           // second division of safe. The weekly framing is that daily figure, not safe/7.
           const doIt = safe>0
             ? `Keeping today under ${dailyPace.dailyText} leaves room across the week.`
-            : "Hold off on non-essentials until your next paycheque lands.";
+            : `Hold off on non-essentials until your next ${payWord(data.profile?.country)} lands.`;
           return (
             <div style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"14px 16px",marginBottom:12}}>
               {know && <>
@@ -4809,7 +4849,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                     ? "tomorrow"
                     : nextPaydayDay
                       ? `in ${nextPaydayDay} day${nextPaydayDay===1?"":"s"}`
-                      : `after your next ${data.profile?.country==="US"?"paycheck":"paycheque"}`;
+                      : `after your next ${payWord(data.profile?.country)}`;
                   if (remaining >= tightThreshold) {
                     setAffordResult({
                       state: "yes",
@@ -6106,7 +6146,7 @@ function PlanAhead({data, setAppData, setScreen}){
               ["Starting balance", _fbalText],
               ["Est. daily spend", `$${(_favg||0).toFixed(0)}/day`],
               ["Pay frequency", _ffreq],
-              ["Est. paycheque", _fPay!=null ? formatMoney(_fPay) : "—"],
+              [`Est. ${payWord(data.profile?.country)}`, _fPay!=null ? formatMoney(_fPay) : "—"],
             ].map(([lbl,val])=>(
               <div key={lbl} style={{background:C.card,borderRadius:10,padding:"7px 10px",border:`1px solid ${C.border}`}}>
                 <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>{lbl}</div>
@@ -6147,8 +6187,8 @@ function PlanAhead({data, setAppData, setScreen}){
                     <div style={{color:isToday?C.greenBright:C.mutedHi,fontWeight:isToday?700:500,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{isToday?"Today ✦":day.d.toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}</div>
                     <span style={{color:C.muted,fontSize:10}}>{isDrilled?"▲":"▼"}</span>
                   </div>
-                  {day.income>0&&<div style={{color:C.green,fontWeight:700,fontSize:13,marginTop:3}}>💰 +${day.income.toLocaleString()} {data.profile?.country==="US"?"paycheck":"paycheque"}</div>}
-                  {day.bills.map((b,j)=><div key={j} style={{color:C.gold,fontSize:12,marginTop:2}}>📅 {b.name}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:4,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}: −{b.variable?"~":""}${parseFloat(b.amount).toFixed(0)}</div>)}
+                  {day.income>0&&<div style={{color:C.green,fontWeight:700,fontSize:13,marginTop:3}}>💰 +${day.income.toLocaleString()} {payWord(data.profile?.country)}</div>}
+                  {day.bills.map((b,j)=><div key={j} style={{color:C.gold,fontSize:12,marginTop:2}}>📅 {b.name}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:4,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}: −{b.variable?"~":""}{formatMoney(b.amount)}</div>)}
                   {isToday&&!day.income&&!day.bills.length&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>Tap to see balance breakdown</div>}
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}>
@@ -6164,7 +6204,7 @@ function PlanAhead({data, setAppData, setScreen}){
               <div style={{borderTop:`1px solid ${C.border}`,padding:"12px 18px 14px",background:"rgba(0,0,0,0.2)"}}>
                 <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,marginBottom:10}}>Cash flow breakdown</div>
                 {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.muted,fontSize:11}}>Opening balance</span><span style={{color:C.muted,fontSize:11}}>{formatBalance(prevBalance)}</span></div>}
-                {day.income>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>💰 {data.profile?.country==="US"?"Paycheck":"Paycheque"}</span><span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+{formatMoney(day.income)}</span></div>}
+                {day.income>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>💰 {payWord(data.profile?.country,{capital:true})}</span><span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+{formatMoney(day.income)}</span></div>}
                 {day.bills.map((b,j)=><div key={j} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>📅 {b.name}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:5,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}</span><span style={{color:C.gold,fontWeight:700,fontSize:12}}>−{b.variable?"~":""}{formatMoney(b.amount)}</span></div>)}
                 {day.idx>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}><span style={{color:C.mutedHi,fontSize:12}}>🛒 Est. daily spend <span style={{color:C.muted,fontSize:9}}>(30d avg)</span></span><span style={{color:C.muted,fontSize:12}}>−{formatMoney(avgDailySpend)}</span></div>}
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${C.border}`,paddingTop:8,marginTop:4}}>
@@ -6262,7 +6302,7 @@ function detectPayroll(transactions, existingIncomes) {
   );
 }
 
-function IncomeDetectionBanner({transactions, incomes, setAppData}){
+function IncomeDetectionBanner({transactions, incomes, setAppData, country}){ // `country` threaded from SpendScreen (profile.country) — this component has no other source for it
   const [dismissed, setDismissed] = useState(()=>{
     try { return safeLoadLS("flourish_dismissed_income", []); } catch { return []; }
   });
@@ -6300,14 +6340,14 @@ function IncomeDetectionBanner({transactions, incomes, setAppData}){
       <div style={{flex:1,minWidth:0}}>
         <div style={{color:C.greenBright,fontWeight:700,fontSize:13,marginBottom:2}}>Looks like a regular deposit</div>
         <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5}}>
-          <strong style={{color:C.cream}}>{c0.name}</strong> appears {c0.count}× averaging <strong style={{color:C.greenBright}}>${c0.avgAmount.toLocaleString()}</strong>. Is this your paycheque?
+          <strong style={{color:C.cream}}>{c0.name}</strong> appears {c0.count}× averaging <strong style={{color:C.greenBright}}>${c0.avgAmount.toLocaleString()}</strong>. Is this your {payWord(country)}?
         </div>
         <div style={{display:"flex",gap:8,marginTop:10}}>
           <button onClick={addIncome} style={{background:C.green,border:"none",borderRadius:99,padding:"7px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>
             Yes, add as income ✓
           </button>
           <button onClick={dismiss} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"7px 12px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>
-            Not a paycheque
+            Not a {payWord(country)}
           </button>
         </div>
       </div>
@@ -7251,7 +7291,7 @@ function SpendScreen({data, setAppData, setScreen}){
       </div>
     </div>
 
-    {!isDemo&&<IncomeDetectionBanner transactions={txns} incomes={data.incomes} setAppData={setAppData}/>}
+    {!isDemo&&<IncomeDetectionBanner transactions={txns} incomes={data.incomes} setAppData={setAppData} country={data.profile?.country}/>}
     <div style={{display:"flex",gap:6,background:C.surface,borderRadius:16,padding:4}}>
       {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeBright:C.muted,borderRadius:12,padding:"9px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
         {t==="txn"?"Transactions":t==="breakdown"?"Breakdown":"Smart Cuts"}
@@ -7645,7 +7685,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               <div style={{marginBottom:14}}>
                 <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Notes (optional)</div>
                 <input value={form.notes||""} onChange={e=>setForm(v=>({...v,notes:e.target.value}))}
-                  placeholder="e.g. RRSP at TD Bank, contributing $200/paycheque"
+                  placeholder={payWord(data.profile?.country)==="paycheck"?"e.g. 401(k) at Fidelity, contributing $200/paycheck":"e.g. RRSP at TD Bank, contributing $200/paycheque"}
                   style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
               </div>
               {/* Timeline preview */}
@@ -8139,11 +8179,11 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
             <div style={{color:C.cream,fontWeight:800,fontSize:14,marginBottom:10,fontFamily:"'Playfair Display',serif"}}>📊 Your Budget Breakdown</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               {[
-                ["Take-home", `$${Math.round(netMo).toLocaleString()}/mo`, C.green],
-                ["Fixed bills & debt", `−$${Math.round(fixedMo).toLocaleString()}/mo`, C.red],
-                ["Savings target", `−$${Math.round(savingsMo).toLocaleString()}/mo`, C.teal],
-                ...(localGoalsMo>0?[["Goal savings", `−$${Math.round(localGoalsMo).toLocaleString()}/mo`, C.purple]]:[]),
-                ["Available for spending", `$${Math.round(spendPool).toLocaleString()}/mo`, C.greenBright],
+                ["Take-home", `${formatMoney(Math.round(netMo))}/mo`, C.green],
+                ["Fixed bills & debt", `${formatMoney(-Math.round(fixedMo))}/mo`, C.red],
+                ["Savings target", `${formatMoney(-Math.round(savingsMo))}/mo`, C.teal],
+                ...(localGoalsMo>0?[["Goal savings", `${formatMoney(-Math.round(localGoalsMo))}/mo`, C.purple]]:[]),
+                ["Available for spending", `${formatMoney(Math.round(spendPool))}/mo`, C.greenBright],
               ].map(([label,val,color])=>(
                 <div key={label} style={{background:C.cardAlt,borderRadius:10,padding:"8px 10px",border:`1px solid ${C.border}`}}>
                   <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1}}>{label}</div>
@@ -9251,7 +9291,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
           "13+":[
             {emoji:"💰",title:"Budget like a boss",body:"50% needs, 30% wants, 20% savings. Without a budget, money just disappears. A budget isn't restriction — it's a plan for the life you actually want.",key:"A budget gives your money direction."},
             {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet — and paying extra for the privilege. Use debt only for things that gain value.",key:"Debt is expensive. Use it wisely or not at all."},
-            {emoji:"📊",title:"Start investing at your first job",body:"$50/month invested at 7% starting at age 16 = $245,000 at retirement. The same $50 starting at 30 = $68,000. Starting early nearly triples your outcome.",key:`Invest with your very first ${data.profile?.country==="US"?"paycheck":"paycheque"}.`},
+            {emoji:"📊",title:"Start investing at your first job",body:"$50/month invested at 7% starting at age 16 = $245,000 at retirement. The same $50 starting at 30 = $68,000. Starting early nearly triples your outcome.",key:`Invest with your very first ${payWord(data.profile?.country)}.`},
           ],
         };
         return(<>
@@ -9310,8 +9350,7 @@ function WidgetScreen({data,onBack}){
   const _ss=SafeSpendEngine.calculate(data);
   const safe=_ss.safeAmount;
   const ssView=safeToSpendView(_ss); // Truth-fix item 5: the widget shows the SAME safe-to-spend value as Today
-  const bal=_ss.balance;
-  const overdraft=_ss.overdraft;
+  const overdraft=_ss.overdraft;     // …and item 2: balance comes from ssView.balanceText, not a local re-format
   const soonBills=_ss.soonBills||[];
   const nextBill=soonBills[0];
   const {score:healthScore}=calcHealthScore(data, getCatOv());
@@ -9363,7 +9402,7 @@ function WidgetScreen({data,onBack}){
 
   // Build list of active medium tiles (up to 3 slots, Safe always first)
   const medTiles=[
-    wContent.balance&&{label:"Balance",value:`$${(bal||0).toFixed(0)}`,color:"rgba(237,233,226,0.85)"},
+    wContent.balance&&{label:"Balance",value:ssView.balanceText,color:"rgba(237,233,226,0.85)"},
     wContent.health&&{label:"Health",value:`${healthScore}/100`,color:"rgba(0,232,154,0.9)"},
     wContent.nextBill&&nextBill&&{label:"Next Bill",value:`${nextBill.name} $${parseFloat(nextBill.amount).toFixed(0)}`,color:"rgba(245,204,106,0.95)"},
     wContent.cashFlow&&{label:"Cash Flow",value:`${wCashFlow>=0?"+":""}$${Math.round(wCashFlow)}/mo`,color:wCashFlow>=0?"rgba(0,232,154,0.9)":"rgba(255,79,106,0.9)"},
@@ -9372,7 +9411,7 @@ function WidgetScreen({data,onBack}){
 
   // Build list of active large grid tiles
   const largeTiles=[
-    wContent.balance&&{label:"Balance",value:`$${(bal||0).toFixed(0)}`,bg:"rgba(255,255,255,0.05)",color:"rgba(237,233,226,0.9)"},
+    wContent.balance&&{label:"Balance",value:ssView.balanceText,bg:"rgba(255,255,255,0.05)",color:"rgba(237,233,226,0.9)"},
     wContent.health&&{label:"Health Score",value:`${healthScore}`,bg:"rgba(0,204,133,0.08)",color:"rgba(0,232,154,0.95)"},
     wContent.nextBill&&{label:"Due Soon",value:`$${Math.round(_ss.upcomingBills)}`,bg:"rgba(232,184,75,0.08)",color:"rgba(245,204,106,0.95)"},
     wContent.cashFlow&&{label:"Cash Flow",value:`${wCashFlow>=0?"+":""}$${Math.round(wCashFlow)}`,bg:wCashFlow>=0?"rgba(0,204,133,0.08)":"rgba(255,79,106,0.08)",color:wCashFlow>=0?"rgba(0,232,154,0.95)":"rgba(255,79,106,0.95)"},
@@ -9423,7 +9462,7 @@ function WidgetScreen({data,onBack}){
         <div style={{background:`rgba(${overdraft?"255,79,106":"0,204,133"},0.08)`,borderRadius:16,padding:"14px 16px",border:`1px solid ${heroColor}28`}}>
           <div style={{color:heroColorBright+"77",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:4}}>Safe to Spend Today</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:46,color:heroColorBright,letterSpacing:-2,lineHeight:1}}>{formatMoney(ssView.headline)}</div>
-          {wContent.balance&&<div style={{color:"rgba(237,233,226,0.45)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Balance: ${bal.toFixed(2)}</div>}
+          {wContent.balance&&<div style={{color:"rgba(237,233,226,0.45)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Balance: {ssView.balanceText}</div>}
         </div>
         {largeTiles.length>0&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           {largeTiles.slice(0,4).map((t,i)=>(
@@ -11897,7 +11936,7 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
     "13+":[
       {emoji:"💰",title:"Budget like a boss",body:"50% needs, 30% wants, 20% savings. Without a budget, money just disappears. A budget is a plan for the life you actually want.",key:"A budget gives your money direction."},
       {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet — and paying extra for the privilege.",key:"Debt is expensive. Use it wisely or not at all."},
-      {emoji:"📊",title:"Start investing at your first job",body:"$50/month at 7% starting at 16 = $245,000 at retirement. Starting at 30 = only $68,000. Starting early nearly triples your outcome.",key:`Invest with your very first ${country==="US"?"paycheck":"paycheque"}.`},
+      {emoji:"📊",title:"Start investing at your first job",body:"$50/month at 7% starting at 16 = $245,000 at retirement. Starting at 30 = only $68,000. Starting early nearly triples your outcome.",key:`Invest with your very first ${payWord(country)}.`},
     ],
   };
 
@@ -12882,9 +12921,9 @@ function BudgetScreen({data, setAppData, setScreen}) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           {[
             ["Take-home", `$${Math.round(netMo).toLocaleString()}/mo`, C.green, "💵"],
-            ["Fixed bills & debt", `−$${Math.round(fixedMo).toLocaleString()}/mo`, C.red, "🏠"],
-            ["Savings target", `−$${Math.round(savingsMo).toLocaleString()}/mo`, C.teal, "💰"],
-            ...(goalsMo > 0 ? [["Goal savings", `−$${Math.round(goalsMo).toLocaleString()}/mo`, C.purple, "🎯"]] : []),
+            ["Fixed bills & debt", `${formatMoney(-Math.round(fixedMo))}/mo`, C.red, "🏠"],
+            ["Savings target", `${formatMoney(-Math.round(savingsMo))}/mo`, C.teal, "💰"],
+            ...(goalsMo > 0 ? [["Goal savings", `${formatMoney(-Math.round(goalsMo))}/mo`, C.purple, "🎯"]] : []),
             ["Available to spend", `$${Math.round(discret).toLocaleString()}/mo`, C.greenBright, "✅"],
           ].map(([label, val, color, emoji]) => (
             <div key={label} style={{ background: C.cardAlt, borderRadius: 12, padding: "10px 12px", border: `1px solid ${C.border}` }}>
@@ -13063,7 +13102,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
                           <div style={{color:C.muted,fontSize:10,marginTop:1}}>${current} → ${suggested}/mo</div>
                         </div>
                         <div style={{textAlign:"right"}}>
-                          <div style={{color:C.green,fontWeight:700,fontSize:13}}>−${saving}/mo</div>
+                          <div style={{color:C.green,fontWeight:700,fontSize:13}}>{formatMoney(-saving)}/mo</div>
                           <button onClick={()=>setEditVals(prev=>({...prev,[cat]:String(suggested)}))}
                             style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:6,padding:"3px 8px",color:C.greenBright,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginTop:3}}>
                             Apply
