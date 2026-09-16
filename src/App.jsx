@@ -38,9 +38,9 @@ import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositA
 import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView } from "./lib/suggestedDaily.js";
 import { demoCoachExchanges, demoFacilitatorLine } from "./lib/demoCoach.js";
-import { DEMO, DEMO_INCOMES, buildDemoTxns } from "./lib/demoFixture.js";
+import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
-import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive } from "./lib/usageLimits.js";
+import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
 
@@ -835,8 +835,9 @@ async function reconcileNotifications(data) {
 function buildDemoState() {
   return {
     profile:{name:"Alex",country:"CA",province:"ON",status:"couple",hasKids:true,partnerName:"Jordan",creditScore:718,creditKnown:true,lifeStages:["t4"],partnerLifeStages:["t4"]},
-    incomes:DEMO_INCOMES,
-    bills:[{name:"Rent",amount:"1650",date:"1"},{name:"Hydro",amount:"95",date:"11"},{name:"Phone",amount:"65",date:"15"},{name:"Netflix",amount:"18.99",date:"22"}],
+    // Phase-anchored so a visitor always lands at the same point in the pay cycle (see demoFixture.js).
+    incomes:buildDemoIncomes(),
+    bills:buildDemoBills(),
     debts:[{name:"TD Visa",balance:"3420",rate:"19.99",min:"68"},{name:"Car Loan",balance:"8200",rate:"6.99",min:"280"}],
     accounts:MOCK_ACCOUNTS,
     transactions:buildDemoTxns(),
@@ -11264,9 +11265,11 @@ function PremiumGate({feature,desc,onUpgrade}){
         </div>
       </div>
       <button onClick={onUpgrade} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.purple}40`}}>
-        Start 14 days free →
+        {getTrialStartedAt() ? "Get Flourish Plus →" : "Start 14 days free →"}
       </button>
-      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>14 days free. Cancel any time.</div>
+      {/* Never offer a free trial to someone who has already had one — this gate also renders for
+          trial-EXPIRED users, directly under the "Your free trial has ended" banner. */}
+      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{getTrialStartedAt() ? "Cancel any time." : "14 days free. Cancel any time."}</div>
     </div>
   );
 }

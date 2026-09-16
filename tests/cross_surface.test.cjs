@@ -17,6 +17,7 @@ const { create } = require("./_runner.cjs");
   const { safeToSpendView } = await import("../src/lib/safeToSpendView.js");
   const { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } = await import("../src/lib/incomeSchedule.js");
   const { FinancialCalcEngine, toMonthly } = await import("../src/lib/financialCalculations.js");
+  const { formatBalance } = await import("../src/lib/format.js");
   const { suggestedDailyView } = await import("../src/lib/suggestedDaily.js");
   const t = create();
 
@@ -43,6 +44,14 @@ const { create } = require("./_runner.cjs");
 
     // ONE balance — the displayed balance is the floor of the single engine balance, nothing else.
     t.eq(f.view.balanceDisplay, Math.floor(f.ss.balance), `${label}: one balance (display = floor of the engine balance)`);
+
+    // THE DEFECT THAT SHIPPED: Today rendered "In your accounts $3,083" while Watch rendered
+    // "STARTING BALANCE $3084" — same engine read, two rounding rules. Every surface that shows THE
+    // balance must render the IDENTICAL string.
+    const todayBalanceRow = f.view.rows.find(r => r.kind === "balance");
+    t.eq(todayBalanceRow.value, f.view.balanceText, `${label}: Today's "In your accounts" === Watch's "Starting balance" string`);
+    t.eq(f.view.balanceText, formatBalance(f.ss.balance), `${label}: …and both are formatBalance(engine balance)`);
+    t.eq(f.view.balanceText, formatBalance(f.fc.forecast[0].balance), `${label}: …and the Watch day-0 forecast row renders it identically too`);
 
     // ONE safe-to-spend value, and the displayed rows reconcile EXACTLY to the displayed headline.
     const rowSum = f.view.rows.reduce((s, r) => s + (r.kind === "balance" ? r.display : -r.display), 0);

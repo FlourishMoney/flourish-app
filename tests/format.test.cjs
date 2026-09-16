@@ -4,7 +4,7 @@ const { create } = require("./_runner.cjs");
 const t = create();
 
 (async () => {
-  const { formatMoney, formatNumber, ordinalSuffix } = await import("../src/lib/format.js");
+  const { formatMoney, formatNumber, ordinalSuffix, roundBalanceDown, formatBalance } = await import("../src/lib/format.js");
 
   t.eq(formatMoney(2082), "$2,082", "1a thousands separator, whole dollars");
   t.eq(formatMoney(95), "$95", "1b small amount");
@@ -31,6 +31,29 @@ const t = create();
   t.eq(ordinalSuffix(23), "rd", "3j 23rd");
   t.eq(ordinalSuffix(31), "st", "3k 31st");
   t.eq(ordinalSuffix("22"), "nd", "3l accepts a string day");
+
+  // ── roundBalanceDown / formatBalance — the ONE "a balance rounds down" rule ────────────────────
+  // These would have caught the $3,083-vs-$3084 split: Today floored while Watch used toFixed(0),
+  // which rounds to NEAREST and emits no separator.
+  t.eq(roundBalanceDown(3083.88), 3083, "4a a balance rounds DOWN, never to nearest (3083.88 -> 3083)");
+  t.eq(roundBalanceDown(3083.0), 3083, "4b an exact dollar is unchanged");
+  t.eq(roundBalanceDown(0), 0, "4c zero");
+  t.eq(roundBalanceDown(0.99), 0, "4d under a dollar floors to 0");
+  t.eq(roundBalanceDown(-50.4), -51, "4e a negative balance rounds DOWN i.e. MORE negative (conservative for an overdraft)");
+  t.eq(roundBalanceDown(NaN), 0, "4f non-finite -> 0");
+  t.eq(roundBalanceDown(undefined), 0, "4g undefined -> 0");
+  t.eq(roundBalanceDown(null), 0, "4h null -> 0");
+  t.eq(roundBalanceDown("3083.88"), 3083, "4i numeric string coerced");
+  t.eq(roundBalanceDown(3083.88), Math.floor(Number(3083.88) || 0), "4j equivalent to the Math.floor it replaced (no behaviour change)");
+
+  t.eq(formatBalance(3083.88), "$3,083", "5a formatBalance floors AND adds the separator");
+  t.eq((3083.88).toFixed(0), "3084", "5b …where the old toFixed(0) rounded UP — the $1 defect");
+  t.eq(formatBalance(1234567.9), "$1,234,567", "5c thousands separators on a large balance");
+  t.eq(formatBalance(0), "$0", "5d zero");
+  t.eq(formatBalance(-50.4), "-$51", "5e negative keeps one leading sign, floored");
+  t.eq(formatBalance(NaN), "$0", "5f non-finite -> $0");
+  t.eq(formatBalance(undefined), "$0", "5g undefined -> $0");
+  t.eq(formatBalance(999.99), "$999", "5h no separator below 1000, still floored");
 
   t.summary("format");
 })();

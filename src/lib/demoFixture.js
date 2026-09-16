@@ -23,6 +23,46 @@ export const DEMO_INCOMES = [
   { id: 2, label: "Canada Child Benefit", amount: "560", freq: "monthly", type: "ccb" },
 ];
 
+// ── Phase anchoring (demo fixture ONLY — never a real user's data) ───────────────────────────────
+// The transactions are dated relative to "now", but the bills and the monthly benefit used to sit on
+// fixed days of the month. That mix made the demo land on a different point in the pay cycle every
+// day: safe-to-spend swung between $2,009 and $359 as rent drifted in and out of the reservation
+// window, and the "next deposit" flipped between the $2,840 paycheque and the $560 benefit as the
+// benefit overtook it (collapsing the horizon from 13 days to 2, which dragged the buffer and savings
+// allocation with it). A visitor — and a screenshot — got a different app depending on the date.
+//
+// So the PHASE is anchored, not the outputs. Every figure is still computed by the engines exactly as
+// it is for a real user; we only fix where in the cycle the sample data sits: the paycheque 13 days
+// out, the benefit behind it, and every bill beyond the horizon so rent is already paid for the
+// period. Offsets are kept in 14..27 days so a bill's day-of-month can never collide with today's
+// (which would land it on day 0) in a 28-to-31-day month.
+export const DEMO_PHASE = { ccb: 20, netflix: 16, phone: 18, hydro: 22, rent: 26 };
+
+const _addDays = (now, n) => { const d = new Date(now); d.setDate(d.getDate() + n); return d; };
+const _iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// Incomes with the benefit phase-anchored behind the paycheque, so the next deposit is always the
+// $2,840 paycheque 13 days out rather than sometimes the $560 benefit.
+export function buildDemoIncomes(now = new Date()) {
+  const ccbDay = _addDays(now, DEMO_PHASE.ccb).getDate();
+  return DEMO_INCOMES.map(i => (i.type === "ccb" ? { ...i, anchorDay: ccbDay } : { ...i }));
+}
+
+// Bills phase-anchored past the reservation horizon (rent already paid for this period). `date` keeps
+// the day-of-month the UI displays; `nextDueDate` is the anchor the bill engine actually schedules from.
+export function buildDemoBills(now = new Date()) {
+  const bill = (name, amount, offset) => {
+    const due = _addDays(now, offset);
+    return { name, amount, date: String(due.getDate()), nextDueDate: _iso(due), freq: "monthly" };
+  };
+  return [
+    bill("Rent", "1650", DEMO_PHASE.rent),
+    bill("Hydro", "95", DEMO_PHASE.hydro),
+    bill("Phone", "65", DEMO_PHASE.phone),
+    bill("Netflix", "18.99", DEMO_PHASE.netflix),
+  ];
+}
+
 // Each row: [id, daysAgo, name, amount, category, icon, color]. Payrolls sit ~bi-weekly (1/12/26 days
 // ago) and pay DEMO.income, so the most recent one anchors the biweekly cadence off real history.
 export function buildDemoTxns(now = new Date()) {
