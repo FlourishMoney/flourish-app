@@ -140,7 +140,10 @@ const CC = {
     benefitsChecker:[
       {name:"Canada Child Benefit",icon:"👶",eligible:"Has children under 18",amount:"Up to $7,997/child under 6",apply:"CRA My Account",url:"https://canada.ca/ccb"},
       {name:"GST/HST Credit",icon:"🛒",eligible:"Under ~$50k income",amount:`Up to $${TAX_DATA.CA.GSTHST_MAX_SINGLE.value}/yr (becomes Groceries & Essentials Benefit Jul 2026)`,apply:"File your taxes",url:"https://canada.ca/gst-credit"},
-      {name:"Ontario Trillium Benefit",icon:"🏙️",eligible:"Ontario residents, low-mid income",amount:"Up to $1,654/yr",apply:"ON-BEN form with taxes",url:"https://canada.ca/trillium"},
+      // `province` gates a benefit that is not federal. This row was shown to every Canadian — a claim
+      // about money owed, made to someone who is not owed it. The same defect the tip list had, in a
+      // second array. Entries with no `province` are federal and shown to everyone.
+      {name:"Ontario Trillium Benefit",province:"ON",icon:"🏙️",eligible:"Ontario residents, low-mid income",amount:"Up to $1,654/yr",apply:"ON-BEN form with taxes",url:"https://canada.ca/trillium"},
       {name:"Canada Workers Benefit",icon:"💼",eligible:"Working, under ~$37,742 single",amount:"Up to $1,633 single / $2,813 family",apply:"Schedule 6 with taxes",url:"https://canada.ca/cwb"},
       {name:"Canada Disability Benefit (CDB)",icon:"♿",eligible:"DTC-approved, age 18–64, low income",amount:"Up to $200/mo ($2,400/yr)",apply:"Service Canada online",url:"https://canada.ca/cdb"},
       {name:"Disability Tax Credit",icon:"♿",eligible:"Severe disability",amount:"~$1,470 federal credit",apply:"T2201 with doctor",url:"https://canada.ca/dtc"},
@@ -7903,6 +7906,10 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
 
     {tab==="tax"&&(()=>{
       const cfg=CC[data.profile?.country||"CA"];
+      // Only the benefits this household could actually claim. An entry with no `province` is federal;
+      // one with a `province` is shown only to residents of it. Both the count badge and the list read
+      // THIS, so they can never disagree.
+      const _eligibleBenefits=(cfg.benefitsChecker||[]).filter(b=>!b.province||b.province===(data.profile?.province||""));
       const tips=getPersonalizedTaxCredits(data.profile);
       const highPriority=tips.filter(t=>t.priority==="high");
       const medPriority=tips.filter(t=>t.priority!=="high");
@@ -7920,7 +7927,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               <div style={{color:C.muted,fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:0.8}}>High Priority</div>
             </div>
             <div style={{background:C.teal+"18",borderRadius:12,padding:"8px 14px",textAlign:"center"}}>
-              <div style={{color:C.tealBright,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{cfg.benefitsChecker.length}</div>
+              <div style={{color:C.tealBright,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{_eligibleBenefits.length}</div>
               <div style={{color:C.muted,fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:0.8}}>Benefits</div>
             </div>
             <div style={{background:C.green+"18",borderRadius:12,padding:"8px 14px",textAlign:"center",flex:1}}>
@@ -7995,7 +8002,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
           <span style={{color:C.tealBright,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🎁 Benefits You May Not Be Claiming</span>
           <div style={{height:1,flex:1,background:C.teal+"33"}}/>
         </div>
-        {cfg.benefitsChecker.map((b,i)=>(
+        {_eligibleBenefits.map((b,i)=>(
           <div key={i} style={{background:C.card,borderRadius:16,padding:"14px 18px",border:`1px solid ${C.teal}28`,display:"flex",gap:14,alignItems:"center"}}>
             <div style={{width:44,height:44,borderRadius:14,background:C.teal+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{b.icon}</div>
             <div style={{flex:1,minWidth:0}}>
@@ -11470,6 +11477,9 @@ function FirstVisitScreen({data, onDismiss}) {
   // breakdown stacked a monthly income calc (income − bills − 15%) against a balance-driven "available"
   // — three rows that summed to something else entirely, and a dead bufferAmt. All gone.
   const ssView = safeToSpendView(SafeSpendEngine.calculate(data));
+  // When the headline is negative the copy says "here's exactly what's already committed" and points
+  // at the breakdown, so the breakdown is open from the start rather than behind a tap.
+  const breakdownOpen = showBreakdown || ssView.isShort;
   const incomeAmt = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMonthly(i.amount,i.freq),0); // kept only to gate the explanatory line
   const name = data.profile?.name || "there";
   // Bug fix: the breathing-room number is balance-driven (SafeSpendEngine reads account balances),
@@ -11493,14 +11503,18 @@ function FirstVisitScreen({data, onDismiss}) {
             Before that: a loader (bank still syncing) or the ready state — never a $0/placeholder calc. */}
         <div style={{marginBottom:8}}>
           {hasCashAccount ? (<>
-            {!ssView.isShort&&<div style={{color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,fontWeight:700,letterSpacing:0.3}}>You're covered. Here's your breathing room.</div>}
+            <div style={{color:ssView.isShort?C.cream:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,fontWeight:700,letterSpacing:0.3,maxWidth:300,marginLeft:"auto",marginRight:"auto",lineHeight:1.5}}>
+              {ssView.isShort
+                ? "You're short before your next payday. Here's exactly what's already committed."
+                : "You're covered. Here's your breathing room."}
+            </div>
             <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,lineHeight:1}}>
-              {ssView.isShort&&<span style={{fontSize:88,color:C.greenBright,letterSpacing:-4}}>-</span>}<span style={{fontSize:22,color:C.greenBright+"88",verticalAlign:"top",marginTop:12,display:"inline-block"}}>$</span>
-              <span style={{fontSize:88,color:C.greenBright,letterSpacing:-4,textShadow:`0 0 80px ${C.green}40`}}>
+              {ssView.isShort&&<span style={{fontSize:88,color:C.cream,letterSpacing:-4}}>-</span>}<span style={{fontSize:22,color:(ssView.isShort?C.cream:C.greenBright)+"88",verticalAlign:"top",marginTop:12,display:"inline-block"}}>$</span>
+              <span style={{fontSize:88,color:ssView.isShort?C.cream:C.greenBright,letterSpacing:-4,textShadow:ssView.isShort?"none":`0 0 80px ${C.green}40`}}>
                 {formatNumber(Math.abs(ssView.headline))}
               </span>
             </div>
-            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>to spend freely today</div>
+            {!ssView.isShort&&<div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>to spend freely today</div>}
           </>) : data.bankConnected ? (
             /* Bank linked but balances still syncing — a loader, not a placeholder number */
             <div style={{marginTop:8}}>
@@ -11518,13 +11532,15 @@ function FirstVisitScreen({data, onDismiss}) {
 
         {/* One-line explanation */}
         <div style={{color:C.mutedHi,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,marginBottom:32,maxWidth:280,margin:"0 auto 32px"}}>
-          {incomeAmt > 0
-            ? "Bills paid. Buffer set. Everything above this number is yours — no guilt, no stress."
-            : "Add your income in Settings to see your personalised safe-to-spend number."}
+          {ssView.isShort
+            ? null
+            : incomeAmt > 0
+              ? "Bills paid. Buffer set. Everything above this number is yours — no guilt, no stress."
+              : "Add your income in Settings to see your personalised safe-to-spend number."}
         </div>
 
         {/* Breakdown — progressive disclosure */}
-        {showBreakdown&&(
+        {breakdownOpen&&(
           <div style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:18,padding:"16px 20px",marginBottom:24,textAlign:"left"}}>
             <div style={{color:C.muted,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How this is calculated</div>
             {ssView.rows.map((r)=>{
@@ -11545,7 +11561,7 @@ function FirstVisitScreen({data, onDismiss}) {
         )}
 
         {/* Primary CTA */}
-        {!showBreakdown?(
+        {!breakdownOpen?(
           <button onClick={()=>setShowBreakdown(true)}
             style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
             How is this calculated? →

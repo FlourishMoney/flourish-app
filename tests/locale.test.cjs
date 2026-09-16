@@ -92,5 +92,34 @@ const { create } = require("./_runner.cjs");
     t.ok(depositRows >= 3, `both forecast surfaces label a per-day income figure "deposit" (found ${depositRows} rows)`);
   }
 
+  // ── 7. A BENEFIT THAT IS NOT FEDERAL MUST CARRY A PROVINCE ────────────────────────────────────
+  // The Ontario Trillium Benefit was named to every Canadian in TWO arrays — the tax-tip list and the
+  // benefits checker. Both are claims about money a person is owed, made to people who are not owed
+  // it. A checker entry is now gated by a `province` field. This scans the benefits-checker arrays and
+  // fails if any entry whose own text names a province or state lacks that gate, so the next one
+  // cannot be added ungated.
+  {
+    const fs = require("fs"), path = require("path");
+    const raw = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+    const PLACES = /Ontario|Quebec|Alberta|Manitoba|Saskatchewan|British Columbia|Nova Scotia|New Brunswick|Newfoundland|Northern Ontario|New York|Illinois|Minnesota|California|Texas|Florida/;
+    const blocks = [...raw.matchAll(/benefitsChecker:\s*\[([\s\S]*?)\n\s*\],/g)].map(m => m[1]);
+    t.eq(blocks.length, 2, "7a both country benefits-checker arrays are found (CA and US)");
+    const offenders = [];
+    for (const block of blocks) {
+      for (const row of block.split(/\n/)) {
+        if (!row.includes("{name:")) continue;
+        if (PLACES.test(row) && !/province:/.test(row)) offenders.push(row.trim().slice(0, 96));
+      }
+    }
+    t.eq(offenders.join("\n"), "", "7b every benefits-checker entry naming a province or state carries a `province` gate");
+    // Non-vacuous: the gated entry really is there, and it really is gated.
+    const trillium = blocks.join("\n").split(/\n/).find(r => r.includes("Ontario Trillium Benefit"));
+    t.ok(!!trillium, "7c …and the Ontario Trillium row is present to be gated");
+    t.ok(/province:"ON"/.test(trillium || ""), "7d …gated to Ontario specifically");
+    // The render must read a FILTERED list, and the count badge must read the same one.
+    t.eq((raw.match(/_eligibleBenefits/g) || []).length, 3, "7e one filtered list, read by both the count badge and the list itself");
+    t.eq((raw.match(/cfg\.benefitsChecker\.(map|length)/g) || []).join(","), "", "7f …and nothing renders the unfiltered array any more");
+  }
+
   t.summary("locale.test");
 })();
