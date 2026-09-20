@@ -202,6 +202,11 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     const sent = runs[0];
     const nonResend = sent.calls.filter(c => !c.url.includes("api.resend.com"));
     t.ok(!JSON.stringify(nonResend).includes(KEY_SENTINEL), "7g the key is sent to Resend and to nothing else");
+    // …and it IS sent to Resend, in the header Resend authenticates with. Without this, 7g would also
+    // pass if the key were never sent at all.
+    const resendReq = sent.calls.find(c => c.url.includes("api.resend.com"));
+    t.eq(resendReq.headers.Authorization, `Bearer ${KEY_SENTINEL}`, "7g1 the Resend request carries the key as a Bearer token");
+    t.eq(resendReq.headers["Content-Type"], "application/json", "7g2 …and declares a JSON body");
     t.ok(!JSON.stringify(sent.res).includes(KEY_SENTINEL) && !JSON.stringify(sent.res).includes(ADDRESS), "7h the HTTP response carries neither the key nor the address");
     // The insert-failure log: status and Postgres code only, never the response body.
     t.eq(insertFailed.res.statusCode, 500, "7i a failed insert still reports the failure");
