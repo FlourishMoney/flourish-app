@@ -1,0 +1,116 @@
+-- ============================================================================
+-- Flourish Money - waitlist welcome email: welcomed_at
+-- ============================================================================
+-- Run in the Supabase SQL editor (Dashboard > SQL > New query > Run).
+-- ADDITIVE ONLY. Idempotent, safe to re-run. No data is written or changed.
+--
+-- What it is for: netlify/functions/beta.js (action join_waitlist) sends one
+-- confirmation email after a successful insert, then stamps welcomed_at on that
+-- row. A NULL welcomed_at means no confirmation email was recorded for the row:
+-- rows that predate this change, rows created while RESEND_API_KEY was unset,
+-- and rows whose send failed. Nothing reads the column yet.
+--
+-- NOTE: public.waitlist itself was created directly in Supabase and has no
+-- migration in this repo, so this file is the first one that touches it.
+-- ============================================================================
+
+alter table public.waitlist
+  add column if not exists welcomed_at timestamptz;
+
+-- ============================================================================
+-- ROLLBACK (run only to undo the migration; drops the column and its values)
+-- ============================================================================
+-- alter table public.waitlist
+--   drop column if exists welcomed_at;
+
+-- ============================================================================
+-- CHECK (counts only, no rows or addresses returned)
+-- ============================================================================
+-- Column present? Expect 1 after the migration, 0 before it.
+-- select count(*) as welcomed_at_column_present
+--   from information_schema.columns
+--  where table_schema = 'public'
+--    and table_name   = 'waitlist'
+--    and column_name  = 'welcomed_at';
+--
+-- Row counts. Expect welcomed = 0 immediately after the migration.
+-- select count(*)                        as rows_total,
+--        count(welcomed_at)              as welcomed,
+--        count(*) - count(welcomed_at)   as not_welcomed
+--   from public.waitlist;
+
+-- ============================================================================
+-- BEFORE MERGING: two READ-ONLY checks on the duplicate guard
+-- ============================================================================
+-- join_waitlist treats a 409, or a body carrying "duplicate key" / 23505, as
+-- "already on the list": it returns alreadyJoined and sends no email. That
+-- depends on a unique constraint or unique index on waitlist.email, which this
+-- repo cannot prove exists (public.waitlist has no migration here). If there is
+-- no unique guard, a second signup with the same address inserts a second row
+-- and sends a second confirmation email.
+--
+-- Neither query writes anything, and neither returns an address.
+-- This PR deliberately does NOT add a constraint.
+--
+-- (a) Every unique (or primary key) constraint and unique index on the table.
+--     WANT: at least one whose definition covers the email column. A constraint
+--     and its backing index both appear; that is normal, not a duplicate guard.
+--
+-- select con.conname                     as name,
+--        'constraint'                    as kind,
+--        pg_get_constraintdef(con.oid)   as definition
+--   from pg_constraint con
+--  where con.conrelid = 'public.waitlist'::regclass
+--    and con.contype in ('u', 'p')
+-- union all
+-- select cls.relname                     as name,
+--        'index'                         as kind,
+--        pg_get_indexdef(idx.indexrelid) as definition
+--   from pg_index idx
+--   join pg_class cls on cls.oid = idx.indexrelid
+--  where idx.indrelid = 'public.waitlist'::regclass
+--    and idx.indisunique
+--  order by kind, name;
+--
+-- (b) Duplicate addresses once case and surrounding spaces are ignored.
+--     Counts only, no addresses returned.
+--     WANT: duplicate_groups = 0 and extra_rows = 0.
+--     A non-zero result means duplicates are already stored, so the guard is
+--     either missing or is case- or whitespace-sensitive.
+--
+-- select (select count(*) from public.waitlist)                           as rows_total,
+--        (select count(distinct lower(trim(email))) from public.waitlist) as distinct_emails,
+--        count(*)                                                         as duplicate_groups,
+--        coalesce(sum(group_rows) - count(*), 0)                          as extra_rows
+--   from ( select count(*) as group_rows
+--            from public.waitlist
+--           group by lower(trim(email))
+--          having count(*) > 1 ) dupes;
+
+-- ============================================================================
+-- BEFORE MERGING: two more READ-ONLY checks, for the scheduled sweep
+-- ============================================================================
+-- waitlist-sweep.js selects id, email and created_at where welcomed_at is null.
+-- This repo cannot prove id or created_at exist, so confirm them. A missing
+-- column shows up at runtime as a 400 on the select, logged as
+-- "[waitlist-sweep] pending select failed 400", and nothing is sent.
+--
+-- (c) The columns the sweep depends on.
+--     WANT: four rows, with created_at a timestamp type.
+--
+-- select column_name, data_type
+--   from information_schema.columns
+--  where table_schema = 'public'
+--    and table_name   = 'waitlist'
+--    and column_name in ('id', 'email', 'created_at', 'welcomed_at')
+--  order by column_name;
+--
+-- (d) How many rows the sweep's FIRST run will pick up. Counts only.
+--     WANT: the same number as rows_total in check (b), expected to be 11.
+--     Every one of them is an existing signup whose welcomed_at is null, which
+--     is the intended one-time catch-up.
+--
+-- select count(*) as first_run_rows
+--   from public.waitlist
+--  where welcomed_at is null
+--    and created_at < now() - interval '5 minutes';

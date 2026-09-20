@@ -6,6 +6,13 @@
   NODE_VERSION           = "18"
   SECRETS_SCAN_OMIT_KEYS = "PLAID_ENV"
 
+# Scheduled: the waitlist welcome sweep. Every 15 minutes it emails any waitlist row whose
+# welcomed_at is still null and that is at least 5 minutes old, then stamps welcomed_at. The request
+# path (join_waitlist) stays best effort; this is what guarantees the email is sent exactly once.
+# Netlify kills a scheduled function at 30 seconds, and the function stops starting new sends at 20.
+[functions."waitlist-sweep"]
+  schedule = "*/15 * * * *"
+
 # Security headers
 [[headers]]
   for = "/*"

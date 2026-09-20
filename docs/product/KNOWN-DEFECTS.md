@@ -147,3 +147,35 @@ to every Canadian.
 is told to apply for an Ontario benefit. Fixed for the tip list; this list still has it.
 
 **Fix** Gate the row on `province === "ON"`, as the tip now is.
+
+---
+
+## 9. A welcome email can be sent twice if `welcomed_at` cannot be written for over 24 hours
+
+**Where** `netlify/functions/_lib/waitlistWelcome.js` (`sendWelcomeEmail`, `markWelcomed`) and
+`netlify/functions/waitlist-sweep.js`.
+
+**What happens** Sending and recording are two steps. The email goes out, then `welcomed_at` is
+stamped. When the stamp fails (a timeout, a 4xx, Supabase unavailable), the row stays `welcomed_at
+null` and the sweep picks it up again on its next run. A second send is normally harmless, because
+Resend de-duplicates on the `Idempotency-Key` `waitlist-welcome/<row id>` the two paths share.
+
+**Resend holds that key for 24 hours.** Past that window the same key is treated as new, so a row
+whose `welcomed_at` has been unwritable for more than a day gets a second copy of the confirmation.
+It needs a sustained failure of the write while sending keeps working, which is narrow, but the
+person sees a duplicate email and there is nothing in the data to say it already went.
+
+**Detection** `welcomed_at is null` on a row older than a day, while the sweep logs show sends:
+```
+[waitlist-sweep] {"considered":N,"sent":N,"failed":0,...}
+```
+with the same count every 15 minutes and no fall in the pending count.
+
+**Fix (suggested, not built)** Record the attempt before the send rather than after it. Add a
+nullable `welcome_attempted_at timestamptz`, stamp it immediately before calling Resend, and have the
+sweep skip any row whose attempt is under 24 hours old even when `welcomed_at` is still null. Then a
+row can never be auto-resent inside the window Resend's key covers, and one that is older than 24
+hours is surfaced for a human decision rather than resent automatically.
+
+**Status** Deferred by decision, 2026-09-20, under the rule that only a HIGH finding blocks a merge.
+Raised in ChatGPT review round 4 of PR #1.
