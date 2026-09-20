@@ -275,8 +275,9 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
   }
 
   // ── 11. A Resend call that never answers cannot take the signup with it ────────────────────
-  // A Netlify function is killed at 10s. The row is already inserted by this point, so a hanging send
-  // must not turn a successful signup into a failed request. The function sets its own 5s deadline.
+  // The row is already inserted by this point, so a hanging send must not leave the person waiting on a
+  // spinner for a signup that worked. The function sets its own 5s deadline, well inside Netlify's 60s
+  // synchronous limit (docs.netlify.com/build/functions/configuration).
   // This is the one slow assertion in the suite: it waits out that real deadline on purpose.
   {
     const started = Date.now();
@@ -284,7 +285,7 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     const elapsed = Date.now() - started;
     t.eq(JSON.stringify(r.body), JSON.stringify({ joined: true, alreadyJoined: false }), "11a a Resend call that never answers still returns joined:true");
     t.ok(elapsed >= 4500, `11b …because the function's own deadline fired, not because the call failed instantly (took ${elapsed}ms)`);
-    t.ok(elapsed < 8000, `11c …and it answers well inside the 10s Netlify limit (took ${elapsed}ms)`);
+    t.ok(elapsed < 8000, `11c …and it answers promptly, far inside Netlify's 60s synchronous limit (took ${elapsed}ms)`);
     t.ok(!!(r.calls.find(c => c.url.includes("api.resend.com")) || {}).signal, "11d the Resend request carries an abort signal, so a deadline can end it");
     t.eq(r.patches.length, 0, "11e welcomed_at is not stamped for a send that never completed");
     t.eq(r.logs.length, 1, "11f exactly one log line");

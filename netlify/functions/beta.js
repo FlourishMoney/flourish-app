@@ -81,10 +81,12 @@ async function getUserCount(supabaseUrl, secretKey) {
 // context: it is never bundled, never returned, and never logged. When it is missing (deploy
 // previews, netlify dev, local runs) the send is skipped silently, so no preview emails a real person.
 const RESEND_ENDPOINT   = "https://api.resend.com/emails";
-// A Netlify function is killed at 10s. Without a deadline of our own, a slow or hanging Resend call
-// would take the whole request with it: the row is already inserted, but the person waits and then
-// sees a failure for a signup that actually worked. 5s leaves room for the insert before it and the
-// response after it. A timeout is just another failed send: no welcomed_at, still joined:true.
+// Netlify kills a synchronous function at 60 seconds (docs.netlify.com/build/functions/configuration,
+// "Synchronous execution limit 60 seconds", not configurable). The limit is not the reason for this
+// deadline: waiting is. The row is already inserted by this point, so a slow or hanging Resend call
+// would leave the person watching a spinner and then seeing a failure for a signup that worked. 5s is
+// far longer than a healthy send takes. A timeout is just another failed send: no welcomed_at, still
+// joined:true.
 const RESEND_TIMEOUT_MS = 5000;
 const WELCOME_FROM     = "Flourish <hello@flourishmoney.app>";
 const WELCOME_REPLY_TO = "hello@flourishmoney.app";
