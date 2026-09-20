@@ -221,5 +221,31 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     t.eq(literalKey.join(","), "", "9e no Resend-shaped key literal is committed in src/ or netlify/");
   }
 
+  // ── 10. The address is trimmed before it is validated, stored and emailed ──────────────────
+  // Pre-existing bug: the regex rejects any whitespace and ran against the RAW input, so a trailing
+  // space was a 400 rather than a signup. The browser trims before it posts, so this only ever bit
+  // non-browser callers, but the row, the check and the email must all agree on one address anyway.
+  {
+    const insertedEmail = (r) => {
+      const post = r.calls.find(c => c.method === "POST" && !c.url.includes("resend"));
+      return post ? JSON.parse(post.body).email : "(no row inserted)";
+    };
+    const emailedTo = (r) => (r.payload ? JSON.stringify(r.payload.to) : "(no email sent)");
+    for (const raw of [" person@example.com", "person@example.com ", "  Person@Example.com  ", "person@example.com\n", "\tPERSON@EXAMPLE.COM"]) {
+      const shown = JSON.stringify(raw);
+      const r = await run({ email: raw });
+      t.eq(r.res.statusCode, 200, `10a ${shown} is accepted, not rejected as invalid`);
+      t.eq(insertedEmail(r), ADDRESS, `10b ${shown} is stored trimmed and lowercased`);
+      t.eq(emailedTo(r), JSON.stringify([ADDRESS]), `10c ${shown} is emailed at the trimmed address`);
+    }
+    // Still rejected: whitespace INSIDE the address, and anything that is not an address at all.
+    for (const bad of ["per son@example.com", "person@exa mple.com", "notanemail", "person@example", "", "   ", 42, null]) {
+      const shown = JSON.stringify(bad);
+      const r = await run({ email: bad });
+      t.eq(r.res.statusCode, 400, `10d ${shown} is still rejected`);
+      t.eq(r.calls.length, 0, `10e ${shown} writes no row and sends no email`);
+    }
+  }
+
   t.summary("waitlistWelcomeEmail.test");
 })();

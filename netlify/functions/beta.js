@@ -210,8 +210,14 @@ exports.handler = async (event) => {
   if (action === "join_waitlist") {
     const { email, country, source, metadata } = body;
 
+    // Normalize BEFORE validating. The regex rejects any whitespace, so a trailing or leading space,
+    // which is a typo and not a different address, used to fail the check outright ("you@example.com "
+    // was a 400 while "you@example.com" was fine). Normalizing first also means the value that is
+    // validated is exactly the value that is stored and emailed: one address, decided in one place.
+    const emailAddr = typeof email === "string" ? email.trim().toLowerCase() : "";
+
     // Basic email validation
-    if (!email || typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!emailAddr || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddr)) {
       return {
         statusCode: 400, headers: CORS,
         body: JSON.stringify({ error: "Valid email required" }),
@@ -228,7 +234,7 @@ exports.handler = async (event) => {
         "Prefer": "return=representation",
       },
       body: JSON.stringify({
-        email: email.trim().toLowerCase(),
+        email: emailAddr,
         country: country || null,
         source: source || null,
         metadata: metadata || {},
@@ -267,9 +273,8 @@ exports.handler = async (event) => {
       insertedRow = Array.isArray(rows) ? rows[0] : rows;
     } catch { /* no or unparseable representation: markWelcomed falls back to the email filter */ }
 
-    const welcomeTo = email.trim().toLowerCase();
-    if (await sendWelcomeEmail(welcomeTo)) {
-      await markWelcomed(supabaseUrl, secretKey, insertedRow, welcomeTo);
+    if (await sendWelcomeEmail(emailAddr)) {
+      await markWelcomed(supabaseUrl, secretKey, insertedRow, emailAddr);
     }
 
     return {
