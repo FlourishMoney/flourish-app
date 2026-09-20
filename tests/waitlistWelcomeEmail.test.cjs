@@ -293,5 +293,27 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     t.ok(!r.logs[0].includes(ADDRESS) && !r.logs[0].includes(KEY_SENTINEL) && !/abort|operation/i.test(r.logs[0]), "11i …and nothing sensitive or internal");
   }
 
+  // ── 12. One email per row, even if the request is replayed ─────────────────────────────────
+  // Resend de-duplicates on Idempotency-Key. The key is the waitlist row id, so a retried POST cannot
+  // produce a second confirmation for the same row. It must never carry the address.
+  {
+    const r = await run();
+    const req = r.calls.find(c => c.url.includes("api.resend.com"));
+    t.eq(req.headers["Idempotency-Key"], "waitlist-welcome/42", "12a the Resend request is keyed on the inserted row id");
+    t.ok(!String(req.headers["Idempotency-Key"]).includes(ADDRESS), "12b …and the key does not carry the address");
+
+    // A different row gets a different key, or one row's key would suppress another row's email.
+    const other = await run({ insert: { ok: true, status: 201, body: [{ id: "8f2c-uuid-43ab" }] } });
+    t.eq(other.calls.find(c => c.url.includes("api.resend.com")).headers["Idempotency-Key"], "waitlist-welcome/8f2c-uuid-43ab",
+      "12c a different row gives a different key (a uuid id works too)");
+
+    // No id came back: there is nothing stable to key on, so the header is omitted rather than invented.
+    const noId = await run({ insert: { ok: true, status: 201, body: [] } });
+    t.eq(noId.calls.find(c => c.url.includes("api.resend.com")).headers["Idempotency-Key"], undefined,
+      "12d with no row id the header is omitted, not guessed");
+    t.eq(noId.resendCalls.length, 1, "12e …and the email is still sent");
+    t.ok(/email=eq\./.test(noId.patches[0].url), "12f …with welcomed_at falling back to the email filter");
+  }
+
   t.summary("waitlistWelcomeEmail.test");
 })();

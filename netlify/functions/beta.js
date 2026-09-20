@@ -132,16 +132,23 @@ function welcomeEmailPayload(to) {
 
 // True only when Resend accepted the message. On failure it logs the words "welcome email failed"
 // and the HTTP status, and nothing else: never the address, the key, the payload or the response body.
-async function sendWelcomeEmail(to) {
+async function sendWelcomeEmail(to, rowId) {
   const key = (process.env.RESEND_API_KEY || "").trim();
   if (!key) return false; // no key configured: previews and local runs send nothing, silently
+  // Resend de-duplicates on Idempotency-Key, so a replayed request (a retried POST from the client, a
+  // function retry) cannot produce a second email for the same waitlist row. Keyed on the row id and
+  // nothing else: it must be stable for that row, and it must never carry the address. When the insert
+  // returned no id there is nothing stable to key on, so the header is omitted rather than invented.
+  const headers = { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" };
+  if (rowId != null && String(rowId) !== "") headers["Idempotency-Key"] = `waitlist-welcome/${rowId}`;
+
   const controller = new AbortController();
   const deadline = setTimeout(() => controller.abort(), RESEND_TIMEOUT_MS);
   let res;
   try {
     res = await fetch(RESEND_ENDPOINT, {
       method: "POST",
-      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(welcomeEmailPayload(to)),
       signal: controller.signal,
     });
@@ -290,7 +297,7 @@ exports.handler = async (event) => {
       insertedRow = Array.isArray(rows) ? rows[0] : rows;
     } catch { /* no or unparseable representation: markWelcomed falls back to the email filter */ }
 
-    if (await sendWelcomeEmail(emailAddr)) {
+    if (await sendWelcomeEmail(emailAddr, insertedRow && insertedRow.id)) {
       await markWelcomed(supabaseUrl, secretKey, insertedRow, emailAddr);
     }
 
