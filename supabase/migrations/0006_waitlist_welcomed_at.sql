@@ -86,3 +86,31 @@ alter table public.waitlist
 --            from public.waitlist
 --           group by lower(trim(email))
 --          having count(*) > 1 ) dupes;
+
+-- ============================================================================
+-- BEFORE MERGING: two more READ-ONLY checks, for the scheduled sweep
+-- ============================================================================
+-- waitlist-sweep.js selects id, email and created_at where welcomed_at is null.
+-- This repo cannot prove id or created_at exist, so confirm them. A missing
+-- column shows up at runtime as a 400 on the select, logged as
+-- "[waitlist-sweep] pending select failed 400", and nothing is sent.
+--
+-- (c) The columns the sweep depends on.
+--     WANT: four rows, with created_at a timestamp type.
+--
+-- select column_name, data_type
+--   from information_schema.columns
+--  where table_schema = 'public'
+--    and table_name   = 'waitlist'
+--    and column_name in ('id', 'email', 'created_at', 'welcomed_at')
+--  order by column_name;
+--
+-- (d) How many rows the sweep's FIRST run will pick up. Counts only.
+--     WANT: the same number as rows_total in check (b), expected to be 11.
+--     Every one of them is an existing signup whose welcomed_at is null, which
+--     is the intended one-time catch-up.
+--
+-- select count(*) as first_run_rows
+--   from public.waitlist
+--  where welcomed_at is null
+--    and created_at < now() - interval '5 minutes';
