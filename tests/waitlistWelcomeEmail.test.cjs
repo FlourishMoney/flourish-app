@@ -79,6 +79,13 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
       return { ok: patch.ok !== false, status: patch.status || 204, json: async () => ({}), text: async () => "" };
     }
     if (opts.method === "POST") {
+      if (insert.hang) {
+        return new Promise((_resolve, reject) => {
+          const abortErr = () => { const e = new Error("The operation was aborted"); e.name = "AbortError"; return e; };
+          if (opts.signal) opts.signal.addEventListener("abort", () => reject(abortErr()));
+          else setTimeout(() => reject(new Error("STUB SAFETY NET: the function sent no abort signal")), 9000);
+        });
+      }
       return {
         ok: insert.ok, status: insert.status,
         json: async () => insert.body,
@@ -349,6 +356,25 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     t.eq(JSON.stringify(r.body), JSON.stringify({ joined: true, alreadyJoined: false }), "13j a 404 on the write (column missing before the migration is applied) still returns joined:true");
     t.eq(r.logs.length, 1, "13k …logging one line");
     t.ok(/welcomed_at update failed/.test(r.logs[0]) && /\b404\b/.test(r.logs[0]), "13l …with the status and nothing else");
+  }
+
+  // ── 14. An insert that never answers ends at the deadline, and sends nothing ───────────────
+  // The insert is the call the signup depends on. Before it had a deadline, a hanging Supabase held the
+  // request until the platform killed it, and the caller got a platform error rather than the app's.
+  {
+    const started = Date.now();
+    const r = await run({ insert: { hang: true } });
+    const elapsed = Date.now() - started;
+    t.eq(r.res.statusCode, 500, "14a an insert that never answers ends as a failed signup");
+    t.eq(JSON.stringify(r.body), JSON.stringify({ error: "Failed to join waitlist" }), "14b …with the same body as any other insert failure, so the client shows its normal error");
+    t.ok(elapsed >= 4500, `14c …after the function's own 5s deadline fired (took ${elapsed}ms)`);
+    t.ok(elapsed < 8000, `14d …rather than running until the platform kills it (took ${elapsed}ms)`);
+    t.ok(!!(r.calls.find(c => c.method === "POST" && !c.url.includes("resend")) || {}).signal, "14e the insert carries an abort signal");
+    t.eq(r.resendCalls.length, 0, "14f no row, so no email");
+    t.eq(r.patches.length, 0, "14g …and no welcomed_at");
+    t.eq(r.logs.length, 1, "14h exactly one log line");
+    t.ok(/insert failed/.test(r.logs[0]) && /timeout/.test(r.logs[0]), "14i …saying the insert failed, timeout");
+    t.ok(!r.logs[0].includes(ADDRESS) && !/abort|operation|supabase\.co/i.test(r.logs[0]), "14j …and neither the address nor the error text");
   }
 
   t.summary("waitlistWelcomeEmail.test");

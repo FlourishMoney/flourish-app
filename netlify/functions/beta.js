@@ -91,6 +91,10 @@ const RESEND_TIMEOUT_MS = 5000;
 // The welcomed_at write gets a shorter deadline than the send: it is bookkeeping against Supabase, in
 // the same region, and by the time it runs the email has already gone out. Nobody should wait on it.
 const PATCH_TIMEOUT_MS  = 3000;
+// The insert is the one call the signup genuinely depends on, so it gets the same 5s as the send. With
+// all three deadlines the worst case for join_waitlist is 5 + 5 + 3 = 13s, well inside Netlify's 60s
+// synchronous limit, and in the normal case the whole thing is under a second.
+const INSERT_TIMEOUT_MS = 5000;
 const WELCOME_FROM     = "Flourish <hello@flourishmoney.app>";
 const WELCOME_REPLY_TO = "hello@flourishmoney.app";
 const WELCOME_SUBJECT  = "You're on the Flourish waitlist";
@@ -258,21 +262,39 @@ exports.handler = async (event) => {
     }
 
     // Use service role to insert (bypasses RLS)
-    const insertRes = await fetch(`${supabaseUrl}/rest/v1/waitlist`, {
-      method: "POST",
-      headers: {
-        "apikey": secretKey,
-        "Authorization": `Bearer ${secretKey}`,
-        "Content-Type": "application/json",
-        "Prefer": "return=representation",
-      },
-      body: JSON.stringify({
-        email: emailAddr,
-        country: country || null,
-        source: source || null,
-        metadata: metadata || {},
-      }),
-    });
+    const insertController = new AbortController();
+    const insertDeadline = setTimeout(() => insertController.abort(), INSERT_TIMEOUT_MS);
+    let insertRes;
+    try {
+      insertRes = await fetch(`${supabaseUrl}/rest/v1/waitlist`, {
+        method: "POST",
+        headers: {
+          "apikey": secretKey,
+          "Authorization": `Bearer ${secretKey}`,
+          "Content-Type": "application/json",
+          "Prefer": "return=representation",
+        },
+        body: JSON.stringify({
+          email: emailAddr,
+          country: country || null,
+          source: source || null,
+          metadata: metadata || {},
+        }),
+        signal: insertController.signal,
+      });
+    } catch (err) {
+      // Previously this threw out of the handler, so a hanging Supabase held the request until the
+      // platform killed it. Now it ends at the deadline and answers with the same shape the other
+      // insert failures use. No row, so no email. The error itself is never logged.
+      const aborted = !!err && (err.name === "AbortError" || err.name === "TimeoutError");
+      console.error("[waitlist] insert failed", aborted ? "timeout" : "no_status");
+      return {
+        statusCode: 500, headers: CORS,
+        body: JSON.stringify({ error: "Failed to join waitlist" }),
+      };
+    } finally {
+      clearTimeout(insertDeadline);
+    }
 
     if (insertRes.status === 409) {
       // Unique violation — already on waitlist
