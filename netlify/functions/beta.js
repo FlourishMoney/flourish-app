@@ -86,9 +86,11 @@ const WELCOME_REPLY_TO = "hello@flourishmoney.app";
 const WELCOME_SUBJECT  = "You're on the Flourish waitlist";
 
 // The approved copy, exactly as written. Do not add claims, launch dates or links.
+// It is deliberately transactional: it confirms the person's own request and nothing else. The product
+// description was removed on the owner's CASL decision (2026-09-19) so this is not a commercial
+// electronic message. Promotional copy and the full CASL footer belong to the later launch email.
 const WELCOME_PARAGRAPHS = [
   "Thanks for joining the Flourish waitlist.",
-  "Flourish is a calm money coach for households in Canada and the US. It shows what's safe to spend today, helps you plan ahead, and explains your money in plain language.",
   "We'll email you when it's ready for you. No launch date yet, and we won't send anything else in the meantime.",
   "Questions or ideas? Just reply to this email.",
   "Amanda, founder of Flourish",
@@ -107,8 +109,8 @@ const WELCOME_HTML = [
   '<body style="margin:0;padding:0;background-color:#F4F1EB;">',
   '<div style="max-width:560px;margin:0 auto;padding:32px 24px;background-color:#F4F1EB;color:#1A2035;',
   'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;">',
-  WELCOME_PARAGRAPHS.slice(0, 6).map(t => _para(t)).join(""),
-  _para(WELCOME_PARAGRAPHS[6], "margin-top:24px;font-size:13px;color:rgba(26,32,53,0.66);"),
+  WELCOME_PARAGRAPHS.slice(0, -1).map(t => _para(t)).join(""),
+  _para(WELCOME_PARAGRAPHS[WELCOME_PARAGRAPHS.length - 1], "margin-top:24px;font-size:13px;color:rgba(26,32,53,0.66);"),
   '</div></body></html>',
 ].join("");
 

@@ -30,7 +30,6 @@ const ADDRESS = "person@example.com";
 // The approved copy. If a word changes in beta.js, these assertions must be updated deliberately.
 const EXPECTED_PARAGRAPHS = [
   "Thanks for joining the Flourish waitlist.",
-  "Flourish is a calm money coach for households in Canada and the US. It shows what's safe to spend today, helps you plan ahead, and explains your money in plain language.",
   "We'll email you when it's ready for you. No launch date yet, and we won't send anything else in the meantime.",
   "Questions or ideas? Just reply to this email.",
   "Amanda, founder of Flourish",
@@ -126,6 +125,11 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     t.ok(!/<img|background-image|url\(/i.test(p.html), "2h no images");
     t.ok(!/—|–/.test(p.text + p.html), "2i no em dashes anywhere in the email");
     t.ok(!/unsubscribe|launch (date|day) is|guarantee|free|beta/i.test(p.text), "2j no claim the copy does not make");
+    // Removed on the owner's CASL decision (2026-09-19): the email stays a transactional confirmation of
+    // the person's own request, so it carries no description of the product and nothing promotional.
+    const REMOVED = "calm money coach";
+    t.ok(!p.text.includes(REMOVED) && !p.html.includes(REMOVED), "2k the product-description sentence is gone from both bodies");
+    t.eq(EXPECTED_PARAGRAPHS.length, 6, "2l six paragraphs: thanks, what happens next, reply, sign-off, domain, why-you-got-this");
   }
 
   // ── 3. Someone already on the list is not emailed again ────────────────────────────────────
