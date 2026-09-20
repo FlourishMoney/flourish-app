@@ -23,6 +23,8 @@ const path = require("path");
 
 const REPO = path.join(__dirname, "..");
 const BETA = path.join(REPO, "netlify", "functions", "beta.js");
+// The template, the send and the welcomed_at write live here, shared with the scheduled sweep.
+const WELCOME_LIB = path.join(REPO, "netlify", "functions", "_lib", "waitlistWelcome.js");
 const KEY_NAME = ["RESEND", "API", "KEY"].join("_"); // assembled so this file is not itself a hit in the scan
 const KEY_SENTINEL = "re_TESTONLY_thisisnotarealkey";
 const ADDRESS = "person@example.com";
@@ -257,7 +259,10 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     const distDir = path.join(REPO, "dist");
     if (fs.existsSync(distDir)) t.eq(scan("dist").join(","), "", `9b ${KEY_NAME} never appears in the built bundle (dist/)`);
     else t.ok(true, "9b dist/ is not built here (it is gitignored); scanned when present");
-    t.ok(fs.readFileSync(BETA, "utf8").includes(`process.env.${KEY_NAME}`), "9c …and the function does read it from process.env, so the scan is looking for the right name");
+    t.ok(fs.readFileSync(WELCOME_LIB, "utf8").includes(`process.env.${KEY_NAME}`), "9c …and the shared send module does read it from process.env, so the scan is looking for the right name");
+    // beta.js may still NAME the variable in its env-var header (that documentation is worth keeping); what
+    // it must not do is read it, because the send belongs to the shared module both callers use.
+    t.ok(!fs.readFileSync(BETA, "utf8").includes(`process.env.${KEY_NAME}`), "9c2 beta.js never reads the key itself: it delegates to the shared module");
     const viteHits = ["src", "netlify", "tests"].flatMap(d => walk(path.join(REPO, d))).filter(f => /VITE_[A-Z_]*RESEND|RESEND[A-Z_]*VITE/.test(fs.readFileSync(f, "utf8"))).map(f => path.relative(REPO, f));
     t.eq(viteHits.join(","), "", "9d no VITE_-prefixed Resend variable anywhere");
     const literalKey = ["src", "netlify"].flatMap(d => walk(path.join(REPO, d))).filter(f => /\bre_[A-Za-z0-9]{12,}/.test(fs.readFileSync(f, "utf8"))).map(f => path.relative(REPO, f));
