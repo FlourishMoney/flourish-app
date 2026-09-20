@@ -9,6 +9,8 @@
  * Env vars needed:
  *   SUPABASE_URL         — your Supabase project URL
  *   SUPABASE_SECRET_KEY  — your Supabase service_role secret key (NOT the anon key)
+ *   RESEND_API_KEY       — OPTIONAL (Production only). Sends the waitlist confirmation email. When it
+ *                          is unset, the signup still succeeds and no email is sent (previews, local).
  *   BETA_CODES           — REQUIRED. Comma-separated list of valid beta/access codes. If unset, the
  *                          function fails CLOSED (every code is rejected). There is deliberately no
  *                          hardcoded fallback — a missing config must never mean "accept known codes".
@@ -71,6 +73,101 @@ async function getUserCount(supabaseUrl, secretKey) {
   const data = await res.json();
   // Supabase returns total in the response
   return data.total || (data.users?.length ? data.users.length : 0);
+}
+
+// ─── Waitlist confirmation email (Resend REST API over fetch, no SDK) ────────────────────────────
+// One short confirmation, sent ONLY after the waitlist row is inserted, and never on a duplicate.
+// RESEND_API_KEY is read from process.env at call time. It lives only in the Netlify Production
+// context: it is never bundled, never returned, and never logged. When it is missing (deploy
+// previews, netlify dev, local runs) the send is skipped silently, so no preview emails a real person.
+const RESEND_ENDPOINT  = "https://api.resend.com/emails";
+const WELCOME_FROM     = "Flourish <hello@flourishmoney.app>";
+const WELCOME_REPLY_TO = "hello@flourishmoney.app";
+const WELCOME_SUBJECT  = "You're on the Flourish waitlist";
+
+// The approved copy, exactly as written. Do not add claims, launch dates or links.
+const WELCOME_PARAGRAPHS = [
+  "Thanks for joining the Flourish waitlist.",
+  "Flourish is a calm money coach for households in Canada and the US. It shows what's safe to spend today, helps you plan ahead, and explains your money in plain language.",
+  "We'll email you when it's ready for you. No launch date yet, and we won't send anything else in the meantime.",
+  "Questions or ideas? Just reply to this email.",
+  "Amanda, founder of Flourish",
+  "flourishmoney.app",
+  "You're receiving this because you joined the waitlist at flourishmoney.app. If this wasn't you, reply and we'll remove you.",
+];
+
+// Both versions are built from the SAME array, so the plain-text and HTML copy can never drift apart.
+const WELCOME_TEXT = WELCOME_PARAGRAPHS.join("\n\n");
+
+// Cream background (#F4F1EB) and ink (#1A2035) are the app's own light-theme values. No images.
+const _para = (text, extra) => `<p style="margin:0 0 16px;${extra || ""}">${text}</p>`;
+const WELCOME_HTML = [
+  '<!doctype html>',
+  '<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>' + WELCOME_SUBJECT + '</title></head>',
+  '<body style="margin:0;padding:0;background-color:#F4F1EB;">',
+  '<div style="max-width:560px;margin:0 auto;padding:32px 24px;background-color:#F4F1EB;color:#1A2035;',
+  'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;">',
+  WELCOME_PARAGRAPHS.slice(0, 6).map(t => _para(t)).join(""),
+  _para(WELCOME_PARAGRAPHS[6], "margin-top:24px;font-size:13px;color:rgba(26,32,53,0.66);"),
+  '</div></body></html>',
+].join("");
+
+function welcomeEmailPayload(to) {
+  return {
+    from:     WELCOME_FROM,
+    reply_to: WELCOME_REPLY_TO,
+    to:       [to],
+    subject:  WELCOME_SUBJECT,
+    text:     WELCOME_TEXT,
+    html:     WELCOME_HTML,
+  };
+}
+
+// True only when Resend accepted the message. On failure it logs the words "welcome email failed"
+// and the HTTP status, and nothing else: never the address, the key, the payload or the response body.
+async function sendWelcomeEmail(to) {
+  const key = (process.env.RESEND_API_KEY || "").trim();
+  if (!key) return false; // no key configured: previews and local runs send nothing, silently
+  let res;
+  try {
+    res = await fetch(RESEND_ENDPOINT, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify(welcomeEmailPayload(to)),
+    });
+  } catch {
+    console.error("[waitlist] welcome email failed", "no_status");
+    return false;
+  }
+  if (!res.ok) {
+    console.error("[waitlist] welcome email failed", res.status);
+    return false;
+  }
+  return true;
+}
+
+// Stamps welcomed_at on the row that was just inserted (migration 0006). Best effort: a failure here
+// never changes what the signup is told. Uses the id the insert returned; falls back to the email
+// filter only when the insert response carried no id.
+async function markWelcomed(supabaseUrl, secretKey, row, email) {
+  const filter = row && row.id != null
+    ? `id=eq.${encodeURIComponent(row.id)}`
+    : `email=eq.${encodeURIComponent(email)}`;
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/waitlist?${filter}`, {
+      method: "PATCH",
+      headers: {
+        "apikey": secretKey,
+        "Authorization": `Bearer ${secretKey}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal",
+      },
+      body: JSON.stringify({ welcomed_at: new Date().toISOString() }),
+    });
+    if (!res.ok) console.error("[waitlist] welcomed_at update failed", res.status);
+  } catch {
+    console.error("[waitlist] welcomed_at update failed", "no_status");
+  }
 }
 
 exports.handler = async (event) => {
@@ -158,6 +255,19 @@ exports.handler = async (event) => {
         statusCode: 500, headers: CORS,
         body: JSON.stringify({ error: "Failed to join waitlist" }),
       };
+    }
+
+    // The row is saved. Only now: send the confirmation, and record it if Resend accepted it. Both
+    // steps are best effort. The signup has already succeeded, so neither failure changes this response.
+    let insertedRow = null;
+    try {
+      const rows = await insertRes.json();
+      insertedRow = Array.isArray(rows) ? rows[0] : rows;
+    } catch { /* no or unparseable representation: markWelcomed falls back to the email filter */ }
+
+    const welcomeTo = email.trim().toLowerCase();
+    if (await sendWelcomeEmail(welcomeTo)) {
+      await markWelcomed(supabaseUrl, secretKey, insertedRow, welcomeTo);
     }
 
     return {
