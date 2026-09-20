@@ -88,6 +88,9 @@ const RESEND_ENDPOINT   = "https://api.resend.com/emails";
 // far longer than a healthy send takes. A timeout is just another failed send: no welcomed_at, still
 // joined:true.
 const RESEND_TIMEOUT_MS = 5000;
+// The welcomed_at write gets a shorter deadline than the send: it is bookkeeping against Supabase, in
+// the same region, and by the time it runs the email has already gone out. Nobody should wait on it.
+const PATCH_TIMEOUT_MS  = 3000;
 const WELCOME_FROM     = "Flourish <hello@flourishmoney.app>";
 const WELCOME_REPLY_TO = "hello@flourishmoney.app";
 const WELCOME_SUBJECT  = "You're on the Flourish waitlist";
@@ -177,6 +180,8 @@ async function markWelcomed(supabaseUrl, secretKey, row, email) {
   const filter = row && row.id != null
     ? `id=eq.${encodeURIComponent(row.id)}`
     : `email=eq.${encodeURIComponent(email)}`;
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), PATCH_TIMEOUT_MS);
   try {
     const res = await fetch(`${supabaseUrl}/rest/v1/waitlist?${filter}`, {
       method: "PATCH",
@@ -187,10 +192,16 @@ async function markWelcomed(supabaseUrl, secretKey, row, email) {
         "Prefer": "return=minimal",
       },
       body: JSON.stringify({ welcomed_at: new Date().toISOString() }),
+      signal: controller.signal,
     });
     if (!res.ok) console.error("[waitlist] welcomed_at update failed", res.status);
-  } catch {
-    console.error("[waitlist] welcomed_at update failed", "no_status");
+  } catch (err) {
+    // Same rule as the send: "timeout" for our own deadline, "no_status" otherwise, and never the
+    // error itself, which carries the request URL (and with it the row filter).
+    const aborted = !!err && (err.name === "AbortError" || err.name === "TimeoutError");
+    console.error("[waitlist] welcomed_at update failed", aborted ? "timeout" : "no_status");
+  } finally {
+    clearTimeout(deadline);
   }
 }
 

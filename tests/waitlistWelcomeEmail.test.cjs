@@ -39,7 +39,7 @@ const EXPECTED_PARAGRAPHS = [
 
 // Run the real handler against a stubbed fetch. `insert` decides what Supabase's insert answers and
 // `resend` what Resend answers; both default to success. Returns everything the function did.
-async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, resend = { ok: true, status: 200 }, withKey = true, action = "join_waitlist", email = ADDRESS } = {}) {
+async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, resend = { ok: true, status: 200 }, patch = {}, withKey = true, action = "join_waitlist", email = ADDRESS } = {}) {
   const calls = [];
   const logs = [];
   const realFetch = global.fetch;
@@ -68,7 +68,16 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
       }
       return { ok: resend.ok, status: resend.status, json: async () => ({}), text: async () => "" };
     }
-    if (opts.method === "PATCH") return { ok: true, status: 204, json: async () => ({}), text: async () => "" };
+    if (opts.method === "PATCH") {
+      if (patch.hang) {
+        return new Promise((_resolve, reject) => {
+          const abortErr = () => { const e = new Error("The operation was aborted"); e.name = "AbortError"; return e; };
+          if (opts.signal) opts.signal.addEventListener("abort", () => reject(abortErr()));
+          else setTimeout(() => reject(new Error("STUB SAFETY NET: the function sent no abort signal")), 9000);
+        });
+      }
+      return { ok: patch.ok !== false, status: patch.status || 204, json: async () => ({}), text: async () => "" };
+    }
     if (opts.method === "POST") {
       return {
         ok: insert.ok, status: insert.status,
@@ -314,6 +323,32 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
       "12d with no row id the header is omitted, not guessed");
     t.eq(noId.resendCalls.length, 1, "12e …and the email is still sent");
     t.ok(/email=eq\./.test(noId.patches[0].url), "12f …with welcomed_at falling back to the email filter");
+  }
+
+  // ── 13. A welcomed_at write that never answers cannot take the signup with it ──────────────
+  // By this point the row is saved AND the email has gone out. The write is bookkeeping, so it gets a
+  // shorter deadline (3s) than the send, and a hanging Supabase must not hold the response.
+  {
+    const started = Date.now();
+    const r = await run({ patch: { hang: true } });
+    const elapsed = Date.now() - started;
+    t.eq(JSON.stringify(r.body), JSON.stringify({ joined: true, alreadyJoined: false }), "13a a welcomed_at write that never answers still returns joined:true");
+    t.ok(elapsed >= 2500, `13b …after the function's own 3s deadline fired (took ${elapsed}ms)`);
+    t.ok(elapsed < 6000, `13c …and the signup answers promptly (took ${elapsed}ms)`);
+    t.ok(!!(r.patches[0] || {}).signal, "13d the PATCH carries an abort signal, so a deadline can end it");
+    t.eq(r.resendCalls.length, 1, "13e the email was still sent: the write is what hung, not the send");
+    t.eq(r.logs.length, 1, "13f exactly one log line");
+    t.ok(/welcomed_at update failed/.test(r.logs[0]), "13g …saying the welcomed_at update failed");
+    t.ok(/timeout/.test(r.logs[0]), "13h …with \"timeout\"");
+    t.ok(!r.logs[0].includes(ADDRESS) && !r.logs[0].includes(KEY_SENTINEL) && !/waitlist\?|id=eq|abort/i.test(r.logs[0]), "13i …and neither the address, the key, nor the request URL");
+  }
+
+  // A welcomed_at write that FAILS (rather than hangs) is logged the same way, with its status.
+  {
+    const r = await run({ patch: { ok: false, status: 404 } });
+    t.eq(JSON.stringify(r.body), JSON.stringify({ joined: true, alreadyJoined: false }), "13j a 404 on the write (column missing before the migration is applied) still returns joined:true");
+    t.eq(r.logs.length, 1, "13k …logging one line");
+    t.ok(/welcomed_at update failed/.test(r.logs[0]) && /\b404\b/.test(r.logs[0]), "13l …with the status and nothing else");
   }
 
   t.summary("waitlistWelcomeEmail.test");
