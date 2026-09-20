@@ -80,7 +80,12 @@ async function getUserCount(supabaseUrl, secretKey) {
 // RESEND_API_KEY is read from process.env at call time. It lives only in the Netlify Production
 // context: it is never bundled, never returned, and never logged. When it is missing (deploy
 // previews, netlify dev, local runs) the send is skipped silently, so no preview emails a real person.
-const RESEND_ENDPOINT  = "https://api.resend.com/emails";
+const RESEND_ENDPOINT   = "https://api.resend.com/emails";
+// A Netlify function is killed at 10s. Without a deadline of our own, a slow or hanging Resend call
+// would take the whole request with it: the row is already inserted, but the person waits and then
+// sees a failure for a signup that actually worked. 5s leaves room for the insert before it and the
+// response after it. A timeout is just another failed send: no welcomed_at, still joined:true.
+const RESEND_TIMEOUT_MS = 5000;
 const WELCOME_FROM     = "Flourish <hello@flourishmoney.app>";
 const WELCOME_REPLY_TO = "hello@flourishmoney.app";
 const WELCOME_SUBJECT  = "You're on the Flourish waitlist";
@@ -130,16 +135,24 @@ function welcomeEmailPayload(to) {
 async function sendWelcomeEmail(to) {
   const key = (process.env.RESEND_API_KEY || "").trim();
   if (!key) return false; // no key configured: previews and local runs send nothing, silently
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), RESEND_TIMEOUT_MS);
   let res;
   try {
     res = await fetch(RESEND_ENDPOINT, {
       method: "POST",
       headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify(welcomeEmailPayload(to)),
+      signal: controller.signal,
     });
-  } catch {
-    console.error("[waitlist] welcome email failed", "no_status");
+  } catch (err) {
+    // "timeout" when our own deadline fired, "no_status" for any other network failure. The error
+    // itself is never logged: it can carry the request URL and headers.
+    const aborted = !!err && (err.name === "AbortError" || err.name === "TimeoutError");
+    console.error("[waitlist] welcome email failed", aborted ? "timeout" : "no_status");
     return false;
+  } finally {
+    clearTimeout(deadline);
   }
   if (!res.ok) {
     console.error("[waitlist] welcome email failed", res.status);

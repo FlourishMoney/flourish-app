@@ -53,9 +53,19 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
 
   global.fetch = async (url, opts = {}) => {
     const u = String(url);
-    calls.push({ url: u, method: opts.method || "GET", headers: opts.headers || {}, body: opts.body });
+    calls.push({ url: u, method: opts.method || "GET", headers: opts.headers || {}, body: opts.body, signal: opts.signal });
     if (u.includes("api.resend.com")) {
       if (resend.throws) throw new Error("network down");
+      if (resend.hang) {
+        // Never settles by itself: only the function's OWN AbortController can end this call. If the
+        // function stops sending a signal, the safety net below fails the test after 9s instead of
+        // hanging the gate forever.
+        return new Promise((_resolve, reject) => {
+          const abortErr = () => { const e = new Error("The operation was aborted"); e.name = "AbortError"; return e; };
+          if (opts.signal) opts.signal.addEventListener("abort", () => reject(abortErr()));
+          else setTimeout(() => reject(new Error("STUB SAFETY NET: the function sent no abort signal")), 9000);
+        });
+      }
       return { ok: resend.ok, status: resend.status, json: async () => ({}), text: async () => "" };
     }
     if (opts.method === "PATCH") return { ok: true, status: 204, json: async () => ({}), text: async () => "" };
@@ -245,6 +255,25 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
       t.eq(r.res.statusCode, 400, `10d ${shown} is still rejected`);
       t.eq(r.calls.length, 0, `10e ${shown} writes no row and sends no email`);
     }
+  }
+
+  // ── 11. A Resend call that never answers cannot take the signup with it ────────────────────
+  // A Netlify function is killed at 10s. The row is already inserted by this point, so a hanging send
+  // must not turn a successful signup into a failed request. The function sets its own 5s deadline.
+  // This is the one slow assertion in the suite: it waits out that real deadline on purpose.
+  {
+    const started = Date.now();
+    const r = await run({ resend: { hang: true } });
+    const elapsed = Date.now() - started;
+    t.eq(JSON.stringify(r.body), JSON.stringify({ joined: true, alreadyJoined: false }), "11a a Resend call that never answers still returns joined:true");
+    t.ok(elapsed >= 4500, `11b …because the function's own deadline fired, not because the call failed instantly (took ${elapsed}ms)`);
+    t.ok(elapsed < 8000, `11c …and it answers well inside the 10s Netlify limit (took ${elapsed}ms)`);
+    t.ok(!!(r.calls.find(c => c.url.includes("api.resend.com")) || {}).signal, "11d the Resend request carries an abort signal, so a deadline can end it");
+    t.eq(r.patches.length, 0, "11e welcomed_at is not stamped for a send that never completed");
+    t.eq(r.logs.length, 1, "11f exactly one log line");
+    t.ok(/welcome email failed/.test(r.logs[0]), "11g …saying the welcome email failed");
+    t.ok(/timeout/.test(r.logs[0]), "11h …with \"timeout\" rather than a status code");
+    t.ok(!r.logs[0].includes(ADDRESS) && !r.logs[0].includes(KEY_SENTINEL) && !/abort|operation/i.test(r.logs[0]), "11i …and nothing sensitive or internal");
   }
 
   t.summary("waitlistWelcomeEmail.test");
