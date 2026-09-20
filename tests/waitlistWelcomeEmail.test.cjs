@@ -187,7 +187,10 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
 
   // ── 7. Nothing sensitive is logged, on any path ────────────────────────────────────────────
   {
-    const runs = [await run(), await run({ resend: { ok: false, status: 422 } }), await run({ resend: { throws: true } }), await run({ insert: { ok: false, status: 409, body: {}, text: "" } })];
+    // A PostgREST failure body that quotes the offending row, which is what this path used to log.
+    const leakyBody = '{"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \\"waitlist\\": (email)=(' + ADDRESS + ')"}';
+    const insertFailed = await run({ insert: { ok: false, status: 500, body: {}, text: leakyBody } });
+    const runs = [await run(), await run({ resend: { ok: false, status: 422 } }), await run({ resend: { throws: true } }), await run({ insert: { ok: false, status: 409, body: {}, text: "" } }), insertFailed];
     const all = runs.map(r => r.logs.join("|")).join("|");
     t.ok(!all.includes(ADDRESS), "7a no log contains the email address");
     t.ok(!all.includes("example.com"), "7b …not even its domain");
@@ -200,6 +203,15 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     const nonResend = sent.calls.filter(c => !c.url.includes("api.resend.com"));
     t.ok(!JSON.stringify(nonResend).includes(KEY_SENTINEL), "7g the key is sent to Resend and to nothing else");
     t.ok(!JSON.stringify(sent.res).includes(KEY_SENTINEL) && !JSON.stringify(sent.res).includes(ADDRESS), "7h the HTTP response carries neither the key nor the address");
+    // The insert-failure log: status and Postgres code only, never the response body.
+    t.eq(insertFailed.res.statusCode, 500, "7i a failed insert still reports the failure");
+    t.eq(insertFailed.logs.length, 1, "7j …with one log line");
+    t.ok(/insert failed/.test(insertFailed.logs[0]), "7k …saying the insert failed");
+    t.ok(/\b500\b/.test(insertFailed.logs[0]), "7l …with the HTTP status");
+    t.ok(/\b42501\b/.test(insertFailed.logs[0]), "7m …and the Postgres error code, so a permissions problem is still diagnosable");
+    t.ok(!insertFailed.logs[0].includes(ADDRESS), "7n …and NOT the address the error body quoted");
+    t.ok(!/row-level security|violates|message|details/i.test(insertFailed.logs[0]), "7o …and not the error body at all");
+    t.eq(insertFailed.resendCalls.length, 0, "7p …and no email is sent");
   }
 
   // ── 8. Other actions are untouched ─────────────────────────────────────────────────────────

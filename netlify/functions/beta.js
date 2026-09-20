@@ -271,7 +271,11 @@ exports.handler = async (event) => {
           body: JSON.stringify({ joined: true, alreadyJoined: true }),
         };
       }
-      console.error("[waitlist] insert failed:", errText);
+      // errText is the raw PostgREST body. It can quote the offending row, including the address, so
+      // it is never logged. The status plus the Postgres SQLSTATE (23505, 23502, 42501 and so on) is
+      // enough to tell a permissions problem from a constraint problem in the function logs.
+      const pgCode = (/"code"\s*:\s*"([A-Za-z0-9]{1,10})"/.exec(errText) || [])[1] || "no_code";
+      console.error("[waitlist] insert failed", insertRes.status, pgCode);
       return {
         statusCode: 500, headers: CORS,
         body: JSON.stringify({ error: "Failed to join waitlist" }),
