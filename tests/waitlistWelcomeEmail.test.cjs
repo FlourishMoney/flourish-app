@@ -41,7 +41,7 @@ const EXPECTED_PARAGRAPHS = [
 
 // Run the real handler against a stubbed fetch. `insert` decides what Supabase's insert answers and
 // `resend` what Resend answers; both default to success. Returns everything the function did.
-async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, resend = { ok: true, status: 200 }, patch = {}, withKey = true, action = "join_waitlist", email = ADDRESS } = {}) {
+async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, resend = { ok: true, status: 200 }, patch = {}, confirm = { rows: [] }, withKey = true, action = "join_waitlist", email = ADDRESS } = {}) {
   const calls = [];
   const logs = [];
   const realFetch = global.fetch;
@@ -93,6 +93,11 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
         json: async () => insert.body,
         text: async () => (typeof insert.text === "string" ? insert.text : JSON.stringify(insert.body || {})),
       };
+    }
+    if (u.includes("/rest/v1/waitlist")) {
+      // The post-timeout confirm read: "is the row there after all?"
+      if (confirm.throws) throw new Error("network down");
+      return { ok: confirm.ok !== false, status: confirm.status || 200, json: async () => confirm.rows || [], text: async () => "" };
     }
     return { ok: true, status: 200, json: async () => ({ total: 0 }), text: async () => "" };
   };
@@ -380,6 +385,47 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     t.eq(r.logs.length, 1, "14h exactly one log line");
     t.ok(/insert failed/.test(r.logs[0]) && /timeout/.test(r.logs[0]), "14i …saying the insert failed, timeout");
     t.ok(!r.logs[0].includes(ADDRESS) && !/abort|operation|supabase\.co/i.test(r.logs[0]), "14j …and neither the address nor the error text");
+  }
+
+  // ── 15. A timed-out insert that actually committed is reported as the success it was ───────
+  // PostgREST not answering does not mean Postgres did not commit. Telling someone their signup failed
+  // when the row is there is the worse error: they try again, hit the unique constraint, and are told
+  // they are already on a list they were just told they were not on. One short read settles it.
+  {
+    const r = await run({ insert: { hang: true }, confirm: { rows: [{ id: 7 }] } });
+    t.eq(r.res.statusCode, 200, "15a the row is there, so the signup is reported as succeeded");
+    t.eq(JSON.stringify(r.body), JSON.stringify({ joined: true, alreadyJoined: false }), "15b …with the response shape the client already handles");
+    const confirmOf = (run) => run.calls.find(c => c.method === "GET" && c.url.includes("/rest/v1/waitlist")) || null;
+    const confirmUrl = (run) => (confirmOf(run) ? confirmOf(run).url : "(no confirm read)");
+    t.ok(!!confirmOf(r), "15c the confirm read happened");
+    t.ok(confirmUrl(r).includes("email=eq." + encodeURIComponent(ADDRESS)) && confirmUrl(r).includes("select=id") && confirmUrl(r).includes("limit=1"),
+      "15d …by normalized email, asking for one id and nothing else");
+    t.ok(!!(confirmOf(r) || {}).signal, "15e …with its own abort signal");
+    t.eq(r.resendCalls.length, 0, "15f no email is sent on this path: it cannot know what happened, and the sweep covers it");
+    t.eq(r.patches.length, 0, "15g …and welcomed_at stays null, which is what the sweep looks for");
+    t.ok(!r.logs.join("|").includes(ADDRESS), "15h no log line carries the address, even though the read's URL does");
+
+    // Normalization still applies on this path: a trailing space must not miss an existing row.
+    const spaced = await run({ email: "  Person@Example.COM  ", insert: { hang: true }, confirm: { rows: [{ id: 7 }] } });
+    t.ok(confirmUrl(spaced).includes("email=eq." + encodeURIComponent(ADDRESS)),
+      "15i the confirm read uses the same normalized address as the insert");
+  }
+
+  // ── 16. …and one that did NOT commit still fails ───────────────────────────────────────────
+  {
+    const empty = await run({ insert: { hang: true }, confirm: { rows: [] } });
+    t.eq(empty.res.statusCode, 500, "16a no row found: the failure stands, rather than claiming a signup that does not exist");
+    t.eq(JSON.stringify(empty.body), JSON.stringify({ error: "Failed to join waitlist" }), "16b …with the normal error body");
+    t.eq(empty.resendCalls.length, 0, "16c and no email");
+
+    const unreadable = await run({ insert: { hang: true }, confirm: { ok: false, status: 503 } });
+    t.eq(unreadable.res.statusCode, 500, "16d a confirm read that errors also leaves the 500 standing");
+    t.ok(/insert confirm failed/.test(unreadable.logs.join("|")) && /\b503\b/.test(unreadable.logs.join("|")), "16e …logged with its status");
+    t.ok(!unreadable.logs.join("|").includes(ADDRESS), "16f …and no address");
+
+    const threw = await run({ insert: { hang: true }, confirm: { throws: true } });
+    t.eq(threw.res.statusCode, 500, "16g a confirm read that throws also leaves the 500 standing");
+    t.ok(/insert confirm failed/.test(threw.logs.join("|")), "16h …logged the same way");
   }
 
   t.summary("waitlistWelcomeEmail.test");

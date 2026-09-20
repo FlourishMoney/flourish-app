@@ -84,6 +84,42 @@ const { sendWelcomeEmail, markWelcomed } = require("./_lib/waitlistWelcome");
 // all three deadlines the worst case for join_waitlist is 5 + 5 + 3 = 13s, well inside Netlify's 60s
 // synchronous limit, and in the normal case the whole thing is under a second.
 const INSERT_TIMEOUT_MS = 5000;
+// After a timed-out insert, one short read decides whether the row landed anyway. It runs only on that
+// path, so its deadline is small: worst case for that path is 5s + 2s.
+const CONFIRM_TIMEOUT_MS = 2000;
+
+// Does a row for this address exist? Used ONLY to interpret a timed-out insert. PostgREST not
+// answering does not mean Postgres did not commit, and telling someone their signup failed when the
+// row is there is the worse error: they try again, hit the unique constraint, and are told they are
+// already on a list they were just told they were not on.
+async function waitlistRowExists(supabaseUrl, secretKey, email) {
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), CONFIRM_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/waitlist?email=eq.${encodeURIComponent(email)}&select=id&limit=1`, {
+      headers: {
+        "apikey": secretKey,
+        "Authorization": `Bearer ${secretKey}`,
+        "Accept": "application/json",
+      },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      console.error("[waitlist] insert confirm failed", res.status);
+      return false;
+    }
+    const rows = await res.json();
+    return Array.isArray(rows) && rows.length > 0;
+  } catch (err) {
+    // Same logging rule as everywhere else here: a fixed message and a status word, never the address
+    // (which is in the URL of this very request) and never the error.
+    const aborted = !!err && (err.name === "AbortError" || err.name === "TimeoutError");
+    console.error("[waitlist] insert confirm failed", aborted ? "timeout" : "no_status");
+    return false;
+  } finally {
+    clearTimeout(deadline);
+  }
+}
 
 exports.handler = async (event) => {
   // Phase D2: per-request CORS (origin-aware). Inner references can keep using CORS.
@@ -164,6 +200,18 @@ exports.handler = async (event) => {
       // insert failures use. No row, so no email. The error itself is never logged.
       const aborted = !!err && (err.name === "AbortError" || err.name === "TimeoutError");
       console.error("[waitlist] insert failed", aborted ? "timeout" : "no_status");
+      // The insert may have committed even though the call did not answer. One read settles it. If the
+      // row is there the signup DID succeed, so say so with the response the client already handles.
+      // No email is sent here: this path cannot know whether one went out, and the scheduled sweep
+      // sends to any row whose welcomed_at is still null. If the read cannot confirm a row, the 500
+      // stands, because claiming success for a signup that may not exist is the worse mistake.
+      if (await waitlistRowExists(supabaseUrl, secretKey, emailAddr)) {
+        console.error("[waitlist] insert did not answer but the row exists: reporting success, sweep will send");
+        return {
+          statusCode: 200, headers: CORS,
+          body: JSON.stringify({ joined: true, alreadyJoined: false }),
+        };
+      }
       return {
         statusCode: 500, headers: CORS,
         body: JSON.stringify({ error: "Failed to join waitlist" }),
