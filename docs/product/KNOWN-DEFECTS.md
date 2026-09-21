@@ -250,3 +250,19 @@ anon and authenticated keys and asserts each RLS policy from the outside. For 2,
 
 **Status** Logged 2026-09-21 from the ChatGPT review of PR #2. Items 1 and 2 are doable now; item 3
 waits on billing.
+
+---
+
+## 12. `meetTabsRow.test.cjs` tests extracted source text, not the rendered row
+
+**Where** `tests/meetTabsRow.test.cjs` and `src/App.jsx` (the Meet screen's `meetTabs` row, around line 8705).
+
+**What happens** The test slices the `meetTabs` declaration and its `if(meetTabs.length<2) return null;` guard out of `App.jsx` as text, compiles that slice with `new Function`, and runs it. That proves the guard's logic is right, but not that the rendered row obeys it. If the declaration ever became dead code — moved, shadowed, or no longer what the JSX maps over — the test would keep passing while the screen showed a single already-selected "Money Meeting" button again. The same extract-and-compile pattern is used elsewhere in this suite, so the gap is not unique to this file.
+
+**What it does NOT do** It does not affect users today: the guard is in place and behaves correctly (hidden with `HOUSEHOLD_ENABLED` off, back with two tabs when on). This is a weakness in how well the test would catch a future regression.
+
+**Detection** Not detectable from behaviour. It shows up only if the row is refactored and the test still passes.
+
+**Fix (suggested, not built)** Extract a small pure render helper, for example `meetTabsFor({ isCouple, householdEnabled })` returning the tab list or `null`, into `src/lib/`. Have the JSX call it and map over its result, and test the helper directly with imports rather than by extracting source text. The test then exercises the same code the screen runs.
+
+**Status** Deferred by decision, 2026-09-21, under the rule that only a HIGH finding blocks a merge. Raised as a LOW in the ChatGPT review of PR #3.
