@@ -15,7 +15,7 @@
 const { create } = require("./_runner.cjs");
 const fs = require("fs");
 const path = require("path");
-const { FREE_CHAT_WEEKLY, decideChatLimit } = require("../netlify/functions/_lib/coachLimits.js");
+const { FREE_CHAT_WEEKLY, freeLimitMessage, countFreeWeek, decideChatLimit } = require("../netlify/functions/_lib/coachLimits.js");
 
 const CEILING = 50;
 const call = (o) => decideChatLimit({ enforce: true, unlimited: false, usedToday: 1, dailyCeiling: CEILING, usedWeek: null, ...o });
@@ -71,8 +71,10 @@ const call = (o) => decideChatLimit({ enforce: true, unlimited: false, usedToday
   // ── 6. coach.js actually uses this, and the old daily rule is gone ───────────────────────────
   {
     const coach = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "coach.js"), "utf8");
+    const lib = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "_lib", "coachLimits.js"), "utf8");
     t.ok(/decideChatLimit\(/.test(coach), "6a coach.js decides through this module");
-    t.ok(/increment_coach_usage_weekly/.test(coach), "6b …counting the week with the new RPC");
+    t.ok(/countFreeWeek\(admin, user_id\)/.test(coach) && /increment_coach_usage_weekly/.test(lib),
+      "6b …counting the week with the new RPC, which now lives in countFreeWeek so its failure is its own");
     t.ok(/rpc\("increment_coach_usage"/.test(coach), "6c …while the day-keyed abuse counter is still called, unchanged");
     t.ok(!/FREE_CHAT_DAILY\s*=/.test(coach), "6d the 1-a-day free constant is gone");
     t.ok(/CHAT_DAILY_CEILING = 50/.test(coach), "6e CHAT_DAILY_CEILING is untouched");
@@ -80,8 +82,113 @@ const call = (o) => decideChatLimit({ enforce: true, unlimited: false, usedToday
     t.ok(/failing closed/i.test(coach), "6g …and so is the fail-closed comment and its branch");
     t.ok(!/come back tomorrow/.test(coach), "6h no message still tells a free user to come back tomorrow");
     // The weekly counter must not be written for accounts the free limit cannot apply to.
-    t.ok(/if \(ENFORCE_PLAN_LIMITS && !unlimited\) \{[\s\S]{0,200}increment_coach_usage_weekly/.test(coach),
+    t.ok(/if \(ENFORCE_PLAN_LIMITS && !unlimited\) \{[\s\S]{0,200}countFreeWeek\(/.test(coach),
       "6i the weekly counter is only incremented when the free limit can actually apply");
+    t.ok(!/increment_coach_usage_weekly/.test(coach),
+      "6j …and coach.js calls the weekly RPC nowhere else, so there is one place for it to fail");
+  }
+
+  // ── 7. The weekly counter fails CLOSED for free accounts, and only for them ──────────────────
+  // ChatGPT's HIGH 1 on PR #2: the weekly RPC used to sit in the same try as the day-keyed one, so
+  // any weekly failure landed in the "counter is down" handler — which lets the request through
+  // under an emergency per-IP cap. A free user whose weekly counter failed got the 50-a-day abuse
+  // ceiling instead of 2 a week. Deploying the code before migration 0008 would have done exactly
+  // that to every free account at once.
+  //
+  // This runs the REAL enforcement block, read out of coach.js at test time and compiled with
+  // stubs, so it tests what ships rather than a restatement of it. ipCount is 1 — a healthy IP —
+  // because that is the case where the old code allowed the message.
+  {
+    const coach = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "coach.js"), "utf8");
+    const from = coach.indexOf("        let userRpcOk = false;");
+    const to = coach.indexOf("        // Healthy-mode per-IP abuse/cost cap");
+    t.ok(from > 0 && to > from, "7a the enforcement block is where this test reads it from");
+    const block = coach.slice(from, to);
+
+    const CORS = { "x-test": "1" };
+    // Three ways the weekly counter can fail. The third is rollout day: code live, 0008 not applied.
+    const MODES = {
+      throws:  () => { throw new Error("fetch failed"); },
+      errors:  () => ({ data: null, error: { message: "permission denied for function increment_coach_usage_weekly" } }),
+      missing: () => ({ data: null, error: { code: "PGRST202", message: "Could not find the function public.increment_coach_usage_weekly(p_user) in the schema cache" } }),
+    };
+
+    const run = async ({ mode, unlimited, enforce = true }) => {
+      const calls = { weekly: 0, daily: 0 };
+      const logs = [];
+      const admin = {
+        rpc: async (name) => {
+          if (name === "increment_coach_usage") { calls.daily++; return { data: 1, error: null }; }
+          calls.weekly++;
+          return MODES[mode]();
+        },
+      };
+      const fn = new Function(
+        "getUserPlan", "getAdminClient", "ENFORCE_PLAN_LIMITS", "CHAT_DAILY_CEILING", "FREE_CHAT_WEEKLY",
+        "countFreeWeek", "decideChatLimit", "corsHeaders", "user_id", "ipCount", "EMERGENCY_IP_DAILY", "console",
+        `return (async () => {\n${block}\n  return { allowedThrough: true };\n})();`
+      );
+      // countFreeWeek logs through the module's own console, not the one injected into the block,
+      // so the real one is captured for the duration of the call and put back afterwards.
+      const quiet = console.error;
+      console.error = (...a) => logs.push(a.map(String).join(" "));
+      let out;
+      try {
+        out = await fn(
+          async () => ({ unlimited }), () => admin, enforce, CEILING, FREE_CHAT_WEEKLY,
+          countFreeWeek, decideChatLimit, CORS, "user-1", 1, 10, { error: (...a) => logs.push(a.map(String).join(" ")) }
+        );
+      } finally { console.error = quiet; }
+      const body = out && out.body ? JSON.parse(out.body) : null;
+      return { out, body, calls, logs };
+    };
+
+    for (const mode of Object.keys(MODES)) {
+      // A free account is refused, with the ordinary free-limit message.
+      const free = await run({ mode, unlimited: false });
+      t.eq(free.out.statusCode, 429, `7b[${mode}] a free account is REFUSED when the weekly counter ${mode}`);
+      t.eq(free.body && free.body.error, "rate_limited", `7c[${mode}] …as a rate limit`);
+      t.eq(free.body && free.body.message, freeLimitMessage(FREE_CHAT_WEEKLY),
+        `7d[${mode}] …with the normal limit message, not an outage message`);
+      t.ok(!/briefly unavailable/.test((free.body && free.body.message) || "(allowed through — no refusal at all)"),
+        `7e[${mode}] …so it never falls through to the IP backstop's wording`);
+      t.eq(free.calls.weekly, 1, `7f[${mode}] …having actually attempted the count once`);
+      t.ok(free.logs.some(l => /weekly counter unavailable/.test(l)),
+        `7g[${mode}] …and the failure is logged where the rollout can be seen`);
+
+      // An account with an entitlement is never counted and never blocked by this path.
+      const trial = await run({ mode, unlimited: true });
+      t.eq(trial.out.allowedThrough, true, `7h[${mode}] an active trial is ALLOWED through`);
+      t.eq(trial.calls.weekly, 0, `7i[${mode}] …and its week is never counted at all`);
+      const founder = await run({ mode, unlimited: true });
+      t.eq(founder.out.allowedThrough, true, `7j[${mode}] a founder is ALLOWED through`);
+      t.eq(founder.calls.weekly, 0, `7k[${mode}] …and is never counted either`);
+
+      // Rollout order: the flag goes on LAST. With it off, a broken counter blocks nobody.
+      const flagOff = await run({ mode, unlimited: false, enforce: false });
+      t.eq(flagOff.out.allowedThrough, true, `7l[${mode}] with ENFORCE_PLAN_LIMITS off, a free account is unaffected`);
+      t.eq(flagOff.calls.weekly, 0, `7m[${mode}] …and nothing is counted before the flag is on`);
+
+      // The day-keyed abuse ceiling still ran in every one of those cases.
+      t.eq(free.calls.daily, 1, `7n[${mode}] the day-keyed abuse counter still ran`);
+    }
+
+    // And the unit beneath it: countFreeWeek reports the failure instead of throwing it upward.
+    for (const mode of Object.keys(MODES)) {
+      const admin = { rpc: async () => MODES[mode]() };
+      const quiet = console.error;
+      console.error = () => {};
+      const r = await countFreeWeek(admin, "user-1");
+      console.error = quiet;
+      t.eq(r.weeklyCounterOk, false, `7o[${mode}] countFreeWeek reports the counter as unavailable`);
+      t.eq(r.usedWeek, null, `7p[${mode}] …with no count invented`);
+    }
+    // A working counter is unchanged.
+    const good = await countFreeWeek({ rpc: async () => ({ data: 3, error: null }) }, "user-1");
+    t.eq(good.weeklyCounterOk, true, "7q a working weekly counter still reports ok");
+    t.eq(good.usedWeek, 3, "7r …and returns the count");
+    const nan = await (async () => { const q = console.error; console.error = () => {}; const r = await countFreeWeek({ rpc: async () => ({ data: "3", error: null }) }, "u"); console.error = q; return r; })();
+    t.eq(nan.weeklyCounterOk, false, "7s a count that is not a number is not a count");
   }
 
   t.summary("coachLimits.test");

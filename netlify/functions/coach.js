@@ -20,7 +20,7 @@
 // -----------------------------------------------------------------------------
 
 const { getUserFromRequest, getAdminClient, getUserPlan, ENFORCE_PLAN_LIMITS } = require("./_lib/auth");
-const { FREE_CHAT_WEEKLY, decideChatLimit } = require("./_lib/coachLimits");
+const { FREE_CHAT_WEEKLY, countFreeWeek, decideChatLimit } = require("./_lib/coachLimits");
 const { getStore } = require("@netlify/blobs");
 
 // Sprint Z #8: per-IP abuse backstop, independent of Supabase. The client IP comes from Netlify's
@@ -310,16 +310,24 @@ exports.handler = async (event) => {
           // The free limit, 2 a week on the Monday 00:00 UTC window (migration 0008). Counted only
           // for accounts the free limit can apply to, so nothing is written for a trial, a paid plan
           // or a founder, and nothing at all while the flag is off.
+          //
+          // countFreeWeek NEVER THROWS. If it did, the failure would be caught below by the handler
+          // that exists for the day-keyed counter being down, whose answer is to let the request
+          // through under an emergency per-IP cap — and a free account would land on the 50-a-day
+          // abuse ceiling instead of 2 a week. The weekly counter fails closed on its own instead:
+          // weeklyCounterOk false refuses a free message with the ordinary limit message. Founders,
+          // paid plans and live trials never enter this branch, so they can never be blocked by it.
           let usedWeek = null;
+          let weeklyCounterOk = true;
           if (ENFORCE_PLAN_LIMITS && !unlimited) {
-            const { data: wk, error: wkErr } = await admin.rpc("increment_coach_usage_weekly", { p_user: user_id });
-            if (wkErr) throw wkErr;
-            usedWeek = wk;
+            const wk = await countFreeWeek(admin, user_id);
+            usedWeek = wk.usedWeek;
+            weeklyCounterOk = wk.weeklyCounterOk;
           }
           const decision = decideChatLimit({
             enforce: ENFORCE_PLAN_LIMITS, unlimited,
             usedToday, dailyCeiling: CHAT_DAILY_CEILING,
-            usedWeek, freeWeekly: FREE_CHAT_WEEKLY,
+            usedWeek, weeklyCounterOk, freeWeekly: FREE_CHAT_WEEKLY,
           });
           if (!decision.allowed) {
             return {
