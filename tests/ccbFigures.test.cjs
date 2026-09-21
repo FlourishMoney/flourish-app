@@ -46,8 +46,8 @@ function walk(dir, out = []) {
   t.eq(CCB.basedOnTaxYear, 2025, "1b …which the CRA calculates from 2025 adjusted family net income");
   t.eq(CCB.maxUnder6, 8157, "1c maximum per child under 6 is $8,157 (was $7,997 — a benefit year stale)");
   t.eq(CCB.max6to17, 6883, "1d maximum per child aged 6 to 17 is $6,883 (was $6,748)");
-  t.eq(CCB.phaseOutStart, 38237, "1e the full amount is paid under $38,237 AFNI");
-  t.eq(CCB.phaseOutSecond, 82847, "1f the steeper second reduction starts over $82,847");
+  t.eq(CCB.phaseOutStart, 38237, "1e the full amount is paid through an AFNI of $38,237");
+  t.eq(CCB.phaseOutSecond, 82847, "1f the reduction continues at a lower rate over $82,847");
   t.ok(/canada\.ca/.test(CCB.source), "1g the source is a Canada.ca page");
   t.ok(/^\d{4}-\d{2}-\d{2}$/.test(CCB.lastVerified), "1h …with the date it was last checked against that page");
 
@@ -123,6 +123,26 @@ function walk(dir, out = []) {
     t.ok(demoMonthly > 0, "3b …with a positive monthly amount");
     t.ok(demoMonthly <= ccbMonthly(CCB.maxUnder6),
       `3c …that never exceeds the monthly maximum (${demoMonthly} <= ${ccbMonthly(CCB.maxUnder6)}), so the sample stays possible`);
+  }
+
+  // ── 4. The wording says what the CRA does ────────────────────────────────────────────────────
+  // The CRA pays the full amount THROUGH the first threshold and the benefit reduces only once income
+  // is over it, so "under $38,237" is wrong at exactly $38,237. Over the second threshold the CRA
+  // applies a fixed reduction plus a LOWER marginal rate, so the benefit keeps falling but more
+  // slowly: "steeper" / "tapers faster" is backwards.
+  {
+    const P = "TAX_DATA.CA.CCB.phaseOutStart.toLocaleString()";
+    const orLess = "an adjusted family net income of $${" + P + "} or less";
+    const occurrences = app.split(orLess).length - 1;
+    t.eq(occurrences, 3, "4a the Tax Tips card, the Learn card and the coach prompt each say 'adjusted family net income of $38,237 or less'");
+    t.ok(!/income under \$\$\{TAX_DATA\.CA\.CCB\.phaseOutStart/.test(app), "4b …and none of them says 'income under $38,237'");
+    t.ok(!/full amount under \$\$\{TAX_DATA\.CA\.CCB\.phaseOutStart/.test(app), "4c …including the coach prompt's old 'full amount under' form");
+    t.ok(app.includes("Above that the amount gradually reduces, and it keeps reducing more slowly over $${TAX_DATA.CA.CCB.phaseOutSecond.toLocaleString()}."),
+      "4d the Learn card says the reduction continues more slowly over the second threshold");
+    t.ok(!/tapers faster|steeper/i.test(app), "4e nothing in App.jsx says the benefit tapers faster or steeper over the second threshold");
+    const table = fs.readFileSync(path.join(REPO, TABLE_FILE), "utf8");
+    t.ok(!/steeper/i.test(table), "4f …and neither does the table's own commentary");
+    t.ok(/LOWER marginal rate/.test(table), "4g the table's commentary records that the rate over $82,847 is lower");
   }
 
   t.summary("ccbFigures.test");

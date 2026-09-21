@@ -49,7 +49,9 @@ export const TAX_DATA = {
     // to June 2027 period, based on 2025 adjusted family net income (AFNI):
     //     "under 6 years of age: $8,157 per year ($679.75 per month)"
     //     "6 to 17 years of age: $6,883 per year ($573.58 per month)"
-    //     maximum applies while AFNI is under $38,237; a second, steeper reduction starts above $82,847
+    //     the full amount is paid through an AFNI of $38,237 and starts to reduce only once AFNI is OVER it
+    //     over $82,847 the CRA applies a fixed reduction plus a LOWER marginal rate than the first phase
+    //     (the benefit still falls, just more slowly per extra dollar of income)
     // https://www.canada.ca/en/revenue-agency/services/child-family-benefits/canada-child-benefit/how-much.html
     //
     // The previous entries (CCB_MAX_UNDER_6 $7,997 / CCB_MAX_6_TO_17 $6,748, benefit year
@@ -62,7 +64,7 @@ export const TAX_DATA = {
       maxUnder6:       8157,                 // $/year, per child under 6
       max6to17:        6883,                 // $/year, per child aged 6 to 17
       phaseOutStart:   38237,                // $ AFNI: at or under this, the maximum is paid in full
-      phaseOutSecond:  82847,                // $ AFNI: above this, the steeper second reduction applies
+      phaseOutSecond:  82847,                // $ AFNI: above this, the reduction continues at a lower rate
       source: "CRA https://www.canada.ca/en/revenue-agency/services/child-family-benefits/canada-child-benefit/how-much.html",
       lastVerified: "2026-09-21",
     },
