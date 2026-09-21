@@ -5021,7 +5021,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           {[
             {label:"Due Soon",value:`$${(soonTotal||0).toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
             {label:totalDebt>0?"Total Debt":"Debt Free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
-            {label:"Net Worth",value:`${netWorth>=0?"+":""}${formatCompactMoney(netWorth)}`,sub:"total net worth",color:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
+            // Week-2 defect b: colour follows the sign. A negative net worth is not a teal figure —
+            // teal is this app's gain colour, and "-$14.5k" painted as a gain is the opposite of the fact.
+            {label:"Net Worth",value:`${netWorth>=0?"+":""}${formatCompactMoney(netWorth)}`,sub:"total net worth",color:netWorth<0?C.red:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
           ].map((s,i)=>(
             <div key={i} onClick={()=>{if(s.tab&&setGoalsTab)setGoalsTab(s.tab);setScreen(s.screen);}} style={{...glass(s.color),borderRadius:20,padding:"14px 12px 12px",textAlign:"center",position:"relative",overflow:"hidden",cursor:"pointer",transition:"transform .2s, box-shadow .2s"}}
               onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 12px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)`;}}
@@ -5178,7 +5180,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
             <div>
               <div style={{...label11(C.muted),marginBottom:4}}>Net Worth Trend</div>
-              <div style={{color:C.tealBright,fontWeight:900,fontSize:26,fontFamily:"'Playfair Display',Georgia,serif",lineHeight:1,letterSpacing:-1}}>{netWorth>=0?"+":"-"}<span style={{fontSize:14,verticalAlign:"super",marginRight:1}}>$</span><CountUp to={Math.abs(netWorth)} decimals={0} sep/></div>
+              <div style={{color:netWorth<0?C.redBright:C.tealBright,fontWeight:900,fontSize:26,fontFamily:"'Playfair Display',Georgia,serif",lineHeight:1,letterSpacing:-1}}>{netWorth>=0?"+":"-"}<span style={{fontSize:14,verticalAlign:"super",marginRight:1}}>$</span><CountUp to={Math.abs(netWorth)} decimals={0} sep/></div>
             </div>
             <div style={{background:C.teal+"20",border:`1px solid ${C.teal}33`,borderRadius:99,padding:"4px 12px",color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>
               {nwHistory.length>1
@@ -7870,7 +7872,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       return <>
       <div style={{background:`linear-gradient(135deg,${C.tealDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"22px",border:`1px solid ${C.teal}44`}}>
         <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Your Net Worth</div>
-        <div style={{fontSize:44,fontWeight:900,color:C.tealBright,fontFamily:"'Playfair Display',serif",letterSpacing:-1}}>{realNetWorth>=0?"+":"-"}$<CountUp to={Math.abs(realNetWorth)} decimals={0} sep/></div>
+        <div style={{fontSize:44,fontWeight:900,color:realNetWorth<0?C.redBright:C.tealBright,fontFamily:"'Playfair Display',serif",letterSpacing:-1}}>{realNetWorth>=0?"+":"-"}$<CountUp to={Math.abs(realNetWorth)} decimals={0} sep/></div>
         <div style={{color:C.muted,fontSize:12,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Assets minus liabilities · includes investments</div>
         <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
           {data.bankConnected
