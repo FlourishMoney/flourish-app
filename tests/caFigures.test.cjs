@@ -1,0 +1,150 @@
+// tests/caFigures.test.cjs
+// -----------------------------------------------------------------------------
+// EVERY CANADIAN GOVERNMENT FIGURE HAS ONE OWNER: TAX_DATA.CA.
+//
+// The CCB audit (PR #4) found one stale program. This file is the same guard for
+// the rest of them, after the 2026-09-21 audit against Canada.ca / CRA / Ontario.ca.
+// What that audit found is pinned below, because these are claims about money the
+// government owes a user: a stale one sends them to the CRA expecting the wrong
+// amount, and several were one to three years out of date.
+//
+// Section 3 is the part that matters a year from now: no program figure, current
+// OR stale, may appear anywhere in src/ or netlify/ outside the table.
+// -----------------------------------------------------------------------------
+"use strict";
+const { create } = require("./_runner.cjs");
+const fs = require("fs");
+const path = require("path");
+
+const REPO = path.join(__dirname, "..");
+const TABLE_FILE = path.join("src", "lib", "taxData.js");
+
+function walk(dir, out = []) {
+  for (const e of fs.readdirSync(path.join(REPO, dir), { withFileTypes: true })) {
+    const rel = path.join(dir, e.name);
+    if (e.isDirectory()) { if (e.name !== "node_modules") walk(rel, out); }
+    else if (/\.(js|jsx|cjs|mjs)$/.test(e.name)) out.push(rel);
+  }
+  return out;
+}
+
+(async () => {
+  const { TAX_DATA, creditWorth } = await import("../src/lib/taxData.js");
+  const t = create();
+  const CA = TAX_DATA.CA;
+  const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
+
+  // ── 1. Every entry says where it came from and when it was checked ───────────────────────────
+  {
+    const entries = Object.entries(CA).filter(([, v]) => v && typeof v === "object");
+    t.ok(entries.length >= 15, `1a the table holds every Canadian program (${entries.length} entries)`);
+    const noSource = entries.filter(([, v]) => !/canada\.ca|ontario\.ca/.test(v.source || ""));
+    t.eq(noSource.map(([k]) => k).join(",") || "(none)", "(none)", "1b every entry cites an official Canada.ca or Ontario.ca page");
+    const noDate = entries.filter(([, v]) => !/^\d{4}-\d{2}-\d{2}$/.test(v.lastVerified || ""));
+    t.eq(noDate.map(([k]) => k).join(",") || "(none)", "(none)", "1c …and the date it was last read off that page");
+    const noPeriod = entries.filter(([k, v]) => !v.year && !v.period && !v.benefitYear && !v.taxYear &&
+      !["FHSA_ANNUAL","FHSA_LIFETIME","HOME_ACCESSIBILITY_MAX","CANADA_TRAINING_CREDIT","GSTHST_SMALL_SUPPLIER","OAS","GIS","CPP_MAX_MONTHLY"].includes(k));
+    t.eq(noPeriod.map(([k]) => k).join(",") || "(none)", "(none)", "1d …and the period it applies to, unless the figure is not periodic");
+  }
+
+  // ── 2. What the official pages said on 2026-09-21 ────────────────────────────────────────────
+  // The GST/HST credit is GONE: its CRA page reads "No longer available - Replaced by the CGEB".
+  t.eq(CA.CGEB.maxSingle, 679, "2a CGEB single is $679 (the GST/HST credit's $533 is two changes behind)");
+  t.eq(CA.CGEB.maxCouple, 890, "2b CGEB couple is $890 (was $698)");
+  t.eq(CA.CGEB.perChildUnder19, 234, "2c CGEB per child under 19 is $234 (was $184)");
+  t.eq(CA.CGEB.benefitYear, "2026-07/2027-06", "2d …for the July 2026 to June 2027 benefit year");
+  t.ok(!("GSTHST_MAX_SINGLE" in CA) && !("GSTHST_MAX_COUPLE" in CA) && !("GSTHST_PER_CHILD" in CA),
+    "2e the GST/HST credit maxima are gone from the table, not left beside the CGEB to be picked up again");
+
+  t.eq(CA.CWB.maxSingle, 1633, "2f CWB single max $1,633 (confirmed unchanged for the 2025 tax year)");
+  t.eq(CA.CWB.maxFamily, 2813, "2g CWB family max $2,813 (confirmed unchanged)");
+  t.eq(CA.CWB.nilOverSingle, 37742, "2h CWB pays nothing over $37,742 single (confirmed)");
+  t.eq(CA.CWB.nilOverFamily, 49393, "2i …or over $49,393 family (confirmed)");
+
+  t.eq(CA.OTB.oeptc18to64, 1307, "2j OEPTC 18-64 is $1,307 for the 2026 benefit year");
+  t.eq(CA.OTB.ostcPerPerson, 378, "2k OSTC is $378 per person");
+  t.eq(CA.OTB.oeptc18to64 + CA.OTB.ostcPerPerson, 1685, "2l …so the combined figure the app shows is $1,685, not the old $1,654");
+
+  t.eq(CA.CDB.maxMonthly, 204.20, "2m Canada Disability Benefit is $204.20/month (was $200)");
+  t.ok(!("maxAnnual" in CA.CDB), "2n …and no annual figure is held: the CRA page publishes only the monthly one for this period");
+
+  t.eq(CA.INDEXED_2026.disabilityAmount, 10341, "2o the 2026 disability amount is $10,341 (the app had 2025's $10,138)");
+  t.eq(CA.INDEXED_2026.ageAmount, 9208, "2p the 2026 age amount is $9,208 (the app had 2023's $8,396, labelled 2024)");
+  t.eq(CA.INDEXED_2026.ageAmountThreshold, 46432, "2q …and its threshold is $46,432 (the app had $42,335)");
+  t.eq(CA.INDEXED_2026.medicalExpenseCeiling, 2890, "2r the 2026 medical expense ceiling is $2,890 (the app had $2,635)");
+
+  t.eq(CA.OAS.maxMonthly65to74, 751.97, "2s OAS 65-74 is $751.97 (the app had the previous quarter's $743.05)");
+  t.eq(CA.GIS.maxMonthlySingle, 1123.17, "2t GIS single is $1,123.17/mo (the app had $1,065)");
+  t.eq(CA.GIS.incomeUnderSingle, 22800, "2u …under an income of $22,800 (the app had ~$21,624)");
+  t.eq(CA.CPP_MAX_MONTHLY.value, 1507.65, "2v CPP max at 65 is $1,507.65 (confirmed unchanged)");
+  t.eq(CA.RRSP_LIMIT.value, 33810, "2w the 2026 RRSP dollar limit is $33,810 (confirmed)");
+  t.eq(CA.TFSA_LIMIT.value, 7000, "2x the 2026 TFSA limit is $7,000 (confirmed)");
+  t.eq(CA.FHSA_ANNUAL.value, 8000, "2y FHSA participation room is $8,000 (confirmed)");
+  t.eq(CA.FHSA_LIFETIME.value, 40000, "2z …against a $40,000 lifetime limit (confirmed)");
+
+  // The lowest federal bracket rate fell to 14% for 2026, so every "worth this much in tax" figure
+  // moved even where the credit amount did not. One owner, so they cannot drift apart.
+  t.eq(CA.FEDERAL_LOWEST_RATE.value, 0.14, "2aa the 2026 lowest federal rate is 14% (was 14.5% in 2025, 15% before)");
+  t.eq(creditWorth(CA.INDEXED_2026.disabilityAmount), 1448, "2ab so the DTC is worth ~$1,448 in federal tax, not the old ~$1,470");
+  t.eq(creditWorth(CA.INDEXED_2026.ageAmount), 1289, "2ac the age amount is worth ~$1,289 (was shown as $1,259)");
+  t.eq(creditWorth(CA.HOME_ACCESSIBILITY_MAX.value), 2800, "2ad the home accessibility credit is worth up to $2,800 (was shown as $3,000 at 15%)");
+
+  // ── 3. No program figure, current or stale, outside the table ────────────────────────────────
+  // Only figures distinctive to a program are listed. Round numbers a tip might use as an
+  // illustration ($5,000 into an RRSP, a $1,000 cushion) are deliberately NOT here: banning those
+  // would fail on ordinary prose. Assertion 4 covers those surfaces by checking they read the table.
+  const CURRENT = ["679","890","234","1,633","2,813","26,855","37,742","30,639","49,393","1,307","1,488","378",
+                   "204.20","10,341","6,032","9,208","46,432","2,890","751.97","827.17","152,062","157,923",
+                   "1,123.17","22,800","1,507.65","33,810","1,685","1,448","1,289"];
+  const STALE   = ["533","698","184","1,654","1,470","10,138","8,396","42,335","1,259","2,635","743.05","1,065","21,624","2,400"];
+  const banned = new RegExp("\\$\\s?(" + [...CURRENT, ...STALE].map(x => x.replace(".","\\.")).join("|") + ")\\b");
+
+  const files = [...walk("src"), ...walk("netlify")].filter(f => f !== TABLE_FILE);
+  t.ok(files.length > 20, `3a scanning the shipped source (${files.length} files, excluding the table)`);
+  const hits = [];
+  for (const f of files) {
+    fs.readFileSync(path.join(REPO, f), "utf8").split("\n").forEach((line, i) => {
+      const m = banned.exec(line);
+      if (m) hits.push(`${f}:${i + 1} ${m[0]}`);
+    });
+  }
+  t.eq(hits.join(" | ") || "(none)", "(none)", "3b no Canadian program figure, current or stale, appears outside TAX_DATA.CA");
+
+  // ── 4. The surfaces read the table ───────────────────────────────────────────────────────────
+  for (const [key, why] of [
+    ["TAX_DATA.CA.CGEB.maxSingle", "the CGEB tip and the benefits checker"],
+    ["TAX_DATA.CA.CWB.maxSingle", "the CWB tip and row"],
+    ["TAX_DATA.CA.OTB.oeptc18to64", "both Ontario Trillium surfaces"],
+    ["TAX_DATA.CA.CDB.maxMonthly", "the disability benefit row"],
+    ["TAX_DATA.CA.INDEXED_2026.disabilityAmount", "the DTC tip and row"],
+    ["TAX_DATA.CA.INDEXED_2026.ageAmount", "the age amount tip"],
+    ["TAX_DATA.CA.INDEXED_2026.medicalExpenseCeiling", "the medical expense tip"],
+    ["TAX_DATA.CA.OAS.maxMonthly65to74", "the OAS and GIS tip"],
+    ["TAX_DATA.CA.GIS.maxMonthlySingle", "the GIS figure"],
+    ["TAX_DATA.CA.TFSA_LIMIT.value", "the TFSA account card"],
+    ["TAX_DATA.CA.FHSA_LIFETIME.value", "the FHSA card and learn card"],
+    ["TAX_DATA.CA.GSTHST_SMALL_SUPPLIER.value", "the HST registration tip"],
+    ["TAX_DATA.CA.CANADA_TRAINING_CREDIT.annualAccrual", "the training credit tip"],
+    ["TAX_DATA.CA.FEDERAL_LOWEST_RATE.value", "every credit-worth figure"],
+  ]) t.ok(app.includes(key), `4 ${why} reads ${key}`);
+
+  // ── 5. Wording the audit had to change ───────────────────────────────────────────────────────
+  t.ok(!/becomes Groceries|becomes the Canada Groceries|Jul 2026\)/.test(app),
+    "5a nothing still says the GST/HST credit is about to become the CGEB: it already did, in July 2026");
+  t.ok(app.includes("Canada Groceries and Essentials Benefit"), "5b the benefit is named as what it is now");
+  t.ok(!/name:"GST\/HST Credit"/.test(app), "5c the benefits checker no longer lists a GST/HST credit a user cannot claim");
+
+  // ── 6. Figures REMOVED because no official page could be found for them ──────────────────────
+  // The rule for this audit was: if it cannot be verified, the dollar amount comes out of the UI
+  // rather than being carried forward. These must stay out until someone adds them WITH a source.
+  for (const [pattern, what] of [
+    [/\$8,000\/child|\$5,000\/child/, "child care expense deduction per-child limits"],
+    [/first \$2,500\/year = \$500|20% on the first \$2,500/, "the CESG grant rate and amount"],
+    [/Canada Learning Bond adds another \$500/, "the Canada Learning Bond amount"],
+    [/first \$2,000 of eligible pension income/, "the pension income amount"],
+    [/\$300–\$2,000/, "the Quebec solidarity credit range"],
+    [/\$20,000 in provincial tax credits/, "the Saskatchewan Graduate Retention amount"],
+  ]) t.ok(!pattern.test(app), `6 ${what} stays out of the UI until it has a source`);
+
+  t.summary("caFigures.test");
+})();
