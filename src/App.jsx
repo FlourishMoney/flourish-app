@@ -11362,11 +11362,17 @@ function PremiumGate({feature,desc,onUpgrade}){
 }
 
 // ─── PAYWALL ──────────────────────────────────────────────────────────────────
-function Paywall({onClose,onUpgrade,onPromoValid,country}){
+// NO onUpgrade, AND THAT IS THE POINT. This screen used to be handed a callback that set the plan
+// to premium in the browser, with no payment anywhere: tapping the CTA gave a free account every
+// paid client gate until the next profile read. Billing does not exist yet (Stripe is planned for
+// 26 Oct), so there is nothing honest for the button to do except say so. When checkout exists it
+// belongs behind a server-confirmed payment writing the profiles row — never a setState here.
+function Paywall({onClose,onPromoValid,country}){
   const [selected,setSelected]=useState("annual");
   const [promo,setPromo]=useState("");
   const [promoError,setPromoError]=useState("");
   const [promoNote,setPromoNote]=useState("");
+  const [upgradeNote,setUpgradeNote]=useState("");
   const isCA=country==="CA";
   // Step 3: all prices come from src/lib/pricing.js — no hard-coded price or "save %" here.
   const _pr = getPricing(country);
@@ -11453,10 +11459,11 @@ function Paywall({onClose,onUpgrade,onPromoValid,country}){
         {promoError&&<div style={{color:C.red,fontSize:11,marginBottom:8,textAlign:"center"}}>{promoError}</div>}
         {promoNote&&<div style={{color:C.muted,fontSize:11,marginBottom:8,textAlign:"center",lineHeight:1.5}}>{promoNote}</div>}
 
-        {/* CTA */}
-        <button onClick={onUpgrade} style={{width:"100%",background:`linear-gradient(135deg,${C.purple} 0%,${C.purpleBright} 100%)`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:16,padding:"16px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 8px 32px ${C.purple}40`,marginBottom:12}}>
+        {/* CTA — says what is true. It changes no plan and charges nothing. */}
+        <button onClick={()=>setUpgradeNote("Paid plans aren't open yet. Nothing has been charged and your plan hasn't changed — we'll email you the moment checkout is live.")} style={{width:"100%",background:`linear-gradient(135deg,${C.purple} 0%,${C.purpleBright} 100%)`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:16,padding:"16px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 8px 32px ${C.purple}40`,marginBottom:12}}>
           Start 14 days free →
         </button>
+        {upgradeNote&&<div style={{color:C.purpleBright,fontSize:12,marginBottom:12,textAlign:"center",lineHeight:1.6}}>{upgradeNote}</div>}
         <div style={{textAlign:"center",color:C.muted,fontSize:11,lineHeight:1.7}}>
           Free for 14 days, then {plans[selected].price}. Cancel any time from Settings.
         </div>
@@ -14538,7 +14545,7 @@ export default function FlourishApp(){
     }} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
   if(!firstVisitDone&&appData)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}/>;
-  if(showPaywall && !isCapacitorIOS())return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setPlan("premium");setIsPremium(true);setShowPaywall(false);}} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"}/>;
+  if(showPaywall && !isCapacitorIOS())return <Paywall onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"}/>;
 
   const unread = (() => {
     try {

@@ -137,5 +137,57 @@ const ahead = (d) => new Date(NOW + d * DAY).toISOString();
     t.ok(/validateBetaCode\(promo\)/.test(app), "4d …and still checks the code against the server");
   }
 
+  // ── 5. The Upgrade button grants nothing ─────────────────────────────────────────────────────
+  // ChatGPT's HIGH 2 on PR #2: the paywall CTA was wired to a handler that ran setPlan("premium")
+  // and setIsPremium(true) in the browser. No payment exists — Stripe is planned for 26 Oct — so
+  // tapping "Start 14 days free" handed a free account every client-side paid gate until the next
+  // profile read, and with a failed read (KNOWN-DEFECTS #10) it could sit there.
+  //
+  // This runs the REAL onClick out of App.jsx, compiled with stubs, and watches the plan.
+  {
+    const app = read("src", "App.jsx");
+    const cta = app.indexOf("{/* CTA — says what is true.");
+    t.ok(cta > 0, "5a the paywall CTA is where this test reads it from");
+    const oc = app.indexOf("onClick={", cta);
+    t.ok(oc > cta, "5b …and it has an onClick");
+    let i = app.indexOf("{", oc + 8), depth = 0, end = -1;
+    for (let k = i; k < app.length; k++) {
+      if (app[k] === "{") depth++;
+      else if (app[k] === "}") { depth--; if (depth === 0) { end = k; break; } }
+    }
+    const handler = app.slice(i + 1, end);
+
+    const calls = { setPlan: [], setIsPremium: [], note: [] };
+    const store = new Map([["flourish_plan", "free"]]);
+    let ran = null;
+    try {
+      new Function("setUpgradeNote", "setPlan", "setIsPremium", "localStorage",
+        `return (${handler});`)(
+          (v) => calls.note.push(v),
+          (v) => { calls.setPlan.push(v); store.set("flourish_plan", v); },
+          (v) => calls.setIsPremium.push(v),
+          { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) }
+        )();
+      ran = "ok";
+    } catch (e) { ran = `threw: ${e.message}`; }
+
+    t.eq(ran, "ok", "5c the real handler runs (anything it reaches beyond the stubs would show here)");
+    t.eq(calls.setPlan.length, 0, "5d clicking Upgrade sets NO plan");
+    t.eq(calls.setIsPremium.length, 0, "5e …and no premium flag");
+    t.eq(store.get("flourish_plan"), "free", "5f …so a free account is still free after the click");
+    t.eq(calls.note.length, 1, "5g …and it says something instead of doing nothing");
+    const note = calls.note[0] || "";
+    t.ok(/aren't open yet|open soon/i.test(note), "5h …that paid plans are not open yet");
+    t.ok(/hasn't changed|not changed/i.test(note) && /charged/i.test(note),
+      "5i …and that nothing was charged and nothing changed, which is the true part");
+
+    // And the wiring that made the grant possible is gone, so it cannot come back by prop.
+    t.ok(!/setPlan\("premium"\)/.test(app), "5j nothing in App.jsx sets the plan to premium in the browser");
+    t.ok(/function Paywall\(\{onClose,onPromoValid,country\}\)/.test(app), "5k Paywall takes no upgrade handler at all");
+    const site = app.slice(app.indexOf("if(showPaywall && !isCapacitorIOS())"), app.indexOf("if(showPaywall && !isCapacitorIOS())") + 400);
+    t.ok(!/onUpgrade=/.test(site), "5l …and the screen that renders it passes none");
+    t.ok(/onPromoValid=/.test(site), "5m …while the promo path still re-reads the server profile");
+  }
+
   t.summary("entitlementsServerAuthority.test");
 })();
