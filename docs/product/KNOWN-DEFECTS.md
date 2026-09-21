@@ -179,3 +179,74 @@ hours is surfaced for a human decision rather than resent automatically.
 
 **Status** Deferred by decision, 2026-09-20, under the rule that only a HIGH finding blocks a merge.
 Raised in ChatGPT review round 4 of PR #1.
+
+---
+
+## 10. A failed profile read leaves the cached plan in place, so client-only gates can be bypassed
+
+**Where** `src/App.jsx` (`refreshPlanFromProfile`), and every gate that reads `isPremium` or the
+`flourish_plan` key in `localStorage` — `PremiumGate`, the Dashboard upsell, the Coach free-message
+counter, `isPremiumOrFounder()`.
+
+**What happens** `refreshPlanFromProfile` reads the `profiles` row and writes what the server says
+into state and cache. When the read fails or returns no row it returns `null` and **leaves the cache
+alone** — it does not downgrade. That is deliberate and is pinned by assertions 3j–3l in
+`tests/entitlementsServerAuthority.test.cjs`: a transient read error must not strip a real founder of
+what she has. The cost of that choice is the defect. `flourish_plan` is ordinary `localStorage`, so
+anyone can type `localStorage.setItem("flourish_plan","beta_founder")` in a console; if the profile
+read then fails, or is never reached, the forged value survives and the client-side gates open.
+
+**What it does NOT do** It buys nothing that costs money to serve. The Coach is the only paid
+feature with a server cost, and `netlify/functions/coach.js` decides from the `profiles` row it reads
+itself with the secret key — it never trusts a plan sent by the browser. Linked accounts are gated by
+Plaid credentials the client does not hold. So the exposure is UI: screens and copy a free account
+should not see.
+
+**Detection** Not detectable from the data — a forged cache leaves no server trace. What would show
+is a support report of paid screens on a free account, or `[profiles] plan reconcile failed:` in the
+browser console alongside premium UI.
+
+**Fix (suggested, not built)** Keep the rule that every paid feature is enforced server-side, and
+make the client plan **display only**:
+1. Each paid capability is checked by the function that serves it, from the `profiles` row, as
+   `coach.js` already does. No new client check is trusted.
+2. `flourish_plan` is treated as a cache for rendering, never as an authority — a screen that costs
+   money to serve asks the server, and on no answer shows the free view rather than the paid one.
+3. When billing exists, the same rule covers checkout: the plan changes only when a server-confirmed
+   payment writes the `profiles` row.
+
+**Status** Deferred by decision, 2026-09-21, under the rule that only a HIGH finding blocks a merge.
+Raised in the ChatGPT review of PR #2 (`entitlements-server-authority`) as a MEDIUM.
+
+---
+
+## 11. Three test gaps on the entitlements work
+
+**Where** `tests/` and `supabase/migrations/`.
+
+**What happens** The entitlements branch is covered at the unit level — 2,113 gate assertions,
+including the real `coach.js` enforcement block and the real `refreshPlanFromProfile` and paywall
+handler compiled out of `src/App.jsx`. Three things are still not tested, and each was verified by
+hand on the local database instead, which is weaker because nothing re-checks it after a change:
+
+1. **No test runs the migrations with RLS end to end.** `supabase db reset` proved the chain
+   `00000` → `0008` applies cleanly, and the `profiles_guard_privileged` trigger was checked both
+   ways by hand (a browser-role `trial_ends_at` write was rejected; the same write with the
+   service-role claim succeeded). But those checks ran through `psql` as the superuser with
+   `set_config('request.jwt.claims', ...)`, not as a real anon/authenticated client through
+   PostgREST. A policy that is right under `set_config` and wrong through the API would not be
+   caught.
+2. **No rollout-order test.** The order is: apply `0007`, then `0008`, then merge and deploy, then
+   set `ENFORCE_PLAN_LIMITS`. Nothing enforces or verifies it. The worst case in that order was the
+   deploy-before-`0008` window, and that one is now covered — `coachLimits.test` section 7 runs the
+   missing-function case — but the ordering itself is a runbook line, not a test.
+3. **No checkout test, because there is no checkout.** Billing is planned for 26 Oct. Until then the
+   Upgrade button only shows a message (see defect 10 and the HIGH 2 fix on PR #2), so there is no
+   payment path, no webhook and no plan write to test.
+
+**Fix (suggested, not built)** For 1, a test that talks to the local stack over PostgREST with the
+anon and authenticated keys and asserts each RLS policy from the outside. For 2, fold the order into
+`scripts/` as a checked deploy step rather than prose. For 3, write it with the checkout.
+
+**Status** Logged 2026-09-21 from the ChatGPT review of PR #2. Items 1 and 2 are doable now; item 3
+waits on billing.

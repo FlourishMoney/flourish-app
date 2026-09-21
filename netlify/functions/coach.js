@@ -13,13 +13,14 @@
 // ── AUTH + ABUSE CEILING (Tier 1.1) ──────────────────────────────────────────
 // Every request requires a valid Supabase JWT (Authorization: Bearer <token>).
 // `chat` requests are counted per-user-per-day via the coach_usage table and
-// capped at CHAT_DAILY_CEILING (abuse ceiling; plan-aware free=1/day is a
+// capped at CHAT_DAILY_CEILING (abuse ceiling; the plan-aware free limit is 2 a week, counted
 // fast-follow once a server-side plan table exists). Clients may no longer send
 // a `system` prompt — they send `payload.context` (data only), which the server
 // embeds inside a server-controlled prompt + TRUST_RULES.
 // -----------------------------------------------------------------------------
 
 const { getUserFromRequest, getAdminClient, getUserPlan, ENFORCE_PLAN_LIMITS } = require("./_lib/auth");
+const { FREE_CHAT_WEEKLY, countFreeWeek, decideChatLimit } = require("./_lib/coachLimits");
 const { getStore } = require("@netlify/blobs");
 
 // Sprint Z #8: per-IP abuse backstop, independent of Supabase. The client IP comes from Netlify's
@@ -142,7 +143,8 @@ const CHAT_DAILY_CEILING = 50;
 // Sprint Q item 11: plan-aware free-tier daily Coach limit (server-authoritative via the profiles
 // table). Matches the product's free tier; trial/plus/pro/founder get the abuse ceiling above.
 // FLAG: bump this if 1/day proves too tight for free users.
-const FREE_CHAT_DAILY = 1;
+// The free limit is FREE_CHAT_WEEKLY (2 a week, Monday 00:00 UTC) and lives in _lib/coachLimits.js.
+// It was 1 a DAY here while the client and DECISIONS.md item 2 both said 2 a week.
 
 // Sprint Z #8: per-IP daily caps (Netlify Blobs). IP_DAILY_CAP is the healthy-mode abuse/cost
 // backstop — generous so users behind shared NAT aren't hit. EMERGENCY_IP_DAILY is the much tighter
@@ -297,20 +299,41 @@ exports.handler = async (event) => {
         let userRpcOk = false;
         try {
           // Sprint Q item 11: plan-aware limit from the profiles table (server-authoritative, NOT
-          // client-sent). Free → FREE_CHAT_DAILY/day; trial/plus/pro/founder → the abuse ceiling.
+          // client-sent). Free → FREE_CHAT_WEEKLY a week; trial/plus/pro/founder → the abuse ceiling only.
           const { unlimited } = await getUserPlan(user_id);
-          const ceiling = (!ENFORCE_PLAN_LIMITS || unlimited) ? CHAT_DAILY_CEILING : FREE_CHAT_DAILY; // v1: flag off → everyone gets the abuse ceiling, not the free 1/day
           const admin = getAdminClient();
-          const { data: usedCount, error: rlError } = await admin.rpc("increment_coach_usage", { p_user: user_id });
+          // The abuse ceiling, unchanged: every account is counted per day by the existing
+          // day-keyed counter, and CHAT_DAILY_CEILING still applies to all of them.
+          const { data: usedToday, error: rlError } = await admin.rpc("increment_coach_usage", { p_user: user_id });
           if (rlError) throw rlError;
           userRpcOk = true;
-          if (typeof usedCount === "number" && usedCount > ceiling) {
+          // The free limit, 2 a week on the Monday 00:00 UTC window (migration 0008). Counted only
+          // for accounts the free limit can apply to, so nothing is written for a trial, a paid plan
+          // or a founder, and nothing at all while the flag is off.
+          //
+          // countFreeWeek NEVER THROWS. If it did, the failure would be caught below by the handler
+          // that exists for the day-keyed counter being down, whose answer is to let the request
+          // through under an emergency per-IP cap — and a free account would land on the 50-a-day
+          // abuse ceiling instead of 2 a week. The weekly counter fails closed on its own instead:
+          // weeklyCounterOk false refuses a free message with the ordinary limit message. Founders,
+          // paid plans and live trials never enter this branch, so they can never be blocked by it.
+          let usedWeek = null;
+          let weeklyCounterOk = true;
+          if (ENFORCE_PLAN_LIMITS && !unlimited) {
+            const wk = await countFreeWeek(admin, user_id);
+            usedWeek = wk.usedWeek;
+            weeklyCounterOk = wk.weeklyCounterOk;
+          }
+          const decision = decideChatLimit({
+            enforce: ENFORCE_PLAN_LIMITS, unlimited,
+            usedToday, dailyCeiling: CHAT_DAILY_CEILING,
+            usedWeek, weeklyCounterOk, freeWeekly: FREE_CHAT_WEEKLY,
+          });
+          if (!decision.allowed) {
             return {
               statusCode: 429,
               headers: corsHeaders,
-              body: JSON.stringify({ error: "rate_limited", message: unlimited
-                ? "You've hit today's Coach message limit. It resets tomorrow."
-                : "You've used today's free Coach message. Upgrade to Plus for unlimited — or come back tomorrow." }),
+              body: JSON.stringify({ error: "rate_limited", message: decision.message }),
             };
           }
         } catch (e) {

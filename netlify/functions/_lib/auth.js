@@ -6,6 +6,7 @@
 "use strict";
 
 const { createClient } = require("@supabase/supabase-js");
+const { isUnlimitedProfile } = require("./planRules");
 
 let _admin = null;
 function getAdminClient() {
@@ -56,23 +57,22 @@ const ENFORCE_PLAN_LIMITS = process.env.ENFORCE_PLAN_LIMITS === "true";
 
 // Sprint Q item 11: server-authoritative plan/entitlement from the profiles table (never trust a
 // client-sent plan). Returns { plan, founder_flag, unlimited }. A trial counts as unlimited only
-// while unexpired (14 days from trial_started_at). Defaults to free on any error — auth still gates
-// access; worst case a paid user is briefly treated as free on a transient DB error.
+// until it ends: trial_ends_at when the row has one (migration 0007), otherwise trial_started_at
+// + 14 days, so trials created before that migration do not move. The rule itself lives in
+// _lib/planRules.js and is parity-tested against the client's copy. Defaults to free on any error —
+// auth still gates access; worst case a paid user is briefly treated as free on a transient DB error.
 async function getUserPlan(user_id) {
   try {
     const admin = getAdminClient();
     const { data, error } = await admin
       .from("profiles")
-      .select("plan, trial_started_at, founder_flag")
+      .select("plan, trial_started_at, trial_ends_at, founder_flag")
       .eq("user_id", user_id)
       .maybeSingle();
     if (error || !data) return { plan: "free", founder_flag: false, unlimited: false };
     const plan = data.plan || "free";
     const founder = !!data.founder_flag;
-    let unlimited = founder || plan === "plus" || plan === "pro";
-    if (!unlimited && plan === "trial" && data.trial_started_at) {
-      unlimited = (Date.now() - new Date(data.trial_started_at).getTime()) < 14 * 86400000;
-    }
+    const unlimited = isUnlimitedProfile(data);
     return { plan, founder_flag: founder, unlimited };
   } catch (e) {
     console.error("[auth] getUserPlan failed (defaulting to free):", e.message);
