@@ -44,6 +44,7 @@ import { demoCoachExchanges, demoFacilitatorLine } from "./lib/demoCoach.js";
 import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
+import { derivePlan } from "./lib/planFromProfile.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
@@ -13681,6 +13682,35 @@ export default function FlourishApp(){
   const isDesktop=w>=960;
 
   // ── Sprint 2: cloud persistence (Supabase) for authenticated users ──────────
+  // ── Item 3: the server profile is the only source of the plan ───────────────
+  // Reads the user's own profiles row (RLS allows exactly that row) and derives the client state
+  // with derivePlan, the same rule the server applies in _lib/planRules.js. localStorage is written
+  // afterwards as a CACHE of this answer, never as the source: a stale "beta_founder" sitting in a
+  // browser loses to a profile that says free, because this overwrites it on every hydrate.
+  // A client write cannot grant anything either way: RLS plus profiles_guard_privileged block the
+  // browser from changing plan, founder_flag or the trial dates.
+  // Returns the derived plan, or null when there is no row (demo mode never calls this).
+  const refreshPlanFromProfile = async (userId) => {
+    if (!userId) return null;
+    try {
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("plan,trial_started_at,trial_ends_at,founder_flag")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (!prof) return null;
+      const cp = derivePlan(prof);
+      setPlan(cp);
+      if (prof.trial_started_at) { try { localStorage.setItem("flourish_trial_started_at", prof.trial_started_at); } catch {} }
+      if (prof.trial_ends_at)    { try { localStorage.setItem("flourish_trial_ends_at",    prof.trial_ends_at);    } catch {} }
+      setIsPremium(isCapacitorIOS() || cp === "premium" || cp === "beta_founder" || cp === "trial");
+      return cp;
+    } catch (e) {
+      console.error("[profiles] plan reconcile failed:", e?.message || e);
+      return null;
+    }
+  };
+
   const hydratedUidRef = useRef(null);    // the user id we've COMPLETED hydrate/decide for. DB save is gated on this === user.id (POSITIVE gate — structurally impossible to write before hydrate finishes for this user, so no empty pre-hydrate overwrite).
   const syncErrorRef = useRef(false);
   const syncFailRef  = useRef(0);
@@ -13822,19 +13852,7 @@ export default function FlourishApp(){
         // server enforces real limits from it. This client read is UI-ONLY — it cannot grant
         // anything (RLS + a guard trigger block client writes to plan/founder/trial; the server
         // grants the trial at signup and derives expiry). Map plus/pro→premium, founder_flag→beta_founder.
-        try {
-          const { data: prof } = await supabase.from("profiles").select("plan,trial_started_at,founder_flag").eq("user_id", user.id).maybeSingle();
-          if (!cancelled && prof) {
-            const TRIAL_MS = 14 * 86400000;
-            let cp = "free";
-            if (prof.founder_flag) cp = "beta_founder";
-            else if (prof.plan === "plus" || prof.plan === "pro") cp = "premium";
-            else if (prof.plan === "trial" && prof.trial_started_at && (Date.now() - new Date(prof.trial_started_at).getTime()) < TRIAL_MS) cp = "trial";
-            setPlan(cp);
-            if (prof.trial_started_at) { try { localStorage.setItem("flourish_trial_started_at", prof.trial_started_at); } catch {} }
-            setIsPremium(isCapacitorIOS() || cp === "premium" || cp === "beta_founder" || cp === "trial");
-          }
-        } catch (e) { console.error("[profiles] plan reconcile failed:", e?.message || e); }
+        if (!cancelled) await refreshPlanFromProfile(user.id);
         if (!cancelled) {
           hydratedUidRef.current = user.id;               // ✅ OPEN the save gate ONLY after a clean hydrate/decision
           console.log("[persist] hydrate complete → save gate OPEN for", user.id);
@@ -14520,7 +14538,7 @@ export default function FlourishApp(){
     }} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
   if(!firstVisitDone&&appData)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}/>;
-  if(showPaywall && !isCapacitorIOS())return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setPlan("premium");setIsPremium(true);setShowPaywall(false);}} onPromoValid={()=>{}} country={appData?.profile?.country||"CA"}/>;
+  if(showPaywall && !isCapacitorIOS())return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setPlan("premium");setIsPremium(true);setShowPaywall(false);}} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"}/>;
 
   const unread = (() => {
     try {
