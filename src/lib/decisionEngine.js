@@ -12,6 +12,8 @@ import { FinancialCalcEngine, isInvestmentAccount } from "./financialCalculation
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { ForecastEngine } from "./forecastEngine.js";
 import { shelterLabel } from "./locale.js";
+import { safeToSpendView } from "./safeToSpendView.js";
+import { computeDailySpendLimit, suggestedDailyView } from "./suggestedDaily.js";
 
 // ── DecisionEngine "what to do today" math (Sprint MATH-LOCK Group F) ─────────────────────────────
 // Pure helpers extracted from the DecisionEngine UI component. The component calls these, then builds
@@ -21,19 +23,11 @@ import { shelterLabel } from "./locale.js";
 // payday as the 1st/15th of the month — a second source of truth divorced from the user's real cadence.
 // Callers now read daysToNextFutureDeposit(incomes, transactions, today) from incomeSchedule instead.
 
-// Daily safe-to-spend until payday. daysLeft floors at 14 to avoid a tiny window inflating the limit.
-export function computeDailySpendLimit(safe, daysToPayday) {
-  // Truth-fix item 7: a REAL floor, not a fallback. `daysToPayday > 0 ? daysToPayday : 14` used the raw
-  // days-to-deposit whenever it was positive, so a deposit landing tomorrow (daysToPayday=1) divided the
-  // whole safe amount into a SINGLE day and licensed spending the entire buffer at once. Floor the
-  // divisor at 14 (~one biweekly pay cycle) so the daily pace always assumes at least a fortnight of
-  // coverage. Because the divisor is deliberately floored above the true days-to-deposit, safe/divisor
-  // is conservative PACING, not the most a person may safely spend — hence "Suggested spend", not a max.
-  const daysLeft = Math.max(14, daysToPayday > 0 ? daysToPayday : 14);
-  const safePerDay = safe > 0 ? safe / daysLeft : 0;
-  const safeToday = Math.floor(safePerDay);
-  return { daysLeft, safePerDay, safeToday };
-}
+// Daily safe-to-spend until payday. The function itself now lives in suggestedDaily.js, beside
+// suggestedDailyView, which is the one thing every surface reads. It is re-exported here so callers
+// that have always imported it from decisionEngine keep working, and so there is still exactly one
+// implementation of the division.
+export { computeDailySpendLimit };
 
 // Highest-APR debt (copy before sort — never mutate the caller's array). Returns null if none.
 export function selectHighestRateDebt(debts) {
@@ -139,7 +133,8 @@ export const BehaviorEngine = {
 // ── ENGINE: ADAPTIVE AUTOPILOT — daily money plan gated by behavior + forecast risk + risk mode ──
 export const AutopilotEngine = {
   generate(data, catOverrides = {}, currentDate = new Date()) {
-    const { safeAmount, balance, soonBills, riskLevel: rawRisk } = SafeSpendEngine.calculate(data, currentDate);
+    const ss = SafeSpendEngine.calculate(data, currentDate);
+    const { balance, soonBills, riskLevel: rawRisk } = ss;
     const { monthlyIncome, cashFlow, totalExpenses } = FinancialCalcEngine.cashFlow(data, catOverrides, currentDate);
     const { forecast, overdraftRisk, lowBalanceWarnings } = ForecastEngine.generate(data, 30, null, currentDate);
     const { spendingStability, spikeRatio } = BehaviorEngine.analyze(data);
@@ -148,30 +143,26 @@ export const AutopilotEngine = {
     const today  = currentDate;
     const todayNum = today.getDate();
 
-    // ── ADAPTIVE: Derive payday from ForecastEngine (anchor-based, not modulo) ─
+    // ── Derive payday from ForecastEngine (anchor-based, not modulo) ─────────
     const nextPayday = forecast.find(f => f.day > 0 && f.isPayday);
-    const daysLeft   = Math.max(1, nextPayday ? nextPayday.day : 14);
+    // The REAL days to payday. Used below to forecast the rest of this period's spending — and NOT
+    // to divide the safe amount, which is the whole of week-2 defect a.
+    const daysToPayday = Math.max(1, nextPayday ? nextPayday.day : 14);
 
-    // ── ADAPTIVE: Base safeDaily, then adjust for behavior ───────────────────
-    let safeDaily = daysLeft > 0 ? Math.floor(safeAmount / daysLeft) : safeAmount;
+    // ── THE DAILY PACE — read, not derived ───────────────────────────────────
+    // This card used to compute its own: floor(safeAmount / daysToPayday), then adjust the result by
+    // ±8-15% for behaviour. Two things were wrong with that. The divisor was the true days to payday
+    // while suggestedDailyView floors it at 14, so on the day before payday the card offered the
+    // entire safe balance as one day's spending. And the behaviour multipliers made it a second
+    // answer to a question Today and Decisions had already answered, under the same label.
+    //
+    // It now reads the one helper, on the same input Today and Decisions use: the DISPLAYED
+    // safe-to-spend headline, not the engine's raw safeAmount. All three surfaces print one number.
+    const pace = suggestedDailyView(safeToSpendView(ss).headline, data.incomes, data.transactions, currentDate);
+    const daysLeft = pace.daysLeft;   // the pace window (floored at 14) — what the card's label must say
+    const safeDaily = pace.daily;
 
-    // Behavior adjustment ①: spike ratio → tighten daily limit
-    if (spikeRatio > 1.4) {
-      const reduction = Math.round(safeDaily * 0.15);
-      safeDaily = Math.max(0, safeDaily - reduction);
-    }
-    // Behavior adjustment ②: consistent underspend → loosen daily limit
-    if (spendingStability > 0.85 && spikeRatio < 1.1) {
-      safeDaily = Math.round(safeDaily * 1.08);
-    }
-
-    // ── ADAPTIVE: Forecast-driven pre-emptive tightening ─────────────────────
     const nearTermLow = lowBalanceWarnings.find(w => w.day <= 7);
-    if (nearTermLow) {
-      const daysUntilLow = nearTermLow.day;
-      const urgency = 1 - (daysUntilLow / 7); // 0 = 7 days away, 1 = tomorrow
-      safeDaily = Math.round(safeDaily * (1 - urgency * 0.30));
-    }
 
     // ── ADAPTIVE: Risk mode gates all downstream allocations ─────────────────
     const forecastDanger = overdraftRisk.length > 0;
@@ -191,7 +182,7 @@ export const AutopilotEngine = {
     const surplus = Math.max(0,
       balance
       - soonBills.reduce((s,b) => s + parseFloat(b.amount||0), 0)
-      - (totalExpenses / 30 * daysLeft)   // forecast remaining spend this period
+      - (totalExpenses / 30 * daysToPayday)   // forecast remaining spend this period (the REAL window)
       - safeFloor
     );
 
@@ -239,10 +230,10 @@ export const AutopilotEngine = {
         : "Cash is critically low. Bills protection mode active — savings and extras paused.";
       alerts.push({ type:"danger", msg });
     } else if (nearTermLow) {
-      alerts.push({ type:"warning", msg:`Balance drops near your safety floor in ${nearTermLow.day} days — daily limit tightened by 15% as a precaution.` });
+      alerts.push({ type:"warning", msg:`Balance drops near your safety floor in ${nearTermLow.day} days.` });
     }
     if (spikeRatio > 1.4 && mode !== "high") {
-      alerts.push({ type:"tip", msg:`Payday spike habit detected (+${Math.round((spikeRatio-1)*100)}%). Daily limit reduced by 15% to smooth your cash flow.` });
+      alerts.push({ type:"tip", msg:`Payday spike habit detected (+${Math.round((spikeRatio-1)*100)}%) — most of your spending lands in the days just after payday.` });
     }
 
     // ── ⑦ Adherence — based on spending stability (0-100) ────────────────────
@@ -250,10 +241,12 @@ export const AutopilotEngine = {
 
     // ── ⑧ Mode label for UI ──────────────────────────────────────────────────
     const modeLabel = mode === "low" ? "On Track" : mode === "medium" ? "Monitor" : "At Risk";
+    // Signals, not adjustments: the daily pace is the same number on every surface, so a chip may
+    // report what was detected but must never claim the limit was moved by it.
     const adaptations = [
-      spikeRatio > 1.4 && `Limit -15% (payday spike habit)`,
-      nearTermLow && `Limit tightened (low balance in ${nearTermLow.day}d)`,
-      spendingStability > 0.85 && `Limit +8% (consistent spending)`,
+      spikeRatio > 1.4 && `Payday spike habit`,
+      nearTermLow && `Low balance in ${nearTermLow.day}d`,
+      spendingStability > 0.85 && `Consistent spending`,
       mode === "high" && `Extras paused (protect bills first)`,
     ].filter(Boolean);
 

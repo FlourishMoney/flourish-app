@@ -17,7 +17,8 @@ const { create } = require("./_runner.cjs");
   const { safeToSpendView } = await import("../src/lib/safeToSpendView.js");
   const { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } = await import("../src/lib/incomeSchedule.js");
   const { FinancialCalcEngine, toMonthly, isCashAccount, baseCurrencyOf, num } = await import("../src/lib/financialCalculations.js");
-  const { formatBalance } = await import("../src/lib/format.js");
+  const { formatBalance, formatMoney } = await import("../src/lib/format.js");
+  const { AutopilotEngine } = await import("../src/lib/decisionEngine.js");
   const { suggestedDailyView } = await import("../src/lib/suggestedDaily.js");
   const t = create();
 
@@ -34,8 +35,9 @@ const { create } = require("./_runner.cjs");
     const fc = ForecastEngine.generate(snap, 45, null, date);
     const cf = FinancialCalcEngine.cashFlow(snap, {}, date);
     const pace = suggestedDailyView(view.headline, snap.incomes, snap.transactions, date); // the ONE daily pace helper
+    const plan = AutopilotEngine.generate(snap, {}, date); // the Autopilot card's whole input
     const firstPayday = fc.forecast.find(f => f.day > 0 && f.income > 0) || null;
-    return { ss, view, nd, days, today, fc, cf, pace, firstPayday };
+    return { ss, view, nd, days, today, fc, cf, pace, plan, firstPayday };
   }
 
   // The invariants that must hold for ANY snapshot/date — the heart of "one fact, one source".
@@ -99,6 +101,15 @@ const { create } = require("./_runner.cjs");
     // Consolidation 2/3: ONE normalised monthly income — produced solely by the shared toMonthly converter.
     t.eq(f.cf.monthlyIncome, (snap.incomes || []).reduce((s, i) => s + toMonthly(i.amount, i.freq), 0),
       `${label}: one normalised monthly income (only toMonthly produces it)`);
+
+    // ONE daily pace across all THREE surfaces that print it. Week-2 defect a: the Autopilot card
+    // divided the engine's raw safeAmount by the TRUE days to payday while Today and Decisions
+    // divided the displayed headline by a divisor floored at 14. Same label, two numbers — and on
+    // the day before payday the card offered a fortnight's money as one day's spending.
+    t.eq(f.plan.dailySpendLimit, f.pace.daily, `${label}: Autopilot's daily figure IS the one pace (Today/Decisions read the same)`);
+    t.eq(formatMoney(f.plan.dailySpendLimit), f.pace.dailyText, `${label}: …and the three surfaces print an identical string`);
+    t.eq(f.plan.daysLeft, f.pace.daysLeft, `${label}: …over the same window, so the card's "for the next N days" is that pace's window`);
+    t.ok(f.plan.daysLeft >= 14, `${label}: …which is never below the 14-day floor`);
 
     return f;
   }
