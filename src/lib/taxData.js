@@ -25,14 +25,49 @@
 // 2026-06-16. Clean grep target (now empty): flaggedFor2026Verification
 // -----------------------------------------------------------------------------
 
+// The CRA publishes CCB as an annual maximum and a monthly figure. Deriving the monthly one keeps
+// a single owner for the amount: ccbMonthly(8157) === 679.75 and ccbMonthly(6883) === 573.58, which
+// are exactly the monthly figures printed on the CRA page above (pinned in tests/ccbFigures.test.cjs).
+export function ccbMonthly(annual) {
+  return Math.round((Number(annual) / 12) * 100) / 100;
+}
+
 export const TAX_DATA = {
   CA: {
     RRSP_LIMIT:        { value: 33810, year: 2026, source: "CRA",            lastVerified: "2026-06-09" },
     TFSA_LIMIT:        { value: 7000,  year: 2026, source: "CRA",            lastVerified: "2026-06-09" },
     FHSA_ANNUAL:       { value: 8000,             source: "CRA",            lastVerified: "2026-06-09" },
     FHSA_LIFETIME:     { value: 40000,            source: "CRA",            lastVerified: "2026-06-09" },
-    CCB_MAX_UNDER_6:   { value: 7997,  period: "2025-07/2026-06", source: "CRA", lastVerified: "2026-06-09" },
-    CCB_MAX_6_TO_17:   { value: 6748,  period: "2025-07/2026-06", source: "CRA", lastVerified: "2026-06-09" },
+    // ── CANADA CHILD BENEFIT — the ONE table. Benefit year July 2026 to June 2027. ──────────────
+    // Every CCB figure the app shows anywhere reads THIS. Nothing else may hold a CCB dollar
+    // amount; tests/ccbFigures.test.cjs fails the gate if one appears outside this object.
+    //
+    // All four move together every July (the amounts are indexed to inflation and the phase-out
+    // thresholds re-set at the same time), so never bump one without the others.
+    //
+    // SOURCE, all four verified 2026-09-21 on the CRA page below, which states for the July 2026
+    // to June 2027 period, based on 2025 adjusted family net income (AFNI):
+    //     "under 6 years of age: $8,157 per year ($679.75 per month)"
+    //     "6 to 17 years of age: $6,883 per year ($573.58 per month)"
+    //     the full amount is paid through an AFNI of $38,237 and starts to reduce only once AFNI is OVER it
+    //     over $82,847 the CRA applies a fixed reduction plus a LOWER marginal rate than the first phase
+    //     (the benefit still falls, just more slowly per extra dollar of income)
+    // https://www.canada.ca/en/revenue-agency/services/child-family-benefits/canada-child-benefit/how-much.html
+    //
+    // The previous entries (CCB_MAX_UNDER_6 $7,997 / CCB_MAX_6_TO_17 $6,748, benefit year
+    // 2025-07/2026-06) are replaced by this object. They had no readers: every surface printed its
+    // own copy of the numbers, which is how they went a benefit year stale.
+    CCB: {
+      benefitYear:     "2026-07/2027-06",
+      yearLabel:       "2026\u201327",        // for display: "2026–27"
+      basedOnTaxYear:  2025,                 // AFNI year the CRA uses for this benefit year
+      maxUnder6:       8157,                 // $/year, per child under 6
+      max6to17:        6883,                 // $/year, per child aged 6 to 17
+      phaseOutStart:   38237,                // $ AFNI: at or under this, the maximum is paid in full
+      phaseOutSecond:  82847,                // $ AFNI: above this, the reduction continues at a lower rate
+      source: "CRA https://www.canada.ca/en/revenue-agency/services/child-family-benefits/canada-child-benefit/how-much.html",
+      lastVerified: "2026-09-21",
+    },
 
     // CPP/OAS monthly maxima — re-verified against CRA 2026-06-16 (both were stale: CPP held the
     // 2024 figure, 2 years behind; OAS held the Jan-Mar 2026 quarter).
