@@ -162,8 +162,7 @@ export function recordSimulationUse() {
 // (account-creation-date check) — the only trustworthy signal, since localStorage is
 // client-controlled. This stops all new/repeat grandfathering; it does NOT strip a
 // "beta_founder" value already in a user's localStorage (the server table reconciles
-// those). The constants below remain — markAccountIfNew / applyBetaCodeFounderUpgrade
-// still use them.
+// those). The constants below remain — markAccountIfNew still uses them.
 
 const PRE_PAYWALL_FLAG  = "flourish_account_existed_pre_paywall";
 const LEGACY_COACH_KEY     = "flourish_coach_msgs";
@@ -191,13 +190,20 @@ export function markAccountIfNew() {
   } catch {}
 }
 
-// ── Beta-code signup → beta_founder ──────────────────────────────────────────
-// Called by the signup flow when a valid BETA_CODE is supplied. New beta-code
-// signups also get founder status, permanently.
-export function applyBetaCodeFounderUpgrade() {
-  setPlan("beta_founder");
-  try { localStorage.setItem(PRE_PAYWALL_FLAG, "1"); } catch {}
-}
+// ── Beta code → no plan grant (decision P13, 2026-09-14) ─────────────────────
+// applyBetaCodeFounderUpgrade() USED TO LIVE HERE. It set a PERMANENT
+// "beta_founder" plan in localStorage, client-side, on a valid beta code. That
+// made a code an entitlement: localStorage is user-controlled, so anyone who saw
+// a code (or edited the key) had unlimited coaching for good, and nothing on the
+// server knew about it.
+//
+// A beta code now only opens the door at signup. What the account is entitled to
+// comes from the server profile, which the client reads and caches. Removed
+// rather than kept as a no-op, so nothing can call it by accident.
+//
+// Existing "beta_founder" values already in a user's localStorage are NOT
+// stripped here; the server profile reconcile decides, and a real founder_flag
+// row keeps its status.
 
 // ── Phase D7: Trial state helpers ────────────────────────────────────────────
 // New users start a 14-day "trial" plan with unlimited Coach + sim. After 14

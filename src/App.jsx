@@ -44,7 +44,7 @@ import { demoCoachExchanges, demoFacilitatorLine } from "./lib/demoCoach.js";
 import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
-import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, applyBetaCodeFounderUpgrade, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
+import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA } from "./lib/taxData.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
 
@@ -11361,10 +11361,11 @@ function PremiumGate({feature,desc,onUpgrade}){
 }
 
 // ─── PAYWALL ──────────────────────────────────────────────────────────────────
-function Paywall({onClose,onUpgrade,onPromoUpgrade,country}){
+function Paywall({onClose,onUpgrade,onPromoValid,country}){
   const [selected,setSelected]=useState("annual");
   const [promo,setPromo]=useState("");
   const [promoError,setPromoError]=useState("");
+  const [promoNote,setPromoNote]=useState("");
   const isCA=country==="CA";
   // Step 3: all prices come from src/lib/pricing.js — no hard-coded price or "save %" here.
   const _pr = getPricing(country);
@@ -11430,7 +11431,7 @@ function Paywall({onClose,onUpgrade,onPromoUpgrade,country}){
         <div style={{display:"flex",gap:8,marginBottom:12}}>
           <input
             value={promo}
-            onChange={e=>{setPromo(e.target.value.toUpperCase());setPromoError("");}}
+            onChange={e=>{setPromo(e.target.value.toUpperCase());setPromoError("");setPromoNote("");}}
             placeholder="Promo code"
             style={{flex:1,background:C.card,border:`1.5px solid ${promoError?C.red:C.border}`,borderRadius:12,padding:"11px 14px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none"}}
           />
@@ -11438,7 +11439,10 @@ function Paywall({onClose,onUpgrade,onPromoUpgrade,country}){
             onClick={async ()=>{
               setPromoError("");
               try {
-                if(await validateBetaCode(promo)){onPromoUpgrade();}
+                // A valid code no longer grants a plan here: it opens the door at signup, and the
+                // account's entitlement comes from the server profile. onPromoValid re-reads that
+                // profile; whatever it says is what the user gets.
+                if(await validateBetaCode(promo)){ setPromoNote("That code is valid. Codes open signup; what your account can do comes from your account, not from the code."); await onPromoValid?.(); }
                 else{setPromoError("Invalid code");}
               } catch { setPromoError("Couldn't verify code — try again."); }
             }}
@@ -11446,6 +11450,7 @@ function Paywall({onClose,onUpgrade,onPromoUpgrade,country}){
           >Apply</button>
         </div>
         {promoError&&<div style={{color:C.red,fontSize:11,marginBottom:8,textAlign:"center"}}>{promoError}</div>}
+        {promoNote&&<div style={{color:C.muted,fontSize:11,marginBottom:8,textAlign:"center",lineHeight:1.5}}>{promoNote}</div>}
 
         {/* CTA */}
         <button onClick={onUpgrade} style={{width:"100%",background:`linear-gradient(135deg,${C.purple} 0%,${C.purpleBright} 100%)`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:16,padding:"16px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 8px 32px ${C.purple}40`,marginBottom:12}}>
@@ -14515,7 +14520,7 @@ export default function FlourishApp(){
     }} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
   if(!firstVisitDone&&appData)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}/>;
-  if(showPaywall && !isCapacitorIOS())return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setPlan("premium");setIsPremium(true);setShowPaywall(false);}} onPromoUpgrade={()=>{applyBetaCodeFounderUpgrade();setIsPremium(true);setShowPaywall(false);}} country={appData?.profile?.country||"CA"}/>;
+  if(showPaywall && !isCapacitorIOS())return <Paywall onClose={()=>setShowPaywall(false)} onUpgrade={()=>{setPlan("premium");setIsPremium(true);setShowPaywall(false);}} onPromoValid={()=>{}} country={appData?.profile?.country||"CA"}/>;
 
   const unread = (() => {
     try {
