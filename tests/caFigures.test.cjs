@@ -43,15 +43,26 @@ function walk(dir, out = []) {
     const noDate = entries.filter(([, v]) => !/^\d{4}-\d{2}-\d{2}$/.test(v.lastVerified || ""));
     t.eq(noDate.map(([k]) => k).join(",") || "(none)", "(none)", "1c …and the date it was last read off that page");
     const noPeriod = entries.filter(([k, v]) => !v.year && !v.period && !v.benefitYear && !v.taxYear &&
-      !["FHSA_ANNUAL","FHSA_LIFETIME","HOME_ACCESSIBILITY_MAX","CANADA_TRAINING_CREDIT","GSTHST_SMALL_SUPPLIER","OAS","GIS","CPP_MAX_MONTHLY"].includes(k));
+      !["FHSA_ANNUAL","FHSA_LIFETIME","HOME_ACCESSIBILITY_MAX","CANADA_TRAINING_CREDIT","GSTHST_SMALL_SUPPLIER","OAS","GIS","CPP_MAX_MONTHLY","HOME_BUYERS_AMOUNT","HBP_WITHDRAWAL_LIMIT"].includes(k));
     t.eq(noPeriod.map(([k]) => k).join(",") || "(none)", "(none)", "1d …and the period it applies to, unless the figure is not periodic");
   }
 
   // ── 2. What the official pages said on 2026-09-21 ────────────────────────────────────────────
   // The GST/HST credit is GONE: its CRA page reads "No longer available - Replaced by the CGEB".
-  t.eq(CA.CGEB.maxSingle, 679, "2a CGEB single is $679 (the GST/HST credit's $533 is two changes behind)");
-  t.eq(CA.CGEB.maxCouple, 890, "2b CGEB couple is $890 (was $698)");
+  // The CRA builds the payment from parts. Pinning ONLY a single/couple total is what let the app
+  // understate a single parent by $211: it showed $679 + $234 where the CRA pays $445 + $445 + $234.
+  t.eq(CA.CGEB.eligibleIndividual, 445, "2a CGEB pays $445 for an eligible individual");
+  t.eq(CA.CGEB.eligibleSpouse, 445, "2a2 …$445 for an eligible spouse");
+  t.eq(CA.CGEB.firstChildSingleParent, 445, "2a3 …$445 for a single parent's FIRST child, not the per-child amount");
+  t.eq(CA.CGEB.additionalSingle, 234, "2a4 …and $234 more for a single individual");
+  t.eq(CA.CGEB.eligibleIndividual + CA.CGEB.firstChildSingleParent + CA.CGEB.additionalSingle, 1124,
+    "2a5 …so a single parent with one child reaches $1,124, which $679 + $234 never would");
+  t.eq(CA.CGEB.maxSingleNoChildren, 679, "2b CGEB single with no children is $679 (the GST/HST credit's $533 is two changes behind)");
+  t.eq(CA.CGEB.maxCoupleNoChildren, 890, "2b2 …and a couple with no children $890 (was $698)");
+  t.eq(CA.CGEB.eligibleIndividual + CA.CGEB.additionalSingle, CA.CGEB.maxSingleNoChildren, "2b3 …the single total is its own parts");
+  t.eq(CA.CGEB.eligibleIndividual + CA.CGEB.eligibleSpouse, CA.CGEB.maxCoupleNoChildren, "2b4 …and so is the couple total");
   t.eq(CA.CGEB.perChildUnder19, 234, "2c CGEB per child under 19 is $234 (was $184)");
+  t.ok(/new residents/i.test(CA.CGEB.applyNote), "2c2 …and the table records that new residents may have to apply");
   t.eq(CA.CGEB.benefitYear, "2026-07/2027-06", "2d …for the July 2026 to June 2027 benefit year");
   t.ok(!("GSTHST_MAX_SINGLE" in CA) && !("GSTHST_MAX_COUPLE" in CA) && !("GSTHST_PER_CHILD" in CA),
     "2e the GST/HST credit maxima are gone from the table, not left beside the CGEB to be picked up again");
@@ -63,7 +74,8 @@ function walk(dir, out = []) {
 
   t.eq(CA.OTB.oeptc18to64, 1307, "2j OEPTC 18-64 is $1,307 for the 2026 benefit year");
   t.eq(CA.OTB.ostcPerPerson, 378, "2k OSTC is $378 per person");
-  t.eq(CA.OTB.oeptc18to64 + CA.OTB.ostcPerPerson, 1685, "2l …so the combined figure the app shows is $1,685, not the old $1,654");
+  t.eq(CA.OTB.oeptc65plus, 1488, "2l …and $1,488 at 65 or older, which is why no single total is 'the' maximum");
+  t.ok(/canada\.ca|ontario\.ca/.test(CA.OTB.calculator || ""), "2l2 …so the table carries a calculator link instead");
 
   t.eq(CA.CDB.maxMonthly, 204.20, "2m Canada Disability Benefit is $204.20/month (was $200)");
   t.ok(!("maxAnnual" in CA.CDB), "2n …and no annual figure is held: the CRA page publishes only the monthly one for this period");
@@ -95,8 +107,8 @@ function walk(dir, out = []) {
   // would fail on ordinary prose. Assertion 4 covers those surfaces by checking they read the table.
   const CURRENT = ["679","890","234","1,633","2,813","26,855","37,742","30,639","49,393","1,307","1,488","378",
                    "204.20","10,341","6,032","9,208","46,432","2,890","751.97","827.17","152,062","157,923",
-                   "1,123.17","22,800","1,507.65","33,810","1,685","1,448","1,289"];
-  const STALE   = ["533","698","184","1,654","1,470","10,138","8,396","42,335","1,259","2,635","743.05","1,065","21,624","2,400"];
+                   "1,123.17","22,800","1,507.65","33,810","1,448","1,289","445","1,124","1,400","60,000"];
+  const STALE   = ["533","698","184","1,654","1,685","1,470","10,138","8,396","42,335","1,259","2,635","743.05","1,065","21,624","2,400"]   // NOT "1,500": two RRSP tips use it as an illustration ("$5,000 in gets ~$1,500 back"). The stale Home Buyers' Tax Credit figure is banned by its own sentence in section 7 instead.;
   const banned = new RegExp("\\$\\s?(" + [...CURRENT, ...STALE].map(x => x.replace(".","\\.")).join("|") + ")\\b");
 
   const files = [...walk("src"), ...walk("netlify")].filter(f => f !== TABLE_FILE);
@@ -126,6 +138,14 @@ function walk(dir, out = []) {
     ["TAX_DATA.CA.GSTHST_SMALL_SUPPLIER.value", "the HST registration tip"],
     ["TAX_DATA.CA.CANADA_TRAINING_CREDIT.annualAccrual", "the training credit tip"],
     ["TAX_DATA.CA.FEDERAL_LOWEST_RATE.value", "every credit-worth figure"],
+    ["TAX_DATA.CA.CGEB.firstChildSingleParent", "the CGEB single-parent amount"],
+    ["TAX_DATA.CA.CGEB.calculator", "the CGEB benefits-checker link"],
+    ["TAX_DATA.CA.OTB.oeptc65plus", "the Ontario Trillium senior amount"],
+    ["TAX_DATA.CA.OTB.calculator", "the Ontario Trillium link"],
+    ["TAX_DATA.CA.CWB.variesIn", "the provinces where the CWB differs"],
+    ["TAX_DATA.CA.CANADA_TRAINING_CREDIT.claimSharePct", "the training credit's 50% rule"],
+    ["TAX_DATA.CA.HOME_BUYERS_AMOUNT.value", "the coach prompt's home buyers' amount"],
+    ["TAX_DATA.CA.HBP_WITHDRAWAL_LIMIT.value", "the coach prompt's HBP limit"],
   ]) t.ok(app.includes(key), `4 ${why} reads ${key}`);
 
   // ── 5. Wording the audit had to change ───────────────────────────────────────────────────────
@@ -145,6 +165,18 @@ function walk(dir, out = []) {
     [/\$300–\$2,000/, "the Quebec solidarity credit range"],
     [/\$20,000 in provincial tax credits/, "the Saskatchewan Graduate Retention amount"],
   ]) t.ok(!pattern.test(app), `6 ${what} stays out of the UI until it has a source`);
+
+  // ── 7. Claims the PR #5 review found wrong ───────────────────────────────────────────────────
+  // Each of these is a sentence the app stated as fact and the official page contradicts.
+  for (const [pattern, what] of [
+    [/is automatic, but the Guaranteed Income Supplement \(GIS\) is not/, "OAS is automatic and GIS is not (Service Canada may auto-enrol either)"],
+    [/GIS\) is not — you must apply/, "you must apply for GIS"],
+    [/First Home Buyers Tax Credit \(\$1,500\)/, "a $1,500 Home Buyers' Tax Credit (it is the amount times the lowest rate)"],
+    [/\$1,654\/yr \(OEPTC\+OSTC\)/, "a single Ontario Trillium maximum"],
+    [/Filing your taxes is the whole application/, "filing is the whole CGEB application (new residents may need to apply)"],
+  ]) t.ok(!pattern.test(app), `7 the app no longer claims: ${what}`);
+  t.ok(/variesIn|AB, QC, NU|Alberta, Quebec/.test(app), "7f …and it names the provinces where the CWB differs");
+  t.ok(/enrols most people automatically|enrolment letter/i.test(app), "7g …and describes OAS/GIS enrolment as Service Canada describes it");
 
   t.summary("caFigures.test");
 })();

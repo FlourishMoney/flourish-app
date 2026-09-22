@@ -123,13 +123,27 @@ export const TAX_DATA = {
       name: "Canada Groceries and Essentials Benefit",
       benefitYear: "2026-07/2027-06",
       basedOnTaxYear: 2025,
-      maxSingle: 679,
-      maxCouple: 890,
-      perChildUnder19: 234,
       replacedOn: "2026-07",
       replaced: "the GST/HST credit",
-      source: "CRA https://www.canada.ca/en/revenue-agency/services/child-family-benefits/canada-groceries-essentials-benefit/how-much.html",
-      lastVerified: "2026-09-21",
+      // The CRA builds the payment from these parts, which is why a single figure cannot be shown
+      // as "the" amount: a single parent with one child gets the adult amount PLUS the first-child
+      // amount PLUS the single supplement ($445 + $445 + $234 = $1,124), not $679 + $234.
+      // https://www.canada.ca/en/revenue-agency/services/child-family-benefits/canada-groceries-essentials-benefit/how-much/payment-amounts.html
+      eligibleIndividual:     445,
+      eligibleSpouse:         445,
+      perChildUnder19:        234,
+      firstChildSingleParent: 445,   // replaces the per-child amount for a single parent's first child
+      additionalSingle:       234,
+      phaseInThresholdSingle: 11564, // the single supplement phases in above this income
+      phaseOutThreshold:      46432,
+      // The two situations the CRA states outright as "you could get up to".
+      maxSingleNoChildren: 679,      // 445 + 234
+      maxCoupleNoChildren: 890,      // 445 + 445
+      // Most people never apply; new residents may have to in their first year.
+      applyNote: "new residents of Canada may need to apply for their first year",
+      calculator: "https://www.canada.ca/en/revenue-agency/services/child-family-benefits/child-family-benefits-calculator.html",
+      source: "CRA https://www.canada.ca/en/revenue-agency/services/child-family-benefits/canada-groceries-essentials-benefit/how-much/payment-amounts.html",
+      lastVerified: "2026-09-22",
     },
 
     // ── Canada workers benefit (basic amount, 2025 tax year — the year the CRA currently shows) ─
@@ -142,8 +156,13 @@ export const TAX_DATA = {
       nilOverSingle: 37742,
       reduceOverFamily: 30639,
       nilOverFamily: 49393,
+      // "The maximum basic CWB amount will vary for residents of Quebec, Nunavut and Alberta", and
+      // the cut-offs differ too (family with children: $49,393 here, $41,048.90 QC, $67,365 NU,
+      // $50,232 AB). The figures above are the Canada-excluding-those-three ones, so the UI must
+      // say who they apply to. Eligibility also needs WORKING income, not just low income.
+      variesIn: ["AB", "QC", "NU"],
       source: "CRA https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-45300-canada-workers-benefit-cwb/how-much-you-can-get.html",
-      lastVerified: "2026-09-21",
+      lastVerified: "2026-09-22",
     },
 
     // ── Ontario Trillium Benefit, 2026 benefit year (July 2026 to June 2027) ───────────────────
@@ -155,6 +174,10 @@ export const TAX_DATA = {
       ostcPerPerson: 378,               // plus the same again for a partner and each child under 19
       noecSingle: 189,
       noecFamily: 290,
+      // There is no single "maximum": a senior gets the higher OEPTC, a family claims the OSTC for
+      // each person, and Northern residents add the NOEC on top. The UI shows the parts with who
+      // each applies to and links the calculator rather than inventing a total.
+      calculator: "https://www.canada.ca/en/revenue-agency/services/child-family-benefits/child-family-benefits-calculator.html",
       source: "Ontario https://www.ontario.ca/page/ontario-trillium-benefit",
       lastVerified: "2026-09-21",
     },
@@ -188,9 +211,20 @@ export const TAX_DATA = {
     // https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-31285-home-accessibility-expenses.html
     HOME_ACCESSIBILITY_MAX: { value: 20000, source: "CRA https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-31285-home-accessibility-expenses.html", lastVerified: "2026-09-21" },
     // https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-45350-canada-training-credit.html
-    CANADA_TRAINING_CREDIT: { annualAccrual: 250, lifetimeMax: 5000, source: "CRA https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-45350-canada-training-credit.html", lastVerified: "2026-09-21" },
+    // Room accrues only if you qualify that year (26 to 65 at year end, resident all year, working
+    // income and net income within the CRA's limits). A CLAIM is the lesser of your accumulated
+    // room and 50% of eligible fees — so it can exceed one year's $250.
+    CANADA_TRAINING_CREDIT: { annualAccrual: 250, lifetimeMax: 5000, minAge: 26, maxAge: 65, claimSharePct: 50, source: "CRA https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-45350-canada-training-credit.html", lastVerified: "2026-09-21" },
     // https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/gst-hst-businesses/when-register-charge.html
     GSTHST_SMALL_SUPPLIER: { value: 30000, source: "CRA https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/gst-hst-businesses/when-register-charge.html", lastVerified: "2026-09-21" },
+
+    // First-home figures. The coach's system prompt stated these from memory, including a Home
+    // Buyers' Tax Credit of $1,500 — that was 15% of the $10,000 amount. The rate is 14% for 2026,
+    // so the credit is $1,400. Derive it, never type it.
+    // https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-31270-home-buyers-amount.html
+    HOME_BUYERS_AMOUNT: { value: 10000, source: "CRA https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-31270-home-buyers-amount.html", lastVerified: "2026-09-22" },
+    // https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/rrsps-related-plans/what-home-buyers-plan.html
+    HBP_WITHDRAWAL_LIMIT: { value: 60000, source: "CRA https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/rrsps-related-plans/what-home-buyers-plan.html", lastVerified: "2026-09-22" },
 
     // ── NOT HELD HERE, ON PURPOSE ─────────────────────────────────────────────────────────────
     // These figures were in the UI before this audit and could not be confirmed on an official
