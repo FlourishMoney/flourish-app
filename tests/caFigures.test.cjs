@@ -102,22 +102,56 @@ function walk(dir, out = []) {
   t.eq(creditWorth(CA.HOME_ACCESSIBILITY_MAX.value), 2800, "2ad the home accessibility credit is worth up to $2,800 (was shown as $3,000 at 15%)");
 
   // ── 3. No program figure, current or stale, outside the table ────────────────────────────────
-  // Only figures distinctive to a program are listed. Round numbers a tip might use as an
-  // illustration ($5,000 into an RRSP, a $1,000 cushion) are deliberately NOT here: banning those
-  // would fail on ordinary prose. Assertion 4 covers those surfaces by checking they read the table.
-  const CURRENT = ["679","890","234","1,633","2,813","26,855","37,742","30,639","49,393","1,307","1,488","378",
-                   "204.20","10,341","6,032","9,208","46,432","2,890","751.97","827.17","152,062","157,923",
-                   "1,123.17","22,800","1,507.65","33,810","1,448","1,289","445","1,124","1,400","60,000"];
-  const STALE   = ["533","698","184","1,654","1,685","1,470","10,138","8,396","42,335","1,259","2,635","743.05","1,065","21,624","2,400"]   // NOT "1,500": two RRSP tips use it as an illustration ("$5,000 in gets ~$1,500 back"). The stale Home Buyers' Tax Credit figure is banned by its own sentence in section 7 instead.;
-  const banned = new RegExp("\\$\\s?(" + [...CURRENT, ...STALE].map(x => x.replace(".","\\.")).join("|") + ")\\b");
+  // The banned list is GENERATED from TAX_DATA.CA rather than typed. Typing it meant the list only
+  // ever covered the figures someone remembered to add: the FHSA limit, the HBP limit and the Home
+  // Buyers' Tax Credit were all hardcoded in the coach's prompt while this section passed.
+  //
+  // Both written forms of each value are banned ("$8000" and "$8,000", plus the 2-decimal form for
+  // money like $204.20), since either could be typed by hand.
+  const numbers = new Set();
+  (function walk(o) {
+    for (const v of Object.values(o)) {
+      if (v && typeof v === "object") walk(v);
+      else if (typeof v === "number" && v >= 100) numbers.add(v);   // below 100 are rates and ages, not amounts
+    }
+  })(CA);
+  const forms = v => [...new Set([String(v), v.toLocaleString("en-US"), v.toFixed(2)])];
+  // Figures that were WRONG and are no longer in the table, so they cannot be generated from it.
+  const STALE = ["533", "698", "184", "1,654", "1,685", "1,470", "10,138", "8,396", "42,335",
+                 "1,259", "2,635", "743.05", "1,065", "21,624", "2,400", "679 + $234"];
+  // NOT in the list: "1,500". Two RRSP tips use it as an illustration ("$5,000 in gets ~$1,500
+  // back"). The stale Home Buyers' Tax Credit figure is banned by its own sentence in section 7.
+  const allForms = [...[...numbers].flatMap(forms), ...STALE];
+  const banned = new RegExp("\\$\\s?(" + allForms.map(x => x.replace(/[.+]/g, "\\$&")).join("|") + ")(?![\\d.,])");
+
+  // Lines where a generated number legitimately means something else. Keyed to the file, a
+  // distinctive fragment of the line, and the EXACT amounts allowed on it — so a Canadian benefit
+  // figure typed onto one of these lines still fails.
+  const ALLOWED = [
+    { file: path.join("src", "App.jsx"), must: "At a 30% marginal rate", values: ["$5,000", "$1,500"], why: "an RRSP illustration, not the training credit's $5,000 lifetime room" },
+    { file: path.join("src", "App.jsx"), must: "Roth IRA: Tax-Free Retirement", values: ["$7,000"], why: "the US Roth IRA limit, not the TFSA limit" },
+    { file: path.join("src", "App.jsx"), must: 'id:"roth"', values: ["$7,000", "$8,000"], why: "the US Roth IRA card: its own limit and 50+ catch-up, not the TFSA or FHSA limits" },
+    { file: path.join("src", "App.jsx"), must: "The Emergency Fund is Different in the US", values: ["$10,000"], why: "a US medical bill illustration, not the home buyers' amount" },
+    { file: path.join("src", "App.jsx"), must: "Lifetime Learning Credit", values: ["$10,000"], why: "that US credit's own limit" },
+    { file: path.join("src", "App.jsx"), must: "Buy a used car for", values: ["$8,000"], why: "a what-if scenario amount, not the FHSA limit" },
+    { file: path.join("src", "App.jsx"), must: "Dependent Care FSA", values: ["$5,000"], why: "a US figure in the coach prompt" },
+    { file: path.join("src", "lib", "plaidNormalize.js"), must: "variable bill", values: ["$250"], why: "bill-detection commentary, not the training credit accrual" },
+    { file: path.join("src", "lib", "plaidNormalize.js"), must: "Costco at", values: ["$250"], why: "bill-detection commentary" },
+  ];
 
   const files = [...walk("src"), ...walk("netlify")].filter(f => f !== TABLE_FILE);
   t.ok(files.length > 20, `3a scanning the shipped source (${files.length} files, excluding the table)`);
+  t.ok(numbers.size >= 40, `3a2 the banned list is generated from the table (${numbers.size} amounts, ${allForms.length} written forms)`);
+  for (const key of ["FHSA_ANNUAL", "HBP_WITHDRAWAL_LIMIT", "HOME_BUYERS_AMOUNT"])
+    t.ok(numbers.has(CA[key].value), `3a3 …including ${key}, which the hand-typed list missed`);
+
   const hits = [];
   for (const f of files) {
     fs.readFileSync(path.join(REPO, f), "utf8").split("\n").forEach((line, i) => {
-      const m = banned.exec(line);
-      if (m) hits.push(`${f}:${i + 1} ${m[0]}`);
+      const found = [...line.matchAll(new RegExp(banned.source, "g"))].map(m => m[0].replace(/\s/g, ""));
+      if (!found.length) return;
+      const exempt = ALLOWED.some(a => f === a.file && line.includes(a.must) && found.every(v => a.values.includes(v)));
+      if (!exempt) hits.push(`${f}:${i + 1} ${found.join(",")}`);
     });
   }
   t.eq(hits.join(" | ") || "(none)", "(none)", "3b no Canadian program figure, current or stale, appears outside TAX_DATA.CA");
