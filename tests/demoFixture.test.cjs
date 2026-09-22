@@ -57,6 +57,15 @@ const { create } = require("./_runner.cjs");
     t.ok(/Visa card/.test(names), "9b …the card is the generic 'Visa card'");
     const card = demoDebtsFor("CA").find(d => /Visa card/.test(d.name));
     t.eq(card && card.balance, "3420", "9c …and renaming it changed no amount");
+
+    // The accounts and their institutions are generic too, and renaming them moved no money.
+    const accts = demoAccountsFor("CA");
+    const REAL = /\bTD\b|Questrade|\bRBC\b|Scotia|\bCIBC\b|\bBMO\b|Wealthsimple|Tangerine|Desjardins|Simplii|EQ Bank/i;
+    const labels = accts.flatMap(a => [a.name, a.institution]).join(" | ");
+    t.ok(!REAL.test(labels), `9d no real institution name on any demo account or institution (${labels})`);
+    t.eq(accts.map(a => a.name.replace(/ ••\d+$/, "")).join(","), "Chequing,Savings,Visa card,TFSA,RRSP", "9e …the accounts read Chequing, Savings, Visa card, TFSA, RRSP");
+    t.eq(accts.map(a => a.institution).join(","), "Your bank,Your bank,Your bank,Your brokerage,Your bank", "9f …and each institution is generic");
+    t.eq(accts.map(a => a.balance).join(","), "1243.88,1840,-3420,12480,8650", "9g …with every balance exactly as before");
   }
 
   t.summary("demoFixture.test");

@@ -63,11 +63,11 @@ const CA_FIXTURE = {
     ["Netflix", "18.99", "netflix"],
   ],
   accounts: [
-    { id: "a1", name: "TD Chequing ••4521", type: "checking",   balance: 1_243.88, institution: "TD Bank", currency: "CAD" },
-    { id: "a2", name: "TD Savings ••8803",  type: "savings",    balance: 1_840.00, institution: "TD Bank", currency: "CAD" },
-    { id: "a3", name: "Visa card ••2291",     type: "credit",     balance: -3_420.00, institution: "TD Bank", currency: "CAD" },
-    { id: "a4", name: "Questrade TFSA ••7723",   type: "investment", balance: 12_480.00, institution: "Questrade", currency: "CAD", ticker: "XEQT",   gain: 2_140, gainPct: 20.7 },
-    { id: "a5", name: "TD e-Series RRSP ••9910", type: "investment", balance: 8_650.00,  institution: "TD Bank",   currency: "CAD", ticker: "TDB902", gain: 890,   gainPct: 11.4 },
+    { id: "a1", name: "Chequing ••4521", type: "checking",   balance: 1_243.88, institution: "Your bank", currency: "CAD" },
+    { id: "a2", name: "Savings ••8803",  type: "savings",    balance: 1_840.00, institution: "Your bank", currency: "CAD" },
+    { id: "a3", name: "Visa card ••2291",     type: "credit",     balance: -3_420.00, institution: "Your bank", currency: "CAD" },
+    { id: "a4", name: "TFSA ••7723",   type: "investment", balance: 12_480.00, institution: "Your brokerage", currency: "CAD", ticker: "XEQT",   gain: 2_140, gainPct: 20.7 },
+    { id: "a5", name: "RRSP ••9910", type: "investment", balance: 8_650.00,  institution: "Your bank",   currency: "CAD", ticker: "TDB902", gain: 890,   gainPct: 11.4 },
   ],
   debts: [
     { name: "Visa card", balance: "3420", rate: "19.99", min: "68" },
