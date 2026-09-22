@@ -80,8 +80,8 @@ function walk(dir, out = []) {
   const CCB_LINE = /\bCCB\b|Canada Child Benefit|child benefit/i;
   const LITERAL = /\$\d[\d,]*(?:\.\d+)?/g;
   const ALLOWED = [
-    { file: path.join("src", "App.jsx"), must: "RESP+CESG", literals: ["$2,500", "$500"],
-      why: "the coach prompt names CCB (interpolated from the table) beside RESP/CESG, whose grant amounts these are" },
+    // (The coach-prompt exemption for RESP/CESG literals was removed in the benefits audit: those
+    //  amounts could not be verified on an official page and came out of the prompt entirely.)
     { file: path.join("src", "App.jsx"), must: '"paycheque" over a', literals: ["$560"],
       why: "a comment explaining the demo household's own monthly benefit, which is asserted in section 3" },
   ];
@@ -106,7 +106,7 @@ function walk(dir, out = []) {
   const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
   const readers = (app.match(/TAX_DATA\.CA\.CCB\./g) || []).length;
   t.ok(readers >= 8, `2d App.jsx reads the table for every CCB figure it prints (${readers} reads)`);
-  t.ok(/import \{ TAX_DATA, ccbMonthly \}/.test(app), "2e …including the monthly helper, so no surface divides by 12 itself");
+  t.ok(/import \{[^}]*\bccbMonthly\b[^}]*\} from "\.\/lib\/taxData\.js"/.test(app), "2e …including the monthly helper, so no surface divides by 12 itself");
   for (const needle of ["Canada Child Benefit (CCB)", "benefitsChecker", "PARENT: CCB"]) {
     t.ok(app.includes(needle), `2f the ${needle} surface is still present to read it`);
   }
