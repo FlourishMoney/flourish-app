@@ -9,7 +9,7 @@
 const { create } = require("./_runner.cjs");
 
 (async () => {
-  const { DEMO, DEMO_INCOMES, buildDemoTxns } = await import("../src/lib/demoFixture.js");
+  const { DEMO, DEMO_INCOMES, buildDemoTxns, demoAccountsFor, demoDebtsFor } = await import("../src/lib/demoFixture.js");
   const { findAnchor, nextFutureDeposit } = await import("../src/lib/incomeSchedule.js");
   const { ForecastEngine } = await import("../src/lib/forecastEngine.js");
   const t = create();
@@ -45,6 +45,19 @@ const { create } = require("./_runner.cjs");
   const paydayEntry = forecast.find(f => f.day > 0 && f.income >= 2840);
   t.ok(!!paydayEntry, "the forecast contains a Full-time Job payday");
   t.eq(paydayEntry && ymd(paydayEntry.date), ymd(addDays(now, 13)), "and it lands on the anchor-derived Sep 28, end to end");
+
+  // ── The demo household carries no card-issuer brand ──────────────────────────────────────────
+  // The sample family's credit card was called "TD Visa": a real bank's real product, on a screen
+  // every visitor sees before signing up, with invented debt attached to it. The name is generic
+  // now, and stays that way.
+  {
+    const names = [...demoAccountsFor("CA").map(a => a.name), ...demoDebtsFor("CA").map(d => d.name)].join(" | ");
+    const ISSUER = /\bTD Visa\b|\bRBC\b|\bScotia|\bCIBC\b|\bBMO\b|\bAmex\b|American Express|Mastercard/i;
+    t.ok(!ISSUER.test(names), `9a no card-issuer brand on the demo household's cards or debts (${names})`);
+    t.ok(/Visa card/.test(names), "9b …the card is the generic 'Visa card'");
+    const card = demoDebtsFor("CA").find(d => /Visa card/.test(d.name));
+    t.eq(card && card.balance, "3420", "9c …and renaming it changed no amount");
+  }
 
   t.summary("demoFixture.test");
 })();

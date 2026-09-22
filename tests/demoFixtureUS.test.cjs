@@ -1,7 +1,7 @@
 // tests/demoFixtureUS.test.cjs
 // -----------------------------------------------------------------------------
 // The landing page's Canada / United States toggle used to tag the waitlist row and nothing else: a
-// visitor who picked "United States" and opened the preview saw chequing accounts, a TD Visa, the
+// visitor who picked "United States" and opened the preview saw chequing accounts, a Visa card, the
 // Canada Child Benefit and the Ontario Trillium Benefit. Three things are pinned here.
 //
 // 1. THE US FIXTURE IS PHASE-STABLE, to the same standard as the Canadian one. Twelve dates spread

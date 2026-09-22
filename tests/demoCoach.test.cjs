@@ -33,7 +33,7 @@ const { create } = require("./_runner.cjs");
     { id: "a3", type: "credit", balance: -3420.00 }, { id: "a4", type: "investment", balance: 12480.00 },
     { id: "a5", type: "investment", balance: 8650.00 },
   ];
-  const DEBTS = [ { name: "TD Visa", balance: "3420", rate: "19.99", min: "68" },
+  const DEBTS = [ { name: "Visa card", balance: "3420", rate: "19.99", min: "68" },
                   { name: "Car Loan", balance: "8200", rate: "6.99", min: "280" } ];
   const snapFor = (d) => ({
     profile: { name: "Alex", country: "CA" }, accounts: ACCOUNTS,

@@ -48,7 +48,7 @@ const t = create();
   // decision is still surfaced — so the UI's empty state must key off the noticed items, NOT the whole
   // agenda (a decision present must not suppress the calm "Nothing stood out this week." message).
   const steady = {
-    debts: [{ name: "TD Visa", balance: 3420, rate: 19.99, min: 68 }, { name: "Car Loan", balance: 8200, rate: 6.99, min: 280 }],
+    debts: [{ name: "Visa card", balance: 3420, rate: 19.99, min: 68 }, { name: "Car Loan", balance: 8200, rate: 6.99, min: 280 }],
     accounts: [{ type: "checking", balance: 1243.88 }, { type: "savings", balance: 1840 }, { type: "credit", balance: -3420 }],
     incomes: [{ amount: "2840", freq: "biweekly", type: "employment" }],
     bills: [{ name: "Hydro", amount: "95", date: "11" }],

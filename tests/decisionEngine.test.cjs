@@ -9,7 +9,7 @@ const t = create();
 (async () => {
   const { debtPayoffMonths, savingsBufferAfter, computeDebtPayoffImpact } = await import("../src/lib/decisionEngine.js");
 
-  const visa = { name: "TD Visa", balance: "3420", rate: "19.99", min: "68" };
+  const visa = { name: "Visa card", balance: "3420", rate: "19.99", min: "68" };
 
   // debtPayoffMonths — before vs after
   const before = debtPayoffMonths(visa, 0);
