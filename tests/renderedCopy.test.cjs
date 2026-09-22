@@ -75,5 +75,51 @@ const COPY_KEYS = ["title", "name", "body", "savings", "amount", "eligible", "an
   }
   t.eq(suspicious.join(" | ") || "(none)", "(none)", "3b no copy literal escapes a brace as a string, which is what rendered as source");
 
+  // ── 4. A double-quoted string can never interpolate ──────────────────────────────────────────
+  // Sections 1-3 only look at the tip/benefit data keys. The same bug reappeared in the coach's
+  // system prompt, where "FIRST-TIME BUYER ELIGIBLE: FHSA ($${TAX_DATA...})" sat inside DOUBLE
+  // QUOTES — so the model was sent the source text instead of $8,000 — and nothing caught it,
+  // because that string is not behind a copy key. It shipped: the deployed bundle carried the
+  // literal "${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}".
+  //
+  // Deciding this needs to know whether each interpolation sits in a template literal or in a
+  // quoted string, which needs a scanner, not a regex. Two earlier attempts failed on real code:
+  // matching quoted strings with a regex treated every apostrophe in prose ("CRA's limits") as a
+  // delimiter, and walking back to the nearest quote was fooled by double quotes INSIDE an
+  // interpolation (`.join(", ")`, `.toLocaleString("en-US")`).
+  //
+  // So: a small forward scanner tracking backticks, ${…} nesting, double quotes and comments.
+  // Single quotes are ignored on purpose — an apostrophe in prose is not a delimiter, and this
+  // file never opens a TAX_DATA interpolation inside a single-quoted string.
+  {
+    const ctx = [];                       // stack: "tpl" | "interp" | "dq"
+    const dqAt = new Set();               // indexes that sit inside a double-quoted string
+    for (let i = 0; i < app.length; i++) {
+      const c = app[i], top = ctx[ctx.length - 1];
+      if (c === "\\") { i++; continue; }                                     // escape
+      if (top === "dq") { dqAt.add(i); if (c === '"') ctx.pop(); continue; }
+      if (top === "tpl") {
+        if (c === "`") ctx.pop();
+        else if (c === "$" && app[i + 1] === "{") { ctx.push("interp"); i++; }
+        continue;
+      }
+      // code, or inside ${ } which behaves like code
+      if (c === "/" && app[i + 1] === "/") { i = app.indexOf("\n", i); if (i < 0) break; continue; }
+      if (c === "/" && app[i + 1] === "*") { i = app.indexOf("*/", i) + 1; if (i < 1) break; continue; }
+      if (c === "`") ctx.push("tpl");
+      else if (c === '"') ctx.push("dq");
+      else if (top === "interp" && c === "}") ctx.pop();
+    }
+    const bad = [];
+    const re = /\$\{(?:TAX_DATA|creditWorth|ccbMonthly)\b/g;
+    let m;
+    while ((m = re.exec(app)) !== null) {
+      if (!dqAt.has(m.index)) continue;
+      bad.push(`App.jsx:${app.slice(0, m.index).split("\n").length} ${app.slice(m.index, m.index + 44)}`);
+    }
+    t.eq(bad.join(" | ") || "(none)", "(none)",
+      "4a every TAX_DATA interpolation sits in a template literal, not a double-quoted string");
+  }
+
   t.summary("renderedCopy.test");
 })();
