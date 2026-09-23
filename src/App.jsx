@@ -47,6 +47,7 @@ import { captureError } from "./lib/errorReporting.js";
 import { derivePlan } from "./lib/planFromProfile.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
+import { effectiveCategory, setMerchantOverride, countMatching } from "./lib/categoryOverrides.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
 
 // Capacitor iOS platform detection — true only when running as a native iOS app via Capacitor.
@@ -727,7 +728,14 @@ function safeLoadLS(key, fallback) {
 // Sprint MATH-LOCK Group B: per-transaction category reassignments { txnId: category }. Loads the
 // EXACT value FinancialCalcEngine.cashFlow used to read internally — passed into the now-pure engine
 // at every call site so re-categorization keeps affecting cash-flow/spend math (no silent {} drop).
-const getCatOv = () => safeLoadLS("flourish_cat_overrides", {});
+// Two layers, most specific first: an override on THIS transaction, then a rule for the
+// merchant. The merchant layer is what makes a correction outlive the row it was made on —
+// see src/lib/categoryOverrides.js. Engines take the pair and resolve it themselves.
+const getCatOvById = () => safeLoadLS("flourish_cat_overrides", {});
+const getMerchantCatOv = () => safeLoadLS("flourish_cat_merchant_overrides", {});
+const getCatOv = () => ({ byId: getCatOvById(), byMerchant: getMerchantCatOv() });
+// For display paths that already hold a byId map of their own.
+const effCat = (t, byId) => effectiveCategory(t, byId, getMerchantCatOv());
 
 // Sprint MATH-LOCK Group C: _levenshtein moved to plaidNormalize.js (used by detectRecurringBills).
 
@@ -2550,7 +2558,7 @@ function computeStats(txns, catOverrides={}) {
   // Skip non-expense categories AND bill categories (bills are tracked separately)
   const SKIP = new Set([...NON_SPEND_CATS, ...BILL_CATS]);
   // Use catOverrides so user-reassigned categories appear in breakdown
-  const getC = (t) => catOverrides[t.id] || t.cat;
+  const getC = (t) => effCat(t, catOverrides);
   const sp = txns.filter(t=>t.amount>0 && !SKIP.has(getC(t)));
   const byCat={}, byDow={0:0,1:0,2:0,3:0,4:0,5:0,6:0};
   let coffee=0,coffeeCount=0,delivery=0,subs=0;
@@ -2918,7 +2926,7 @@ function parseCSVStatement(text) {
       const c = parseFloat(cols[creditIdx]?.replace(/[$, ]/g,'') || 0);
       amount = d > 0 ? d : -c;
     }
-    return { id:`csv_${i}`, date: cols[dateIdx]||'', name: cols[descIdx]||'Transaction', amount: isNaN(amount)?0:amount, category:'OTHER', pending:false };
+    return { id:`csv_${i}`, date: cols[dateIdx]||'', name: cols[descIdx]||'Transaction', amount: isNaN(amount)?0:amount, category:'OTHER', cat:'Other', pending:false };
   }).filter(t => t.date && t.name);
 }
 
@@ -6720,7 +6728,7 @@ function BudgetPlanCard({data, setAppData}) {
   });
   const monthSpend = {};
   monthTxns.forEach(t=>{
-    const cat=catOverrides[t.id]||t.cat;
+    const cat=effCat(t, catOverrides);
     if(!NON_SPEND_CATS.has(cat)&&!CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))){
       monthSpend[cat]=(monthSpend[cat]||0)+t.amount;
     }
@@ -6943,33 +6951,40 @@ function SpendScreen({data, setAppData, setScreen}){
   });
   const monthLabel = now.toLocaleString("en-CA",{month:"long",year:"numeric"});
   const catOverrides = safeLoadLS("flourish_cat_overrides", {});
-  const getCat = (t) => catOverrides[t.id] || t.cat;
+  const getCat = (t) => effCat(t, catOverrides);
   const stats=computeStats(thisMonthTxns, catOverrides);
 
   const recat = (txn, newCat, applyToAll=false) => {
     const overrides = safeLoadLS("flourish_cat_overrides", {});
-    if(applyToAll) {
-      const merchantKey = (txn.name||"").toLowerCase().trim();
-      const updated = {...overrides};
-      txns.forEach(t => {
-        if((t.name||"").toLowerCase().trim() === merchantKey) updated[t.id] = newCat;
-      });
-      localStorage.setItem("flourish_cat_overrides", JSON.stringify(updated));
-    } else {
+    // A MERCHANT RULE, not a stamp on the rows that happen to exist right now. This is the
+    // whole point of item 3: tomorrow's charge from the same merchant has to arrive already
+    // corrected, and statement rows are re-numbered on every import (`stmt_${i}`), so a
+    // per-id override silently re-points at a different transaction.
+    //
+    // "Apply to all" writes the rule. A correction on a merchant with no other transactions
+    // writes it too: with nothing else it could mean, "this merchant is X" is the only
+    // reading. A correction on ONE of several stays per-transaction — that is someone saying
+    // "this particular charge was not what it looked like", not "this merchant is always X".
+    const mKey = merchantKey(txn.name);
+    const others = countMatching(txns, txn.name);
+    if (applyToAll || others <= 1) {
+      const merchants = setMerchantOverride(safeLoadLS("flourish_cat_merchant_overrides", {}), txn.name, newCat);
+      if (mKey) localStorage.setItem("flourish_cat_merchant_overrides", JSON.stringify(merchants));
+    }
+    if (!applyToAll) {
       const updated = {...overrides, [txn.id]: newCat};
       localStorage.setItem("flourish_cat_overrides", JSON.stringify(updated));
     }
     // Auto-link: if this vendor matches a bill's name, store in vendorBillMap
-    const merchantKey = (txn.name||"").toLowerCase().trim();
-    if(merchantKey.length >= 3 && setAppData) {
+    if(mKey.length >= 3 && setAppData) {
       const matchedBill = (data.bills||[]).find(b =>
-        merchantKey.includes((b.name||"").toLowerCase().trim().substring(0,5)) ||
-        (b.name||"").toLowerCase().trim().includes(merchantKey.substring(0,8))
+        mKey.includes((b.name||"").toLowerCase().trim().substring(0,5)) ||
+        (b.name||"").toLowerCase().trim().includes(mKey.substring(0,8))
       );
       if(matchedBill) {
         setAppData(prev => ({
           ...prev,
-          vendorBillMap: {...(prev.vendorBillMap||{}), [merchantKey]: matchedBill.name}
+          vendorBillMap: {...(prev.vendorBillMap||{}), [mKey]: matchedBill.name}
         }));
       }
     }
@@ -6986,7 +7001,7 @@ function SpendScreen({data, setAppData, setScreen}){
       t.id !== txn.id &&
       (t.name||"").toLowerCase().trim() === merchantKey &&
       merchantKey.length >= 3 && // require at least 3 chars to avoid over-matching
-      (catOverrides[t.id] || t.cat) !== newCat
+      effCat(t, catOverrides) !== newCat
     );
     if(otherSameMerchant.length > 0) {
       setApplyAllPrompt({txn, newCat, count: otherSameMerchant.length + 1});
@@ -8205,7 +8220,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         try{const d=new Date(t.date+"T12:00:00");return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()&&t.amount>0;}catch{return false;}
       });
       const monthSpend = {};
-      monthTxns.forEach(t=>{ const cat=catOverrides[t.id]||t.cat; monthSpend[cat]=(monthSpend[cat]||0)+t.amount; });
+      monthTxns.forEach(t=>{ const cat=effCat(t, catOverrides); monthSpend[cat]=(monthSpend[cat]||0)+t.amount; });
 
       // Merge budgets + suggestions for display
       const displayCats = {...suggestions};
@@ -12899,7 +12914,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
   });
   const monthSpend = {};
   monthTxns.forEach(t => {
-    const cat = catOverrides[t.id] || t.cat;
+    const cat = effCat(t, catOverrides);
     // Only track discretionary categories — bills excluded to prevent double-counting
     if(!NON_SPEND_CATS.has(cat) && !CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))) {
       monthSpend[cat] = (monthSpend[cat] || 0) + t.amount;
@@ -12940,7 +12955,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
       const d = new Date(t.date + "T12:00:00");
       return d.getFullYear() === now2.getFullYear() && d.getMonth() === now2.getMonth();
     }).forEach(t => {
-      const cat = catOv[t.id] || t.cat;
+      const cat = effCat(t, catOv);
       // Include if: it's a custom category OR it's any spend category not already seeded
       if(!seed[cat] && !NON_SPEND_CATS.has(cat) && !BILL_CATS.has(cat)) {
         seed[cat] = "50"; // default starting budget for new categories
