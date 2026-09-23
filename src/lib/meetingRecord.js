@@ -28,6 +28,7 @@ const ANSWERS = new Set([ANSWER_ACCEPTED, ANSWER_DISMISSED]);
 // The only fields a recorded answer may carry. Anything else is dropped, including anything
 // numeric — figures live in the engines, and the next meeting reads them from there.
 const ALLOWED_FIELDS = ["signature", "domain", "kind", "answer", "subject"];
+export const MAX_FIELD_LENGTH = 200;
 
 /**
  * Normalise one answer for storage, or null if it is not a real answer.
@@ -36,14 +37,21 @@ const ALLOWED_FIELDS = ["signature", "domain", "kind", "answer", "subject"];
  */
 export function recordableAnswer(raw) {
   const a = raw || {};
-  if (!a.signature || typeof a.signature !== "string") return null;
-  if (!a.domain || typeof a.domain !== "string") return null;
+  // Length is checked HERE, not only in the copy below: an over-long signature stripped by the
+  // copy would leave an answer with no signature at all — a record that can never be matched to
+  // the question it answers, which is worse than refusing it.
+  const str = (v) => typeof v === "string" && v.length > 0 && v.length <= MAX_FIELD_LENGTH;
+  if (!str(a.signature)) return null;
+  if (!str(a.domain)) return null;
   if (!ANSWERS.has(a.answer)) return null;
   const out = {};
   for (const f of ALLOWED_FIELDS) {
     const v = a[f];
     if (v == null) continue;
     if (typeof v !== "string") continue;      // no numbers, no objects, no arrays
+    if (v.length > MAX_FIELD_LENGTH) continue; // a signature or a merchant name is short; anything
+                                               // longer is not one, and storing it would let a
+                                               // single meeting write megabytes
     out[f] = v;
   }
   return out;
@@ -55,17 +63,31 @@ export function buildMeetingRecord({ metOn, answers } = {}) {
   return { metOn: typeof metOn === "string" ? metOn.slice(0, 10) : null, answers: list };
 }
 
-/** Signatures the household has already answered, so the loop does not re-ask them. */
-export function answeredSignatures(records, domain = null) {
+/**
+ * Signatures the household has answered, optionally filtered by domain and by which answer.
+ *
+ * For SUPPRESSION use dismissedSignatures() below, not this. Feeding every answered signature
+ * into the loop's dismissal set would make an ACCEPT permanent too: the household says "yes, add
+ * that bill", and if the bill is later removed or the charge reappears, the question can never be
+ * asked again. An accept does not need suppressing — applying it changes the data, so the
+ * detector stops finding a difference on its own.
+ */
+export function answeredSignatures(records, domain = null, answer = null) {
   const out = [];
   for (const r of Array.isArray(records) ? records : []) {
     for (const a of (r && Array.isArray(r.answers)) ? r.answers : []) {
       if (!a || !a.signature) continue;
       if (domain && a.domain !== domain) continue;
+      if (answer && a.answer !== answer) continue;
       out.push(a.signature);
     }
   }
   return [...new Set(out)];
+}
+
+/** The suppression set: what the household said NO to. This is what the loop must be given. */
+export function dismissedSignatures(records, domain = null) {
+  return answeredSignatures(records, domain, ANSWER_DISMISSED);
 }
 
 /** The most recent meeting, by date. Ties keep the first, which is the order the server returns. */
@@ -108,11 +130,10 @@ export function meetingOpening({ lastRecord = null, snapshot = {} } = {}) {
   for (const a of accepted) {
     lines.push({ text: `Since then, ${VERB[a.answer]} ${a.subject || a.kind || "a change"}.`, source: "meetingRecord" });
   }
-  if (dismissed.length) {
-    lines.push({
-      text: `You left ${dismissed.length} question${dismissed.length === 1 ? "" : "s"} unanswered last time; ${dismissed.length === 1 ? "it is" : "they are"} not being asked again.`,
-      source: "meetingRecord",
-    });
+  // "No" is an ANSWER. The agenda's second option maps to `dismissed`, so calling these
+  // "unanswered" told the household they had not decided something they had just decided.
+  for (const a of dismissed) {
+    lines.push({ text: `You said no to ${a.subject || a.kind || "a change"}, so it is not being raised again.`, source: "meetingRecord" });
   }
   if (!answers.length) {
     lines.push({ text: "No decisions were recorded at that meeting.", source: "meetingRecord" });

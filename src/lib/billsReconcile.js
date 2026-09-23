@@ -32,6 +32,8 @@ export function billKey(name) {
 
 const amt = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
 const isObserved = (bill) => (bill || {}).origin === "observed";
+// The detector writes type:"variable"; bills typed in onboarding may carry variable:true instead.
+const isVariable = (bill) => { const b = bill || {}; return b.type === "variable" || b.variable === true; };
 
 /**
  * Compare what the bank shows against what the household has.
@@ -56,6 +58,12 @@ export function billChanges(detectedBills, currentBills) {
       changes.push({ kind: "appeared", key, name: det.name, currentAmount: null, detectedAmount: amt(det.amount) });
       continue;
     }
+    // A VARIABLE bill is one whose amount is SUPPOSED to move — the detector marks it variable
+    // when its spread exceeds 15% (plaidNormalize.js), which is three times this tolerance. Asking
+    // "did your hydro bill change?" every single month is the loop making itself unusable, and it
+    // could never be silenced either: the signature carries the amount, so each month's new figure
+    // is a new question the previous dismissal does not cover.
+    if (isVariable(cur) || isVariable(det)) continue;
     const c = amt(cur.amount), d = amt(det.amount);
     if (c > 0 && d > 0 && Math.abs(d - c) / c > BILL_AMOUNT_TOLERANCE) {
       changes.push({ kind: "amount", key, name: cur.name, currentAmount: c, detectedAmount: d });

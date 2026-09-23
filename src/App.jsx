@@ -735,7 +735,15 @@ const getCatOvById = () => safeLoadLS("flourish_cat_overrides", {});
 const getMerchantCatOv = () => safeLoadLS("flourish_cat_merchant_overrides", {});
 const getCatOv = () => ({ byId: getCatOvById(), byMerchant: getMerchantCatOv() });
 // For display paths that already hold a byId map of their own.
-const effCat = (t, byId) => effectiveCategory(t, byId, getMerchantCatOv());
+//
+// Memoised: called per transaction, several times per render across the whole list, and
+// getMerchantCatOv is a localStorage read plus a JSON.parse — what it replaced was a property
+// read. bumpMerchantCatOv() clears it on every write, so a correction shows immediately; without
+// that, seeing your own change would take a reload.
+let _mcoCache = null;
+const getMerchantCatOvCached = () => (_mcoCache || (_mcoCache = getMerchantCatOv()));
+const bumpMerchantCatOv = () => { _mcoCache = null; };
+const effCat = (t, byId) => effectiveCategory(t, byId, getMerchantCatOvCached());
 
 // Sprint MATH-LOCK Group C: _levenshtein moved to plaidNormalize.js (used by detectRecurringBills).
 
@@ -6969,22 +6977,35 @@ function SpendScreen({data, setAppData, setScreen}){
     const others = countMatching(txns, txn.name);
     if (applyToAll || others <= 1) {
       const merchants = setMerchantOverride(safeLoadLS("flourish_cat_merchant_overrides", {}), txn.name, newCat);
-      if (mKey) localStorage.setItem("flourish_cat_merchant_overrides", JSON.stringify(merchants));
+      if (mKey) { localStorage.setItem("flourish_cat_merchant_overrides", JSON.stringify(merchants)); bumpMerchantCatOv(); }
     }
-    if (!applyToAll) {
+    if (applyToAll) {
+      // The merchant rule alone would NOT win: effectiveCategory resolves per-transaction
+      // overrides first, so a row corrected individually earlier keeps its old category —
+      // including the row being looked at while tapping "apply to all". Clearing those entries is
+      // what makes the button mean what it says.
+      const cleared = {...overrides};
+      txns.forEach(t => { if (merchantKey(t.name) === mKey) delete cleared[t.id]; });
+      localStorage.setItem("flourish_cat_overrides", JSON.stringify(cleared));
+    } else {
       const updated = {...overrides, [txn.id]: newCat};
       localStorage.setItem("flourish_cat_overrides", JSON.stringify(updated));
     }
-    // Auto-link: if this vendor matches a bill's name, store in vendorBillMap
-    if(mKey.length >= 3 && setAppData) {
+    // Auto-link: if this vendor matches a bill's name, store in vendorBillMap.
+    // RAW lowercased name, NOT mKey. vendorBillMap has two other sites — the "mark as bill"
+    // writer and the Monthly Bills reader — and both look up (t.name||"").toLowerCase().trim().
+    // Writing the POS-stripped key here produced entries that could never be found again, so a
+    // bill stopped showing as paid right after the household categorised the charge that pays it.
+    const vendorKey = (txn.name||"").toLowerCase().trim();
+    if(vendorKey.length >= 3 && setAppData) {
       const matchedBill = (data.bills||[]).find(b =>
-        mKey.includes((b.name||"").toLowerCase().trim().substring(0,5)) ||
-        (b.name||"").toLowerCase().trim().includes(mKey.substring(0,8))
+        vendorKey.includes((b.name||"").toLowerCase().trim().substring(0,5)) ||
+        (b.name||"").toLowerCase().trim().includes(vendorKey.substring(0,8))
       );
       if(matchedBill) {
         setAppData(prev => ({
           ...prev,
-          vendorBillMap: {...(prev.vendorBillMap||{}), [mKey]: matchedBill.name}
+          vendorBillMap: {...(prev.vendorBillMap||{}), [vendorKey]: matchedBill.name}
         }));
       }
     }
@@ -6994,13 +7015,15 @@ function SpendScreen({data, setAppData, setScreen}){
 
   // When user picks a category, check if there are other transactions from same merchant
   const recatWithSmartPrompt = (txn, newCat) => {
-    const merchantKey = (txn.name||"").toLowerCase().trim();
+    // The SAME key setMerchantOverride writes with. Counting with a plainer key showed a number
+    // that did not match the set the rule would actually change.
+    const mKeyPrompt = merchantKey(txn.name);
     // Guard: empty name would match ALL unnamed transactions — skip prompt
-    if(!merchantKey) { recat(txn, newCat, false); return; }
+    if(!mKeyPrompt) { recat(txn, newCat, false); return; }
     const otherSameMerchant = txns.filter(t =>
       t.id !== txn.id &&
-      (t.name||"").toLowerCase().trim() === merchantKey &&
-      merchantKey.length >= 3 && // require at least 3 chars to avoid over-matching
+      merchantKey(t.name) === mKeyPrompt &&
+      mKeyPrompt.length >= 3 && // require at least 3 chars to avoid over-matching
       effCat(t, catOverrides) !== newCat
     );
     if(otherSameMerchant.length > 0) {

@@ -116,6 +116,9 @@ export function agendaNumbers(agenda) {
   (agenda.wins || []).forEach(w => push(w.value));
   (agenda.changes || []).forEach(c => push(c.value));
   (agenda.risks || []).forEach(r => push(r.value));
+  // questions carry figures inside their TEXT (never as a value), so there is nothing numeric to
+  // collect here — but the section must be named, or a future numeric field would go unchecked.
+  (agenda.questions || []).forEach(q => push(q.value));
   (agenda.progress || []).forEach(p => push(p.value));
   // decision outcomes are engine-computed strings/values passed through untouched (not re-derived)
   return out;
@@ -123,6 +126,6 @@ export function agendaNumbers(agenda) {
 
 // True if every agenda item carries a `source` (provenance) — no item without an engine origin.
 export function everyItemHasSource(agenda) {
-  const all = [...(agenda.wins||[]), ...(agenda.changes||[]), ...(agenda.risks||[]), ...(agenda.progress||[]), ...(agenda.decisions||[])];
+  const all = [...(agenda.wins||[]), ...(agenda.changes||[]), ...(agenda.risks||[]), ...(agenda.progress||[]), ...(agenda.decisions||[]), ...(agenda.questions||[])];
   return all.every(i => typeof i.source === "string" && i.source.length > 0);
 }

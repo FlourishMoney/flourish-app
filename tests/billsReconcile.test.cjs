@@ -37,7 +37,10 @@ const { create } = require("./_runner.cjs");
   t.eq(kinds([{ name: "  NETFLIX  " , amount: "24.99" }], [observed("netflix", 18.99)]), "amount:netflix",
     "3c case and spacing do not make it a different bill");
   t.eq(kinds([{ name: "", amount: "10" }], []), "", "3d a nameless charge is not a question");
-  t.eq(kinds([{ name: "New", amount: "10" }], [observed("Zero", 0)]), "appeared:new,disappeared:zero", "3e a zero-amount current bill cannot divide by zero");
+  // Both sides must carry the SAME bill, or the amount branch is never reached and the guard this
+  // is named for is never exercised.
+  t.eq(kinds([{ name: "Zero", amount: "10" }], [observed("Zero", 0)]), "", "3e a current amount of zero cannot divide by zero, and is not a change");
+  t.eq(kinds([{ name: "Zero", amount: "0" }], [observed("Zero", 25)]), "", "3e2 …nor is a detected amount of zero, which is a detector artefact rather than news");
 
   // ── 4. One dismissal per change — the whole point ────────────────────────────────────────────
   {

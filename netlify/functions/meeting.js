@@ -41,17 +41,23 @@ const json = (statusCode, headers, body) => ({ statusCode, headers, body: JSON.s
 // tests/meetingRecord.test.cjs section 6, which runs both over the same inputs.
 const ANSWERS = new Set(["accepted", "dismissed"]);
 const ALLOWED_FIELDS = ["signature", "domain", "kind", "answer", "subject"];
+const MAX_FIELD_LENGTH = 200;
 
 function recordableAnswer(raw) {
   const a = raw || {};
-  if (!a.signature || typeof a.signature !== "string") return null;
-  if (!a.domain || typeof a.domain !== "string") return null;
+  // Length is checked HERE, not only in the copy below: an over-long signature stripped by the
+  // copy would leave an answer with no signature at all — a record that can never be matched to
+  // the question it answers, which is worse than refusing it.
+  const str = (v) => typeof v === "string" && v.length > 0 && v.length <= MAX_FIELD_LENGTH;
+  if (!str(a.signature)) return null;
+  if (!str(a.domain)) return null;
   if (!ANSWERS.has(a.answer)) return null;
   const out = {};
   for (const f of ALLOWED_FIELDS) {
     const v = a[f];
     if (v == null) continue;
     if (typeof v !== "string") continue;
+    if (v.length > MAX_FIELD_LENGTH) continue;   // 50 answers x 5 unbounded strings is megabytes
     out[f] = v;
   }
   return out;

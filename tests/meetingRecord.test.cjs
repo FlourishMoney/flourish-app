@@ -86,11 +86,11 @@ const post = (body) => ({ httpMethod: "POST", headers: {}, body: JSON.stringify(
       metOn: "2026-09-23",
       answers: [{ signature: first[0].signature, domain: "bills", kind: "amount", answer: "dismissed", subject: "Netflix" }],
     });
-    const second = bills.billPrompts({ detectedBills: det, currentBills: cur, dismissedSignatures: r.answeredSignatures([meeting], "bills") });
+    const second = bills.billPrompts({ detectedBills: det, currentBills: cur, dismissedSignatures: r.dismissedSignatures([meeting], "bills") });
     t.eq(second.length, 0, "4b and after the household answers it, the next meeting does not ask it again");
 
     // The same subject changing AGAIN is a new question, not the old one.
-    const third = bills.billPrompts({ detectedBills: [{ name: "Netflix", amount: "31.99" }], currentBills: cur, dismissedSignatures: r.answeredSignatures([meeting], "bills") });
+    const third = bills.billPrompts({ detectedBills: [{ name: "Netflix", amount: "31.99" }], currentBills: cur, dismissedSignatures: r.dismissedSignatures([meeting], "bills") });
     t.eq(third.length, 1, "4c …while a further change does ask, because the facts moved");
   }
 
@@ -126,7 +126,11 @@ const post = (body) => ({ httpMethod: "POST", headers: {}, body: JSON.stringify(
     const opening = r.meetingOpening({ lastRecord: last, snapshot: { healthScore: { current: 71, previous: 66 } } });
     t.eq(opening.metOn, "2026-09-16", "6c a later meeting opens with when the last one was");
     t.ok(opening.lines.some(l => /you said yes to Netflix/.test(l.text)), "6d …what was decided");
-    t.ok(opening.lines.some(l => /not being asked again/.test(l.text)), "6e …what was left, and that it will not be re-asked");
+    // "No" is an answer. Calling it "unanswered" told the household they had not decided
+    // something they had just decided.
+    t.ok(opening.lines.some(l => /You said no to Gym, so it is not being raised again/.test(l.text)),
+      "6e …and what they said no to, described as the answer it is");
+    t.ok(!opening.lines.some(l => /unanswered/.test(l.text)), "6e2 …never as an unanswered question");
     t.ok(opening.lines.some(l => /moved up 5 since then, to 71/.test(l.text)), "6f …and what the engines say has changed since");
 
     // EVERY line must name an engine or the record. Nothing may come from the model.
@@ -161,17 +165,24 @@ const post = (body) => ({ httpMethod: "POST", headers: {}, body: JSON.stringify(
 
     const good = await fn.handler(post({ action: "record", met_on: "2026-09-23", answers: [ok({ amount: 999, newBalance: 5 })] }));
     t.eq(good.statusCode, 200, "7f a real answer is recorded");
-    t.eq(state.writes[0].user_id, "u1", "7g …against the user from the verified token, never the body");
+    t.eq(state.writes[0].user_id, "u1", "7g …against the user from the verified token");
     t.eq(JSON.stringify(state.writes[0].answers[0].amount), undefined, "7h …with the model-supplied figures stripped server-side too");
     t.eq(Object.keys(state.writes[0].answers[0]).sort().join(","), "answer,domain,kind,signature,subject", "7i …leaving exactly the five allowed fields");
 
     // An unknown field like `amount` is dropped just by not being in the list, so it does not
     // exercise the type check at all. The case that does is an ALLOWED field carrying a number:
     // a facilitator summarising "Netflix" as 4200 must not be able to store 4200 as the subject.
-    const numeric = await fn.handler(post({ action: "record", met_on: "2026-09-24", answers: [ok({ subject: 4200 })] }));
+    // 7g could not fail before this: no request ever carried a competing user_id, so it held
+    // whether or not the server trusted the body.
+    const spoof = await fn.handler(post({ action: "record", met_on: "2026-09-24", user_id: "someone-else", answers: [ok()] }));
+    t.eq(spoof.statusCode, 200, "7g2 a body carrying another user_id is accepted…");
+    t.eq(state.writes[state.writes.length - 1].user_id, "u1", "7g3 …and written against the TOKEN's user, not the body's");
+
+    const numeric = await fn.handler(post({ action: "record", met_on: "2026-09-26", answers: [ok({ subject: 4200 })] }));
     t.eq(numeric.statusCode, 200, "7j an answer whose subject is a number is still recorded");
-    t.ok(!("subject" in state.writes[1].answers[0]), "7k …with that number dropped, not stored as the subject");
-    t.eq(Object.keys(state.writes[1].answers[0]).sort().join(","), "answer,domain,kind,signature", "7l …leaving only the string fields");
+    const last = state.writes[state.writes.length - 1].answers[0];
+    t.ok(!("subject" in last), "7k …with that number dropped, not stored as the subject");
+    t.eq(Object.keys(last).sort().join(","), "answer,domain,kind,signature", "7l …leaving only the string fields");
   }
 
   // ── 8. The two allow-lists agree ─────────────────────────────────────────────────────────────
@@ -181,6 +192,7 @@ const post = (body) => ({ httpMethod: "POST", headers: {}, body: JSON.stringify(
     const lib = fs.readFileSync(path.join(__dirname, "..", "src", "lib", "meetingRecord.js"), "utf8");
     const fn = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "meeting.js"), "utf8");
     const fields = (src) => (src.match(/ALLOWED_FIELDS = \[([^\]]+)\]/) || [])[1];
+    t.ok(!!fields(lib) && !!fields(fn), "8a0 both allow-lists are actually found — undefined === undefined is not a passing tripwire");
     t.eq(fields(fn), fields(lib), "8a the server's allowed fields are the same list as the client's");
     t.ok(/"accepted"[\s\S]{0,40}"dismissed"/.test(fn), "8b …and the same two answers");
   }
@@ -190,11 +202,55 @@ const post = (body) => ({ httpMethod: "POST", headers: {}, body: JSON.stringify(
     const m = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "0011_meeting_records.sql"), "utf8");
     t.ok(/enable row level security/i.test(m), "9a RLS is on");
     t.ok(/for select using \(auth\.uid\(\) = user_id\)/i.test(m), "9b the client reads its own row");
-    t.ok(!/for insert|for update|for delete/i.test(m), "9c …and has no policy that lets it write one");
+    t.ok(!/for insert|for update|for delete|for all/i.test(m), "9c …and no policy that lets it write one, INCLUDING `for all`");
     t.ok(/grant select\s+on table public\.meeting_records to authenticated/i.test(m), "9d authenticated may select");
     t.ok(/grant all privileges on table public\.meeting_records to service_role/i.test(m), "9e the service role writes");
     t.ok(!/to anon/i.test(m), "9f anon gets nothing");
     t.ok(/answers\s+jsonb/i.test(m), "9g answers are stored as given");
+  }
+
+
+  // ── 10. Accepting is not a permanent silence ─────────────────────────────────────────────────
+  // Feeding every ANSWERED signature into the dismissal set would make a yes permanent: the
+  // household accepts a new bill, the bill is later removed, the charge reappears — and the
+  // question could never be asked again. An accept needs no suppression; applying it changes the
+  // data, so the detector stops finding a difference by itself.
+  {
+    const accepted = r.buildMeetingRecord({ metOn: "2026-09-23", answers: [
+      { signature: "appeared|gym|?|45", domain: "bills", kind: "appeared", answer: "accepted", subject: "Gym" },
+      { signature: "amount|netflix|19|25", domain: "bills", kind: "amount", answer: "dismissed", subject: "Netflix" },
+    ]});
+    t.eq(r.answeredSignatures([accepted], "bills").length, 2, "10a both answers are recorded");
+    t.eq(r.dismissedSignatures([accepted], "bills").join(","), "amount|netflix|19|25",
+      "10b …but only the NO suppresses, so a yes can be asked about again if it comes back");
+    t.eq(r.answeredSignatures([accepted], "bills", "accepted").join(","), "appeared|gym|?|45", "10c …and the yes is still queryable");
+  }
+
+  // ── 11. A variable bill is not asked about every month ───────────────────────────────────────
+  // The detector marks a bill variable when its spread exceeds 15% — three times the 5% that
+  // raises an amount question. Without this, a hydro bill asks forever AND can never be silenced:
+  // the signature carries the amount, so each month's figure is a new question.
+  {
+    const variableCur = [{ name: "Hydro", amount: "95", origin: "observed", type: "variable" }];
+    t.eq(bills.billChanges([{ name: "Hydro", amount: "124" }], variableCur).length, 0, "11a a variable bill moving 30% is not a question");
+    t.eq(bills.billChanges([{ name: "Hydro", amount: "124", type: "variable" }], [{ name: "Hydro", amount: "95", origin: "observed" }]).length, 0,
+      "11b …and neither is one the detector has just decided is variable");
+    const fixedCur = [{ name: "Hydro", amount: "95", origin: "observed", type: "fixed" }];
+    t.eq(bills.billChanges([{ name: "Hydro", amount: "124" }], fixedCur).length, 1, "11c a FIXED bill moving 30% still is");
+    t.eq(bills.billChanges([], variableCur).length, 1, "11d …and a variable bill disappearing is still worth asking about");
+  }
+
+  // ── 12. A stored field cannot be unbounded ───────────────────────────────────────────────────
+  {
+    const long = "x".repeat(r.MAX_FIELD_LENGTH + 1);
+    const rec = r.recordableAnswer({ signature: long, domain: "bills", answer: "accepted" });
+    t.eq(rec, null, "12a an over-long signature is not a signature");
+    const okLen = r.recordableAnswer({ signature: "s", domain: "bills", answer: "accepted", subject: long });
+    t.ok(!("subject" in okLen), "12b …and an over-long subject is dropped rather than stored");
+    const state = { writes: [] };
+    const fn = loadFn({ user_id: "u1", state });
+    await fn.handler(post({ action: "record", met_on: "2026-09-25", answers: [{ signature: "s", domain: "bills", answer: "accepted", subject: long }] }));
+    t.ok(!("subject" in state.writes[0].answers[0]), "12c …server-side too, so 50 answers cannot be megabytes");
   }
 
   t.summary("meetingRecord.test");

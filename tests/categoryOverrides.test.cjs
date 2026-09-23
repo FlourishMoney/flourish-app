@@ -28,7 +28,7 @@ const path = require("path");
   t.eq(c.merchantKey("  NETFLIX  "), "netflix", "1a case and spacing do not make a different merchant");
   t.eq(c.merchantKey("SQ *COFFEE SHOP 4821"), "coffee shop", "1b a POS prefix and a trailing account number do not either");
   t.eq(c.merchantKey(null), "", "1c a missing name is empty, not a crash");
-  t.eq(c.merchantKey("Netflix"), billKey("Netflix"), "1d …and it is literally billReeval's key, not a second nearly-identical one");
+  t.ok(c.merchantKey === billKey, "1d …and it is literally billReeval's function, not a second nearly-identical one");
   t.ok(!c.isUsableMerchantKey("ab") && c.isUsableMerchantKey("abc"), "1e under 3 characters is not enough to match on");
 
   // ── 2. Resolution order, most specific first ─────────────────────────────────────────────────
@@ -39,6 +39,17 @@ const path = require("path");
   t.eq(c.effectiveCategory(txn("t2", "Mystery"), {}, {}), "Other", "2d and finally Other — never undefined, which is what statement rows rendered");
   t.eq(c.effectiveCategory(null, {}, {}), "Other", "2e a missing transaction resolves rather than throwing");
   t.eq(c.effectiveCategory(txn("t3", "ab", "Shopping"), {}, { ab: "Travel" }), "Shopping", "2f a too-short merchant key is not matched");
+
+  // ── 2b. A merchant named like an Object member is not a category ─────────────────────────────
+  // merchantKey lowercases, and two Object.prototype members survive that: "__proto__" and
+  // "constructor". A bare bracket read would resolve them through the prototype chain and return
+  // a function as the category — on a completely EMPTY override store.
+  for (const hostile of ["__proto__", "constructor", "toString", "valueOf", "hasOwnProperty"]) {
+    t.eq(c.effectiveCategory(txn("h", hostile), {}, {}), "Other", `2p a merchant named ${hostile} resolves to Other, not to an inherited member`);
+    t.eq(c.effectiveCategory({ id: hostile, name: "Shop" }, {}, {}), "Other", `2q …and neither does a transaction whose id is ${hostile}`);
+  }
+  t.eq(c.effectiveCategory(txn("h", "__proto__"), {}, { __proto__: "Travel" }), "Other",
+    "2r …and a literal __proto__ entry in the map is not reachable either, which is what an attacker-shaped name would aim for");
 
   // ── 3. The legacy flat map keeps working ─────────────────────────────────────────────────────
   // Every existing household has { [txnId]: category } in storage. It must behave identically.
@@ -62,8 +73,17 @@ const path = require("path");
 
   // ── 5. Statement rows ────────────────────────────────────────────────────────────────────────
   {
-    const src = fs.readFileSync(path.join(__dirname, "..", "src", "lib", "statementImport.js"), "utf8");
-    t.ok(/cat: FALLBACK_CATEGORY/.test(src), "5a a statement row now arrives with a category");
+    // Behaviour, not a grep: run the real importer and look at the row it produces. The grep that
+    // used to stand here passed as long as the literal appeared anywhere in the file.
+    const { rowsToImport } = await import("../src/lib/statementImport.js");
+    const rows = rowsToImport(
+      [{ id: "r1", date: "2026-09-01", name: "Loblaws", amount: 52.4, status: "ok" }],
+      ["r1"]);
+    t.eq(rows.length, 1, "5a0 the importer produced the row");
+    t.eq(rows[0].cat, c.FALLBACK_CATEGORY, "5a a statement row now arrives WITH a category, not undefined");
+    t.eq(c.effectiveCategory(rows[0], {}, {}), "Other", "5a2 …so it resolves to Other rather than rendering a blank chip");
+    t.eq(c.effectiveCategory(rows[0], {}, c.setMerchantOverride({}, "Loblaws", "Groceries")), "Groceries",
+      "5a3 …and it is correctable by merchant like anything else");
     const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
     t.ok(/cat:'Other', pending:false/.test(app), "5b …and so does a CSV row");
 
@@ -108,8 +128,15 @@ const path = require("path");
     t.eq(Object.keys(c.setMerchantOverride(base, "Gym", "")).length, 1, "8c an empty category writes nothing");
     t.eq(Object.keys(c.clearMerchantOverride(base, "NETFLIX")).length, 0, "8d a rule can be removed, case-insensitively");
     t.eq(base.netflix, "Subscriptions", "8e …without mutating the map it was given");
-    t.eq(c.countMatching([txn("a", "Netflix"), txn("b", "netflix "), txn("c", "Other")], "NETFLIX"), 2,
-      "8f the count the prompt shows uses the same key as the rule it writes");
+    t.eq(c.countMatching([txn("a", "Netflix"), txn("b", "netflix "), txn("c", "Other")], "NETFLIX"), 2, "8f counting is by merchant key");
+    // The claim that matters is about the SHIPPED prompt, not about countMatching agreeing with
+    // itself: recatWithSmartPrompt must count with the same key recat writes the rule with.
+    const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+    const prompt = app.slice(app.indexOf("const recatWithSmartPrompt"), app.indexOf("const recatWithSmartPrompt") + 900);
+    t.ok(/merchantKey\(t\.name\) === mKeyPrompt/.test(prompt),
+      "8g the apply-to-all prompt counts with merchantKey, the key the rule is written with");
+    t.ok(!/\(t\.name\|\|""\)\.toLowerCase\(\)\.trim\(\) === /.test(prompt),
+      "8h …and no longer with a plainer key that matched a different set than it would change");
   }
 
   t.summary("categoryOverrides.test");

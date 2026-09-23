@@ -42,6 +42,9 @@ import { merchantKey } from "./billReeval.js";
 
 // A merchant key is only meaningful if there is enough of it to match on. The existing prompt
 // uses 3 characters; anything shorter would collide merchants that are not the same.
+// Only a key the map actually OWNS counts. Inherited members are not categories.
+const own = (obj, key) => (obj && Object.prototype.hasOwnProperty.call(obj, key) && typeof obj[key] === "string") ? obj[key] : undefined;
+
 export const MIN_MERCHANT_KEY = 3;
 export function isUsableMerchantKey(key) {
   return typeof key === "string" && key.length >= MIN_MERCHANT_KEY;
@@ -71,11 +74,15 @@ export function effectiveCategory(txn, overrides, merchantOverrides = null) {
   const { byId, byMerchant } = normaliseOverrides(overrides);
   const merchants = merchantOverrides || byMerchant;
 
-  const byIdHit = t.id != null ? byId[t.id] : undefined;
+  // own() rather than a bare bracket read: a merchant literally named "__proto__" or
+  // "constructor" survives lowercasing, and a bare read would resolve it through Object.prototype
+  // and return a function as the category, on a completely empty override store.
+  const byIdHit = t.id != null ? own(byId, t.id) : undefined;
   if (byIdHit) return byIdHit;
 
   const key = merchantKey(t.name);
-  if (isUsableMerchantKey(key) && merchants[key]) return merchants[key];
+  const merchantHit = isUsableMerchantKey(key) ? own(merchants, key) : undefined;
+  if (merchantHit) return merchantHit;
 
   return t.cat || FALLBACK_CATEGORY;
 }
