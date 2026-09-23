@@ -37,6 +37,13 @@ git commit -m "message"
 git push origin main
 Always specify exact files in `git add`. Never `git add .`.
 
+## Native builds (Capacitor) — iOS and Android
+See `docs/ops/NATIVE-BUILDS.md` for ids, versions, the Android JDK 21 requirement, and
+the store accounts. Short version: **both store accounts already exist and are paid**
+(Apple Team ID `V8B8MR88SL`; the Play account is the one that ships GrowSmart), so no
+plan needs to budget for them again. Android is `com.flourishmoney.app`, iOS is
+`app.flourishmoney`; they differ deliberately.
+
 ## iOS build (Capacitor)
 Capacitor 8.4.2 wraps the web app as a native iOS app — appId `app.flourishmoney`, SPM-based (open `ios/App/App.xcodeproj`; there is **no** `.xcworkspace`). The app bundles `dist/` (no `server.url` in `capacitor.config.json`). After any web change, rebuild + sync + run:
 ```
@@ -45,6 +52,8 @@ npx cap sync ios    # copy dist/ into the native project + refresh plugins
 npx cap run ios     # build & run on a simulator/device
                     # (or: npx cap open ios → then Build & Run ▶ in Xcode)
 ```
+Android is the same flow with `npx cap sync android`, but needs JDK 21 and
+`ANDROID_HOME` exported — see `docs/ops/NATIVE-BUILDS.md`.
 Native-only behaviour is gated by `isCapacitorIOS()`: the app boots into login/signup (skips the "coming soon" waitlist landing), and an iOS-only "Try demo" button gives App Store reviewers access without a beta code.
 
 ## Delivery constraints (NON-NEGOTIABLE)
