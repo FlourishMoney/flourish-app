@@ -266,3 +266,120 @@ waits on billing.
 **Fix (suggested, not built)** Extract a small pure render helper, for example `meetTabsFor({ isCouple, householdEnabled })` returning the tab list or `null`, into `src/lib/`. Have the JSX call it and map over its result, and test the helper directly with imports rather than by extracting source text. The test then exercises the same code the screen runs.
 
 **Status** Deferred by decision, 2026-09-21, under the rule that only a HIGH finding blocks a merge. Raised as a LOW in the ChatGPT review of PR #3.
+
+---
+
+## 13. The learning loop: eight accepted findings from the PR #10 review
+
+All eight were accepted during the review that returned DO NOT MERGE on PR #10. The two
+blockers in that review are fixed on the branch; these are the ones deferred by decision.
+Numbered 13a-13h so they can be referred to individually.
+
+### 13a. The merchant-override memo cache is never invalidated on hydrate or wipe
+
+**Where** `src/App.jsx:743` (`let _mcoCache = null;`), cleared only by `bumpMerchantCatOv()`
+at `src/App.jsx:745`, called from `recat` and the Remove-rule control.
+
+**What happens** The cache is filled on first read and cleared only by a LOCAL write. Two
+paths change `flourish_cat_merchant_overrides` without going through them: cloud hydrate
+(`writeSideKeys`, `src/lib/persistence.js:79`) and the shared-device wipe
+(`clearAllUserLocal`, same file). After either, the module-level cache still holds the
+previous household's rules until the page is reloaded — so signing in on a device that
+already had a session can show one household's category rules applied to another's
+transactions.
+
+**What it does NOT do** It cannot write the wrong rule to storage; only the resolution in
+that page session is stale, and the stored data is correct.
+
+**Fix** Call `bumpMerchantCatOv()` from `writeSideKeys` and `clearAllUserLocal`, or drop the
+cache in favour of reading through React state so hydration invalidates it naturally.
+
+### 13b. A correction on a merchant with one transaction silently writes a permanent rule
+
+**Where** `src/App.jsx:6978` — `if (applyToAll || others <= 1)`.
+
+**What happens** Correcting a transaction whose merchant has no other transactions writes a
+forward-applying merchant rule with no prompt and no notice. The reasoning is in the code
+(with nothing else it could mean, "this merchant is X" is the only reading), but the
+household is not told a rule was created, and only finds out when a future charge arrives
+already categorised.
+
+**Fix** Either say so in the sheet ("future charges from this merchant will use this too"),
+or restrict silent rule-writing to the explicit apply-to-all path.
+
+### 13c. The data export omits merchant overrides
+
+**Where** `src/App.jsx:10238` exports `categoryOverrides: _ls("flourish_cat_overrides", "{}")`
+and nothing exports `flourish_cat_merchant_overrides`.
+
+**What happens** The PIPEDA data export is incomplete: the household's merchant rules are
+their data and are not in it. They ARE synced (`src/lib/persistence.js` SIDE_KEYS), so this
+is an export gap, not a loss.
+
+**Fix** One line beside the existing entry.
+
+### 13d. `billsReconcile` keys bills differently from the rest of the pipeline
+
+**Where** `src/lib/billsReconcile.js:29` (`billKey`, lowercase + collapse whitespace) versus
+`src/lib/billReeval.js:57` (`merchantKey`, which also strips POS prefixes and account numbers
+via `plaidNormalize.stripAccountNumber`).
+
+**What happens** A detected bill named "FPOS 1234 REIDS DAIRY" and a stored bill "Reid's Dairy"
+key differently in `billsReconcile` while keying the same everywhere else, so the meeting can
+raise "a new bill appeared" for a bill the household already has under its cleaner name.
+
+**Fix** Use `merchantKey` in `billsReconcile` too. It was written before the blocker-1 work
+made `merchantKey` safe; now that it is, there is no reason for a second key.
+
+### 13e. Nothing writes `meetingRecords`
+
+**Where** `src/lib/meetSnapshot.js:119` and `:146` read `data.meetingRecords`; no writer exists
+in `src/`.
+
+**What happens** The record table, the server writer (`netlify/functions/meeting.js`) and the
+reader all exist, but no client code posts an answer or hydrates the rows into `appData`. Until
+that is wired, dismissals persist only in the local `billSuggestionDismissed` field and the
+next-meeting opening always reports "first money meeting".
+
+**Fix** Post to `/api/meeting` when an agenda question is answered, and hydrate
+`meetingRecords` from the `meeting_records` table alongside the rest of the profile read.
+Needs migration `0011_meeting_records.sql` applied first.
+
+### 13f. `agenda.questions` is never rendered on the Meet screen
+
+**Where** `src/App.jsx` — zero references to `agenda.questions`; the Meet screen renders wins,
+changes, risks, progress and decisions only.
+
+**What happens** The questions reach the agenda object and the facilitator's text context
+(`agendaToText`), so the model can ask them out loud, but nothing is shown on screen and there
+are no Yes/No controls — so there is no way for a household to answer one in the UI.
+
+**Fix** Render the section with its two options and call the writer from 13e.
+
+### 13g. `meetingOpening`'s health-score line can never render
+
+**Where** `src/lib/meetingRecord.js` reads `snapshot.healthScore.current` / `.previous`;
+`buildMeetSnapshot` (`src/lib/meetSnapshot.js`) never sets `healthScore`.
+
+**What happens** The "since last time" opening is limited to what the stored record says. The
+one engine-derived line it can produce is unreachable in the running app, so item 5's "and
+what the engines say has changed" is currently only true in tests, which pass the snapshot
+directly.
+
+**Fix** Set `healthScore: { current, previous }` in `buildMeetSnapshot` from `calcHealthScore`.
+The previous value needs somewhere to come from — the last meeting record is the natural home,
+which makes this depend on 13e.
+
+### 13h. `rememberDismissal` writes a shape its only reader rejects
+
+**Where** `src/lib/reconcileLoop.js:123` returns `{ [field]: signature }` — a single string.
+For `domain: "bills"` the field is `billSuggestionDismissed`, which
+`src/lib/meetSnapshot.js:120` and `billsReconcile.shouldPromptBills` both read as an ARRAY.
+
+**What happens** Nothing today: `rememberDismissal` has no callers, and the bills path uses
+`rememberBillDismissal` instead. But the function is exported and looks like the one to use, so
+the first caller to reach for it writes a string where an array is expected and silently
+suppresses nothing.
+
+**Fix** Either make it domain-aware (array for bills, string for income) or delete it and keep
+`rememberBillDismissal` as the only writer.
