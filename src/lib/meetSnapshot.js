@@ -110,7 +110,11 @@ export function buildReconcilePrompts(data = {}) {
   try {
     const txns = data.transactions || [];
     if (!txns.length) return [];
-    const detected = detectRecurringBills(txns, { overrides: data.billOverrides || {}, debts: data.debts || [] });
+    // userBillOverrides, NOT billOverrides. The wrong name fell back to {} and the detector ran
+    // blind to removed bills, typed amounts, corrected types and corrected cadences — so the
+    // meeting asked about bills the household had already removed, with amounts they had already
+    // corrected. App.jsx:14155 is the other caller and names it correctly.
+    const detected = detectRecurringBills(txns, { overrides: data.userBillOverrides || {}, debts: data.debts || [] });
     const dismissed = [
       ...dismissedSignatures(data.meetingRecords || [], "bills"),
       ...(Array.isArray(data.billSuggestionDismissed) ? data.billSuggestionDismissed : []),

@@ -106,5 +106,39 @@ const HOUSEHOLD = () => ({
   t.eq(m.meetAgendaFor({ transactions: [], bills: [] }).questions.length, 0, "5c an empty household gets an agenda with no questions");
   t.ok(Array.isArray(m.meetOpeningFor({}).lines), "5d …and an opening that still renders");
 
+
+  // ── 6. The household's own bill corrections reach the meeting's detector ─────────────────────
+  // buildReconcilePrompts read data.billOverrides; the field is data.userBillOverrides
+  // (App.jsx:14155). The wrong name fell back to {} and nothing errored, so the meeting asked
+  // about bills the household had already REMOVED and amounts they had already CORRECTED.
+  //
+  // The old fixture set neither, which is exactly why the wrong name and the right name were
+  // indistinguishable to the suite. These two cases can tell them apart.
+  {
+    // (i) a bill the household removed must not come back as "appeared"
+    const removed = HOUSEHOLD();
+    removed.bills = [];                                   // they keep no bills at all
+    const askedAbout = (d) => m.buildReconcilePrompts(d).map(p => p.subject).sort().join(",");
+    t.eq(askedAbout(removed), "Goodlife Gym,Netflix", "6a with no overrides the meeting asks about both charges");
+
+    removed.userBillOverrides = { removed: ["goodlife gym"] };
+    t.eq(askedAbout(removed), "Netflix", "6b a bill the household REMOVED is not raised again — the detector sees the override");
+
+    // (ii) an amount the household corrected must not be re-raised as a change
+    const corrected = HOUSEHOLD();                        // bank sees Netflix 24.99, bill says 18.99
+    t.eq(m.buildReconcilePrompts(corrected).filter(p => p.kind === "amount").length, 1,
+      "6c without the override the amount difference is a question");
+    corrected.userBillOverrides = { amounts: { netflix: 18.99 } };
+    t.eq(m.buildReconcilePrompts(corrected).filter(p => p.kind === "amount").length, 0,
+      "6d with the household's own amount, there is nothing to ask");
+
+    // And the wrong field name must not quietly work.
+    const wrongName = HOUSEHOLD();
+    wrongName.bills = [];
+    wrongName.billOverrides = { removed: ["goodlife gym", "netflix"] };
+    t.eq(askedAbout(wrongName), "Goodlife Gym,Netflix",
+      "6e a fallback field name is NOT read — if this ever passes with billOverrides, the name has drifted back");
+  }
+
   t.summary("meetLoopWiring.test");
 })();
