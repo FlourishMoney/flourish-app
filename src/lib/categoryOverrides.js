@@ -46,8 +46,27 @@ import { merchantKey } from "./billReeval.js";
 const own = (obj, key) => (obj && Object.prototype.hasOwnProperty.call(obj, key) && typeof obj[key] === "string") ? obj[key] : undefined;
 
 export const MIN_MERCHANT_KEY = 3;
+
+// Bank and terminal noise. None of these is a merchant, and a key made only of them would match an
+// enormous, arbitrary set of charges — "purchase" is 8 characters and sails past the length check,
+// which was the only guard before. A rule is written only when something merchant-specific
+// survives: "purchase loblaws" is fine, "purchase" is not.
+const GENERIC_TOKENS = new Set([
+  "pos", "fpos", "purchase", "purch", "payment", "pmt", "debit", "credit", "card", "visa",
+  "mastercard", "amex", "interac", "etransfer", "e-transfer", "transfer", "withdrawal", "deposit",
+  "preauthorized", "preauth", "pre-authorized", "chq", "cheque", "check", "bill", "billpay",
+  "online", "banking", "misc", "fee", "service", "charge", "recurring", "autopay", "auto",
+  "transaction",
+]);
+
+// Does anything in this key actually name a merchant?
+export function hasMerchantToken(key) {
+  return String(key || "").split(" ").some(tok =>
+    tok.length >= MIN_MERCHANT_KEY && !/^\d+$/.test(tok) && !GENERIC_TOKENS.has(tok));
+}
+
 export function isUsableMerchantKey(key) {
-  return typeof key === "string" && key.length >= MIN_MERCHANT_KEY;
+  return typeof key === "string" && key.length >= MIN_MERCHANT_KEY && hasMerchantToken(key);
 }
 
 /**

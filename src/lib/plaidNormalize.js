@@ -276,6 +276,34 @@ const CA_BANKING_ACRONYMS = new Set([
 // POS-terminal / acquirer prefixes banks staple onto a merchant name. They are noise, and leaving
 // them in produced display names like "Fpos Reid'S Dairy Company".
 const POS_PREFIX_RX = /^(?:fpos|pos|sq\s*\*|sqc\*|tst\*|tst\s|sp\s+|ic\*|pp\*|paypal\s*\*|dd\s*\*|ext\s)\s*/i;
+// Trailing account / reference numbers, e.g. "HYDRO ONE 123456789" -> "HYDRO ONE".
+//
+// ANCHORED TO THE END, and that anchor is the whole point. The previous expression
+// (/\s+\d{4,}.*$/, unanchored in effect because of the .*) took everything after the FIRST run of
+// four digits, so a LEADING reference number carried the merchant away with it:
+//     "POS PURCHASE 1234 LOBLAWS"          -> "purchase"
+//     "PREAUTHORIZED DEBIT 1111 INSURANCE" -> "preauthorized debit"
+//     "FPOS 1234 REIDS DAIRY"              -> "fpos"
+// For bill healing that silently groups unrelated merchants. For a category rule keyed on the
+// merchant it is worse: correcting one grocery charge would write a permanent forward-applying
+// rule over every POS purchase, and those categories feed monthlySpend, cashFlow, savingsRate,
+// emergencyFundMonths and the health score.
+//
+// Both callers use THIS function so they cannot drift: the detector's display name
+// (detectRecurringBillsDetailed below) and billReeval.merchantKey.
+export function stripAccountNumber(s) {
+  return String(s == null ? "" : s)
+    // a trailing account number, and anything after it ("…12345 ON")
+    .replace(/\s+\d{4,}\s*$/, "")
+    // a reference number sitting BETWEEN words, as its own token. Removed rather than left in
+    // place, because "POS PURCHASE 1234 LOBLAWS" and "POS PURCHASE 5678 LOBLAWS" are the same
+    // merchant: leaving the digits would key them differently and a merchant rule would never
+    // apply to the next charge, which is the entire point of having one.
+    .replace(/(^|\s)\d{4,}(?=\s)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function stripPosPrefix(s) {
   let out = String(s || "").trim();
   // Strip repeatedly — some banks stack them ("POS FPOS MERCHANT").
@@ -508,7 +536,7 @@ export function detectRecurringBillsDetailed(txns, opts = {}) {
     // MATH-LOCK finding #1: restores the case-normalization the original code intended but never ran
     // (a corrupted `/<BS>\w/g` was a silent no-op for years, so bank names shipped raw, e.g. all-caps).
     const displayName = titleCaseBillName(
-      stripPosPrefix(txList[0].name.replace(/\s+\d{4,}.*$/, "").trim())  // strip account numbers, then POS prefixes
+      stripPosPrefix(stripAccountNumber(txList[0].name))  // strip account numbers, then POS prefixes
     );
 
     // Tier 4: overrides are keyed by the cleaned display name (what the user removes/types).

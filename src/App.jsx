@@ -47,7 +47,7 @@ import { captureError } from "./lib/errorReporting.js";
 import { derivePlan } from "./lib/planFromProfile.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
-import { effectiveCategory, setMerchantOverride, countMatching } from "./lib/categoryOverrides.js";
+import { effectiveCategory, setMerchantOverride, clearMerchantOverride, countMatching } from "./lib/categoryOverrides.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
 
 // Capacitor iOS platform detection — true only when running as a native iOS app via Capacitor.
@@ -7291,7 +7291,11 @@ function SpendScreen({data, setAppData, setScreen}){
             <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
             <div style={{color:C.cream,fontWeight:800,fontSize:16}}>Apply to all?</div>
             <div style={{color:C.muted,fontSize:13,marginTop:4,lineHeight:1.5}}>
-              Found <strong style={{color:C.mutedHi}}>{applyAllPrompt.count} transactions</strong> from <strong style={{color:C.mutedHi}}>{applyAllPrompt.txn.name}</strong>.
+              Found <strong style={{color:C.mutedHi}}>{applyAllPrompt.count} transactions</strong> from <strong style={{color:C.mutedHi}}>{merchantKey(applyAllPrompt.txn.name) || applyAllPrompt.txn.name}</strong>.{" "}
+              {/* The KEY, not the raw descriptor. The rule is written against the key, so naming the
+                  full "POS PURCHASE 1234 LOBLAWS" while changing every "purchase loblaws" charge
+                  told the household the rule was narrower than it is. */}
+              This is matched on the merchant, so future charges from it are included.
             </div>
           </div>
           <div style={{padding:"14px 20px 20px",display:"flex",flexDirection:"column",gap:10}}>
@@ -7344,6 +7348,30 @@ function SpendScreen({data, setAppData, setScreen}){
               </div>
             </div>
           </div>
+          {/* An existing merchant rule, and the way to remove it.
+              Without this, clearMerchantOverride was called from nowhere: a rule written on a
+              descriptor that turned out to be too broad could be seen in its effects but never
+              undone, short of editing storage. */}
+          {(() => {
+            const rules = getMerchantCatOv();
+            const key = merchantKey(recatTxn.name);
+            if (!key || !rules[key]) return null;
+            return (
+              <div style={{padding:"10px 20px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+                <div style={{color:C.muted,fontSize:11,lineHeight:1.5,minWidth:0}}>
+                  Always <strong style={{color:C.mutedHi}}>{rules[key]}</strong> for <strong style={{color:C.mutedHi}}>{key}</strong>
+                </div>
+                <button onClick={()=>{
+                  localStorage.setItem("flourish_cat_merchant_overrides", JSON.stringify(clearMerchantOverride(rules, recatTxn.name)));
+                  bumpMerchantCatOv();
+                  setRecatTxn(null);
+                }} style={{background:"none",border:`1px solid ${C.border}`,color:C.muted,borderRadius:99,padding:"5px 12px",cursor:"pointer",fontSize:11,fontFamily:"inherit",flexShrink:0}}>
+                  Remove rule
+                </button>
+              </div>
+            );
+          })()}
+
           {/* Scrollable categories */}
           <div style={{overflowY:"auto",padding:"16px 20px",flex:1}}>
             <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>

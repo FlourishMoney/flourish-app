@@ -139,5 +139,59 @@ const path = require("path");
       "8h …and no longer with a plainer key that matched a different set than it would change");
   }
 
+
+  // ── 9. A LEADING reference number must not take the merchant with it ─────────────────────────
+  // The regex was /\s+\d{4,}.*$/ — the .*$ meant the FIRST run of four digits swallowed the rest
+  // of the descriptor. Section 1 only ever tested a TRAILING number, which is why 2,539 green
+  // assertions missed it. These are real Canadian descriptor shapes.
+  {
+    const cases = [
+      ["POS PURCHASE 1234 LOBLAWS", "purchase loblaws"],
+      ["FPOS 1234 REIDS DAIRY", "reids dairy"],
+      ["PREAUTHORIZED DEBIT 1111 INSURANCE", "preauthorized debit insurance"],
+      ["HYDRO ONE 123456789", "hydro one"],              // trailing still works
+      ["SQ *COFFEE SHOP 4821", "coffee shop"],
+    ];
+    for (const [raw, expected] of cases) {
+      t.eq(c.merchantKey(raw), expected, `9a ${raw} keys as ${expected}, keeping the merchant`);
+      t.ok(!["purchase", "fpos", "preauthorized debit", "pos"].includes(c.merchantKey(raw)),
+        `9b …and never collapses to bank noise alone`);
+    }
+    // The same merchant with a different reference number is the SAME key, or a rule would never
+    // reach the next charge.
+    t.eq(c.merchantKey("POS PURCHASE 1234 LOBLAWS"), c.merchantKey("POS PURCHASE 5678 LOBLAWS"),
+      "9c two charges at one merchant with different reference numbers share a key");
+  }
+
+  // ── 10. A key with no merchant in it is not a rule ───────────────────────────────────────────
+  // Length was the only guard, and "purchase" is 8 characters. A rule keyed on it would apply to
+  // every POS purchase the household ever makes, and those categories feed monthlySpend, cashFlow,
+  // savingsRate, emergencyFundMonths and the health score.
+  {
+    for (const raw of ["POS PURCHASE 1234", "PREAUTHORIZED DEBIT 1111", "INTERAC E-TRANSFER 9911", "VISA PAYMENT"]) {
+      t.eq(Object.keys(c.setMerchantOverride({}, raw, "Groceries")).length, 0,
+        `10a no rule is written for ${raw}, which names no merchant`);
+    }
+    for (const raw of ["POS PURCHASE 1234 LOBLAWS", "Loblaws", "FPOS 1234 REIDS DAIRY"]) {
+      t.eq(Object.keys(c.setMerchantOverride({}, raw, "Groceries")).length, 1, `10b …but one IS written for ${raw}`);
+    }
+    t.ok(!c.hasMerchantToken("purchase") && c.hasMerchantToken("purchase loblaws"), "10c the test is for a merchant-specific token, not for length");
+    // A generic key that somehow reached storage is not matched either.
+    t.eq(c.effectiveCategory({ id: "x", name: "POS PURCHASE 9999" }, {}, { purchase: "Groceries" }), "Other",
+      "10d …and a generic key already in storage does not resolve, so an old bad rule stops applying");
+  }
+
+  // ── 11. A rule can be removed, and the UI can do it ──────────────────────────────────────────
+  {
+    const rules = c.setMerchantOverride({}, "Loblaws", "Groceries");
+    t.eq(Object.keys(c.clearMerchantOverride(rules, "LOBLAWS")).length, 0, "11a clearing is case-insensitive");
+    const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+    t.ok(/clearMerchantOverride\(rules, recatTxn\.name\)/.test(app), "11b …and the sheet calls it, so a bad rule can be undone without editing storage");
+    t.ok(/Remove rule/.test(app), "11c …behind a visible control");
+    // The prompt must name the thing the rule changes.
+    t.ok(/merchantKey\(applyAllPrompt\.txn\.name\)/.test(app),
+      "11d the apply-to-all prompt names the merchant KEY, not the raw descriptor it does not match on");
+  }
+
   t.summary("categoryOverrides.test");
 })();
