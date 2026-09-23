@@ -57,6 +57,50 @@ export function decidePrompt({ signature = null, differences = [], dismissedSign
   return { prompt: true, reason: DIFFERS, signature, reasons };
 }
 
+
+// ── How long a "no" lasts ───────────────────────────────────────────────────────────────────────
+// Settled product decision: a dismissal holds for as long as the pattern holds, reopens
+// IMMEDIATELY when the amount or cadence materially changes, and reopens ONCE after twelve
+// months — and never sooner.
+//
+// The first two need no clock: the signature encodes the amount and the cadence, so a material
+// change is a different signature and is asked about at once, while an unchanged pattern keeps
+// matching its dismissal. Only the third needs a date, so a dismissal is recorded as
+// { signature, at } and expires 365 days later. Dismissing again starts a fresh clock, which is
+// what makes it reopen once rather than repeatedly.
+export const DISMISSAL_REOPEN_DAYS = 365;
+const DAY_MS = 86400000;
+
+// Accepts a bare signature string (what was stored before there was a clock) or { signature, at }.
+export function normaliseDismissal(entry) {
+  if (!entry) return null;
+  if (typeof entry === "string") return { signature: entry, at: null };
+  if (!entry.signature || typeof entry.signature !== "string") return null;
+  return { signature: entry.signature, at: entry.at || null };
+}
+
+// Is this dismissal still holding?
+//
+// An entry with no date holds. It predates the clock, and the alternative — treating an unknown
+// date as expired — would reopen every existing dismissal at once, which is the one thing
+// "never sooner" rules out.
+export function isDismissalActive(entry, now = Date.now()) {
+  const d = normaliseDismissal(entry);
+  if (!d) return false;
+  if (!d.at) return true;
+  const at = Date.parse(d.at);
+  if (!Number.isFinite(at)) return true;
+  const t = now instanceof Date ? now.getTime() : now;
+  return (t - at) < DISMISSAL_REOPEN_DAYS * DAY_MS;
+}
+
+// The signatures still suppressed, from a mixed list of strings and { signature, at } records.
+export function activeDismissedSignatures(list, now = Date.now()) {
+  return (Array.isArray(list) ? list : [])
+    .filter(e => isDismissalActive(e, now))
+    .map(e => normaliseDismissal(e).signature);
+}
+
 // ── Remembering ─────────────────────────────────────────────────────────────────────────────────
 // Where each domain's dismissal lives on appData. Income keeps the field it has always used, so
 // a household mid-flight does not suddenly get re-asked a question it already declined.

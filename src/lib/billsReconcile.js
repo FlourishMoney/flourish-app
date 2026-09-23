@@ -19,7 +19,7 @@
 // origin undefined and are treated as typed, which is the safe direction.
 // -----------------------------------------------------------------------------
 
-import { decidePrompt } from "./reconcileLoop.js";
+import { decidePrompt, activeDismissedSignatures, DISMISSAL_REOPEN_DAYS } from "./reconcileLoop.js";
 
 // Matches income's tolerance: below this is rounding and variable-charge noise, not news.
 export const BILL_AMOUNT_TOLERANCE = 0.05;
@@ -96,8 +96,10 @@ export function billChangeSignature(change) {
  * dismissedSignatures is an ARRAY (one per declined change) — see the header.
  * Returns one decision per change, each shaped exactly like income's, plus the change itself.
  */
-export function shouldPromptBills({ detectedBills, currentBills, dismissedSignatures = [] } = {}) {
-  const dismissed = new Set((Array.isArray(dismissedSignatures) ? dismissedSignatures : []).filter(Boolean));
+export function shouldPromptBills({ detectedBills, currentBills, dismissedSignatures = [], now = Date.now() } = {}) {
+  // Entries may be bare signatures (pre-clock) or { signature, at }. One that has passed its
+  // twelve months stops suppressing, so the question reopens once — see reconcileLoop.
+  const dismissed = new Set(activeDismissedSignatures(dismissedSignatures, now));
   return billChanges(detectedBills, currentBills).map(change => {
     const signature = billChangeSignature(change);
     const decision = decidePrompt({
@@ -148,11 +150,16 @@ export function applyBillChange(currentBills, change, detectedBill = null) {
 }
 
 // Declining adds this change's signature to the remembered set, leaving the others alone.
-export function rememberBillDismissal(dismissedSignatures, change) {
+// The date is part of the record: it is what lets the question reopen after twelve months, and
+// dismissing the same thing again REPLACES the old entry so the clock restarts rather than the
+// question reopening on the first dismissal's anniversary.
+export function rememberBillDismissal(dismissedSignatures, change, now = new Date()) {
   const sig = billChangeSignature(change);
   const existing = (Array.isArray(dismissedSignatures) ? dismissedSignatures : []).filter(Boolean);
-  if (!sig || existing.includes(sig)) return existing;
-  return [...existing, sig];
+  if (!sig) return existing;
+  const at = (now instanceof Date ? now : new Date(now)).toISOString();
+  const others = existing.filter(e => (typeof e === "string" ? e : e && e.signature) !== sig);
+  return [...others, { signature: sig, at }];
 }
 
 // Human-readable, for the meeting to speak out loud. Short: it has to be answerable in a sentence.

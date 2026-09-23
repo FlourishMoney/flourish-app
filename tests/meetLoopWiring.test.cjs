@@ -140,5 +140,25 @@ const HOUSEHOLD = () => ({
       "6e a fallback field name is NOT read — if this ever passes with billOverrides, the name has drifted back");
   }
 
+
+  // ── 7. The meeting's own date is when the "no" was said ──────────────────────────────────────
+  {
+    const data = HOUSEHOLD();
+    const netflix = m.meetAgendaFor(data).questions.find(q => /Netflix/.test(q.text));
+    const say = (metOn) => r.buildMeetingRecord({ metOn, answers: [
+      { signature: netflix.id, domain: "bills", kind: "amount", answer: "dismissed", subject: "Netflix" }] });
+
+    data.meetingRecords = [say("2026-09-16")];
+    t.ok(!m.buildReconcilePrompts(data).some(p => /Netflix/.test(p.text)), "7a a recent no holds");
+
+    data.meetingRecords = [say("2024-01-05")];
+    t.ok(m.buildReconcilePrompts(data).some(p => /Netflix/.test(p.text)),
+      "7b …and one said over twelve months ago reopens, using the meeting's own date as when it was said");
+
+    // The latest no wins, so answering again at a later meeting restarts the clock.
+    data.meetingRecords = [say("2024-01-05"), say(new Date().toISOString().slice(0, 10))];
+    t.ok(!m.buildReconcilePrompts(data).some(p => /Netflix/.test(p.text)), "7c saying it again restarts the twelve months");
+  }
+
   t.summary("meetLoopWiring.test");
 })();

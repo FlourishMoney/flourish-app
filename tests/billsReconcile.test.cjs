@@ -120,5 +120,45 @@ const { create } = require("./_runner.cjs");
     t.ok(q.length < 90 && q.split(".").length <= 3, "8 …and it is one short sentence plus a question");
   }
 
+
+  // ── 9. How long a "no" lasts (settled product decision) ──────────────────────────────────────
+  // It holds while the pattern holds, reopens IMMEDIATELY when the amount or cadence materially
+  // changes, and reopens ONCE after twelve months — never sooner.
+  {
+    const loop = await import("../src/lib/reconcileLoop.js");
+    const cur = [observed("Netflix", 18.99)], det = [{ name: "Netflix", amount: "24.99" }];
+    const change = m.billChanges(det, cur)[0];
+    const sig = m.billChangeSignature(change);
+    const NOW = Date.parse("2027-01-01T00:00:00Z");
+    const asks = (d) => m.billPrompts({ detectedBills: det, currentBills: cur, dismissedSignatures: d, now: NOW }).length;
+
+    t.eq(loop.DISMISSAL_REOPEN_DAYS, 365, "9a twelve months is the reopen window");
+    t.eq(asks([]), 1, "9b with no dismissal the change is asked about");
+    t.eq(asks([{ signature: sig, at: "2026-12-01T00:00:00Z" }]), 0, "9c a month later it still holds");
+    t.eq(asks([{ signature: sig, at: "2026-02-05T00:00:00Z" }]), 0, "9d …and at eleven months it still holds — never sooner");
+    t.eq(asks([{ signature: sig, at: "2026-01-01T00:00:01Z" }]), 0, "9e …right up to the anniversary");
+    t.eq(asks([{ signature: sig, at: "2025-12-31T00:00:00Z" }]), 1, "9f …and past twelve months it reopens");
+
+    // A material change does not wait for the clock.
+    t.eq(m.billPrompts({ detectedBills: [{ name: "Netflix", amount: "31.99" }], currentBills: cur,
+                         dismissedSignatures: [{ signature: sig, at: "2026-12-01T00:00:00Z" }], now: NOW }).length, 1,
+      "9g a further move is asked about immediately, dismissal or not — the signature carries the amount");
+
+    // Saying no again restarts the clock rather than the question reopening on the first no's
+    // anniversary.
+    const first = m.rememberBillDismissal([], change, new Date("2026-01-01T00:00:00Z"));
+    t.eq(first.length, 1, "9h declining records one entry");
+    t.ok(first[0].at, "9i …with the date it was said");
+    const again = m.rememberBillDismissal(first, change, new Date("2026-12-01T00:00:00Z"));
+    t.eq(again.length, 1, "9j saying no again replaces it rather than appending");
+    t.eq(again[0].at, "2026-12-01T00:00:00.000Z", "9k …and the clock restarts from the latest no");
+    t.eq(asks(again), 0, "9l …so it holds for another twelve months from then");
+
+    // Anything already stored without a date keeps holding: reopening every existing dismissal at
+    // once is the one thing "never sooner" rules out.
+    t.eq(asks([sig]), 0, "9m a bare signature stored before the clock existed still holds");
+    t.eq(asks([{ signature: sig, at: "not-a-date" }]), 0, "9n …and an unparseable date is treated the same way");
+  }
+
   t.summary("billsReconcile.test");
 })();

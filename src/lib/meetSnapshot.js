@@ -11,7 +11,7 @@ import { selectHighestRateDebt, debtPayoffMonths, savingsBufferAfter, computeSav
 import { buildMeetingAgenda } from "./meetingAgenda.js";
 import { detectRecurringBills } from "./plaidNormalize.js";
 import { billPrompts, billChangeQuestion } from "./billsReconcile.js";
-import { dismissedSignatures, lastMeeting, meetingOpening } from "./meetingRecord.js";
+import { dismissedEntries, lastMeeting, meetingOpening } from "./meetingRecord.js";
 import { formatMoney } from "./format.js";
 
 const _round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -116,7 +116,7 @@ export function buildReconcilePrompts(data = {}) {
     // corrected. App.jsx:14155 is the other caller and names it correctly.
     const detected = detectRecurringBills(txns, { overrides: data.userBillOverrides || {}, debts: data.debts || [] });
     const dismissed = [
-      ...dismissedSignatures(data.meetingRecords || [], "bills"),
+      ...dismissedEntries(data.meetingRecords || [], "bills"),
       ...(Array.isArray(data.billSuggestionDismissed) ? data.billSuggestionDismissed : []),
     ];
     return billPrompts({ detectedBills: detected, currentBills: data.bills || [], dismissedSignatures: dismissed })

@@ -90,6 +90,25 @@ export function dismissedSignatures(records, domain = null) {
   return answeredSignatures(records, domain, ANSWER_DISMISSED);
 }
 
+/**
+ * The same set WITH the date each no was said, which is what the twelve-month reopen needs.
+ * The meeting's own date is the dismissal date — it is when the household actually said it.
+ */
+export function dismissedEntries(records, domain = null) {
+  const out = new Map();
+  for (const r of Array.isArray(records) ? records : []) {
+    for (const a of (r && Array.isArray(r.answers)) ? r.answers : []) {
+      if (!a || !a.signature || a.answer !== ANSWER_DISMISSED) continue;
+      if (domain && a.domain !== domain) continue;
+      const at = r.metOn || null;
+      // Keep the LATEST no for a signature: saying it again restarts the clock.
+      const prev = out.get(a.signature);
+      if (!prev || (at && prev.at && at > prev.at) || (at && !prev.at)) out.set(a.signature, { signature: a.signature, at });
+    }
+  }
+  return [...out.values()];
+}
+
 /** The most recent meeting, by date. Ties keep the first, which is the order the server returns. */
 export function lastMeeting(records) {
   const list = (Array.isArray(records) ? records : []).filter(r => r && r.metOn);
