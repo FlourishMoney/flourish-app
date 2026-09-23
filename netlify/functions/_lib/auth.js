@@ -6,7 +6,7 @@
 "use strict";
 
 const { createClient } = require("@supabase/supabase-js");
-const { isUnlimitedProfile } = require("./planRules");
+const { deriveEntitlement } = require("./planRules");
 
 let _admin = null;
 function getAdminClient() {
@@ -69,11 +69,38 @@ async function getUserPlan(user_id) {
       .select("plan, trial_started_at, trial_ends_at, founder_flag")
       .eq("user_id", user_id)
       .maybeSingle();
-    if (error || !data) return { plan: "free", founder_flag: false, unlimited: false };
+    if (error || !data) return { plan: "free", founder_flag: false, unlimited: false, paid: false };
     const plan = data.plan || "free";
     const founder = !!data.founder_flag;
-    const unlimited = isUnlimitedProfile(data);
-    return { plan, founder_flag: founder, unlimited };
+
+    // From 2026-10-26 the subscription row, not the profile, is what makes a household paid. Read
+    // it second and separately: a missing or unreadable subscriptions table (it is applied after
+    // this code ships) must leave the profile answer exactly as it was, never throw, and never
+    // upgrade anyone. Same failure posture as the rest of this function — worst case a paying user
+    // is briefly treated as free, never the reverse.
+    let sub = null;
+    try {
+      const { data: subRow, error: subErr } = await admin
+        .from("subscriptions")
+        .select("status, current_period_end, plan_key, cancel_at_period_end")
+        .eq("user_id", user_id)
+        .maybeSingle();
+      if (!subErr) sub = subRow || null;
+    } catch (e) {
+      console.error("[auth] subscription read failed (treating as unpaid):", e.message);
+    }
+
+    const ent = deriveEntitlement(data, sub);
+    return {
+      // `plan` stays the RAW profiles.plan value it has always been — plaid.js, coach.js and the
+      // existing tests read this shape. The derived answer is added beside it, not in place of it.
+      plan,
+      entitlement: ent.plan,          // "beta_founder" | "premium" | "trial" | "free"
+      founder_flag: founder,
+      unlimited: ent.unlimited,
+      paid: ent.paidSubscription,
+      subscription_status: sub ? sub.status : null,
+    };
   } catch (e) {
     console.error("[auth] getUserPlan failed (defaulting to free):", e.message);
     return { plan: "free", founder_flag: false, unlimited: false };
