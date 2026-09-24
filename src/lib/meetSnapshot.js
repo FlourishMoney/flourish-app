@@ -9,6 +9,9 @@ import { ForecastEngine } from "./forecastEngine.js";
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { selectHighestRateDebt, debtPayoffMonths, savingsBufferAfter, computeSavingsOpportunity } from "./decisionEngine.js";
 import { buildMeetingAgenda } from "./meetingAgenda.js";
+import { detectRecurringBills } from "./plaidNormalize.js";
+import { billPrompts, billChangeQuestion } from "./billsReconcile.js";
+import { dismissedEntries, lastMeeting, meetingOpening } from "./meetingRecord.js";
 import { formatMoney } from "./format.js";
 
 const _round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -94,9 +97,54 @@ export function buildMeetSnapshot(data = {}) {
   return snap;
 }
 
+// ── The reconcile questions (items 2 and 4) ─────────────────────────────────────────────────────
+// This is what moves the ASKING into the money meeting. Without it every piece of the loop exists
+// and none of it reaches a household: buildMeetingAgenda iterates snapshot.reconcilePrompts, and
+// nothing set it.
+//
+// Suppression comes from DISMISSED answers only (meetingRecord.dismissedSignatures) plus the local
+// dismissal field, never from accepted ones — accepting changes the data, so the detector stops
+// finding a difference by itself, and treating a yes as permanent would mean a bill added in
+// September could never be asked about again.
+export function buildReconcilePrompts(data = {}) {
+  try {
+    const txns = data.transactions || [];
+    if (!txns.length) return [];
+    // userBillOverrides, NOT billOverrides. The wrong name fell back to {} and the detector ran
+    // blind to removed bills, typed amounts, corrected types and corrected cadences — so the
+    // meeting asked about bills the household had already removed, with amounts they had already
+    // corrected. App.jsx:14155 is the other caller and names it correctly.
+    const detected = detectRecurringBills(txns, { overrides: data.userBillOverrides || {}, debts: data.debts || [] });
+    const dismissed = [
+      ...dismissedEntries(data.meetingRecords || [], "bills"),
+      ...(Array.isArray(data.billSuggestionDismissed) ? data.billSuggestionDismissed : []),
+    ];
+    return billPrompts({ detectedBills: detected, currentBills: data.bills || [], dismissedSignatures: dismissed })
+      .map(p => ({
+        signature: p.signature,
+        text: billChangeQuestion(p.change),
+        domain: "bills",
+        kind: p.change.kind,
+        subject: p.change.name,
+      }));
+  } catch {
+    // A detector failure must not take the meeting down with it: the agenda is still worth having
+    // without its questions.
+    return [];
+  }
+}
+
 // The one function the screen renders AND the facilitator receives — displayed === generated === sent.
 export function meetAgendaFor(data) {
-  return buildMeetingAgenda(buildMeetSnapshot(data));
+  const snap = buildMeetSnapshot(data);
+  snap.reconcilePrompts = buildReconcilePrompts(data);
+  return buildMeetingAgenda(snap);
+}
+
+// ITEM 5: what the meeting opens with. Stored answers plus engine output, never the model.
+export function meetOpeningFor(data = {}) {
+  const records = data.meetingRecords || [];
+  return meetingOpening({ lastRecord: lastMeeting(records), snapshot: buildMeetSnapshot(data) });
 }
 
 // Which facilitator state the Meet screen shows (item 3). Pure, so it can be unit-tested:
@@ -127,6 +175,13 @@ export function agendaToText(agenda) {
       lines.push("- " + d.text);
       (d.options || []).forEach(o => lines.push(`    • ${o.label}: ${o.outcome}`));
     });
+  }
+  // The questions the household is being asked. The facilitator READS these out; it does not
+  // compose them and must not restate their figures differently — every one is already phrased by
+  // its domain, from engine output.
+  if (agenda.questions && agenda.questions.length) {
+    lines.push("Questions to ask (read as written, do not restate the figures):");
+    agenda.questions.forEach(q => lines.push(`- ${q.text}`));
   }
   return lines.join("\n");
 }
