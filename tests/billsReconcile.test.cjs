@@ -97,6 +97,30 @@ const { create } = require("./_runner.cjs");
     t.eq(m.applyBillChange(cur, { kind: "nonsense", key: "x" }).length, 2, "6h an unknown answer changes nothing rather than guessing");
     t.eq(m.applyBillChange(cur, appeared, { name: "Hydro" }).length, 3, "6i re-applying is additive once");
     t.eq(m.applyBillChange(m.applyBillChange(cur, appeared), appeared).length, 3, "6j …and applying the same appearance twice does not duplicate it");
+
+    // 13d, the LATENT half. billChanges no longer raises a bill stored under the detector's older
+    // display name as new — but if applying an answer matched by the written name alone, the same
+    // double count would simply arrive later, in the stored data instead of in a question.
+    // (A change reaching here by any other route — an older agenda, a replayed answer — is enough.)
+    const storedOldName = [observed("Rogers", 95)];
+    const detectedNewName = { name: "Rogers Toronto On", legacyName: "Rogers", amount: "95", date: "14", type: "fixed" };
+    const wouldAdd = { kind: "appeared", key: "rogers toronto on", name: "Rogers Toronto On", currentAmount: null, detectedAmount: 95 };
+    t.eq(m.applyBillChange(storedOldName, wouldAdd, detectedNewName).length, 1,
+      "6k accepting an appearance for a bill already stored under its older name adds nothing");
+    t.eq(m.applyBillChange(storedOldName, wouldAdd, detectedNewName).map(b => b.name).join(","), "Rogers",
+      "6l …and leaves the household's own name for it alone");
+
+    // The other two answers have to find that same bill, or they operate on nothing at all.
+    const amountUnderNewName = { kind: "amount", key: "rogers toronto on", name: "Rogers Toronto On", currentAmount: 95, detectedAmount: 110 };
+    t.eq(m.applyBillChange(storedOldName, amountUnderNewName, detectedNewName)[0].amount, "110",
+      "6m an accepted amount change updates the bill stored under the older name");
+    t.eq(m.applyBillChange(storedOldName, { ...amountUnderNewName, kind: "disappeared" }, detectedNewName).length, 0,
+      "6n …and an accepted disappearance removes it rather than silently keeping it");
+
+    // Matching more loosely must not start swallowing unrelated bills.
+    const twoBills = [observed("Rogers", 95), typed("Rent", 1650)];
+    t.eq(m.applyBillChange(twoBills, wouldAdd, detectedNewName).map(b => b.name).join(","), "Rogers,Rent",
+      "6o …while a different bill in the same list is untouched");
   }
 
   // ── 7. Remembering ───────────────────────────────────────────────────────────────────────────

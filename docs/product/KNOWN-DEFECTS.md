@@ -318,45 +318,58 @@ is an export gap, not a loss.
 
 **Fix** One line beside the existing entry.
 
-### 13d. `billsReconcile` keys bills differently from the rest of the pipeline — a FIRST-SYNC event, not cosmetic
+### 13d. `billsReconcile` keyed bills differently from the rest of the pipeline — FIXED 2026-09-23
 
-**Severity: this is the one to fix before the answer path is wired.** An earlier version of this
-entry called it pre-existing and cosmetic. It is neither. Blocker 1's fix changed the detector's
-display name, and `docs`-level "cosmetic" was the wrong reading even before that.
+**Status: fixed** in `src/lib/billsReconcile.js` + `src/lib/plaidNormalize.js` on branch
+`learning-loop`. Kept here because the reproduction is the regression test, and because the
+compatibility read it depends on still has to be retired one day (see the end of this entry).
 
-**Where** `src/lib/billsReconcile.js:29` (`billKey`, lowercase + collapse whitespace) versus
+**Where** `src/lib/billsReconcile.js` (`billKey`, lowercase + collapse whitespace) versus
 `src/lib/billReeval.js:57` (`merchantKey`, which also strips POS prefixes and account numbers via
 `plaidNormalize.stripAccountNumber`).
 
-**What happens** A stored bill and the detector's current name for the same merchant can differ —
-`"Rogers"` stored, `"Rogers Toronto On"` detected from `"ROGERS 1234 TORONTO ON"`. `billsReconcile`
-compares them with its own weaker key, sees no match, and raises BOTH halves: an `appeared` for the
-detected name and a `disappeared` for the stored one. One bill, two questions, pointing opposite
-ways.
+**What happened** A stored bill and the detector's current name for the same merchant could
+differ — `"Rogers"` stored, `"Rogers Toronto On"` detected from `"ROGERS 1234 TORONTO ON"`.
+`billsReconcile` compared them with its own weaker key, saw no match, and raised BOTH halves. For a
+stored bill `{name:"Rogers", origin:"observed", amount:"95.00"}` plus four monthly
+`"ROGERS 1234 TORONTO ON"` charges at $95, `buildReconcilePrompts` returned two questions:
 
-For an existing household this is a **first-sync event**, not a slow drift: the first money meeting
-after this ships asks them to add bills they already have, and in the same agenda asks them to
-confirm those same bills have ended. Fixes 1-3 (commit `c179383`) make the name match again for the
-common shapes — `HYDRO ONE 12345 ON`, `BELL CANADA 1234 QC`, `HYDRO QUEBEC 1234 5678` — and the
-compatibility read carries `userBillOverrides` across, but neither covers the bill-name matching
-inside `billsReconcile`, and `"ROGERS 1234 TORONTO ON"` still splits.
+> Rogers Toronto On looks like a new regular bill at $95. Add it?
+> Rogers at $95 has stopped showing up. Has it ended?
 
-Pinned by `tests/merchantNameCompat.test.cjs` assertion **e2**, which asserts the CURRENT (wrong)
-behaviour so it is visible and counted. Fixing 13d makes that assertion fail; change it to expect
-`"(none)"` at the same time.
+One bill, two questions, pointing opposite ways. For an existing household this was a **first-sync
+event**, not a slow drift: the first money meeting after this shipped would ask them to add bills
+they already have, and in the same agenda ask them to confirm those same bills had ended. The Meet
+screen does not render `agenda.questions`, but `agendaToText` sends them to the facilitator, so a
+`beta_founder` household with AI on would have heard both.
 
-**Fix** Use `merchantKey` in `billsReconcile` instead of `billKey`. It was written before the
-blocker-1 work made `merchantKey` safe; now that it is, there is no reason for a second key.
+**The fix** `billsReconcile` now decides "same bill" the way the rest of the pipeline does:
+`billMatchKeys()` returns the written name, `merchantKey(name)`, and the name main's code produced
+for the same descriptor. The detector carries that last one on each detected bill as `legacyName`,
+and only when it differs from the display name. `applyBillChange` resolves a change to a stored bill
+through the same rule, so an accepted answer updates or removes the bill the household actually has
+instead of appending a second copy. No display name changed.
 
-**SEQUENCING CONSTRAINT — read this before starting 13e or 13f.**
+An alias may claim a stored bill only **once**: main's names were lossier than today's (two
+different POS merchants both became `"POS PURCHASE"`), so without that guard a second real merchant
+would be absorbed into the first and never raised.
 
-The double-counted bill is **latent today**: `applyBillChange` has no caller, so nothing acts on the
-pair. It becomes **live** the moment 13e (writing `meetingRecords`) and 13f (rendering
-`agenda.questions`) wire the answer path — at that point a household can accept both halves, adding
-a duplicate bill AND removing the real one, and the bill total is wrong in both directions.
+**Regression tests** `tests/merchantNameCompat.test.cjs` section (e): assertion **e2** was pinned to
+`"appeared,disappeared"` as a characterisation of this defect and now asserts `"(none)"`; **e6.1-6**
+run all six fixture descriptors, each stored under the name produced by running origin/main's own
+function; **e7** proves a genuinely different merchant is still raised as new, so the fix cannot
+silence everything; **e8/e9** cover the POS collision. `tests/billsReconcile.test.cjs` **6k-6o**
+cover `applyBillChange`. Each was mutation-checked: removing any part of the fix fails a named
+assertion.
 
-So: **fixes 1 to 3 must land before 13e/13f work starts** (they have, in `c179383`), and **13d must
-be fixed before 13e/13f ship**, not after. The order is 13d, then 13e/13f, then the migration.
+**The double count is closed**, in the questions and in the stored data, so the sequencing
+constraint this entry used to carry is discharged — 13e and 13f no longer wait on it.
+
+**Still open, separately:** the compatibility layer itself — `stripAccountNumberLegacy`,
+`legacyMerchantKey`, and the `legacyName` field — exists only because stored names were never
+migrated. It can be removed once stored display names have settled, which needs a migration of
+`userBillOverrides` keys and stored bill names, not just the passage of time. The code comments that
+say "REMOVE once stored names have settled" point here.
 
 ### 13e. Nothing writes `meetingRecords`
 

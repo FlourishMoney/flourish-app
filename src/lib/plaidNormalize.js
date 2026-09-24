@@ -571,6 +571,9 @@ export function detectRecurringBillsDetailed(txns, opts = {}) {
     // main produced. Read-only: nothing is rewritten.
     // REMOVE once stored names have settled — docs/product/KNOWN-DEFECTS.md 13d.
     const _dnlLegacy = stripPosPrefix(stripAccountNumberLegacy(txList[0].name)).toLowerCase().trim();
+    // The same name as a DISPLAY name, carried on the bill below so billsReconcile can tell that a
+    // bill stored under it is this same bill. Nothing reads it as a label.
+    const _legacyDisplay = titleCaseBillName(stripPosPrefix(stripAccountNumberLegacy(txList[0].name)));
     const _ov = (map) => {
       if (!map) return undefined;
       const hit = map[_dnl];
@@ -605,6 +608,11 @@ export function detectRecurringBillsDetailed(txns, opts = {}) {
       nextDueDate: _nextDue, // Sprint Q item 1: cadence phase anchor
       auto:    true,   // flag so UI can show "detected" badge
       origin:  "observed", // Plaid-observed (vs origin:"manual" for user-entered future bills)
+      // 13d: the display name above is not the name MAIN produced for this same descriptor
+      // ("ROGERS 1234 TORONTO ON" was "Rogers", and is "Rogers Toronto On" here). A household
+      // whose bill is stored under the old name would otherwise have it raised as a new bill AND
+      // as a bill that has ended. Carried only when the two differ, and never displayed.
+      ...(_legacyDisplay && _legacyDisplay !== displayName ? { legacyName: _legacyDisplay } : {}),
       avgNote: txList.length >= 3 ? `avg of last ${Math.min(txList.length,3)}` : "estimated",
     });
   });

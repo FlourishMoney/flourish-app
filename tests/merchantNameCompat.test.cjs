@@ -116,48 +116,78 @@ function mainLibDir() {
       "d7 …and a rule written under the old key still applies");
   }
 
-  // ── (e) The meeting raises nothing for an unchanged bill stored under main's name ────────────
+  // ── (e) The meeting raises nothing for a bill stored under main's name ──────────────────────
+  // 13d, FIXED 2026-09-23. billsReconcile matched bills by its own billKey — the name as written —
+  // while the detector's display name had changed shape. One unchanged bill was therefore raised
+  // as BOTH a new bill and a bill that had ended: "Rogers Toronto On looks like a new regular bill
+  // at $95. Add it?" and "Rogers at $95 has stopped showing up. Has it ended?". The screen does not
+  // render agenda.questions, but agendaToText sends them to the facilitator, so it was live.
+  // billsReconcile now matches on merchantKey and on the name main produced (carried as legacyName).
   if (main) {
     const m = await import("../src/lib/meetSnapshot.js");
-    const DESC = "HYDRO ONE 12345 ON";
-    const storedName = mainName(DESC);                        // what main wrote into data.bills
-    const txns = [0, 1, 2].map(k => {
+
+    // Four monthly charges of one amount: a bill by any reading.
+    const txnsFor = (desc, amount, tag) => [0, 1, 2, 3].map(k => {
       const d = new Date(); d.setMonth(d.getMonth() - k);
-      return { id: `h${k}`, name: DESC, amount: 143.9, date: d.toISOString().slice(0, 10), cat: "Bills" };
+      return { id: `${tag}${k}`, name: desc, amount, date: d.toISOString().slice(0, 10), cat: "Bills" };
     });
-    const prompts = m.buildReconcilePrompts({
-      transactions: txns,
-      bills: [{ name: storedName, amount: "143.90", origin: "observed" }],
-      userBillOverrides: {}, debts: [],
+    // The stored bill, named by RUNNING MAIN'S OWN FUNCTION — never by typing the expected string.
+    const storedUnderMain = (desc, amount) => ({
+      name: main.titleCaseBillName(mainName(desc)), amount: amount.toFixed(2), origin: "observed",
     });
-    const kinds = prompts.map(p => `${p.kind}:${p.subject}`).join(", ");
-    t.eq(kinds || "(none)", "(none)",
+    const promptsFor = (txns, bills) =>
+      m.buildReconcilePrompts({ transactions: txns, bills, userBillOverrides: {}, debts: [] });
+    const kindsOf = (prompts) => prompts.map(p => `${p.kind}:${p.subject}`).sort().join(", ") || "(none)";
+
+    const DESC = "HYDRO ONE 12345 ON";
+    t.eq(kindsOf(promptsFor(txnsFor(DESC, 143.9, "h"), [storedUnderMain(DESC, 143.9)])), "(none)",
       "e1 an unchanged bill stored under main's name raises no appeared/disappeared pair — the first meeting does not ask the household to add bills they already have");
 
-    // CHARACTERISATION, not an endorsement. Fixes 1-3 make the name match again for the common
-    // shapes, but not for every one: "ROGERS 1234 TORONTO ON" still keys as "Rogers Toronto On"
-    // here and "Rogers" under main, and billsReconcile matches bills by its OWN key
-    // (billsReconcile.js billKey), which the compatibility read does not cover. The result is the
-    // first-sync event described in KNOWN-DEFECTS 13d: one bill presented as both a new bill and
-    // a bill that has ended.
-    //
-    // This assertion records the CURRENT behaviour so it is visible and counted. When 13d is
-    // fixed — by keying bills with merchantKey like everything else — this test fails and should
-    // be changed to expect "(none)".
+    // e2/e3 were pinned to "appeared,disappeared" as a characterisation of 13d. They now expect
+    // nothing: this is the fix, and the assertion is what proves it stays fixed.
     const DESC2 = "ROGERS 1234 TORONTO ON";
-    const stored2 = main.titleCaseBillName(mainName(DESC2));
-    const txns2 = [0, 1, 2].map(k => {
-      const d = new Date(); d.setMonth(d.getMonth() - k);
-      return { id: `r${k}`, name: DESC2, amount: 88, date: d.toISOString().slice(0, 10), cat: "Bills" };
+    const prompts2 = promptsFor(txnsFor(DESC2, 95, "r"), [storedUnderMain(DESC2, 95)]);
+    t.eq(kindsOf(prompts2), "(none)",
+      "e2 the descriptor whose name changed ('Rogers' stored, 'Rogers Toronto On' detected) raises NOTHING — 13d fixed");
+    t.eq(prompts2.length, 0, "e3 …one bill is one bill, not two questions");
+
+    // The detected bill carries the name main produced, which is what makes e2 possible.
+    const rogers = br.detectRecurringBills(txnsFor(DESC2, 95, "r"), {})[0];
+    t.eq(rogers && rogers.legacyName, main.titleCaseBillName(mainName(DESC2)),
+      "e4 the detected bill carries main's name for the same descriptor");
+    t.ok(!!(rogers && rogers.legacyName && rogers.name !== rogers.legacyName),
+      "e5 …and it really is a different name from the one shown");
+
+    // ── every fixture descriptor, each on its own, stored as main would have written it ─────────
+    const DESCRIPTORS = ["HYDRO ONE 12345 ON", "BELL CANADA 1234 QC", "HYDRO QUEBEC 1234 5678",
+                         "1234567 ONTARIO INC", "7654321 ONTARIO INC", "ROGERS 1234 TORONTO ON"];
+    DESCRIPTORS.forEach((desc, i) => {
+      const amount = 40 + i * 7;
+      const stored = storedUnderMain(desc, amount);
+      // A vacuous pass is impossible: if the detector missed the merchant entirely, the stored
+      // observed bill would be raised as "disappeared" and this would fail.
+      t.eq(kindsOf(promptsFor(txnsFor(desc, amount, `f${i}`), [stored])), "(none)",
+        `e6.${i + 1} ${desc} stored as "${stored.name}" raises no question`);
     });
-    const prompts2 = m.buildReconcilePrompts({
-      transactions: txns2,
-      bills: [{ name: stored2, amount: "88.00", origin: "observed" }],
-      userBillOverrides: {}, debts: [],
-    });
-    t.eq(prompts2.map(p => p.kind).sort().join(","), "appeared,disappeared",
-      "e2 KNOWN (13d): a descriptor whose name still changes is presented as both a new bill and an ended one — pinned here until 13d is fixed");
-    t.ok(prompts2.length === 2, "e3 …which is one bill turned into two questions, and why 13d blocks the 13e/13f wiring");
+
+    // ── and the fix must not silence a bill that IS new ─────────────────────────────────────────
+    const mixed = promptsFor(
+      [...txnsFor(DESC2, 95, "mr"), ...txnsFor("BELL CANADA 1234 QC", 88, "mb")],
+      [storedUnderMain(DESC2, 95)],
+    );
+    t.eq(kindsOf(mixed), "appeared:Bell Canada",
+      "e7 a genuinely different merchant is still raised as new while the renamed one stays quiet");
+
+    // Main's names were LOSSIER than today's: two different POS merchants both became
+    // "POS PURCHASE". An alias may therefore claim a stored bill only once, or the second real
+    // merchant would be absorbed into the first and never raised.
+    const posTxns = [...txnsFor("POS PURCHASE 1234 LOBLAWS", 60, "pa"),
+                     ...txnsFor("POS PURCHASE 5678 REIDS DAIRY", 35, "pb")];
+    const posPrompts = promptsFor(posTxns, [{ name: "POS PURCHASE", amount: "60.00", origin: "observed" }]);
+    t.eq(posPrompts.filter(p => p.kind === "appeared").length, 1,
+      "e8 one stored POS bill absorbs one merchant, and the OTHER merchant is still raised");
+    t.eq(posPrompts.filter(p => p.kind === "disappeared").length, 0,
+      "e9 …and nothing is reported as ended");
   }
 
   t.summary("merchantNameCompat.test");
