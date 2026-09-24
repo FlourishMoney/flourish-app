@@ -1,8 +1,9 @@
 // src/lib/pricing.js — single source of truth for launch pricing (DECISIONS.md item 1, 2026-09-03).
 //
 // CA is the launch market: $11.99/month or $99.99/year. Founding members (the beta cohort and the
-// first 100 paying) get a founding annual price of $79.99/year (vs the standard $99.99), locked
-// while continuously subscribed. That FOUNDING ENTITLEMENT — the first-100 cohort and the price
+// first 50 paying — changed from 100 on 2026-09-23) get a founding annual price of $79.99/year
+// (vs the standard $99.99), locked
+// while continuously subscribed. That FOUNDING ENTITLEMENT — the first-50 cohort and the price
 // lock — is implemented
 // with billing when Stripe is built; for now only the `foundingAnnual` PRICE CONSTANT exists and the
 // existing beta_founder tier is preserved. US values stay behind the country flag ($7.99/$59.99)

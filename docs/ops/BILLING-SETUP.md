@@ -152,8 +152,9 @@ does not arrive by webhook.
 - **`past_due` is not treated as paid.** A failed renewal removes access at once. Whether
   there should be a grace period is a product decision nobody has made; when it is made it
   is one entry in `SUBSCRIPTION_PAID_STATUSES` in `_lib/planRules.js`, with no migration.
-- **Founding eligibility is `profiles.founder_flag` only.** P4 caps the cohort at 100, and
-  nothing counts that cap yet — the flag is the gate. A non-founder asking for the founding
-  price gets a 403.
+- **Founding eligibility is `profiles.founder_flag` AND an open slot.** P4 caps the cohort at 50
+  (changed from 100 on 2026-09-23). The count lives in `_lib/foundingCohort.js`, which is the only
+  place the number appears in code; `status` and `create_checkout_session` both ask it. A
+  non-founder, or anyone arriving once the cohort is full, gets a 403.
 - **Quebec (P17)** is not enforced in the billing path. Signup-time exclusion is where that
   belongs, and it does not exist yet.

@@ -1,6 +1,6 @@
 # Flourish: decisions (settled 2026-09-03)
 
-1. Launch price: $11.99/month or $99.99/year CAD. Founding members (beta cohort and first 100 paying) $79.99/year, locked while continuously subscribed. The founding entitlement (first-100 cohort, lock while subscribed) is implemented with billing when Stripe is built; for now only the price constant exists and the existing beta_founder tier is preserved. US values stay behind the country flag ($7.99/$59.99 USD until reviewed).
+1. Launch price: $11.99/month or $99.99/year CAD. Founding members (beta cohort and first 50 paying) $79.99/year, locked while continuously subscribed. The founding entitlement (first-50 cohort, lock while subscribed) is implemented with billing when Stripe is built; for now only the price constant exists and the existing beta_founder tier is preserved. US values stay behind the country flag ($7.99/$59.99 USD until reviewed).
 2. Free coaching after the 14-day trial: 2 messages per week, resetting weekly. Trial is unlimited. Plus is unlimited coaching, linked accounts, and the Meet facilitator. Free Meet shows the deterministic agenda without the facilitator.
 3. Prompt caching ships with the coach work regardless of usage limits, using the cache-control structure the current API version supports; only stable prompt content is cached, user financial context is not.
 4. Statement import: the model transcribes only. JS validates every row (verbatim amount, real date, inside statement period, totals reconciliation where anchors exist). The whole proposed import is shown. Questionable-but-valid rows are flagged and selectable; rows that fail validation are shown but cannot be selected until the user edits them into a valid row. The user approves exactly which rows enter the data. No partial auto-import. Non-numeric amounts are rejected, never coerced to 0.
@@ -16,7 +16,7 @@
 P1. Merge and deploy strategy-implementation on September 15 after the pre-merge checklist and the Netlify secret scoping are green. Default: yes.
 P2. Trial structure: keep the 14-day no-card trial as built; card asked for at conversion. Default: keep.
 P3. Onboarding order: cohort 1 keeps the built order (bank link offered first, manual available); manual-first is decided October 5 from the link rate and built in the week 5 slot only if under half link. Default: as built.
-P4. Founding cohort: 45 personal invitations September 21 to 25 (five on the 21st as a smoke) to net about 30 started trials; 79.99 a year plus tax; founding capped at 100. Default: yes.
+P4. Founding cohort: 45 personal invitations September 21 to 25 (five on the 21st as a smoke) to net about 30 started trials; 79.99 a year plus tax; founding capped at 50 (founding cohort changed from 100 to 50 on 2026-09-23 — see docs/product/DECISIONS.md). Default: yes.
 P5. On camera: one or two short videos a week. Default: yes (faceless variant exists).
 P6. Founding-member group: WhatsApp Community announcement group (members' numbers hidden), bugs through the in-app form. Default: yes.
 P7. Books: QuickBooks Online Simple Start. Default: yes.
