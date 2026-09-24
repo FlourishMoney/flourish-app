@@ -13,7 +13,7 @@
    ```sh
    npm run test:math
    ```
-   `.github/workflows/math-lock.yml` runs `npm ci` and then this command on every push and PR to `main`. On `main` today it is 64 suites and 2,662 assertions, all passing. `npm ci` is required first — some suites now import modules that pull in `@capacitor/*`, so a bare checkout fails to resolve them.
+   `.github/workflows/math-lock.yml` runs `npm ci` and then this command on every push and PR to `main`. On `main` today it is 65 suites and 2,675 assertions, all passing. `npm ci` is required first — some suites now import modules that pull in `@capacitor/*`, so a bare checkout fails to resolve them.
 10. **Review: one review round per change.** Only HIGH findings block a merge. MEDIUM and LOW go to `docs/product/KNOWN-DEFECTS.md`.
 
 ## What this app is
@@ -55,13 +55,6 @@ git commit -m "message"
 git push -u origin <branch>
 ```
 Always specify exact files in `git add`. Never `git add .`. Then give Amanda the PR link. Never push to `main`, never merge, never deploy.
-
-## Native builds (Capacitor) — iOS and Android
-See `docs/ops/NATIVE-BUILDS.md` for ids, versions, the Android JDK 21 requirement, and
-the store accounts. Short version: **both store accounts already exist and are paid**
-(Apple Team ID `V8B8MR88SL`; the Play account is the one that ships GrowSmart), so no
-plan needs to budget for them again. Android is `com.flourishmoney.app`, iOS is
-`app.flourishmoney`; they differ deliberately.
 
 ## Native builds (Capacitor) — iOS and Android
 See `docs/ops/NATIVE-BUILDS.md` for ids, versions, the Android JDK 21 requirement, and
