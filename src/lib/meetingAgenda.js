@@ -77,7 +77,35 @@ export function buildMeetingAgenda(snapshot = {}) {
     }
   });
 
-  return { wins, changes, risks, progress, decisions };
+  // ── Questions (from the reconcile loop) ───────────────────────────────────────────
+  // ITEM 4: the agenda items that can carry an answer BACK. Each one arrives already phrased
+  // by its domain (billsReconcile.billChangeQuestion) with a signature that identifies exactly
+  // which finding it is about — that signature is what the household's answer is recorded
+  // against, and what stops the same question being asked twice.
+  //
+  // Nothing is computed here, same rule as everything above: the text, the figures inside it
+  // and the signature are all copied from what the caller passed in.
+  const questions = [];
+  (snapshot.reconcilePrompts || []).forEach(p => {
+    if (!p || !p.signature || !p.text) return;
+    questions.push({
+      id: p.signature,
+      text: p.text,
+      domain: p.domain || "unknown",
+      kind: p.kind || null,
+      subject: p.subject || null,
+      // Spoken out loud, so the answer is yes or no. "Later" is not an option: leaving it
+      // unanswered is already possible by saying nothing, and storing a "later" would mean
+      // deciding whether it counts as a dismissal.
+      options: [
+        { label: "Yes", answer: "accepted" },
+        { label: "No",  answer: "dismissed" },
+      ],
+      source: "reconcileLoop",
+    });
+  });
+
+  return { wins, changes, risks, progress, decisions, questions };
 }
 
 // Every numeric value the agenda surfaces, for the "traces to an engine output" test. If a number
@@ -88,6 +116,9 @@ export function agendaNumbers(agenda) {
   (agenda.wins || []).forEach(w => push(w.value));
   (agenda.changes || []).forEach(c => push(c.value));
   (agenda.risks || []).forEach(r => push(r.value));
+  // questions carry figures inside their TEXT (never as a value), so there is nothing numeric to
+  // collect here — but the section must be named, or a future numeric field would go unchecked.
+  (agenda.questions || []).forEach(q => push(q.value));
   (agenda.progress || []).forEach(p => push(p.value));
   // decision outcomes are engine-computed strings/values passed through untouched (not re-derived)
   return out;
@@ -95,6 +126,6 @@ export function agendaNumbers(agenda) {
 
 // True if every agenda item carries a `source` (provenance) — no item without an engine origin.
 export function everyItemHasSource(agenda) {
-  const all = [...(agenda.wins||[]), ...(agenda.changes||[]), ...(agenda.risks||[]), ...(agenda.progress||[]), ...(agenda.decisions||[])];
+  const all = [...(agenda.wins||[]), ...(agenda.changes||[]), ...(agenda.risks||[]), ...(agenda.progress||[]), ...(agenda.decisions||[]), ...(agenda.questions||[])];
   return all.every(i => typeof i.source === "string" && i.source.length > 0);
 }

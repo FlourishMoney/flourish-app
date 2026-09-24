@@ -12,6 +12,8 @@
 // Amount sign convention (matches the parser prompt): positive = money out (debit), negative =
 // money in (credit).
 
+import { FALLBACK_CATEGORY } from "./categoryOverrides.js";
+
 export const IMPORT_SOURCE = "statement-import";
 export const RECONCILE_TOLERANCE = 0.02; // dollars — a missed/duplicated row should break this
 
@@ -172,7 +174,13 @@ export function rowsToImport(classified, selectedIds, accountId = null) {
       date: r.date,
       name: r.name,
       amount: r.amount,
+      // `category` is the statement-side label and nothing reads it. `cat` is what the app reads
+      // everywhere (engines, the transaction list, the category filter), and a statement row used
+      // to arrive without one at all: the chip rendered blank, the filter grew an `undefined`
+      // entry, and the row could not be corrected because there was nothing to correct.
+      // FALLBACK_CATEGORY is the same "Other" a Plaid transaction of unknown type gets.
       category: "OTHER",
+      cat: FALLBACK_CATEGORY,
       pending: false,
       source: IMPORT_SOURCE,
       edited,
