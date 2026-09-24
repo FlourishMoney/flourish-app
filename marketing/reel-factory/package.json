@@ -1,0 +1,21 @@
+{
+  "name": "flourish-reel-factory",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Turns a written script into a finished faceless Instagram Reel. Separate from the app: its own dependencies, its own node_modules, nothing added to the app's package.json.",
+  "scripts": {
+    "reels": "node src/cli.mjs",
+    "postinstall": "playwright install chromium"
+  },
+  "dependencies": {
+    "@remotion/bundler": "^4.0.0",
+    "@remotion/google-fonts": "^4.0.527",
+    "@remotion/renderer": "^4.0.0",
+    "dotenv": "^16.4.5",
+    "playwright": "^1.47.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.0"
+  }
+}

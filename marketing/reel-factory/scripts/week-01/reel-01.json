@@ -1,0 +1,29 @@
+{
+  "id": "reel-01",
+  "week": "week-01",
+  "hook": "Still adding up your bills by hand?",
+  "voice": [
+    { "text": "Still adding up your bills by hand?", "screen": "hook" },
+    { "text": "Flourish finds them for you.", "screen": "bills-list" },
+    { "text": "Every bill. Every payday. The next 90 days, laid out.", "screen": "forecast-90-day" },
+    { "text": "So the tight week never sneaks up on you.", "screen": "forecast-low-point" },
+    { "text": "Your money, handled.", "screen": "end-card" }
+  ],
+  "captionLines": [
+    "Still adding up your bills by hand?",
+    "Flourish finds them for you.",
+    "Every bill. Every payday. The next 90 days, laid out.",
+    "So the tight week never sneaks up on you.",
+    "Your money, handled."
+  ],
+  "endCard": [
+    "Your money, handled.",
+    "Join the waitlist. First 50 households get the founding price.",
+    "Link in bio."
+  ],
+  "captions": {
+    "instagram": "Stop doing the money math. Flourish finds your bills and paydays and shows you the next 90 days. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio.",
+    "tiktok": "Stop doing the money math. Flourish finds your bills and paydays and shows you the next 90 days. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio.",
+    "facebook": "Stop doing the money math. Flourish finds your bills and paydays and shows you the next 90 days. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio."
+  }
+}

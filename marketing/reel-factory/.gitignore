@@ -1,0 +1,8 @@
+# The ElevenLabs key lives here and must never be committed.
+.env
+node_modules/
+# Everything the pipeline generates. Rendered reels are build output, not source.
+out/
+recordings/
+remotion/public/*
+!remotion/public/.gitkeep
