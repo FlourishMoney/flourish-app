@@ -40,7 +40,7 @@
 // `origin:"observed"`). Bills typed during onboarding are plain {name, amount, date} objects with
 // NEITHER field, so a looser test such as `origin !== "manual"` would silently delete them.
 
-import { stripPosPrefix } from "./plaidNormalize.js";
+import { stripPosPrefix, stripAccountNumber } from "./plaidNormalize.js";
 
 export const isAutoDetectedBill = (b) => !!b && (b.auto === true || b.origin === "observed");
 
@@ -50,12 +50,12 @@ export const isAutoDetectedBill = (b) => !!b && (b.auto === true || b.origin ===
 // "Reid's Dairy Company"); stripping the prefix on both sides makes an old stored name still
 // resolve to the same merchant, so a phantom stored under the old spelling is still judged.
 // The account-number strip and the POS strip must be applied in the SAME ORDER the detector uses to
-// build its display name (plaidNormalize.js: `stripPosPrefix(name.replace(/\s+\d{4,}.*$/, "")…)`).
+// build its display name — both now call plaidNormalize.stripAccountNumber, so they cannot drift.
 // Skipping the account-number strip here would key a raw transaction "HYDRO ONE 123456789" as
 // "hydro one 123456789" while the stored bill "Hydro One" keys as "hydro one" — the merchant would
 // then never reach the evidence bar and could never be healed.
 export function merchantKey(name) {
-  const withoutAcct = String(name == null ? "" : name).replace(/\s+\d{4,}.*$/, "").trim();
+  const withoutAcct = stripAccountNumber(name);
   return stripPosPrefix(withoutAcct)
     .toLowerCase()
     .replace(/\s+/g, " ")

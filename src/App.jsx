@@ -47,6 +47,7 @@ import { captureError } from "./lib/errorReporting.js";
 import { derivePlan } from "./lib/planFromProfile.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
+import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
 
 // Capacitor iOS platform detection — true only when running as a native iOS app via Capacitor.
@@ -727,7 +728,22 @@ function safeLoadLS(key, fallback) {
 // Sprint MATH-LOCK Group B: per-transaction category reassignments { txnId: category }. Loads the
 // EXACT value FinancialCalcEngine.cashFlow used to read internally — passed into the now-pure engine
 // at every call site so re-categorization keeps affecting cash-flow/spend math (no silent {} drop).
-const getCatOv = () => safeLoadLS("flourish_cat_overrides", {});
+// Two layers, most specific first: an override on THIS transaction, then a rule for the
+// merchant. The merchant layer is what makes a correction outlive the row it was made on —
+// see src/lib/categoryOverrides.js. Engines take the pair and resolve it themselves.
+const getCatOvById = () => safeLoadLS("flourish_cat_overrides", {});
+const getMerchantCatOv = () => safeLoadLS("flourish_cat_merchant_overrides", {});
+const getCatOv = () => ({ byId: getCatOvById(), byMerchant: getMerchantCatOv() });
+// For display paths that already hold a byId map of their own.
+//
+// Memoised: called per transaction, several times per render across the whole list, and
+// getMerchantCatOv is a localStorage read plus a JSON.parse — what it replaced was a property
+// read. bumpMerchantCatOv() clears it on every write, so a correction shows immediately; without
+// that, seeing your own change would take a reload.
+let _mcoCache = null;
+const getMerchantCatOvCached = () => (_mcoCache || (_mcoCache = getMerchantCatOv()));
+const bumpMerchantCatOv = () => { _mcoCache = null; };
+const effCat = (t, byId) => effectiveCategory(t, byId, getMerchantCatOvCached());
 
 // Sprint MATH-LOCK Group C: _levenshtein moved to plaidNormalize.js (used by detectRecurringBills).
 
@@ -2550,7 +2566,7 @@ function computeStats(txns, catOverrides={}) {
   // Skip non-expense categories AND bill categories (bills are tracked separately)
   const SKIP = new Set([...NON_SPEND_CATS, ...BILL_CATS]);
   // Use catOverrides so user-reassigned categories appear in breakdown
-  const getC = (t) => catOverrides[t.id] || t.cat;
+  const getC = (t) => effCat(t, catOverrides);
   const sp = txns.filter(t=>t.amount>0 && !SKIP.has(getC(t)));
   const byCat={}, byDow={0:0,1:0,2:0,3:0,4:0,5:0,6:0};
   let coffee=0,coffeeCount=0,delivery=0,subs=0;
@@ -2918,7 +2934,7 @@ function parseCSVStatement(text) {
       const c = parseFloat(cols[creditIdx]?.replace(/[$, ]/g,'') || 0);
       amount = d > 0 ? d : -c;
     }
-    return { id:`csv_${i}`, date: cols[dateIdx]||'', name: cols[descIdx]||'Transaction', amount: isNaN(amount)?0:amount, category:'OTHER', pending:false };
+    return { id:`csv_${i}`, date: cols[dateIdx]||'', name: cols[descIdx]||'Transaction', amount: isNaN(amount)?0:amount, category:'OTHER', cat:'Other', pending:false };
   }).filter(t => t.date && t.name);
 }
 
@@ -6720,7 +6736,7 @@ function BudgetPlanCard({data, setAppData}) {
   });
   const monthSpend = {};
   monthTxns.forEach(t=>{
-    const cat=catOverrides[t.id]||t.cat;
+    const cat=effCat(t, catOverrides);
     if(!NON_SPEND_CATS.has(cat)&&!CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))){
       monthSpend[cat]=(monthSpend[cat]||0)+t.amount;
     }
@@ -6943,33 +6959,56 @@ function SpendScreen({data, setAppData, setScreen}){
   });
   const monthLabel = now.toLocaleString("en-CA",{month:"long",year:"numeric"});
   const catOverrides = safeLoadLS("flourish_cat_overrides", {});
-  const getCat = (t) => catOverrides[t.id] || t.cat;
+  const getCat = (t) => effCat(t, catOverrides);
   const stats=computeStats(thisMonthTxns, catOverrides);
 
   const recat = (txn, newCat, applyToAll=false) => {
     const overrides = safeLoadLS("flourish_cat_overrides", {});
-    if(applyToAll) {
-      const merchantKey = (txn.name||"").toLowerCase().trim();
-      const updated = {...overrides};
-      txns.forEach(t => {
-        if((t.name||"").toLowerCase().trim() === merchantKey) updated[t.id] = newCat;
-      });
-      localStorage.setItem("flourish_cat_overrides", JSON.stringify(updated));
+    // A MERCHANT RULE, not a stamp on the rows that happen to exist right now. This is the
+    // whole point of item 3: tomorrow's charge from the same merchant has to arrive already
+    // corrected, and statement rows are re-numbered on every import (`stmt_${i}`), so a
+    // per-id override silently re-points at a different transaction.
+    //
+    // "Apply to all" writes the rule. A correction on a merchant with no other transactions
+    // writes it too: with nothing else it could mean, "this merchant is X" is the only
+    // reading. A correction on ONE of several stays per-transaction — that is someone saying
+    // "this particular charge was not what it looked like", not "this merchant is always X".
+    const mKey = merchantKey(txn.name);
+    // ONLY on an explicit yes. A rule was also written silently when no other transaction
+    // matched — the household corrected one charge and a permanent forward-applying rule
+    // appeared with no prompt and no notice, which they would only discover when a future
+    // charge arrived already categorised. recatWithSmartPrompt now always asks first.
+    if (applyToAll) {
+      const merchants = setMerchantOverride(safeLoadLS("flourish_cat_merchant_overrides", {}), txn.name, newCat);
+      if (mKey) { localStorage.setItem("flourish_cat_merchant_overrides", JSON.stringify(merchants)); bumpMerchantCatOv(); }
+    }
+    if (applyToAll) {
+      // The merchant rule alone would NOT win: effectiveCategory resolves per-transaction
+      // overrides first, so a row corrected individually earlier keeps its old category —
+      // including the row being looked at while tapping "apply to all". Clearing those entries is
+      // what makes the button mean what it says.
+      const cleared = {...overrides};
+      txns.forEach(t => { if (merchantKey(t.name) === mKey) delete cleared[t.id]; });
+      localStorage.setItem("flourish_cat_overrides", JSON.stringify(cleared));
     } else {
       const updated = {...overrides, [txn.id]: newCat};
       localStorage.setItem("flourish_cat_overrides", JSON.stringify(updated));
     }
-    // Auto-link: if this vendor matches a bill's name, store in vendorBillMap
-    const merchantKey = (txn.name||"").toLowerCase().trim();
-    if(merchantKey.length >= 3 && setAppData) {
+    // Auto-link: if this vendor matches a bill's name, store in vendorBillMap.
+    // RAW lowercased name, NOT mKey. vendorBillMap has two other sites — the "mark as bill"
+    // writer and the Monthly Bills reader — and both look up (t.name||"").toLowerCase().trim().
+    // Writing the POS-stripped key here produced entries that could never be found again, so a
+    // bill stopped showing as paid right after the household categorised the charge that pays it.
+    const vendorKey = (txn.name||"").toLowerCase().trim();
+    if(vendorKey.length >= 3 && setAppData) {
       const matchedBill = (data.bills||[]).find(b =>
-        merchantKey.includes((b.name||"").toLowerCase().trim().substring(0,5)) ||
-        (b.name||"").toLowerCase().trim().includes(merchantKey.substring(0,8))
+        vendorKey.includes((b.name||"").toLowerCase().trim().substring(0,5)) ||
+        (b.name||"").toLowerCase().trim().includes(vendorKey.substring(0,8))
       );
       if(matchedBill) {
         setAppData(prev => ({
           ...prev,
-          vendorBillMap: {...(prev.vendorBillMap||{}), [merchantKey]: matchedBill.name}
+          vendorBillMap: {...(prev.vendorBillMap||{}), [vendorKey]: matchedBill.name}
         }));
       }
     }
@@ -6979,18 +7018,24 @@ function SpendScreen({data, setAppData, setScreen}){
 
   // When user picks a category, check if there are other transactions from same merchant
   const recatWithSmartPrompt = (txn, newCat) => {
-    const merchantKey = (txn.name||"").toLowerCase().trim();
+    // The SAME key setMerchantOverride writes with. Counting with a plainer key showed a number
+    // that did not match the set the rule would actually change.
+    const mKeyPrompt = merchantKey(txn.name);
     // Guard: empty name would match ALL unnamed transactions — skip prompt
-    if(!merchantKey) { recat(txn, newCat, false); return; }
+    if(!mKeyPrompt) { recat(txn, newCat, false); return; }
     const otherSameMerchant = txns.filter(t =>
       t.id !== txn.id &&
-      (t.name||"").toLowerCase().trim() === merchantKey &&
-      merchantKey.length >= 3 && // require at least 3 chars to avoid over-matching
-      (catOverrides[t.id] || t.cat) !== newCat
+      merchantKey(t.name) === mKeyPrompt &&
+      effCat(t, catOverrides) !== newCat
     );
-    if(otherSameMerchant.length > 0) {
+    // Ask whenever a rule COULD be written, not only when other transactions already match.
+    // A merchant with one transaction today still has one tomorrow, and that is exactly the
+    // case that used to write a permanent rule in silence.
+    if (isUsableMerchantKey(mKeyPrompt)) {
       setApplyAllPrompt({txn, newCat, count: otherSameMerchant.length + 1});
     } else {
+      // Nothing merchant-specific in the descriptor — a rule here would match an arbitrary set
+      // ("atm withdrawal"), so this correction applies to this transaction only.
       recat(txn, newCat, false);
     }
   };
@@ -7253,7 +7298,11 @@ function SpendScreen({data, setAppData, setScreen}){
             <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
             <div style={{color:C.cream,fontWeight:800,fontSize:16}}>Apply to all?</div>
             <div style={{color:C.muted,fontSize:13,marginTop:4,lineHeight:1.5}}>
-              Found <strong style={{color:C.mutedHi}}>{applyAllPrompt.count} transactions</strong> from <strong style={{color:C.mutedHi}}>{applyAllPrompt.txn.name}</strong>.
+              Found <strong style={{color:C.mutedHi}}>{applyAllPrompt.count} transactions</strong> from <strong style={{color:C.mutedHi}}>{merchantKey(applyAllPrompt.txn.name) || applyAllPrompt.txn.name}</strong>.{" "}
+              {/* The KEY, not the raw descriptor. The rule is written against the key, so naming the
+                  full "POS PURCHASE 1234 LOBLAWS" while changing every "purchase loblaws" charge
+                  told the household the rule was narrower than it is. */}
+              This is matched on the merchant, so future charges from it are included.
             </div>
           </div>
           <div style={{padding:"14px 20px 20px",display:"flex",flexDirection:"column",gap:10}}>
@@ -7306,6 +7355,30 @@ function SpendScreen({data, setAppData, setScreen}){
               </div>
             </div>
           </div>
+          {/* An existing merchant rule, and the way to remove it.
+              Without this, clearMerchantOverride was called from nowhere: a rule written on a
+              descriptor that turned out to be too broad could be seen in its effects but never
+              undone, short of editing storage. */}
+          {(() => {
+            const rules = getMerchantCatOv();
+            const key = merchantKey(recatTxn.name);
+            if (!key || !rules[key]) return null;
+            return (
+              <div style={{padding:"10px 20px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+                <div style={{color:C.muted,fontSize:11,lineHeight:1.5,minWidth:0}}>
+                  Always <strong style={{color:C.mutedHi}}>{rules[key]}</strong> for <strong style={{color:C.mutedHi}}>{key}</strong>
+                </div>
+                <button onClick={()=>{
+                  localStorage.setItem("flourish_cat_merchant_overrides", JSON.stringify(clearMerchantOverride(rules, recatTxn.name)));
+                  bumpMerchantCatOv();
+                  setRecatTxn(null);
+                }} style={{background:"none",border:`1px solid ${C.border}`,color:C.muted,borderRadius:99,padding:"5px 12px",cursor:"pointer",fontSize:11,fontFamily:"inherit",flexShrink:0}}>
+                  Remove rule
+                </button>
+              </div>
+            );
+          })()}
+
           {/* Scrollable categories */}
           <div style={{overflowY:"auto",padding:"16px 20px",flex:1}}>
             <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
@@ -8205,7 +8278,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         try{const d=new Date(t.date+"T12:00:00");return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()&&t.amount>0;}catch{return false;}
       });
       const monthSpend = {};
-      monthTxns.forEach(t=>{ const cat=catOverrides[t.id]||t.cat; monthSpend[cat]=(monthSpend[cat]||0)+t.amount; });
+      monthTxns.forEach(t=>{ const cat=effCat(t, catOverrides); monthSpend[cat]=(monthSpend[cat]||0)+t.amount; });
 
       // Merge budgets + suggestions for display
       const displayCats = {...suggestions};
@@ -12899,7 +12972,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
   });
   const monthSpend = {};
   monthTxns.forEach(t => {
-    const cat = catOverrides[t.id] || t.cat;
+    const cat = effCat(t, catOverrides);
     // Only track discretionary categories — bills excluded to prevent double-counting
     if(!NON_SPEND_CATS.has(cat) && !CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))) {
       monthSpend[cat] = (monthSpend[cat] || 0) + t.amount;
@@ -12940,7 +13013,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
       const d = new Date(t.date + "T12:00:00");
       return d.getFullYear() === now2.getFullYear() && d.getMonth() === now2.getMonth();
     }).forEach(t => {
-      const cat = catOv[t.id] || t.cat;
+      const cat = effCat(t, catOv);
       // Include if: it's a custom category OR it's any spend category not already seeded
       if(!seed[cat] && !NON_SPEND_CATS.has(cat) && !BILL_CATS.has(cat)) {
         seed[cat] = "50"; // default starting budget for new categories

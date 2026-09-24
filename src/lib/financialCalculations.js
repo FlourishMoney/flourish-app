@@ -24,6 +24,8 @@
 // -----------------------------------------------------------------------------
 
 // ── Input coercion helpers (internal) ────────────────────────────────────────
+import { effectiveCategory } from "./categoryOverrides.js";
+
 function _num(v, fallback = 0) {
   const n = typeof v === "number" ? v : parseFloat(v);
   return Number.isFinite(n) ? n : fallback;
@@ -1065,7 +1067,10 @@ export const FinancialCalcEngine = {
     const incomes = (data.incomes || []).filter(i => num(i.amount) > 0);
     const bills   = data.bills || [];
     const accounts = data.accounts || [];
-    const getEffCat = (t) => catOverrides[t.id] || t.cat;
+    // Resolution order lives in categoryOverrides.js: this transaction's own override, then a
+    // rule for its merchant, then the category it arrived with. A legacy flat { [id]: cat } map
+    // — which is what every existing household has stored — behaves exactly as it always did.
+    const getEffCat = (t) => effectiveCategory(t, catOverrides);
     // Sprint Z3 #6: exclude transactions from foreign-currency accounts (no FX in v1) so monthly spend
     // isn't summed 1:1 across currencies. account.currency defaults CAD → single-currency users unchanged.
     const base = baseCurrencyOf(data);
