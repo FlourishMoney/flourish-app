@@ -9,33 +9,36 @@ import {
   useCurrentFrame, useVideoConfig, interpolate, spring, Easing,
 } from "remotion";
 import { loadFont } from "@remotion/google-fonts/PlusJakartaSans";
+import { PHONE as GEO, BEZEL, PILL, CAPTION, captionRect, zoomToRect, screenRect } from "../src/layout.mjs";
 
 // Self-hosted by @remotion/google-fonts — bundled into the render, no network call (STYLE.md §3).
 const { fontFamily } = loadFont();
 
 const MAX_TILT_DEG = 8;          // STYLE.md §4
 
-// THE DEVICE FILLS THE FRAME. 864 is 80% of 1080, and at the recording's true 390:844 ratio that
-// makes it 1870 tall — taller than the canvas. So it starts just under the top safe band and runs
-// off the bottom edge, the way a product film frames a phone. Two things follow: there is no empty
-// band anywhere, and the app's own type is big enough to read, which is the point.
-const PHONE = { w: 864, h: 1870, radius: 76 };   // 864/1870 == 390/844, so nothing is cropped
-const PHONE_TOP = 262;                           // just under the top safe band
-// With a full-bleed device the caption has nowhere to go but over it, so it sits on a scrim —
-// which is what keeps it at AA contrast against whatever the app is showing behind it.
-const CAPTION_BOTTOM = 430;                      // clear of the 400px bottom safe band
-const SCRIM_TOP = 1180;
+// Geometry lives in src/layout.mjs so the composition and the quality gate compute it once, from
+// the same numbers. The device is 80% of the frame width at the recording's true 390:844 ratio,
+// which makes it taller than the canvas: it starts below the top safe band, leaving a clear strip
+// for the "Example" pill, and runs off the bottom edge.
+const PHONE = { w: GEO.w, h: GEO.h, radius: GEO.radius };
+const PHONE_TOP = GEO.top;
 
 // ── the device ───────────────────────────────────────────────────────────────────────────────
 // One frame, one shadow, one highlight. The tilt and the push-in are driven by a spring so the
 // move starts and settles like a physical object rather than a linear slide.
-const Phone = ({ src, brand, progress, focus, zoom, dim = 0 }) => {
+const Phone = ({ src, brand, progress, box, zoom, showRing }) => {
   const tilt = interpolate(progress, [0, 1], [MAX_TILT_DEG, MAX_TILT_DEG * 0.35]);
-  // THE SCREEN ZOOMS, NOT THE DEVICE. Scaling the whole phone pushed its corners up into the
-  // reserved top band and down into the caption — the layout has to stay fixed, so the push-in
-  // happens inside the bezel, anchored on the number being narrated. This is also what the move
-  // looks like in a product film: the camera does not grow the object, it moves closer to it.
-  const scale = interpolate(progress, [0, 1], [1, zoom]);
+
+  // ONE TRANSFORM, ONE LAYER. The ring and the dim used to live in a separate layer that scaled
+  // from a different origin and measured against the bezel rather than the screen — which is how a
+  // 2px outline around a wide box became two green lines across the frame, and how the dim ended
+  // up over the very thing it was meant to reveal. They are now children of the element the video
+  // is in, positioned in unzoomed screen coordinates, so they cannot drift from it.
+  const { scale: full, tx: fullTx, ty: fullTy } = zoomToRect(box, zoom);
+  const scale = 1 + (full - 1) * progress;
+  const tx = fullTx * progress;
+  const ty = fullTy * progress;
+  const ringOpacity = interpolate(progress, [0.18, 0.6], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
 
   return (
     <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-start", paddingTop: PHONE_TOP, perspective: 3200, overflow: "hidden" }}>
@@ -43,24 +46,28 @@ const Phone = ({ src, brand, progress, focus, zoom, dim = 0 }) => {
         width: PHONE.w, height: PHONE.h,
         transform: `rotateY(${tilt}deg) rotateX(${tilt * 0.22}deg)`,
         transformStyle: "preserve-3d",
-        borderRadius: PHONE.radius + 12, padding: 11,
+        borderRadius: PHONE.radius + 12, padding: BEZEL,
         background: "linear-gradient(150deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.06) 42%, rgba(255,255,255,0.16) 100%)",
         boxShadow: `0 60px 140px rgba(0,0,0,0.62), 0 0 0 1px rgba(255,255,255,0.05)`,
       }}>
         <div style={{ width: "100%", height: "100%", borderRadius: PHONE.radius, overflow: "hidden", background: brand.bg, position: "relative" }}>
-          {src ? (
-            <OffthreadVideo src={src} muted style={{
-              width: "100%", height: "100%", objectFit: "cover",
-              transform: `scale(${scale})`, transformOrigin: `${focus.x * 100}% ${focus.y * 100}%`,
-            }} />
-          ) : null}
-          {/* Dim everything but the element being narrated, so the eye has one place to go. */}
-          {dim > 0 ? (
-            <AbsoluteFill style={{
-              background: `radial-gradient(38% 20% at 50% 50%, ${brand.bg}00 0%, ${brand.bg}00 55%, ${brand.bg}${Math.round(dim * 230).toString(16).padStart(2, "0")} 100%)`,
-            }} />
-          ) : null}
-          {/* a single soft screen highlight, not a gradient wash */}
+          <div style={{ width: "100%", height: "100%", position: "relative",
+                        transform: `translate(${tx}px, ${ty}px) scale(${scale})`, transformOrigin: "0 0" }}>
+            {src ? <OffthreadVideo src={src} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : null}
+            {showRing && box ? (
+              <div style={{
+                position: "absolute",
+                left: `${(box.x - box.w / 2) * 100}%`, top: `${(box.y - box.h / 2) * 100}%`,
+                width: `${box.w * 100}%`, height: `${box.h * 100}%`,
+                border: `${2 / scale}px solid ${brand.greenBright}`,
+                borderRadius: `${16 / scale}px`,
+                // The dim is this element's own shadow, so it is exactly "everything but the
+                // target", at 50% and no more. Nothing is blurred: the target is untouched.
+                boxShadow: `0 0 0 ${4000 / scale}px ${brand.bg}80`,
+                opacity: ringOpacity,
+              }} />
+            ) : null}
+          </div>
           <AbsoluteFill style={{ background: "linear-gradient(115deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0) 38%)" }} />
         </div>
       </div>
@@ -68,31 +75,11 @@ const Phone = ({ src, brand, progress, focus, zoom, dim = 0 }) => {
   );
 };
 
-// A thin ring over the number being narrated. Fades in with the push-in, never bounces.
-const HighlightRing = ({ brand, progress, focus, box, zoom = 1 }) => {
-  const opacity = interpolate(progress, [0.15, 0.55], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-  const scale = interpolate(progress, [0, 1], [1, zoom]);
-  if (!box) return null;
-  return (
-    <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-start", paddingTop: PHONE_TOP, pointerEvents: "none", overflow: "hidden" }}>
-      <div style={{ width: PHONE.w, height: PHONE.h, position: "relative", overflow: "hidden", borderRadius: PHONE.radius,
-                    transform: `scale(${scale})`, transformOrigin: `${focus.x * 100}% ${focus.y * 100}%` }}>
-        <div style={{
-          position: "absolute",
-          left: `${(focus.x - box.w / 2) * 100}%`, top: `${(focus.y - box.h / 2) * 100}%`,
-          width: `${box.w * 100}%`, height: `${box.h * 100}%`,
-          border: `2px solid ${brand.greenBright}`, borderRadius: 18,
-          boxShadow: `0 0 0 6px ${brand.greenBright}1A`,
-          opacity,
-        }} />
-      </div>
-    </AbsoluteFill>
-  );
-};
-
 // STYLE.md §5: visible for the whole time app footage is on screen. Inside the safe zone.
-const ExampleLabel = ({ brand, safe }) => (
-  <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-start", paddingTop: safe.top + 12 }}>
+// In the clear strip between the top safe line and the device, right-aligned — so it covers no
+// app pixel at all. It used to sit over the demo banner.
+const ExampleLabel = ({ brand }) => (
+  <AbsoluteFill style={{ alignItems: "flex-end", justifyContent: "flex-start", paddingTop: PILL.top, paddingRight: PILL.right }}>
     <div style={{
       fontFamily, fontSize: 26, fontWeight: 800, letterSpacing: 2.2, textTransform: "uppercase",
       color: brand.bg, background: brand.cream, padding: "9px 22px", borderRadius: 999,
@@ -101,36 +88,43 @@ const ExampleLabel = ({ brand, safe }) => (
 );
 
 // STYLE.md §8: word by word, current word lime, lower third, two lines at most.
-const Caption = ({ chunks = [], brand, safe, fps }) => {
+const Caption = ({ chunks = [], brand, fps, anchor = "bottom" }) => {
   const t = useCurrentFrame() / fps;
   // Six words at most on screen (STYLE.md §3): show the chunk being spoken, and hold the last one
   // rather than cutting to nothing between chunks.
   const active = chunks.filter((c) => t >= c.start - 0.05).pop() || chunks[0];
   const words = active ? active.words : [];
+  const rect = captionRect(anchor);
   return (
     <AbsoluteFill>
-      {/* A scrim, so the caption keeps AA contrast over whatever the app is showing behind it. */}
-      <AbsoluteFill style={{
-        top: SCRIM_TOP,
-        background: `linear-gradient(to bottom, ${brand.bg}00 0%, ${brand.bg}D9 26%, ${brand.bg}F2 60%, ${brand.bg}F2 100%)`,
-      }} />
-      <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-end", paddingBottom: CAPTION_BOTTOM }}>
+      {/* A scrim behind the caption only, so it keeps AA contrast over whatever is behind it. */}
       <div style={{
-        maxWidth: 940, textAlign: "center", fontFamily, fontWeight: 800,
-        fontSize: 76, lineHeight: 1.18, letterSpacing: -1.6,
+        position: "absolute", left: 0, right: 0,
+        top: rect.y - 70, height: rect.h + 140,
+        background: anchor === "top"
+          ? `linear-gradient(to bottom, ${brand.bg}F2 0%, ${brand.bg}E6 62%, ${brand.bg}00 100%)`
+          : `linear-gradient(to top, ${brand.bg}F2 0%, ${brand.bg}E6 62%, ${brand.bg}00 100%)`,
+      }} />
+      <div style={{
+        position: "absolute", left: rect.x, top: rect.y, width: rect.w, height: rect.h,
+        display: "flex", alignItems: anchor === "top" ? "flex-start" : "flex-end", justifyContent: "center",
       }}>
-        {words.map((w, i) => {
-          const spoken = t >= w.start - 0.03;
-          const current = spoken && t < w.end + 0.08;
-          return (
-            <span key={i} style={{
-              color: current ? brand.greenBright : (spoken ? brand.cream : `${brand.cream}59`),
-              marginRight: 14, display: "inline-block",
-            }}>{w.word}</span>
-          );
-        })}
+        <div style={{
+          textAlign: "center", fontFamily, fontWeight: 800,
+          fontSize: 76, lineHeight: 1.18, letterSpacing: -1.6,
+        }}>
+          {words.map((w, i) => {
+            const spoken = t >= w.start - 0.03;
+            const current = spoken && t < w.end + 0.08;
+            return (
+              <span key={i} style={{
+                color: current ? brand.greenBright : (spoken ? brand.cream : `${brand.cream}59`),
+                marginRight: 14, display: "inline-block",
+              }}>{w.word}</span>
+            );
+          })}
+        </div>
       </div>
-      </AbsoluteFill>
     </AbsoluteFill>
   );
 };
@@ -189,7 +183,9 @@ export const Reel = ({ beats = [], endCard = [], brand, safe, narration, tones =
   // STYLE.md §1 and §8, checked here so a layout edit cannot quietly push type into Instagram's UI.
   if (PHONE_TOP < safe.top) throw new Error(`The device starts at ${PHONE_TOP}px, inside the top safe band (${safe.top}px).`);
   if (PHONE.w / width < 0.75) throw new Error(`The device is ${Math.round((PHONE.w / width) * 100)}% of the frame; it must be at least 75%.`);
-  if (CAPTION_BOTTOM < safe.bottom) throw new Error(`The caption sits ${CAPTION_BOTTOM}px from the bottom, inside the ${safe.bottom}px safe band.`);
+  const capB = captionRect("bottom"), capT = captionRect("top");
+  if (capB.y + capB.h > height - safe.bottom) throw new Error("The bottom caption runs into the bottom safe band.");
+  if (capT.y < safe.top) throw new Error("The top caption runs into the top safe band.");
   const { fps } = useVideoConfig();
   return (
     <AbsoluteFill style={{ background: brand.bg, fontFamily }}>
@@ -234,14 +230,14 @@ const BeatBody = ({ beat, brand, safe, endCard, logo }) => {
     extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: Easing.inOut(Easing.cubic),
   });
   const progress = inP * outP;
-  const focus = beat.focus || { x: 0.5, y: 0.45 };
+  const box = beat.box || null;
   return (
     <>
-      <Phone src={beat.video ? staticFile(beat.video) : null} brand={brand} progress={progress} focus={focus}
-             zoom={beat.zoom || 1} dim={beat.zoom > 1.2 ? progress : 0} />
-      {beat.ring ? <HighlightRing brand={brand} progress={progress} focus={focus} box={beat.ring} zoom={beat.zoom || 1} /> : null}
-      <ExampleLabel brand={brand} safe={safe} />
-      <Caption chunks={beat.chunks || []} brand={brand} safe={safe} fps={fps} />
+      <Phone src={beat.video ? staticFile(beat.video) : null} brand={brand} progress={progress}
+             box={box} zoom={beat.zoom || 1} showRing={!!beat.ring} />
+      <Caption chunks={beat.chunks || []} brand={brand} fps={fps} anchor={beat.captionAnchor || "bottom"} />
+      {/* After the caption: the caption paints a scrim, and the pill has to stay legible over it. */}
+      <ExampleLabel brand={brand} />
     </>
   );
 };

@@ -12,6 +12,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { CANVAS, SAFE } from "./config.mjs";
 import { measureLufs, TARGET_LUFS } from "./audio.mjs";
+import { screenRect, captionRect, intersects, PILL, FRAME } from "./layout.mjs";
 
 const run = promisify(execFile);
 const ff = (args) => run("ffmpeg", ["-y", "-loglevel", "error", ...args], { maxBuffer: 1 << 28 });
@@ -77,7 +78,7 @@ const nearCream = (r, g, b, cream) => {
   return Math.abs(r - cr) < 26 && Math.abs(g - cg) < 26 && Math.abs(b - cb) < 26;
 };
 
-export async function runQualityGate({ mp4, outDir, reelId, script, brand, durationSeconds, captionColour, endCardColour, appWindows = [] }) {
+export async function runQualityGate({ mp4, outDir, reelId, script, brand, durationSeconds, captionColour, endCardColour, appWindows = [], beats = [], endCardLines = [] }) {
   const results = [];
   const check = (name, ok, detail) => { results.push({ name, ok, detail }); return ok; };
 
@@ -158,11 +159,14 @@ export async function runQualityGate({ mp4, outDir, reelId, script, brand, durat
     if (!showsApp(t)) continue;
     const { buf } = await frameRgb(mp4, t, W, H);
     let lo = W, hi = -1;
-    for (const frac of [0.30, 0.42, 0.54]) {           // rows across the device, above the scrim
+    // The BEZEL, not the screen: the push-in dims the screen by design, and a dimmed screen is not
+    // a smaller phone. The bezel is a light border that the dim never reaches, so it is what
+    // actually measures the device.
+    for (const frac of [0.24, 0.32, 0.40, 0.48, 0.56, 0.64]) {
       const y = Math.round(H * frac);
       for (let x = 0; x < W; x++) {
         const o = (y * W + x) * 3;
-        if (luminance([buf[o], buf[o + 1], buf[o + 2]]) > bgLum + 0.012) { if (x < lo) lo = x; if (x > hi) hi = x; }
+        if (luminance([buf[o], buf[o + 1], buf[o + 2]]) > bgLum + 0.004) { if (x < lo) lo = x; if (x > hi) hi = x; }
       }
     }
     if (hi > lo) widths.push({ t, frac: (hi - lo + 1) / W });
@@ -197,6 +201,100 @@ export async function runQualityGate({ mp4, outDir, reelId, script, brand, durat
     const unknown = [...new Set(words)].filter((w) => w.length > 1 && !known(w));
     check("spelling", unknown.length === 0, unknown.length ? `not a word: ${unknown.join(", ")}` : `${new Set(words).size} distinct words`);
   }
+
+  // ── the review's six additions ──────────────────────────────────────────────────────────────
+  const scr = screenRect();
+  const ringBeats = beats.filter((b) => b.kind === "screen" && b.ring && b.targetRect);
+
+  // (1) The ring's box lies fully inside the device screen, on every frame it is drawn.
+  // Inside the screen AND inside the frame: the device runs off the bottom edge, so a ring can be
+  // within the screen and still be somewhere nobody will ever see it.
+  const visTop = Math.max(scr.y, 0), visBottom = Math.min(scr.y + scr.h, FRAME.h);
+  const outside = ringBeats.filter((b) => {
+    const r = b.targetRect;
+    return r.x < scr.x || r.x + r.w > scr.x + scr.w || r.y < visTop || r.y + r.h > visBottom;
+  });
+  check("ring inside the visible screen", ringBeats.length > 0 && outside.length === 0,
+    ringBeats.length === 0 ? "no ring beats to check"
+      : outside.length ? `${outside.length} ring(s) cross the bezel` : `${ringBeats.length} ring beat(s) inside`);
+
+  // (2) The focused element is neither blurred nor crushed. Laplacian variance is calibrated on
+  // this reel's own wide app frames: the zoomed target must be at least as sharp as a quarter of
+  // that, and the region must stay above a luminance floor (the dim must not swallow it).
+  const lapVar = (buf, w, h, rect) => {
+    const g = (x, y) => { const o = (y * w + x) * 3; return 0.299 * buf[o] + 0.587 * buf[o + 1] + 0.114 * buf[o + 2]; };
+    const x0 = Math.max(1, Math.round(rect.x)), x1 = Math.min(w - 2, Math.round(rect.x + rect.w));
+    const y0 = Math.max(1, Math.round(rect.y)), y1 = Math.min(h - 2, Math.round(rect.y + rect.h));
+    const vals = [];
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      vals.push(g(x - 1, y) + g(x + 1, y) + g(x, y - 1) + g(x, y + 1) - 4 * g(x, y));
+    }
+    if (vals.length < 40) return { variance: 0, mean: 0, n: vals.length };
+    const m = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const variance = vals.reduce((a, b) => a + (b - m) ** 2, 0) / vals.length;
+    let lum = 0, n = 0;
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { lum += g(x, y); n++; }
+    return { variance, mean: lum / Math.max(1, n), n: vals.length };
+  };
+  const SW = 540, SH = 960, k = SW / FRAME.w;
+  const scaleRect = (r) => ({ x: r.x * k, y: r.y * k, w: r.w * k, h: r.h * k });
+
+  // Baseline: the wide beats, which are the same footage without the zoom.
+  const baseline = [];
+  for (const b of beats.filter((x) => x.kind === "screen" && !x.ring).slice(0, 3)) {
+    const { buf } = await frameRgb(mp4, b.from + b.duration * 0.6, SW, SH);
+    baseline.push(lapVar(buf, SW, SH, scaleRect({ x: scr.x + scr.w * 0.2, y: scr.y + scr.h * 0.25, w: scr.w * 0.6, h: scr.h * 0.25 })).variance);
+  }
+  const floorVar = baseline.length ? (baseline.reduce((a, b) => a + b, 0) / baseline.length) * 0.25 : 0;
+  const sharp = [];
+  for (const b of ringBeats) {
+    const { buf } = await frameRgb(mp4, b.from + b.duration * 0.62, SW, SH);
+    sharp.push({ t: b.from, ...lapVar(buf, SW, SH, scaleRect(b.targetRect)) });
+  }
+  const blurred = sharp.filter((r) => r.variance < floorVar);
+  const dark = sharp.filter((r) => r.mean < 26);
+  check("focused element sharp", sharp.length > 0 && blurred.length === 0,
+    sharp.length === 0 ? "no ring beats sampled"
+      : `variance ${sharp.map((r) => Math.round(r.variance)).join("/")} vs floor ${Math.round(floorVar)}`);
+  check("focused element not crushed", dark.length === 0,
+    `mean luma ${sharp.map((r) => Math.round(r.mean)).join("/")} (floor 26)`);
+
+  // (3) No full-frame horizontal line artifacts — a row that is mostly ring colour.
+  const [rr, rg, rb] = hex(brand.greenBright);
+  const lineRows = [];
+  for (let i = 0; i < 9; i++) {
+    const t = (durationSeconds * (i + 0.5)) / 9;
+    if (!showsApp(t)) continue;
+    const { buf } = await frameRgb(mp4, t, W, H);
+    for (let y = 0; y < H; y++) {
+      let hit = 0;
+      for (let x = 0; x < W; x++) {
+        const o = (y * W + x) * 3;
+        if (Math.abs(buf[o] - rr) < 40 && Math.abs(buf[o + 1] - rg) < 40 && Math.abs(buf[o + 2] - rb) < 40) hit++;
+      }
+      if (hit / W > 0.8) { lineRows.push({ t, y }); break; }
+    }
+  }
+  check("no full-width ring artifacts", lineRows.length === 0,
+    lineRows.length ? `line at ${lineRows.map((l) => l.t.toFixed(1) + "s").join(", ")}` : "none across sampled app frames");
+
+  // (4) The "Example" pill covers no app pixel — it sits outside the device entirely.
+  const pillRect = { x: FRAME.w - PILL.right - 230, y: PILL.top, w: 230, h: PILL.h };
+  const deviceRect = { x: (FRAME.w - 864) / 2, y: scr.y - 11, w: 864, h: 1870 };
+  check("Example pill clear of the app", !intersects(pillRect, deviceRect),
+    `pill ${Math.round(pillRect.y)}-${Math.round(pillRect.y + pillRect.h)}px, device starts ${Math.round(deviceRect.y)}px`);
+
+  // (5) The caption never sits on the element being talked about.
+  const collisions = beats.filter((b) => b.kind === "screen" && b.targetRect && intersects(b.targetRect, captionRect(b.captionAnchor || "bottom")));
+  check("caption clear of the focus", collisions.length === 0,
+    collisions.length ? `${collisions.length} beat(s) overlap` : `${beats.filter((b) => b.kind === "screen").length} beats checked`);
+
+  // (6) The end-card line is shown once, on the end card.
+  const headline = (endCardLines[0] || "").trim().toLowerCase();
+  const shownInBeats = beats.filter((b) => (b.kind === "hook" || b.kind === "statement")
+    && (b.chunks || []).map((c) => c.words.map((w) => w.word).join(" ")).join(" ").trim().toLowerCase().includes(headline) && headline).length;
+  check("end-card line appears once", headline ? shownInBeats === 0 : false,
+    headline ? (shownInBeats === 0 ? "only on the end card" : `also held as ${shownInBeats} statement beat(s)`) : "no end-card headline in the script");
 
   // ── report ──────────────────────────────────────────────────────────────────────────────────
   console.log("\n  Quality gate (STYLE.md §10)");

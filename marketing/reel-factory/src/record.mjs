@@ -49,15 +49,26 @@ async function measureFocus(page, targetText) {
     throw new Error(`Push-in target "${targetText}" is not on screen. Fix the recipe in src/record.mjs rather than zooming on nothing.`);
   }
   const box = await el.evaluate((node, vp) => {
-    // The card around the text where there is one: zooming a bare label cuts the figure off.
-    const card = node.closest("[style*='border-radius'], [style*='borderRadius']") || node;
-    const r = card.getBoundingClientRect();
+    // Climb to the largest ancestor that is still SMALL ENOUGH TO ZOOM INTO. A bare label cuts the
+    // figure off; the full-width card around it cannot be zoomed at all, because keeping a
+    // full-width box on screen with padding leaves no room to magnify. The useful target is the
+    // group in between — the label and its number.
+    let best = node;
+    let n = node.parentElement;
+    for (let i = 0; i < 6 && n; i++, n = n.parentElement) {
+      const r = n.getBoundingClientRect();
+      // 0.46 of the width is the widest box that still allows a 1.8x push-in with 40px to spare.
+      if (r.width <= vp.w * 0.46 && r.height <= vp.h * 0.30 && r.width > 0) best = n;
+      else break;
+    }
+    const r = best.getBoundingClientRect();
     return { x: (r.x + r.width / 2) / vp.w, y: (r.y + r.height / 2) / vp.h, w: r.width / vp.w, h: r.height / vp.h };
   }, { w: DEVICE.width, h: DEVICE.height });
-  const clamp = (v) => Math.min(0.9, Math.max(0.1, v));
+  const clamp = (v) => Math.min(0.88, Math.max(0.12, v));
   return {
     focus: { x: clamp(box.x), y: clamp(box.y) },
-    ring: { w: Math.min(0.94, Math.max(0.2, box.w)), h: Math.min(0.5, Math.max(0.05, box.h)) },
+    // A little breathing room around the element, so the ring does not sit on its edge.
+    ring: { w: Math.min(0.8, Math.max(0.18, box.w * 1.12)), h: Math.min(0.42, Math.max(0.05, box.h * 1.25)) },
   };
 }
 
