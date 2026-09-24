@@ -18,8 +18,9 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
-const TTS_URL = (voiceId) =>
-  `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/with-timestamps`;
+// output_format is a QUERY parameter on this endpoint, not a body field.
+const TTS_URL = (voiceId, fmt) =>
+  `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/with-timestamps?output_format=${encodeURIComponent(fmt)}`;
 
 export async function audioDurationSeconds(file) {
   const { stdout } = await run("ffprobe", [
@@ -76,13 +77,16 @@ export async function speak(text, outFile, env = process.env) {
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
 
   if (key && voiceId) {
-    const res = await fetch(TTS_URL(voiceId), {
+    const model = env.ELEVENLABS_MODEL_ID || "eleven_multilingual_v2";
+    const res = await fetch(TTS_URL(voiceId, "mp3_44100_128"), {
       method: "POST",
       headers: { "xi-api-key": key, "Content-Type": "application/json" },   // never logged
       body: JSON.stringify({
         text,
-        model_id: env.ELEVENLABS_MODEL_ID || "eleven_multilingual_v2",
-        output_format: "mp3_44100_128",
+        model_id: model,
+        // Stability high and style at zero: a brand read, not a performance. The same settings on
+        // every line, so the seven clips sound like one person in one sitting.
+        voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true },
       }),
     });
     if (!res.ok) {
@@ -96,7 +100,8 @@ export async function speak(text, outFile, env = process.env) {
     const words = wordsFromCharacterAlignment(text, body.alignment || body.normalized_alignment)
       || estimateWordTimings(text, duration);
     const measured = !!wordsFromCharacterAlignment(text, body.alignment || body.normalized_alignment);
-    return { file: mp3, duration, words, source: "elevenlabs", measured };
+    // One credit per character on this model. Reported so the 20,000 cap stays visible.
+    return { file: mp3, duration, words, source: "elevenlabs", measured, credits: text.length, model, voiceId };
   }
 
   // ── fallback: the macOS voice ──────────────────────────────────────────────────────────────
@@ -106,7 +111,7 @@ export async function speak(text, outFile, env = process.env) {
   await run("ffmpeg", ["-y", "-loglevel", "error", "-i", aiff, "-codec:a", "libmp3lame", "-q:a", "4", mp3]);
   fs.rmSync(aiff, { force: true });
   const duration = await audioDurationSeconds(mp3);
-  return { file: mp3, duration, words: estimateWordTimings(text, duration), source: "macos-say", measured: false };
+  return { file: mp3, duration, words: estimateWordTimings(text, duration), source: "macos-say", measured: false, credits: 0, model: null, voiceId: null };
 }
 
 export const _test = { estimateWordTimings, wordsFromCharacterAlignment, wordsOf };

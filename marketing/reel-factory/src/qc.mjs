@@ -12,7 +12,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { CANVAS, SAFE } from "./config.mjs";
 import { measureLufs, TARGET_LUFS } from "./audio.mjs";
-import { screenRect, captionRect, intersects, PILL, FRAME, MAX_SHOT_SECONDS, CAPTION } from "./layout.mjs";
+import { screenRect, captionRect, intersects, PILL, pillRect, FRAME, MAX_SHOT_SECONDS, CAPTION, deviceRect, PHONE_TOP_FOR } from "./layout.mjs";
 
 const run = promisify(execFile);
 const ff = (args) => run("ffmpeg", ["-y", "-loglevel", "error", ...args], { maxBuffer: 1 << 28 });
@@ -78,7 +78,7 @@ const nearCream = (r, g, b, cream) => {
   return Math.abs(r - cr) < 26 && Math.abs(g - cg) < 26 && Math.abs(b - cb) < 26;
 };
 
-export async function runQualityGate({ mp4, outDir, reelId, script, brand, durationSeconds, captionColour, endCardColour, appWindows = [], beats = [], endCardLines = [], shots = {}, storyboard = [] }) {
+export async function runQualityGate({ mp4, outDir, reelId, script, brand, durationSeconds, captionColour, endCardColour, appWindows = [], beats = [], endCardLines = [], shots = {}, storyboard = [], voice = {} }) {
   const results = [];
   const check = (name, ok, detail) => { results.push({ name, ok, detail }); return ok; };
 
@@ -134,8 +134,9 @@ export async function runQualityGate({ mp4, outDir, reelId, script, brand, durat
     const t = (durationSeconds * (i + 0.5)) / 9;
     if (!showsApp(t)) continue;
     const { buf } = await frameRgb(mp4, t, W, H);
-    const y0 = Math.round((SAFE.top / CANVAS.height) * H);
-    const y1 = y0 + Math.round((90 / CANVAS.height) * H);
+    const pr = pillRect();
+    const y0 = Math.max(0, Math.round((pr.y / CANVAS.height) * H) - 1);
+    const y1 = Math.min(H, Math.round(((pr.y + pr.h) / CANVAS.height) * H) + 1);
     let hits = 0;
     for (let y = y0; y < y1; y++) for (let x = 0; x < W; x++) {
       const o = (y * W + x) * 3;
@@ -203,7 +204,7 @@ export async function runQualityGate({ mp4, outDir, reelId, script, brand, durat
   }
 
   // ── the review's six additions ──────────────────────────────────────────────────────────────
-  const scr = screenRect();
+  const scr = screenRect(true);
   const ringBeats = beats.filter((b) => b.kind === "screen" && b.ring && b.targetRect);
 
   // (1) The ring's box lies fully inside the device screen, on every frame it is drawn.
@@ -279,13 +280,17 @@ export async function runQualityGate({ mp4, outDir, reelId, script, brand, durat
     lineRows.length ? `line at ${lineRows.map((l) => l.t.toFixed(1) + "s").join(", ")}` : "none across sampled app frames");
 
   // (4) The "Example" pill covers no app pixel — it sits outside the device entirely.
-  const pillRect = { x: FRAME.w - PILL.right - 230, y: PILL.top, w: 230, h: PILL.h };
-  const deviceRect = { x: (FRAME.w - 864) / 2, y: scr.y - 11, w: 864, h: 1870 };
-  check("Example pill clear of the app", !intersects(pillRect, deviceRect),
-    `pill ${Math.round(pillRect.y)}-${Math.round(pillRect.y + pillRect.h)}px, device starts ${Math.round(deviceRect.y)}px`);
+  const pill = pillRect();
+  const phoneBox = deviceRect(true);
+  check("Example pill clear of the app", !intersects(pill, phoneBox),
+    `pill ${Math.round(pill.y)}-${Math.round(pill.y + pill.h)}px, device starts ${Math.round(phoneBox.y)}px`);
+  // It also has to stay off the WORDS. It sat top-right and cut straight through the end of a
+  // caption line — visible in the contact sheet, invisible to every check that existed.
+  check("Example pill clear of the caption", !intersects(pill, captionRect()),
+    `caption ends ${captionRect().y + captionRect().h}px, pill starts ${pill.y}px`);
 
   // (5) The caption never sits on the element being talked about.
-  const collisions = beats.filter((b) => b.kind === "screen" && b.targetRect && intersects(b.targetRect, captionRect(b.captionAnchor || "bottom")));
+  const collisions = beats.filter((b) => b.kind === "screen" && b.targetRect && intersects(b.targetRect, captionRect()));
   check("caption clear of the focus", collisions.length === 0,
     collisions.length ? `${collisions.length} beat(s) overlap` : `${beats.filter((b) => b.kind === "screen").length} beats checked`);
 
@@ -310,27 +315,35 @@ export async function runQualityGate({ mp4, outDir, reelId, script, brand, durat
   for (const b of beats.filter((x) => x.kind === "screen").slice(0, 6)) {
     const t = b.from + b.duration * 0.6;
     const { buf } = await frameRgb(mp4, t, W, H);
-    const rect = captionRect(b.captionAnchor || "bottom");
+    const rect = captionRect();
     const y0 = Math.round((rect.y / FRAME.h) * H), y1 = Math.round(((rect.y + rect.h) / FRAME.h) * H);
     const x0 = Math.round((rect.x / FRAME.w) * W), x1 = Math.round(((rect.x + rect.w) / FRAME.w) * W);
-    const bgL = luminance(hex(brand.bg)) * 255;
-    const vals = [];
-    for (let y = Math.max(0, y0); y < Math.min(H, y1); y++) for (let x = Math.max(0, x0); x < Math.min(W, x1); x++) {
-      const o = (y * W + x) * 3;
-      const l = 0.299 * buf[o] + 0.587 * buf[o + 1] + 0.114 * buf[o + 2];
-      if (l > 42) continue;                 // a glyph (cream or lime); the rule is about what is BEHIND
-      vals.push(l);
+    // The reference is the SAME ROWS outside the caption box — background by definition, and it
+    // carries the radial glow just as the box does. Comparing against a flat theme colour would be
+    // comparing two different things (and comparing a 0-255 luma against a 0-1 relative luminance,
+    // which is what made this check fail on a band that was in fact clean).
+    const luma = (o) => 0.299 * buf[o] + 0.587 * buf[o + 1] + 0.114 * buf[o + 2];
+    const vals = [], ref = [];
+    for (let y = Math.max(0, y0); y < Math.min(H, y1); y++) {
+      for (let x = Math.max(0, x0); x < Math.min(W, x1); x++) {
+        const l = luma((y * W + x) * 3);
+        if (l > 42) continue;               // a glyph; the rule is about what is BEHIND the words
+        vals.push(l);
+      }
+      for (let x = 0; x < Math.max(0, x0) - 2; x++) ref.push(luma((y * W + x) * 3));
+      for (let x = Math.min(W, x1) + 2; x < W; x++) ref.push(luma((y * W + x) * 3));
     }
-    if (vals.length < 200) continue;
+    if (vals.length < 200 || ref.length < 100) continue;
     const mean = vals.reduce((a, c) => a + c, 0) / vals.length;
     const variance = vals.reduce((a, c) => a + (c - mean) ** 2, 0) / vals.length;
+    const bgL = ref.reduce((a, c) => a + c, 0) / ref.length;
     bandResults.push({ t, mean, sd: Math.sqrt(variance), bgL });
   }
-  const dirty = bandResults.filter((r) => r.sd > 6 || Math.abs(r.mean - r.bgL) > 10);
+  const dirty = bandResults.filter((r) => r.sd > 6 || Math.abs(r.mean - r.bgL) > 6);
   check("caption band clean", bandResults.length > 0 && dirty.length === 0,
     bandResults.length === 0 ? "no caption bands sampled"
       : dirty.length ? `app pixels behind the words at ${dirty.map((r) => r.t.toFixed(1) + "s").join(", ")} (sd ${dirty.map((r) => r.sd.toFixed(1)).join("/")})`
-      : `sd ${bandResults.map((r) => r.sd.toFixed(1)).join("/")} across ${bandResults.length} bands`);
+      : `sd ${bandResults.map((r) => r.sd.toFixed(1)).join("/")}, within ${Math.max(...bandResults.map((r) => Math.abs(r.mean - r.bgL))).toFixed(1)} of the background beside it`);
 
   // (9) Each ring is around the text the script says it should be around. The recorder captures
   // what it measured; this compares that against the recipe, so a layout change that moves a ring
@@ -341,6 +354,21 @@ export async function runQualityGate({ mp4, outDir, reelId, script, brand, durat
   check("ring targets match the script", mismatched.length === 0,
     mismatched.length ? mismatched.map(([k, sh]) => `${k}: wanted "${sh.expect}", ringed "${sh.text}"`).join("; ")
       : Object.values(shots).filter((sh) => sh.expect).map((sh) => `"${sh.text}"`).join(", "));
+
+  // ── v5: the voice is real, and the words are where the voice put them ───────────────────────
+  check("voice is ElevenLabs", voice.source === "elevenlabs",
+    voice.source === "elevenlabs" ? `${voice.model} · ${voice.credits} credits`
+      : `fell back to ${voice.source || "nothing"} — a placeholder read must never ship`);
+  check("caption timings measured", voice.measured === true,
+    voice.measured ? "from the alignment data" : "estimated from clip length, not the alignment");
+
+  // The caption must not touch the device in EITHER position, wide or zoomed.
+  const cap = captionRect();
+  const overlapPositions = [false, true].filter((close) => intersects(cap, deviceRect(close)));
+  const tightest = Math.min(...[false, true].map((close) => PHONE_TOP_FOR(close) - (cap.y + cap.h)));
+  check("caption never touches the device", overlapPositions.length === 0 && tightest >= CAPTION.gap,
+    overlapPositions.length ? `overlaps in ${overlapPositions.map((c) => (c ? "zoom" : "wide")).join(" and ")}`
+      : `${tightest}px of air at the tightest (minimum ${CAPTION.gap})`);
 
   // ── report ──────────────────────────────────────────────────────────────────────────────────
   if (storyboard.length) {

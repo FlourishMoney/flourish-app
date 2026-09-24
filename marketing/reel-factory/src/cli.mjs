@@ -16,7 +16,7 @@ import { writeCaptions } from "./captions.mjs";
 import { renderReel } from "./render.mjs";
 import { assembleNarration, normaliseTo, uiTone, maybeMusicBed } from "./audio.mjs";
 import { runQualityGate } from "./qc.mjs";
-import { targetRectInFrame, captionAnchorFor, captionRect, intersects, screenRect, zoomToRect, MAX_SHOT_SECONDS, CAPTION } from "./layout.mjs";
+import { targetRectInFrame, captionAnchorFor, captionRect, intersects, screenRect, zoomToRect, MAX_SHOT_SECONDS, CAPTION, PHONE_TOP_FOR, deviceRect } from "./layout.mjs";
 
 dotenv.config({ path: path.join(ROOT, ".env") });
 
@@ -50,13 +50,16 @@ async function buildOne(scriptPath) {
 
   // ── 1. voice ──────────────────────────────────────────────────────────────────────────────
   const lines = [];
-  let voiceSource = null, timingsMeasured = true;
+  let voiceSource = null, timingsMeasured = true, credits = 0, voiceModel = null, voiceIdUsed = null;
   for (const [i, line] of script.voice.entries()) {
     const spoken = await speak(line.text, path.join(workDir, `line-${String(i + 1).padStart(2, "0")}.mp3`));
     voiceSource = spoken.source;
     timingsMeasured = timingsMeasured && spoken.measured;
+    credits += spoken.credits || 0;
+    voiceModel = spoken.model || voiceModel;
+    voiceIdUsed = spoken.voiceId || voiceIdUsed;
     lines.push({ ...line, ...spoken });
-    log(`voice ${i + 1}/${script.voice.length} · ${spoken.duration.toFixed(2)}s · ${spoken.source}`);
+    log(`voice ${i + 1}/${script.voice.length} · ${spoken.duration.toFixed(2)}s · ${spoken.source}${spoken.measured ? " · measured timings" : " · estimated timings"}`);
   }
 
   // ── 2. screens ────────────────────────────────────────────────────────────────────────────
@@ -180,6 +183,7 @@ async function buildOne(scriptPath) {
   const endCardLines = lines.slice(lastScreenIndex + 1);
 
   let t = PACE.hookLead;
+  let lastPhoneTop = PHONE_TOP_FOR(false);      // the hook cuts to a wide shot
   const narrationLines = [];
   const tones = [];
   lines.forEach((line, i) => {
@@ -232,12 +236,12 @@ async function buildOne(scriptPath) {
       if (isClose && take && take.ring) tones.push({ at: beatFrom });   // a soft tone on the reveal
       // The caption goes OPPOSITE the element being talked about, so it never covers it.
       const bt = beats[beats.length - 1];
-      const tRect = bt.box ? targetRectInFrame(bt.box, bt.zoom) : null;
-      bt.captionAnchor = captionAnchorFor(tRect);
-      bt.targetRect = tRect;
-      if (intersects(tRect, captionRect(bt.captionAnchor))) {
-        bt.captionAnchor = bt.captionAnchor === "top" ? "bottom" : "top";
-      }
+      const isCloseBeat = !!bt.ring;
+      bt.targetRect = bt.box ? targetRectInFrame(bt.box, bt.zoom, 40, isCloseBeat) : null;
+      bt.captionAnchor = captionAnchorFor();
+      // Where the device was when the previous beat ended, so this one can ease from there.
+      bt.phoneTopFrom = lastPhoneTop;
+      lastPhoneTop = PHONE_TOP_FOR(isCloseBeat);
     }
     t += shot;
   });
@@ -293,6 +297,7 @@ async function buildOne(scriptPath) {
     captionColour: brand.cream, endCardColour: brand.cream,
     appWindows: beats.filter((b) => b.kind === "screen").map((b) => [b.from, b.from + b.duration]),
     beats, endCardLines: script.endCard, shots: clips,
+    voice: { source: voiceSource, measured: timingsMeasured, credits, model: voiceModel, voiceId: voiceIdUsed },
     // One row per spoken line, for review against the words.
     storyboard: (() => {
       const rows = [];
@@ -302,7 +307,7 @@ async function buildOne(scriptPath) {
         const sh = clips[line.screen];
         rows.push({ kind: "screen", from: at, seconds: shotSeconds[i], line: line.text,
                     target: sh && sh.text ? sh.text : null,
-                    zoom: sh && sh.ring ? zoomToRect({ x: sh.focus.x, y: sh.focus.y, w: sh.ring.w, h: sh.ring.h }, sh.zoom).scale : null });
+                    zoom: sh && sh.ring ? zoomToRect({ x: sh.focus.x, y: sh.focus.y, w: sh.ring.w, h: sh.ring.h }, sh.zoom, 40, true).scale : null });
         at += shotSeconds[i];
       });
       rows.push({ kind: "end-card", from: at, seconds: endHold, line: (endCardLines[0] || {}).text || script.endCard[0], target: null, zoom: null });

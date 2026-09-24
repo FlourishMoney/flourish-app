@@ -9,7 +9,7 @@ import {
   useCurrentFrame, useVideoConfig, interpolate, spring, Easing,
 } from "remotion";
 import { loadFont } from "@remotion/google-fonts/PlusJakartaSans";
-import { PHONE as GEO, BEZEL, PILL, CAPTION, captionRect, zoomToRect, screenRect } from "../src/layout.mjs";
+import { PHONE as GEO, BEZEL, PILL, CAPTION, captionRect, zoomToRect, screenRect, PHONE_TOP_FOR } from "../src/layout.mjs";
 
 // Self-hosted by @remotion/google-fonts — bundled into the render, no network call (STYLE.md §3).
 const { fontFamily } = loadFont();
@@ -18,15 +18,15 @@ const MAX_TILT_DEG = 8;          // STYLE.md §4
 
 // Geometry lives in src/layout.mjs so the composition and the quality gate compute it once, from
 // the same numbers. The device is 80% of the frame width at the recording's true 390:844 ratio,
-// which makes it taller than the canvas: it starts below the top safe band, leaving a clear strip
-// for the "Example" pill, and runs off the bottom edge.
+// so it is taller than the canvas and runs off the bottom. Its TOP moves: lower on a wide shot so
+// the caption has clean background above it, higher on a zoom so more screen is visible — eased
+// between, never cut.
 const PHONE = { w: GEO.w, h: GEO.h, radius: GEO.radius };
-const PHONE_TOP = GEO.top;
 
 // ── the device ───────────────────────────────────────────────────────────────────────────────
 // One frame, one shadow, one highlight. The tilt and the push-in are driven by a spring so the
 // move starts and settles like a physical object rather than a linear slide.
-const Phone = ({ src, brand, progress, box, zoom, showRing }) => {
+const Phone = ({ src, brand, progress, box, zoom, showRing, phoneTop, close }) => {
   const tilt = interpolate(progress, [0, 1], [MAX_TILT_DEG, MAX_TILT_DEG * 0.35]);
 
   // ONE TRANSFORM, ONE LAYER. The ring and the dim used to live in a separate layer that scaled
@@ -34,14 +34,14 @@ const Phone = ({ src, brand, progress, box, zoom, showRing }) => {
   // 2px outline around a wide box became two green lines across the frame, and how the dim ended
   // up over the very thing it was meant to reveal. They are now children of the element the video
   // is in, positioned in unzoomed screen coordinates, so they cannot drift from it.
-  const { scale: full, tx: fullTx, ty: fullTy } = zoomToRect(box, zoom);
+  const { scale: full, tx: fullTx, ty: fullTy } = zoomToRect(box, zoom, 40, close);
   const scale = 1 + (full - 1) * progress;
   const tx = fullTx * progress;
   const ty = fullTy * progress;
   const ringOpacity = interpolate(progress, [0.18, 0.6], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
 
   return (
-    <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-start", paddingTop: PHONE_TOP, perspective: 3200, overflow: "hidden" }}>
+    <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-start", paddingTop: phoneTop, perspective: 3200, overflow: "hidden" }}>
       <div style={{
         width: PHONE.w, height: PHONE.h,
         transform: `rotateY(${tilt}deg) rotateX(${tilt * 0.22}deg)`,
@@ -79,7 +79,7 @@ const Phone = ({ src, brand, progress, box, zoom, showRing }) => {
 // In the clear strip between the top safe line and the device, right-aligned — so it covers no
 // app pixel at all. It used to sit over the demo banner.
 const ExampleLabel = ({ brand }) => (
-  <AbsoluteFill style={{ alignItems: "flex-end", justifyContent: "flex-start", paddingTop: PILL.top, paddingRight: PILL.right }}>
+  <AbsoluteFill style={{ alignItems: "flex-end", justifyContent: "flex-start", paddingTop: PILL.top, paddingRight: PILL.right, height: PILL.h }}>
     <div style={{
       fontFamily, fontSize: 26, fontWeight: 800, letterSpacing: 2.2, textTransform: "uppercase",
       color: brand.bg, background: brand.cream, padding: "9px 22px", borderRadius: 999,
@@ -88,34 +88,22 @@ const ExampleLabel = ({ brand }) => (
 );
 
 // STYLE.md §8: word by word, current word lime, lower third, two lines at most.
-const Caption = ({ chunks = [], brand, fps, anchor = "bottom" }) => {
+const Caption = ({ chunks = [], brand, fps }) => {
   const t = useCurrentFrame() / fps;
   // Six words at most on screen (STYLE.md §3): show the chunk being spoken, and hold the last one
   // rather than cutting to nothing between chunks.
   const active = chunks.filter((c) => t >= c.start - 0.05).pop() || chunks[0];
   const words = active ? active.words : [];
-  const rect = captionRect(anchor);
+  const rect = captionRect();
+  // NO BAND. The device starts below this box, so the background behind the words is the
+  // background — there is nothing of the app to cover up.
   return (
     <AbsoluteFill>
-      {/* A CLEAN BAND, not a wash. The caption sits over the device, so anything less than opaque
-          leaves app text legible behind the words — which is what made v3 hard to read. The band is
-          the background colour at full strength across the caption itself, and only fades outside
-          it, where there is nothing to hide. */}
-      <div style={{
-        position: "absolute", left: 0, right: 0,
-        top: rect.y - CAPTION.band, height: rect.h + CAPTION.band * 2,
-        background: anchor === "top"
-          ? `linear-gradient(to bottom, ${brand.bg} 0%, ${brand.bg} ${((CAPTION.band + rect.h) / (rect.h + CAPTION.band * 2) * 100).toFixed(1)}%, ${brand.bg}00 100%)`
-          : `linear-gradient(to top, ${brand.bg} 0%, ${brand.bg} ${((CAPTION.band + rect.h) / (rect.h + CAPTION.band * 2) * 100).toFixed(1)}%, ${brand.bg}00 100%)`,
-      }} />
       <div style={{
         position: "absolute", left: rect.x, top: rect.y, width: rect.w, height: rect.h,
-        display: "flex", alignItems: anchor === "top" ? "flex-start" : "flex-end", justifyContent: "center",
+        display: "flex", alignItems: "center", justifyContent: "center",
       }}>
-        <div style={{
-          textAlign: "center", fontFamily, fontWeight: 800,
-          fontSize: 76, lineHeight: 1.18, letterSpacing: -1.6,
-        }}>
+        <div style={{ textAlign: "center", fontFamily, fontWeight: 800, fontSize: 76, lineHeight: 1.18, letterSpacing: -1.6 }}>
           {words.map((w, i) => {
             const spoken = t >= w.start - 0.03;
             const current = spoken && t < w.end + 0.08;
@@ -184,11 +172,15 @@ const EndCard = ({ lines, brand, safe, logo }) => {
 export const Reel = ({ beats = [], endCard = [], brand, safe, narration, tones = [], music, logo }) => {
   const { height, width } = useVideoConfig();
   // STYLE.md §1 and §8, checked here so a layout edit cannot quietly push type into Instagram's UI.
-  if (PHONE_TOP < safe.top) throw new Error(`The device starts at ${PHONE_TOP}px, inside the top safe band (${safe.top}px).`);
   if (PHONE.w / width < 0.75) throw new Error(`The device is ${Math.round((PHONE.w / width) * 100)}% of the frame; it must be at least 75%.`);
-  const capB = captionRect("bottom"), capT = captionRect("top");
-  if (capB.y + capB.h > height - safe.bottom) throw new Error("The bottom caption runs into the bottom safe band.");
-  if (capT.y < safe.top) throw new Error("The top caption runs into the top safe band.");
+  const cap = captionRect();
+  if (cap.y < safe.top) throw new Error("The caption runs into the top safe band.");
+  for (const close of [true, false]) {
+    const top = PHONE_TOP_FOR(close);
+    if (cap.y + cap.h + CAPTION.gap > top) {
+      throw new Error(`The caption ends at ${cap.y + cap.h}px and the device starts at ${top}px — less than ${CAPTION.gap}px of air.`);
+    }
+  }
   const { fps } = useVideoConfig();
   return (
     <AbsoluteFill style={{ background: brand.bg, fontFamily }}>
@@ -234,11 +226,16 @@ const BeatBody = ({ beat, brand, safe, endCard, logo }) => {
   });
   const progress = inP * outP;
   const box = beat.box || null;
+  const close = !!beat.ring;
+  // The device's own move, eased on the same spring as the push-in, from wherever the previous beat
+  // left it. A cut that also jumps the phone reads as two different shots of two different phones.
+  const topFrom = beat.phoneTopFrom ?? PHONE_TOP_FOR(close);
+  const phoneTop = topFrom + (PHONE_TOP_FOR(close) - topFrom) * progress;
   return (
     <>
       <Phone src={beat.video ? staticFile(beat.video) : null} brand={brand} progress={progress}
-             box={box} zoom={beat.zoom || 1} showRing={!!beat.ring} />
-      <Caption chunks={beat.chunks || []} brand={brand} fps={fps} anchor={beat.captionAnchor || "bottom"} />
+             box={box} zoom={beat.zoom || 1} showRing={!!beat.ring} phoneTop={phoneTop} close={close} />
+      <Caption chunks={beat.chunks || []} brand={brand} fps={fps} />
       {/* After the caption: the caption paints a scrim, and the pill has to stay legible over it. */}
       <ExampleLabel brand={brand} />
     </>
