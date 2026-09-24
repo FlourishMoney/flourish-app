@@ -6128,10 +6128,19 @@ function ManualBillForm({data, setAppData, onClose}){
 }
 
 function PlanAhead({data, setAppData, setScreen}){
-  const [range,setRange]=useState(14);
+  // The header has always promised "the next 90 days" while the range offered 7 or 14, so the list
+  // stopped two weeks out and the rent — the event a household most needs to see coming — was never
+  // on screen. 30 is the default because a month is the unit a bill cycle is measured in; 90 matches
+  // what the header says. The day-by-day list below still shows only today, income days and bill
+  // days, so 90d is a longer list, not a wall of empty dates.
+  const [range,setRange]=useState(30);
+  const RANGES = [7, 30, 90];
   const [showBillManager,setShowBillManager]=useState(false);
   const [expandedPlanDay, setExpandedPlanDay] = useState(null);
   // ── ForecastEngine powers the plan ahead view
+  // Math.max keeps the ENGINE's window at 30 days minimum (the risk flags below read further ahead
+  // than the list shows); passing `range` straight through would shorten those to 7 days on the 7d
+  // view. With range 90 it projects 90, which is what the list then slices.
   const { forecast: _forecast, willGoNegative: willGoNeg, overdraftRisk, lowBalanceWarnings, canProject, dataIssues } = ForecastEngine.generate(data, Math.max(range, 30));
   const days = _forecast.slice(0, range).map(f => ({
     d: f.date, dayNum: f.date.getDate(),
@@ -6144,6 +6153,11 @@ function PlanAhead({data, setAppData, setScreen}){
   // 0 when it can't be determined (this is only a chart scale, not a displayed figure).
   const income = perDepositAmount((data.incomes||[])[0]) || 0;
   const minBalance = Math.min(...days.map(d => d.balance));
+  // The bar's scale has to cover what the RANGE shows. It was "balance + one paycheque", which is
+  // always enough for a fortnight and is not enough for a month: Bar paints RED when the value
+  // exceeds its max, so on this demo every balance after the second paycheque — $6,591 and up —
+  // would have rendered as a danger bar on a perfectly healthy forecast.
+  const barMax = Math.max(bal + income, ...days.map(d => d.balance), 1);
 
   const hasBills = (data.bills||[]).length > 0;
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -6164,7 +6178,7 @@ function PlanAhead({data, setAppData, setScreen}){
     </div>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <ScreenHeader title="Watch" subtitle="The next 90 days. What's coming in, what's going out, and what happens if." onBack={setScreen?()=>setScreen("home"):null}/>
-      <div style={{display:"flex",gap:6,background:C.surface,borderRadius:12,padding:3,flexShrink:0,marginBottom:16}}>{[7,14].map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"6px 16px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .22s"}}>{r}d</button>)}</div>
+      <div style={{display:"flex",gap:4,background:C.surface,borderRadius:12,padding:3,flexShrink:0,marginBottom:16}}>{RANGES.map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"6px 11px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",transition:"all .22s"}}>{r}d</button>)}</div>
     </div>
     {(()=>{
       // Item 1: the starting balance is the SAME displayed value as Today's "In your accounts" — read from
@@ -6239,7 +6253,7 @@ function PlanAhead({data, setAppData, setScreen}){
                   <div style={{color:C.muted,fontSize:9}}>balance</div>
                 </div>
               </div>
-              <Bar v={Math.max(0,day.balance)} max={bal+income} color={neg?C.red:low?C.gold:C.green} h={4}/>
+              <Bar v={Math.max(0,day.balance)} max={barMax} color={neg?C.red:low?C.gold:C.green} h={4}/>
               {neg&&<div style={{marginTop:8,color:C.redBright,fontSize:12,fontWeight:600}}>⚠️ Projected overdraft — NSF fees $45–48. Move money now.</div>}
               {low&&!neg&&<div style={{marginTop:6,color:C.goldBright,fontSize:11}}>⚠ Getting low — hold non-essential spending.</div>}
             </div>
