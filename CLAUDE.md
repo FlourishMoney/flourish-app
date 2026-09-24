@@ -63,6 +63,13 @@ the store accounts. Short version: **both store accounts already exist and are p
 plan needs to budget for them again. Android is `com.flourishmoney.app`, iOS is
 `app.flourishmoney`; they differ deliberately.
 
+## Native builds (Capacitor) — iOS and Android
+See `docs/ops/NATIVE-BUILDS.md` for ids, versions, the Android JDK 21 requirement, and
+the store accounts. Short version: **both store accounts already exist and are paid**
+(Apple Team ID `V8B8MR88SL`; the Play account is the one that ships GrowSmart), so no
+plan needs to budget for them again. Android is `com.flourishmoney.app`, iOS is
+`app.flourishmoney`; they differ deliberately.
+
 ## iOS build (Capacitor)
 Capacitor 8.4.2 wraps the web app as a native iOS app — appId `app.flourishmoney`, SPM-based (open `ios/App/App.xcodeproj`; there is **no** `.xcworkspace`). The app bundles `dist/` (no `server.url` in `capacitor.config.json`). After any web change, rebuild + sync + run:
 ```
