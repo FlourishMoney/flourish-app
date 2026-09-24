@@ -318,18 +318,45 @@ is an export gap, not a loss.
 
 **Fix** One line beside the existing entry.
 
-### 13d. `billsReconcile` keys bills differently from the rest of the pipeline
+### 13d. `billsReconcile` keys bills differently from the rest of the pipeline — a FIRST-SYNC event, not cosmetic
+
+**Severity: this is the one to fix before the answer path is wired.** An earlier version of this
+entry called it pre-existing and cosmetic. It is neither. Blocker 1's fix changed the detector's
+display name, and `docs`-level "cosmetic" was the wrong reading even before that.
 
 **Where** `src/lib/billsReconcile.js:29` (`billKey`, lowercase + collapse whitespace) versus
-`src/lib/billReeval.js:57` (`merchantKey`, which also strips POS prefixes and account numbers
-via `plaidNormalize.stripAccountNumber`).
+`src/lib/billReeval.js:57` (`merchantKey`, which also strips POS prefixes and account numbers via
+`plaidNormalize.stripAccountNumber`).
 
-**What happens** A detected bill named "FPOS 1234 REIDS DAIRY" and a stored bill "Reid's Dairy"
-key differently in `billsReconcile` while keying the same everywhere else, so the meeting can
-raise "a new bill appeared" for a bill the household already has under its cleaner name.
+**What happens** A stored bill and the detector's current name for the same merchant can differ —
+`"Rogers"` stored, `"Rogers Toronto On"` detected from `"ROGERS 1234 TORONTO ON"`. `billsReconcile`
+compares them with its own weaker key, sees no match, and raises BOTH halves: an `appeared` for the
+detected name and a `disappeared` for the stored one. One bill, two questions, pointing opposite
+ways.
 
-**Fix** Use `merchantKey` in `billsReconcile` too. It was written before the blocker-1 work
-made `merchantKey` safe; now that it is, there is no reason for a second key.
+For an existing household this is a **first-sync event**, not a slow drift: the first money meeting
+after this ships asks them to add bills they already have, and in the same agenda asks them to
+confirm those same bills have ended. Fixes 1-3 (commit `c179383`) make the name match again for the
+common shapes — `HYDRO ONE 12345 ON`, `BELL CANADA 1234 QC`, `HYDRO QUEBEC 1234 5678` — and the
+compatibility read carries `userBillOverrides` across, but neither covers the bill-name matching
+inside `billsReconcile`, and `"ROGERS 1234 TORONTO ON"` still splits.
+
+Pinned by `tests/merchantNameCompat.test.cjs` assertion **e2**, which asserts the CURRENT (wrong)
+behaviour so it is visible and counted. Fixing 13d makes that assertion fail; change it to expect
+`"(none)"` at the same time.
+
+**Fix** Use `merchantKey` in `billsReconcile` instead of `billKey`. It was written before the
+blocker-1 work made `merchantKey` safe; now that it is, there is no reason for a second key.
+
+**SEQUENCING CONSTRAINT — read this before starting 13e or 13f.**
+
+The double-counted bill is **latent today**: `applyBillChange` has no caller, so nothing acts on the
+pair. It becomes **live** the moment 13e (writing `meetingRecords`) and 13f (rendering
+`agenda.questions`) wire the answer path — at that point a household can accept both halves, adding
+a duplicate bill AND removing the real one, and the bill total is wrong in both directions.
+
+So: **fixes 1 to 3 must land before 13e/13f work starts** (they have, in `c179383`), and **13d must
+be fixed before 13e/13f ship**, not after. The order is 13d, then 13e/13f, then the migration.
 
 ### 13e. Nothing writes `meetingRecords`
 
