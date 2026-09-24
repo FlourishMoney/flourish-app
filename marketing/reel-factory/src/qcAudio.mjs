@@ -45,7 +45,7 @@ async function contactSheet(mp4, outJpg, seconds) {
 const waveform = (mp4, outPng) =>
   ff(["-i", mp4, "-filter_complex", "[0:a]showwavespic=s=1600x420:colors=#00E89A|#EDE9E2:split_channels=1", "-frames:v", "1", outPng]);
 
-export async function runAudioGate({ inFile, outFile, spec, lines, reviewDir, music, musicNote, credits, ticks, take = null, suffix = "v6", briefed = null, maxSpeed = 1.0 }) {
+export async function runAudioGate({ inFile, outFile, spec, lines, reviewDir, music, musicNote, credits, ticks, take = null, suffix = "v6", briefed = null, maxSpeed = 1.0, duckedStem = null, musicStem = null, requireMusic = false, musicMeta = null }) {
   const results = [];
   const check = (name, ok, detail) => { results.push({ name, ok, detail }); return ok; };
 
@@ -96,6 +96,31 @@ export async function runAudioGate({ inFile, outFile, spec, lines, reviewDir, mu
     check("voice settings as briefed", sameExceptSpeed && speedOk && Number.isInteger(take.seed),
       `stability ${t.stability}, similarity ${t.similarity_boost}, style ${t.style}, boost ${t.use_speaker_boost}, `
       + `speed ${t.speed}${t.speed > 1 ? ` (allowed up to ${maxSpeed})` : ""}, seed ${take.seed}`);
+  }
+
+  // ── the bed is there, and it gets out of the way of every line ──────────────────────────────
+  if (requireMusic) {
+    check("music present", !!music && !!duckedStem && fs.existsSync(duckedStem),
+      music ? `${musicNote}` : "the final cut does not ship without music");
+
+    // Measured on the ducked stem: each line's own level against the quiet either side of it.
+    const level = async (file, from, to) => {
+      const { stderr } = await run("ffmpeg", ["-hide_banner", "-nostats", "-ss", from.toFixed(3), "-t", Math.max(0.12, to - from).toFixed(3),
+        "-i", file, "-af", "volumedetect", "-f", "null", "-"], { maxBuffer: 1 << 24 }).catch((e) => ({ stderr: e.stderr || "" }));
+      const m = /mean_volume:\s*(-?\d+(?:\.\d+)?) dB/.exec(stderr);
+      return m ? parseFloat(m[1]) : null;
+    };
+    const dips = [];
+    for (const l of lines) {
+      const from = l.start + 0.2, to = Math.max(from + 0.15, l.end - 0.05);
+      const before = await level(musicStem, from, to);
+      const after = await level(duckedStem, from, to);
+      dips.push({ line: l.line, dip: before !== null && after !== null ? before - after : null });
+    }
+    const notDucked = dips.filter((d) => d.dip === null || d.dip < 1.0);
+    check("music ducked under every line", notDucked.length === 0,
+      notDucked.length ? notDucked.map((d) => `"${d.line.slice(0, 20)}…" only ${d.dip === null ? "?" : d.dip.toFixed(1)} dB`).join("; ")
+        : `dips ${dips.map((d) => d.dip.toFixed(1)).join("/")} dB across ${dips.length} lines`);
   }
 
   // ── nothing secret can reach the repo ───────────────────────────────────────────────────────

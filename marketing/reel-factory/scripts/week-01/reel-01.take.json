@@ -133,5 +133,13 @@
   "audition": {
     "maxSpeed": 1.05,
     "outputPattern": "reel-01-audition-{key}-{label}.mp4"
+  },
+  "final": {
+    "audition": "A",
+    "output": "flourish-reel-01-v8.mp4",
+    "musicFile": "out/week-01/music/bed-21400.mp3",
+    "pauseLufs": -20,
+    "duckLufs": -24,
+    "requireMusic": true
   }
 }

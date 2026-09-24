@@ -22,7 +22,8 @@ dotenv.config({ path: path.join(ROOT, ".env") });
 
 const argv = process.argv.slice(2);
 const week = argv.find((a) => !a.startsWith("--"));
-const auditionKey = (argv.find((a) => a.startsWith("--audition=")) || "").split("=")[1] || null;
+let auditionKey = (argv.find((a) => a.startsWith("--audition=")) || "").split("=")[1] || null;
+const isFinal = argv.includes("--final");
 if (!week) { console.error("Usage: npm run dub:take -- week-01 [--audition=A]"); process.exit(1); }
 const REVIEW = process.env.REVIEW_DIR || path.join(process.env.HOME, "Projects", "flourish-app", "marketing", "review", week);
 const log = (m) => console.log(`  ${m}`);
@@ -44,14 +45,18 @@ async function tick(out, { freq, seconds = 0.09, peakDbfs }) {
 
   // An audition swaps ONLY the voice. Script, commas, alignment rules, mix targets, ticks and gate
   // are the v7 pipeline untouched — otherwise the comparison is not about the voice.
+  // --final ships the chosen audition: the SAME cached take, never re-generated, plus the bed.
+  if (isFinal) auditionKey = spec.final.audition;
   const aud = auditionKey ? spec.auditions[auditionKey] : null;
   if (auditionKey && !aud) throw new Error(`No audition "${auditionKey}" in the spec.`);
-  const suffix = aud ? `audition-${auditionKey}` : "v7";
+  const suffix = isFinal ? "v8" : (aud ? `audition-${auditionKey}` : "v7");
   if (aud) {
     spec.voice = { ...spec.voice, voiceId: aud.voiceId, name: aud.name, settings: aud.settings };
-    spec.output = spec.audition.outputPattern.replace("{key}", auditionKey).replace("{label}", aud.label);
+    spec.output = isFinal ? spec.final.output
+      : spec.audition.outputPattern.replace("{key}", auditionKey).replace("{label}", aud.label);
   }
-  const work = ensure(path.join(dir.out, week, `audio-${suffix}`));
+  // The take comes from the audition's own cache, so the chosen performance is the one that ships.
+  const work = ensure(path.join(dir.out, week, `audio-${isFinal ? `audition-${auditionKey}` : suffix}`));
   const inFile = path.join(REVIEW, spec.input);
   const outFile = path.join(REVIEW, spec.output);
   if (!fs.existsSync(inFile)) throw new Error(`The locked picture is not at ${inFile}`);
@@ -113,26 +118,40 @@ async function tick(out, { freq, seconds = 0.09, peakDbfs }) {
   const { file: voiceTrack } = await normaliseTo(voiceRaw, path.join(work, "voice.wav"), -16);
   log(`edit: 7 segments, ${(xf * 1000).toFixed(0)}ms fades, pauses ${pauses.map((p) => p.toFixed(2)).join("/")}s`);
 
-  // ── 3. music, asked for properly ────────────────────────────────────────────────────────────
-  let music = null, musicNote = "skipped (no key)";
-  const key = (process.env.ELEVENLABS_API_KEY || "").trim();
-  if (key) {
-    const res = await fetch("https://api.elevenlabs.io/v1/music", {
-      method: "POST", headers: { "xi-api-key": key, "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: spec.music.prompt, music_length_ms: Math.round(spec.duration * 1000) }),
-    });
-    if (res.ok) {
-      const raw = path.join(work, "music-raw.mp3");
-      fs.writeFileSync(raw, Buffer.from(await res.arrayBuffer()));
-      const bed = path.join(work, "music-bed.wav");
-      await ff(["-i", raw, "-af",
-        `afade=t=in:st=0:d=${spec.music.fadeIn},afade=t=out:st=${(spec.duration - spec.music.fadeOut).toFixed(2)}:d=${spec.music.fadeOut}`,
-        "-ar", "48000", "-ac", "2", bed]);
-      music = (await normaliseTo(bed, path.join(work, "music.wav"), spec.music.lufs)).file;
-      musicNote = `ElevenLabs Music at ${spec.music.lufs} LUFS, ducked under the voice`;
-    } else {
-      let why = ""; try { why = (((await res.json()) || {}).detail || {}).message || ""; } catch { /* not json */ }
-      musicNote = `unavailable (HTTP ${res.status}${why ? `: ${why.replace(/\s+/g, " ").slice(0, 90)}` : ""}) — no music rather than an unlicensed substitute`;
+  // ── 3. music ────────────────────────────────────────────────────────────────────────────────
+  // The bed sits at pauseLufs and the voice pulls it down to about duckLufs — so the gaps never
+  // feel empty and the read is never fought. Generated once and cached; the final cut must have it.
+  let music = null, musicNote = "skipped", musicMeta = null;
+  const bedPath = isFinal ? path.join(ROOT, spec.final.musicFile) : null;
+  if (isFinal) {
+    if (!fs.existsSync(bedPath)) throw new Error(`No music bed at ${bedPath}. The final cut does not ship without music.`);
+    musicMeta = JSON.parse(fs.readFileSync(bedPath.replace(/\.mp3$/, ".json"), "utf8"));
+    const faded = path.join(work, "music-faded.wav");
+    await ff(["-i", bedPath, "-af",
+      `afade=t=in:st=0:d=${spec.music.fadeIn},afade=t=out:st=${(spec.duration - spec.music.fadeOut).toFixed(2)}:d=${spec.music.fadeOut}`,
+      "-t", String(spec.duration), "-ar", "48000", "-ac", "2", faded]);
+    music = (await normaliseTo(faded, path.join(work, "music.wav"), spec.final.pauseLufs)).file;
+    musicNote = `ElevenLabs Music · ${spec.final.pauseLufs} LUFS in the gaps, ducked toward ${spec.final.duckLufs} under the voice`;
+  } else {
+    const key = (process.env.ELEVENLABS_API_KEY || "").trim();
+    if (key) {
+      const res = await fetch("https://api.elevenlabs.io/v1/music", {
+        method: "POST", headers: { "xi-api-key": key, "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: spec.music.prompt, music_length_ms: Math.round(spec.duration * 1000) }),
+      });
+      if (res.ok) {
+        const raw = path.join(work, "music-raw.mp3");
+        fs.writeFileSync(raw, Buffer.from(await res.arrayBuffer()));
+        const bed = path.join(work, "music-bed.wav");
+        await ff(["-i", raw, "-af",
+          `afade=t=in:st=0:d=${spec.music.fadeIn},afade=t=out:st=${(spec.duration - spec.music.fadeOut).toFixed(2)}:d=${spec.music.fadeOut}`,
+          "-ar", "48000", "-ac", "2", bed]);
+        music = (await normaliseTo(bed, path.join(work, "music.wav"), spec.music.lufs)).file;
+        musicNote = `ElevenLabs Music at ${spec.music.lufs} LUFS, ducked under the voice`;
+      } else {
+        let why = ""; try { why = (((await res.json()) || {}).detail || {}).message || ""; } catch { /* not json */ }
+        musicNote = `unavailable (HTTP ${res.status}${why ? `: ${why.replace(/\s+/g, " ").slice(0, 90)}` : ""}) — no music rather than an unlicensed substitute`;
+      }
     }
   }
   log(`music: ${musicNote}`);
@@ -153,10 +172,26 @@ async function tick(out, { freq, seconds = 0.09, peakDbfs }) {
 
   // ── 5. mix, master, mux ─────────────────────────────────────────────────────────────────────
   const mixRaw = path.join(work, "mix-raw.wav");
+  const duckedStem = path.join(work, "music-ducked.wav");
   if (music) {
-    await ff(["-i", voiceTrack, "-i", music, "-i", ticks, "-filter_complex",
-      "[1:a][0:a]sidechaincompress=threshold=0.05:ratio=8:attack=12:release=320[duck];"
-      + "[0:a][duck][2:a]amix=inputs=3:normalize=0:duration=first[out]", "-map", "[out]", "-ar", "48000", "-ac", "2", mixRaw]);
+    // The ducked bed is written out on its own as well as into the mix, so the gate can MEASURE
+    // the dip under each line rather than take the filter's word for it.
+    // AUTOMATION, NOT A COMPRESSOR. A sidechain's depth depends on what the music happens to be
+    // doing, so one line dipped 0.4 dB while another dipped plenty. The bed is instead pulled down
+    // by a fixed amount across each line's own window with 150ms ramps: the dip is the same every
+    // time, it is exactly the difference between the two briefed levels, and it can be verified.
+    const dipDb = spec.final.pauseLufs - spec.final.duckLufs;      // -20 in the gaps, -24 under
+    const g = Math.pow(10, -dipDb / 20).toFixed(4);
+    const R = 0.15;
+    const env = placed.map((p) => {
+      const a = (p.target - R).toFixed(3), b = (p.target + p.dur + R).toFixed(3);
+      return `clip(min((t-${a})/${R},(${b}-t)/${R}),0,1)`;
+    }).reduce((acc, e) => (acc ? `max(${acc},${e})` : e), "");
+    await ff(["-i", music, "-af", `volume='1-(1-${g})*(${env})':eval=frame`,
+      "-ar", "48000", "-ac", "2", duckedStem]);
+    log(`duck: ${dipDb.toFixed(0)} dB under each line, ${(R * 1000).toFixed(0)}ms ramps`);
+    await ff(["-i", voiceTrack, "-i", duckedStem, "-i", ticks, "-filter_complex",
+      "[0:a][1:a][2:a]amix=inputs=3:normalize=0:duration=first[out]", "-map", "[out]", "-ar", "48000", "-ac", "2", mixRaw]);
   } else {
     await ff(["-i", voiceTrack, "-i", ticks, "-filter_complex",
       "[0:a][1:a]amix=inputs=2:normalize=0:duration=first[out]", "-map", "[out]", "-ar", "48000", "-ac", "2", mixRaw]);
@@ -172,6 +207,8 @@ async function tick(out, { freq, seconds = 0.09, peakDbfs }) {
     speed: 1, requestId: take.requestId }));
   await runAudioGate({ inFile, outFile, spec, lines, reviewDir: REVIEW, music: !!music, musicNote,
     credits: take.credits, ticks: at.length, take, suffix,
+    duckedStem: music ? duckedStem : null, musicStem: music, requireMusic: !!(isFinal && spec.final.requireMusic),
+    musicMeta,
     briefed: aud ? aud.settings : spec.voice.settings,
     maxSpeed: aud ? (spec.audition.maxSpeed || 1.0) : 1.0 });
 })();
