@@ -37,6 +37,7 @@ import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, 
 import { todayKnowItem } from "./lib/todayPriorities.js";
 import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown, formatCompactMoney } from "./lib/format.js";
 import { payWord, savingsAccountTerm, retirementAccountsLabel } from "./lib/locale.js";
+import { DEMO_STATUS_LABEL, statusChip, heroFreshness, refreshStamp } from "./lib/demoStatus.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
@@ -5118,14 +5119,18 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
       {/* ── Top status bar ───────────────────────────────────────────────── */}
       <div style={{...anim(0),display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:2}}>
         <div onClick={()=>setShowTransparency(true)} style={{display:"flex",alignItems:"center",gap:7,background:"rgba(0,204,133,0.06)",border:"1px solid rgba(0,204,133,0.12)",borderRadius:99,padding:"4px 10px",cursor:"pointer"}} title="How is this calculated?">
-          <div style={{width:6,height:6,borderRadius:"50%",background:C.green,boxShadow:`0 0 8px ${C.green}`,animation:"pulse 2.8s ease-in-out infinite",flexShrink:0}}/>
-          <span style={{color:C.green,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>Live</span>
-          <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{
-            (()=>{ const l=localStorage.getItem("flourish_last_refresh");
-              if(!l) return "· up to date";
-              const m=Math.round((Date.now()-parseInt(l))/60000);
-              return m<1?"· just refreshed":m<60?`· updated ${m}m ago`:"· up to date"; })()
-          }</span>
+          {(()=>{
+            // Wording comes from demoStatus.js: in demo mode every figure is sample data, so this chip
+            // must say so (the same "Example · sample data" Meet uses) rather than "Live". A pulsing
+            // green dot is a live signal too, so demo gets the static gold of Meet's example label.
+            const chip = statusChip({demo:!!data.demo, lastRefreshRaw:localStorage.getItem("flourish_last_refresh"), nowMs:Date.now()});
+            const tone = data.demo ? C.gold : C.green;
+            return <>
+              <div style={{width:6,height:6,borderRadius:"50%",background:tone,boxShadow:data.demo?"none":`0 0 8px ${C.green}`,animation:data.demo?"none":"pulse 2.8s ease-in-out infinite",flexShrink:0}}/>
+              <span style={{color:tone,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>{chip.label}</span>
+              {chip.detail&&<span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{chip.detail}</span>}
+            </>;
+          })()}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2}}>{new Date().toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}</span>
@@ -5281,9 +5286,12 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               <div style={{width:6,height:6,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 10px ${heroColor}`,animation:"pulse 2.5s ease-in-out infinite"}}/>
               <span style={{color:heroColorBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Safe to spend until next payday</span>
               <InfoDot term="Safe to spend" onOpen={setShowTerm}/>
-              {data.bankConnected
-                ? <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· live</span>
-                : <span style={{color:C.gold,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· estimated</span>}
+              {(()=>{
+                // Demo sets bankConnected:true, so this used to say "· live" over sample data. The
+                // wording now comes from demoStatus.js; colours are unchanged (live muted, else gold).
+                const fresh = heroFreshness({demo:!!data.demo, bankConnected:!!data.bankConnected});
+                return <span style={{color:fresh.kind==="live"?C.muted:C.gold,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3,whiteSpace:fresh.kind==="example"?"nowrap":undefined}}>{fresh.text}</span>;
+              })()}
             </div>
             {hasCashAccount ? (_ss.noIncome ? (
             /* Sprint Q item 3: no income → prompt to set it up, not a misleading safe-to-spend */
@@ -5319,11 +5327,11 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             </div>
             )}
             {/* ── Timestamp — hidden during refresh to avoid contradiction ── */}
-            {data.bankConnected&&!isRefreshing&&(()=>{
-              const lastRefresh = parseInt(localStorage.getItem("flourish_last_refresh")||"0");
-              if (!lastRefresh) return null;
-              const mins = Math.round((Date.now()-lastRefresh)/60000);
-              const label = mins < 1 ? "just updated" : mins < 60 ? `updated ${mins}m ago` : mins < 1440 ? `updated ${Math.floor(mins/60)}h ago` : "updated today";
+            {(()=>{
+              // Never in demo: sample data was not updated from anywhere, whatever an earlier real
+              // session left in localStorage on this browser. Wording/thresholds live in demoStatus.js.
+              const label = refreshStamp({demo:!!data.demo, bankConnected:!!data.bankConnected, isRefreshing:!!isRefreshing, lastRefreshRaw:localStorage.getItem("flourish_last_refresh"), nowMs:Date.now()});
+              if (!label) return null;
               return (
                 <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:500,letterSpacing:0.3,marginBottom:4}}>
                   {label}
@@ -9309,7 +9317,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
         /* Demo mode: one scripted facilitator line, read from the agenda already above. Local only —
            no /api/coach call. The real "trial" paywall below is unchanged for signed-in free-tier users. */
         <div style={{...card,background:C.cardAlt}}>
-          <div style={{color:C.goldBright,fontSize:11 /* SMALL_TEXT_OK: data-provenance tag, a marker on content rather than content */,fontWeight:800,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Example · sample data</div>
+          <div style={{color:C.goldBright,fontSize:11 /* SMALL_TEXT_OK: data-provenance tag, a marker on content rather than content */,fontWeight:800,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{DEMO_STATUS_LABEL}</div>
           <div style={{color:C.cream,fontSize:13,lineHeight:1.6}}>{demoFacilitatorLine(data, new Date()) || "Your coach works through the agenda above with you, one item at a time."}</div>
           <div style={{color:C.muted,fontSize:13,lineHeight:1.5,marginTop:8}}>A scripted preview. Create a free account to run this meeting on your own numbers.</div>
         </div>
@@ -11856,7 +11864,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
             <div style={{color:C.cream,fontWeight:800,fontSize:15}}>AI Coach</div>
             <div style={{color:isOnline?C.green:C.muted,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",gap:4}}>
               <div style={{width:6,height:6,borderRadius:"50%",background:isOnline?C.green:C.muted}}/>
-              {data.demo?"Example · Sample data":isOnline?"Live · Your real data":"Offline"}
+              {data.demo?DEMO_STATUS_LABEL:isOnline?"Live · Your real data":"Offline"}
             </div>
           </div>
           <button onClick={async ()=>{
