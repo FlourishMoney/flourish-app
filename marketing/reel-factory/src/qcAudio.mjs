@@ -45,7 +45,7 @@ async function contactSheet(mp4, outJpg, seconds) {
 const waveform = (mp4, outPng) =>
   ff(["-i", mp4, "-filter_complex", "[0:a]showwavespic=s=1600x420:colors=#00E89A|#EDE9E2:split_channels=1", "-frames:v", "1", outPng]);
 
-export async function runAudioGate({ inFile, outFile, spec, lines, reviewDir, music, musicNote, credits, ticks }) {
+export async function runAudioGate({ inFile, outFile, spec, lines, reviewDir, music, musicNote, credits, ticks, take = null, suffix = "v6" }) {
   const results = [];
   const check = (name, ok, detail) => { results.push({ name, ok, detail }); return ok; };
 
@@ -81,6 +81,21 @@ export async function runAudioGate({ inFile, outFile, spec, lines, reviewDir, mu
   check('no line says "I"', firstPerson.length === 0,
     firstPerson.length ? firstPerson.map((l) => `"${l.line}"`).join("; ") : `${lines.length} lines checked`);
 
+  // ── one take, not seven ─────────────────────────────────────────────────────────────────────
+  // Separately generated lines each reset the performance, which is what made v6 sound like seven
+  // announcements. Every line must trace back to the same request.
+  if (take) {
+    const ids = new Set(lines.map((l) => l.requestId || null));
+    check("one take for all lines", ids.size === 1 && take.requestId && !ids.has(null),
+      take.requestId ? `request-id ${take.requestId} for all ${lines.length} lines` : "the API returned no request id");
+    check("voice settings as briefed",
+      take.settings && take.settings.stability === 0.55 && take.settings.similarity_boost === 0.75
+        && take.settings.style === 0 && take.settings.use_speaker_boost === true && take.settings.speed === 1.0
+        && Number.isInteger(take.seed),
+      `stability ${take.settings?.stability}, similarity ${take.settings?.similarity_boost}, style ${take.settings?.style}, `
+      + `boost ${take.settings?.use_speaker_boost}, speed ${take.settings?.speed}, seed ${take.seed}`);
+  }
+
   // ── nothing secret can reach the repo ───────────────────────────────────────────────────────
   const envPath = path.join(path.dirname(path.dirname(new URL(import.meta.url).pathname)), ".env");
   const key = fs.existsSync(envPath) ? ((/^ELEVENLABS_API_KEY=(.*)$/m.exec(fs.readFileSync(envPath, "utf8")) || [])[1] || "").trim() : "";
@@ -93,8 +108,8 @@ export async function runAudioGate({ inFile, outFile, spec, lines, reviewDir, mu
   check("no secrets or media staged", leaks.length === 0, leaks.length ? leaks.join("; ") : "clean");
 
   // ── review artefacts ────────────────────────────────────────────────────────────────────────
-  const sheet = path.join(reviewDir, `${spec.id}-v6-contact.jpg`);
-  const wave = path.join(reviewDir, `${spec.id}-v6-waveform.png`);
+  const sheet = path.join(reviewDir, `${spec.id}-${suffix}-contact.jpg`);
+  const wave = path.join(reviewDir, `${spec.id}-${suffix}-waveform.png`);
   await contactSheet(outFile, sheet, parseFloat(dof.duration));
   await waveform(outFile, wave);
   check("contact sheet + waveform", fs.existsSync(sheet) && fs.existsSync(wave), `${path.basename(sheet)}, ${path.basename(wave)}`);
