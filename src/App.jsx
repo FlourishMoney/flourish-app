@@ -22,6 +22,7 @@ import { shouldPromptIncome, applyDetectedIncome, cadenceLabel } from "./lib/inc
 import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill } from "./lib/billReeval.js";
 import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate } from "./lib/statementImport.js";
 import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
+import { isNativeApp, billingUiState, offeredPlans, billingReturnNotice, BILLING_RETURN_PARAMS } from "./lib/billingVisibility.js";
 import { tabForScreen } from "./lib/navigation.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState } from "./lib/meetSnapshot.js";
@@ -5440,7 +5441,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         })()}
 
         {/* ── PREMIUM UPGRADE ───────────────────────────────────────────── */}
-        {!data.isPremium&&!isCapacitorIOS()&&onUpgrade&&(
+        {!data.isPremium&&!isNativeApp()&&onUpgrade&&(
           <div onClick={onUpgrade} style={{...anim(300),...glass(C.purple,C.purple+"33"),borderRadius:20,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}
             onMouseEnter={e=>e.currentTarget.style.borderColor=C.purple+"55"}
             onMouseLeave={e=>e.currentTarget.style.borderColor=C.purple+"22"}>
@@ -10176,7 +10177,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
   return null;
 }
 
-function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo}){
+function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade}){
   // notifToggles state removed with the Notifications preference section (no notification system yet — see audit).
   const [activeSection,setActiveSection]=useState(null);
   // Apple 5.1.2(i): flipping the AI Coach toggle ON re-grants third-party sharing consent via
@@ -10464,6 +10465,20 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <button onClick={onAddBank} style={{width:"100%",marginTop:12,background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:10,padding:"10px",color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
           + Connect Another Bank
         </button>
+      </div>
+    )}
+    {/* ── Flourish Plus ────────────────────────────────────────── */}
+    {/* One of exactly two entry points (the other is the Coach's free-limit prompt). Hidden
+        entirely unless the server says billing is on and this is not a native shell. */}
+    {billingUi?.show&&onOpenUpgrade&&(
+      <div style={{marginTop:10,padding:"16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
+        <div style={{color:C.cream,fontWeight:700,marginBottom:4}}>Flourish Plus</div>
+        <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>
+          {billingUi.mode==="manage"
+            ? "Change your card, switch plan or cancel."
+            : "Unlimited coaching and the full picture from your linked accounts."}
+        </div>
+        <Btn label={billingUi.mode==="manage"?"Manage subscription":"See plans"} onClick={onOpenUpgrade} color={C.purpleBright} outline small/>
       </div>
     )}
     {/* ── Sign out ─────────────────────────────────────────────── */}
@@ -11444,6 +11459,93 @@ function PremiumGate({feature,desc,onUpgrade}){
 // paid client gate until the next profile read. Billing does not exist yet (Stripe is planned for
 // 26 Oct), so there is nothing honest for the button to do except say so. When checkout exists it
 // belongs behind a server-confirmed payment writing the profiles row — never a setState here.
+// ── UPGRADE (Flourish Plus) ──────────────────────────────────────────────────────────────────────
+// The only screen that can start a payment. It renders nothing on its own account: the caller has
+// already asked billingUiState whether billing is on, whether this is a native shell, and whether
+// the household is already paying.
+//
+// PRICES COME FROM offeredPlans(), which reads src/lib/pricing.js. No amount is typed here.
+// WHICH PLANS are offered is the server's answer, not this screen's opinion — the founding price
+// appears only because the status call said there is room for it, and its price id never reaches
+// the browser at all: the client posts a plan KEY.
+function UpgradeScreen({status, mode, notice, onClose, onManage}){
+  const [busy,setBusy]=useState(null);
+  const [error,setError]=useState("");
+  const plans = offeredPlans({status});
+
+  const go = async (planKey) => {
+    setBusy(planKey); setError("");
+    try{
+      const jwt = await getJwt();
+      if(!jwt) throw new Error("signed_out");
+      const res = await fetch(`${API_BASE}/api/billing`,{
+        method:"POST",
+        headers:{"Content-Type":"application/json",Authorization:`Bearer ${jwt}`},
+        body: JSON.stringify(planKey==="__portal__"
+          ? {action:"create_portal_session"}
+          : {action:"create_checkout_session", plan_key:planKey}),
+      });
+      const body = await res.json().catch(()=>({}));
+      // The founding price can sell out between the screen rendering and the tap.
+      if(res.status===403 && body.error==="founding_cohort_full"){
+        setError("The founding price has just been taken up. The annual plan is still available.");
+        setBusy(null); return;
+      }
+      if(!res.ok || !body.url) throw new Error(body.error||"unavailable");
+      window.location.assign(body.url);      // Stripe Checkout, hosted by Stripe
+    }catch(e){
+      setError(e.message==="signed_out" ? "Sign in again to continue." : "Couldn't reach checkout. Try again in a moment.");
+      setBusy(null);
+    }
+  };
+
+  return(
+    <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center"}}>
+      <div style={{width:"100%",maxWidth:430,padding:"24px 20px 60px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
+          <div style={{fontSize:20,fontWeight:800,display:"flex",alignItems:"center",gap:7}}>Flourish Plus</div>
+          <button onClick={onClose} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"7px 14px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Close</button>
+        </div>
+
+        {notice&&(
+          <div style={{background:notice.kind==="success"?C.green+"18":C.card,border:`1px solid ${notice.kind==="success"?C.green+"55":C.border}`,borderRadius:12,padding:"12px 14px",marginBottom:18,color:notice.kind==="success"?C.greenBright:C.mutedHi,fontSize:13,lineHeight:1.6}}>
+            {notice.text}
+          </div>
+        )}
+
+        {mode==="manage" ? (
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"18px"}}>
+            <div style={{color:C.cream,fontWeight:700,marginBottom:6}}>You're on Flourish Plus</div>
+            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:14}}>Change your card, switch plan or cancel in Stripe's billing portal.</div>
+            <button onClick={()=>onManage ? onManage() : go("__portal__")} disabled={busy==="__portal__"} style={{width:"100%",background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"14px",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>
+              {busy==="__portal__"?"Opening…":"Manage subscription"}
+            </button>
+          </div>
+        ) : (
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {plans.map(plan=>(
+              <button key={plan.key} onClick={()=>go(plan.key)} disabled={!!busy} style={{textAlign:"left",background:C.card,border:`2px solid ${plan.key==="founding_annual"?C.gold+"77":C.border}`,borderRadius:16,padding:"16px 18px",cursor:busy?"default":"pointer",fontFamily:"inherit",opacity:busy&&busy!==plan.key?0.5:1}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10}}>
+                  <div style={{color:C.cream,fontWeight:800,fontSize:15}}>{plan.label}</div>
+                  <div style={{color:C.cream,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{plan.price}</div>
+                </div>
+                {plan.sub&&<div style={{color:C.muted,fontSize:12,marginTop:4}}>{plan.sub}</div>}
+                {plan.note&&<div style={{color:plan.key==="founding_annual"?C.gold:C.mutedHi,fontSize:12,marginTop:6,lineHeight:1.5}}>{plan.note}</div>}
+                {busy===plan.key&&<div style={{color:C.muted,fontSize:12,marginTop:8}}>Opening checkout…</div>}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {error&&<div style={{color:C.redBright,fontSize:13,marginTop:14,lineHeight:1.6}}>{error}</div>}
+        <div style={{color:C.muted,fontSize:11,marginTop:18,lineHeight:1.7}}>
+          Payment is handled by Stripe. Your plan changes once Stripe confirms the payment.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Paywall({onClose,onPromoValid,country}){
   const [selected,setSelected]=useState("annual");
   const [promo,setPromo]=useState("");
@@ -13693,6 +13795,11 @@ export default function FlourishApp(){
   const [household,setHousehold]=useState(()=>saved?.household||null);
   const [isPremium,setIsPremium]=useState(()=>isCapacitorIOS()||saved?.isPremium||false);
   const [showPaywall,setShowPaywall]=useState(false);
+  // Billing (live 2026-10-26). null until the server says otherwise, which is what keeps every
+  // surface hidden while BILLING_ENABLED is unset.
+  const [showUpgrade,setShowUpgrade]=useState(false);
+  const [billingStatus,setBillingStatus]=useState(null);
+  const [billingNotice,setBillingNotice]=useState(null);
   // Tier 2: iOS Capacitor build is free — no paywall, no upgrade/trial/Plus/price UI.
   // Distinct from isPremium (a real paid subscriber); used to hide/inert those surfaces.
   const iosFreeUnlock = isCapacitorIOS();
@@ -13794,6 +13901,53 @@ export default function FlourishApp(){
       return null;
     }
   };
+
+  // ── BILLING VISIBILITY ─────────────────────────────────────────────────────────────────────
+  // One ask, one answer, and every failure means hidden: a 404 (the flag is off), an offline
+  // device, a shape we do not recognise. Not asked at all inside a native shell — Apple and
+  // Google require their own purchase systems for digital subscriptions, so the iOS and Android
+  // builds must show no price, no link and no button. See docs/ops/BILLING-SETUP.md.
+  const nativeApp = isNativeApp();
+  useEffect(()=>{
+    let cancelled = false;
+    if(nativeApp || !user?.id){ setBillingStatus(null); return; }
+    (async ()=>{
+      try{
+        const jwt = await getJwt();
+        if(!jwt) return;
+        const res = await fetch(`${API_BASE}/api/billing`,{
+          method:"POST",
+          headers:{"Content-Type":"application/json",Authorization:`Bearer ${jwt}`},
+          body: JSON.stringify({action:"status"}),
+        });
+        if(!res.ok) return;                       // 404 while billing is off: stay hidden
+        const body = await res.json();
+        if(!cancelled) setBillingStatus(body);
+      }catch{ /* offline or blocked: stay hidden */ }
+    })();
+    return ()=>{ cancelled = true; };
+  },[user?.id, nativeApp]);
+
+  const billingUi = billingUiState({status:billingStatus, native:nativeApp, paid:!!billingStatus?.paid});
+  // The two entry points call this. While billing is off it opens the existing feature paywall,
+  // exactly as it did before, so nothing about today's app changes.
+  const openUpgrade = ()=>{ if(billingUi.show) setShowUpgrade(true); else setShowPaywall(true); };
+
+  // Coming back from Stripe. THIS SETS NO PLAN. A success redirect means the card was accepted,
+  // not that the subscription exists — and it is a URL anyone can type. The plan is whatever the
+  // profile says after the webhook has written it, so the only action here is to re-read it.
+  useEffect(()=>{
+    const notice = billingReturnNotice(typeof window==="undefined" ? "" : window.location.search);
+    if(!notice) return;
+    setBillingNotice(notice);
+    if(notice.kind==="success") setShowUpgrade(true);
+    refreshPlanFromProfile(user?.id);
+    try{
+      const url = new URL(window.location.href);
+      BILLING_RETURN_PARAMS.forEach(k=>url.searchParams.delete(k));
+      window.history.replaceState({},"",url.pathname+url.search+url.hash);
+    }catch{}
+  },[user?.id]);
 
   const hydratedUidRef = useRef(null);    // the user id we've COMPLETED hydrate/decide for. DB save is gated on this === user.id (POSITIVE gate — structurally impossible to write before hydrate finishes for this user, so no empty pre-hydrate overwrite).
   const syncErrorRef = useRef(false);
@@ -14622,7 +14776,8 @@ export default function FlourishApp(){
     }} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
   if(!firstVisitDone&&appData)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}/>;
-  if(showPaywall && !isCapacitorIOS())return <Paywall onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"}/>;
+  if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}}/>;
+  if(showPaywall && !isNativeApp())return <Paywall onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"}/>;
 
   const unread = (() => {
     try {
@@ -14776,7 +14931,7 @@ export default function FlourishApp(){
 
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo}/>{pendingPlaid&&<BankConsentModal
+    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
       onViewLegal={s=>{setShowSettings(false);setPendingPlaid(null);setScreen(s);}}
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;
@@ -14806,7 +14961,7 @@ export default function FlourishApp(){
       // Phase D7: gate via library (handles trial unlimited + post-trial daily caps + tiers)
       const freeCoachAllowed = canUseCoach();
       const showCoach = isPremium || freeCoachAllowed;
-      if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium || isTrialActive()} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={()=>setShowPaywall(true)} setScreen={setScreen} setAppData={setAppData} onExitDemo={exitDemo} postCoachConsent={postCoachConsent} onNeedConsent={requireAIDisclosure}/>;
+      if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium || isTrialActive()} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={openUpgrade} setScreen={setScreen} setAppData={setAppData} onExitDemo={exitDemo} postCoachConsent={postCoachConsent} onNeedConsent={requireAIDisclosure}/>;
       // Phase D10: removed stale 5-message gate (D7 dropped FREE_TIER_LIMITS.coachMessagesPerDay to 1; line below handles all gated cases).
       return <PremiumGate feature="AI Coach" desc="Coaching from your own numbers: what they mean and what to do next." onUpgrade={()=>setShowPaywall(true)}/>;
     }

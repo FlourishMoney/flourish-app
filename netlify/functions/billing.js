@@ -19,7 +19,9 @@
 
 const { getUserFromRequest, getAdminClient, unauthorized } = require("./_lib/auth");
 const { priceIdFor, isValidPlanKey, mayBuyFoundingPrice } = require("./_lib/billingPlans");
+const { FOUNDING_COHORT_LIMIT, foundingSlotsOpen, countFoundingSubscriptions } = require("./_lib/foundingCohort");
 const { stripePost } = require("./_lib/stripeApi");
+const { SUBSCRIPTION_PAID_STATUSES: PAID_STATUSES } = require("./_lib/planRules");
 
 const ALLOWED_ORIGINS = new Set([
   "https://flourishmoney.app",
@@ -93,6 +95,29 @@ exports.handler = async (event) => {
   catch (e) { console.error("[billing] admin client:", e.message); return json(500, CORS, { error: "server_misconfigured" }); }
 
   try {
+    // What the client is allowed to know: whether billing is on, whether this household is already
+    // paying, and whether the founding price is available to THEM. No price ids, no amounts (those
+    // come from src/lib/pricing.js), and no count of how many slots are gone.
+    if (action === "status") {
+      const { data: profile } = await admin
+        .from("profiles").select("founder_flag").eq("user_id", user_id).maybeSingle();
+      const { data: row } = await admin
+        .from("subscriptions").select("status, provider_customer_id").eq("user_id", user_id).maybeSingle();
+
+      let foundingAvailable = false;
+      if (mayBuyFoundingPrice(profile)) {
+        // Same question the checkout asks. If the two disagreed, the screen would offer a price
+        // the next call refuses.
+        foundingAvailable = foundingSlotsOpen(await countFoundingSubscriptions(admin));
+      }
+      return json(200, CORS, {
+        enabled: true,
+        paid: PAID_STATUSES.includes(row?.status),
+        manageable: !!row?.provider_customer_id,
+        founding: { available: foundingAvailable, cohortLimit: FOUNDING_COHORT_LIMIT },
+      });
+    }
+
     if (action === "create_checkout_session") {
       const planKey = body.plan_key;
       if (!isValidPlanKey(planKey)) return json(400, CORS, { error: "unknown_plan" });
@@ -100,6 +125,11 @@ exports.handler = async (event) => {
       const { data: profile } = await admin
         .from("profiles").select("founder_flag").eq("user_id", user_id).maybeSingle();
 
+      // The cap is enforced HERE, not only in what the screen offers. A client can post this
+      // action directly, and the screen's copy is a promise about the price we can honour.
+      if (planKey === "founding_annual" && !foundingSlotsOpen(await countFoundingSubscriptions(admin))) {
+        return json(403, CORS, { error: "founding_cohort_full" });
+      }
       if (planKey === "founding_annual" && !mayBuyFoundingPrice(profile)) {
         // Refused outright rather than downgraded to the standard price: charging someone
         // $99.99 when they clicked $79.99 is worse than an error they can read.

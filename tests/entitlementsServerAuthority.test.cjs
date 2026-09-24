@@ -184,7 +184,12 @@ const ahead = (d) => new Date(NOW + d * DAY).toISOString();
     // And the wiring that made the grant possible is gone, so it cannot come back by prop.
     t.ok(!/setPlan\("premium"\)/.test(app), "5j nothing in App.jsx sets the plan to premium in the browser");
     t.ok(/function Paywall\(\{onClose,onPromoValid,country\}\)/.test(app), "5k Paywall takes no upgrade handler at all");
-    const site = app.slice(app.indexOf("if(showPaywall && !isCapacitorIOS())"), app.indexOf("if(showPaywall && !isCapacitorIOS())") + 400);
+    // The gate widened from iOS to every native shell (Play requires its own billing too), so the
+    // anchor moved with it. Asserted rather than assumed: indexOf returning -1 would slice from the
+    // END of the file and make 5l and 5m pass on an empty string.
+    const ANCHOR = "if(showPaywall && !isNativeApp())";
+    t.ok(app.includes(ANCHOR), "5k2 the paywall render site is where this test thinks it is");
+    const site = app.slice(app.indexOf(ANCHOR), app.indexOf(ANCHOR) + 400);
     t.ok(!/onUpgrade=/.test(site), "5l …and the screen that renders it passes none");
     t.ok(/onPromoValid=/.test(site), "5m …while the promo path still re-reads the server profile");
   }
