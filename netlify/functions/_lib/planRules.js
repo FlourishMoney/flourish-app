@@ -59,4 +59,49 @@ function isUnlimitedProfile(profile, now = Date.now()) {
   return p === "beta_founder" || p === "premium" || p === "trial";
 }
 
-module.exports = { TRIAL_DAYS, TRIAL_MS, trialEndsAtMs, derivePlan, isUnlimitedProfile };
+
+// ── THE SUBSCRIPTION, from 2026-10-26 ────────────────────────────────────────────────────────────
+// Everything above answers from the profiles row alone, and that stays true: it is the half the
+// client also computes, and tests/planParity.test.cjs holds the two copies together. A subscription
+// is server-only knowledge — the client has no row for it and must never be asked.
+//
+// WHICH STATUSES COUNT AS PAID. Stripe's own lifecycle has eight values; only these two mean the
+// household currently has what it paid for:
+const SUBSCRIPTION_PAID_STATUSES = Object.freeze(["active", "trialing"]);
+//
+// past_due is deliberately NOT here. It means a renewal charge failed and Stripe is retrying, and
+// including it would be a product decision about a grace period that nobody has made yet — so the
+// conservative reading applies until someone makes it: access follows a payment that succeeded.
+// The day a grace period is decided, it is one entry in this array and a line in the report; the
+// schema does not change, because 0009 stores Stripe's status verbatim and constrains nothing here.
+//
+// current_period_end is checked as well as status. An 'active' row whose period ended is a webhook
+// we never received, and trusting status alone would hand out the product on a delivery failure.
+function isPaidSubscription(sub, now = Date.now()) {
+  if (!sub || !SUBSCRIPTION_PAID_STATUSES.includes(sub.status)) return false;
+  const end = _time(sub.current_period_end);
+  if (end === null) return true;               // no period on the row yet: status is all we have
+  const t = now instanceof Date ? now.getTime() : now;
+  return t < end;
+}
+
+// The whole entitlement answer: the profile rule above, plus the subscription.
+//
+// A paid subscription can only ADD. It never downgrades someone the profile already entitles —
+// a founder stays a founder, and an unexpired trial stays a trial even after the card is charged,
+// so nobody loses trial days by paying early.
+function deriveEntitlement(profile, subscription, now = Date.now()) {
+  const fromProfile = derivePlan(profile, now);
+  if (fromProfile !== "free") {
+    return { plan: fromProfile, unlimited: true, paidSubscription: isPaidSubscription(subscription, now) };
+  }
+  if (isPaidSubscription(subscription, now)) {
+    return { plan: "premium", unlimited: true, paidSubscription: true };
+  }
+  return { plan: "free", unlimited: false, paidSubscription: false };
+}
+
+module.exports = {
+  TRIAL_DAYS, TRIAL_MS, trialEndsAtMs, derivePlan, isUnlimitedProfile,
+  SUBSCRIPTION_PAID_STATUSES, isPaidSubscription, deriveEntitlement,
+};

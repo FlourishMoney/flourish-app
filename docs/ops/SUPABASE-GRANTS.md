@@ -48,6 +48,36 @@ grant usage, select on sequence public.<table>_<column>_seq to authenticated;
 None of our tables need that line today — every primary key is a `uuid`, a natural key
 (`beta_signups.email`), or a composite (`coach_usage_weekly`).
 
+## The one exemption: a server-only table
+
+Some tables have no client reader at all — a payment event ledger, for instance. Granting
+`authenticated` "because that is the standard block" is worse than not granting it: it is
+harmless only for as long as nobody adds a permissive RLS policy, and the day someone does,
+every signed-in user can read who paid what and when.
+
+Such a migration may skip the `authenticated` grant, but it must say so and it must earn it.
+Put this marker on its own line in the migration:
+
+```sql
+-- grants: service_role only
+```
+
+`tests/supabaseGrants.test.cjs` then holds that file to **all four** of these, and fails it if
+any one is missing:
+
+1. the marker is present in the file
+2. every table it creates grants `service_role`
+3. every table it creates has row level security enabled
+4. it grants nothing on those tables to `anon` or `authenticated`
+
+So a marked migration is checked *harder* than an ordinary one, not waved through. The check
+reads the file's **content**, never its name — a filename allow-list is precisely what that test
+exists to prevent, and the grandfathered list stays frozen at its five pre-cutoff migrations.
+A comment that merely looks like the marker (`-- grants: service_role only-ish`) does not open
+the exemption.
+
+`0010_billing_events.sql` is the only migration using it today.
+
 ## The anon rule
 
 **`anon` gets `select` and only `select`, and only on a table meant to be readable with

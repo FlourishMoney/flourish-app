@@ -423,3 +423,77 @@ suppresses nothing.
 
 **Fix** Either make it domain-aware (array for bills, string for income) or delete it and keep
 `rememberBillDismissal` as the only writer.
+
+---
+
+## 14. A webhook delivery that dies after claiming its event is never retried
+
+**Rating: MEDIUM.** Found in the PR #9 review, 2026-09-23. Not fixed — the fix is a policy
+decision about how long a claim may be held.
+
+**Where** `netlify/functions/stripe-webhook.js`, the claim/complete sequence.
+
+**What happens** The `billing_events` insert is the idempotency lock and is claimed *before* the
+work, which is correct: two concurrent deliveries of one event cannot both proceed. Completion
+then marks the row `processed`, and a thrown error marks it `failed` — and a `failed` row is
+allowed to run again.
+
+A delivery that dies *between* those two points marks neither. The row stays `received`. Every
+later retry finds a duplicate, sees a status that is not `failed`, and answers `200 {replay:true}`,
+so Stripe stops retrying and the work never happens. A Netlify function timeout does exactly this:
+the `catch` never runs.
+
+**What a user sees** They paid, Stripe took the money, and their plan never changed. Nothing in
+the app reports an error; the ledger row says `received` and looks unremarkable.
+
+**Fix (suggested, not built)** Treat a `received` row older than a few minutes as retryable, the
+same way a `failed` row is — the claim is a lock, and a lock nobody released is a crash, not a
+success. `attempts` is already on the row to bound it. The number is the decision: too short and
+two deliveries overlap, too long and a stuck payment waits.
+
+**Meanwhile** it is recoverable by hand: set that event's `status` to `failed` and Stripe's
+"Resend" in the dashboard replays it.
+
+---
+
+## 15. The founding price is kept out of the Billing Portal by a dashboard setting, not by code
+
+**Rating: MEDIUM.** Found in the PR #9 review, 2026-09-23. Not fixed — it cannot be fixed in this
+repo alone.
+
+**Where** `netlify/functions/billing.js`, `create_portal_session`.
+
+**What happens** `mayBuyFoundingPrice()` gates the $79.99 founding price at checkout: a profile
+without `founder_flag` is refused. The Billing Portal does not go through that gate. It is created
+with a customer and a return URL and no `configuration`, so it uses whatever the Stripe dashboard's
+default portal configuration allows. If "customers can switch plans" is ever enabled with the
+founding price among the listed products, any paying customer can move themselves onto it and keep
+it — the eligibility rule is bypassed entirely, permanently, and silently.
+
+`docs/ops/BILLING-SETUP.md` step 4 says to allow only cancellation and payment-method updates,
+which is the safe configuration. Nothing enforces that it stays that way, and no test can see it.
+
+**Fix (suggested, not built)** Create an explicit portal configuration with plan switching off,
+put its id in `STRIPE_PORTAL_CONFIGURATION_ID`, and pass it on every `create_portal_session`. The
+setting is then pinned in an environment variable that a reviewer can read, rather than in a
+dashboard toggle nobody looks at. Until then, **verify the portal configuration by hand before
+2026-10-26**, and again after any Stripe dashboard change.
+
+---
+
+## 16. `getUserPlan`'s error paths return a different shape from its success path
+
+**Rating: LOW.** Found in the PR #9 review, 2026-09-23.
+
+**Where** `netlify/functions/_lib/auth.js`, the `!data` early return and the outer `catch`.
+
+**What happens** The success path returns `{ plan, entitlement, founder_flag, unlimited, paid,
+subscription_status }`. The two failure paths return only `{ plan, founder_flag, unlimited }` (one
+of them also `paid: false`). A caller reading `entitlement` gets `undefined` rather than `"free"`.
+
+Harmless today: `unlimited` is the field every existing caller reads, and it is `false` on both
+paths, so access still fails closed. It becomes a defect the first time something branches on
+`entitlement` and treats `undefined` as anything other than free.
+
+**Fix (suggested, not built)** Return one shape from all three paths, with `entitlement: "free"`
+and `paid: false` in the failure cases.
