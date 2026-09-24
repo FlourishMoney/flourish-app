@@ -15,18 +15,21 @@ const { fontFamily } = loadFont();
 
 const MAX_TILT_DEG = 8;          // STYLE.md §4
 
-// The frame keeps the RECORDING's aspect ratio (390x844), so nothing is cropped away by
-// objectFit. Its height is chosen so the device sits between the top safe band and the caption
-// band and never touches either — a caption over the screen is the thing that makes a reel look
-// like a template.
-const PHONE_TOP = 330;                           // clears the "Example" pill below the safe line
-const PHONE = { w: 462, h: 1000, radius: 54 };   // 462/1000 == 390/844, so nothing is cropped
-const CAPTION_TOP = PHONE_TOP + PHONE.h + 38;    // where the lower third starts
+// THE DEVICE FILLS THE FRAME. 864 is 80% of 1080, and at the recording's true 390:844 ratio that
+// makes it 1870 tall — taller than the canvas. So it starts just under the top safe band and runs
+// off the bottom edge, the way a product film frames a phone. Two things follow: there is no empty
+// band anywhere, and the app's own type is big enough to read, which is the point.
+const PHONE = { w: 864, h: 1870, radius: 76 };   // 864/1870 == 390/844, so nothing is cropped
+const PHONE_TOP = 262;                           // just under the top safe band
+// With a full-bleed device the caption has nowhere to go but over it, so it sits on a scrim —
+// which is what keeps it at AA contrast against whatever the app is showing behind it.
+const CAPTION_BOTTOM = 430;                      // clear of the 400px bottom safe band
+const SCRIM_TOP = 1180;
 
 // ── the device ───────────────────────────────────────────────────────────────────────────────
 // One frame, one shadow, one highlight. The tilt and the push-in are driven by a spring so the
 // move starts and settles like a physical object rather than a linear slide.
-const Phone = ({ src, brand, progress, focus, zoom }) => {
+const Phone = ({ src, brand, progress, focus, zoom, dim = 0 }) => {
   const tilt = interpolate(progress, [0, 1], [MAX_TILT_DEG, MAX_TILT_DEG * 0.35]);
   // THE SCREEN ZOOMS, NOT THE DEVICE. Scaling the whole phone pushed its corners up into the
   // reserved top band and down into the caption — the layout has to stay fixed, so the push-in
@@ -35,7 +38,7 @@ const Phone = ({ src, brand, progress, focus, zoom }) => {
   const scale = interpolate(progress, [0, 1], [1, zoom]);
 
   return (
-    <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-start", paddingTop: PHONE_TOP, perspective: 2200 }}>
+    <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-start", paddingTop: PHONE_TOP, perspective: 3200, overflow: "hidden" }}>
       <div style={{
         width: PHONE.w, height: PHONE.h,
         transform: `rotateY(${tilt}deg) rotateX(${tilt * 0.22}deg)`,
@@ -49,6 +52,12 @@ const Phone = ({ src, brand, progress, focus, zoom }) => {
             <OffthreadVideo src={src} muted style={{
               width: "100%", height: "100%", objectFit: "cover",
               transform: `scale(${scale})`, transformOrigin: `${focus.x * 100}% ${focus.y * 100}%`,
+            }} />
+          ) : null}
+          {/* Dim everything but the element being narrated, so the eye has one place to go. */}
+          {dim > 0 ? (
+            <AbsoluteFill style={{
+              background: `radial-gradient(38% 20% at 50% 50%, ${brand.bg}00 0%, ${brand.bg}00 55%, ${brand.bg}${Math.round(dim * 230).toString(16).padStart(2, "0")} 100%)`,
             }} />
           ) : null}
           {/* a single soft screen highlight, not a gradient wash */}
@@ -65,7 +74,7 @@ const HighlightRing = ({ brand, progress, focus, box, zoom = 1 }) => {
   const scale = interpolate(progress, [0, 1], [1, zoom]);
   if (!box) return null;
   return (
-    <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-start", paddingTop: PHONE_TOP, pointerEvents: "none" }}>
+    <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-start", paddingTop: PHONE_TOP, pointerEvents: "none", overflow: "hidden" }}>
       <div style={{ width: PHONE.w, height: PHONE.h, position: "relative", overflow: "hidden", borderRadius: PHONE.radius,
                     transform: `scale(${scale})`, transformOrigin: `${focus.x * 100}% ${focus.y * 100}%` }}>
         <div style={{
@@ -99,10 +108,16 @@ const Caption = ({ chunks = [], brand, safe, fps }) => {
   const active = chunks.filter((c) => t >= c.start - 0.05).pop() || chunks[0];
   const words = active ? active.words : [];
   return (
-    <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-start", paddingTop: CAPTION_TOP }}>
+    <AbsoluteFill>
+      {/* A scrim, so the caption keeps AA contrast over whatever the app is showing behind it. */}
+      <AbsoluteFill style={{
+        top: SCRIM_TOP,
+        background: `linear-gradient(to bottom, ${brand.bg}00 0%, ${brand.bg}D9 26%, ${brand.bg}F2 60%, ${brand.bg}F2 100%)`,
+      }} />
+      <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-end", paddingBottom: CAPTION_BOTTOM }}>
       <div style={{
-        maxWidth: 880, textAlign: "center", fontFamily, fontWeight: 800,
-        fontSize: 54, lineHeight: 1.22, letterSpacing: -1.1,
+        maxWidth: 940, textAlign: "center", fontFamily, fontWeight: 800,
+        fontSize: 76, lineHeight: 1.18, letterSpacing: -1.6,
       }}>
         {words.map((w, i) => {
           const spoken = t >= w.start - 0.03;
@@ -115,6 +130,7 @@ const Caption = ({ chunks = [], brand, safe, fps }) => {
           );
         })}
       </div>
+      </AbsoluteFill>
     </AbsoluteFill>
   );
 };
@@ -129,7 +145,7 @@ const HookCard = ({ chunks = [], brand, safe }) => {
   return (
     <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", padding: `${safe.top}px 80px ${safe.bottom}px` }}>
       <div style={{
-        fontFamily, fontWeight: 900, fontSize: 92, lineHeight: 1.12, letterSpacing: -2.6,
+        fontFamily, fontWeight: 900, fontSize: 146, lineHeight: 1.06, letterSpacing: -4,
         color: brand.cream, textAlign: "center",
         opacity: s, transform: `translateY(${(1 - s) * 26}px)`,
       }}>{active ? active.words.map((w) => w.word).join(" ") : ""}</div>
@@ -169,11 +185,11 @@ const EndCard = ({ lines, brand, safe, logo }) => {
 };
 
 export const Reel = ({ beats = [], endCard = [], brand, safe, narration, tones = [], music, logo }) => {
-  const { height } = useVideoConfig();
+  const { height, width } = useVideoConfig();
   // STYLE.md §1 and §8, checked here so a layout edit cannot quietly push type into Instagram's UI.
   if (PHONE_TOP < safe.top) throw new Error(`The device starts at ${PHONE_TOP}px, inside the top safe band (${safe.top}px).`);
-  if (CAPTION_TOP < PHONE_TOP + PHONE.h) throw new Error("The caption overlaps the device.");
-  if (CAPTION_TOP + 150 > height - safe.bottom) throw new Error(`The caption runs into the bottom safe band (starts ${CAPTION_TOP}, band at ${height - safe.bottom}).`);
+  if (PHONE.w / width < 0.75) throw new Error(`The device is ${Math.round((PHONE.w / width) * 100)}% of the frame; it must be at least 75%.`);
+  if (CAPTION_BOTTOM < safe.bottom) throw new Error(`The caption sits ${CAPTION_BOTTOM}px from the bottom, inside the ${safe.bottom}px safe band.`);
   const { fps } = useVideoConfig();
   return (
     <AbsoluteFill style={{ background: brand.bg, fontFamily }}>
@@ -209,12 +225,20 @@ const BeatBody = ({ beat, brand, safe, endCard, logo }) => {
   if (beat.kind === "end-card") return <EndCard lines={endCard} brand={brand} safe={safe} logo={logo} />;
   if (beat.kind === "hook" || beat.kind === "statement") return <HookCard chunks={beat.chunks} brand={brand} safe={safe} />;
 
-  // 300-500ms settle on a spring (STYLE.md §5).
-  const progress = spring({ frame, fps, config: { damping: 200, mass: 1.1 }, durationInFrames: Math.round(0.45 * fps) });
+  // The move: spring in over ~450ms, hold, then ease back out over the last ~450ms of the beat.
+  // "Ease back out" matters — a zoom that stops at its closest point reads as a freeze frame.
+  const inP = spring({ frame, fps, config: { damping: 200, mass: 1.1 }, durationInFrames: Math.round(0.45 * fps) });
+  const total = Math.max(1, Math.round((beat.duration || 2) * fps));
+  const outStart = total - Math.round(0.45 * fps);
+  const outP = interpolate(frame, [outStart, total], [1, 0.55], {
+    extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: Easing.inOut(Easing.cubic),
+  });
+  const progress = inP * outP;
   const focus = beat.focus || { x: 0.5, y: 0.45 };
   return (
     <>
-      <Phone src={beat.video ? staticFile(beat.video) : null} brand={brand} progress={progress} focus={focus} zoom={beat.zoom || 1} />
+      <Phone src={beat.video ? staticFile(beat.video) : null} brand={brand} progress={progress} focus={focus}
+             zoom={beat.zoom || 1} dim={beat.zoom > 1.2 ? progress : 0} />
       {beat.ring ? <HighlightRing brand={brand} progress={progress} focus={focus} box={beat.ring} zoom={beat.zoom || 1} /> : null}
       <ExampleLabel brand={brand} safe={safe} />
       <Caption chunks={beat.chunks || []} brand={brand} safe={safe} fps={fps} />

@@ -17,8 +17,18 @@ variables so the recorder cannot reach a real project:
 ```sh
 VITE_SUPABASE_URL="https://placeholder.supabase.co" \
 VITE_SUPABASE_PUBLISHABLE_KEY="placeholder" \
-npx vite --port 5173 --strictPort
+npx vite --port 5174 --strictPort
 ```
+
+**Port 5174, not 5173.** 5173 is Vite's default and is routinely taken by another project — a reel
+recorded against the wrong app is the failure this avoids. The factory defaults to 5174 and takes
+`--url` to point somewhere else:
+
+```sh
+npm run reels -- week-01 --url=http://localhost:5199
+```
+
+It refuses any URL that is not a local dev server.
 
 ## What comes out
 

@@ -28,13 +28,17 @@ one-accent rule is a property of the script (`emphasis`), asserted in `src/cli.m
 ## 3. Type
 The app's own typeface, **Plus Jakarta Sans**, loaded locally through `@remotion/google-fonts` —
 self-hosted at render, no network call, no Google Fonts stylesheet. Heavy weight (800/900) for
-hooks. **At most 6 words on screen at once**, one idea per shot.
+hooks, **at least 140 px**; captions **at least 72 px**. **At most 6 words on screen at once**, one
+idea per shot, and chunks break only at natural phrase boundaries — never mid-phrase.
 *Enforced:* `remotion/Reel.jsx` loads the font; the 6-word cap is asserted per caption line in
 `src/cli.mjs`.
 
 ## 4. Device
-A realistic iPhone frame: rounded bezel, soft shadow, subtle screen highlight. A slow 3D tilt of
-**no more than 8°**. Push-in zooms onto the number being narrated, with a thin highlight ring.
+A realistic iPhone frame: rounded bezel, soft shadow, subtle screen highlight. **It fills about 80%
+of the frame width** and runs off the bottom edge, so the app's own type is readable and no band of
+the frame is left empty. A slow 3D tilt of **no more than 8°**. When a line names a number or a row,
+the shot **pushes in to 1.8-2.2x on that exact element**, dims everything around it, holds, and
+eases back out. The element's position is MEASURED in the running app, never guessed.
 The app is recorded at **deviceScaleFactor 3** so type is crisp at 1080 wide. Scrolling is
 scripted and eased — never a raw wheel event, never a jump.
 *Enforced:* `MAX_TILT_DEG` in `remotion/Reel.jsx`; `DEVICE.scale` and `easedScrollTo()` in
@@ -78,7 +82,8 @@ on any FAIL.
 | Contact sheet | — (always written: `out/week-NN/reel-NN-contact.jpg`, 9 frames) |
 | Duration | outside 20–28 s |
 | Frame rate | not 60 fps |
-| Safe zone | cream type is found in the top 250 px or bottom 400 px |
+| Top safe band | cream type is found in the top 250 px |
+| Device size | the device is narrower than 75% of the frame at any point after the hook |
 | Example label | a frame showing app footage has no “Example” label |
 | Contrast | caption or end-card text is below WCAG AA (4.5:1) on its background |
 | Loudness | integrated loudness is not −14 LUFS ± 1.5 |

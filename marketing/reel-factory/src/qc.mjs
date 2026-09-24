@@ -101,7 +101,6 @@ export async function runQualityGate({ mp4, outDir, reelId, script, brand, durat
   // Sampled across nine frames, in the SAME proportions the canvas uses.
   const W = 270, H = 480;
   const topRows = Math.round((SAFE.top / CANVAS.height) * H);
-  const bottomRows = Math.round((SAFE.bottom / CANVAS.height) * H);
   let worstBand = 0, worstAt = 0;
   for (let i = 0; i < 9; i++) {
     const t = (durationSeconds * (i + 0.5)) / 9;
@@ -115,12 +114,14 @@ export async function runQualityGate({ mp4, outDir, reelId, script, brand, durat
         }
       }
     };
+    // Only the TOP band. The device now fills the frame, so app footage sits behind the scrim in
+    // the bottom band by design; what must stay out of the safe zones is OUR overlay type, and the
+    // caption's position is a layout contract the composition asserts at render time.
     scan(0, topRows);
-    scan(H - bottomRows, H);
     if (hits > worstBand) { worstBand = hits; worstAt = t; }
   }
   // A handful of stray pixels is compression noise; a line of type is thousands.
-  check("safe zone clear", worstBand < 400, `worst frame ${worstAt.toFixed(1)}s: ${worstBand} cream px in the reserved bands`);
+  check("top safe band clear", worstBand < 400, `worst frame ${worstAt.toFixed(1)}s: ${worstBand} cream px in the reserved bands`);
 
   // ── the "Example" label is present whenever app footage is ──────────────────────────────────
   // The label is a cream pill at a known band; look for it in every frame that is not the end card.
@@ -146,6 +147,30 @@ export async function runQualityGate({ mp4, outDir, reelId, script, brand, durat
     appFrames.length === 0 ? "no app frames sampled — the check could not run"
       : labelMissing.length ? `missing at ${labelMissing.map((f) => f.t.toFixed(1) + "s").join(", ")}`
       : `${appFrames.length} app frames checked`);
+
+  // ── the device fills the frame (revision §1 and §9) ────────────────────────────────────────
+  // Measured, not assumed: find the horizontal extent of the lit device in each frame after the
+  // hook. The bezel and the app's own screen are both brighter than the canvas behind them.
+  const bgLum = luminance(hex(brand.bg));
+  const widths = [];
+  for (let i = 0; i < 9; i++) {
+    const t = (durationSeconds * (i + 0.5)) / 9;
+    if (!showsApp(t)) continue;
+    const { buf } = await frameRgb(mp4, t, W, H);
+    let lo = W, hi = -1;
+    for (const frac of [0.30, 0.42, 0.54]) {           // rows across the device, above the scrim
+      const y = Math.round(H * frac);
+      for (let x = 0; x < W; x++) {
+        const o = (y * W + x) * 3;
+        if (luminance([buf[o], buf[o + 1], buf[o + 2]]) > bgLum + 0.012) { if (x < lo) lo = x; if (x > hi) hi = x; }
+      }
+    }
+    if (hi > lo) widths.push({ t, frac: (hi - lo + 1) / W });
+  }
+  const narrowest = widths.length ? widths.reduce((a, b) => (a.frac < b.frac ? a : b)) : null;
+  check("device fills >=75% of frame", !!narrowest && narrowest.frac >= 0.75,
+    narrowest ? `narrowest ${Math.round(narrowest.frac * 100)}% at ${narrowest.t.toFixed(1)}s`
+      : "no app frames sampled — the check could not run");
 
   // ── contrast (WCAG AA 4.5:1) ────────────────────────────────────────────────────────────────
   const capRatio = contrastRatio(captionColour, brand.bg);

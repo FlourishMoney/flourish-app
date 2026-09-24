@@ -24,17 +24,42 @@ const LOCAL_ONLY = /^http:\/\/(localhost|127\.0\.0\.1):\d+\/?$/;
 // container, not the window, so a wheel event at page level moves nothing) and it doubles as the
 // proof that the right screen is up: if the text is not there, the recipe is wrong and this throws
 // rather than filming whatever happened to be on screen.
-// `focus` is where the push-in goes, in fractions of the phone screen (STYLE.md §4) — the number
-// the line is narrating. `ring` is the highlight box drawn around it, same units.
+// `anchor` is the text scrolled into view — it is also the proof the right screen is up.
+// `target` is the element the push-in lands on. Its box is MEASURED in the running app after the
+// scroll settles, so the zoom lands on the real row, bill or balance rather than on a guess that
+// drifts the moment a layout changes. `zoom` is how close (STYLE.md §4: 1.8-2.2x).
 export const SCREENS = {
-  "hook":               { nav: "Today", anchor: null,                          focus: { x: 0.5, y: 0.40 } },
-  "safe-to-spend":      { nav: "Today", anchor: "Safe to Spend",               focus: { x: 0.5, y: 0.34 }, ring: { w: 0.66, h: 0.12 } },
-  "bills-list":         { nav: "Watch", anchor: "Your bills",                  focus: { x: 0.5, y: 0.52 }, ring: { w: 0.82, h: 0.11 } },
-  "forecast-90-day":    { nav: "Watch", anchor: "The next 90 days",            focus: { x: 0.5, y: 0.36 }, ring: { w: 0.82, h: 0.16 } },
-  "forecast-low-point": { nav: "Watch", anchor: "DAY-BY-DAY CASH FLOW",        focus: { x: 0.5, y: 0.62 }, ring: { w: 0.82, h: 0.13 } },
-  "meeting-agenda":     { nav: "Meet",  anchor: "Your 15-minute money meeting", focus: { x: 0.5, y: 0.40 }, ring: { w: 0.82, h: 0.14 } },
+  "hook":               { nav: "Today", anchor: null,                          target: null },
+  "safe-to-spend":      { nav: "Today", anchor: "Safe to Spend",               target: "Safe to Spend",  zoom: 2.0 },
+  // The app has no standalone bills list in demo mode: "Your bills" on the Watch screen is the
+  // bills surface, and the rows beneath it are the bills it found, with their amounts.
+  "bills-list":         { nav: "Watch", anchor: "Your bills",                  target: "Your bills",     zoom: 2.1 },
+  "forecast-90-day":    { nav: "Watch", anchor: "The next 90 days",            target: "STARTING BALANCE", zoom: 1.9 },
+  "forecast-low-point": { nav: "Watch", anchor: "DAY-BY-DAY CASH FLOW",        target: "Phone:",         zoom: 2.2 },
+  "meeting-agenda":     { nav: "Meet",  anchor: "Your 15-minute money meeting", target: "Your 15-minute money meeting", zoom: 1.9 },
   "end-card":           null,     // drawn by Remotion, nothing to record
 };
+
+// Where the target sits inside the viewport, as fractions — exactly what the composition needs to
+// zoom onto it. Measured after the scroll has settled, never guessed.
+async function measureFocus(page, targetText) {
+  if (!targetText) return { focus: { x: 0.5, y: 0.45 }, ring: null };
+  const el = page.getByText(targetText, { exact: false }).first();
+  if (!(await el.count())) {
+    throw new Error(`Push-in target "${targetText}" is not on screen. Fix the recipe in src/record.mjs rather than zooming on nothing.`);
+  }
+  const box = await el.evaluate((node, vp) => {
+    // The card around the text where there is one: zooming a bare label cuts the figure off.
+    const card = node.closest("[style*='border-radius'], [style*='borderRadius']") || node;
+    const r = card.getBoundingClientRect();
+    return { x: (r.x + r.width / 2) / vp.w, y: (r.y + r.height / 2) / vp.h, w: r.width / vp.w, h: r.height / vp.h };
+  }, { w: DEVICE.width, h: DEVICE.height });
+  const clamp = (v) => Math.min(0.9, Math.max(0.1, v));
+  return {
+    focus: { x: clamp(box.x), y: clamp(box.y) },
+    ring: { w: Math.min(0.94, Math.max(0.2, box.w)), h: Math.min(0.5, Math.max(0.05, box.h)) },
+  };
+}
 
 // ONLY THE SETTLED SCREEN. Playwright records a context from the moment it is created, so the raw
 // clip also holds the sign-in screen, the demo click, the AI notice and the tab change — and a reel
@@ -155,6 +180,7 @@ export async function recordScreens(screenNames, { baseUrl, week, reelId, tailSe
         recordVideo: { dir: clipDir, size: { width: DEVICE.width, height: DEVICE.height } },
       });
       const page = await context.newPage();
+      let measured = { focus: { x: 0.5, y: 0.45 }, ring: null };
       await enterDemo(page, baseUrl);
       if (recipe.nav) {
         await tapVisible(navButton(page, recipe.nav), `${recipe.nav} tab`);
@@ -169,12 +195,16 @@ export async function recordScreens(screenNames, { baseUrl, week, reelId, tailSe
         }
         await easedScrollTo(page, anchor);
       }
+      measured = await measureFocus(page, recipe.target);
       // Hold still for longer than the reel will use, so the tail is all settled screen.
       await page.waitForTimeout((tailSeconds + 2) * 1000);
       await context.close();                       // flushes the video file
       const file = fs.readdirSync(clipDir).find((f) => f.endsWith(".webm"));
       if (!file) throw new Error(`Playwright wrote no video for screen "${screen}".`);
-      results[screen] = await trimToTail(path.join(clipDir, file), path.join(clipDir, `${screen}.mp4`), tailSeconds);
+      results[screen] = {
+        file: await trimToTail(path.join(clipDir, file), path.join(clipDir, `${screen}.mp4`), tailSeconds),
+        focus: measured.focus, ring: measured.ring, zoom: recipe.zoom || 1,
+      };
     }
   } finally {
     await browser.close();

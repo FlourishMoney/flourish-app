@@ -25,11 +25,12 @@ const flag = (name, fallback) => {
   const hit = args.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : fallback;
 };
-const BASE_URL = flag("url", "http://localhost:5173");
+// 5173 is commonly taken by another project; the app is served on 5174 by default here.
+const BASE_URL = flag("url", "http://localhost:5174");
 const SKIP_RECORD = args.includes("--no-record");
 
 if (!week) {
-  console.error("Usage: npm run reels -- week-01 [--url=http://localhost:5173] [--no-record]");
+  console.error("Usage: npm run reels -- week-01 [--url=http://localhost:5174] [--no-record]");
   process.exit(1);
 }
 
@@ -67,10 +68,10 @@ async function buildOne(scriptPath) {
     // Every clip must cover the longest line that uses it, with a little room.
     const tailSeconds = Math.ceil(Math.max(...lines.map((l) => l.duration)) + GAP + 2);
     clips = await recordScreens(wanted, { baseUrl: BASE_URL, week, reelId: script.id, tailSeconds });
-    for (const [screen, file] of Object.entries(clips)) {
+    for (const [screen, shot] of Object.entries(clips)) {
       const dest = path.join(workDir, `${screen}.mp4`);
-      fs.copyFileSync(file, dest);
-      clips[screen] = dest;
+      fs.copyFileSync(shot.file, dest);
+      clips[screen] = { ...shot, file: dest };
     }
   }
 
@@ -83,21 +84,38 @@ async function buildOne(scriptPath) {
   // STYLE.md §3 limits what is on screen AT ONCE, not what may be said. The copy is the writer's
   // and is never edited here, so a long line is shown in timed chunks of six words or fewer,
   // each held for exactly as long as those words are spoken.
+  // Chunks break at NATURAL PHRASE BOUNDARIES, never mid-phrase. Punctuation first; failing that,
+  // before a word that starts a new phrase. A chunk is only forced when no break exists at all,
+  // and that case is reported rather than silently split.
+  const PHRASE_STARTERS = /^(and|but|so|then|or|to|for|with|that|which|when|after|before|never|until|because|while|if)$/i;
   const chunk = (words) => {
+    if (words.length <= MAX_CAPTION_WORDS) return [mk(words)];
     const out = [];
     let cur = [];
-    for (const w of words) {
-      cur.push(w);
-      const endsClause = /[.,!?;:]$/.test(w.word);
-      if (cur.length >= MAX_CAPTION_WORDS || (endsClause && cur.length >= 3)) { out.push(cur); cur = []; }
+    const flush = () => { if (cur.length) { out.push(mk(cur)); cur = []; } };
+    for (let i = 0; i < words.length; i++) {
+      cur.push(words[i]);
+      const endsClause = /[.,!?;:]$/.test(words[i].word);
+      const nextStartsPhrase = words[i + 1] && PHRASE_STARTERS.test(words[i + 1].word.replace(/[^A-Za-z']/g, ""));
+      const full = cur.length >= MAX_CAPTION_WORDS;
+      // Break at a clause end, or just before a new phrase once the chunk is worth holding.
+      if (endsClause || (nextStartsPhrase && cur.length >= 3) || (full && nextStartsPhrase)) flush();
+      else if (full) {
+        // No natural break within six words: fall back to the nearest phrase start behind us.
+        let k = cur.length - 1;
+        while (k > 1 && !PHRASE_STARTERS.test(cur[k].word.replace(/[^A-Za-z']/g, ""))) k--;
+        if (k > 1) { const tail = cur.splice(k); flush(); cur = tail; } else flush();
+      }
     }
-    if (cur.length) {
-      // A stray one-word tail reads as a mistake; fold it back if there is room.
-      if (out.length && cur.length === 1 && out[out.length - 1].length < MAX_CAPTION_WORDS) out[out.length - 1].push(...cur);
-      else out.push(cur);
+    flush();
+    // A one-word tail reads as a mistake; fold it back when the previous chunk has room.
+    if (out.length > 1 && out[out.length - 1].words.length === 1 && out[out.length - 2].words.length < MAX_CAPTION_WORDS) {
+      const tail = out.pop();
+      out[out.length - 1] = mk([...out[out.length - 1].words, ...tail.words]);
     }
-    return out.map((ws) => ({ words: ws, start: ws[0].start, end: ws[ws.length - 1].end }));
+    return out;
   };
+  const mk = (ws) => ({ words: ws, start: ws[0].start, end: ws[ws.length - 1].end });
   const assertChunks = (chunks, where) => {
     const over = chunks.find((c) => c.words.length > MAX_CAPTION_WORDS);
     if (over) throw new Error(`${where}: "${over.words.map((w) => w.word).join(" ")}" puts ${over.words.length} words on screen at once; STYLE.md §3 allows ${MAX_CAPTION_WORDS}.`);
@@ -134,7 +152,11 @@ async function buildOne(scriptPath) {
     const shot = shotSeconds[i];
     narrationLines.push({ file: line.file, start: t });
     const recipe = SCREENS[line.screen] || {};
-    const clip = clips[line.screen] || (fs.existsSync(path.join(workDir, `${line.screen}.mp4`)) ? path.join(workDir, `${line.screen}.mp4`) : null);
+    const take = clips[line.screen]
+      || (fs.existsSync(path.join(workDir, `${line.screen}.mp4`))
+        ? { file: path.join(workDir, `${line.screen}.mp4`), focus: { x: 0.5, y: 0.45 }, ring: null, zoom: (recipe && recipe.zoom) || 1 }
+        : null);
+    const clip = take ? take.file : null;
     if (line.screen !== "end-card" && !clip) {
       throw new Error(`No recording for screen "${line.screen}" — run without --no-record, or add a recipe in src/record.mjs.`);
     }
@@ -154,9 +176,10 @@ async function buildOne(scriptPath) {
         duration: each,
         // A real push-in, not a drift: the second beat is close enough to read the figure being
         // narrated, which is the whole reason for cutting to it.
-        zoom: b === 0 ? 1.0 : 1.0 + 0.17 * b,
-        focus: recipe.focus || { x: 0.5, y: 0.45 },
-        ring: b > 0 ? (recipe.ring || null) : null,        // the ring arrives with the push-in
+        // Beat one sits wide; the next pushes right in on the measured element (1.8-2.2x).
+        zoom: b === 0 ? 1.0 : (take && take.zoom) || 2.0,
+        focus: (take && take.focus) || { x: 0.5, y: 0.45 },
+        ring: b > 0 ? ((take && take.ring) || null) : null,   // the ring arrives with the push-in
         chunks: (() => {
           const shifted = line.words.map((w) => ({ ...w, start: w.start + (t - beatFrom), end: w.end + (t - beatFrom) }));
           const cs = chunk(shifted);

@@ -1,16 +1,31 @@
 {
   "id": "reel-01",
   "week": "week-01",
-  "hook": "Still adding up your bills by hand?",
+  "hook": "Still adding up bills by hand?",
   "voice": [
-    { "text": "Still adding up your bills by hand?", "screen": "hook" },
-    { "text": "Flourish finds them for you.", "screen": "bills-list" },
-    { "text": "Every bill. Every payday. The next 90 days, laid out.", "screen": "forecast-90-day" },
-    { "text": "So the tight week never sneaks up on you.", "screen": "forecast-low-point" },
-    { "text": "Your money, handled.", "screen": "end-card" }
+    {
+      "text": "Still adding up bills by hand?",
+      "screen": "hook"
+    },
+    {
+      "text": "Flourish finds them for you.",
+      "screen": "bills-list"
+    },
+    {
+      "text": "Every bill. Every payday. The next 90 days, laid out.",
+      "screen": "forecast-90-day"
+    },
+    {
+      "text": "So the tight week never sneaks up on you.",
+      "screen": "forecast-low-point"
+    },
+    {
+      "text": "Your money, handled.",
+      "screen": "end-card"
+    }
   ],
   "captionLines": [
-    "Still adding up your bills by hand?",
+    "Still adding up bills by hand?",
     "Flourish finds them for you.",
     "Every bill. Every payday. The next 90 days, laid out.",
     "So the tight week never sneaks up on you.",
