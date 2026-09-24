@@ -86,7 +86,12 @@ export async function speak(text, outFile, env = process.env) {
         model_id: model,
         // Stability high and style at zero: a brand read, not a performance. The same settings on
         // every line, so the seven clips sound like one person in one sitting.
-        voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true },
+        voice_settings: {
+          stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true,
+          // Only ever nudged when a line would otherwise overrun its scene; never past 1.1, where
+          // a calm read stops sounding calm.
+          ...(env.ELEVENLABS_SPEED ? { speed: Number(env.ELEVENLABS_SPEED) } : {}),
+        },
       }),
     });
     if (!res.ok) {
