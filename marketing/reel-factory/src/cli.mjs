@@ -16,7 +16,7 @@ import { writeCaptions } from "./captions.mjs";
 import { renderReel } from "./render.mjs";
 import { assembleNarration, normaliseTo, uiTone, maybeMusicBed } from "./audio.mjs";
 import { runQualityGate } from "./qc.mjs";
-import { targetRectInFrame, captionAnchorFor, captionRect, intersects, screenRect, zoomToRect } from "./layout.mjs";
+import { targetRectInFrame, captionAnchorFor, captionRect, intersects, screenRect, zoomToRect, MAX_SHOT_SECONDS, CAPTION } from "./layout.mjs";
 
 dotenv.config({ path: path.join(ROOT, ".env") });
 
@@ -138,14 +138,28 @@ async function buildOne(scriptPath) {
   // The end card is not a shot: its line is spoken over it, so only the SCREEN lines are padded.
   const screenLines = lines.filter((l) => l.screen !== "end-card");
   const endSeconds = Math.max(PACE.endCard, ...lines.filter((l) => l.screen === "end-card").map((l) => l.duration + GAP), 0);
-  const natural = lines.map((l) => Math.max(l.duration + GAP, PACE.minBeat * 2));
+  // PACE. No shot runs longer than MAX_SHOT_SECONDS; a line that needs more than that keeps
+  // speaking over the next shot, which is what a cut is for. The audio is one continuous track, so
+  // nothing is lost. Any time still needed to clear the 20s floor goes to the END CARD, which is
+  // the one beat the pace rule exempts — and which is the call to action, so holding it is no loss.
+  const natural = lines.map((l) => Math.min(MAX_SHOT_SECONDS, Math.max(l.duration + GAP, PACE.minBeat)));
   let shotSeconds = natural.slice();
-  const total0 = PACE.hookLead + endSeconds + shotSeconds.slice(0, screenLines.length).reduce((a, b) => a + b, 0);
-  if (total0 < CANVAS.minSeconds) {
-    const pad = (CANVAS.minSeconds + 0.8 - total0) / Math.max(1, screenLines.length);
-    shotSeconds = shotSeconds.map((d, i) => (i < screenLines.length ? d + pad : d));
+  // Reaching the 20s floor: give the time to the SHOTS first, up to their 2.5s cap, and only the
+  // remainder to the end card. Dumping it all on the card put 8.5 seconds of call-to-action on the
+  // end of a 20-second reel — within every rule, and no way to watch.
+  let endHold = endSeconds;
+  const shotSum = () => shotSeconds.slice(0, screenLines.length).reduce((a, b) => a + b, 0);
+  let deficit = CANVAS.minSeconds + 0.4 - (PACE.hookLead + endHold + shotSum());
+  if (deficit > 0) {
+    const headroom = screenLines.map((_, i) => MAX_SHOT_SECONDS - shotSeconds[i]);
+    const room = headroom.reduce((a, b) => a + b, 0);
+    const take = Math.min(deficit, room);
+    if (room > 0) screenLines.forEach((_, i) => { shotSeconds[i] += (headroom[i] / room) * take; });
+    deficit -= take;
+    if (deficit > 0) endHold += deficit;         // only what the shots could not absorb
   }
-  const total = PACE.hookLead + shotSeconds.slice(0, screenLines.length).reduce((a, b) => a + b, 0) + endSeconds;
+  const shotTotal = shotSum();
+  const total = PACE.hookLead + shotTotal + endHold;
   if (total > CANVAS.maxSeconds) {
     throw new Error(`The reel is ${total.toFixed(1)}s and STYLE.md §1 allows ${CANVAS.minSeconds}-${CANVAS.maxSeconds}s. Cut a line from ${path.basename(scriptPath)}.`);
   }
@@ -188,6 +202,7 @@ async function buildOne(scriptPath) {
     // Word timings are relative to the line; beats are absolute, so shift them per beat.
     for (let b = 0; b < count; b++) {
       const beatFrom = t + b * each;
+      const isClose = count === 1 ? true : b > 0;
       beats.push({
         // A line with no screen behind it is a statement, held full-bleed — no phone, no figures,
         // so nothing to label.
@@ -197,13 +212,16 @@ async function buildOne(scriptPath) {
         duration: each,
         // A real push-in, not a drift: the second beat is close enough to read the figure being
         // narrated, which is the whole reason for cutting to it.
-        // Beat one sits wide; the next pushes right in on the measured element (1.8-2.2x).
-        zoom: b === 0 ? 1.0 : (take && take.zoom) || 2.0,
+        // With shots capped at 2.5s a shot is usually ONE beat, so the push-in has to happen inside
+        // it rather than on a second beat that no longer exists: the shot opens a touch wide and
+        // moves in on the measured element. Where a shot is long enough to hold two beats, the
+        // first still sits wide and the second comes close.
+        zoom: isClose ? (take && take.zoom) || 2.0 : 1.0,
         // The measured element, centre and size in screen fractions. The composition zooms to it,
         // rings it and dims around it from this one box, so they cannot disagree.
         box: take && take.focus && take.ring
           ? { x: take.focus.x, y: take.focus.y, w: take.ring.w, h: take.ring.h } : null,
-        ring: b > 0 && !!(take && take.ring),                // the ring arrives with the push-in
+        ring: isClose && !!(take && take.ring),              // the ring arrives with the push-in
         chunks: (() => {
           const shifted = line.words.map((w) => ({ ...w, start: w.start + (t - beatFrom), end: w.end + (t - beatFrom) }));
           const cs = chunk(shifted);
@@ -211,7 +229,7 @@ async function buildOne(scriptPath) {
           return cs;
         })(),
       });
-      if (b > 0) tones.push({ at: beatFrom });             // a soft tone on the number reveal
+      if (isClose && take && take.ring) tones.push({ at: beatFrom });   // a soft tone on the reveal
       // The caption goes OPPOSITE the element being talked about, so it never covers it.
       const bt = beats[beats.length - 1];
       const tRect = bt.box ? targetRectInFrame(bt.box, bt.zoom) : null;
@@ -224,12 +242,8 @@ async function buildOne(scriptPath) {
     t += shot;
   });
   // The end card carries whatever is left to say, and holds for at least its 2.5 seconds.
-  let endDuration = PACE.endCard;
-  for (const line of endCardLines) {
-    narrationLines.push({ file: line.file, start: t });
-    endDuration = Math.max(endDuration, line.duration + GAP);
-    t += 0; // all end-card lines start together at the card; there is only ever one today
-  }
+  let endDuration = endHold;
+  for (const line of endCardLines) narrationLines.push({ file: line.file, start: t });
   beats.push({ kind: "end-card", from: t, duration: endDuration });
   t += endDuration;
 
@@ -278,7 +292,22 @@ async function buildOne(scriptPath) {
     durationSeconds: total,
     captionColour: brand.cream, endCardColour: brand.cream,
     appWindows: beats.filter((b) => b.kind === "screen").map((b) => [b.from, b.from + b.duration]),
-    beats, endCardLines: script.endCard,
+    beats, endCardLines: script.endCard, shots: clips,
+    // One row per spoken line, for review against the words.
+    storyboard: (() => {
+      const rows = [];
+      let at = PACE.hookLead;
+      lines.forEach((line, i) => {
+        if (i > lastScreenIndex) return;
+        const sh = clips[line.screen];
+        rows.push({ kind: "screen", from: at, seconds: shotSeconds[i], line: line.text,
+                    target: sh && sh.text ? sh.text : null,
+                    zoom: sh && sh.ring ? zoomToRect({ x: sh.focus.x, y: sh.focus.y, w: sh.ring.w, h: sh.ring.h }, sh.zoom).scale : null });
+        at += shotSeconds[i];
+      });
+      rows.push({ kind: "end-card", from: at, seconds: endHold, line: (endCardLines[0] || {}).text || script.endCard[0], target: null, zoom: null });
+      return rows;
+    })(),
   });
 
   console.log(`\n✓ ${path.relative(ROOT, mp4Out)}`);

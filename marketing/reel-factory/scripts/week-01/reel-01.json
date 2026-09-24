@@ -5,19 +5,27 @@
   "voice": [
     {
       "text": "Still adding up bills by hand?",
-      "screen": "hook"
+      "screen": "watch-top"
     },
     {
       "text": "Flourish finds them for you.",
-      "screen": "bills-list"
+      "screen": "bills-card"
     },
     {
-      "text": "Every bill. Every payday. The next 90 days, laid out.",
-      "screen": "forecast-90-day"
+      "text": "Every bill.",
+      "screen": "bill-phone"
     },
     {
-      "text": "So the tight week never sneaks up on you.",
-      "screen": "forecast-low-point"
+      "text": "Every payday.",
+      "screen": "payday-deposit"
+    },
+    {
+      "text": "The next 90 days, laid out.",
+      "screen": "ninety-day-scroll"
+    },
+    {
+      "text": "So rent never sneaks up on you.",
+      "screen": "rent-row"
     },
     {
       "text": "Your money, handled.",
@@ -27,8 +35,10 @@
   "captionLines": [
     "Still adding up bills by hand?",
     "Flourish finds them for you.",
-    "Every bill. Every payday. The next 90 days, laid out.",
-    "So the tight week never sneaks up on you.",
+    "Every bill.",
+    "Every payday.",
+    "The next 90 days, laid out.",
+    "So rent never sneaks up on you.",
     "Your money, handled."
   ],
   "endCard": [

@@ -29,43 +29,63 @@ const LOCAL_ONLY = /^http:\/\/(localhost|127\.0\.0\.1):\d+\/?$/;
 // scroll settles, so the zoom lands on the real row, bill or balance rather than on a guess that
 // drifts the moment a layout changes. `zoom` is how close (STYLE.md §4: 1.8-2.2x).
 export const SCREENS = {
-  "hook":               { nav: "Today", anchor: null,                          target: null },
-  "safe-to-spend":      { nav: "Today", anchor: "Safe to Spend",               target: "Safe to Spend",  zoom: 2.0 },
-  // The app has no standalone bills list in demo mode: "Your bills" on the Watch screen is the
-  // bills surface, and the rows beneath it are the bills it found, with their amounts.
-  "bills-list":         { nav: "Watch", anchor: "Your bills",                  target: "Your bills",     zoom: 2.1 },
-  "forecast-90-day":    { nav: "Watch", anchor: "The next 90 days",            target: "STARTING BALANCE", zoom: 1.9 },
-  "forecast-low-point": { nav: "Watch", anchor: "DAY-BY-DAY CASH FLOW",        target: "Phone:",         zoom: 2.2 },
-  "meeting-agenda":     { nav: "Meet",  anchor: "Your 15-minute money meeting", target: "Your 15-minute money meeting", zoom: 1.9 },
-  "end-card":           null,     // drawn by Remotion, nothing to record
+  // Every recipe below lands on Watch. The Home/Decisions screen is deliberately absent: it says
+  // nothing about bills, and it was holding four seconds of the reel.
+  //
+  //   tap      a control to press once the screen is up (the 90d range, for instance)
+  //   anchor   text scrolled into view — also the proof the right screen is up
+  //   target   the element the push-in lands on, MEASURED in the running app
+  //   tight    measure the text's own box rather than climbing to the group around it
+  //   scroll   an eased scripted scroll through the list, for a shot that shows time passing
+  "watch-top":         { nav: "Watch", anchor: "The next 90 days",  target: null },
+  "bills-card":        { nav: "Watch", anchor: "Your bills",        target: "Your bills",        zoom: 2.1 },
+  "bill-phone":        { nav: "Watch", anchor: "Phone:",            target: "Phone:",            zoom: 2.2, tight: true },
+  "payday-deposit":    { nav: "Watch", anchor: "+$2,840 deposit",   target: "+$2,840 deposit",   zoom: 2.2, tight: true },
+  // The 90-day view is the point of this shot: tap it, then travel down the list so weeks pass.
+  "ninety-day-scroll": { nav: "Watch", tap: "90d", anchor: "DAY-BY-DAY CASH FLOW", target: null, scroll: { to: "Rent:", seconds: 2.2 } },
+  "rent-row":          { nav: "Watch", tap: "90d", anchor: "Rent:", target: "Rent:",             zoom: 2.2, tight: true },
+  "end-card":          null,     // drawn by Remotion, nothing to record
 };
 
 // Where the target sits inside the viewport, as fractions — exactly what the composition needs to
 // zoom onto it. Measured after the scroll has settled, never guessed.
-async function measureFocus(page, targetText) {
-  if (!targetText) return { focus: { x: 0.5, y: 0.45 }, ring: null };
+async function measureFocus(page, targetText, tight) {
+  if (!targetText) return { focus: { x: 0.5, y: 0.45 }, ring: null, text: null };
   const el = page.getByText(targetText, { exact: false }).first();
   if (!(await el.count())) {
     throw new Error(`Push-in target "${targetText}" is not on screen. Fix the recipe in src/record.mjs rather than zooming on nothing.`);
   }
-  const box = await el.evaluate((node, vp) => {
+  const text = (await el.innerText().catch(() => "")).replace(/\s+/g, " ").trim();
+  const box = await el.evaluate((node, { vp, tight }) => {
     // Climb to the largest ancestor that is still SMALL ENOUGH TO ZOOM INTO. A bare label cuts the
     // figure off; the full-width card around it cannot be zoomed at all, because keeping a
     // full-width box on screen with padding leaves no room to magnify. The useful target is the
     // group in between — the label and its number.
     let best = node;
-    let n = node.parentElement;
-    for (let i = 0; i < 6 && n; i++, n = n.parentElement) {
-      const r = n.getBoundingClientRect();
-      // 0.46 of the width is the widest box that still allows a 1.8x push-in with 40px to spare.
-      if (r.width <= vp.w * 0.46 && r.height <= vp.h * 0.30 && r.width > 0) best = n;
-      else break;
+    if (!tight) {
+      let n = node.parentElement;
+      for (let i = 0; i < 6 && n; i++, n = n.parentElement) {
+        const r = n.getBoundingClientRect();
+        // 0.46 of the width is the widest box that still allows a 1.8x push-in with 40px to spare.
+        if (r.width <= vp.w * 0.46 && r.height <= vp.h * 0.30 && r.width > 0) best = n;
+        else break;
+      }
     }
-    const r = best.getBoundingClientRect();
+    // TIGHT means the glyphs, not the box they sit in. A row like "📅 Phone: −$65" is a flex child
+    // stretched to 69% of the width; the words themselves are a third of that. A Range over the
+    // node's own text measures what is actually written, which is what the ring should sit around.
+    let r = best.getBoundingClientRect();
+    if (tight) {
+      const range = document.createRange();
+      range.selectNodeContents(best);
+      const rr = range.getBoundingClientRect();
+      if (rr.width > 4 && rr.height > 4) r = rr;
+    }
     return { x: (r.x + r.width / 2) / vp.w, y: (r.y + r.height / 2) / vp.h, w: r.width / vp.w, h: r.height / vp.h };
-  }, { w: DEVICE.width, h: DEVICE.height });
+  }, { vp: { w: DEVICE.width, h: DEVICE.height }, tight: !!tight });
   const clamp = (v) => Math.min(0.88, Math.max(0.12, v));
   return {
+    text,                                  // what the ring is actually around, for the gate to check
     focus: { x: clamp(box.x), y: clamp(box.y) },
     // A little breathing room around the element, so the ring does not sit on its edge.
     ring: { w: Math.min(0.8, Math.max(0.18, box.w * 1.12)), h: Math.min(0.42, Math.max(0.05, box.h * 1.25)) },
@@ -126,6 +146,42 @@ async function easedScrollTo(page, locator) {
     requestAnimationFrame(step);
   }));
   await page.waitForTimeout(500);
+}
+
+/**
+ * Travel down the list, slowly, so weeks visibly pass. Same cubic easing as easedScrollTo, but it
+ * runs for a set time and ends on a named row rather than centring one — this is a camera move,
+ * not a jump to a destination.
+ */
+async function easedScrollThrough(page, toText, seconds) {
+  const target = page.getByText(toText, { exact: false }).first();
+  if (!(await target.count())) {
+    throw new Error(`The scroll is meant to end on "${toText}" and it is not in the list. Fix the recipe in src/record.mjs.`);
+  }
+  await target.evaluate((el, ms) => new Promise((resolve) => {
+    const scroller = (() => {
+      let n = el.parentElement;
+      while (n && n !== document.body) {
+        const s = getComputedStyle(n);
+        if (/(auto|scroll)/.test(s.overflowY) && n.scrollHeight > n.clientHeight + 4) return n;
+        n = n.parentElement;
+      }
+      return document.scrollingElement || document.documentElement;
+    })();
+    const from = scroller.scrollTop;
+    const box = el.getBoundingClientRect();
+    const sBox = scroller === document.scrollingElement ? { top: 0, height: innerHeight } : scroller.getBoundingClientRect();
+    const to = Math.max(0, Math.min(from + (box.top - sBox.top) - sBox.height * 0.45, scroller.scrollHeight - scroller.clientHeight));
+    const t0 = performance.now();
+    const ease = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+    const step = (now) => {
+      const p = Math.min(1, (now - t0) / ms);
+      scroller.scrollTop = from + (to - from) * ease(p);
+      if (p < 1) requestAnimationFrame(step); else resolve();
+    };
+    requestAnimationFrame(step);
+  }), Math.round(seconds * 1000));
+  await page.waitForTimeout(300);
 }
 
 async function enterDemo(page, baseUrl) {
@@ -197,6 +253,12 @@ export async function recordScreens(screenNames, { baseUrl, week, reelId, tailSe
         await tapVisible(navButton(page, recipe.nav), `${recipe.nav} tab`);
         await page.waitForTimeout(1200);
       }
+      if (recipe.tap) {
+        // A visible press on a control — the 90d range, for instance — so the reel shows the app
+        // being used rather than arriving at a state.
+        await tapVisible(page.getByRole("button", { name: new RegExp(`^${recipe.tap}$`) }).last(), `${recipe.tap} control`);
+        await page.waitForTimeout(1400);
+      }
       if (recipe.anchor) {
         const anchor = page.getByText(recipe.anchor, { exact: false }).first();
         try {
@@ -206,7 +268,8 @@ export async function recordScreens(screenNames, { baseUrl, week, reelId, tailSe
         }
         await easedScrollTo(page, anchor);
       }
-      measured = await measureFocus(page, recipe.target);
+      if (recipe.scroll) await easedScrollThrough(page, recipe.scroll.to, recipe.scroll.seconds);
+      measured = await measureFocus(page, recipe.target, recipe.tight);
       // Hold still for longer than the reel will use, so the tail is all settled screen.
       await page.waitForTimeout((tailSeconds + 2) * 1000);
       await context.close();                       // flushes the video file
@@ -214,7 +277,8 @@ export async function recordScreens(screenNames, { baseUrl, week, reelId, tailSe
       if (!file) throw new Error(`Playwright wrote no video for screen "${screen}".`);
       results[screen] = {
         file: await trimToTail(path.join(clipDir, file), path.join(clipDir, `${screen}.mp4`), tailSeconds),
-        focus: measured.focus, ring: measured.ring, zoom: recipe.zoom || 1,
+        focus: measured.focus, ring: measured.ring, text: measured.text || null,
+        expect: recipe.target || null, zoom: recipe.zoom || 1,
       };
     }
   } finally {

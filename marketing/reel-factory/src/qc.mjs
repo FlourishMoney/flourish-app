@@ -12,7 +12,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { CANVAS, SAFE } from "./config.mjs";
 import { measureLufs, TARGET_LUFS } from "./audio.mjs";
-import { screenRect, captionRect, intersects, PILL, FRAME } from "./layout.mjs";
+import { screenRect, captionRect, intersects, PILL, FRAME, MAX_SHOT_SECONDS, CAPTION } from "./layout.mjs";
 
 const run = promisify(execFile);
 const ff = (args) => run("ffmpeg", ["-y", "-loglevel", "error", ...args], { maxBuffer: 1 << 28 });
@@ -78,7 +78,7 @@ const nearCream = (r, g, b, cream) => {
   return Math.abs(r - cr) < 26 && Math.abs(g - cg) < 26 && Math.abs(b - cb) < 26;
 };
 
-export async function runQualityGate({ mp4, outDir, reelId, script, brand, durationSeconds, captionColour, endCardColour, appWindows = [], beats = [], endCardLines = [] }) {
+export async function runQualityGate({ mp4, outDir, reelId, script, brand, durationSeconds, captionColour, endCardColour, appWindows = [], beats = [], endCardLines = [], shots = {}, storyboard = [] }) {
   const results = [];
   const check = (name, ok, detail) => { results.push({ name, ok, detail }); return ok; };
 
@@ -296,7 +296,63 @@ export async function runQualityGate({ mp4, outDir, reelId, script, brand, durat
   check("end-card line appears once", headline ? shownInBeats === 0 : false,
     headline ? (shownInBeats === 0 ? "only on the end card" : `also held as ${shownInBeats} statement beat(s)`) : "no end-card headline in the script");
 
+  // ── the v4 additions ────────────────────────────────────────────────────────────────────────
+  // (7) Pace: no shot longer than 2.5s, the end card excepted.
+  const shotLengths = storyboard.filter((r) => r.kind !== "end-card");
+  const tooLong = shotLengths.filter((r) => r.seconds > MAX_SHOT_SECONDS + 0.01);
+  check(`no shot over ${MAX_SHOT_SECONDS}s`, tooLong.length === 0,
+    tooLong.length ? tooLong.map((r) => `${r.line} ${r.seconds.toFixed(2)}s`).join("; ")
+      : `longest ${Math.max(...shotLengths.map((r) => r.seconds)).toFixed(2)}s across ${shotLengths.length} shots`);
+
+  // (8) The caption band is clean: behind the words, once the glyphs themselves are excluded,
+  // there is background and nothing else. App text showing through is what this catches.
+  const bandResults = [];
+  for (const b of beats.filter((x) => x.kind === "screen").slice(0, 6)) {
+    const t = b.from + b.duration * 0.6;
+    const { buf } = await frameRgb(mp4, t, W, H);
+    const rect = captionRect(b.captionAnchor || "bottom");
+    const y0 = Math.round((rect.y / FRAME.h) * H), y1 = Math.round(((rect.y + rect.h) / FRAME.h) * H);
+    const x0 = Math.round((rect.x / FRAME.w) * W), x1 = Math.round(((rect.x + rect.w) / FRAME.w) * W);
+    const bgL = luminance(hex(brand.bg)) * 255;
+    const vals = [];
+    for (let y = Math.max(0, y0); y < Math.min(H, y1); y++) for (let x = Math.max(0, x0); x < Math.min(W, x1); x++) {
+      const o = (y * W + x) * 3;
+      const l = 0.299 * buf[o] + 0.587 * buf[o + 1] + 0.114 * buf[o + 2];
+      if (l > 42) continue;                 // a glyph (cream or lime); the rule is about what is BEHIND
+      vals.push(l);
+    }
+    if (vals.length < 200) continue;
+    const mean = vals.reduce((a, c) => a + c, 0) / vals.length;
+    const variance = vals.reduce((a, c) => a + (c - mean) ** 2, 0) / vals.length;
+    bandResults.push({ t, mean, sd: Math.sqrt(variance), bgL });
+  }
+  const dirty = bandResults.filter((r) => r.sd > 6 || Math.abs(r.mean - r.bgL) > 10);
+  check("caption band clean", bandResults.length > 0 && dirty.length === 0,
+    bandResults.length === 0 ? "no caption bands sampled"
+      : dirty.length ? `app pixels behind the words at ${dirty.map((r) => r.t.toFixed(1) + "s").join(", ")} (sd ${dirty.map((r) => r.sd.toFixed(1)).join("/")})`
+      : `sd ${bandResults.map((r) => r.sd.toFixed(1)).join("/")} across ${bandResults.length} bands`);
+
+  // (9) Each ring is around the text the script says it should be around. The recorder captures
+  // what it measured; this compares that against the recipe, so a layout change that moves a ring
+  // onto the wrong row fails here rather than shipping.
+  const mismatched = Object.entries(shots)
+    .filter(([, sh]) => sh.expect)
+    .filter(([, sh]) => !(sh.text || "").toLowerCase().includes(String(sh.expect).toLowerCase()));
+  check("ring targets match the script", mismatched.length === 0,
+    mismatched.length ? mismatched.map(([k, sh]) => `${k}: wanted "${sh.expect}", ringed "${sh.text}"`).join("; ")
+      : Object.values(shots).filter((sh) => sh.expect).map((sh) => `"${sh.text}"`).join(", "));
+
   // ── report ──────────────────────────────────────────────────────────────────────────────────
+  if (storyboard.length) {
+    console.log("\n  Storyboard");
+    console.log("   " + "time".padEnd(13) + "voice line".padEnd(34) + "ring target".padEnd(24) + "zoom");
+    for (const r of storyboard) {
+      console.log("   " + `${r.from.toFixed(1)}-${(r.from + r.seconds).toFixed(1)}s`.padEnd(13)
+        + (r.line.length > 32 ? r.line.slice(0, 31) + "…" : r.line).padEnd(34)
+        + (r.target || "—").padEnd(24) + (r.zoom ? r.zoom.toFixed(2) + "x" : "—"));
+    }
+  }
+
   console.log("\n  Quality gate (STYLE.md §10)");
   for (const r of results) console.log(`   ${r.ok ? "PASS" : "FAIL"}  ${r.name.padEnd(32)} ${r.detail}`);
   const failed = results.filter((r) => !r.ok);

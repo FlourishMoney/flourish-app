@@ -97,13 +97,16 @@ const Caption = ({ chunks = [], brand, fps, anchor = "bottom" }) => {
   const rect = captionRect(anchor);
   return (
     <AbsoluteFill>
-      {/* A scrim behind the caption only, so it keeps AA contrast over whatever is behind it. */}
+      {/* A CLEAN BAND, not a wash. The caption sits over the device, so anything less than opaque
+          leaves app text legible behind the words — which is what made v3 hard to read. The band is
+          the background colour at full strength across the caption itself, and only fades outside
+          it, where there is nothing to hide. */}
       <div style={{
         position: "absolute", left: 0, right: 0,
-        top: rect.y - 70, height: rect.h + 140,
+        top: rect.y - CAPTION.band, height: rect.h + CAPTION.band * 2,
         background: anchor === "top"
-          ? `linear-gradient(to bottom, ${brand.bg}F2 0%, ${brand.bg}E6 62%, ${brand.bg}00 100%)`
-          : `linear-gradient(to top, ${brand.bg}F2 0%, ${brand.bg}E6 62%, ${brand.bg}00 100%)`,
+          ? `linear-gradient(to bottom, ${brand.bg} 0%, ${brand.bg} ${((CAPTION.band + rect.h) / (rect.h + CAPTION.band * 2) * 100).toFixed(1)}%, ${brand.bg}00 100%)`
+          : `linear-gradient(to top, ${brand.bg} 0%, ${brand.bg} ${((CAPTION.band + rect.h) / (rect.h + CAPTION.band * 2) * 100).toFixed(1)}%, ${brand.bg}00 100%)`,
       }} />
       <div style={{
         position: "absolute", left: rect.x, top: rect.y, width: rect.w, height: rect.h,

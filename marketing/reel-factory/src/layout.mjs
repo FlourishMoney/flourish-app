@@ -97,9 +97,12 @@ export function targetRectInFrame(box, zoom, pad = 40) {
 // The "Example" pill: in the clear strip between the top safe line and the device, so it can never
 // sit over app text.
 export const PILL = { h: 56, top: SAFE_BAND.top + 14, right: 80 };
+// STYLE.md pace: no shot may run longer than this, the end card excepted.
+export const MAX_SHOT_SECONDS = 2.5;
 
 // The caption block, anchored to whichever half of the frame the target is NOT in.
-export const CAPTION = { maxH: 210, side: 70, gap: 40 };
+// `band` is how far the opaque background extends past the caption box before it fades.
+export const CAPTION = { maxH: 210, side: 70, gap: 40, band: 90 };
 export function captionRect(anchor) {
   return anchor === "top"
     ? { x: CAPTION.side, y: PILL.top + PILL.h + 26, w: FRAME.w - CAPTION.side * 2, h: CAPTION.maxH }
