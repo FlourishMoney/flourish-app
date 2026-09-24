@@ -16,6 +16,8 @@
 // user already declined.
 // -----------------------------------------------------------------------------
 
+import { decidePrompt } from "./reconcileLoop.js";
+
 export const AMOUNT_TOLERANCE = 0.05;      // 5% — below this is rounding/variable-pay noise, not news
 export const ANCHOR_TOLERANCE_DAYS = 2;    // payday drifts for weekends; only flag a real move
 
@@ -67,17 +69,21 @@ export function incomeDifferences(detected, currentIncomes) {
 // Returns { prompt, reason, signature, suggestion } — suggestion is what the card renders.
 export function shouldPromptIncome({ detected, currentIncomes, dismissedSignature = null } = {}) {
   const signature = detectionSignature(detected);
+  // Kept here rather than in decidePrompt: "a detection with no money in it" is an income fact.
   if (!detected || !(Number(detected.perDeposit) > 0)) return { prompt: false, reason: "no-detection", signature: null, suggestion: null };
   const p = primaryIncome(currentIncomes);
   // No user income at all → the caller adopts the detection directly; nothing to reconcile.
-  if (!p) return { prompt: false, reason: "no-current-income", signature, suggestion: null };
-  if (dismissedSignature && dismissedSignature === signature) return { prompt: false, reason: "dismissed", signature, suggestion: null };
-  const reasons = incomeDifferences(detected, currentIncomes);
-  if (reasons.length === 0) return { prompt: false, reason: "within-tolerance", signature, suggestion: null };
+  const decision = decidePrompt({
+    signature,
+    differences: p ? incomeDifferences(detected, currentIncomes) : [],
+    dismissedSignature,
+    blockedReason: p ? null : "no-current-income",
+  });
+  if (!decision.prompt) return { ...decision, suggestion: null };
   return {
-    prompt: true, reason: "differs", signature, reasons,
+    ...decision,
     suggestion: {
-      signature, reasons,
+      signature, reasons: decision.reasons,
       detected: { amount: Math.round(Number(detected.perDeposit)), freq: detected.freq || null,
                   anchorDay: detected.anchorDay ?? null, label: detected.label || "Employment",
                   isVariable: !!detected.isVariable },

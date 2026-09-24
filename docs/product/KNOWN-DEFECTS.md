@@ -266,3 +266,234 @@ waits on billing.
 **Fix (suggested, not built)** Extract a small pure render helper, for example `meetTabsFor({ isCouple, householdEnabled })` returning the tab list or `null`, into `src/lib/`. Have the JSX call it and map over its result, and test the helper directly with imports rather than by extracting source text. The test then exercises the same code the screen runs.
 
 **Status** Deferred by decision, 2026-09-21, under the rule that only a HIGH finding blocks a merge. Raised as a LOW in the ChatGPT review of PR #3.
+
+---
+
+## 13. The learning loop: eight accepted findings from the PR #10 review
+
+All eight were accepted during the review that returned DO NOT MERGE on PR #10. The two
+blockers in that review are fixed on the branch; these are the ones deferred by decision.
+Numbered 13a-13h so they can be referred to individually.
+
+### 13a. The merchant-override memo cache is never invalidated on hydrate or wipe
+
+**Where** `src/App.jsx:743` (`let _mcoCache = null;`), cleared only by `bumpMerchantCatOv()`
+at `src/App.jsx:745`, called from `recat` and the Remove-rule control.
+
+**What happens** The cache is filled on first read and cleared only by a LOCAL write. Two
+paths change `flourish_cat_merchant_overrides` without going through them: cloud hydrate
+(`writeSideKeys`, `src/lib/persistence.js:79`) and the shared-device wipe
+(`clearAllUserLocal`, same file). After either, the module-level cache still holds the
+previous household's rules until the page is reloaded — so signing in on a device that
+already had a session can show one household's category rules applied to another's
+transactions.
+
+**What it does NOT do** It cannot write the wrong rule to storage; only the resolution in
+that page session is stale, and the stored data is correct.
+
+**Fix** Call `bumpMerchantCatOv()` from `writeSideKeys` and `clearAllUserLocal`, or drop the
+cache in favour of reading through React state so hydration invalidates it naturally.
+
+### 13b. A correction on a merchant with one transaction silently writes a permanent rule
+
+**Where** `src/App.jsx:6978` — `if (applyToAll || others <= 1)`.
+
+**What happens** Correcting a transaction whose merchant has no other transactions writes a
+forward-applying merchant rule with no prompt and no notice. The reasoning is in the code
+(with nothing else it could mean, "this merchant is X" is the only reading), but the
+household is not told a rule was created, and only finds out when a future charge arrives
+already categorised.
+
+**Fix** Either say so in the sheet ("future charges from this merchant will use this too"),
+or restrict silent rule-writing to the explicit apply-to-all path.
+
+### 13c. The data export omits merchant overrides
+
+**Where** `src/App.jsx:10238` exports `categoryOverrides: _ls("flourish_cat_overrides", "{}")`
+and nothing exports `flourish_cat_merchant_overrides`.
+
+**What happens** The PIPEDA data export is incomplete: the household's merchant rules are
+their data and are not in it. They ARE synced (`src/lib/persistence.js` SIDE_KEYS), so this
+is an export gap, not a loss.
+
+**Fix** One line beside the existing entry.
+
+### 13d. `billsReconcile` keyed bills differently from the rest of the pipeline — FIXED 2026-09-23
+
+**Status: fixed** in `src/lib/billsReconcile.js` + `src/lib/plaidNormalize.js` on branch
+`learning-loop`. Kept here because the reproduction is the regression test, and because the
+compatibility read it depends on still has to be retired one day (see the end of this entry).
+
+**Where** `src/lib/billsReconcile.js` (`billKey`, lowercase + collapse whitespace) versus
+`src/lib/billReeval.js:57` (`merchantKey`, which also strips POS prefixes and account numbers via
+`plaidNormalize.stripAccountNumber`).
+
+**What happened** A stored bill and the detector's current name for the same merchant could
+differ — `"Rogers"` stored, `"Rogers Toronto On"` detected from `"ROGERS 1234 TORONTO ON"`.
+`billsReconcile` compared them with its own weaker key, saw no match, and raised BOTH halves. For a
+stored bill `{name:"Rogers", origin:"observed", amount:"95.00"}` plus four monthly
+`"ROGERS 1234 TORONTO ON"` charges at $95, `buildReconcilePrompts` returned two questions:
+
+> Rogers Toronto On looks like a new regular bill at $95. Add it?
+> Rogers at $95 has stopped showing up. Has it ended?
+
+One bill, two questions, pointing opposite ways. For an existing household this was a **first-sync
+event**, not a slow drift: the first money meeting after this shipped would ask them to add bills
+they already have, and in the same agenda ask them to confirm those same bills had ended. The Meet
+screen does not render `agenda.questions`, but `agendaToText` sends them to the facilitator, so a
+`beta_founder` household with AI on would have heard both.
+
+**The fix** `billsReconcile` now decides "same bill" the way the rest of the pipeline does:
+`billMatchKeys()` returns the written name, `merchantKey(name)`, and the name main's code produced
+for the same descriptor. The detector carries that last one on each detected bill as `legacyName`,
+and only when it differs from the display name. `applyBillChange` resolves a change to a stored bill
+through the same rule, so an accepted answer updates or removes the bill the household actually has
+instead of appending a second copy. No display name changed.
+
+An alias may claim a stored bill only **once**: main's names were lossier than today's (two
+different POS merchants both became `"POS PURCHASE"`), so without that guard a second real merchant
+would be absorbed into the first and never raised.
+
+**Regression tests** `tests/merchantNameCompat.test.cjs` section (e): assertion **e2** was pinned to
+`"appeared,disappeared"` as a characterisation of this defect and now asserts `"(none)"`; **e6.1-6**
+run all six fixture descriptors, each stored under the name produced by running origin/main's own
+function; **e7** proves a genuinely different merchant is still raised as new, so the fix cannot
+silence everything; **e8/e9** cover the POS collision. `tests/billsReconcile.test.cjs` **6k-6o**
+cover `applyBillChange`. Each was mutation-checked: removing any part of the fix fails a named
+assertion.
+
+**The double count is closed**, in the questions and in the stored data, so the sequencing
+constraint this entry used to carry is discharged — 13e and 13f no longer wait on it.
+
+**Still open, separately:** the compatibility layer itself — `stripAccountNumberLegacy`,
+`legacyMerchantKey`, and the `legacyName` field — exists only because stored names were never
+migrated. It can be removed once stored display names have settled, which needs a migration of
+`userBillOverrides` keys and stored bill names, not just the passage of time. The code comments that
+say "REMOVE once stored names have settled" point here.
+
+### 13e. Nothing writes `meetingRecords`
+
+**Where** `src/lib/meetSnapshot.js:119` and `:146` read `data.meetingRecords`; no writer exists
+in `src/`.
+
+**What happens** The record table, the server writer (`netlify/functions/meeting.js`) and the
+reader all exist, but no client code posts an answer or hydrates the rows into `appData`. Until
+that is wired, dismissals persist only in the local `billSuggestionDismissed` field and the
+next-meeting opening always reports "first money meeting".
+
+**Fix** Post to `/api/meeting` when an agenda question is answered, and hydrate
+`meetingRecords` from the `meeting_records` table alongside the rest of the profile read.
+Needs migration `0011_meeting_records.sql` applied first.
+
+### 13f. `agenda.questions` is never rendered on the Meet screen
+
+**Where** `src/App.jsx` — zero references to `agenda.questions`; the Meet screen renders wins,
+changes, risks, progress and decisions only.
+
+**What happens** The questions reach the agenda object and the facilitator's text context
+(`agendaToText`), so the model can ask them out loud, but nothing is shown on screen and there
+are no Yes/No controls — so there is no way for a household to answer one in the UI.
+
+**Fix** Render the section with its two options and call the writer from 13e.
+
+### 13g. `meetingOpening`'s health-score line can never render
+
+**Where** `src/lib/meetingRecord.js` reads `snapshot.healthScore.current` / `.previous`;
+`buildMeetSnapshot` (`src/lib/meetSnapshot.js`) never sets `healthScore`.
+
+**What happens** The "since last time" opening is limited to what the stored record says. The
+one engine-derived line it can produce is unreachable in the running app, so item 5's "and
+what the engines say has changed" is currently only true in tests, which pass the snapshot
+directly.
+
+**Fix** Set `healthScore: { current, previous }` in `buildMeetSnapshot` from `calcHealthScore`.
+The previous value needs somewhere to come from — the last meeting record is the natural home,
+which makes this depend on 13e.
+
+### 13h. `rememberDismissal` writes a shape its only reader rejects
+
+**Where** `src/lib/reconcileLoop.js:123` returns `{ [field]: signature }` — a single string.
+For `domain: "bills"` the field is `billSuggestionDismissed`, which
+`src/lib/meetSnapshot.js:120` and `billsReconcile.shouldPromptBills` both read as an ARRAY.
+
+**What happens** Nothing today: `rememberDismissal` has no callers, and the bills path uses
+`rememberBillDismissal` instead. But the function is exported and looks like the one to use, so
+the first caller to reach for it writes a string where an array is expected and silently
+suppresses nothing.
+
+**Fix** Either make it domain-aware (array for bills, string for income) or delete it and keep
+`rememberBillDismissal` as the only writer.
+
+---
+
+## 14. A webhook delivery that dies after claiming its event is never retried
+
+**Rating: MEDIUM.** Found in the PR #9 review, 2026-09-23. Not fixed — the fix is a policy
+decision about how long a claim may be held.
+
+**Where** `netlify/functions/stripe-webhook.js`, the claim/complete sequence.
+
+**What happens** The `billing_events` insert is the idempotency lock and is claimed *before* the
+work, which is correct: two concurrent deliveries of one event cannot both proceed. Completion
+then marks the row `processed`, and a thrown error marks it `failed` — and a `failed` row is
+allowed to run again.
+
+A delivery that dies *between* those two points marks neither. The row stays `received`. Every
+later retry finds a duplicate, sees a status that is not `failed`, and answers `200 {replay:true}`,
+so Stripe stops retrying and the work never happens. A Netlify function timeout does exactly this:
+the `catch` never runs.
+
+**What a user sees** They paid, Stripe took the money, and their plan never changed. Nothing in
+the app reports an error; the ledger row says `received` and looks unremarkable.
+
+**Fix (suggested, not built)** Treat a `received` row older than a few minutes as retryable, the
+same way a `failed` row is — the claim is a lock, and a lock nobody released is a crash, not a
+success. `attempts` is already on the row to bound it. The number is the decision: too short and
+two deliveries overlap, too long and a stuck payment waits.
+
+**Meanwhile** it is recoverable by hand: set that event's `status` to `failed` and Stripe's
+"Resend" in the dashboard replays it.
+
+---
+
+## 15. The founding price is kept out of the Billing Portal by a dashboard setting, not by code
+
+**Rating: MEDIUM.** Found in the PR #9 review, 2026-09-23. Not fixed — it cannot be fixed in this
+repo alone.
+
+**Where** `netlify/functions/billing.js`, `create_portal_session`.
+
+**What happens** `mayBuyFoundingPrice()` gates the $79.99 founding price at checkout: a profile
+without `founder_flag` is refused. The Billing Portal does not go through that gate. It is created
+with a customer and a return URL and no `configuration`, so it uses whatever the Stripe dashboard's
+default portal configuration allows. If "customers can switch plans" is ever enabled with the
+founding price among the listed products, any paying customer can move themselves onto it and keep
+it — the eligibility rule is bypassed entirely, permanently, and silently.
+
+`docs/ops/BILLING-SETUP.md` step 4 says to allow only cancellation and payment-method updates,
+which is the safe configuration. Nothing enforces that it stays that way, and no test can see it.
+
+**Fix (suggested, not built)** Create an explicit portal configuration with plan switching off,
+put its id in `STRIPE_PORTAL_CONFIGURATION_ID`, and pass it on every `create_portal_session`. The
+setting is then pinned in an environment variable that a reviewer can read, rather than in a
+dashboard toggle nobody looks at. Until then, **verify the portal configuration by hand before
+2026-10-26**, and again after any Stripe dashboard change.
+
+---
+
+## 16. `getUserPlan`'s error paths return a different shape from its success path
+
+**Rating: LOW.** Found in the PR #9 review, 2026-09-23.
+
+**Where** `netlify/functions/_lib/auth.js`, the `!data` early return and the outer `catch`.
+
+**What happens** The success path returns `{ plan, entitlement, founder_flag, unlimited, paid,
+subscription_status }`. The two failure paths return only `{ plan, founder_flag, unlimited }` (one
+of them also `paid: false`). A caller reading `entitlement` gets `undefined` rather than `"free"`.
+
+Harmless today: `unlimited` is the field every existing caller reads, and it is `false` on both
+paths, so access still fails closed. It becomes a defect the first time something branches on
+`entitlement` and treats `undefined` as anything other than free.
+
+**Fix (suggested, not built)** Return one shape from all three paths, with `entitlement: "free"`
+and `paid: false` in the failure cases.

@@ -39,6 +39,16 @@ function corsHeadersFor(event) {
   };
 }
 
+// BILLING IS OFF UNTIL IT IS SWITCHED ON. Billing goes live 2026-10-26, and nothing in src/
+// calls these endpoints — but merging deploys them, and a Netlify function is a public URL: any
+// signed-in beta user could POST here with their own token and be handed a real Stripe checkout
+// for a price no one has seen yet. Read per request, not once at module load, so switching it on
+// is an environment change in Netlify and not a deploy.
+//
+// The response is 404, deliberately: an endpoint that is not open yet should look absent rather
+// than advertise that billing exists and is merely switched off.
+const billingEnabled = () => process.env.BILLING_ENABLED === "true";
+
 const APP_ORIGIN = () => (process.env.APP_ORIGIN || "https://flourishmoney.app").trim();
 const json = (statusCode, headers, body) => ({ statusCode, headers, body: JSON.stringify(body) });
 
@@ -65,6 +75,10 @@ exports.handler = async (event) => {
   const CORS = corsHeadersFor(event);
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS, body: "" };
   if (event.httpMethod !== "POST") return json(405, CORS, { error: "Method not allowed" });
+
+  // The flag comes before auth, the body and the admin client: while billing is off this function
+  // reads nothing, writes nothing and asks Stripe for nothing.
+  if (!billingEnabled()) return json(404, CORS, { error: "not_found" });
 
   // Auth first, every time. Nothing below runs for an anonymous caller.
   const { user_id, error: authError } = await getUserFromRequest(event);

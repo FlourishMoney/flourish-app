@@ -48,6 +48,12 @@ create table if not exists public.subscriptions (
   amount_tax_cents         integer,
   amount_total_cents       integer,
 
+  -- The `created` time of the Stripe EVENT this row was last written from — not the time we
+  -- processed it. Stripe does not guarantee delivery order and retries for days, so the webhook
+  -- compares against this and ignores an event older than the one already applied. Null on a row
+  -- written before any event (the customer stub created at checkout).
+  last_event_at            timestamptz,
+
   created_at               timestamptz not null default now(),
   updated_at               timestamptz not null default now()
 );

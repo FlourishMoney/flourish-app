@@ -89,6 +89,9 @@ const post = (body, headers = {}) => ({ httpMethod: "POST", headers, body: typeo
   const t = create();
   process.env.STRIPE_WEBHOOK_SECRET = "whsec_gate_test";
   process.env.STRIPE_PRICE_MONTHLY_CAD = "price_monthly_test";
+  // Billing is off by default (section 10 proves that). The checkout sections below are about what
+  // the endpoint DOES once it is on, so they switch it on explicitly rather than relying on a default.
+  process.env.BILLING_ENABLED = "true";
 
   // ── 1. billing.js refuses an unauthenticated caller ──────────────────────────────────────────
   {
@@ -206,6 +209,121 @@ const post = (body, headers = {}) => ({ httpMethod: "POST", headers, body: typeo
     t.eq(res.statusCode, 500, "8a a missing webhook secret is a 500, not an open door");
     t.eq(state.writes.length, 0, "8b …and nothing was read or written");
     process.env.STRIPE_WEBHOOK_SECRET = saved;
+  }
+
+  // ── 9. OUT-OF-ORDER EVENTS (13-review HIGH 1) ────────────────────────────────────────────────
+  // Stripe does not guarantee delivery order and retries for days. Two orderings matter, and both
+  // are a wrong entitlement, not a cosmetic one.
+  {
+    const sign = (b) => ({ "stripe-signature": signPayload(b, "whsec_gate_test") });
+    const T = Math.floor(Date.parse("2026-10-27T10:00:00Z") / 1000);
+    const subObj = (status, created_extra = {}) => ({
+      id: "sub_ord", customer: "cus_ord", status,
+      metadata: { user_id: "u_ord", plan_key: "annual" },
+      current_period_end: Math.floor(Date.parse("2027-10-27T10:00:00Z") / 1000),
+      items: { data: [{ price: { id: "price_annual_test" } }] },
+      ...created_extra,
+    });
+
+    // (a) cancel, then a STALE 'active' update generated before it.
+    {
+      const state = { rows: {}, writes: [] };
+      const hook = loadWithStubs(HOOK_PATH, { state });
+      const del = JSON.stringify({ id: "evt_del", created: T + 60, type: "customer.subscription.deleted",
+                                   data: { object: subObj("canceled") } });
+      await hook.handler(post(del, sign(del)));
+      t.eq(state.rows.subscriptions[0].status, "canceled", "9a the cancellation is applied");
+
+      const stale = JSON.stringify({ id: "evt_stale_active", created: T, type: "customer.subscription.updated",
+                                     data: { object: subObj("active") } });
+      const res = await hook.handler(post(stale, sign(stale)));
+      t.eq(res.statusCode, 200, "9b a stale update is acknowledged, not retried forever");
+      t.eq(state.rows.subscriptions[0].status, "canceled",
+        "9c …and does NOT revive the cancelled subscription — an out-of-order event cannot grant a paid plan");
+      t.eq(state.rows.billing_events.find(e => e.event_id === "evt_stale_active").status, "ignored",
+        "9d …it is recorded as ignored, so the ledger shows why nothing changed");
+    }
+
+    // (b) the reverse: a renewal applied, then a STALE cancellation lands after it.
+    {
+      const state = { rows: {}, writes: [] };
+      const hook = loadWithStubs(HOOK_PATH, { state });
+      const live = JSON.stringify({ id: "evt_live", created: T + 60, type: "customer.subscription.updated",
+                                    data: { object: subObj("active") } });
+      await hook.handler(post(live, sign(live)));
+      t.eq(state.rows.subscriptions[0].status, "active", "9e the renewal is applied");
+
+      const staleDel = JSON.stringify({ id: "evt_stale_del", created: T, type: "customer.subscription.deleted",
+                                        data: { object: subObj("canceled") } });
+      await hook.handler(post(staleDel, sign(staleDel)));
+      t.eq(state.rows.subscriptions[0].status, "active",
+        "9f …and a stale cancellation does NOT take away access somebody paid for");
+    }
+
+    // (c) in-order events still apply — the guard must not freeze the row.
+    {
+      const state = { rows: {}, writes: [] };
+      const hook = loadWithStubs(HOOK_PATH, { state });
+      const first = JSON.stringify({ id: "evt_o1", created: T, type: "customer.subscription.updated",
+                                     data: { object: subObj("active") } });
+      await hook.handler(post(first, sign(first)));
+      const later = JSON.stringify({ id: "evt_o2", created: T + 60, type: "customer.subscription.deleted",
+                                     data: { object: subObj("canceled") } });
+      await hook.handler(post(later, sign(later)));
+      t.eq(state.rows.subscriptions[0].status, "canceled", "9g a LATER event still applies normally");
+      t.eq(state.rows.subscriptions[0].founding_locked_at ?? null, null, "9h …and the founding lock is cleared on cancellation");
+    }
+
+    // (d) an event with no timestamp is applied rather than dropped — fail open on ordering only,
+    //     never on authenticity.
+    {
+      const state = { rows: {}, writes: [] };
+      const hook = loadWithStubs(HOOK_PATH, { state });
+      // A stamped event first, so the row HAS a last_event_at to be compared against — otherwise
+      // the comparison never runs and this proves nothing.
+      const stamped = JSON.stringify({ id: "evt_stamped", created: T, type: "customer.subscription.deleted",
+                                       data: { object: subObj("canceled") } });
+      await hook.handler(post(stamped, sign(stamped)));
+      t.ok(!!state.rows.subscriptions[0].last_event_at, "9i the row carries the event time it was written from");
+
+      const noTs = JSON.stringify({ id: "evt_nots", type: "customer.subscription.updated",
+                                    data: { object: subObj("active") } });
+      const res = await hook.handler(post(noTs, sign(noTs)));
+      t.eq(res.statusCode, 200, "9j an event carrying no created timestamp is still processed");
+      t.eq(state.rows.subscriptions[0].status, "active",
+        "9k …and applied — ordering fails OPEN, because the signature already proved the event is real");
+    }
+  }
+
+  // ── 10. BILLING IS OFF UNTIL IT IS SWITCHED ON (13-review HIGH 2) ─────────────────────────────
+  // Nothing in src/ calls these endpoints, but merging deploys them, and any signed-in beta user
+  // can POST to a Netlify function directly. Billing goes live 2026-10-26; until BILLING_ENABLED
+  // is set, the endpoint must behave as though it does not exist.
+  {
+    const saved = process.env.BILLING_ENABLED;
+    delete process.env.BILLING_ENABLED;
+    const state = { rows: { profiles: [{ user_id: "u_flag", founder_flag: true }] }, writes: [] };
+    let stripeCalls = 0;
+    const billing = loadWithStubs(BILLING_PATH, {
+      user_id: "u_flag", state,
+      stripe: { stripePost: async () => { stripeCalls++; return { id: "cs_x", url: "https://stripe.test/pay" }; } },
+    });
+    for (const action of ["create_checkout_session", "create_portal_session"]) {
+      const res = await billing.handler(post({ action, plan_key: "monthly" }));
+      t.eq(res.statusCode, 404, `10 ${action} is not reachable while billing is off`);
+      t.eq(JSON.parse(res.body).url, undefined, `10 ${action} returns no checkout URL`);
+    }
+    t.eq(stripeCalls, 0, "10c no Stripe session was created for a beta user while billing is off");
+    t.eq(state.writes.length, 0, "10d …and nothing was written");
+
+    process.env.BILLING_ENABLED = "true";
+    const on = loadWithStubs(BILLING_PATH, {
+      user_id: "u_flag", state: { rows: { profiles: [{ user_id: "u_flag", founder_flag: true }] }, writes: [] },
+      stripe: { stripePost: async () => ({ id: "cs_y", url: "https://stripe.test/pay" }) },
+    });
+    const res = await on.handler(post({ action: "create_checkout_session", plan_key: "monthly" }));
+    t.eq(res.statusCode, 200, "10e …and the same call works once it is switched on, so the flag is the only thing off");
+    if (saved === undefined) delete process.env.BILLING_ENABLED; else process.env.BILLING_ENABLED = saved;
   }
 
   t.summary("billingFunctions.test");

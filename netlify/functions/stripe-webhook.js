@@ -125,10 +125,43 @@ exports.handler = async (event) => {
     return reply(200, { received: true, ignored: true });
   }
 
+  // ORDERING. Stripe does not guarantee the order events arrive in, and it retries a failed
+  // delivery for days. Without this check a stale customer.subscription.updated landing after a
+  // cancellation flips a cancelled household back to active, and a stale cancellation landing
+  // after a renewal takes away access somebody paid for. Every write stamps the row with the
+  // EVENT's own created time — not the processing time, which is the order they happened to
+  // arrive in — and an event older than the one already applied to that row changes nothing.
+  //
+  // Ordering only. An event carrying no `created` is applied rather than dropped: the signature
+  // already proved it is real, and refusing it would silently lose a payment. Equal timestamps
+  // apply too — same second, and the later writer wins, which is what it did before.
+  const eventAtMs = Number.isFinite(evt.created) ? evt.created * 1000 : null;
+  const eventAtIso = isoOrNull(evt.created);
+  const staleAgainst = (row) => {
+    if (!row || eventAtMs === null) return false;
+    const applied = Date.parse(row.last_event_at || "");
+    return Number.isFinite(applied) && eventAtMs < applied;
+  };
+  const acknowledgeStale = async () => {
+    await admin.from("billing_events").update({
+      status: "ignored",
+      processed_at: new Date().toISOString(),
+      error: "stale: a newer event has already been applied to this subscription",
+    }).eq("event_id", evt.id);
+    return reply(200, { received: true, stale: true });   // 200: retrying will not make it newer
+  };
+  const subscriptionRowFor = async (column, value) => {
+    if (!value) return null;
+    const { data } = await admin
+      .from("subscriptions").select("user_id, last_event_at").eq(column, value).maybeSingle();
+    return data || null;
+  };
+
   try {
     if (evt.type === "checkout.session.completed") {
       const user_id = userIdFrom(object);
       if (!user_id) throw new Error("checkout session carried no user_id");
+      if (staleAgainst(await subscriptionRowFor("user_id", user_id))) return await acknowledgeStale();
       const patch = {
         user_id,
         provider: "stripe",
@@ -141,6 +174,7 @@ exports.handler = async (event) => {
       // DECISIONS.md item 1: the founding price is locked WHILE CONTINUOUSLY SUBSCRIBED. The
       // clock starts here and is cleared on deletion, so "continuously" stays checkable.
       if (patch.plan_key === "founding_annual") patch.founding_locked_at = new Date().toISOString();
+      if (eventAtIso) patch.last_event_at = eventAtIso;
       const { error } = await admin.from("subscriptions").upsert(patch, { onConflict: "user_id" });
       if (error) throw new Error(error.message);
     }
@@ -154,8 +188,11 @@ exports.handler = async (event) => {
       let q = admin.from("subscriptions");
       // Prefer the subscription id; fall back to metadata's user_id for a row written at checkout
       // before the first subscription event arrived.
-      const { data: existing } = await admin
-        .from("subscriptions").select("user_id").eq("provider_subscription_id", object.id).maybeSingle();
+      const existing = await subscriptionRowFor("provider_subscription_id", object.id);
+      // Staleness is judged against whichever row this event would write — including the row the
+      // checkout wrote, which the subscription id does not find until the first update lands.
+      if (staleAgainst(existing || await subscriptionRowFor("user_id", user_id))) return await acknowledgeStale();
+      if (eventAtIso) patch.last_event_at = eventAtIso;
       if (existing?.user_id) {
         const { error } = await q.update(patch).eq("user_id", existing.user_id);
         if (error) throw new Error(error.message);
