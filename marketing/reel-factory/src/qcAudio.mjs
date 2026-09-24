@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
+import { beds } from "./music.mjs";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
@@ -45,7 +46,7 @@ async function contactSheet(mp4, outJpg, seconds) {
 const waveform = (mp4, outPng) =>
   ff(["-i", mp4, "-filter_complex", "[0:a]showwavespic=s=1600x420:colors=#00E89A|#EDE9E2:split_channels=1", "-frames:v", "1", outPng]);
 
-export async function runAudioGate({ inFile, outFile, spec, lines, reviewDir, music, musicNote, credits, ticks, take = null, suffix = "v6", briefed = null, maxSpeed = 1.0, duckedStem = null, musicStem = null, requireMusic = false, musicMeta = null }) {
+export async function runAudioGate({ inFile, outFile, spec, lines, reviewDir, music, musicNote, credits, ticks, take = null, suffix = "v6", briefed = null, maxSpeed = 1.0, duckedStem = null, musicStem = null, requireMusic = false, musicMeta = null, musicDir = null }) {
   const results = [];
   const check = (name, ok, detail) => { results.push({ name, ok, detail }); return ok; };
 
@@ -117,6 +118,15 @@ export async function runAudioGate({ inFile, outFile, spec, lines, reviewDir, mu
       const after = await level(duckedStem, from, to);
       dips.push({ line: l.line, dip: before !== null && after !== null ? before - after : null });
     }
+    // Every cached bed must record that it was ASKED for instrumentally. A bed with singing in it
+    // is a second narrator, and v8 shipped one — this is the check that would have caught it.
+    const cached = musicDir ? beds(musicDir) : [];
+    const notForced = cached.filter((b) => !b.requestBody || b.requestBody.force_instrumental !== true);
+    check("every bed forced instrumental", cached.length > 0 && notForced.length === 0,
+      cached.length === 0 ? "no cached bed found to check"
+        : notForced.length ? `${notForced.map((b) => b.name).join(", ")} has no force_instrumental`
+        : `${cached.length} bed(s), force_instrumental true on each`);
+
     const notDucked = dips.filter((d) => d.dip === null || d.dip < 1.0);
     check("music ducked under every line", notDucked.length === 0,
       notDucked.length ? notDucked.map((d) => `"${d.line.slice(0, 20)}…" only ${d.dip === null ? "?" : d.dip.toFixed(1)} dB`).join("; ")

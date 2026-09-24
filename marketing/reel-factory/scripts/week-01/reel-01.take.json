@@ -136,10 +136,11 @@
   },
   "final": {
     "audition": "A",
-    "output": "flourish-reel-01-v8.mp4",
-    "musicFile": "out/week-01/music/bed-21400.mp3",
+    "output": "flourish-reel-01-v9.mp4",
     "pauseLufs": -20,
     "duckLufs": -24,
-    "requireMusic": true
+    "requireMusic": true,
+    "musicSeed": 20260924,
+    "musicDir": "out/week-01/music"
   }
 }

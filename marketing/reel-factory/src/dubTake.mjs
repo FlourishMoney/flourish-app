@@ -13,6 +13,7 @@ import { promisify } from "node:util";
 import { ROOT, dir, ensure } from "./config.mjs";
 import { buildScript, planBreaks, fetchTake, locateLines } from "./take.mjs";
 import { normaliseTo } from "./audio.mjs";
+import { generateBed } from "./music.mjs";
 import { audioDurationSeconds } from "./voice.mjs";
 import { runAudioGate } from "./qcAudio.mjs";
 
@@ -49,7 +50,9 @@ async function tick(out, { freq, seconds = 0.09, peakDbfs }) {
   if (isFinal) auditionKey = spec.final.audition;
   const aud = auditionKey ? spec.auditions[auditionKey] : null;
   if (auditionKey && !aud) throw new Error(`No audition "${auditionKey}" in the spec.`);
-  const suffix = isFinal ? "v8" : (aud ? `audition-${auditionKey}` : "v7");
+  const suffix = isFinal
+    ? (spec.final.output.match(/-(v\d+)\.mp4$/) || [, "final"])[1]
+    : (aud ? `audition-${auditionKey}` : "v7");
   if (aud) {
     spec.voice = { ...spec.voice, voiceId: aud.voiceId, name: aud.name, settings: aud.settings };
     spec.output = isFinal ? spec.final.output
@@ -122,12 +125,19 @@ async function tick(out, { freq, seconds = 0.09, peakDbfs }) {
   // The bed sits at pauseLufs and the voice pulls it down to about duckLufs — so the gaps never
   // feel empty and the read is never fought. Generated once and cached; the final cut must have it.
   let music = null, musicNote = "skipped", musicMeta = null;
-  const bedPath = isFinal ? path.join(ROOT, spec.final.musicFile) : null;
   if (isFinal) {
-    if (!fs.existsSync(bedPath)) throw new Error(`No music bed at ${bedPath}. The final cut does not ship without music.`);
-    musicMeta = JSON.parse(fs.readFileSync(bedPath.replace(/\.mp3$/, ".json"), "utf8"));
+    // Generated through src/music.mjs, which forces instrumental on every request. If no model
+    // will produce it the run stops — the final cut does not ship without music.
+    const bed = await generateBed({
+      prompt: spec.music.prompt, ms: Math.round(spec.duration * 1000), seed: spec.final.musicSeed,
+      cacheDir: path.join(ROOT, spec.final.musicDir), env: process.env,
+    });
+    musicMeta = bed;
+    log(`bed: ${bed.cached ? "cached" : "generated"} · ${bed.model} · ${bed.format} · `
+      + `force_instrumental ${bed.requestBody.force_instrumental} · `
+      + (bed.requestBody.seed != null ? `seed ${bed.requestBody.seed}` : `no seed (${bed.seedNote || "not sent"})`));
     const faded = path.join(work, "music-faded.wav");
-    await ff(["-i", bedPath, "-af",
+    await ff(["-i", bed.file, "-af",
       `afade=t=in:st=0:d=${spec.music.fadeIn},afade=t=out:st=${(spec.duration - spec.music.fadeOut).toFixed(2)}:d=${spec.music.fadeOut}`,
       "-t", String(spec.duration), "-ar", "48000", "-ac", "2", faded]);
     music = (await normaliseTo(faded, path.join(work, "music.wav"), spec.final.pauseLufs)).file;
@@ -206,7 +216,7 @@ async function tick(out, { freq, seconds = 0.09, peakDbfs }) {
     sceneEnd: p.at === spec.lines[spec.lines.length - 1].at ? spec.voiceEnd : spec.lines[spec.lines.findIndex((l) => l.at === p.at) + 1].at,
     speed: 1, requestId: take.requestId }));
   await runAudioGate({ inFile, outFile, spec, lines, reviewDir: REVIEW, music: !!music, musicNote,
-    credits: take.credits, ticks: at.length, take, suffix,
+    credits: take.credits, ticks: at.length, take, suffix, musicDir: path.join(ROOT, spec.final ? spec.final.musicDir : "out"),
     duckedStem: music ? duckedStem : null, musicStem: music, requireMusic: !!(isFinal && spec.final.requireMusic),
     musicMeta,
     briefed: aud ? aud.settings : spec.voice.settings,
