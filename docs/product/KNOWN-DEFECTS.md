@@ -497,3 +497,59 @@ paths, so access still fails closed. It becomes a defect the first time somethin
 
 **Fix (suggested, not built)** Return one shape from all three paths, with `entitlement: "free"`
 and `paid: false` in the failure cases.
+
+---
+
+## 17. Upgrade CTAs elsewhere in the app do nothing in a native shell
+
+**Rating: MEDIUM.** Found reviewing the upgrade screen, 2026-09-23.
+
+**Where** `src/App.jsx` — `PremiumGate`, `WhatIfSimulator`'s "Upgrade to continue" button, and
+`Goals`, all of which call `onUpgrade` → `setShowPaywall(true)`.
+
+**What happens** The paywall render is now gated on `isNativeApp()`, so in the iOS and Android
+builds `showPaywall` becomes true and nothing appears. The button is not hidden — it is inert.
+This is not new (it was already true on iOS, gated on `isCapacitorIOS()`); widening the gate to
+Android widened the dead button with it, which is the correct trade against showing a price in a
+build Apple and Google would reject for it.
+
+**What a user sees** A button that looks tappable and does nothing.
+
+**Fix (suggested, not built)** Hide those CTAs in a native shell rather than letting them open
+nothing, or give them a native-appropriate destination once the store in-app purchase decision in
+`docs/ops/BILLING-SETUP.md` is made. Doing it properly means touching every gated feature surface,
+which is a bigger change than the upgrade screen brief.
+
+---
+
+## 18. US pricing is defined but cannot be sold
+
+**Rating: LOW.** Found reviewing the upgrade screen, 2026-09-23.
+
+**Where** `src/lib/pricing.js` (`PRICING.US`) versus `netlify/functions/_lib/billingPlans.js`
+(`STRIPE_PRICE_MONTHLY_CAD`, `STRIPE_PRICE_ANNUAL_CAD`, `STRIPE_PRICE_FOUNDING_ANNUAL_CAD`).
+
+**What happens** `PRICING.US` carries $7.99/$59.99 pending review, but the only Stripe price ids
+that exist are CAD. The upgrade screen originally passed the profile's country through, so a US
+household would have been shown $7.99 and charged $11.99 CAD — a different number from the one it
+agreed to. `offeredPlans()` now pins CA and says why, so the screen shows only what can be charged.
+
+**What is left** A US household is shown CAD prices. That is correct rather than wrong — CA is the
+launch market — but it is not a US launch. Whoever reviews US pricing also creates the USD price
+ids and re-enables the country lookup in `offeredPlans()`; the comment there names the condition.
+
+---
+
+## 19. The success message can be preceded by a flash of the dashboard
+
+**Rating: LOW.** Found reviewing the upgrade screen, 2026-09-23.
+
+**Where** `src/App.jsx`, the billing-return effect and the billing-status fetch.
+
+**What happens** Returning from Stripe, the return effect runs at mount and sets the notice, but
+the upgrade screen only renders once the status call has answered. For the moment in between, the
+dashboard shows instead. The screen appears by itself when the answer arrives — nothing is lost,
+and the message is still read — but the first frame after paying is not the confirmation.
+
+**Fix (suggested, not built)** Render the notice from the shell rather than from inside the
+upgrade screen, so it does not wait on the status call.

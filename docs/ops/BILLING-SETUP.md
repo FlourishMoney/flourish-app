@@ -116,11 +116,45 @@ and treats the household as unpaid. Sign-in, trials and the free coach limit are
 
 ## 6. Decisions still open, flagged rather than assumed
 
+### STORE IN-APP PURCHASE — open, and it blocks nothing until the store submissions
+
+**Decide before submitting to either store.** Apple (App Store Review Guideline 3.1.1) and Google
+(Play Payments policy) both require their own purchase systems for digital subscriptions consumed
+inside the app. A build that shows a price, a plan, a purchase button or a link out to a web
+checkout is a rejected build — and on Apple the rule covers "buttons, external links, or other
+calls to action" pointing at another way to pay, not only the purchase itself.
+
+**What the app does today.** Nothing billing-related renders in a native shell. `isNativeApp()`
+in `src/lib/billingVisibility.js` is true for the iOS build, the Android build and any non-http(s)
+shell, and it gates the upgrade screen, the feature paywall (which lists prices) and the
+dashboard's upgrade card. The web app is unaffected. Confirmed by
+`tests/billingUpgradeScreen.test.cjs` section 4 and 6.
+
+**So the native apps ship with no way to subscribe at all.** That is deliberate and it is the safe
+state, but it is not a plan. The options, none of them chosen:
+
+1. **StoreKit 2 / Play Billing.** Apple and Google take 15–30%. Two more purchase paths to
+   reconcile against `public.subscriptions`, each with its own receipt validation and its own
+   server-to-server notifications, and a household that pays through Apple must be recognised as
+   the same household that may have paid through Stripe on the web.
+2. **Reader-style / external purchase entitlements.** Narrow, region-specific, and needs Apple's
+   approval. Probably not available to a finance app.
+3. **Keep the native apps free and sell only on the web.** What ships today. Allowed, as long as
+   the app does not point at the web checkout — which is exactly what the gate enforces. The cost
+   is that a native user has no route to Plus.
+
+**Whoever decides it also decides how the two sources of truth reconcile.** `planRules.js` reads
+one `subscriptions` row per household; a StoreKit subscription is not a Stripe subscription and
+does not arrive by webhook.
+
+
+
 - **`past_due` is not treated as paid.** A failed renewal removes access at once. Whether
   there should be a grace period is a product decision nobody has made; when it is made it
   is one entry in `SUBSCRIPTION_PAID_STATUSES` in `_lib/planRules.js`, with no migration.
-- **Founding eligibility is `profiles.founder_flag` only.** P4 caps the cohort at 100, and
-  nothing counts that cap yet — the flag is the gate. A non-founder asking for the founding
-  price gets a 403.
+- **Founding eligibility is `profiles.founder_flag` AND an open slot.** P4 caps the cohort at 50
+  (changed from 100 on 2026-09-23). The count lives in `_lib/foundingCohort.js`, which is the only
+  place the number appears in code; `status` and `create_checkout_session` both ask it. A
+  non-founder, or anyone arriving once the cohort is full, gets a 403.
 - **Quebec (P17)** is not enforced in the billing path. Signup-time exclusion is where that
   belongs, and it does not exist yet.

@@ -26,7 +26,7 @@ Marketing: the New Year money reset campaign, content written December 15 to 22 
 
 Sales and partnerships: the letter of intent from Phase 3 becomes a live pilot in January (a partner access code, a co-branded email, monthly reporting of starts and payers); two more letters of intent sought from mortgage brokers and employers; credit unions and counselling agencies stay a 2027 conversation.
 
-Support: the lifecycle emails run in Resend; the founding group gets a "founding 100" milestone when the cap closes; the churn-reason table from the first cohort read on January 5 and every Monday after; a founder-down note in force; decision 19 revisited January 31.
+Support: the lifecycle emails run in Resend; the founding group gets a "founding 50" milestone when the cap closes; the churn-reason table from the first cohort read on January 5 and every Monday after; a founder-down note in force; decision 19 revisited January 31.
 
 Finance: the first GST/HST filing (frequency per the registration); GrowSmart Inc.'s year-end close for 2026 with Flourish as its own class; the 13-week cash forecast rolled monthly; hire-trigger check on the first Monday of each month (the answer is no, with the gap stated); insurance (cyber and errors-and-omissions) bound before the Play launch; Apple and Google payouts reconciled a month in arrears.
 
@@ -44,13 +44,13 @@ Outcome: Flourish is the Canadian household's tool for the two money deadlines o
 
 Product and engineering: the Capacitor 8.5 UIScene migration and Xcode 27 land here, after the January season and before Apple requires them in April (decision 15); the RRSP deadline (March 1) and tax-time coaching flows ship by February 5 (deterministic: contribution room from the user's entered figures, refund estimate from the calculator, never from the coach; the coach explains); the "money after taxes" Today item for the weeks after T4s arrive (late February); NETFILE opens around February 22, so the tax-time content runs February 15 to March 14; Play live if approved; iOS 1.2 with the household second login if it slipped; preview isolation for the staging project (a second Netlify site pointed at staging) so CC can demo branches without production, which widens decision 14 and is recorded as such on December 12; performance: the App.jsx split by tab lands here if it has not already.
 
-Marketing: RRSP season content February 1 to March 1 (RRSP vs TFSA vs FHSA page is the hub; short videos on the three questions Canadians ask every February); tax-time content March 1 to 14; the second paid test if the first failed the bar, on the RRSP page traffic; PR follow-ups; the founding 100 close as a moment (a founding badge in the app, a thank-you note from the founder, and the price moves to 99.99 for everyone after).
+Marketing: RRSP season content February 1 to March 1 (RRSP vs TFSA vs FHSA page is the hub; short videos on the three questions Canadians ask every February); tax-time content March 1 to 14; the second paid test if the first failed the bar, on the RRSP page traffic; PR follow-ups; the founding 50 close as a moment (a founding badge in the app, a thank-you note from the founder, and the price moves to 99.99 for everyone after).
 
 Sales and partnerships: the pilot's monthly numbers; a second pilot signed; a mortgage broker referral flow for first-time buyers (FHSA is the hook).
 
 Support: the six-month churn-reason table; the first annual-renewal notices are still months away (October 2027), so February is about monthly-plan churn and the manual-mode experience after lapses.
 
-Finance: the second quarter closes cash positive in the base case (about 3,800 CAD); the six-month P&L with Flourish as its own class; the hire-trigger table re-run with six months of real contribution data (the 0.7 share and the 9.50 blended revenue replaced by measured values); the price question for after the founding 100 (99.99 annual stands unless the data says otherwise; no price change inside the window).
+Finance: the second quarter closes cash positive in the base case (about 3,800 CAD); the six-month P&L with Flourish as its own class; the hire-trigger table re-run with six months of real contribution data (the 0.7 share and the 9.50 blended revenue replaced by measured values); the price question for after the founding 50 (99.99 annual stands unless the data says otherwise; no price change inside the window).
 
 Legal: Quebec decision at 100 paying (decision 17's revisit); trademark status; the first privacy-policy update from the lawyer's round in force; Bill C-36 status.
 
@@ -62,7 +62,7 @@ Kill or pivot criteria, decided March 14: if paying households are under 90 with
 
 ## Decision points
 
-December 12: the 90-day review; this plan re-planned with three months of data; the twelve heads review it. January 15: self-serve conversion on the first 100 expired trials; paid acquisition go or no-go; Sonnet 5 adoption. January 31: Phase 4 gate; decision 19 (interim support help). February 15: founding 100 close (expected); Quebec re-entry assessment read. March 1: RRSP deadline (the content and product moment). March 14: Phase 5 gate; the six-month review; the next six months planned.
+December 12: the 90-day review; this plan re-planned with three months of data; the twelve heads review it. January 15: self-serve conversion on the first 100 expired trials; paid acquisition go or no-go; Sonnet 5 adoption. January 31: Phase 4 gate; decision 19 (interim support help). February 15: founding 50 close (expected); Quebec re-entry assessment read. March 1: RRSP deadline (the content and product moment). March 14: Phase 5 gate; the six-month review; the next six months planned.
 
 ## Department KPIs at six months (March 14, 2027)
 
@@ -112,7 +112,7 @@ Pass 1 (the draft before this review):
 6. Distribution: 9. Two seasons, referral, partners, the App Store and Play, PR timed to January editors, Apple featuring pitch. Held.
 7. Execution: 8. The Christmas week had founder tasks; zeroed, with the campaign scheduled ahead. Decision 19 had no second date; January 31 and March 14 added.
 8. Kill criteria: 8. The March 14 criteria did not separate "not retaining" from "not distributing"; split, with a different next quarter for each.
-9. Completeness: 8. Missing: insurance timing, HST first filing, year-end books, Plaid consent-expiry handling, the Quebec assessment date, the founding 100 close as a moment. Added.
+9. Completeness: 8. Missing: insurance timing, HST first filing, year-end books, Plaid consent-expiry handling, the Quebec assessment date, the founding 50 close as a moment. Added.
 
 Pass 1 total: 75/100. Fixes applied as listed.
 

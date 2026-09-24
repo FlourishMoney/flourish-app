@@ -48,6 +48,14 @@
   to     = "/.netlify/functions/beta"
   status = 200
 
+# Redirect: app calls /api/billing → Netlify function.
+# The function itself answers 404 to everything while BILLING_ENABLED is unset, so this route
+# existing does not make billing reachable — see netlify/functions/billing.js.
+[[redirects]]
+  from   = "/api/billing"
+  to     = "/.netlify/functions/billing"
+  status = 200
+
 # SPA fallback — all routes → index.html
 [[redirects]]
   from   = "/*"

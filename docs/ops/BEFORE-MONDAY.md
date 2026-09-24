@@ -25,7 +25,7 @@ Hi [name]. I built a money app for Canadian households and I'm opening it to 30 
 
 ### WhatsApp (goes under the invite card)
 
-You're invited to the founding 100.
+You're invited to the founding 50.
 
 flourish is a money coach for Canadian households. It shows you one number every morning (what's safe to spend), flags what's coming, and runs a short weekly money meeting with your partner. The numbers are calculated from your data; the coach explains them and never moves your money.
 
@@ -61,7 +61,7 @@ Day 1: "Did you see your number?" Day 3: "Anything confusing?" Day 7: "Book your
 
 ## 3. Founding offer terms (plain-language summary for the lawyer packet)
 
-1. Founding membership is offered to the first 100 households that subscribe on the annual plan during the founding period.
+1. Founding membership is offered to the first 50 households that subscribe on the annual plan during the founding period (founding cohort changed from 100 to 50 on 2026-09-23 — see docs/product/DECISIONS.md).
 2. Price: 79.99 CAD per year plus applicable taxes (about 90.39 in Ontario), compared with the regular annual price of 99.99 CAD plus applicable taxes. The founding price renews at 79.99 for as long as the subscription remains continuously active. If the subscription lapses or is cancelled and later restarted, the regular price applies.
 3. The 14-day free trial comes first; no card is required for the trial. Payment is collected only when the member subscribes at the end of the trial.
 4. Founding includes everything in Plus: unlimited coaching, linked accounts, the Meet facilitator, and a second household login when that ships.

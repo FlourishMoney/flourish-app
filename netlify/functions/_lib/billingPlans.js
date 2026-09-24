@@ -34,8 +34,10 @@ function priceIdFor(planKey, env = process.env) {
   return { priceId: value };
 }
 
-// P4 caps the founding cohort at 100 and DECISIONS.md item 1 restricts the founding price to the
-// beta cohort and the first 100 paying. The server decides this; a client asking for
+// P4 caps the founding cohort at 50 (changed from 100 on 2026-09-23) and DECISIONS.md item 1
+// restricts the founding price to the beta cohort and the first 50 paying. THE NUMBER ITSELF LIVES
+// IN ONE PLACE: FOUNDING_COHORT_LIMIT in _lib/foundingCohort.js, which is what counts and enforces
+// it — never re-type it here. The server decides this; a client asking for
 // founding_annual without the flag is refused rather than quietly sold the standard price, because
 // silently charging someone $99.99 when they clicked $79.99 is worse than an error.
 function mayBuyFoundingPrice(profile) {

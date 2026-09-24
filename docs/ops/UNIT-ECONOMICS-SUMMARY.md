@@ -46,7 +46,7 @@ The workbook itself (Flourish_Unit_Economics.xlsx) lives in the repo at docs/ops
 | Monthly paid churn | 0.06 | 0.05 | Assumption. Subscription finance apps see 4 to 8% monthly. |
 | Share of non-converting signups still active as free users | 0.50 | 0.30 | Assumption. Free users who stay cost money (A) or nothing (B). |
 | Plan inputs added Sept 10, 2026 (feed the Plan Check sheet) |  |  |  |
-| Founding annual price CAD | 79.99 |  | DECISIONS.md: first 100 founding households, locked while continuously subscribed. |
+| Founding annual price CAD | 79.99 |  | DECISIONS.md: first 50 founding households, locked while continuously subscribed. |
 | Stripe Tax % of taxed transactions | 0.01 |  | Stripe Tax no-code 0.5% (stripe.com/en-ca/pricing). Applies once GST/HST is charged. |
 | Personal invitations sent by Dec 12 | 150 |  | Operating plan v3: 45 in weeks 2 to 4, then 15 a week through Dec 5. Stretch 250. |
 | Invitation to started-trial rate | 0.65 |  | Assumption: warm invitations start at 60 to 70 percent. |
