@@ -47,7 +47,7 @@ import { captureError } from "./lib/errorReporting.js";
 import { derivePlan } from "./lib/planFromProfile.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
-import { effectiveCategory, setMerchantOverride, clearMerchantOverride, countMatching } from "./lib/categoryOverrides.js";
+import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
 
 // Capacitor iOS platform detection — true only when running as a native iOS app via Capacitor.
@@ -6974,8 +6974,11 @@ function SpendScreen({data, setAppData, setScreen}){
     // reading. A correction on ONE of several stays per-transaction — that is someone saying
     // "this particular charge was not what it looked like", not "this merchant is always X".
     const mKey = merchantKey(txn.name);
-    const others = countMatching(txns, txn.name);
-    if (applyToAll || others <= 1) {
+    // ONLY on an explicit yes. A rule was also written silently when no other transaction
+    // matched — the household corrected one charge and a permanent forward-applying rule
+    // appeared with no prompt and no notice, which they would only discover when a future
+    // charge arrived already categorised. recatWithSmartPrompt now always asks first.
+    if (applyToAll) {
       const merchants = setMerchantOverride(safeLoadLS("flourish_cat_merchant_overrides", {}), txn.name, newCat);
       if (mKey) { localStorage.setItem("flourish_cat_merchant_overrides", JSON.stringify(merchants)); bumpMerchantCatOv(); }
     }
@@ -7023,12 +7026,16 @@ function SpendScreen({data, setAppData, setScreen}){
     const otherSameMerchant = txns.filter(t =>
       t.id !== txn.id &&
       merchantKey(t.name) === mKeyPrompt &&
-      mKeyPrompt.length >= 3 && // require at least 3 chars to avoid over-matching
       effCat(t, catOverrides) !== newCat
     );
-    if(otherSameMerchant.length > 0) {
+    // Ask whenever a rule COULD be written, not only when other transactions already match.
+    // A merchant with one transaction today still has one tomorrow, and that is exactly the
+    // case that used to write a permanent rule in silence.
+    if (isUsableMerchantKey(mKeyPrompt)) {
       setApplyAllPrompt({txn, newCat, count: otherSameMerchant.length + 1});
     } else {
+      // Nothing merchant-specific in the descriptor — a rule here would match an arbitrary set
+      // ("atm withdrawal"), so this correction applies to this transaction only.
       recat(txn, newCat, false);
     }
   };

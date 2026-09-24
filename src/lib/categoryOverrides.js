@@ -39,6 +39,14 @@ export const FALLBACK_CATEGORY = "Other";
 // the count the prompt shows and the rule it writes agree, which they did not before.)
 export { merchantKey } from "./billReeval.js";
 import { merchantKey } from "./billReeval.js";
+import { stripPosPrefix, stripAccountNumberLegacy } from "./plaidNormalize.js";
+
+// COMPATIBILITY, added 2026-09-23. A merchant rule written before stripAccountNumber changed is
+// filed under the key main produced. Looked up as a fallback so an existing rule keeps applying.
+// REMOVE once stored names have settled — docs/product/KNOWN-DEFECTS.md 13d.
+export function legacyMerchantKey(name) {
+  return stripPosPrefix(stripAccountNumberLegacy(name)).toLowerCase().replace(/\s+/g, " ").trim();
+}
 
 // A merchant key is only meaningful if there is enough of it to match on. The existing prompt
 // uses 3 characters; anything shorter would collide merchants that are not the same.
@@ -47,22 +55,42 @@ const own = (obj, key) => (obj && Object.prototype.hasOwnProperty.call(obj, key)
 
 export const MIN_MERCHANT_KEY = 3;
 
-// Bank and terminal noise. None of these is a merchant, and a key made only of them would match an
-// enormous, arbitrary set of charges — "purchase" is 8 characters and sails past the length check,
-// which was the only guard before. A rule is written only when something merchant-specific
-// survives: "purchase loblaws" is fine, "purchase" is not.
-const GENERIC_TOKENS = new Set([
-  "pos", "fpos", "purchase", "purch", "payment", "pmt", "debit", "credit", "card", "visa",
-  "mastercard", "amex", "interac", "etransfer", "e-transfer", "transfer", "withdrawal", "deposit",
-  "preauthorized", "preauth", "pre-authorized", "chq", "cheque", "check", "bill", "billpay",
-  "online", "banking", "misc", "fee", "service", "charge", "recurring", "autopay", "auto",
-  "transaction",
-]);
+// Bank and terminal wording. A deny-list of single WORDS cannot do this job: "atm withdrawal",
+// "interac e-transfer sent", "point of sale purchase", "cash advance" and "nsf fee" each contain a
+// token that is not itself bank noise ("atm", "sent", "sale", "advance", "fee"), so a word-level
+// check accepted every one of them. A household recategorising a single $200 cash withdrawal as
+// Groceries would then permanently recategorise every ATM withdrawal they ever make.
+//
+// So: remove every known phrase, longest first, and see whether anything is left.
+const BANKING_PHRASES = [
+  "pre authorized payment", "pre-authorized payment", "preauthorized payment",
+  "point of sale purchase", "interac e-transfer sent", "interac e-transfer", "interac etransfer",
+  "e-transfer sent", "e transfer sent", "electronic funds transfer", "atm withdrawal",
+  "abm withdrawal", "cash withdrawal", "cash advance", "overdraft fee", "service charge",
+  "monthly fee", "nsf fee", "send e-tfr", "point of sale", "pre authorized", "pre-authorized",
+  "preauthorized", "e-transfer", "e transfer", "etransfer", "bill payment", "online banking",
+  "funds transfer", "direct deposit", "pos purchase", "debit purchase", "credit memo",
+  "e-tfr", "etfr", "atm", "abm", "nsf", "overdraft", "withdrawal", "deposit", "advance", "sent",
+  "received", "purchase", "purch", "payment", "pmt", "debit", "credit", "card", "visa",
+  "mastercard", "amex", "interac", "transfer", "chq", "cheque", "check", "bill", "billpay",
+  "online", "banking", "misc", "fee", "charge", "recurring", "autopay", "auto", "transaction",
+  "pos", "fpos", "sale", "service",
+].sort((a, b) => b.length - a.length);
 
-// Does anything in this key actually name a merchant?
+// The key with every banking phrase taken out. Whole words only, so "onerous" keeps its "one".
+export function stripBankingPhrases(key) {
+  let out = " " + String(key || "").toLowerCase().replace(/\s+/g, " ").trim() + " ";
+  for (const phrase of BANKING_PHRASES) {
+    out = out.split(" " + phrase + " ").join(" ");
+  }
+  return out.replace(/\s+/g, " ").trim();
+}
+
+// Does anything in this key actually name a merchant, once the banking wording is gone?
 export function hasMerchantToken(key) {
-  return String(key || "").split(" ").some(tok =>
-    tok.length >= MIN_MERCHANT_KEY && !/^\d+$/.test(tok) && !GENERIC_TOKENS.has(tok));
+  return stripBankingPhrases(key)
+    .split(" ")
+    .some(tok => tok.length >= MIN_MERCHANT_KEY && !/^\d+$/.test(tok));
 }
 
 export function isUsableMerchantKey(key) {
@@ -102,6 +130,13 @@ export function effectiveCategory(txn, overrides, merchantOverrides = null) {
   const key = merchantKey(t.name);
   const merchantHit = isUsableMerchantKey(key) ? own(merchants, key) : undefined;
   if (merchantHit) return merchantHit;
+
+  // …then under the key main produced, for a rule written before the name changed.
+  const legacy = legacyMerchantKey(t.name);
+  if (legacy && legacy !== key && isUsableMerchantKey(legacy)) {
+    const legacyHit = own(merchants, legacy);
+    if (legacyHit) return legacyHit;
+  }
 
   return t.cat || FALLBACK_CATEGORY;
 }

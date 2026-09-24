@@ -193,5 +193,37 @@ const path = require("path");
       "11d the apply-to-all prompt names the merchant KEY, not the raw descriptor it does not match on");
   }
 
+
+  // ── 12. A deny-list of single WORDS cannot do this job ───────────────────────────────────────
+  // Each of these contains a token that is not itself bank noise — "atm", "sent", "sale",
+  // "advance", "fee" — so the word-level guard accepted every one. A household recategorising a
+  // single $200 cash withdrawal as Groceries would then permanently recategorise every ATM
+  // withdrawal they ever make.
+  {
+    for (const key of ["atm withdrawal", "abm withdrawal", "pre authorized payment",
+                       "interac e-transfer sent", "send e-tfr", "point of sale purchase",
+                       "cash advance", "nsf fee", "overdraft fee", "pos purchase", "bill payment"]) {
+      t.ok(!c.isUsableMerchantKey(key), `12a "${key}" names no merchant and cannot become a rule`);
+      t.eq(Object.keys(c.setMerchantOverride({}, key, "Groceries")).length, 0, `12b …and writing one is refused`);
+    }
+    for (const key of ["purchase loblaws", "atm withdrawal metro", "loblaws", "hydro one", "reids dairy"]) {
+      t.ok(c.isUsableMerchantKey(key), `12c "${key}" does name a merchant`);
+    }
+    t.eq(c.stripBankingPhrases("interac e-transfer sent"), "", "12d the phrase is removed whole, not word by word");
+    t.eq(c.stripBankingPhrases("atm withdrawal metro"), "metro", "12e …leaving whatever names the merchant");
+    t.eq(c.stripBankingPhrases("one stop shop"), "one stop shop", "12f …and an ordinary name survives intact");
+  }
+
+  // ── 13. A forward-applying rule is never written without asking ──────────────────────────────
+  {
+    const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+    const recat = app.slice(app.indexOf("const recat = (txn, newCat"), app.indexOf("const recatWithSmartPrompt"));
+    t.ok(/if \(applyToAll\) \{/.test(recat), "13a recat writes a merchant rule only on an explicit apply-to-all");
+    t.ok(!/others <= 1/.test(recat), "13b …and no longer writes one silently when nothing else matches");
+    const prompt = app.slice(app.indexOf("const recatWithSmartPrompt"), app.indexOf("const recatWithSmartPrompt") + 1200);
+    t.ok(/isUsableMerchantKey\(mKeyPrompt\)/.test(prompt), "13c the prompt is shown whenever a rule COULD be written…");
+    t.ok(!/otherSameMerchant\.length > 0/.test(prompt), "13d …not only when other transactions already match");
+  }
+
   t.summary("categoryOverrides.test");
 })();
