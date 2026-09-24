@@ -1,15 +1,15 @@
 {
   "id": "reel-01",
   "week": "week-01",
-  "input": "flourish-reel-01-preview-silent-v2.mp4",
+  "input": "flourish-reel-01-preview-silent-v3.mp4",
   "output": "flourish-reel-01-v6.mp4",
-  "duration": 20.2,
+  "duration": 21.4,
   "voice": {
     "voiceId": "EXAVITQu4vr4xnSDxMaL",
     "name": "Sarah",
     "model": "eleven_multilingual_v2",
     "leadIn": 0.2,
-    "maxSpeed": 1.1
+    "maxSpeed": 1.05
   },
   "music": {
     "prompt": "calm minimal modern electronic, soft felt piano, warm pads, light pulse, 92 bpm, premium fintech product film, gentle resolve at the end",
@@ -65,5 +65,5 @@
     ],
     "peakDbfs": -30
   },
-  "voiceEnd": 19.8
+  "voiceEnd": 21.2
 }

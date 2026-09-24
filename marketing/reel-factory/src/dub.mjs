@@ -115,7 +115,9 @@ async function tick(out, { freq, seconds = 0.09, peakDbfs = -30 }) {
       music = norm.file;
       musicNote = `ElevenLabs Music, ${spec.music.lufs} LUFS, ducked under the voice`;
     } else {
-      musicNote = `unavailable (HTTP ${res.status}) — no music rather than an unlicensed substitute`;
+      let why = "";
+      try { why = (((await res.json()) || {}).detail || {}).message || ""; } catch { /* body not JSON */ }
+      musicNote = `unavailable (HTTP ${res.status}${why ? `: ${why.replace(/\s+/g, " ").slice(0, 90)}` : ""}) — no music rather than an unlicensed substitute`;
     }
   }
   log(`music: ${musicNote}`);
