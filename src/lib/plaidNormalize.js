@@ -276,6 +276,56 @@ const CA_BANKING_ACRONYMS = new Set([
 // POS-terminal / acquirer prefixes banks staple onto a merchant name. They are noise, and leaving
 // them in produced display names like "Fpos Reid'S Dairy Company".
 const POS_PREFIX_RX = /^(?:fpos|pos|sq\s*\*|sqc\*|tst\*|tst\s|sp\s+|ic\*|pp\*|paypal\s*\*|dd\s*\*|ext\s)\s*/i;
+// Trailing account / reference numbers, e.g. "HYDRO ONE 123456789" -> "HYDRO ONE".
+//
+// ANCHORED TO THE END, and that anchor is the whole point. The previous expression
+// (/\s+\d{4,}.*$/, unanchored in effect because of the .*) took everything after the FIRST run of
+// four digits, so a LEADING reference number carried the merchant away with it:
+//     "POS PURCHASE 1234 LOBLAWS"          -> "purchase"
+//     "PREAUTHORIZED DEBIT 1111 INSURANCE" -> "preauthorized debit"
+//     "FPOS 1234 REIDS DAIRY"              -> "fpos"
+// For bill healing that silently groups unrelated merchants. For a category rule keyed on the
+// merchant it is worse: correcting one grocery charge would write a permanent forward-applying
+// rule over every POS purchase, and those categories feed monthlySpend, cashFlow, savingsRate,
+// emergencyFundMonths and the health score.
+//
+// Both callers use THIS function so they cannot drift: the detector's display name
+// (detectRecurringBillsDetailed below) and billReeval.merchantKey.
+export function stripAccountNumber(s) {
+  let out = String(s == null ? "" : s).trim();
+  // To a FIXED POINT. A single pass is not idempotent — "HYDRO QUEBEC 1234 5678" became
+  // "Hydro Quebec 1234" on one run and "Hydro Quebec" on the next, so the same merchant had two
+  // display names depending on how many times the name had been through here. That is what made
+  // bill healing log "no current transactions, kept" for a merchant with four of them.
+  for (let i = 0; i < 5; i++) {
+    const next = out
+      // ONE OR MORE trailing account numbers, plus an optional short trailing token — the
+      // province or branch code Canadian descriptors carry: "HYDRO ONE 12345 ON",
+      // "BELL CANADA 1234 QC", "HYDRO QUEBEC 1234 5678".
+      .replace(/(?:\s+\d{4,})+(?:\s+[A-Za-z]{1,3})?\s*$/, "")
+      // A reference number BETWEEN words. Note the leading \s and no ^ alternative: a number at
+      // the START of the descriptor is part of the merchant's name, not a reference. Numbered
+      // companies are the normal incorporation form in Ontario and BC, so deleting it merged
+      // "1234567 ONTARIO INC" and "7654321 ONTARIO INC" into one bill — a real $390/month error
+      // when a daycare and a property manager collapsed together.
+      .replace(/\s\d{4,}(?=\s)/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (next === out) break;
+    out = next;
+  }
+  return out || String(s == null ? "" : s).trim();
+}
+
+// COMPATIBILITY, added 2026-09-23. The display name above is what userBillOverrides and the
+// merchant rules are FILED UNDER, and this function changed it for common Canadian descriptors.
+// Nothing migrates stored names, so a correction made before this shipped would silently stop
+// matching. Callers look up under the new name first and then under this one.
+// REMOVE once stored names have settled — see docs/product/KNOWN-DEFECTS.md 13d.
+export function stripAccountNumberLegacy(s) {
+  return String(s == null ? "" : s).replace(/\s+\d{4,}.*$/, "").trim();
+}
+
 export function stripPosPrefix(s) {
   let out = String(s || "").trim();
   // Strip repeatedly — some banks stack them ("POS FPOS MERCHANT").
@@ -508,15 +558,31 @@ export function detectRecurringBillsDetailed(txns, opts = {}) {
     // MATH-LOCK finding #1: restores the case-normalization the original code intended but never ran
     // (a corrupted `/<BS>\w/g` was a silent no-op for years, so bank names shipped raw, e.g. all-caps).
     const displayName = titleCaseBillName(
-      stripPosPrefix(txList[0].name.replace(/\s+\d{4,}.*$/, "").trim())  // strip account numbers, then POS prefixes
+      stripPosPrefix(stripAccountNumber(txList[0].name))  // strip account numbers, then POS prefixes
     );
 
     // Tier 4: overrides are keyed by the cleaned display name (what the user removes/types).
     const _dnl = displayName.toLowerCase().trim();
-    if (removedSet.has(_dnl)) return;
-    const finalType = typedMap[_dnl] || billType;
+    // COMPATIBILITY READ, added 2026-09-23. userBillOverrides is filed under the DISPLAY NAME, and
+    // stripAccountNumber changed that name for some Canadian descriptors ("ROGERS 1234 TORONTO ON"
+    // used to key as "rogers"). Nothing migrates the stored keys, so a household's removals, typed
+    // amounts, corrected types and corrected cadences would silently stop matching — no error, no
+    // warning, the bill simply comes back. Every lookup tries the new name first and then the name
+    // main produced. Read-only: nothing is rewritten.
+    // REMOVE once stored names have settled — docs/product/KNOWN-DEFECTS.md 13d.
+    const _dnlLegacy = stripPosPrefix(stripAccountNumberLegacy(txList[0].name)).toLowerCase().trim();
+    // The same name as a DISPLAY name, carried on the bill below so billsReconcile can tell that a
+    // bill stored under it is this same bill. Nothing reads it as a label.
+    const _legacyDisplay = titleCaseBillName(stripPosPrefix(stripAccountNumberLegacy(txList[0].name)));
+    const _ov = (map) => {
+      if (!map) return undefined;
+      const hit = map[_dnl];
+      return hit !== undefined ? hit : (_dnlLegacy && _dnlLegacy !== _dnl ? map[_dnlLegacy] : undefined);
+    };
+    if (removedSet.has(_dnl) || (_dnlLegacy && removedSet.has(_dnlLegacy))) return;
+    const finalType = _ov(typedMap) || billType;
     // Sprint Q item 2: a persisted user cadence correction wins over the freshly-detected cadence.
-    const finalFreq = cadenceMap[_dnl] || cadence.freq;
+    const finalFreq = _ov(cadenceMap) || cadence.freq;
 
     // Sprint Q item 1: anchor nextDueDate from the LAST observed occurrence + cadence, so the
     // forecast/SafeSpend recur from the real phase (e.g. biweekly last seen 7d ago → due in 7d).
@@ -535,13 +601,18 @@ export function detectRecurringBillsDetailed(txns, opts = {}) {
 
     bills.push({
       name:    displayName,
-      amount:  (amountsMap[_dnl] != null ? Number(amountsMap[_dnl]) : (avg||0)).toFixed(2),
+      amount:  (_ov(amountsMap) != null ? Number(_ov(amountsMap)) : (avg||0)).toFixed(2),
       date:    String(dayMode),
       type:    finalType,   // Tier 4: "fixed" | "variable"
       freq:    finalFreq, // Sprint 4 (item 8) + Sprint Q item 2: detected cadence, or user override
       nextDueDate: _nextDue, // Sprint Q item 1: cadence phase anchor
       auto:    true,   // flag so UI can show "detected" badge
       origin:  "observed", // Plaid-observed (vs origin:"manual" for user-entered future bills)
+      // 13d: the display name above is not the name MAIN produced for this same descriptor
+      // ("ROGERS 1234 TORONTO ON" was "Rogers", and is "Rogers Toronto On" here). A household
+      // whose bill is stored under the old name would otherwise have it raised as a new bill AND
+      // as a bill that has ended. Carried only when the two differ, and never displayed.
+      ...(_legacyDisplay && _legacyDisplay !== displayName ? { legacyName: _legacyDisplay } : {}),
       avgNote: txList.length >= 3 ? `avg of last ${Math.min(txList.length,3)}` : "estimated",
     });
   });

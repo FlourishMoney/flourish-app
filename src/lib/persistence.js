@@ -31,7 +31,9 @@ export const STAMP_KEY = "flourish_uid"; // localStorage stamp for shared-device
 // Side localStorage keys that ARE user data and should sync (exact allow-list).
 const SIDE_KEYS = [
   "flourish_custom_cats",      // custom budget categories
-  "flourish_cat_overrides",    // per-txn category recategorizations / budget targets
+  "flourish_cat_overrides",    // per-transaction category corrections ({ [txnId]: category })
+  "flourish_cat_merchant_overrides", // per-MERCHANT category rules ({ [merchantKey]: category }) —
+                                     // what makes a correction outlive the row it was made on
   "flourish_kids",             // kids-zone roster
   "flourish_streak",           // check-in streak
   "flourish_plan",             // UI cache only (real entitlement = future profiles table)
