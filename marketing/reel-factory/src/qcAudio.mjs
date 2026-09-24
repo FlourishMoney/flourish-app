@@ -45,7 +45,7 @@ async function contactSheet(mp4, outJpg, seconds) {
 const waveform = (mp4, outPng) =>
   ff(["-i", mp4, "-filter_complex", "[0:a]showwavespic=s=1600x420:colors=#00E89A|#EDE9E2:split_channels=1", "-frames:v", "1", outPng]);
 
-export async function runAudioGate({ inFile, outFile, spec, lines, reviewDir, music, musicNote, credits, ticks, take = null, suffix = "v6" }) {
+export async function runAudioGate({ inFile, outFile, spec, lines, reviewDir, music, musicNote, credits, ticks, take = null, suffix = "v6", briefed = null, maxSpeed = 1.0 }) {
   const results = [];
   const check = (name, ok, detail) => { results.push({ name, ok, detail }); return ok; };
 
@@ -88,12 +88,14 @@ export async function runAudioGate({ inFile, outFile, spec, lines, reviewDir, mu
     const ids = new Set(lines.map((l) => l.requestId || null));
     check("one take for all lines", ids.size === 1 && take.requestId && !ids.has(null),
       take.requestId ? `request-id ${take.requestId} for all ${lines.length} lines` : "the API returned no request id");
-    check("voice settings as briefed",
-      take.settings && take.settings.stability === 0.55 && take.settings.similarity_boost === 0.75
-        && take.settings.style === 0 && take.settings.use_speaker_boost === true && take.settings.speed === 1.0
-        && Number.isInteger(take.seed),
-      `stability ${take.settings?.stability}, similarity ${take.settings?.similarity_boost}, style ${take.settings?.style}, `
-      + `boost ${take.settings?.use_speaker_boost}, speed ${take.settings?.speed}, seed ${take.seed}`);
+    const want = briefed || {};
+    const t = take.settings || {};
+    const sameExceptSpeed = ["stability", "similarity_boost", "style", "use_speaker_boost"]
+      .every((k) => want[k] === undefined || t[k] === want[k]);
+    const speedOk = typeof t.speed === "number" && t.speed >= 1.0 && t.speed <= maxSpeed + 1e-9;
+    check("voice settings as briefed", sameExceptSpeed && speedOk && Number.isInteger(take.seed),
+      `stability ${t.stability}, similarity ${t.similarity_boost}, style ${t.style}, boost ${t.use_speaker_boost}, `
+      + `speed ${t.speed}${t.speed > 1 ? ` (allowed up to ${maxSpeed})` : ""}, seed ${take.seed}`);
   }
 
   // ── nothing secret can reach the repo ───────────────────────────────────────────────────────

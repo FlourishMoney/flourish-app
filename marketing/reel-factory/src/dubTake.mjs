@@ -20,8 +20,10 @@ const run = promisify(execFile);
 const ff = (a) => run("ffmpeg", ["-y", "-loglevel", "error", ...a], { maxBuffer: 1 << 28 });
 dotenv.config({ path: path.join(ROOT, ".env") });
 
-const week = process.argv.slice(2).find((a) => !a.startsWith("--"));
-if (!week) { console.error("Usage: npm run dub:take -- week-01"); process.exit(1); }
+const argv = process.argv.slice(2);
+const week = argv.find((a) => !a.startsWith("--"));
+const auditionKey = (argv.find((a) => a.startsWith("--audition=")) || "").split("=")[1] || null;
+if (!week) { console.error("Usage: npm run dub:take -- week-01 [--audition=A]"); process.exit(1); }
 const REVIEW = process.env.REVIEW_DIR || path.join(process.env.HOME, "Projects", "flourish-app", "marketing", "review", week);
 const log = (m) => console.log(`  ${m}`);
 
@@ -39,7 +41,17 @@ async function tick(out, { freq, seconds = 0.09, peakDbfs }) {
 
 (async () => {
   const spec = JSON.parse(fs.readFileSync(path.join(dir.scripts, week, "reel-01.take.json"), "utf8"));
-  const work = ensure(path.join(dir.out, week, "audio-v7"));
+
+  // An audition swaps ONLY the voice. Script, commas, alignment rules, mix targets, ticks and gate
+  // are the v7 pipeline untouched — otherwise the comparison is not about the voice.
+  const aud = auditionKey ? spec.auditions[auditionKey] : null;
+  if (auditionKey && !aud) throw new Error(`No audition "${auditionKey}" in the spec.`);
+  const suffix = aud ? `audition-${auditionKey}` : "v7";
+  if (aud) {
+    spec.voice = { ...spec.voice, voiceId: aud.voiceId, name: aud.name, settings: aud.settings };
+    spec.output = spec.audition.outputPattern.replace("{key}", auditionKey).replace("{label}", aud.label);
+  }
+  const work = ensure(path.join(dir.out, week, `audio-${suffix}`));
   const inFile = path.join(REVIEW, spec.input);
   const outFile = path.join(REVIEW, spec.output);
   if (!fs.existsSync(inFile)) throw new Error(`The locked picture is not at ${inFile}`);
@@ -48,35 +60,38 @@ async function tick(out, { freq, seconds = 0.09, peakDbfs }) {
   // ── 1. the take ─────────────────────────────────────────────────────────────────────────────
   const breaks = planBreaks(spec.lines, ESTIMATES, spec.align.lead);
   const text = buildScript(spec.lines, breaks);
-  const take = await fetchTake({ text, spec, cacheDir: work, env: process.env });
-  log(`take: ${take.cached ? "cached" : "generated"} · request-id ${take.requestId || "(not returned)"} · ${take.credits} credits`);
-  log(`breaks: ${breaks.map((b) => b.toFixed(2) + "s").join(", ")}`);
 
-  const located = locateLines(take.alignment, spec.lines);
-  const takeLen = await audioDurationSeconds(take.file);
-
-  // ── 2. the edit: move silence, never words ──────────────────────────────────────────────────
-  // Cut in the middle of each pause so a line keeps its own breath on both sides.
-  const cuts = [0];
-  for (let i = 0; i < located.length - 1; i++) cuts.push((located[i].audioEnd + located[i + 1].audioStart) / 2);
-  cuts.push(takeLen);
-
-  const placed = located.map((l, i) => {
-    const segStart = cuts[i], segEnd = cuts[i + 1];
-    const lead = l.audioStart - segStart;                 // silence carried in front of the words
-    const target = l.at + spec.align.lead;                // where the words should land
-    return { ...l, segStart, segEnd, at0: target - lead, target, dur: l.audioEnd - l.audioStart };
-  });
-
-  // The silence that will actually be heard between one line's last word and the next line's first.
-  const pauses = placed.slice(1).map((p, i) => p.target - (placed[i].target + placed[i].dur));
-  const tooTight = pauses.filter((p) => p < spec.align.minPause);
-  if (tooTight.length) {
-    throw new Error(`A pause would have to close to ${Math.min(...pauses).toFixed(2)}s, below the ${spec.align.minPause}s floor. `
-      + `Lengthen the scene or shorten the copy — the read is not being squeezed to fit.`);
+  // A different voice reads at a different pace. If the take will not fit the scenes at 1.0, ask
+  // once at the allowed 1.05 — and if it still will not fit, SKIP the voice rather than cut a word.
+  const maxSpeed = (spec.audition && spec.audition.maxSpeed) || 1.0;
+  let take = null, placed = null, located = null, takeLen = 0, pauses = [], usedSpeed = 1.0;
+  for (const speed of [1.0, ...(maxSpeed > 1.0 ? [maxSpeed] : [])]) {
+    spec.voice = { ...spec.voice, settings: { ...spec.voice.settings, speed } };
+    take = await fetchTake({ text, spec, cacheDir: work, env: process.env });
+    located = locateLines(take.alignment, spec.lines);
+    takeLen = await audioDurationSeconds(take.file);
+    const cuts2 = [0];
+    for (let i = 0; i < located.length - 1; i++) cuts2.push((located[i].audioEnd + located[i + 1].audioStart) / 2);
+    cuts2.push(takeLen);
+    placed = located.map((l, i) => {
+      const segStart = cuts2[i], segEnd = cuts2[i + 1];
+      const lead = l.audioStart - segStart;
+      const target = l.at + spec.align.lead;
+      return { ...l, segStart, segEnd, at0: target - lead, target, dur: l.audioEnd - l.audioStart };
+    });
+    pauses = placed.slice(1).map((p, i) => p.target - (placed[i].target + placed[i].dur));
+    const last = placed[placed.length - 1];
+    const fits = pauses.every((p) => p >= spec.align.minPause) && (last.target + last.dur) <= spec.voiceEnd;
+    usedSpeed = speed;
+    if (fits) break;
+    if (speed === maxSpeed) {
+      console.error(`  SKIPPED ${spec.voice.name}: does not fit even at speed ${maxSpeed} `
+        + `(tightest pause ${Math.min(...pauses).toFixed(2)}s, last line ends ${(last.target + last.dur).toFixed(2)}s vs ${spec.voiceEnd}s). No word is cut to make it fit.`);
+      process.exit(3);
+    }
   }
-  const lastEnd = placed[placed.length - 1].target + placed[placed.length - 1].dur;
-  if (lastEnd > spec.voiceEnd) throw new Error(`The last line ends at ${lastEnd.toFixed(2)}s, past ${spec.voiceEnd}s.`);
+  log(`take: ${take.cached ? "cached" : "generated"} · ${spec.voice.name} · request-id ${take.requestId || "(not returned)"} · ${take.credits} credits · speed ${usedSpeed}`);
+  log(`breaks: ${breaks.map((b) => b.toFixed(2) + "s").join(", ")}`);
 
   // Each segment is trimmed out of the one take, faded 20ms at both cuts so no join can click, and
   // delayed to its place. Silence between them is simply the gap left by the delays.
@@ -156,5 +171,7 @@ async function tick(out, { freq, seconds = 0.09, peakDbfs }) {
     sceneEnd: p.at === spec.lines[spec.lines.length - 1].at ? spec.voiceEnd : spec.lines[spec.lines.findIndex((l) => l.at === p.at) + 1].at,
     speed: 1, requestId: take.requestId }));
   await runAudioGate({ inFile, outFile, spec, lines, reviewDir: REVIEW, music: !!music, musicNote,
-    credits: take.credits, ticks: at.length, take, suffix: "v7" });
+    credits: take.credits, ticks: at.length, take, suffix,
+    briefed: aud ? aud.settings : spec.voice.settings,
+    maxSpeed: aud ? (spec.audition.maxSpeed || 1.0) : 1.0 });
 })();

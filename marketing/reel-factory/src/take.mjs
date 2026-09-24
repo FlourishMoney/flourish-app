@@ -9,6 +9,7 @@
 // only deleting the cache spends credits again.
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 
 const TTS = (voiceId) =>
   `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/with-timestamps?output_format=mp3_44100_128`;
@@ -34,11 +35,16 @@ export function planBreaks(lines, estimates, lead) {
 
 export async function fetchTake({ text, spec, cacheDir, env }) {
   fs.mkdirSync(cacheDir, { recursive: true });
-  const mp3 = path.join(cacheDir, "take.mp3");
-  const meta = path.join(cacheDir, "take.json");
+  const signature = JSON.stringify({ text, voiceId: spec.voice.voiceId, model: spec.voice.model,
+                                     seed: spec.voice.seed, settings: spec.voice.settings });
+  // The file NAME carries the signature. One fixed name per voice meant a take that needed a
+  // speed-up overwrote its own 1.0 version on every run — and paid for the 1.05 one again.
+  const stamp = createHash("sha1").update(signature).digest("hex").slice(0, 10);
+  const mp3 = path.join(cacheDir, `take-${stamp}.mp3`);
+  const meta = path.join(cacheDir, `take-${stamp}.json`);
   if (fs.existsSync(mp3) && fs.existsSync(meta)) {
     const m = JSON.parse(fs.readFileSync(meta, "utf8"));
-    if (m.text === text) return { ...m, file: mp3, cached: true };
+    if (m.signature === signature) return { ...m, file: mp3, cached: true };
   }
   const key = (env.ELEVENLABS_API_KEY || "").trim();
   if (!key) throw new Error("No ELEVENLABS_API_KEY in marketing/reel-factory/.env");
@@ -58,7 +64,7 @@ export async function fetchTake({ text, spec, cacheDir, env }) {
   const body = await res.json();
   fs.writeFileSync(mp3, Buffer.from(body.audio_base64, "base64"));
   const record = {
-    text, requestId, credits: text.length,
+    text, signature, requestId, credits: text.length,
     model: spec.voice.model, voiceId: spec.voice.voiceId, seed: spec.voice.seed,
     settings: spec.voice.settings,
     alignment: body.alignment || body.normalized_alignment || null,
