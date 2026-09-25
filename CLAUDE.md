@@ -13,7 +13,7 @@
    ```sh
    npm run test:math
    ```
-   `.github/workflows/math-lock.yml` runs `npm ci` and then this command on every push and PR to `main`. On `main` today it is 65 suites and 2,675 assertions, all passing. `npm ci` is required first — some suites now import modules that pull in `@capacitor/*`, so a bare checkout fails to resolve them.
+   `.github/workflows/math-lock.yml` runs `npm ci` and then this command on every push and PR to `main`. On `main` today it is 72 suites and 2,905 assertions, all passing. `npm ci` is required first — some suites now import modules that pull in `@capacitor/*`, so a bare checkout fails to resolve them.
 10. **Review: one review round per change.** Only HIGH findings block a merge. MEDIUM and LOW go to `docs/product/KNOWN-DEFECTS.md`.
 
 ## What this app is
