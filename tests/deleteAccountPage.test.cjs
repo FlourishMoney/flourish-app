@@ -74,6 +74,15 @@ const PAGE = APP.slice(APP.indexOf("function DeleteAccount({onBack})"), APP.inde
   // Third parties named in the privacy policy also keep their own copies.
   t.ok(/retention rules require/.test(PAGE), "4g …as do the services that processed data for us");
 
+  // ── 4b. the retention period Play asks for ───────────────────────────────────────────────────
+  // Play's account-deletion requirement expects the page to say what is retained AND for how long.
+  // Matched on the flattened text so a reflow of the JSX cannot silently drop it.
+  const flat = PAGE.replace(/\s+/g, " ");
+  t.ok(flat.includes("Your account and data are deleted within 30 days of your request. Copies in our "
+    + "daily backups are removed automatically within 7 days after that. Nothing else is kept unless "
+    + "the law requires it."),
+    "4h the retention period renders, in the founder's approved wording");
+
   // ── 5. the date is not in the future ─────────────────────────────────────────────────────────
   const last = (PAGE.match(/const last="([^"]+)"/) || [])[1];
   t.ok(!!last, "5a the page carries a last-updated date");

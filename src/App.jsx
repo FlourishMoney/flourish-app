@@ -11452,6 +11452,10 @@ function DeleteAccount({onBack}){
         <li style={li}>Your money-meeting records and anything the coach wrote for you.</li>
         <li style={li}>Any subscription record held with us.</li>
       </ul>
+      <div style={{...p,marginTop:12}}>
+        Your account and data are deleted within 30 days of your request. Copies in our daily backups are
+        removed automatically within 7 days after that. Nothing else is kept unless the law requires it.
+      </div>
 
       <div style={h2}>What is kept</div>
       <div style={p}>
