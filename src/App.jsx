@@ -1489,14 +1489,18 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
       setQuery(qText);
       setResult({
         cashImpact: "tight",
-        cashDetail: `You've used all ${FREE_TIER_LIMITS.simulationsPerDay} simulations for today. Upgrade to Flourish Plus for unlimited What-If scenarios, or come back tomorrow.`,
+        // On a store app there is nothing to buy, so an upsell would be both useless and against
+        // Apple's and Google's rules. State the limit and when it lifts, and stop there.
+        cashDetail: isNativeApp()
+          ? `You've used today's ${FREE_TIER_LIMITS.simulationsPerDay} simulation${FREE_TIER_LIMITS.simulationsPerDay === 1 ? "" : "s"}. ${FREE_TIER_LIMITS.simulationsPerDay === 1 ? "It resets" : "They reset"} tomorrow.`
+          : `You've used all ${FREE_TIER_LIMITS.simulationsPerDay} simulations for today. Upgrade to Flourish Plus for unlimited What-If scenarios, or come back tomorrow.`,
         debtImpact: "none",
         debtDetail: "",
         savingsDelay: "none",
         healthScoreDelta: 0,
         healthDetail: "",
-        verdict: "Upgrade to continue",
-        verdictReason: "Daily simulation limit reached on the free plan.",
+        verdict: isNativeApp() ? "Daily limit reached" : "Upgrade to continue",
+        verdictReason: isNativeApp() ? "" : "Daily simulation limit reached on the free plan.",
         tip: "",
       });
       return;
@@ -10739,6 +10743,8 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
 
   // ── Constants and derived values (after all hooks) ────────────────────────
   const FREE_LIMIT=FREE_TIER_LIMITS.coachMessagesPerWeek;
+  // Native-only: the plain statement shown when the weekly allowance is used up.
+  const [limitNote,setLimitNote]=useState("");
   const STORAGE_KEY = "flourish_coach_history";
   const WELCOME = {role:"assistant", content:"I'm your Flourish coach. I work from the numbers Flourish has calculated: your safe-to-spend, forecast, spending patterns, debts and goals. I'll tell you what they mean, what needs attention first, and what your options are. I don't move money and I'm not a licensed adviser. Where do you want to start?"};
   const freeMsgsLeft=isPremium?Infinity:Math.max(0,FREE_LIMIT-coachMsgCount);
@@ -10908,7 +10914,12 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
     if(!text || loading) return;
     if(data.demo) return; // demo has no JWT; the UI gates this, but never let a fetch 401 from here
     if(!aiEnabled()) return; // Step 8: single gate — never send chat when AI is off (belt to the render gate)
-    if(!isPremium && freeMsgsLeft<=0){ onUpgrade(); return; }
+    if(!isPremium && freeMsgsLeft<=0){
+      // On a store app onUpgrade opens a paywall that native never renders, so the tap did
+      // nothing at all. Say what happened and when it lifts — no upsell, no website.
+      if(isNativeApp()){ setLimitNote(`You've used this week's ${FREE_LIMIT} coach messages. They reset Monday.`); return; }
+      onUpgrade(); return;
+    }
     // Detect if user is asking about balance mismatch
     const isBalanceQuestion = (text.toLowerCase().includes("balance") && 
       (text.toLowerCase().includes("wrong") || text.toLowerCase().includes("match") || 
@@ -11038,7 +11049,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
           }} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"6px 10px",color:C.muted,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:36,flexShrink:0}} title="Clear history">
             🗑️
           </button>
-          {!isPremium&&<div onClick={onUpgrade} style={{background:freeMsgsLeft>0?C.purple+"22":C.red+"22",border:`1px solid ${freeMsgsLeft>0?C.purple+"44":C.red+"44"}`,borderRadius:10,padding:"5px 10px",cursor:"pointer",textAlign:"center"}}>
+          {!isPremium&&<div onClick={isNativeApp()?undefined:onUpgrade} style={{background:freeMsgsLeft>0?C.purple+"22":C.red+"22",border:`1px solid ${freeMsgsLeft>0?C.purple+"44":C.red+"44"}`,borderRadius:10,padding:"5px 10px",cursor:"pointer",textAlign:"center"}}>
             <div style={{color:freeMsgsLeft>0?C.purpleBright:C.redBright,fontSize:12,fontWeight:800}}>{freeMsgsLeft}/{FREE_LIMIT}</div>
             <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>left this week</div>
           </div>}
@@ -11132,6 +11143,16 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
               {s}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Native-only: what happened and when it lifts. No upsell, no website, no link out. */}
+      {limitNote&&(
+        <div style={{padding:"10px 20px 0",flexShrink:0}}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"11px 14px",
+                       color:C.mutedHi,fontSize:13,lineHeight:1.55,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            {limitNote}
+          </div>
         </div>
       )}
 
@@ -11414,7 +11435,7 @@ function TermsOfService({onBack}){
       <div style={p}>You agree not to: use the App for any unlawful purpose; attempt to reverse-engineer, decompile, or hack the App; use the App to process another person's financial data without their consent; resell or sublicense the App; or interfere with the security or integrity of the App or its infrastructure.</div>
 
       <div style={h2}>7. Subscription & Billing</div>
-      <div style={p}>{isCapacitorIOS() ? "Flourish is currently provided free of charge on iOS." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
+      <div style={p}>{isNativeApp() ? "In the iOS and Android apps there is nothing to buy yet. New accounts get a 14-day trial of all features, then the free tier." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
 
       <div style={h2}>8. Intellectual Property</div>
       <div style={p}>The App, including its design, logo, code, AI systems, and content, is the exclusive property of GrowSmart Inc. and is protected by copyright, trademark, and other intellectual property laws. You receive a limited, non-exclusive, non-transferable licence to use the App for personal, non-commercial purposes.</div>
