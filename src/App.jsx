@@ -11383,6 +11383,10 @@ function PrivacyPolicy({onBack}){
 
       <div style={h2}>7. Your Rights</div>
       <div style={p}>You have the right to access, correct, or delete your personal information at any time. You can delete your account and all associated data from Settings → Delete Account. For data requests or questions, contact us at privacy@flourishmoney.app. We will respond within 30 days.</div>
+      <div style={{...p,marginTop:10}}>
+        Step-by-step instructions, including how to ask by email without the app, are on the{" "}
+        <a href="/delete-account" style={{color:C.greenBright}}>delete your account</a> page.
+      </div>
 
       <div style={h2}>8. Children's Privacy</div>
       <div style={p}>The App is not intended for individuals under the age of 18. We do not knowingly collect personal information from minors. If we learn that we have collected personal information from a minor, we will promptly delete it.</div>
@@ -11400,6 +11404,63 @@ function PrivacyPolicy({onBack}){
 }
 
 // ─── TERMS OF SERVICE ─────────────────────────────────────────────────────────
+// Google Play requires a publicly reachable page where somebody can ask for their account to be
+// deleted WITHOUT installing the app. Same shell as the other two legal pages, same /route pattern.
+function DeleteAccount({onBack}){
+  const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
+  const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
+  const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
+  const li={...p,marginBottom:6};
+  const last="September 26, 2026";
+  return(
+    <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
+        <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 18px",minHeight:44,color:C.cream,fontSize:13,cursor:"pointer",...s}}>← Back</button>
+        <div>
+          <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream}}>Delete your account</div>
+          <div style={{...s,fontSize:11,color:C.muted}}>Last updated {last}</div>
+        </div>
+      </div>
+
+      <div style={p}>You can delete your Flourish account and everything in it. There are two ways, and you do not need the app for either.</div>
+
+      <div style={h2}>In the app or on the web</div>
+      <ol style={{paddingLeft:20,margin:"8px 0 0"}}>
+        <li style={li}>Sign in at <a href="https://flourishmoney.app" style={{color:C.greenBright}}>flourishmoney.app</a>.</li>
+        <li style={li}>Open <strong style={{color:C.cream}}>Settings</strong>.</li>
+        <li style={li}>Choose <strong style={{color:C.cream}}>Delete Account</strong> — the red button under "Your Data".</li>
+      </ol>
+      <div style={{...p,marginTop:8}}>The deletion happens immediately.</div>
+
+      <div style={h2}>By email</div>
+      <div style={p}>
+        Email <a href="mailto:hello@flourishmoney.app" style={{color:C.greenBright}}>hello@flourishmoney.app</a> from the
+        address the account uses, and ask for it to be deleted. It is done within 30 days. Writing from the account's own
+        address is how we know the request is yours — we will not delete an account on someone else's say-so.
+      </div>
+
+      <div style={h2}>What is deleted</div>
+      <ul style={{paddingLeft:20,margin:"8px 0 0"}}>
+        <li style={li}>Your profile and sign-in.</li>
+        <li style={li}>Every bank connection, and the tokens behind them, so no further data can be fetched.</li>
+        <li style={li}>Accounts, balances, transactions, bills, debts, goals and budgets.</li>
+        <li style={li}>Your money-meeting records and anything the coach wrote for you.</li>
+        <li style={li}>Any subscription record held with us.</li>
+      </ul>
+
+      <div style={h2}>What is kept</div>
+      <div style={p}>
+        Nothing, except the few records the law requires us to keep — for example a record of a payment, which tax and
+        accounting rules oblige us to retain. Those are kept only for as long as the law requires and are never used to
+        rebuild your account or to contact you.
+      </div>
+      <div style={{...p,marginTop:10}}>
+        Coach conversations are not stored on our servers at all, so there is nothing of them to delete.
+      </div>
+    </div>
+  );
+}
+
 function TermsOfService({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
@@ -13828,6 +13889,7 @@ export default function FlourishApp(){
     const path = window.location.pathname.replace(/\/+$/,"").toLowerCase();
     if (path === "/privacy") return "privacy";
     if (path === "/terms")   return "terms";
+    if (path === "/delete-account") return "delete-account";
     if (path === "/kids")    return "kids";
     return "home";
   })();
@@ -14776,6 +14838,7 @@ export default function FlourishApp(){
   const legalShell={background:C.bg,minHeight:"100dvh",padding:"max(20px, env(safe-area-inset-top)) 16px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"};
   if(screen==="privacy")return <div style={legalShell}><PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="terms")return <div style={legalShell}><TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
+  if(screen==="delete-account")return <div style={legalShell}><DeleteAccount onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="kids")return <KidsMiniSite country={appData?.profile?.country}/>;
 
   // ── Auth gate ───────────────────────────────────────────────────
