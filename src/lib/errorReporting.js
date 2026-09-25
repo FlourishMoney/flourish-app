@@ -48,6 +48,12 @@ function scrubPII(event) {
   return event;
 }
 
+// The deploy this bundle came from, or null when the build had no SHA to bake (a plain local run).
+function buildRelease() {
+  const sha = import.meta.env.VITE_BUILD_SHA;
+  return typeof sha === "string" && sha && sha !== "unknown" && sha !== "dev" ? sha : null;
+}
+
 export async function initErrorReporting() {
   const dsn = import.meta.env.VITE_SENTRY_DSN;
   if (!dsn) return; // inert until a DSN is configured — Sentry chunk is never loaded
@@ -56,6 +62,13 @@ export async function initErrorReporting() {
     Sentry.init({
       dsn,
       environment: import.meta.env.MODE,
+      // WITHOUT THIS THE RELEASES PAGE IS EMPTY. Sentry only lists a release once events carry one,
+      // so every error so far has been filed against "no release" and no deploy has ever appeared.
+      // The SHA is already baked at build time by vite.config.js — from Netlify's COMMIT_REF in
+      // production — and it is the same string the app prints as "Build <sha>" in Settings, so an
+      // error in Sentry can be traced to the exact deploy the user was running.
+      // Omitted when it is not a real SHA, so a local build cannot create a junk "unknown" release.
+      ...(buildRelease() ? { release: buildRelease() } : {}),
       sendDefaultPii: false,   // don't auto-attach IP / headers / cookies
       tracesSampleRate: 0,     // v1: error reporting only, no performance tracing
       beforeSend: scrubPII,
