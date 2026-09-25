@@ -51,14 +51,6 @@ import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
 
-// Capacitor iOS platform detection — true only when running as a native iOS app via Capacitor.
-// Returns false on web/dev. Used to gate iOS-specific behavior: iOS launches free during v1
-// (no Apple IAP yet — full StoreKit integration coming in v1.1).
-const isCapacitorIOS = () => {
-  try { return typeof window !== "undefined" && window.Capacitor?.getPlatform?.() === "ios"; }
-  catch { return false; }
-};
-
 // Base for API fetches. "" on web → relative → same origin (flourishmoney.app AND Netlify deploy
 // previews). Any NON-web shell (Capacitor serves from capacitor://localhost; also file:/ionic:) must
 // hit the deployed origin, because a relative /api/* there resolves against capacitor://localhost and
