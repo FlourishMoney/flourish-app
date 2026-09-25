@@ -11415,7 +11415,7 @@ function DeleteAccount({onBack}){
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
   const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
   const li={...p,marginBottom:6};
-  const last="September 26, 2026";
+  const last="September 25, 2026";
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
@@ -11432,7 +11432,8 @@ function DeleteAccount({onBack}){
       <ol style={{paddingLeft:20,margin:"8px 0 0"}}>
         <li style={li}>Sign in at <a href="https://flourishmoney.app" style={{color:C.greenBright}}>flourishmoney.app</a>.</li>
         <li style={li}>Open <strong style={{color:C.cream}}>Settings</strong>.</li>
-        <li style={li}>Choose <strong style={{color:C.cream}}>Delete Account</strong> — the red button under "Your Data".</li>
+        <li style={li}>Choose <strong style={{color:C.cream}}>Delete Account</strong> — the red button in the <strong style={{color:C.cream}}>Delete Account</strong> section, below "Your Data".</li>
+        <li style={li}>Confirm in the box that asks "Delete your account?".</li>
       </ol>
       <div style={{...p,marginTop:8}}>The deletion happens immediately.</div>
 
@@ -11446,7 +11447,7 @@ function DeleteAccount({onBack}){
       <div style={h2}>What is deleted</div>
       <ul style={{paddingLeft:20,margin:"8px 0 0"}}>
         <li style={li}>Your profile and sign-in.</li>
-        <li style={li}>Every bank connection, and the tokens behind them, so no further data can be fetched.</li>
+        <li style={li}>Every bank connection. We delete our access tokens, so Flourish itself can fetch nothing more, and we ask the provider to revoke the connection at the same time.</li>
         <li style={li}>Accounts, balances, transactions, bills, debts, goals and budgets.</li>
         <li style={li}>Your money-meeting records and anything the coach wrote for you.</li>
         <li style={li}>Any subscription record held with us.</li>
@@ -11454,9 +11455,12 @@ function DeleteAccount({onBack}){
 
       <div style={h2}>What is kept</div>
       <div style={p}>
-        Nothing, except the few records the law requires us to keep — for example a record of a payment, which tax and
-        accounting rules oblige us to retain. Those are kept only for as long as the law requires and are never used to
-        rebuild your account or to contact you.
+        Almost nothing. Tax and accounting rules oblige us to keep a record of any payment, and those
+        records are kept only for as long as the law requires and are never used to rebuild your
+        account or to contact you. If you ever paid us, our payment processor also keeps its own
+        billing record, which we cannot delete for you. Services that processed data on our behalf —
+        our bank-data provider, and the AI provider behind the coach — keep whatever their own
+        retention rules require; neither is given your name.
       </div>
       <div style={{...p,marginTop:10}}>
         Coach conversations are not stored on our servers at all, so there is nothing of them to delete.
