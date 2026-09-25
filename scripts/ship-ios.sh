@@ -65,7 +65,9 @@ ok "MATH-LOCK green"
 
 # ── 5. build (stamps the SHA into dist/) ─────────────────────────────────────
 step "Build web bundle (npm run build) — stamping SHA $SHA"
-VITE_BUILD_SHA="$SHA" npm run build || die "build failed."
+# build:native refuses to build without the VITE_* variables, and re-checks that they actually
+# reached dist/. Shipping without them is what put a white screen on iOS 526891.
+VITE_BUILD_SHA="$SHA" npm run build:native || die "build failed (see the check above)."
 ok "dist/ built and stamped $SHA"
 
 # ── 6. sync into the iOS project ─────────────────────────────────────────────
