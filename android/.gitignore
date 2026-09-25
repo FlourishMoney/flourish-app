@@ -53,9 +53,15 @@ captures/
 .idea/navEditor.xml
 
 # Keystore files
-# Uncomment the following lines if you do not want to check your keystore files in.
-#*.jks
-#*.keystore
+# Signing material NEVER belongs in this repo. The upload keystore lives outside it and is
+# referenced by path from ~/.gradle/gradle.properties; these lines make an accidental copy
+# unstageable rather than merely discouraged. They shipped commented out.
+*.jks
+*.keystore
+*.p12
+*.pepk
+keystore.properties
+signing.properties
 
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild

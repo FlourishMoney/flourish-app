@@ -1,5 +1,12 @@
 apply plugin: 'com.android.application'
 
+// True only when every one of the four upload-signing properties is present. Checked as a set:
+// three out of four is a misconfiguration, not a signing config, and would fail deep in the build
+// with a message about the missing one rather than the missing set.
+ext.hasUploadSigning = ['FLOURISH_UPLOAD_STORE_FILE', 'FLOURISH_UPLOAD_KEY_ALIAS',
+                        'FLOURISH_UPLOAD_STORE_PASSWORD', 'FLOURISH_UPLOAD_KEY_PASSWORD']
+                       .every { project.hasProperty(it) }
+
 android {
     namespace = "com.flourishmoney.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,10 +23,31 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // ── Release signing ──────────────────────────────────────────────────────────────────────
+    // The four properties live in ~/.gradle/gradle.properties, OUTSIDE this repository, and the
+    // keystore file itself is never copied in — only its path is referenced. Nothing here prints
+    // or logs a password: Gradle reads the properties directly.
+    //
+    // When the properties are absent — CI, a fresh clone, anyone who is not the founder — the
+    // release build still CONFIGURES and simply produces an unsigned bundle. A missing local
+    // credential must not break the build for everybody else, and a hard failure here would.
+    signingConfigs {
+        release {
+            if (project.hasUploadSigning) {
+                storeFile file(project.property('FLOURISH_UPLOAD_STORE_FILE'))
+                keyAlias project.property('FLOURISH_UPLOAD_KEY_ALIAS')
+                storePassword project.property('FLOURISH_UPLOAD_STORE_PASSWORD')
+                keyPassword project.property('FLOURISH_UPLOAD_KEY_PASSWORD')
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Signed when the upload key is available, unsigned when it is not — never half-set.
+            signingConfig project.hasUploadSigning ? signingConfigs.release : null
         }
     }
 }
