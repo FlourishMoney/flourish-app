@@ -46,6 +46,7 @@ import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
 import { derivePlan } from "./lib/planFromProfile.js";
+import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
@@ -12425,14 +12426,18 @@ function ResetPasswordScreen({ onDone, onCancel }) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  // Captured once, at mount. The store apps send their reset links back here with this marker
+  // because an email link opens in the browser, not in the app: the password is set on the
+  // website and the person returns to the app to log in. stripHash() keeps the query string.
+  const [fromApp] = useState(() => { try { return startedInApp(window.location.search); } catch { return false; } });
   const stripHash = () => { try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch {} }; // drop #access_token, keep ?query
   // BLOCKER fix: hand back to the app only after the success state has shown, via a cleanup-safe
   // timer (so it can't fire setState on an unmounted tree if an auth event re-renders first).
   useEffect(() => {
-    if (!done) return;
+    if (!done || fromApp) return;   // started in the app: leave the instruction up, don't hand back
     const t = setTimeout(() => onDone(), 1400);
     return () => clearTimeout(t);
-  }, [done]);
+  }, [done, fromApp]);
   // BLOCKER fix: escape hatch. If the recovery token is expired/invalid, updateUser fails and there
   // was no way out (the hash kept re-seeding recoveryMode on refresh) — this strips the hash and bails.
   const cancel = () => { stripHash(); onCancel(); };
@@ -12456,7 +12461,7 @@ function ResetPasswordScreen({ onDone, onCancel }) {
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 38, marginBottom: 10 }}>✓</div>
               <div style={{ fontFamily: "'Playfair Display',Georgia,serif", fontWeight: 900, fontSize: 22, color: "#EDE9E2" }}>Password updated</div>
-              <div style={{ color: "#6B7A6E", fontSize: 13, marginTop: 8, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Taking you to Flourish…</div>
+              <div style={{ color: "#6B7A6E", fontSize: 13, marginTop: 8, fontFamily: "'Plus Jakarta Sans',sans-serif", lineHeight: 1.6 }}>{fromApp ? PASSWORD_UPDATED_IN_APP : "Taking you to Flourish…"}</div>
             </div>
           ) : (
             <>
@@ -12571,7 +12576,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
     if (!email) { setError("Enter your email above, then tap “Forgot password.”"); return; }
     if (resendCooldown > 0) return; // Sprint Z #12: throttle repeated sends
     setLoading(true); setError(""); setSuccess("");
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: passwordResetRedirect() });
     setLoading(false);
     if (error) { setError(error.message); return; }
     setSuccess("If an account exists for that email, a password-reset link is on its way.");
@@ -12968,10 +12973,13 @@ function AuthScreen({ onAuth, onTryDemo }) {
                   </button>
                   {mode === "login" && (
                     <>
-                      <button onClick={handleMagicLink} disabled={loading || resendCooldown > 0}
+                      {/* A magic link returns to the website, which cannot log anyone into a store
+                          app, so the button would be a dead end. Web keeps it. Password reset stays
+                          on native: it ends with a password the person can type into the app. */}
+                      {!isNativeApp() && <button onClick={handleMagicLink} disabled={loading || resendCooldown > 0}
                         style={{ width: "100%", marginTop: 12, background: "transparent", color: "#00D68F", border: "1.5px solid rgba(0,214,143,0.4)", borderRadius: 14, padding: "13px", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 700, fontSize: 14, cursor: (loading || resendCooldown > 0) ? "default" : "pointer", opacity: resendCooldown > 0 ? 0.6 : 1 }}>
                         {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Email me a magic link"}
-                      </button>
+                      </button>}
                       <div style={{ textAlign: "center", marginTop: 14 }}>
                         <button onClick={handleForgotPassword} disabled={loading || resendCooldown > 0}
                           style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 12, cursor: (loading || resendCooldown > 0) ? "default" : "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline", opacity: resendCooldown > 0 ? 0.6 : 1 }}>

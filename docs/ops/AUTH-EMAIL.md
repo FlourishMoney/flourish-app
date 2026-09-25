@@ -76,15 +76,32 @@ looks like "the link doesn't work" rather than an error.
 project member — a project member's address can succeed on the built-in sender and hide the
 problem. Then confirm the send appears in the Resend dashboard.
 
-## Related gap, not fixed here
+## Where reset links come back to
 
-Both native builds pass `redirectTo: window.location.origin`, which inside a store app is
-`capacitor://localhost` (iOS) or `http://localhost` (Android), not `https://flourishmoney.app`.
-Those are not in the redirect allow-list, so a reset or magic link tapped from the iOS or Android
-app will bounce to the website instead of returning to the app. The "Forgot password?" and magic
-link buttons are both reachable on native, so this will be hit.
+Decided 2026-09-25, and implemented on this branch: **the store apps send reset links to the
+website.** An auth email opens in the system browser, never inside the app, so a link pointing at
+`capacitor://localhost` is meaningless there — the browser cannot open it, and Supabase rejects it
+against the allow-list. Native therefore sends `redirectTo`
+`https://flourishmoney.app/?reset_from=app`, the person sets the new password on the site, and the
+page then tells them: "Your password is updated. Open the Flourish app and log in with your new
+password." Web behaviour is unchanged, including on deploy previews.
 
-Fixing it properly means deciding what a store app's links should open — a universal link / app
-link back into the app (needs Apple App Site Association and Android assetlinks.json hosted on
-flourishmoney.app) or an explicit web URL that tells the person to return to the app. That is a
-product and infrastructure decision, so it is written down here rather than guessed at in code.
+The **magic link is hidden in both store apps** for the same reason and without the same remedy: it
+logs a *browser* in, and a browser session cannot become an app session, so the button was a dead
+end. Password reset stays on native because it ends with a password the person can type into the
+app. The web keeps both.
+
+This means the redirect allow-list must accept the marker. Add it explicitly:
+
+- `https://flourishmoney.app/**`
+- `https://flourishmoney.app/?reset_from=app`
+
+If the marker is ever stripped, nothing breaks — the password is still updated and the page simply
+behaves as it does for a web visitor. Only the closing instruction is lost.
+
+**Universal links are the better answer and are a later update.** An `https://` link that opens the
+app directly would let someone finish a reset without leaving it. That needs an Apple App Site
+Association file and an Android `assetlinks.json` hosted on flourishmoney.app, plus the associated
+domain entitlement in both builds — infrastructure this branch deliberately does not touch. Until
+then the website round trip above is the Apple-standard flow and is what ships.
+
