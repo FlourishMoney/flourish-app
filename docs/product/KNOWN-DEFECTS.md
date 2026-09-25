@@ -553,3 +553,173 @@ and the message is still read — but the first frame after paying is not the co
 
 **Fix (suggested, not built)** Render the notice from the shell rather than from inside the
 upgrade screen, so it does not wait on the status call.
+
+---
+
+## 20. A household that pays on the web is shown "free" inside the store apps
+
+**Rating: HIGH once billing ships. Not reachable today.** Found by an adversarial review of the
+native-launch-parity PR, 2026-09-25.
+
+**Where** `netlify/functions/_lib/planRules.js` (`deriveEntitlement`) against `src/App.jsx`
+(`refreshPlanFromProfile`), and `netlify/functions/stripe-webhook.js`.
+
+**What happens** The server's entitlement is the profile rule **OR** a paid `subscriptions` row.
+The client's is the profile rule alone, because the browser cannot read `subscriptions`. The
+webhook is the only writer of that table and it never touches `profiles.plan`, so paying creates a
+row the client cannot see and changes nothing the client reads. Native then has no second chance:
+the billing-status call, which is the one signal that would carry `paid`, is deliberately skipped
+inside a store app. A household that subscribes on flourishmoney.app — the decision on record is to
+sell only on the web — opens the iOS app, is told it is free, and is blocked at two coach messages
+a week while the server would have served every one of them.
+
+Nothing can reach this today: `BILLING_ENABLED` is unset, so no subscription exists.
+
+**Fix (suggested, not built)** Have the webhook write `profiles.plan` when a subscription becomes
+active and clear it when it lapses, so the one row the client already reads carries the answer.
+That keeps native free of any billing call. **This must be done before billing is switched on**,
+not after — the failure is silent and it lands on the people who have just paid.
+
+---
+
+## 21. The coach's free limit is enforced on the client but not on the server
+
+**Rating: MEDIUM.** Found by the same review.
+
+**Where** `netlify/functions/_lib/auth.js` (`ENFORCE_PLAN_LIMITS`, default false) against
+`src/App.jsx`.
+
+**What happens** With the flag off the server applies only a 50/day abuse ceiling, so it would
+serve a free user far more than the two messages a week the client stops them at. The direction is
+safe — the client shows *less* than the server allows, never more — but the two are not the same
+rule, and which one is true depends on an environment variable nobody has verified in production.
+Defect 17 already records that the production value is unconfirmed.
+
+**Fix (suggested, not built)** Decide whether the free limit is real, then either turn the flag on
+or drop the client-side cap. Turning it on also makes defect 22 live.
+
+---
+
+## 22. A 429 from the coach can arrive while the device still thinks it has messages left
+
+**Rating: MEDIUM.** Found by the same review.
+
+**Where** `netlify/functions/_lib/coachLimits.js` against `src/App.jsx`.
+
+**What happens** The server counts coach messages per user in the database; the client counts them
+per device in `localStorage`. Send two messages on the web, then open the app: the device's counter
+is zero, the server's is two, and the first message in the app comes back 429. The user is told the
+limit is reached by a message they did not expect, having sent nothing from that device.
+
+The store apps no longer print the server's copy for this (it sells Plus), so what shows is our own
+line — but the underlying disagreement between the two counters is unchanged.
+
+**Fix (suggested, not built)** Let the server's count be the one that matters and have the client
+read it, rather than keeping a second tally per device.
+
+---
+
+## 23. Account deletion leaves the payment processor's records behind
+
+**Rating: MEDIUM now, HIGH once billing ships.** Found by the same review.
+
+**Where** `netlify/functions/plaid.js`, the `delete_account` action — which contains no Stripe
+call at all — against `netlify/functions/billing.js`, which creates a Stripe customer carrying the
+user's email.
+
+**What happens** Deleting the account removes everything in Supabase and the auth user, but the
+Stripe customer object and its invoices survive, and **an active subscription is never cancelled**,
+so someone who deletes their account while subscribed would keep being charged for a product they
+can no longer sign in to. The `/delete-account` page now says the processor keeps its own billing
+record, so the page is no longer untrue — but the billing itself is the real problem.
+
+Not reachable today: `BILLING_ENABLED` is unset, so there are no customers and no subscriptions.
+
+**Fix (suggested, not built)** Cancel the subscription and delete the Stripe customer inside
+`delete_account`, before the auth user goes, and record the failure as critical if it does not
+succeed. **Before billing is switched on.**
+
+---
+
+## 24. The account-deletion page states no retention period
+
+**Rating: MEDIUM.** Found by the same review.
+
+**Where** `src/App.jsx`, the `DeleteAccount` page, "What is kept".
+
+**What happens** Google Play's account-deletion requirement expects the page to say what is
+retained **and for how long**. The page says payment records are kept "only for as long as the law
+requires" and gives no period. That is honest but not specific, and a reviewer may ask.
+
+**Fix (needs the founder, not a developer)** State the actual retention period — the figure
+depends on Canadian and US tax record-keeping rules and on which of them the company is bound by,
+which is a legal statement for the founder to make rather than a number to infer from code.
+
+---
+
+## 25. A partial deletion tells the user nothing was changed
+
+**Rating: MEDIUM.** Found by the same review. Pre-existing; the new public page now points at it.
+
+**Where** `src/App.jsx`, `deleteAllData`, and the step ordering in `delete_account`.
+
+**What happens** The handler deletes the data tables first and the auth user last. If the auth
+delete fails, the client says "Your account could not be fully deleted, so nothing was changed" —
+but the accounts, transactions, bills, goals and meeting records are already gone. The account
+still exists, the data does not, and the message says the opposite. The `/delete-account` page's
+"The deletion happens immediately" makes the contradiction public.
+
+**Fix (suggested, not built)** Either delete the auth user first, or report the true state: the
+account still exists, the data is gone, and here is what to do next.
+
+---
+
+## 26. A trial can be self-granted on the client, and the invented start date outlives it
+
+**Rating: MEDIUM.** Found by the same review.
+
+**Where** `src/lib/usageLimits.js` (`startTrialIfEligible`) and `src/App.jsx`
+(`refreshPlanFromProfile`).
+
+**What happens** `startTrialIfEligible()` writes a trial start date and sets the plan at boot,
+from local storage alone, for anyone whose device is clean — signed in or not. The next successful
+profile read corrects the plan, so the grant itself is window-scoped. The date is not corrected:
+the profile read only ever *writes* the trial dates it finds and never clears one it does not, so a
+server row with no trial leaves the invented date in place. On the web that user then sees the
+expired-trial upgrade bar for a trial they never had.
+
+**Fix (suggested, not built)** Clear the cached trial dates when the profile has none, and let the
+server be the only thing that starts a trial.
+
+---
+
+## 27. A missing profiles row lets the cached plan survive, and sync carries it between devices
+
+**Rating: MEDIUM.** Found by the same review.
+
+**Where** `src/App.jsx` (`refreshPlanFromProfile` returns early when there is no row) and
+`src/lib/persistence.js` (`flourish_plan` is on the sync allow-list).
+
+**What happens** With no profiles row the reconcile returns without setting anything, so whatever
+plan is cached locally stands — and because the key is synced, it is uploaded and restored onto
+every other device. The server treats a missing row as free. Narrow: it needs the new-user trigger
+to have not fired, or the select to return nothing.
+
+**Fix (suggested, not built)** Treat a missing row as free explicitly, and take the plan off the
+sync allow-list — it is a cache of a server answer, not user data.
+
+---
+
+## 28. The trial clock is the device clock
+
+**Rating: LOW.** Found by the same review.
+
+**Where** `src/lib/usageLimits.js`, `getTrialDaysLeft`.
+
+**What happens** Trial expiry is measured against `Date.now()`, so moving the device clock back
+keeps the local feature gates open after the server's trial has ended. `isPremium` still comes from
+the server whenever there is a network, so the main gates hold and the coach's server-side limits
+are unaffected. Requires deliberate tampering for a small prize.
+
+**Fix (suggested, not built)** Use the server's clock, taken from a response header, for the trial
+comparison.

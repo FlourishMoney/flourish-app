@@ -24,7 +24,29 @@ import { formatMoney, formatNumber, roundBalanceDown } from "./format.js";
 // format.js (also behind formatBalance), so Today, Watch and the timelines cannot drift apart.
 const _ceil = (n) => Math.ceil(Number(n) || 0);
 
-export function safeToSpendView(ss) {
+/**
+ * `setup` describes whether the household has given us anything to compute FROM:
+ *   { hasCashAccount, hasIncome }
+ *
+ * "Safe until next payday" is balance minus commitments. The balance comes from cash accounts and
+ * from nowhere else, so with no cash account linked it is $0 BY ABSENCE, not by fact — the person may
+ * well have a month of pay sitting in a bank we cannot see. Subtracting a savings allocation or a rent bill
+ * from that assumed zero produces "-$506 safe until next payday" on the first screen somebody ever
+ * sees. That is not a finding about their money. It is an artefact of an account with no balance
+ * in it, and it reads as an accusation.
+ *
+ * So the test is the BALANCE, not the paperwork: no cash account means no headline, whatever else
+ * has been entered. An earlier version of this also required income to be missing, which let the
+ * exact reported case through — someone who had entered their pay but not linked a bank still got
+ * their savings allocation rendered as a negative. Income now only chooses the wording of the
+ * prompt.
+ *
+ * With `needsSetup` true every headline field is null, so no surface can print a figure by
+ * accident, and callers must not render the breakdown either — rows is empty and there is no total
+ * to put under it. Omitting `setup` keeps the old behaviour, which every existing caller relies on.
+ */
+export function safeToSpendView(ss, setup = null) {
+  const needsSetup = !!setup && !setup.hasCashAccount;
   const balanceDisplay = roundBalanceDown(ss && ss.balance);
 
   // Order + labels match the Today card exactly, so both screens render identical rows.
@@ -58,7 +80,23 @@ export function safeToSpendView(ss) {
     ...deductions.filter(d => d.display > 0).map(d => ({ key: d.key, kind: "deduction", label: d.label, sign: "−", display: d.display, value: d.value })),
   ];
 
+  if (needsSetup) {
+    return {
+      balanceDisplay, balanceText: formatMoney(balanceDisplay),
+      deductions, rows: [], totalDeductions,
+      // Nothing to show and nothing to misread: no headline, and never "short".
+      headline: null, isShort: false, shortfall: 0, headlineText: null, headlineNumber: null,
+      needsSetup: true,
+      setupPrompt: setup.hasIncome
+        ? "Connect a bank or import a statement to see your safe-to-spend."
+        : "Connect a bank or import a statement, and add your pay, to see your safe-to-spend.",
+      totalLabel: "= Safe until next payday",
+    };
+  }
+
   return {
+    needsSetup: false,
+    setupPrompt: null,
     balanceDisplay,
     balanceText: formatMoney(balanceDisplay), // "$3,083" — the ONE displayed balance string (Today row, Watch starting balance)
     deductions,           // all four, with display values (whether zero or not)

@@ -46,18 +46,11 @@ import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
 import { derivePlan } from "./lib/planFromProfile.js";
+import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
-
-// Capacitor iOS platform detection — true only when running as a native iOS app via Capacitor.
-// Returns false on web/dev. Used to gate iOS-specific behavior: iOS launches free during v1
-// (no Apple IAP yet — full StoreKit integration coming in v1.1).
-const isCapacitorIOS = () => {
-  try { return typeof window !== "undefined" && window.Capacitor?.getPlatform?.() === "ios"; }
-  catch { return false; }
-};
 
 // Base for API fetches. "" on web → relative → same origin (flourishmoney.app AND Netlify deploy
 // previews). Any NON-web shell (Capacitor serves from capacitor://localhost; also file:/ionic:) must
@@ -1485,18 +1478,22 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
     // ── PAYWALL GATE (Phase 2) ───────────────────────────────────────────
     // Free tier: 3 simulations/day. Premium and beta_founder: unlimited.
     // Soft gate — show a clear message in the result card instead of an alert.
-    if (!isCapacitorIOS() && !canRunSimulation()) {
+    if (!canRunSimulation()) {
       setQuery(qText);
       setResult({
         cashImpact: "tight",
-        cashDetail: `You've used all ${FREE_TIER_LIMITS.simulationsPerDay} simulations for today. Upgrade to Flourish Plus for unlimited What-If scenarios, or come back tomorrow.`,
+        // On a store app there is nothing to buy, so an upsell would be both useless and against
+        // Apple's and Google's rules. State the limit and when it lifts, and stop there.
+        cashDetail: isNativeApp()
+          ? `You've used today's ${FREE_TIER_LIMITS.simulationsPerDay} simulation${FREE_TIER_LIMITS.simulationsPerDay === 1 ? "" : "s"}. ${FREE_TIER_LIMITS.simulationsPerDay === 1 ? "It resets" : "They reset"} tomorrow.`
+          : `You've used all ${FREE_TIER_LIMITS.simulationsPerDay} simulations for today. Upgrade to Flourish Plus for unlimited What-If scenarios, or come back tomorrow.`,
         debtImpact: "none",
         debtDetail: "",
         savingsDelay: "none",
         healthScoreDelta: 0,
         healthDetail: "",
-        verdict: "Upgrade to continue",
-        verdictReason: "Daily simulation limit reached on the free plan.",
+        verdict: isNativeApp() ? "Daily limit reached" : "Upgrade to continue",
+        verdictReason: isNativeApp() ? "" : "Daily simulation limit reached on the free plan.",
         tip: "",
       });
       return;
@@ -4549,7 +4546,10 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const _ss         = SafeSpendEngine.calculate(data);
   const bal         = _ss.balance;
   const safe        = _ss.safeAmount;
-  const ssView      = safeToSpendView(_ss); // Truth-fix item 5: the ONE safe-to-spend presentation view-model (rows + headline reconcile)
+  const ssView      = safeToSpendView(_ss, {
+    hasCashAccount: (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0,
+    hasIncome: (data.incomes||[]).some(i => num(i && i.amount) > 0),   // num(), not Number(): "$2,600" is a valid amount
+  }); // Truth-fix item 5: the ONE safe-to-spend presentation view-model (rows + headline reconcile)
   const dailyPace   = suggestedDailyView(ssView.headline, data.incomes, data.transactions, new Date()); // Consolidation 1: the ONE suggested daily pace (Today + Decisions read this)
   const hasCashAccount = (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0; // Sprint 1: gate safe-to-spend empty state
   // overdraft: either bills in next 10 days exceed balance (immediate)
@@ -4874,7 +4874,10 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             ─────────────────────────────────────────────────────────────── */}
             {/* Afford widget: hidden if immediate overdraft (balance already negative-bound)
                 but shown with warning if only 7-day forecast overdraft */}
-            {!overdraftImmediate&&<div style={{marginTop:16,borderTop:`1px solid ${heroColor}18`,paddingTop:14}}
+            {/* "Can I afford this?" subtracts from the headline above. With no cash account there
+                IS no headline, and Number(null) is a finite 0 — so the card would answer every
+                question against a balance of zero it invented. Don't ask what can't be answered. */}
+            {!overdraftImmediate&&!ssView.needsSetup&&<div style={{marginTop:16,borderTop:`1px solid ${heroColor}18`,paddingTop:14}}
               onClick={e=>e.stopPropagation()}>
               {(()=>{
                 // R1: Uses pre-calculated nextPaydayDay — no ForecastEngine call per keystroke
@@ -5955,7 +5958,7 @@ function ManualBillForm({data, setAppData, onClose}){
     if (!name.trim() || !(amt > 0) || !setAppData) return;
     // Capture BEFORE the write: the contextual notification ask fires only on the FIRST manual bill.
     const firstManualBill = (!editId || editId === "new") && manualBills.length === 0
-      && isCapacitorIOS() && !(data.profile?.notifications?.permissionAsked);
+      && isNativeApp() && !(data.profile?.notifications?.permissionAsked);
     const shape = {
       name: name.trim(), amount: amt, dayOfMonth: dom, recurring, variable,
       origin: "manual",
@@ -10739,6 +10742,8 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
 
   // ── Constants and derived values (after all hooks) ────────────────────────
   const FREE_LIMIT=FREE_TIER_LIMITS.coachMessagesPerWeek;
+  // Native-only: the plain statement shown when the weekly allowance is used up.
+  const [limitNote,setLimitNote]=useState("");
   const STORAGE_KEY = "flourish_coach_history";
   const WELCOME = {role:"assistant", content:"I'm your Flourish coach. I work from the numbers Flourish has calculated: your safe-to-spend, forecast, spending patterns, debts and goals. I'll tell you what they mean, what needs attention first, and what your options are. I don't move money and I'm not a licensed adviser. Where do you want to start?"};
   const freeMsgsLeft=isPremium?Infinity:Math.max(0,FREE_LIMIT-coachMsgCount);
@@ -10908,7 +10913,12 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
     if(!text || loading) return;
     if(data.demo) return; // demo has no JWT; the UI gates this, but never let a fetch 401 from here
     if(!aiEnabled()) return; // Step 8: single gate — never send chat when AI is off (belt to the render gate)
-    if(!isPremium && freeMsgsLeft<=0){ onUpgrade(); return; }
+    if(!isPremium && freeMsgsLeft<=0){
+      // On a store app onUpgrade opens a paywall that native never renders, so the tap did
+      // nothing at all. Say what happened and when it lifts — no upsell, no website.
+      if(isNativeApp()){ setLimitNote(`You've used this week's ${FREE_LIMIT} coach messages. They reset Monday.`); return; }
+      onUpgrade(); return;
+    }
     // Detect if user is asking about balance mismatch
     const isBalanceQuestion = (text.toLowerCase().includes("balance") && 
       (text.toLowerCase().includes("wrong") || text.toLowerCase().includes("match") || 
@@ -10967,7 +10977,15 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
 
       if(res.status === 429){
         const j = await res.json().catch(()=>({}));
-        setMessages(prev=>[...prev, {role:"assistant", isSystem:true, content: j.message || "You've hit today's Coach message limit. It resets tomorrow."}]);
+        // The server's limit message sells Plus ("Upgrade to Plus for unlimited…"), which must not
+        // appear in a store app — and the client's own gate above cannot prevent this one, because
+        // the server counts per user in the DB while the client counts per device in localStorage,
+        // so a 429 can arrive while this device still believes it has messages left. Native writes
+        // its own line rather than printing whatever the server sent.
+        const limitMsg = isNativeApp()
+          ? `You've used this week's ${FREE_TIER_LIMITS.coachMessagesPerWeek} coach messages. They reset Monday.`
+          : (j.message || "You've hit today's Coach message limit. It resets tomorrow.");
+        setMessages(prev=>[...prev, {role:"assistant", isSystem:true, content: limitMsg}]);
         setLoading(false);
         return;
       }
@@ -11038,7 +11056,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
           }} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"6px 10px",color:C.muted,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:36,flexShrink:0}} title="Clear history">
             🗑️
           </button>
-          {!isPremium&&<div onClick={onUpgrade} style={{background:freeMsgsLeft>0?C.purple+"22":C.red+"22",border:`1px solid ${freeMsgsLeft>0?C.purple+"44":C.red+"44"}`,borderRadius:10,padding:"5px 10px",cursor:"pointer",textAlign:"center"}}>
+          {!isPremium&&<div onClick={isNativeApp()?undefined:onUpgrade} style={{background:freeMsgsLeft>0?C.purple+"22":C.red+"22",border:`1px solid ${freeMsgsLeft>0?C.purple+"44":C.red+"44"}`,borderRadius:10,padding:"5px 10px",cursor:"pointer",textAlign:"center"}}>
             <div style={{color:freeMsgsLeft>0?C.purpleBright:C.redBright,fontSize:12,fontWeight:800}}>{freeMsgsLeft}/{FREE_LIMIT}</div>
             <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>left this week</div>
           </div>}
@@ -11132,6 +11150,16 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
               {s}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Native-only: what happened and when it lifts. No upsell, no website, no link out. */}
+      {limitNote&&(
+        <div style={{padding:"10px 20px 0",flexShrink:0}}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"11px 14px",
+                       color:C.mutedHi,fontSize:13,lineHeight:1.55,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            {limitNote}
+          </div>
         </div>
       )}
 
@@ -11359,6 +11387,10 @@ function PrivacyPolicy({onBack}){
 
       <div style={h2}>7. Your Rights</div>
       <div style={p}>You have the right to access, correct, or delete your personal information at any time. You can delete your account and all associated data from Settings → Delete Account. For data requests or questions, contact us at privacy@flourishmoney.app. We will respond within 30 days.</div>
+      <div style={{...p,marginTop:10}}>
+        Step-by-step instructions, including how to ask by email without the app, are on the{" "}
+        <a href="/delete-account" style={{color:C.greenBright}}>delete your account</a> page.
+      </div>
 
       <div style={h2}>8. Children's Privacy</div>
       <div style={p}>The App is not intended for individuals under the age of 18. We do not knowingly collect personal information from minors. If we learn that we have collected personal information from a minor, we will promptly delete it.</div>
@@ -11376,6 +11408,71 @@ function PrivacyPolicy({onBack}){
 }
 
 // ─── TERMS OF SERVICE ─────────────────────────────────────────────────────────
+// Google Play requires a publicly reachable page where somebody can ask for their account to be
+// deleted WITHOUT installing the app. Same shell as the other two legal pages, same /route pattern.
+function DeleteAccount({onBack}){
+  const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
+  const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
+  const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
+  const li={...p,marginBottom:6};
+  const last="September 25, 2026";
+  return(
+    <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:28,paddingTop:4}}>
+        <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 18px",minHeight:44,color:C.cream,fontSize:13,cursor:"pointer",...s}}>← Back</button>
+        <div>
+          <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream}}>Delete your account</div>
+          <div style={{...s,fontSize:11,color:C.muted}}>Last updated {last}</div>
+        </div>
+      </div>
+
+      <div style={p}>You can delete your Flourish account and everything in it. There are two ways, and you do not need the app for either.</div>
+
+      <div style={h2}>In the app or on the web</div>
+      <ol style={{paddingLeft:20,margin:"8px 0 0"}}>
+        <li style={li}>Sign in at <a href="https://flourishmoney.app" style={{color:C.greenBright}}>flourishmoney.app</a>.</li>
+        <li style={li}>Open <strong style={{color:C.cream}}>Settings</strong>.</li>
+        <li style={li}>Choose <strong style={{color:C.cream}}>Delete Account</strong> — the red button in the <strong style={{color:C.cream}}>Delete Account</strong> section, below "Your Data".</li>
+        <li style={li}>Confirm in the box that asks "Delete your account?".</li>
+      </ol>
+      <div style={{...p,marginTop:8}}>The deletion happens immediately.</div>
+
+      <div style={h2}>By email</div>
+      <div style={p}>
+        Email <a href="mailto:hello@flourishmoney.app" style={{color:C.greenBright}}>hello@flourishmoney.app</a> from the
+        address the account uses, and ask for it to be deleted. It is done within 30 days. Writing from the account's own
+        address is how we know the request is yours — we will not delete an account on someone else's say-so.
+      </div>
+
+      <div style={h2}>What is deleted</div>
+      <ul style={{paddingLeft:20,margin:"8px 0 0"}}>
+        <li style={li}>Your profile and sign-in.</li>
+        <li style={li}>Every bank connection. We delete our access tokens, so Flourish itself can fetch nothing more, and we ask the provider to revoke the connection at the same time.</li>
+        <li style={li}>Accounts, balances, transactions, bills, debts, goals and budgets.</li>
+        <li style={li}>Your money-meeting records and anything the coach wrote for you.</li>
+        <li style={li}>Any subscription record held with us.</li>
+      </ul>
+      <div style={{...p,marginTop:12}}>
+        Your account and data are deleted within 30 days of your request. Copies in our daily backups are
+        removed automatically within 7 days after that. Nothing else is kept unless the law requires it.
+      </div>
+
+      <div style={h2}>What is kept</div>
+      <div style={p}>
+        Almost nothing. Tax and accounting rules oblige us to keep a record of any payment, and those
+        records are kept only for as long as the law requires and are never used to rebuild your
+        account or to contact you. If you ever paid us, our payment processor also keeps its own
+        billing record, which we cannot delete for you. Services that processed data on our behalf —
+        our bank-data provider, and the AI provider behind the coach — keep whatever their own
+        retention rules require; neither is given your name.
+      </div>
+      <div style={{...p,marginTop:10}}>
+        Coach conversations are not stored on our servers at all, so there is nothing of them to delete.
+      </div>
+    </div>
+  );
+}
+
 function TermsOfService({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
@@ -11414,7 +11511,7 @@ function TermsOfService({onBack}){
       <div style={p}>You agree not to: use the App for any unlawful purpose; attempt to reverse-engineer, decompile, or hack the App; use the App to process another person's financial data without their consent; resell or sublicense the App; or interfere with the security or integrity of the App or its infrastructure.</div>
 
       <div style={h2}>7. Subscription & Billing</div>
-      <div style={p}>{isCapacitorIOS() ? "Flourish is currently provided free of charge on iOS." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
+      <div style={p}>{isNativeApp() ? "In the iOS and Android apps there is nothing to buy yet. New accounts get a 14-day trial of all features, then the free tier." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
 
       <div style={h2}>8. Intellectual Property</div>
       <div style={p}>The App, including its design, logo, code, AI systems, and content, is the exclusive property of GrowSmart Inc. and is protected by copyright, trademark, and other intellectual property laws. You receive a limited, non-exclusive, non-transferable licence to use the App for personal, non-commercial purposes.</div>
@@ -11449,20 +11546,33 @@ function PremiumGate({feature,desc,onUpgrade}){
         <div style={{color:C.cream,fontWeight:900,fontSize:22,fontFamily:"'Playfair Display',serif",marginBottom:8}}>{feature}</div>
         <div style={{color:C.muted,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7,maxWidth:280}}>{desc}</div>
       </div>
-      <div style={{background:C.purpleDim,borderRadius:16,padding:"14px 20px",border:`1px solid ${C.purple}33`,maxWidth:280}}>
-        <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish Plus includes:</div>
-        <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
-          {["AI Coach with real data","Full credit coaching","Tax tips & benefits checker","Investment tracking","Weekly money meeting","Debt simulator"].map((f,i)=>(
-            <div key={i} style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"left",display:"flex",alignItems:"center",gap:7}}><Icon id="check" size={14} color={C.green} strokeWidth={2.0}/>{f}</div>
-          ))}
+      {/* On a store app there is nothing to buy, so the pitch below would be an upgrade offer with
+          no purchase behind it — and its button opens a paywall native never renders. Apple and
+          Google both forbid it. State what the tier includes and stop. */}
+      {isNativeApp() ? (
+        <div style={{background:"rgba(255,255,255,0.05)",borderRadius:16,padding:"14px 20px",border:`1px solid ${C.border}`,maxWidth:280}}>
+          <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7}}>
+            {feature} isn't part of the free tier. New accounts get 14 days of every feature, then the free tier.
+          </div>
         </div>
-      </div>
-      <button onClick={onUpgrade} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.purple}40`}}>
-        {getTrialStartedAt() ? "Get Flourish Plus →" : "Start 14 days free →"}
-      </button>
-      {/* Never offer a free trial to someone who has already had one — this gate also renders for
-          trial-EXPIRED users, directly under the "Your free trial has ended" banner. */}
-      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{getTrialStartedAt() ? "Cancel any time." : "14 days free. Cancel any time."}</div>
+      ) : (
+        <>
+        <div style={{background:C.purpleDim,borderRadius:16,padding:"14px 20px",border:`1px solid ${C.purple}33`,maxWidth:280}}>
+          <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish Plus includes:</div>
+          <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
+            {["AI Coach with real data","Full credit coaching","Tax tips & benefits checker","Investment tracking","Weekly money meeting","Debt simulator"].map((f,i)=>(
+              <div key={i} style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"left",display:"flex",alignItems:"center",gap:7}}><Icon id="check" size={14} color={C.green} strokeWidth={2.0}/>{f}</div>
+            ))}
+          </div>
+        </div>
+        <button onClick={onUpgrade} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.purple}40`}}>
+          {getTrialStartedAt() ? "Get Flourish Plus →" : "Start 14 days free →"}
+        </button>
+        {/* Never offer a free trial to someone who has already had one — this gate also renders for
+            trial-EXPIRED users, directly under the "Your free trial has ended" banner. */}
+        <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{getTrialStartedAt() ? "Cancel any time." : "14 days free. Cancel any time."}</div>
+        </>
+      )}
     </div>
   );
 }
@@ -11684,10 +11794,15 @@ function FirstVisitScreen({data, onDismiss}) {
   // through the ONE presentation view-model, so First Visit and Today can never disagree. The old
   // breakdown stacked a monthly income calc (income − bills − 15%) against a balance-driven "available"
   // — three rows that summed to something else entirely, and a dead bufferAmt. All gone.
-  const ssView = safeToSpendView(SafeSpendEngine.calculate(data));
+  // Pass what the household has actually given us. With no bank and no pay entered the view
+  // returns no headline at all, so this screen cannot print a number made of nothing.
+  const ssView = safeToSpendView(SafeSpendEngine.calculate(data), {
+    hasCashAccount: (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0,
+    hasIncome: (data.incomes||[]).some(i => num(i && i.amount) > 0),   // num(), not Number(): "$2,600" is a valid amount
+  });
   // When the headline is negative the copy says "here's exactly what's already committed" and points
   // at the breakdown, so the breakdown is open from the start rather than behind a tap.
-  const breakdownOpen = showBreakdown || ssView.isShort;
+  const breakdownOpen = (showBreakdown || ssView.isShort) && !ssView.needsSetup;
   const incomeAmt = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMonthly(i.amount,i.freq),0); // kept only to gate the explanatory line
   const name = data.profile?.name || "there";
   // Bug fix: the breathing-room number is balance-driven (SafeSpendEngine reads account balances),
@@ -11734,21 +11849,27 @@ function FirstVisitScreen({data, onDismiss}) {
             <div style={{marginTop:8}}>
               <div style={{fontSize:64,marginBottom:12}}>🌱</div>
               <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:C.greenBright,marginBottom:8}}>Flourish is ready</div>
+              {ssView.needsSetup&&(
+                <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",maxWidth:300,margin:"0 auto"}}>
+                  {ssView.setupPrompt}
+                </div>
+              )}
             </div>
           )}
         </div>
 
         {/* One-line explanation */}
         <div style={{color:C.mutedHi,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,marginBottom:32,maxWidth:280,margin:"0 auto 32px"}}>
-          {ssView.isShort
+          {ssView.isShort || ssView.needsSetup
             ? null
             : incomeAmt > 0
               ? "Bills paid. Buffer set. Everything above this number is yours — no guilt, no stress."
               : "Add your income in Settings to see your personalised safe-to-spend number."}
         </div>
 
-        {/* Breakdown — progressive disclosure */}
-        {breakdownOpen&&(
+        {/* Breakdown — progressive disclosure. Never when needsSetup: there are no rows and no
+            total, so the card would be a heading, nothing, and a labelled blank. */}
+        {breakdownOpen&&!ssView.needsSetup&&(
           <div style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:18,padding:"16px 20px",marginBottom:24,textAlign:"left"}}>
             <div style={{color:C.muted,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How this is calculated</div>
             {ssView.rows.map((r)=>{
@@ -11768,8 +11889,9 @@ function FirstVisitScreen({data, onDismiss}) {
           </div>
         )}
 
-        {/* Primary CTA */}
-        {!breakdownOpen?(
+        {/* Primary CTA. With nothing to explain there is no working to show, so the button that
+            opens it would do nothing — go straight to the dashboard instead. */}
+        {!breakdownOpen&&!ssView.needsSetup?(
           <button onClick={()=>setShowBreakdown(true)}
             style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
             How is this calculated? →
@@ -12338,14 +12460,18 @@ function ResetPasswordScreen({ onDone, onCancel }) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  // Captured once, at mount. The store apps send their reset links back here with this marker
+  // because an email link opens in the browser, not in the app: the password is set on the
+  // website and the person returns to the app to log in. stripHash() keeps the query string.
+  const [fromApp] = useState(() => { try { return startedInApp(window.location.search); } catch { return false; } });
   const stripHash = () => { try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch {} }; // drop #access_token, keep ?query
   // BLOCKER fix: hand back to the app only after the success state has shown, via a cleanup-safe
   // timer (so it can't fire setState on an unmounted tree if an auth event re-renders first).
   useEffect(() => {
-    if (!done) return;
+    if (!done || fromApp) return;   // started in the app: leave the instruction up, don't hand back
     const t = setTimeout(() => onDone(), 1400);
     return () => clearTimeout(t);
-  }, [done]);
+  }, [done, fromApp]);
   // BLOCKER fix: escape hatch. If the recovery token is expired/invalid, updateUser fails and there
   // was no way out (the hash kept re-seeding recoveryMode on refresh) — this strips the hash and bails.
   const cancel = () => { stripHash(); onCancel(); };
@@ -12369,7 +12495,7 @@ function ResetPasswordScreen({ onDone, onCancel }) {
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 38, marginBottom: 10 }}>✓</div>
               <div style={{ fontFamily: "'Playfair Display',Georgia,serif", fontWeight: 900, fontSize: 22, color: "#EDE9E2" }}>Password updated</div>
-              <div style={{ color: "#6B7A6E", fontSize: 13, marginTop: 8, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Taking you to Flourish…</div>
+              <div style={{ color: "#6B7A6E", fontSize: 13, marginTop: 8, fontFamily: "'Plus Jakarta Sans',sans-serif", lineHeight: 1.6 }}>{fromApp ? PASSWORD_UPDATED_IN_APP : "Taking you to Flourish…"}</div>
             </div>
           ) : (
             <>
@@ -12406,7 +12532,9 @@ function AuthScreen({ onAuth, onTryDemo }) {
   const [success, setSuccess] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0); // seconds until "Resend" re-enables
   const [checkEmailNote, setCheckEmailNote] = useState(""); // contextual line on the check-email screen
-  const [showAuth, setShowAuth] = useState(isCapacitorIOS()); // native iOS: skip the "coming soon" waitlist landing, boot straight into login/signup
+  // Both store apps boot straight into login/signup. The "coming soon" waitlist landing is a web
+  // page for people who cannot use the product yet; someone who has installed the app already can.
+  const [showAuth, setShowAuth] = useState(isNativeApp());
 
   // Phase E1: waitlist email capture (replaces public signup CTAs).
   const [waitlistEmail, setWaitlistEmail] = useState("");
@@ -12482,7 +12610,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
     if (!email) { setError("Enter your email above, then tap “Forgot password.”"); return; }
     if (resendCooldown > 0) return; // Sprint Z #12: throttle repeated sends
     setLoading(true); setError(""); setSuccess("");
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: passwordResetRedirect() });
     setLoading(false);
     if (error) { setError(error.message); return; }
     setSuccess("If an account exists for that email, a password-reset link is on its way.");
@@ -12820,7 +12948,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
           <div style={{ width: "100%", maxWidth: 400, animation: "fadeUp .5s ease both" }}>
 
             <div style={{ textAlign: "center", marginBottom: 28 }}>
-              {!isCapacitorIOS() && <button onClick={() => setShowAuth(false)}
+              {!isNativeApp() && <button onClick={() => setShowAuth(false)}
                 style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, margin: "0 auto 16px", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
                 ← Back
               </button>}
@@ -12879,10 +13007,13 @@ function AuthScreen({ onAuth, onTryDemo }) {
                   </button>
                   {mode === "login" && (
                     <>
-                      <button onClick={handleMagicLink} disabled={loading || resendCooldown > 0}
+                      {/* A magic link returns to the website, which cannot log anyone into a store
+                          app, so the button would be a dead end. Web keeps it. Password reset stays
+                          on native: it ends with a password the person can type into the app. */}
+                      {!isNativeApp() && <button onClick={handleMagicLink} disabled={loading || resendCooldown > 0}
                         style={{ width: "100%", marginTop: 12, background: "transparent", color: "#00D68F", border: "1.5px solid rgba(0,214,143,0.4)", borderRadius: 14, padding: "13px", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 700, fontSize: 14, cursor: (loading || resendCooldown > 0) ? "default" : "pointer", opacity: resendCooldown > 0 ? 0.6 : 1 }}>
                         {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Email me a magic link"}
-                      </button>
+                      </button>}
                       <div style={{ textAlign: "center", marginTop: 14 }}>
                         <button onClick={handleForgotPassword} disabled={loading || resendCooldown > 0}
                           style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 12, cursor: (loading || resendCooldown > 0) ? "default" : "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline", opacity: resendCooldown > 0 ? 0.6 : 1 }}>
@@ -12903,7 +13034,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
               )}
 
             </div>
-            {isCapacitorIOS() && onTryDemo && (
+            {isNativeApp() && onTryDemo && (
               /* App Store reviewers: enter with sample data — no account or beta code needed (iOS only). */
               <div style={{ textAlign: "center", marginTop: 22 }}>
                 <button onClick={() => onTryDemo(waitlistCountry)} style={{ background: "rgba(0,200,224,0.14)", border: "1px solid rgba(0,200,224,0.4)", color: "#00C8E0", borderRadius: 99, padding: "11px 22px", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>🧪 Try the demo — no account needed</button>
@@ -13792,6 +13923,7 @@ export default function FlourishApp(){
     const path = window.location.pathname.replace(/\/+$/,"").toLowerCase();
     if (path === "/privacy") return "privacy";
     if (path === "/terms")   return "terms";
+    if (path === "/delete-account") return "delete-account";
     if (path === "/kids")    return "kids";
     return "home";
   })();
@@ -13807,7 +13939,7 @@ export default function FlourishApp(){
   const [tourStep,setTourStep]=useState(()=>{ try{return localStorage.getItem("flourish_tour_done")==="1"?null:0;}catch{return 0;} });
   const dismissTour=()=>{ try{localStorage.setItem("flourish_tour_done","1");}catch{} setTourStep(null); };
   const [household,setHousehold]=useState(()=>saved?.household||null);
-  const [isPremium,setIsPremium]=useState(()=>isCapacitorIOS()||saved?.isPremium||false);
+  const [isPremium,setIsPremium]=useState(()=>saved?.isPremium||false);
   const [showPaywall,setShowPaywall]=useState(false);
   // Billing (live 2026-10-26). null until the server says otherwise, which is what keeps every
   // surface hidden while BILLING_ENABLED is unset.
@@ -13816,7 +13948,6 @@ export default function FlourishApp(){
   const [billingNotice,setBillingNotice]=useState(null);
   // Tier 2: iOS Capacitor build is free — no paywall, no upgrade/trial/Plus/price UI.
   // Distinct from isPremium (a real paid subscriber); used to hide/inert those surfaces.
-  const iosFreeUnlock = isCapacitorIOS();
   // ── Plaid reconnect state ─────────────────────────────────────
   // Phase D6: the legacy multi-bank token state was retired. Plaid items live in
   // Supabase plaid_items; Settings UI fetches via getUserItems(). The D1-E migration
@@ -13853,15 +13984,19 @@ export default function FlourishApp(){
     markAccountIfNew();
     // Phase D7: trial lifecycle — start fresh trials for brand-new users,
     // and auto-transition expired trials to "free".
-    // Tier 2: skip entirely on iOS — the app is free there, and a started/expired
-    // trial surfaces upgrade dead-ends Apple rejects (3.1.1 / 2.3.1).
-    if (!iosFreeUnlock) {
-      startTrialIfEligible();
-      expireTrialIfNeeded();
-    }
-    // Sync the legacy isPremium boolean with the new plan tier so UI badges
-    // (e.g. {freeMsgsLeft}/{FREE_LIMIT}) reflect grandfathered beta_founder users.
-    if (isPremiumOrFounder()) setIsPremium(true);
+    // The trial runs on EVERY platform now. A store app used to skip it because the app was free
+    // there and an expired trial surfaced upgrade dead-ends Apple rejects — but the answer to a
+    // dead-end is to hide the upgrade, not to hand everyone premium. Native gets the same 14 days
+    // and then the same free tier; what is hidden on native is the way to pay, not the truth.
+    startTrialIfEligible();
+    expireTrialIfNeeded();
+    // isPremium is DERIVED from the plan, never remembered. This used to only ever raise it, so a
+    // trial that ended while the device was offline left premium switched on for the whole session
+    // — expireTrialIfNeeded() moves the plan to free but cannot touch React state, and the profile
+    // read that would have corrected it never runs without a network. Derive both ways: the cached
+    // plan is what the server last said, and refreshPlanFromProfile overrides it the moment one
+    // arrives.
+    setIsPremium(isPremiumOrFounder() || isTrialActive());
   },[]);
   const [checkInBonus,setCheckInBonus]=useState(()=>saved?.checkInBonus||0);
   const [showCheckIn,setShowCheckIn]=useState(false);
@@ -13908,7 +14043,7 @@ export default function FlourishApp(){
       setPlan(cp);
       if (prof.trial_started_at) { try { localStorage.setItem("flourish_trial_started_at", prof.trial_started_at); } catch {} }
       if (prof.trial_ends_at)    { try { localStorage.setItem("flourish_trial_ends_at",    prof.trial_ends_at);    } catch {} }
-      setIsPremium(isCapacitorIOS() || cp === "premium" || cp === "beta_founder" || cp === "trial");
+      setIsPremium(cp === "premium" || cp === "beta_founder" || cp === "trial");
       return cp;
     } catch (e) {
       console.error("[profiles] plan reconcile failed:", e?.message || e);
@@ -13987,16 +14122,20 @@ export default function FlourishApp(){
     }
     return saverRef.current;
   };
-  // Apply a hydrated DB blob to React state (DB is canonical). Preserves iOS free-unlock;
-  // isPremium from the DB is UI cache only (real entitlement = future profiles table).
+  // Apply a hydrated DB blob to React state (DB is canonical). The plan is NOT taken from the blob:
+  // real entitlement comes from the profiles row, and the local plan cache is what the server last
+  // said. See the derivation below.
   const applyBlob = (blob) => {
     const c = (blob && blob.core) || {};
     if (c.appData !== undefined) setAppData(c.appData);
     setOnboarded(!!c.onboarded);
     setHousehold(c.household ?? null);
-    setIsPremium(isCapacitorIOS() || !!c.isPremium);
     setCheckInBonus(c.checkInBonus || 0);
     writeSideKeys(blob && blob.sideKeys);
+    // AFTER writeSideKeys, which restores flourish_plan: derive from the plan the blob just brought
+    // in, not the one this device happened to be holding. The blob's own isPremium flag is written
+    // by the client, so trusting it would let a stale device re-grant itself premium on restore.
+    setIsPremium(isPremiumOrFounder() || isTrialActive());
     // Sprint 7: reflect synced AI-disclosure choices so a returning / cross-device user isn't re-prompted.
     try {
       setAiDisclosureSeen(localStorage.getItem("flourish_ai_disclosure_seen") === "1");
@@ -14069,7 +14208,7 @@ export default function FlourishApp(){
     if (localUid && localUid !== user.id) {
       console.log("[persist] shared-device: clearing prior user's local data", { localUid, now: user.id });
       clearAllUserLocal();
-      setAppData(null); setOnboarded(false); setHousehold(null); setIsPremium(isCapacitorIOS()); setCheckInBonus(0);
+      setAppData(null); setOnboarded(false); setHousehold(null); setIsPremium(false); setCheckInBonus(0);
     }
     // Bug A: capture the local recency stamp BEFORE the network round-trip. The save effect stamps
     // savedAt on EVERY run, so reading it after the await sees a value written DURING the fetch —
@@ -14741,6 +14880,7 @@ export default function FlourishApp(){
   const legalShell={background:C.bg,minHeight:"100dvh",padding:"max(20px, env(safe-area-inset-top)) 16px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"};
   if(screen==="privacy")return <div style={legalShell}><PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="terms")return <div style={legalShell}><TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
+  if(screen==="delete-account")return <div style={legalShell}><DeleteAccount onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="kids")return <KidsMiniSite country={appData?.profile?.country}/>;
 
   // ── Auth gate ───────────────────────────────────────────────────
@@ -15096,7 +15236,7 @@ input,button,select,textarea { font-family:inherit; }
         {/* Sidebar footer */}
         <div style={{padding:"16px 12px",borderTop:`1px solid ${C.border}`}}>
           {/* Trial status in sidebar — Phase D7: only render for users on trial or post-trial */}
-          {!isPremium&&!iosFreeUnlock&&(trialActive||trialExpired)&&(
+          {!isPremium&&!isNativeApp()&&(trialActive||trialExpired)&&(
             <div onClick={()=>setShowPaywall(true)} style={{background:trialExpired?"#180800":trialDaysLeft<=2?C.orange+"18":C.purple+"18",border:`1px solid ${trialExpired?C.red+"44":trialDaysLeft<=2?C.orange+"44":C.purple+"33"}`,borderRadius:12,padding:"10px 14px",marginBottom:8,cursor:"pointer",transition:"all .18s"}}>
               <div style={{color:trialExpired?C.redBright:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>
                 {trialExpired?"Trial ended 🔒":trialDaysLeft===0?"Trial ends today ⚠️":`${trialDaysLeft} day${trialDaysLeft===1?"":"s"} left`}
@@ -15113,7 +15253,7 @@ input,button,select,textarea { font-family:inherit; }
               <div>
                 <div style={{color:C.cream,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{appData.profile?.name||"User"}</div>
                 {HOUSEHOLD_ENABLED&&household&&<div style={{color:C.green,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🏠 Household connected</div>}
-                {isPremium&&!iosFreeUnlock&&<div style={{color:C.goldBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ Flourish Plus</div>}
+                {isPremium&&<div style={{color:C.goldBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ Flourish Plus</div>}
               </div>
             </div>
           </div>}
@@ -15182,7 +15322,7 @@ input,button,select,textarea { font-family:inherit; }
           </div>
         )}
         {/* ── TRIAL BANNER ─── Phase D7: only render for users on an active trial ── */}
-        {!isPremium&&!iosFreeUnlock&&trialActive&&trialDaysLeft<=7&&(
+        {!isPremium&&!isNativeApp()&&trialActive&&trialDaysLeft<=7&&(
           <div style={{background:trialDaysLeft<=2?"#1A0800":`linear-gradient(90deg,${C.purple}22,${C.purpleDim})`,borderBottom:`1px solid ${trialDaysLeft<=2?C.orange+"55":C.purple+"44"}`,padding:"8px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
             <span style={{fontSize:13}}>{trialDaysLeft<=2?"⚠️":"✨"}</span>
             <span style={{color:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700,flex:1}}>
@@ -15193,7 +15333,7 @@ input,button,select,textarea { font-family:inherit; }
             </button>
           </div>
         )}
-        {!iosFreeUnlock&&trialExpired&&(
+        {!isNativeApp()&&trialExpired&&(
           <div style={{background:"#180800",borderBottom:`2px solid ${C.red}55`,padding:"10px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
             <span style={{fontSize:13}}>🔒</span>
             <span style={{color:C.redBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700,flex:1}}>Your free trial has ended</span>
