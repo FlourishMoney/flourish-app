@@ -1485,7 +1485,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
     // ── PAYWALL GATE (Phase 2) ───────────────────────────────────────────
     // Free tier: 3 simulations/day. Premium and beta_founder: unlimited.
     // Soft gate — show a clear message in the result card instead of an alert.
-    if (!isCapacitorIOS() && !canRunSimulation()) {
+    if (!canRunSimulation()) {
       setQuery(qText);
       setResult({
         cashImpact: "tight",
@@ -13809,7 +13809,7 @@ export default function FlourishApp(){
   const [tourStep,setTourStep]=useState(()=>{ try{return localStorage.getItem("flourish_tour_done")==="1"?null:0;}catch{return 0;} });
   const dismissTour=()=>{ try{localStorage.setItem("flourish_tour_done","1");}catch{} setTourStep(null); };
   const [household,setHousehold]=useState(()=>saved?.household||null);
-  const [isPremium,setIsPremium]=useState(()=>isCapacitorIOS()||saved?.isPremium||false);
+  const [isPremium,setIsPremium]=useState(()=>saved?.isPremium||false);
   const [showPaywall,setShowPaywall]=useState(false);
   // Billing (live 2026-10-26). null until the server says otherwise, which is what keeps every
   // surface hidden while BILLING_ENABLED is unset.
@@ -13818,7 +13818,6 @@ export default function FlourishApp(){
   const [billingNotice,setBillingNotice]=useState(null);
   // Tier 2: iOS Capacitor build is free — no paywall, no upgrade/trial/Plus/price UI.
   // Distinct from isPremium (a real paid subscriber); used to hide/inert those surfaces.
-  const iosFreeUnlock = isCapacitorIOS();
   // ── Plaid reconnect state ─────────────────────────────────────
   // Phase D6: the legacy multi-bank token state was retired. Plaid items live in
   // Supabase plaid_items; Settings UI fetches via getUserItems(). The D1-E migration
@@ -13855,12 +13854,12 @@ export default function FlourishApp(){
     markAccountIfNew();
     // Phase D7: trial lifecycle — start fresh trials for brand-new users,
     // and auto-transition expired trials to "free".
-    // Tier 2: skip entirely on iOS — the app is free there, and a started/expired
-    // trial surfaces upgrade dead-ends Apple rejects (3.1.1 / 2.3.1).
-    if (!iosFreeUnlock) {
-      startTrialIfEligible();
-      expireTrialIfNeeded();
-    }
+    // The trial runs on EVERY platform now. A store app used to skip it because the app was free
+    // there and an expired trial surfaced upgrade dead-ends Apple rejects — but the answer to a
+    // dead-end is to hide the upgrade, not to hand everyone premium. Native gets the same 14 days
+    // and then the same free tier; what is hidden on native is the way to pay, not the truth.
+    startTrialIfEligible();
+    expireTrialIfNeeded();
     // Sync the legacy isPremium boolean with the new plan tier so UI badges
     // (e.g. {freeMsgsLeft}/{FREE_LIMIT}) reflect grandfathered beta_founder users.
     if (isPremiumOrFounder()) setIsPremium(true);
@@ -13910,7 +13909,7 @@ export default function FlourishApp(){
       setPlan(cp);
       if (prof.trial_started_at) { try { localStorage.setItem("flourish_trial_started_at", prof.trial_started_at); } catch {} }
       if (prof.trial_ends_at)    { try { localStorage.setItem("flourish_trial_ends_at",    prof.trial_ends_at);    } catch {} }
-      setIsPremium(isCapacitorIOS() || cp === "premium" || cp === "beta_founder" || cp === "trial");
+      setIsPremium(cp === "premium" || cp === "beta_founder" || cp === "trial");
       return cp;
     } catch (e) {
       console.error("[profiles] plan reconcile failed:", e?.message || e);
@@ -13996,7 +13995,7 @@ export default function FlourishApp(){
     if (c.appData !== undefined) setAppData(c.appData);
     setOnboarded(!!c.onboarded);
     setHousehold(c.household ?? null);
-    setIsPremium(isCapacitorIOS() || !!c.isPremium);
+    setIsPremium(!!c.isPremium);
     setCheckInBonus(c.checkInBonus || 0);
     writeSideKeys(blob && blob.sideKeys);
     // Sprint 7: reflect synced AI-disclosure choices so a returning / cross-device user isn't re-prompted.
@@ -14071,7 +14070,7 @@ export default function FlourishApp(){
     if (localUid && localUid !== user.id) {
       console.log("[persist] shared-device: clearing prior user's local data", { localUid, now: user.id });
       clearAllUserLocal();
-      setAppData(null); setOnboarded(false); setHousehold(null); setIsPremium(isCapacitorIOS()); setCheckInBonus(0);
+      setAppData(null); setOnboarded(false); setHousehold(null); setIsPremium(false); setCheckInBonus(0);
     }
     // Bug A: capture the local recency stamp BEFORE the network round-trip. The save effect stamps
     // savedAt on EVERY run, so reading it after the await sees a value written DURING the fetch —
@@ -15098,7 +15097,7 @@ input,button,select,textarea { font-family:inherit; }
         {/* Sidebar footer */}
         <div style={{padding:"16px 12px",borderTop:`1px solid ${C.border}`}}>
           {/* Trial status in sidebar — Phase D7: only render for users on trial or post-trial */}
-          {!isPremium&&!iosFreeUnlock&&(trialActive||trialExpired)&&(
+          {!isPremium&&!isNativeApp()&&(trialActive||trialExpired)&&(
             <div onClick={()=>setShowPaywall(true)} style={{background:trialExpired?"#180800":trialDaysLeft<=2?C.orange+"18":C.purple+"18",border:`1px solid ${trialExpired?C.red+"44":trialDaysLeft<=2?C.orange+"44":C.purple+"33"}`,borderRadius:12,padding:"10px 14px",marginBottom:8,cursor:"pointer",transition:"all .18s"}}>
               <div style={{color:trialExpired?C.redBright:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>
                 {trialExpired?"Trial ended 🔒":trialDaysLeft===0?"Trial ends today ⚠️":`${trialDaysLeft} day${trialDaysLeft===1?"":"s"} left`}
@@ -15115,7 +15114,7 @@ input,button,select,textarea { font-family:inherit; }
               <div>
                 <div style={{color:C.cream,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{appData.profile?.name||"User"}</div>
                 {HOUSEHOLD_ENABLED&&household&&<div style={{color:C.green,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🏠 Household connected</div>}
-                {isPremium&&!iosFreeUnlock&&<div style={{color:C.goldBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ Flourish Plus</div>}
+                {isPremium&&<div style={{color:C.goldBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ Flourish Plus</div>}
               </div>
             </div>
           </div>}
@@ -15184,7 +15183,7 @@ input,button,select,textarea { font-family:inherit; }
           </div>
         )}
         {/* ── TRIAL BANNER ─── Phase D7: only render for users on an active trial ── */}
-        {!isPremium&&!iosFreeUnlock&&trialActive&&trialDaysLeft<=7&&(
+        {!isPremium&&!isNativeApp()&&trialActive&&trialDaysLeft<=7&&(
           <div style={{background:trialDaysLeft<=2?"#1A0800":`linear-gradient(90deg,${C.purple}22,${C.purpleDim})`,borderBottom:`1px solid ${trialDaysLeft<=2?C.orange+"55":C.purple+"44"}`,padding:"8px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
             <span style={{fontSize:13}}>{trialDaysLeft<=2?"⚠️":"✨"}</span>
             <span style={{color:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700,flex:1}}>
@@ -15195,7 +15194,7 @@ input,button,select,textarea { font-family:inherit; }
             </button>
           </div>
         )}
-        {!iosFreeUnlock&&trialExpired&&(
+        {!isNativeApp()&&trialExpired&&(
           <div style={{background:"#180800",borderBottom:`2px solid ${C.red}55`,padding:"10px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
             <span style={{fontSize:13}}>🔒</span>
             <span style={{color:C.redBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700,flex:1}}>Your free trial has ended</span>
