@@ -8,7 +8,12 @@ Financial math correctness is enforced by tests, not vibes. **`npm run test:math
 npm run test:math
 ```
 
-Runs three suites (pure ESM `src/lib/` modules, zero runtime deps — bare `node`, no install/build):
+Runs 72 suites. **`npm ci` first** — the gate is no longer dependency-free: suites now reach code that
+imports `@capacitor/*` (for example `forecastNaN` → `notificationPlanner` → `notifications`), and without
+`node_modules` the run dies with `ERR_MODULE_NOT_FOUND` in about eleven seconds — a failure that looks
+nothing like a failing test. `.github/workflows/math-lock.yml` installs first for exactly this reason.
+
+The three suites below are the original core; the rest are listed in `package.json`'s `test:math`:
 
 | Suite | File | Covers |
 |---|---|---|
