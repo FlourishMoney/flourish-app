@@ -22,7 +22,14 @@ material do not.
 |---|---|---|
 | id | `app.flourishmoney` | `com.flourishmoney.app` |
 | version | 1.0.0 | 1.0.0 (`versionName`) |
-| build | 1 (`CURRENT_PROJECT_VERSION`) | 1 (`versionCode`) |
+| build | 526891 (`CURRENT_PROJECT_VERSION`) | 2 (`versionCode`) |
+
+The iOS build number is not a small counter and must not be reset to one. App Store Connect
+already holds builds 1, 2 and 526890 against version 1.0 from July and August 2026, and it
+refuses a number it has seen before (error 90189, "Redundant Binary Upload"). Before bumping
+it, check what TestFlight already has rather than the last number in this repo — the two are
+not the same history. Android is unaffected: its `versionCode` is a separate sequence and
+Play has only ever had 1.
 
 The two ids differ, deliberately and confirmed: the App Store Connect record predates
 the Play draft. Do not "fix" one to match the other — changing a shipped id means a new
