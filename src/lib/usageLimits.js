@@ -219,11 +219,28 @@ export function getTrialStartedAt() {
   } catch { return null; }
 }
 
-export function getTrialDaysLeft() {
+// When the trial ends, by the same rule the server applies in _lib/planRules.js: an explicit
+// trial_ends_at if the profile has one, otherwise trial_started_at + 14 days. The explicit date is
+// what Decision P18 moves if billing is late — migration 0007 pushes every unexpired trial forward
+// — so ignoring it here would cap a cohort the SERVER is still treating as unlimited.
+function trialEndsAtMs() {
+  try {
+    const explicit = localStorage.getItem("flourish_trial_ends_at");
+    if (explicit) {
+      const t = new Date(explicit).getTime();
+      if (Number.isFinite(t)) return t;
+    }
+  } catch { /* fall through to the started_at rule */ }
   const start = getTrialStartedAt();
-  if (!start) return null;
-  const daysUsed = Math.floor((Date.now() - start.getTime()) / (1000 * 60 * 60 * 24));
-  return Math.max(0, TRIAL_DURATION_DAYS - daysUsed);
+  return start ? start.getTime() + TRIAL_DURATION_DAYS * 86400000 : null;
+}
+
+export function getTrialDaysLeft() {
+  const ends = trialEndsAtMs();
+  if (ends === null) return null;
+  const msLeft = ends - Date.now();
+  if (msLeft <= 0) return 0;
+  return Math.ceil(msLeft / (1000 * 60 * 60 * 24));
 }
 
 export function isTrialActive() {

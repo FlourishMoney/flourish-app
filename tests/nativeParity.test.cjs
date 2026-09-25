@@ -21,7 +21,10 @@ const path = require("path");
 const SRC = path.join(__dirname, "..", "src");
 const APP = fs.readFileSync(path.join(SRC, "App.jsx"), "utf8");
 const IOS = { Capacitor: { getPlatform: () => "ios" }, location: { protocol: "capacitor:" } };
-const ANDROID = { Capacitor: { getPlatform: () => "android" }, location: { protocol: "http:" } };
+// androidScheme defaults to https in Capacitor 8 and capacitor.config.json does not override it,
+// so on Android the URL-scheme fallback says "web" and detection rests entirely on the bridge.
+// Fixturing this as http: would have hidden a regression in exactly that fallback.
+const ANDROID = { Capacitor: { getPlatform: () => "android" }, location: { protocol: "https:" } };
 const WEB = { location: { protocol: "https:" } };
 
 const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
@@ -140,6 +143,48 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
   const cap = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "capacitor.config.json"), "utf8"));
   t.eq(cap.server, undefined, "7a capacitor.config.json has no server.url, so native loads its own dist");
   t.eq(cap.webDir, "dist", "7b …which is dist, bundled at build time");
+
+  // ── 8. the surfaces an adversarial review found still selling on native ──────────────────────
+  // PremiumGate renders on the Credit tab and on the coach screen for any free user. On main it was
+  // unreachable on iOS only because iOS handed everyone premium; removing that unlock exposed it.
+  {
+    const start = APP.indexOf("function PremiumGate(");
+    t.ok(start > 0, "8a PremiumGate is in App.jsx");
+    const gate = APP.slice(start, APP.indexOf("\n}", start));
+    t.ok(/\{isNativeApp\(\) \? \(/.test(gate), "8b it branches on the platform before it renders a pitch");
+    const native = gate.slice(gate.indexOf("{isNativeApp() ? ("), gate.indexOf(") : ("));
+    t.ok(!/Flourish Plus|Get Flourish|Start 14 days free|Cancel any time|onClick=\{onUpgrade\}/.test(native),
+      "8c the native branch has no Plus pitch, no trial offer and no upgrade button");
+    t.ok(/isn't part of the free tier/.test(native), "8d it states what the tier is instead");
+    const web = gate.slice(gate.indexOf(") : ("));
+    t.ok(/Flourish Plus includes:/.test(web) && /onClick=\{onUpgrade\}/.test(web),
+      "8e (control) the web branch keeps the pitch, so native is quiet by platform and not by deletion");
+  }
+  // A 429 from the coach carries the SERVER's copy, which sells Plus. The client's own gate cannot
+  // stop it: the server counts per user in the DB, the client per device in localStorage.
+  t.ok(/const limitMsg = isNativeApp\(\)/.test(APP),
+    "8f a 429 on native uses our own limit line, not whatever string the server sent");
+  t.ok(/: \(j\.message \|\| "You've hit today's Coach message limit/.test(APP),
+    "8g …while the web still shows the server's message");
+
+  // ── 9. the client's own clock agrees with the server's ───────────────────────────────────────
+  // Decision P18 extends live trials by moving trial_ends_at (migration 0007). The server honours
+  // that date; the client used to compute trial_started_at + 14 days and ignore it, so an extended
+  // cohort would have been capped on the device while the server served them as unlimited.
+  {
+    const limitsSrc = fs.readFileSync(path.join(SRC, "lib", "usageLimits.js"), "utf8");
+    t.ok(/localStorage\.getItem\("flourish_trial_ends_at"\)/.test(limitsSrc),
+      "9a the trial clock reads the explicit end date the server wrote");
+    t.ok(/function trialEndsAtMs\(\)/.test(limitsSrc), "9b …through one helper, as the server does");
+    t.ok(/setIsPremium\(isPremiumOrFounder\(\) \|\| isTrialActive\(\)\)/.test(APP),
+      "9c isPremium is DERIVED from the plan, so a trial that ends offline switches it off");
+    t.eq((APP.match(/setIsPremium\(isPremiumOrFounder\(\) \|\| isTrialActive\(\)\)/g) || []).length, 2,
+      "9d …at boot and on restore, the two places that used to only ever raise it");
+    t.ok(!/if \(isPremiumOrFounder\(\)\) setIsPremium\(true\)/.test(APP),
+      "9e the raise-only version is gone");
+    t.ok(!/setIsPremium\(!!c\.isPremium\)/.test(APP),
+      "9f and a client-written flag in the synced blob no longer grants premium");
+  }
 
   t.summary("nativeParity.test");
 })();

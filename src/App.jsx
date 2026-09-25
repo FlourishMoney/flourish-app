@@ -4548,7 +4548,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const safe        = _ss.safeAmount;
   const ssView      = safeToSpendView(_ss, {
     hasCashAccount: (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0,
-    hasIncome: (data.incomes||[]).some(i => Number(i && i.amount) > 0),
+    hasIncome: (data.incomes||[]).some(i => num(i && i.amount) > 0),   // num(), not Number(): "$2,600" is a valid amount
   }); // Truth-fix item 5: the ONE safe-to-spend presentation view-model (rows + headline reconcile)
   const dailyPace   = suggestedDailyView(ssView.headline, data.incomes, data.transactions, new Date()); // Consolidation 1: the ONE suggested daily pace (Today + Decisions read this)
   const hasCashAccount = (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0; // Sprint 1: gate safe-to-spend empty state
@@ -4874,7 +4874,10 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             ─────────────────────────────────────────────────────────────── */}
             {/* Afford widget: hidden if immediate overdraft (balance already negative-bound)
                 but shown with warning if only 7-day forecast overdraft */}
-            {!overdraftImmediate&&<div style={{marginTop:16,borderTop:`1px solid ${heroColor}18`,paddingTop:14}}
+            {/* "Can I afford this?" subtracts from the headline above. With no cash account there
+                IS no headline, and Number(null) is a finite 0 — so the card would answer every
+                question against a balance of zero it invented. Don't ask what can't be answered. */}
+            {!overdraftImmediate&&!ssView.needsSetup&&<div style={{marginTop:16,borderTop:`1px solid ${heroColor}18`,paddingTop:14}}
               onClick={e=>e.stopPropagation()}>
               {(()=>{
                 // R1: Uses pre-calculated nextPaydayDay — no ForecastEngine call per keystroke
@@ -10974,7 +10977,15 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
 
       if(res.status === 429){
         const j = await res.json().catch(()=>({}));
-        setMessages(prev=>[...prev, {role:"assistant", isSystem:true, content: j.message || "You've hit today's Coach message limit. It resets tomorrow."}]);
+        // The server's limit message sells Plus ("Upgrade to Plus for unlimited…"), which must not
+        // appear in a store app — and the client's own gate above cannot prevent this one, because
+        // the server counts per user in the DB while the client counts per device in localStorage,
+        // so a 429 can arrive while this device still believes it has messages left. Native writes
+        // its own line rather than printing whatever the server sent.
+        const limitMsg = isNativeApp()
+          ? `You've used this week's ${FREE_TIER_LIMITS.coachMessagesPerWeek} coach messages. They reset Monday.`
+          : (j.message || "You've hit today's Coach message limit. It resets tomorrow.");
+        setMessages(prev=>[...prev, {role:"assistant", isSystem:true, content: limitMsg}]);
         setLoading(false);
         return;
       }
@@ -11527,20 +11538,33 @@ function PremiumGate({feature,desc,onUpgrade}){
         <div style={{color:C.cream,fontWeight:900,fontSize:22,fontFamily:"'Playfair Display',serif",marginBottom:8}}>{feature}</div>
         <div style={{color:C.muted,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7,maxWidth:280}}>{desc}</div>
       </div>
-      <div style={{background:C.purpleDim,borderRadius:16,padding:"14px 20px",border:`1px solid ${C.purple}33`,maxWidth:280}}>
-        <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish Plus includes:</div>
-        <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
-          {["AI Coach with real data","Full credit coaching","Tax tips & benefits checker","Investment tracking","Weekly money meeting","Debt simulator"].map((f,i)=>(
-            <div key={i} style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"left",display:"flex",alignItems:"center",gap:7}}><Icon id="check" size={14} color={C.green} strokeWidth={2.0}/>{f}</div>
-          ))}
+      {/* On a store app there is nothing to buy, so the pitch below would be an upgrade offer with
+          no purchase behind it — and its button opens a paywall native never renders. Apple and
+          Google both forbid it. State what the tier includes and stop. */}
+      {isNativeApp() ? (
+        <div style={{background:"rgba(255,255,255,0.05)",borderRadius:16,padding:"14px 20px",border:`1px solid ${C.border}`,maxWidth:280}}>
+          <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7}}>
+            {feature} isn't part of the free tier. New accounts get 14 days of every feature, then the free tier.
+          </div>
         </div>
-      </div>
-      <button onClick={onUpgrade} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.purple}40`}}>
-        {getTrialStartedAt() ? "Get Flourish Plus →" : "Start 14 days free →"}
-      </button>
-      {/* Never offer a free trial to someone who has already had one — this gate also renders for
-          trial-EXPIRED users, directly under the "Your free trial has ended" banner. */}
-      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{getTrialStartedAt() ? "Cancel any time." : "14 days free. Cancel any time."}</div>
+      ) : (
+        <>
+        <div style={{background:C.purpleDim,borderRadius:16,padding:"14px 20px",border:`1px solid ${C.purple}33`,maxWidth:280}}>
+          <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish Plus includes:</div>
+          <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
+            {["AI Coach with real data","Full credit coaching","Tax tips & benefits checker","Investment tracking","Weekly money meeting","Debt simulator"].map((f,i)=>(
+              <div key={i} style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"left",display:"flex",alignItems:"center",gap:7}}><Icon id="check" size={14} color={C.green} strokeWidth={2.0}/>{f}</div>
+            ))}
+          </div>
+        </div>
+        <button onClick={onUpgrade} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.purple}40`}}>
+          {getTrialStartedAt() ? "Get Flourish Plus →" : "Start 14 days free →"}
+        </button>
+        {/* Never offer a free trial to someone who has already had one — this gate also renders for
+            trial-EXPIRED users, directly under the "Your free trial has ended" banner. */}
+        <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{getTrialStartedAt() ? "Cancel any time." : "14 days free. Cancel any time."}</div>
+        </>
+      )}
     </div>
   );
 }
@@ -11766,11 +11790,11 @@ function FirstVisitScreen({data, onDismiss}) {
   // returns no headline at all, so this screen cannot print a number made of nothing.
   const ssView = safeToSpendView(SafeSpendEngine.calculate(data), {
     hasCashAccount: (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0,
-    hasIncome: (data.incomes||[]).some(i => Number(i && i.amount) > 0),
+    hasIncome: (data.incomes||[]).some(i => num(i && i.amount) > 0),   // num(), not Number(): "$2,600" is a valid amount
   });
   // When the headline is negative the copy says "here's exactly what's already committed" and points
   // at the breakdown, so the breakdown is open from the start rather than behind a tap.
-  const breakdownOpen = showBreakdown || ssView.isShort;
+  const breakdownOpen = (showBreakdown || ssView.isShort) && !ssView.needsSetup;
   const incomeAmt = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMonthly(i.amount,i.freq),0); // kept only to gate the explanatory line
   const name = data.profile?.name || "there";
   // Bug fix: the breathing-room number is balance-driven (SafeSpendEngine reads account balances),
@@ -11828,15 +11852,16 @@ function FirstVisitScreen({data, onDismiss}) {
 
         {/* One-line explanation */}
         <div style={{color:C.mutedHi,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,marginBottom:32,maxWidth:280,margin:"0 auto 32px"}}>
-          {ssView.isShort
+          {ssView.isShort || ssView.needsSetup
             ? null
             : incomeAmt > 0
               ? "Bills paid. Buffer set. Everything above this number is yours — no guilt, no stress."
               : "Add your income in Settings to see your personalised safe-to-spend number."}
         </div>
 
-        {/* Breakdown — progressive disclosure */}
-        {breakdownOpen&&(
+        {/* Breakdown — progressive disclosure. Never when needsSetup: there are no rows and no
+            total, so the card would be a heading, nothing, and a labelled blank. */}
+        {breakdownOpen&&!ssView.needsSetup&&(
           <div style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:18,padding:"16px 20px",marginBottom:24,textAlign:"left"}}>
             <div style={{color:C.muted,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How this is calculated</div>
             {ssView.rows.map((r)=>{
@@ -11856,8 +11881,9 @@ function FirstVisitScreen({data, onDismiss}) {
           </div>
         )}
 
-        {/* Primary CTA */}
-        {!breakdownOpen?(
+        {/* Primary CTA. With nothing to explain there is no working to show, so the button that
+            opens it would do nothing — go straight to the dashboard instead. */}
+        {!breakdownOpen&&!ssView.needsSetup?(
           <button onClick={()=>setShowBreakdown(true)}
             style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
             How is this calculated? →
@@ -13956,9 +13982,13 @@ export default function FlourishApp(){
     // and then the same free tier; what is hidden on native is the way to pay, not the truth.
     startTrialIfEligible();
     expireTrialIfNeeded();
-    // Sync the legacy isPremium boolean with the new plan tier so UI badges
-    // (e.g. {freeMsgsLeft}/{FREE_LIMIT}) reflect grandfathered beta_founder users.
-    if (isPremiumOrFounder()) setIsPremium(true);
+    // isPremium is DERIVED from the plan, never remembered. This used to only ever raise it, so a
+    // trial that ended while the device was offline left premium switched on for the whole session
+    // — expireTrialIfNeeded() moves the plan to free but cannot touch React state, and the profile
+    // read that would have corrected it never runs without a network. Derive both ways: the cached
+    // plan is what the server last said, and refreshPlanFromProfile overrides it the moment one
+    // arrives.
+    setIsPremium(isPremiumOrFounder() || isTrialActive());
   },[]);
   const [checkInBonus,setCheckInBonus]=useState(()=>saved?.checkInBonus||0);
   const [showCheckIn,setShowCheckIn]=useState(false);
@@ -14084,16 +14114,20 @@ export default function FlourishApp(){
     }
     return saverRef.current;
   };
-  // Apply a hydrated DB blob to React state (DB is canonical). Preserves iOS free-unlock;
-  // isPremium from the DB is UI cache only (real entitlement = future profiles table).
+  // Apply a hydrated DB blob to React state (DB is canonical). The plan is NOT taken from the blob:
+  // real entitlement comes from the profiles row, and the local plan cache is what the server last
+  // said. See the derivation below.
   const applyBlob = (blob) => {
     const c = (blob && blob.core) || {};
     if (c.appData !== undefined) setAppData(c.appData);
     setOnboarded(!!c.onboarded);
     setHousehold(c.household ?? null);
-    setIsPremium(!!c.isPremium);
     setCheckInBonus(c.checkInBonus || 0);
     writeSideKeys(blob && blob.sideKeys);
+    // AFTER writeSideKeys, which restores flourish_plan: derive from the plan the blob just brought
+    // in, not the one this device happened to be holding. The blob's own isPremium flag is written
+    // by the client, so trusting it would let a stale device re-grant itself premium on restore.
+    setIsPremium(isPremiumOrFounder() || isTrialActive());
     // Sprint 7: reflect synced AI-disclosure choices so a returning / cross-device user isn't re-prompted.
     try {
       setAiDisclosureSeen(localStorage.getItem("flourish_ai_disclosure_seen") === "1");
