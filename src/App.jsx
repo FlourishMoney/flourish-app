@@ -5955,7 +5955,7 @@ function ManualBillForm({data, setAppData, onClose}){
     if (!name.trim() || !(amt > 0) || !setAppData) return;
     // Capture BEFORE the write: the contextual notification ask fires only on the FIRST manual bill.
     const firstManualBill = (!editId || editId === "new") && manualBills.length === 0
-      && isCapacitorIOS() && !(data.profile?.notifications?.permissionAsked);
+      && isNativeApp() && !(data.profile?.notifications?.permissionAsked);
     const shape = {
       name: name.trim(), amount: amt, dayOfMonth: dom, recurring, variable,
       origin: "manual",
@@ -12406,7 +12406,9 @@ function AuthScreen({ onAuth, onTryDemo }) {
   const [success, setSuccess] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0); // seconds until "Resend" re-enables
   const [checkEmailNote, setCheckEmailNote] = useState(""); // contextual line on the check-email screen
-  const [showAuth, setShowAuth] = useState(isCapacitorIOS()); // native iOS: skip the "coming soon" waitlist landing, boot straight into login/signup
+  // Both store apps boot straight into login/signup. The "coming soon" waitlist landing is a web
+  // page for people who cannot use the product yet; someone who has installed the app already can.
+  const [showAuth, setShowAuth] = useState(isNativeApp());
 
   // Phase E1: waitlist email capture (replaces public signup CTAs).
   const [waitlistEmail, setWaitlistEmail] = useState("");
@@ -12820,7 +12822,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
           <div style={{ width: "100%", maxWidth: 400, animation: "fadeUp .5s ease both" }}>
 
             <div style={{ textAlign: "center", marginBottom: 28 }}>
-              {!isCapacitorIOS() && <button onClick={() => setShowAuth(false)}
+              {!isNativeApp() && <button onClick={() => setShowAuth(false)}
                 style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, margin: "0 auto 16px", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
                 ← Back
               </button>}
@@ -12903,7 +12905,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
               )}
 
             </div>
-            {isCapacitorIOS() && onTryDemo && (
+            {isNativeApp() && onTryDemo && (
               /* App Store reviewers: enter with sample data — no account or beta code needed (iOS only). */
               <div style={{ textAlign: "center", marginTop: 22 }}>
                 <button onClick={() => onTryDemo(waitlistCountry)} style={{ background: "rgba(0,200,224,0.14)", border: "1px solid rgba(0,200,224,0.4)", color: "#00C8E0", borderRadius: 99, padding: "11px 22px", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>🧪 Try the demo — no account needed</button>
