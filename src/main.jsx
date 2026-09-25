@@ -1,6 +1,5 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App, { clearState } from './App.jsx'
 import { initErrorReporting, captureError } from './lib/errorReporting.js'
 
 // Sprint Z #10: env-gated error reporting. No-op until VITE_SENTRY_DSN is configured.
@@ -42,7 +41,7 @@ class ErrorBoundary extends React.Component {
           <div style={{fontSize:20,fontWeight:800,marginBottom:8}}>Something went wrong</div>
           <div style={{fontSize:14,color:"#6B7A6E",maxWidth:320,lineHeight:1.6,marginBottom:24}}>The app hit an unexpected error. A reload usually fixes it; if not, resetting clears local app data and starts fresh.</div>
           <button onClick={()=>window.location.reload()} style={{background:"linear-gradient(135deg,#00D68F,#00B37A)",color:"#021208",fontWeight:800,fontSize:15,padding:"14px 28px",borderRadius:14,border:"none",cursor:"pointer",marginBottom:12,minWidth:200}}>Reload</button>
-          <button onClick={()=>{ try{ clearState(); }catch{} window.location.reload(); }} style={{background:"none",color:"#6B7A6E",fontSize:13,padding:"8px",border:"none",cursor:"pointer",textDecoration:"underline"}}>Reset app data</button>
+          <button onClick={()=>{ try{ this.props.clearState?.(); }catch{} window.location.reload(); }} style={{background:"none",color:"#6B7A6E",fontSize:13,padding:"8px",border:"none",cursor:"pointer",textDecoration:"underline"}}>Reset app data</button>
         </div>
       );
     }
@@ -50,10 +49,45 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
-  </React.StrictMode>
-)
+// A plain screen for the case where the app never got as far as rendering. Deliberately styled
+// inline and dependent on nothing: if this is showing, the module graph is broken, so it cannot
+// import a theme, a component or a font and expect them to exist.
+function BootFailure() {
+  return (
+    <div style={{minHeight:"100dvh",background:"#050D09",color:"#EDE9E2",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"24px",fontFamily:"system-ui,-apple-system,sans-serif"}}>
+      <div style={{fontSize:40,marginBottom:12}}>🌱</div>
+      <div style={{fontSize:20,fontWeight:800,marginBottom:8}}>Something went wrong, please restart</div>
+      <div style={{fontSize:14,color:"#6B7A6E",maxWidth:320,lineHeight:1.6,marginBottom:24}}>Flourish could not start. Close the app completely and open it again. If it keeps happening, reinstalling will not lose anything — your data is on your account.</div>
+      <button onClick={()=>window.location.reload()} style={{background:"linear-gradient(135deg,#00D68F,#00B37A)",color:"#021208",fontWeight:800,fontSize:15,padding:"14px 28px",borderRadius:14,border:"none",cursor:"pointer",minWidth:200}}>Try again</button>
+    </div>
+  );
+}
+
+// App is imported at RUNTIME rather than as a static import, and that is the whole point.
+//
+// iOS 1.0.0 (526891) and Android 1.0.0 (2) shipped built without VITE_SUPABASE_URL, so the
+// createClient call at the top of App.jsx threw "supabaseUrl is required" while the module graph
+// was still being evaluated. With a static import, that exception happens BEFORE any line of this
+// file runs: no root is created, the ErrorBoundary below is never constructed, and the phone shows
+// a white screen with nothing to tap and nothing logged where anyone would look.
+//
+// A dynamic import moves that evaluation inside a promise this file can catch, which is the
+// difference between a white screen and a sentence. The ErrorBoundary still handles the other
+// case — a component that throws once rendering has begun.
+const root = ReactDOM.createRoot(document.getElementById('root'))
+
+import('./App.jsx')
+  .then(({ default: App, clearState }) => {
+    root.render(
+      <React.StrictMode>
+        <ErrorBoundary clearState={clearState}>
+          <App />
+        </ErrorBoundary>
+      </React.StrictMode>
+    )
+  })
+  .catch((error) => {
+    console.error("[boot] the app module failed to load:", error)
+    try { captureError(error, { area: "boot" }) } catch {}
+    root.render(<BootFailure />)
+  })

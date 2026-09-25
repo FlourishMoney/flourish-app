@@ -55,6 +55,11 @@ system-modules transform fails on it. `openjdk@21` is keg-only, so it does not d
 the 17 and 26 already installed:
 
 ```
+# The VITE_* variables must be present, or the app is a white screen. Netlify supplies them
+# for the web; a native build gets them from this shell, and Vite does not complain when they
+# are absent — it bakes `undefined` in and the build succeeds. Use build:native, never build.
+npm run build:native                         # refuses to build without them, and re-checks dist/
+
 export ANDROID_HOME=$HOME/Library/Android/sdk
 export JAVA_HOME=/opt/homebrew/opt/openjdk@21
 cd android && ./gradlew assembleDebug        # bundleRelease once signing is configured
