@@ -4553,7 +4553,10 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const _ss         = SafeSpendEngine.calculate(data);
   const bal         = _ss.balance;
   const safe        = _ss.safeAmount;
-  const ssView      = safeToSpendView(_ss); // Truth-fix item 5: the ONE safe-to-spend presentation view-model (rows + headline reconcile)
+  const ssView      = safeToSpendView(_ss, {
+    hasCashAccount: (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0,
+    hasIncome: (data.incomes||[]).some(i => Number(i && i.amount) > 0),
+  }); // Truth-fix item 5: the ONE safe-to-spend presentation view-model (rows + headline reconcile)
   const dailyPace   = suggestedDailyView(ssView.headline, data.incomes, data.transactions, new Date()); // Consolidation 1: the ONE suggested daily pace (Today + Decisions read this)
   const hasCashAccount = (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0; // Sprint 1: gate safe-to-spend empty state
   // overdraft: either bills in next 10 days exceed balance (immediate)
@@ -11705,7 +11708,12 @@ function FirstVisitScreen({data, onDismiss}) {
   // through the ONE presentation view-model, so First Visit and Today can never disagree. The old
   // breakdown stacked a monthly income calc (income − bills − 15%) against a balance-driven "available"
   // — three rows that summed to something else entirely, and a dead bufferAmt. All gone.
-  const ssView = safeToSpendView(SafeSpendEngine.calculate(data));
+  // Pass what the household has actually given us. With no bank and no pay entered the view
+  // returns no headline at all, so this screen cannot print a number made of nothing.
+  const ssView = safeToSpendView(SafeSpendEngine.calculate(data), {
+    hasCashAccount: (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0,
+    hasIncome: (data.incomes||[]).some(i => Number(i && i.amount) > 0),
+  });
   // When the headline is negative the copy says "here's exactly what's already committed" and points
   // at the breakdown, so the breakdown is open from the start rather than behind a tap.
   const breakdownOpen = showBreakdown || ssView.isShort;
@@ -11755,6 +11763,11 @@ function FirstVisitScreen({data, onDismiss}) {
             <div style={{marginTop:8}}>
               <div style={{fontSize:64,marginBottom:12}}>🌱</div>
               <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:C.greenBright,marginBottom:8}}>Flourish is ready</div>
+              {ssView.needsSetup&&(
+                <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",maxWidth:300,margin:"0 auto"}}>
+                  {ssView.setupPrompt}
+                </div>
+              )}
             </div>
           )}
         </div>

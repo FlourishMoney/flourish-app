@@ -24,7 +24,21 @@ import { formatMoney, formatNumber, roundBalanceDown } from "./format.js";
 // format.js (also behind formatBalance), so Today, Watch and the timelines cannot drift apart.
 const _ceil = (n) => Math.ceil(Number(n) || 0);
 
-export function safeToSpendView(ss) {
+/**
+ * `setup` describes whether the household has given us anything to compute FROM:
+ *   { hasCashAccount, hasIncome }
+ *
+ * A brand-new account has no bank linked and no pay entered, so the balance is $0 while a savings
+ * allocation may already exist from onboarding — and 0 − 506 is "-$506 safe until next payday" on
+ * the first screen somebody ever sees. That number is not a finding about their money, it is an
+ * artefact of an empty account, and it reads as an accusation.
+ *
+ * When both are missing the view refuses to produce a headline at all: `needsSetup` is true and
+ * every headline field is null, so no surface can print a figure by accident. Omitting `setup`
+ * keeps the old behaviour, which is what every existing caller and test relies on.
+ */
+export function safeToSpendView(ss, setup = null) {
+  const needsSetup = !!setup && !setup.hasCashAccount && !setup.hasIncome;
   const balanceDisplay = roundBalanceDown(ss && ss.balance);
 
   // Order + labels match the Today card exactly, so both screens render identical rows.
@@ -58,7 +72,21 @@ export function safeToSpendView(ss) {
     ...deductions.filter(d => d.display > 0).map(d => ({ key: d.key, kind: "deduction", label: d.label, sign: "−", display: d.display, value: d.value })),
   ];
 
+  if (needsSetup) {
+    return {
+      balanceDisplay, balanceText: formatMoney(balanceDisplay),
+      deductions, rows: [], totalDeductions,
+      // Nothing to show and nothing to misread: no headline, and never "short".
+      headline: null, isShort: false, shortfall: 0, headlineText: null, headlineNumber: null,
+      needsSetup: true,
+      setupPrompt: "Connect a bank, import a statement, or add your pay to see your safe-to-spend.",
+      totalLabel: "= Safe until next payday",
+    };
+  }
+
   return {
+    needsSetup: false,
+    setupPrompt: null,
     balanceDisplay,
     balanceText: formatMoney(balanceDisplay), // "$3,083" — the ONE displayed balance string (Today row, Watch starting balance)
     deductions,           // all four, with display values (whether zero or not)
