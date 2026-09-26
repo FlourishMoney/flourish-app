@@ -281,5 +281,48 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     t.ok(!/OPEN_SIGNUP/.test(auth), "the flag's value is never in the screen, only the server's answer");
   }
 
+  // ── 9. Entitlements are unchanged: the trial, from the server, and nothing else ───────────────
+  {
+    const REPO = path.join(__dirname, "..");
+    const OPEN = { OPEN_SIGNUP: "true", BETA_CODES: CODES };
+
+    // What the function asks Supabase to create. An entitlement smuggled in here would be invisible
+    // to the profile guard, because the service role is allowed to write anything.
+    for (const [label, code] of [["self-serve", ""], ["invited", "BETA100"]]) {
+      const r = await signup(OPEN, { code });
+      const u = r.state.created[0];
+      t.eq(Object.keys(u).sort(), ["email", "email_confirm", "password", "user_metadata"], `${label}: createUser is given exactly the account, nothing more`);
+      t.eq(Object.keys(u.user_metadata).sort(), ["beta", "signed_up", "signup_source"], `${label}: and metadata carries only the labels`);
+      const meta = JSON.stringify(u.user_metadata);
+      t.ok(!/plan|founder|trial|premium|pro\b|unlimited/i.test(meta), `${label}: no plan, founder flag or trial is set at signup`);
+    }
+    const beta = fs.readFileSync(path.join(REPO, "netlify", "functions", "beta.js"), "utf8");
+    // Comments stripped: the comments here EXPLAIN what the trigger grants, so a naive scan would
+    // match its own prose rather than the code it is guarding.
+    const stripComments = (js) => js.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    const signupBlock = stripComments(beta.slice(beta.indexOf('if (action === "signup")')));
+    t.ok(!/founder_flag|"premium"|'premium'|beta_founder|trial_ends_at|trial_started_at/.test(signupBlock),
+         "the signup path never writes a plan, a founder flag or a trial date");
+    t.ok(!/from\("profiles"\)/.test(signupBlock), "…and never touches the profiles table at all");
+
+    // The database is what grants the trial, identically for both cohorts: it never reads the code,
+    // the metadata or the source.
+    const mig = fs.readFileSync(path.join(REPO, "supabase", "migrations", "0007_trial_only_signups.sql"), "utf8");
+    const fn = mig.slice(mig.indexOf("create or replace function public.handle_new_user"), mig.indexOf("-- 3."));
+    t.ok(/values \(new\.id, 'trial', now\(\), now\(\) \+ interval '14 days', false\)/.test(fn),
+         "handle_new_user gives every new account the 14-day trial and founder_flag false");
+    t.ok(!/raw_user_meta|user_metadata|beta|code|source/i.test(fn),
+         "…and does not look at the code, the metadata or the source, so an open signup gets the same");
+
+    // The client writes no plan on the way through. The server profile stays the authority.
+    const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
+    const h = app.slice(app.indexOf("const handleSignup = async () => {"), app.indexOf("const handleLogin"));
+    t.ok(h.length > 200, "found handleSignup");
+    t.ok(!/setPlan\(|setIsPremium\(|localStorage|flourish_plan|flourish_trial/.test(h),
+         "handleSignup sets no plan, no premium flag and writes nothing to localStorage");
+    t.ok(/setMode\("login"\)/.test(h), "…it hands the person to the login screen, where the profile read decides the plan");
+    t.ok(/refreshPlanFromProfile/.test(app), "…and refreshPlanFromProfile remains the thing that sets the plan");
+  }
+
   t.summary("openSignup.test");
 })();
