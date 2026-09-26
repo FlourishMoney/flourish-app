@@ -5117,7 +5117,11 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
       )}
 
       {/* ── Top status bar ───────────────────────────────────────────────── */}
-      <div style={{...anim(0),display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:2}}>
+      {/* Demo's "Example · sample data" is longer than "Live · up to date". At 390px it no longer fits
+          beside the date and Reorder, and without wrapping all three broke into two-line fragments. In
+          demo the row may wrap, each label stays whole, and the date + Reorder group stays right-aligned
+          on its own line. Non-demo markup is unchanged. */}
+      <div style={{...anim(0),display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:2,...(data.demo?{flexWrap:"wrap",rowGap:8}:{})}}>
         <div onClick={()=>setShowTransparency(true)} style={{display:"flex",alignItems:"center",gap:7,background:"rgba(0,204,133,0.06)",border:"1px solid rgba(0,204,133,0.12)",borderRadius:99,padding:"4px 10px",cursor:"pointer"}} title="How is this calculated?">
           {(()=>{
             // Wording comes from demoStatus.js: in demo mode every figure is sample data, so this chip
@@ -5127,13 +5131,13 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             const tone = data.demo ? C.gold : C.green;
             return <>
               <div style={{width:6,height:6,borderRadius:"50%",background:tone,boxShadow:data.demo?"none":`0 0 8px ${C.green}`,animation:data.demo?"none":"pulse 2.8s ease-in-out infinite",flexShrink:0}}/>
-              <span style={{color:tone,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>{chip.label}</span>
+              <span style={{color:tone,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4,...(data.demo?{whiteSpace:"nowrap"}:{})}}>{chip.label}</span>
               {chip.detail&&<span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{chip.detail}</span>}
             </>;
           })()}
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2}}>{new Date().toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}</span>
+        <div style={{display:"flex",alignItems:"center",gap:8,...(data.demo?{marginLeft:"auto"}:{})}}>
+          <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2,...(data.demo?{whiteSpace:"nowrap"}:{})}}>{new Date().toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}</span>
           {setDashLayout&&<button onClick={()=>setShowCustomize(true)} style={{background:`linear-gradient(135deg,${C.green}22,${C.teal}11)`,border:`1px solid ${C.green}44`,borderRadius:99,padding:"0 14px",minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer",letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}>⠿ Reorder</button>}
         </div>
       </div>
