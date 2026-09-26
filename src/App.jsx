@@ -5277,7 +5277,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           {/* Dot grid texture */}
           <div style={{position:"absolute",inset:0,backgroundImage:`radial-gradient(circle,${heroColor}18 1px,transparent 1px)`,backgroundSize:"24px 24px",pointerEvents:"none",opacity:0.45,maskImage:"radial-gradient(ellipse 100% 80% at 50% 50%,black 40%,transparent 100%)"}}/>
           <div style={{position:"relative",padding:"24px 24px 20px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:"0.8em",flexWrap:"wrap"}}>
               <div style={{width:6,height:6,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 10px ${heroColor}`,animation:"pulse 2.5s ease-in-out infinite"}}/>
               <span style={{color:heroColorBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Safe to spend until next payday</span>
               <InfoDot term="Safe to spend" onOpen={setShowTerm}/>
@@ -5295,8 +5295,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             <button onClick={e=>{e.stopPropagation();setExplain("safeToSpend");}} aria-label="How Flourish got this number"
               style={{background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",
               fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:1,marginBottom:18,position:"relative",display:"inline-block"}}>
-              {ssView.isShort&&<span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,fontWeight:900}}>-</span>}<span style={{fontSize:24,color:heroColorBright,verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
-              <span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`,
+              {ssView.isShort&&<span style={{fontSize:76,color:heroColorBright,letterSpacing:"-0.053em",fontWeight:900}}>-</span>}<span style={{fontSize:24,color:heroColorBright,verticalAlign:"top",marginTop:"0.46em",display:"inline-block",fontWeight:700}}>$</span>
+              <span style={{fontSize:76,color:heroColorBright,letterSpacing:"-0.053em",textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`,
                 transition:"opacity .3s",opacity:isRefreshing?0.4:1}}>
                 <CountUp to={Math.abs(ssView.headline)} decimals={0} dur={300} sep/>
               </span>
@@ -15054,6 +15054,21 @@ export default function FlourishApp(){
   // "sample data" disclosure returns on next open and cannot be dismissed for good. Safe only
   // because Settings carries a second, permanent exit from demo.
   const [demoBannerHidden, setDemoBannerHidden] = useState(false);
+  // How much room the fixed top banners actually need. Measured rather than assumed: the demo
+  // banner wraps to two lines at 375px and grows again with the phone's text size, and at 88px it
+  // was covering the wordmark and the notification bell. A ResizeObserver keeps it honest.
+  const bannerRef = useRef(null);
+  const [bannerH, setBannerH] = useState(0);
+  useEffect(() => {
+    const el = bannerRef.current;
+    if (!el) { setBannerH(0); return; }
+    const measure = () => setBannerH(el.getBoundingClientRect().height || 0);
+    measure();
+    let ro;
+    try { ro = new ResizeObserver(measure); ro.observe(el); } catch {}
+    window.addEventListener("resize", measure);
+    return () => { try { ro && ro.disconnect(); } catch {} window.removeEventListener("resize", measure); };
+  });
   const dismissMigratedBanner = ()=>{ try { localStorage.setItem("flourish_db_migrated","seen"); } catch {} setShowMigratedBanner(false); };
   const getSaver = () => {
     if (!saverRef.current) {
@@ -16133,7 +16148,7 @@ input,button,select,textarea { font-family:inherit; }
 `
   // Sprint 2: shown only after repeated cloud-sync failures — data is safe on-device meanwhile.
   const syncBanner = syncError ? (
-    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.gold+"22",borderBottom:`1px solid ${C.gold}55`,color:C.goldBright,fontSize:13,fontWeight:600,textAlign:"center",padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.isDark?"rgba(5,8,16,0.94)":"rgba(244,241,235,0.94)",backdropFilter:"blur(12px)",boxShadow:`inset 0 0 0 999px ${C.gold}22`,borderBottom:`1px solid ${C.gold}55`,color:C.goldBright,fontSize:13,fontWeight:600,textAlign:"center",padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
       Saved on this device. Cloud sync is retrying…
     </div>
   ) : null;
@@ -16143,7 +16158,7 @@ input,button,select,textarea { font-family:inherit; }
   // Sprint Z #15: persistent demo-mode banner so it's always clear the data is sample data and how
   // to switch to real. (The "Try Demo" entry already lives on the onboarding bank-connect step.)
   const demoBanner = appData?.demo && !demoBannerHidden ? (
-    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.teal+"22",borderBottom:`1px solid ${C.teal}55`,color:C.tealBright,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 34px",fontFamily:"'Plus Jakarta Sans',sans-serif",flexWrap:"wrap"}}>
+    <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.isDark?"rgba(5,8,16,0.94)":"rgba(244,241,235,0.94)",backdropFilter:"blur(12px)",boxShadow:`inset 0 0 0 999px ${C.teal}22`,borderBottom:`1px solid ${C.teal}55`,color:C.tealBright,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 34px",fontFamily:"'Plus Jakarta Sans',sans-serif",flexWrap:"wrap"}}>
       🧪 Demo mode: you're viewing sample data.
       {/* Labelled as an exit, not a "connect your bank" prompt: in demo the numbers are sample data,
           so nagging to connect a bank misreads the context. This button is also the ONLY route out
@@ -16158,7 +16173,7 @@ input,button,select,textarea { font-family:inherit; }
   ) : null;
   // (5) one-time, dismissible — appears after a successful local→DB migration upload.
   const migratedBanner = showMigratedBanner ? (
-    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.green+"22",borderBottom:`1px solid ${C.green}55`,color:C.greenBright,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.isDark?"rgba(5,8,16,0.94)":"rgba(244,241,235,0.94)",backdropFilter:"blur(12px)",boxShadow:`inset 0 0 0 999px ${C.green}22`,borderBottom:`1px solid ${C.green}55`,color:C.greenBright,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
       ✓ Your data is now backed up to your Flourish account
       <button aria-label="Dismiss" onClick={dismissMigratedBanner} style={{background:"none",border:"none",color:C.greenBright,cursor:"pointer",fontWeight:800,fontSize:14,padding:"0 4px",lineHeight:1}}>✕</button>
     </div>
@@ -16167,7 +16182,7 @@ input,button,select,textarea { font-family:inherit; }
   if(isDesktop) return (
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      {syncBanner}{migratedBanner}{demoBanner}<ModalHost/>
+      {syncBanner}{migratedBanner}{demoBanner}<div aria-hidden="true" style={{height:bannerH,flexShrink:0}}/><ModalHost/>
 
       {/* ── DESKTOP SIDEBAR ─────────────────────────────────────────── */}
       <div style={{width:240,minHeight:"100dvh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:0,height:"100dvh",flexShrink:0}}>
@@ -16268,7 +16283,7 @@ input,button,select,textarea { font-family:inherit; }
   return(
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      {syncBanner}{migratedBanner}{demoBanner}<ModalHost/>
+      {syncBanner}{migratedBanner}{demoBanner}<div aria-hidden="true" style={{height:bannerH,flexShrink:0}}/><ModalHost/>
       {/* Ambient mesh background */}
       <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
         <div style={{position:"absolute",top:-220,left:-180,width:640,height:640,borderRadius:"50%",background:C.isDark?"radial-gradient(circle,rgba(0,204,133,0.055) 0%,transparent 68%)":"radial-gradient(circle,rgba(0,147,95,0.07) 0%,transparent 68%)",animation:"breathe 8s ease-in-out infinite"}}/>
@@ -16304,7 +16319,7 @@ input,button,select,textarea { font-family:inherit; }
             </button>
           </div>
         )}
-        <div style={{padding:"max(14px, env(safe-area-inset-top)) 20px 12px",background:C.isDark?"rgba(5,8,16,0.90)":"rgba(244,241,235,0.92)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",position:"sticky",top:0,zIndex:30,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 1px 0 rgba(255,255,255,0.025)"}}>
+        <div style={{padding:"max(14px, env(safe-area-inset-top)) 20px 12px",background:C.isDark?"rgba(5,8,16,0.90)":"rgba(244,241,235,0.92)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",position:"sticky",top:bannerH,zIndex:30,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 1px 0 rgba(255,255,255,0.025)"}}>
           <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",padding:0}}>
             <FlourishMark size={36}/>
             <span style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:20,color:C.cream,letterSpacing:-0.3}}>flourish</span>
