@@ -36,11 +36,15 @@ const NEGATIVE = new Set(["red", "redBright"]);
 
   // ── 1. The Today bento tile ──────────────────────────────────────────────────────────────────
   {
-    const line = lineWith('{label:"Net Worth",value:');
-    t.ok(line.length > 0, "1a the Net Worth tile is in App.jsx");
+    // Sentence case since the readability pass: "Net worth", not "Net Worth".
+    const line = lineWith('{label:"Net worth",value:');
+    t.ok(line.length > 0, "1a the Net worth tile is in App.jsx");
     const colour = colourOf(line, "netWorth");
     const vm = /value:`([^`]+)`/.exec(line);
     t.ok(colour && vm, "1b …with a colour and a value this test can run");
+    // Fail the assertion above rather than throwing here: a renamed label should read as one clear
+    // failure, not a stack trace that stops the whole gate at suite 61.
+    if (!colour || !vm) { t.summary("netWorthSign"); return; }
     const value = new Function("netWorth", "formatCompactMoney", `return \`${vm[1]}\`;`);
 
     t.eq(value(-14500, formatCompactMoney), "-$14.5k", "1c NEGATIVE: the figure carries the minus");

@@ -5502,27 +5502,32 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         </div>
         )}
 
-        {/* ── BENTO ROW 1: 3 mini stat tiles inside 2-col span ──────────── */}
+        {/* Three tiles across 375px gave each about 110px — an icon, a label, a number and a
+            caption stacked in a column narrower than this sentence. They are three separate
+            places to go, not three supporting figures, so they are now three full-width rows:
+            label and caption on the left, the number on the right, each a 44px target. */}
         {isVisible('bento')&&(
-        <div style={{...anim(110),display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+        <div style={{...anim(110),display:"flex",flexDirection:"column",gap:SPACE.sm}}>
           {[
-            {label:"Due Soon",value:`$${(soonTotal||0).toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
-            {label:totalDebt>0?"Total Debt":"Debt Free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
+            {label:"Due soon",value:`$${(soonTotal||0).toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
+            {label:totalDebt>0?"Total debt":"Debt free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
             // Week-2 defect b: colour follows the sign. A negative net worth is not a teal figure —
             // teal is this app's gain colour, and "-$14.5k" painted as a gain is the opposite of the fact.
-            {label:"Net Worth",value:`${netWorth>=0?"+":""}${formatCompactMoney(netWorth)}`,sub:"total net worth",color:netWorth<0?C.red:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
+            {label:"Net worth",value:`${netWorth>=0?"+":""}${formatCompactMoney(netWorth)}`,sub:"total net worth",color:netWorth<0?C.red:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
           ].map((s,i)=>(
-            <div key={i} onClick={()=>{if(s.tab&&setGoalsTab)setGoalsTab(s.tab);setScreen(s.screen);}} style={{...glass(s.color),borderRadius:20,padding:"14px 12px 12px",textAlign:"center",position:"relative",overflow:"hidden",cursor:"pointer",transition:"transform .2s, box-shadow .2s"}}
-              onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 12px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)`;}}
-              onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04)";}}>
-              <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at 50% 0%,${s.color}14 0%,transparent 70%)`,pointerEvents:"none"}}/>
-              <div style={{position:"relative"}}>
-                <div style={{marginBottom:5,display:"flex",justifyContent:"center"}}><Icon id={s.icon} size={16} color={s.color} strokeWidth={1.5}/></div>
-                <div style={{...label11(C.muted),marginBottom:2}}>{s.label}</div>
-                <div style={{fontSize:18,fontWeight:800,color:s.color,fontFamily:"'Playfair Display',Georgia,serif",lineHeight:1.1,marginTop:2}}>{s.value}</div>
-                <div style={{color:C.muted,fontSize:13,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{s.sub}</div>
-              </div>
-            </div>
+            <button key={i} onClick={()=>{if(s.tab&&setGoalsTab)setGoalsTab(s.tab);setScreen(s.screen);}}
+              style={{...glass(s.color),borderRadius:16,padding:LAYOUT.cardPadding,minHeight:LAYOUT.minTap,width:"100%",
+                border:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left",
+                display:"flex",alignItems:"center",justifyContent:"space-between",gap:SPACE.md}}>
+              <span style={{display:"flex",alignItems:"center",gap:SPACE.md,minWidth:0}}>
+                <Icon id={s.icon} size={20} color={s.color} strokeWidth={1.5}/>
+                <span style={{minWidth:0}}>
+                  <span style={{display:"block",color:C.cream,...TYPE.headline,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{s.label}</span>
+                  <span style={{display:"block",color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{s.sub}</span>
+                </span>
+              </span>
+              <span style={{...TYPE.title2,color:s.color,fontFamily:"'Playfair Display',Georgia,serif",whiteSpace:"nowrap"}}>{s.value}</span>
+            </button>
           ))}
         </div>
         )}
@@ -6369,6 +6374,48 @@ function BillManager({data, setAppData, onClose}){
 // Now: title on its own line, at most one line of subtitle under it, and controls on their own
 // full-width row below via `controls`. The back arrow only appears when `onBack` is given, so a
 // root tab does not show an arrow that goes nowhere.
+// ONE MAIN NUMBER, AND THE REST A TAP AWAY.
+//
+// A 2x2 grid of figures has no lead. Four boxes of the same size, the same weight and the same
+// colour ask to be read in no particular order, so the eye lands nowhere and the card reads as
+// clutter — which is most of what "there is so much on them" means.
+//
+// This gives a card one number to lead with and puts its supporting figures behind a row that
+// says what they are. Nothing is removed and nothing is recalculated: the same values, one tap
+// further away, which is where a figure belongs when it explains rather than informs.
+function SupportingFigures({ label = "How this is worked out", rows = [], defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const visible = rows.filter(r => r && r.label);
+  if (!visible.length) return null;
+  return (
+    <div style={{marginTop:SPACE.md}}>
+      <button onClick={()=>setOpen(o=>!o)} aria-expanded={open}
+        style={{width:"100%",background:"none",border:"none",padding:`${SPACE.md}px 0`,minHeight:LAYOUT.minTap,
+          display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",
+          fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.mutedHi,...TYPE.subhead}}>
+        <span>{label}</span>
+        <span aria-hidden="true" style={{color:C.muted,fontSize:13,transform:open?"rotate(180deg)":"none",transition:"transform .2s"}}>⌄</span>
+      </button>
+      {open&&(
+        <div style={{display:"flex",flexDirection:"column",gap:SPACE.sm,paddingBottom:SPACE.sm}}>
+          {visible.map(r=>(
+            <div key={r.label} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:SPACE.md,minHeight:r.onEdit?LAYOUT.minTap:0}}>
+              <span style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.label}</span>
+              {r.onEdit
+                ? <button onClick={r.onEdit} aria-label={`Edit ${r.label}`}
+                    style={{background:"none",border:"none",cursor:"pointer",padding:`${SPACE.sm}px 0`,minHeight:LAYOUT.minTap,
+                      color:C.greenBright,...TYPE.footnote,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:6}}>
+                    {r.value}<span aria-hidden="true" style={{opacity:0.75}}>✎</span>{r.tag}
+                  </button>
+                : <span style={{color:C.cream,...TYPE.footnote,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.value}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // A disclaimer is a footnote, not a card.
 //
 // Boxing it, tinting it and giving it an ℹ️ puts it at the same rank as the numbers it qualifies —
@@ -6701,27 +6748,14 @@ function PlanAhead({data, setAppData, setScreen}){
       const _inc0 = (data.incomes||[])[0];
       const _fPay = perDepositAmount(_inc0) != null || (_inc0 && _inc0.isVariable) ? monthlyIncomeBasis(_inc0, data, new Date()) : null;
       return (
-        <div style={{background:C.isDark?"rgba(255,255,255,0.03)":C.surface,borderRadius:14,padding:"12px 16px",border:`1px solid ${C.border}`}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-            {[
-              ["Starting balance", _fbalText],
-              ["Est. daily spend", `$${(_favg||0).toFixed(0)}/day`],
-              ["Pay frequency", frequencyLabel(_ffreq)],
-              [`Est. ${payWord(data.profile?.country)}`, _fPay!=null ? formatMoney(_fPay) : "Not set"],
-            ].map(([lbl,val])=>{
-              // "Est. daily spend" is the household's to change: tap it to set their own figure.
-              const editable = lbl==="Est. daily spend" && !!setAppData;
-              const cell = (
-                <>
-                  <div style={{color:C.muted,fontSize:13,marginBottom:2}}>{lbl}{editable&&<span style={{opacity:0.7,marginLeft:4}}>✎</span>}</div>
-                  <div style={{color:C.cream,fontSize:13,fontWeight:700}}>{val}{editable&&_fSpendEdited&&<EditedTag/>}</div>
-                </>
-              );
-              return editable
-                ? <button key={lbl} onClick={()=>setShowDailySpend(true)} aria-label="Edit estimated daily spend" style={{background:C.card,borderRadius:10,padding:"7px 10px",border:`1px solid ${_fSpendEdited?C.teal+"55":C.border}`,textAlign:"left",cursor:"pointer",fontFamily:"inherit"}}>{cell}</button>
-                : <div key={lbl} style={{background:C.card,borderRadius:10,padding:"7px 10px",border:`1px solid ${C.border}`}}>{cell}</div>;
-            })}
-          </div>
+        <div style={{background:C.isDark?"rgba(255,255,255,0.03)":C.surface,borderRadius:16,padding:LAYOUT.cardPadding,border:`1px solid ${C.border}`}}>
+          <div style={{color:C.muted,...TYPE.subhead,fontWeight:400,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Starting balance</div>
+          <div style={{color:C.cream,...TYPE.largeTitle,fontFamily:"'Playfair Display',serif",marginTop:SPACE.xs}}>{_fbalText}</div>
+          <SupportingFigures label="What the forecast is built from" rows={[
+            {label:"Est. daily spend", value:`$${(_favg||0).toFixed(0)}/day`, onEdit:setAppData?()=>setShowDailySpend(true):null, tag:_fSpendEdited?<EditedTag/>:null},
+            {label:"Pay frequency", value:frequencyLabel(_ffreq)},
+            {label:`Est. ${payWord(data.profile?.country)}`, value:_fPay!=null ? formatMoney(_fPay) : "Not set"},
+          ]}/>
         </div>
       );
     })()}
@@ -14077,25 +14111,20 @@ function BudgetScreen({data, setAppData, setScreen}) {
         ctaColor={editMode ? C.green : C.purple}
       />
 
-      {/* Money math strip */}
-      <div style={{ background: C.card, borderRadius: 18, padding: "14px 16px", border: `1px solid ${C.border}` }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          {[
-            ["Take-home", `$${Math.round(netMo).toLocaleString()}/mo`, C.green, "💵"],
-            ["Fixed bills & debt", `${formatMoney(-Math.round(fixedMo))}/mo`, C.red, "🏠"],
-            ["Savings target", `${formatMoney(-Math.round(savingsMo))}/mo`, C.teal, "💰"],
-            ...(goalsMo > 0 ? [["Goal savings", `${formatMoney(-Math.round(goalsMo))}/mo`, C.purple, "🎯"]] : []),
-            ["Available to spend", `$${Math.round(discret).toLocaleString()}/mo`, C.greenBright, "✅"],
-          ].map(([label, val, color, emoji]) => (
-            <div key={label} style={{ background: C.cardAlt, borderRadius: 12, padding: "10px 12px", border: `1px solid ${C.border}` }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
-                <span style={{ fontSize:13 }}>{emoji}</span>
-                <span style={{ color: C.mutedHi, fontSize:15, fontWeight: 600, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{label}</span>
-              </div>
-              <div style={{ color, fontWeight: 800, fontSize: 14, fontFamily: "'Playfair Display',serif" }}>{val}</div>
-            </div>
-          ))}
+      {/* The one number this card exists to give: what is left to spend. The four figures that
+          produce it are the working, and working belongs behind a tap — as a 2x2 grid of five
+          equal boxes it had no lead at all, and the answer was just one tile among the inputs. */}
+      <div style={{ background: C.card, borderRadius: 18, padding: LAYOUT.cardPadding, border: `1px solid ${C.border}` }}>
+        <div style={{ color: C.muted, ...TYPE.subhead, fontWeight: 400, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Available to spend</div>
+        <div style={{ color: C.greenBright, ...TYPE.largeTitle, fontFamily: "'Playfair Display',serif", marginTop: SPACE.xs }}>
+          {`$${Math.round(discret).toLocaleString()}`}<span style={{ ...TYPE.title2, color: C.muted, fontWeight: 600 }}>/mo</span>
         </div>
+        <SupportingFigures label="How that is worked out" rows={[
+          { label: "Take-home", value: `$${Math.round(netMo).toLocaleString()}/mo` },
+          { label: "Fixed bills & debt", value: `${formatMoney(-Math.round(fixedMo))}/mo` },
+          { label: "Savings target", value: `${formatMoney(-Math.round(savingsMo))}/mo` },
+          ...(goalsMo > 0 ? [{ label: "Goal savings", value: `${formatMoney(-Math.round(goalsMo))}/mo` }] : []),
+        ]}/>
       </div>
 
       {/* ── EDIT MODE ───────────────────────────────────────────────── */}
