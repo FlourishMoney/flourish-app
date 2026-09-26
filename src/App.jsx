@@ -5496,7 +5496,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               </div>
             </div>
             {overdraft&&<div style={{marginTop:12,padding:"10px 14px",background:C.red+"18",borderRadius:14,border:`1px solid ${C.red}33`,color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-              <strong style={{color:C.redBright}}>Overdraft risk</strong>: bills exceed your balance. Hold non-essential spending.
+              <strong style={{color:C.redBright}}>Heads up</strong>: your bills come to more than your balance before your next deposit.{setScreen&&<button onClick={e=>{e.stopPropagation();setScreen("plan");}} style={{display:"block",marginTop:SPACE.sm,background:"none",border:"none",padding:`${SPACE.sm}px 0`,minHeight:LAYOUT.minTap,color:C.redBright,...TYPE.footnote,fontWeight:700,fontFamily:"inherit",cursor:"pointer",textAlign:"left"}}>See what's coming →</button>}
             </div>}
           </div>
         </div>
@@ -6760,8 +6760,9 @@ function PlanAhead({data, setAppData, setScreen}){
       );
     })()}
     {willGoNeg&&<div style={{background:C.redDim,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.red}55`}}>
-      <div style={{color:C.redBright,fontWeight:800,marginBottom:4}}>Projected Overdraft</div>
-      <div style={{color:C.cream,fontSize:13,lineHeight:1.5}}>Balance hits <strong style={{color:C.red}}>{formatBalance(minBalance)}</strong> before your next deposit. Reduce spending now.</div>
+      <div style={{color:C.redBright,...TYPE.headline,fontWeight:800,marginBottom:SPACE.xs}}>Projected overdraft</div>
+      <div style={{color:C.cream,...TYPE.callout,lineHeight:1.5}}>Heads up: your balance could dip to <strong style={{color:C.red}}>{formatBalance(minBalance)}</strong> before your next deposit.</div>
+      <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.sm}}>The day-by-day list below shows which day, and what lands on it.</div>
     </div>}
     {/* Bills summary — BillManager is the single bill entry point */}
     <Card style={{display:"flex",justifyContent:"space-between",alignItems:"center",border:`1px solid ${C.teal}33`,background:`linear-gradient(135deg,rgba(0,200,224,0.05) 0%,${C.card} 100%)`}}>
@@ -6810,8 +6811,8 @@ function PlanAhead({data, setAppData, setScreen}){
                 </div>
               </div>
               <Bar v={Math.max(0,day.balance)} max={barMax} color={neg?C.red:low?C.gold:C.green} h={4}/>
-              {neg&&<div style={{marginTop:8,color:C.redBright,fontSize:13,fontWeight:600}}>⚠️ Projected overdraft: NSF fees $45 to $48. Move money now.</div>}
-              {low&&!neg&&<div style={{marginTop:6,color:C.goldBright,fontSize:13}}>⚠ Getting low. Hold non-essential spending.</div>}
+              {neg&&<div style={{marginTop:8,color:C.redBright,fontSize:13,fontWeight:600}}>Heads up: an overdraft here usually costs $45 to $48 in NSF fees. Tap the day to see what lands on it.</div>}
+              {low&&!neg&&<div style={{marginTop:6,color:C.goldBright,fontSize:13}}>Heads up: this day runs close to empty.</div>}
             </div>
             {isDrilled&&(
               <div style={{borderTop:`1px solid ${C.border}`,padding:"12px 18px 14px",background:"rgba(0,0,0,0.2)"}}>
