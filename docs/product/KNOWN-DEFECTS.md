@@ -766,3 +766,152 @@ with it; no change to them is needed.
 **What happens** The component carries the same tappable deposit and bill rows and edit sheet as
 Today and Watch, but no screen renders it, so those rows are unreachable. Either render it or
 delete it.
+
+---
+
+## 32. The signup endpoint has no rate limit and does not verify the email address
+
+**FIXED on the open-signup branch.** A self-serve signup is now created unconfirmed and must open
+Supabase's confirmation email (sent through the project's SMTP) before its token is accepted;
+`getUserFromRequest` refuses an unconfirmed user, so every function is covered. The rate limit is
+below. Kept here for the record.
+
+**Rating: MEDIUM while signup is invite-only, HIGH the day OPEN_SIGNUP is turned on.** Found while
+building the open door (item 5 of the open-signup work). Reported, not fixed, deliberately: the guards
+that exist were in scope to preserve, not to redesign.
+
+**Where** `netlify/functions/beta.js`, the `signup` action.
+
+**What happens** There is no per-IP limit, no CAPTCHA and no proof-of-work on signup, and the account
+is created with `email_confirm: true`, so any syntactically valid address works, including one nobody
+owns. Today an invite code is the brake. With the door open, one script can create unlimited real,
+immediately usable accounts from one machine.
+
+Each of those accounts is a 14-day trial, and `planRules.js` treats an unexpired trial as
+**unlimited**, so the only per-account brake on coach spend is `CHAT_DAILY_CEILING` (50 a day). The
+only cross-account brake is the per-IP coach cap (100 a day), which a mobile network, a VPN or a
+handful of hosts sidesteps.
+
+**Fix (suggested, not built)** A per-IP signup cap in Netlify Blobs, the same shape as
+`coach_ip_usage`; or require a real email round trip (`email_confirm: false` plus a confirmation
+link) before the account can call `/api/coach`.
+
+---
+
+## 33b. Signup rate limit
+
+**FIXED on the open-signup branch.** 5 attempts per IP per hour and 3 per email per day, counted in
+Netlify Blobs (`netlify/functions/_lib/signupLimit.js`), covering both signup and the confirmation
+resend, failing closed when the store is unreachable. Recorded here because defect 32 named it.
+
+---
+
+## 33. A statement upload costs many chat messages but is metered as one
+
+**Rating: MEDIUM.** Same review.
+
+**Where** `src/App.jsx` (the statement parser prompt, sent to `/api/coach`) against
+`netlify/functions/coach.js`.
+
+**What happens** Statement import goes through `/api/coach`, so it is authenticated, fails closed and
+counts against the same ceilings. But it sends a whole statement, so one upload can cost a large
+multiple of a chat message in tokens while costing exactly 1 against the 50-a-day ceiling. A stranger
+with an account can burn the Anthropic budget far faster by uploading documents than by chatting, and
+the ceiling will not notice.
+
+**Fix (suggested, not built)** Weight the counter by the size of what is sent rather than counting
+requests: about one message per 10 KB of body, so a full-size upload (the body cap is 100 KB) costs
+10 of the 50 daily messages instead of 1, and an ordinary chat turn still costs 1.
+
+---
+
+## 34. A linked bank keeps billing after the trial is abandoned
+
+**Rating: MEDIUM (cost, not correctness).** Same review.
+
+**Where** Plaid Items created through `netlify/functions/plaid.js` (`create_link_token` is
+auth-required, so an account is needed first).
+
+**What happens** Plaid bills per Item per month for as long as the access token exists.
+`docs/ops/UNIT-ECONOMICS-SUMMARY.md` puts that at 0.30 USD per connected account per month plus a
+0.10 USD allowance, at 2.5 connected accounts for a typical linking user: about **0.85 USD per linked
+user per month**. `/item/remove` is called on unlink and on account deletion, and on no other path, so
+a trial that links a bank, never converts and never deletes its account keeps costing that every month
+indefinitely. Open signup multiplies the number of such accounts.
+
+**Fix (suggested, not built)** A scheduled sweep that removes Items for accounts whose trial ended
+without converting and which have not opened the app in N days.
+
+---
+
+## 35. The Android app cannot reach coach, plaid or billing: their CORS lists omit its origin
+
+**FIXED on the open-signup branch.** All five functions now share one allow-list
+(`netlify/functions/_lib/cors.js`), which includes the Android shell origin. Kept here for the record.
+
+**Rating was: HIGH for Android, which has not shipped yet.** Found by the review round on the
+open-signup work, which fixed the signup half of it.
+
+**Where** `ALLOWED_ORIGINS` in `netlify/functions/coach.js`, `plaid.js` and `billing.js`.
+
+**What happens** Capacitor 8 defaults `androidScheme` to `https` and `capacitor.config.json` does not
+override it, so the Android shell serves from `https://localhost` and its requests carry
+`Origin: https://localhost`. Every function's allow-list names `capacitor://localhost` (iOS) and not
+that, so each falls back to the production origin and the browser refuses the response. The same gap
+made `API_BASE` resolve to `""` on Android, which sent every call to the WebView's own server; that
+half is fixed on this branch, and `beta.js` now allows the Android origin.
+
+Nothing has been noticed because Android has never been released: versionCode 4 was built and never
+uploaded.
+
+**Fix (suggested, not built)** Add `"https://localhost"` to the three remaining allow-lists, and test
+one call per function from a real Android build before the first Play upload.
+
+
+---
+
+## 36. Signup answers email_exists, and an unconfirmed address is squatted forever
+
+**Rating: MEDIUM.** Found by the review round on the open-signup PR. Reported, not fixed: closing it
+properly changes what a person is told when they have simply forgotten they have an account, which is
+a product decision rather than a patch.
+
+**Where** `netlify/functions/beta.js`, the `signup` action.
+
+**What happens** Once the door is open, anyone can POST an address with no code and learn from
+`email_exists` whether it has an account. Worse, a self-serve signup for `victim@example.com` creates
+an unconfirmed account that is never purged, so the real owner is later told the address is already
+registered and cannot take it.
+
+**Fix (suggested, not built)** Answer the same way whether or not the address exists ("check your
+email"), and delete unconfirmed accounts after a day or two so a squat expires.
+
+---
+
+## 37. Rate-limit buckets are fixed windows, and their keys are never expired
+
+**Rating: LOW.** Same review.
+
+**Where** `netlify/functions/_lib/signupLimit.js`.
+
+**What happens** The hour and day buckets are calendar-aligned, so 5 attempts at 10:59 and 5 more at
+11:00 are 10 in one second. The keys are also written to Netlify Blobs and never deleted, so the store
+grows by one small entry per IP-hour and per inbox-day forever. Neither matters at this scale, and a
+sliding window costs more than the abuse it would prevent here.
+
+**Fix (suggested, not built)** A sliding window, and a scheduled sweep of keys older than two days.
+
+---
+
+## 38. An unconfirmed account's trial clock is already running
+
+**Rating: LOW.** Same review.
+
+**Where** `supabase/migrations/0007_trial_only_signups.sql`, `handle_new_user`.
+
+**What happens** The trigger sets `trial_started_at` and `trial_ends_at` when the auth user is created,
+which for a self-serve signup is before the address is confirmed. Someone who confirms three days
+later has three days less trial.
+
+**Fix (suggested, not built)** Start the trial when the address is confirmed rather than when the row
+is created.

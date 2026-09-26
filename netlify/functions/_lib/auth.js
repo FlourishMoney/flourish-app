@@ -33,6 +33,15 @@ function extractToken(event) {
 // Verifies the JWT and returns { user_id, error }
 // On success: { user_id: "uuid-string", error: null }
 // On failure: { user_id: null, error: "reason" }
+//
+// AN UNCONFIRMED ADDRESS IS NOT AN ACCOUNT. Open signup creates the user before anyone has proved
+// they own the address (that is what the confirmation email is for), so until email_confirmed_at is
+// set this returns no user and every function that calls this answers 401. Enforcing it here rather
+// than in each function means coach, plaid, billing and meeting are all covered by one rule, and it
+// holds whatever the project's "Confirm email" dashboard setting happens to say.
+//
+// Nobody who exists today is affected: every account so far was admin-created with email_confirm
+// true, and coded signups still are, so they all carry a confirmation timestamp.
 async function getUserFromRequest(event) {
   const token = extractToken(event);
   if (!token) return { user_id: null, error: "missing Authorization header" };
@@ -44,11 +53,43 @@ async function getUserFromRequest(event) {
       if (error) console.error("[auth] getUser failed:", error.message);
       return { user_id: null, error: "invalid or expired token" };
     }
+    if (!isEmailConfirmed(data.user)) {
+      return { user_id: null, error: "email not confirmed" };
+    }
     return { user_id: data.user.id, error: null };
   } catch (err) {
     console.error("[auth] getUser threw:", err.message);
     return { user_id: null, error: "authentication error" };
   }
+}
+
+// Has this address been proved? GoTrue sets email_confirmed_at, and older rows may carry
+// confirmed_at instead, so both count. A user object without either is unconfirmed.
+function isEmailConfirmed(user) {
+  return !!(user && (user.email_confirmed_at || user.confirmed_at));
+}
+
+// The PUBLIC client, built with the publishable (anon) key rather than the secret one.
+//
+// It exists for exactly one job: asking Supabase to send its own "Confirm your signup" email through
+// the project's SMTP. That is auth.resend({ type: "signup" }), a public endpoint, and it is the
+// mechanism the platform documents for "this user exists but has not confirmed yet". The service key
+// is not the right credential for it, and admin.generateLink() is the wrong tool — it hands back a
+// link for an application to email itself, which would mean owning a second template and a second
+// sending path when the project already has one configured.
+//
+// Throws when SUPABASE_ANON_KEY is unset, so a missing variable is loud at the call site and the
+// signup that depends on it fails rather than silently creating an account no email can reach.
+let _public = null;
+function getPublicClient() {
+  if (_public) return _public;
+  const url = (process.env.SUPABASE_URL || "").trim();
+  const key = (process.env.SUPABASE_ANON_KEY || "").trim();
+  if (!url || !key) {
+    throw new Error("SUPABASE_URL or SUPABASE_ANON_KEY env var is missing");
+  }
+  _public = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+  return _public;
 }
 
 // Sprint Q (v1 policy): plan limits are CODE-READY but OFF for v1 (free, no IAP). Flip via the
@@ -122,4 +163,6 @@ module.exports = {
   getUserPlan,
   ENFORCE_PLAN_LIMITS,
   unauthorized,
+  isEmailConfirmed,
+  getPublicClient,
 };

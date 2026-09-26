@@ -11,14 +11,43 @@
  *   SUPABASE_SECRET_KEY  — your Supabase service_role secret key (NOT the anon key)
  *   RESEND_API_KEY       — OPTIONAL (Production only). Sends the waitlist confirmation email. When it
  *                          is unset, the signup still succeeds and no email is sent (previews, local).
- *   BETA_CODES           — REQUIRED. Comma-separated list of valid beta/access codes. If unset, the
- *                          function fails CLOSED (every code is rejected). There is deliberately no
- *                          hardcoded fallback — a missing config must never mean "accept known codes".
+ *   BETA_CODES           — REQUIRED while signup is invite-only. Comma-separated list of valid
+ *                          beta/access codes. If unset, the function fails CLOSED (every code is
+ *                          rejected). There is deliberately no hardcoded fallback — a missing config
+ *                          must never mean "accept known codes".
+ *   SUPABASE_ANON_KEY    — REQUIRED once OPEN_SIGNUP is on. The publishable key, used only to ask
+ *                          Supabase to send its own confirmation email through the project's SMTP.
+ *   OPEN_SIGNUP          — OPTIONAL. "true" opens signup to anyone, with no code. Anything else,
+ *                          including unset, keeps signup invite-only exactly as it is today. Read
+ *                          server-side only; its value never reaches the client bundle. See
+ *                          _lib/signupGate.js.
  */
 
 "use strict";
 
-const { getAdminClient } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
+const { getAdminClient, getPublicClient } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
+const { openSignupEnabled, decideSignup } = require("./_lib/signupGate");
+const { checkSignupLimit, recordEmailSent } = require("./_lib/signupLimit");
+const { getStore } = require("@netlify/blobs");
+
+// The client's IP, from Netlify's trusted header, exactly as coach.js reads it.
+function clientIp(event) {
+  const h = event.headers || {};
+  const ip = (h["x-nf-client-connection-ip"] || h["x-forwarded-for"] || "").split(",")[0].trim();
+  return ip || null;
+}
+
+// The signup rate-limit store, or null when Blobs is unavailable — which checkSignupLimit treats as
+// a refusal, because an abuse control that opens during an outage is not a control.
+function signupLimitStore() {
+  try { return getStore("signup_attempts"); }
+  catch (e) { console.error("[signup] blobs store unavailable:", e.message); return null; }
+}
+
+// One gate for every endpoint that creates an account, sends mail, or lets someone guess a code.
+async function rateLimit(event, email) {
+  return checkSignupLimit({ store: signupLimitStore(), ip: clientIp(event), email });
+}
 
 const BETA_CAP = 30;
 
@@ -43,24 +72,7 @@ function validateBetaCode(code) {
   return codes.includes(String(code || "").trim().toUpperCase());
 }
 
-// Phase D2: origin-aware CORS — locks to known origins, falls back to production.
-const ALLOWED_ORIGINS = new Set([
-  "https://flourishmoney.app",
-  "capacitor://localhost", // iOS app WKWebView origin — see coach.js for why. Without it, beta-code signup fails on device.
-  "http://localhost:5173",
-  "http://localhost:8888",
-]);
-
-function corsHeadersFor(event) {
-  const origin = event.headers?.origin || event.headers?.Origin || "";
-  const allowed = ALLOWED_ORIGINS.has(origin) ? origin : "https://flourishmoney.app";
-  return {
-    "Access-Control-Allow-Origin":  allowed,
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Content-Type":                 "application/json",
-  };
-}
+const { corsHeadersFor } = require("./_lib/cors");
 
 async function getUserCount(supabaseUrl, secretKey) {
   const res = await fetch(`${supabaseUrl}/auth/v1/admin/users?page=1&per_page=1`, {
@@ -121,6 +133,39 @@ async function waitlistRowExists(supabaseUrl, secretKey, email) {
   }
 }
 
+// Where the confirmation link lands. A real page on the site, so it works for someone who signed up
+// on the web AND for someone who signed up in a store app and opens the mail on the same phone: the
+// page tells them to go back to the app, which is the only instruction that is true for both.
+// Supabase will only redirect to a URL on its own allow-list, so this exact address has to be added
+// to the project's Redirect URLs.
+const CONFIRM_REDIRECT = "https://flourishmoney.app/confirmed";
+
+// Ask Supabase to send its "Confirm your signup" email through the project's SMTP. Returns true when
+// Supabase accepted it. Never throws: a signup that has already created the account must not be
+// reported as failed because the mail could not be handed over, and the person can press Resend.
+async function sendConfirmation(email, event) {
+  try {
+    const pub = getPublicClient();
+    const { error } = await pub.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: CONFIRM_REDIRECT },
+    });
+    if (error) {
+      console.error("[beta:signup] confirmation send refused:", error.message);
+      return false;
+    }
+    // Only a mail that actually went out fills the address's daily bucket, so a stranger's failed
+    // attempts can never spend someone else's allowance.
+    await recordEmailSent({ store: signupLimitStore(), email });
+    return true;
+  } catch (e) {
+    // A missing SUPABASE_ANON_KEY lands here. Loud in the log, and the caller decides what to say.
+    console.error("[beta:signup] confirmation send failed:", e.message);
+    return false;
+  }
+}
+
 exports.handler = async (event) => {
   // Phase D2: per-request CORS (origin-aware). Inner references can keep using CORS.
   const CORS = corsHeadersFor(event);
@@ -130,6 +175,22 @@ exports.handler = async (event) => {
   }
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: "Method not allowed" }) };
+  }
+
+  let action = "count";
+  let body = {};
+  try {
+    body = JSON.parse(event.body || "{}");
+    action = body.action || "count";
+  } catch {}
+
+  // Is the door open? Answered BEFORE the Supabase guard below, because it needs neither variable and
+  // a preview or local build without them would otherwise 500 and leave the screen invite-only while
+  // OPEN_SIGNUP said otherwise. The ONE thing the client is told about the flag: the store apps bundle
+  // the web code at build time, so a shipped binary cannot know what Amanda set in Netlify afterwards.
+  // Read-only, no Supabase call, no secret, exactly one boolean.
+  if (action === "signup_status") {
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ openSignup: openSignupEnabled() }) };
   }
 
   const supabaseUrl = (process.env.SUPABASE_URL || "").trim();
@@ -142,17 +203,35 @@ exports.handler = async (event) => {
     };
   }
 
-  let action = "count";
-  let body = {};
-  try {
-    body = JSON.parse(event.body || "{}");
-    action = body.action || "count";
-  } catch {}
-
   // Sprint Z #5: beta/promo-code validation lives server-side — codes never ship in the client bundle.
   // Valid codes come ONLY from BETA_CODES; unset env var → validateBetaCode returns false (fail closed).
   if (action === "validate") {
+    // Metered too. It answers yes or no to a guessed code as fast as it can be asked, which is the
+    // same brute force the signup path limits; without this, that limit only moved the attack here.
+    // No address is involved, so only the IP bucket applies.
+    const vLimit = await rateLimit(event, "");
+    if (!vLimit.allowed) {
+      return { statusCode: 429, headers: CORS, body: JSON.stringify({ error: "rate_limited", message: vLimit.message }) };
+    }
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: validateBetaCode(body.code) }) };
+  }
+
+  // Send the confirmation email again. The person asked for it, typically because the first one has
+  // not arrived. Deliberately says nothing about whether the address exists or is already confirmed:
+  // this endpoint is public, so a different answer for each case would make it an account oracle.
+  // Supabase rate-limits its own resend endpoint; the per-IP and per-email limits below cover ours.
+  if (action === "resend_confirmation") {
+    const addr = String(body.email || "").trim().toLowerCase();
+    if (!addr || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) {
+      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "invalid_email" }) };
+    }
+    const limit = await rateLimit(event, addr);
+    if (!limit.allowed) {
+      console.error(`[signup] resend refused: ${limit.reason}`);
+      return { statusCode: 429, headers: CORS, body: JSON.stringify({ error: "rate_limited", message: limit.message }) };
+    }
+    await sendConfirmation(addr, event);
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
   }
 
   // Phase E1: waitlist email capture (replaces public signup CTAs).
@@ -268,8 +347,9 @@ exports.handler = async (event) => {
 
   // Sprint Z3 #1: server-side signup — the ONLY signup path once public sign-ups are disabled in
   // Supabase. Validates the beta code, ATOMICALLY reserves a seat (closes the count→insert TOCTOU via
-  // reserve_beta_seat's advisory lock), then admin-creates the user. email_confirm:true (option b) —
-  // beta accounts are admin-provisioned + confirmed; no transactional email provider needed (App Review note).
+  // reserve_beta_seat's advisory lock), then admin-creates the user. A CODED signup is created
+  // confirmed, as it always has been: Amanda handed that person the code. A SELF-SERVE signup is
+  // created unconfirmed and must open the email first.
   if (action === "signup") {
     const email = String(body.email || "").trim().toLowerCase();
     const password = body.password;
@@ -281,30 +361,76 @@ exports.handler = async (event) => {
     if (!password || typeof password !== "string" || password.length < 8) {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "weak_password" }) };
     }
-    if (!validateBetaCode(code)) {
-      return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "invalid_code" }) };
+    // Counted before an account is created or an email is sent, and after the cheap checks above, so
+    // a typo in the address does not burn an attempt. A refused code still counts: guessing codes is
+    // one of the things this limits.
+    const limit = await rateLimit(event, email);
+    if (!limit.allowed) {
+      console.error(`[signup] refused: ${limit.reason}`);
+      return { statusCode: 429, headers: CORS, body: JSON.stringify({ error: "rate_limited", message: limit.message }) };
+    }
+
+    // Invite-only unless OPEN_SIGNUP is exactly "true". With the flag unset this is byte for byte
+    // today's answer: no code, or a code that is not configured, is invalid_code.
+    const open = openSignupEnabled();
+    let gate = decideSignup({ code, open, isValidCode: validateBetaCode });
+    if (!gate.allow) {
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: gate.error }) };
     }
 
     let admin;
     try { admin = getAdminClient(); }
     catch (e) { console.error("[beta:signup] admin client unavailable:", e.message); return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_misconfig" }) }; }
 
-    // Atomic seat reservation (advisory-locked count+insert in Postgres).
-    let seat;
-    try {
-      const { data, error } = await admin.rpc("reserve_beta_seat", { p_email: email, p_cap: BETA_CAP });
-      if (error) throw error;
-      seat = data; // 'ok' | 'cap_reached' | 'email_exists'
-    } catch (e) {
-      console.error("[beta:signup] reserve_beta_seat failed:", e.message);
-      return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: "reserve_failed", detail: (e.message || "").slice(0, 200) }) };
+    // CHECKED BEFORE THE ACCOUNT EXISTS. A self-serve account is unusable until its address is
+    // confirmed, so creating one we cannot possibly email would leave a person holding an account
+    // that can never be opened and no way to tell. A missing SUPABASE_ANON_KEY is a misconfiguration,
+    // and it is answered as one, before anything is written.
+    if (!gate.usedCode) {
+      try { getPublicClient(); }
+      catch (e) {
+        console.error("[beta:signup] cannot send confirmations:", e.message);
+        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_misconfig" }) };
+      }
     }
-    if (seat === "cap_reached")  return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "cap_reached" }) };
-    if (seat === "email_exists") return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "email_exists" }) };
 
-    // seat === 'ok' → seat reserved. Create the auth user; on ANY failure, RELEASE the seat so the cap
-    // stays accurate (best-effort — if the release itself fails the seat orphans; log loudly for manual SQL).
+    // THE CAP IS THE INVITED COHORT'S CAP, so only a coded signup reserves a seat against it.
+    //
+    // beta_signups is what BETA_CAP counts. If a self-serve signup took a seat, the first 30 strangers
+    // would fill the beta and lock out the people actually holding codes — and then, once full, every
+    // open signup would answer cap_reached, which is exactly the shut door this work removes. So an
+    // open signup skips the reservation entirely: it is never refused for a full cap, and it never
+    // consumes one. A duplicate email is still caught, one step later and just as atomically, by
+    // Supabase's own unique constraint in createUser (the email_exists branch below).
+    let seat = null;
+    if (gate.usedCode) {
+      try {
+        const { data, error } = await admin.rpc("reserve_beta_seat", { p_email: email, p_cap: BETA_CAP });
+        if (error) throw error;
+        seat = data; // 'ok' | 'cap_reached' | 'email_exists'
+      } catch (e) {
+        console.error("[beta:signup] reserve_beta_seat failed:", e.message);
+        return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: "reserve_failed", detail: (e.message || "").slice(0, 200) }) };
+      }
+      // A FULL CAP MUST NOT REFUSE SOMEONE WHOSE ONLY MISTAKE WAS TYPING A CODE. beta_signups was
+      // backfilled from every existing auth user (migration 0005), so it can already be at 30. With the
+      // door open, refusing here would mean "Beta is full, join the waitlist" for a code holder while
+      // the same person, having cleared the field, is admitted instantly. So once the door is open a
+      // full cap simply makes this a self-serve signup: they get in, and they do not take a seat.
+      if (seat === "cap_reached") {
+        if (!open) return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "cap_reached" }) };
+        console.log("[beta:signup] cap full and the door is open: admitting as self_serve");
+        gate = { allow: true, source: "self_serve", usedCode: false };
+        seat = null;
+      }
+      if (seat === "email_exists") return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "email_exists" }) };
+    }
+
+    // A coded signup now holds a seat. Create the auth user; on ANY failure, RELEASE it so the cap
+    // stays accurate (best-effort — if the release itself fails the seat orphans; log loudly for manual
+    // SQL). A self-serve signup reserved nothing, so there is nothing to release.
     const releaseSeat = async (why) => {
+      if (!gate.usedCode) return; // a self-serve signup reserved nothing
       try {
         const { error: delErr } = await admin.from("beta_signups").delete().eq("email", email);
         if (delErr) console.error(`[beta:signup] ORPHAN SEAT (${why}) — seat-release FAILED for ${email}; manual cleanup: delete from public.beta_signups where email='${email}';`, delErr.message);
@@ -317,8 +443,17 @@ exports.handler = async (event) => {
       const { error: createErr } = await admin.auth.admin.createUser({
         email,
         password,
-        email_confirm: true,
-        user_metadata: { beta: true, signed_up: new Date().toISOString() },
+        // A CODED signup is confirmed on creation, exactly as it has always been: Amanda handed that
+        // person the code, so the address is already known to her. A SELF-SERVE signup is created
+        // UNCONFIRMED, because nobody has yet shown they own the address — they prove it by opening
+        // the email. Until they do, _lib/auth.js refuses their token, so the account cannot call
+        // /api/coach or anything else.
+        email_confirm: gate.usedCode,
+        // `beta` says whether a code was used, so it stops being true of everyone the day the door
+        // opens; `signup_source` is the same word the response and the log carry. Neither grants
+        // anything: handle_new_user (migration 0007) gives every new account the 14-day trial and
+        // founder_flag false, and nothing anywhere reads these fields.
+        user_metadata: { beta: gate.usedCode, signup_source: gate.source, signed_up: new Date().toISOString() },
       });
       if (createErr) {
         await releaseSeat("createUser error");
@@ -335,7 +470,21 @@ exports.handler = async (event) => {
       return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "create_threw", detail: (e.message || "").slice(0, 200) }) };
     }
 
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
+    // signup_completed. There is no analytics pipeline yet (no events table, no Plausible, no GA), so
+    // the funnel's record of this is the function log plus the `source` the client is handed back.
+    // The cohort is the whole point of the field: `invited` is someone who was given a code,
+    // `self_serve` is a stranger who found the app. No email and no identifier is logged.
+    console.log(`[beta:signup] signup_completed source=${gate.source}`);
+
+    // A self-serve account is unusable until the address is confirmed, so the email is the last step
+    // of the signup rather than an afterthought. If Supabase would not take it the account still
+    // exists and still needs confirming, so the answer says so and the screen offers Resend.
+    if (!gate.usedCode) {
+      const sent = await sendConfirmation(email, event);
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, source: gate.source, needsConfirmation: true, sent }) };
+    }
+
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, source: gate.source }) };
   }
 
   try {
