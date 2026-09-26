@@ -723,3 +723,46 @@ are unaffected. Requires deliberate tampering for a small prize.
 
 **Fix (suggested, not built)** Use the server's clock, taken from a response header, for the trial
 comparison.
+
+---
+
+## 29. An expected item is not replaced when the real money arrives
+
+**Rating: LOW.** Found in the review round on the forecast-edits branch.
+
+**Where** `src/lib/forecastEdits.js`, `expectedOccurrences`.
+
+**What happens** Income and bill projections give way to the real deposit or payment when it lands
+(`arrivedDeposit`, `billArrived`). Items added with "Add expected money in or out" have no such
+check, because a name the household typed ("Tax refund") does not reliably match what the bank
+shows. A refund that arrives early is counted twice until its date passes. The sheet says so: "Once
+the money has moved, delete or edit this item."
+
+**Fix (suggested, not built)** Offer "Did this arrive?" on an expected item when a deposit or charge
+within 10% of its amount lands within a week of its date.
+
+---
+
+## 30. Forecast corrections are shared only by a household that shares one login
+
+**Rating: LOW (a limit, not a regression).**
+
+**Where** `appData.forecastEdits`, `appData.depositDecisions`, `appData.depositRules`.
+
+**What happens** The corrections are household data in `appData`, synced and exported with incomes
+and bills, so everyone on the household's login sees the same forecast. There is no separate
+partner login yet (`HOUSEHOLD_ENABLED` is false and `user_data` is one row per user), so a partner
+on their own account would not see them. When shared household data lands, these three keys move
+with it; no change to them is needed.
+
+---
+
+## 31. The Financial Timeline is not rendered anywhere
+
+**Rating: LOW.**
+
+**Where** `src/App.jsx`, `FinancialTimeline`.
+
+**What happens** The component carries the same tappable deposit and bill rows and edit sheet as
+Today and Watch, but no screen renders it, so those rows are unreachable. Either render it or
+delete it.

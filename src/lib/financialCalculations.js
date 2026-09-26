@@ -25,6 +25,7 @@
 
 // ── Input coercion helpers (internal) ────────────────────────────────────────
 import { effectiveCategory } from "./categoryOverrides.js";
+import { monthlyIncomeBasis, correctionsOf } from "./forecastEdits.js";
 
 function _num(v, fallback = 0) {
   const n = typeof v === "number" ? v : parseFloat(v);
@@ -1064,7 +1065,8 @@ export const FinancialCalcEngine = {
   cashFlow(data, catOverrides = {}, currentDate = new Date()) {
     // num(), not parseFloat: `parseFloat("$1,200") > 0` is NaN > 0 === false, which silently dropped
     // a perfectly valid income from the monthly-income total.
-    const incomes = (data.incomes || []).filter(i => num(i.amount) > 0);
+    // A "My pay varies" income may carry only the household's expected amount.
+    const incomes = (data.incomes || []).filter(i => num(i.amount) > 0 || (i.isVariable && num(i.expectedAmount) > 0));
     const bills   = data.bills || [];
     const accounts = data.accounts || [];
     // Resolution order lives in categoryOverrides.js: this transaction's own override, then a
@@ -1086,7 +1088,9 @@ export const FinancialCalcEngine = {
       return d.getFullYear() === currentDate.getFullYear() && d.getMonth() === currentDate.getMonth();
     });
     // No invented income fallback — 0 when none entered (ratio calcs guard >0).
-    const monthlyIncome = incomes.reduce((s,i) => s + toMonthly(i.amount, i.freq), 0);
+    // The going per-deposit rate (forecastEdits.monthlyIncomeBasis): the entered amount, unless the
+    // household changed it from a date on, stopped it, or said the pay varies (then its low end).
+    const monthlyIncome = incomes.reduce((s,i) => s + toMonthly(monthlyIncomeBasis(i, data, currentDate), i.freq), 0);
     const monthlyBills  = bills.reduce((s,b) => s + billMonthlyAmount(b), 0);
     // Discretionary: excludes non-spend flows, bill categories (already in monthlyBills), CC payments.
     const monthlySpend  = txns.filter(t => {
@@ -1126,7 +1130,14 @@ export const FinancialCalcEngine = {
 
   /** Average daily spend from transaction history. Uses raw t.cat (never respected overrides) and
    *  derives its window from the txn dates themselves — already pure, no params threaded. */
+  // The daily spend every projection uses: the household's own figure when they set one on Watch,
+  // otherwise Flourish's estimate below.
   avgDailySpend(data) {
+    const override = correctionsOf(data).dailySpend;
+    return override != null ? override : FinancialCalcEngine.avgDailySpendEstimate(data);
+  },
+
+  avgDailySpendEstimate(data) {
     const txns = (data.transactions || []).filter(t =>
       t.amount > 0 &&
       !t.pending &&

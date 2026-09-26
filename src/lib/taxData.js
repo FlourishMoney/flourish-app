@@ -80,7 +80,7 @@ export const TAX_DATA = {
     // own copy of the numbers, which is how they went a benefit year stale.
     CCB: {
       benefitYear:     "2026-07/2027-06",
-      yearLabel:       "2026\u201327",        // for display: "2026–27"
+      yearLabel:       "2026 to 2027",       // for display: the July-to-June benefit year, in words (no dash)
       basedOnTaxYear:  2025,                 // AFNI year the CRA uses for this benefit year
       maxUnder6:       8157,                 // $/year, per child under 6
       max6to17:        6883,                 // $/year, per child aged 6 to 17

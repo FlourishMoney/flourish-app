@@ -154,7 +154,8 @@ const { create } = require("./_runner.cjs");
     t.ok(!/formatMoney\((?:ev|day)\.income(?:\|\|0)?\)\}? ?deposit/.test(app), "no forecast row prints a summed \"+$X deposit\" any more");
     t.eq((app.match(/depositLines\((?:ev|day)\)\.map\(/g) || []).length, 4,
          "Time Machine row, Financial Timeline row and drill-down, and Watch row all render depositLines()");
-    t.eq((app.match(/deposits: (?:ev\.isPayday \? )?depositLines\((?:ev|day)\)/g) || []).length, 2,
+    // (A day with ANY money in, not only payday: an expected item the household added is named too.)
+    t.eq((app.match(/deposits: (?:ev\.income>0 \? )?depositLines\((?:ev|day)\)/g) || []).length, 2,
          "both cash-flow drill-downs (Time Machine and Watch) pass the named lines to forecastWalk");
     t.ok(/income: f\.income, deposits: f\.deposits/.test(app), "the Watch list keeps the engine's deposits on each day");
   }

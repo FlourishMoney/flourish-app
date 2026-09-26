@@ -114,6 +114,12 @@ export function applyDetectedIncome(incomes, suggestion) {
 }
 
 // Human-readable cadence for the card copy.
+// A pay frequency as a label, in the words a person would use ("Every 2 weeks", never "biweekly").
+export function frequencyLabel(freq) {
+  return ({ weekly: "Weekly", biweekly: "Every 2 weeks", semimonthly: "Twice a month", monthly: "Monthly",
+            quarterly: "Every 3 months", annually: "Yearly", annual: "Yearly", yearly: "Yearly" })[freq] || "Not set";
+}
+
 export function cadenceLabel(freq) {
   return ({ weekly: "every week", biweekly: "every 2 weeks", semimonthly: "twice a month", monthly: "every month" })[freq] || "regularly";
 }

@@ -10,7 +10,7 @@
 
 import { FinancialCalcEngine, isBillArchived, billOccursOnDate, parseMoney } from "./financialCalculations.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./safeSpendEngine.js";
-import { depositDatesFor } from "./incomeSchedule.js";
+import { incomeOccurrences, billOccurrences } from "./forecastEdits.js";
 
 export const ForecastEngine = {
 generate(data, days = 90, scenario = null, today = new Date()) {
@@ -44,46 +44,26 @@ generate(data, days = 90, scenario = null, today = new Date()) {
   const overdraftRisk     = [];
   const lowBalanceWarnings = [];
 
-  // income.amount is the per-deposit amount for all freq types. Parsed ONCE, up front, into {inc, amt}
-  // so a bad value is reported a single time rather than on every filter pass and loop iteration.
-  const incomes = (data.incomes||[])
-    .map(inc => ({ inc, amt: money(inc.amount, `income "${inc.label || inc.id || "?"}" amount`) }))
-    .filter(x => x.amt > 0);
+  // income.amount is the per-deposit amount for all freq types. Parsed here only to REPORT a bad value
+  // (once per income); the projection itself comes from forecastEdits below.
+  (data.incomes||[]).forEach(inc => money(inc.amount, `income "${inc.label || inc.id || "?"}" amount`));
 
-  // ── Payday projection — EVERY income, its own cadence and anchor ────────────
-  // There is deliberately no primary/secondary split. The old code projected only incomes[0] with a
-  // weekly/biweekly cadence and filtered the rest to monthly/semimonthly, so a SECOND biweekly earner
-  // — the default cadence on the Add Income button — never appeared in the forecast at all. Income is
-  // accumulated into a date->amount map so N incomes landing on the same day simply sum.
-  // Bug 2: key paydays by LOCAL calendar date (not UTC toISOString) so NA users' paydays land on the right forecast day.
-  const localYMD = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
-  const incomeByDate = new Map(); // "YYYY-MM-DD" -> total income landing that day
-  // "YYYY-MM-DD" -> the income entries that land that day, one record per deposit. Recorded where the
-  // deposit is generated, from the income entry itself, so a surface can name the source without ever
-  // guessing it back from the amount. The sum above stays the single figure the balance walk uses.
-  const depositsByDate = new Map();
-  const addIncome = (dt, amt, inc) => {
-    if(!(amt > 0)) return;
-    const k = localYMD(dt);
-    incomeByDate.set(k, (incomeByDate.get(k) || 0) + amt);
-    if(!depositsByDate.has(k)) depositsByDate.set(k, []);
-    depositsByDate.get(k).push({ incomeId: inc.id ?? null, label: typeof inc.label === "string" ? inc.label.trim() : "", amount: amt });
-  };
-
-  const txns    = data.transactions || [];
-  // ── Payday projection — anchor detection + cadence stepping now live in incomeSchedule ───────
-  // depositDatesFor() is the single owner of "on which dates does this income land" (Truth-fix item 2,
-  // moved down from here, not copied): weekly/biweekly phase off the real anchor, monthly/semimonthly
-  // match the anchor day. This loop only SUMS each income's projected deposit dates into the
-  // date->amount map, so the forecast's output is identical to before the extraction.
-  for(const { inc, amt } of incomes) {
-    for(const d of depositDatesFor(inc, amt, txns, today, days)) addIncome(d, amt, inc);
+  // ── Money in and money out — ONE list, with the household's corrections applied ─────────────────
+  // forecastEdits owns "what lands on which day": every income on its own cadence and anchor (there is
+  // deliberately no primary/secondary split, so a second biweekly earner is projected too), every bill,
+  // every expected item, each "just this one" / "from this date on" edit, variable pay at its low end,
+  // and a real deposit or bill that already arrived replacing its projection. Incomes landing on the
+  // same day simply sum. Keyed by LOCAL calendar day index, never a UTC date string.
+  const byDay = new Map(); // day index -> { deposits: [], bills: [], occurrences: [] }
+  const slot = (i) => { if(!byDay.has(i)) byDay.set(i, { deposits: [], bills: [], occurrences: [] }); return byDay.get(i); };
+  for(const o of incomeOccurrences(data, today, days)) {
+    const sl = slot(o.day);
+    sl.occurrences.push(o);
+    if(o.skipped || !(o.amount > 0)) continue;
+    sl.deposits.push({ incomeId: o.kind === "income" ? o.sourceId : null, srcKey: o.srcKey, kind: o.kind, label: o.label,
+                       amount: o.amount, low: o.variable ? o.low : null, high: o.variable ? o.high : null,
+                       edited: !!o.edited, occurrence: o });
   }
-
-  // Tier 5 / Sprint Q item 1: freq-aware bill placement anchored on nextDueDate (not today /
-  // day-of-month). One-offs may land on day 0; recurring bills skip day 0 (today's balance already
-  // reflects them). billOccursOnDate also fixes quarterly/annual (was firing EVERY month).
-  const billOccursOn = (b, d, i) => (b.type === "one_off" ? billOccursOnDate(b, d, today) : (i > 0 && billOccursOnDate(b, d, today)));
 
   // Bill amounts are parsed once each and memoised, so a malformed amount is reported a single time
   // instead of once per day it recurs across the horizon.
@@ -94,20 +74,36 @@ generate(data, days = 90, scenario = null, today = new Date()) {
   };
   bills.forEach(b => { if(!isBillArchived(b, today)) billAmt(b); }); // surface bad amounts up front
 
+  // Tier 5 / Sprint Q item 1: freq-aware bill placement anchored on nextDueDate. One-offs may land on
+  // day 0; recurring bills skip day 0 (today's balance already reflects them). An unedited bill is the
+  // bill object itself; an edited one is a copy carrying the edited amount.
+  for(const o of billOccurrences(data, today, days)) {
+    const sl = slot(o.day);
+    sl.occurrences.push(o);
+    if(o.skipped) continue;
+    if(o.kind === "bill") {
+      const amt = o.edited ? o.amount : billAmt(o.bill);
+      sl.bills.push({ bill: o.edited ? { ...o.bill, amount: amt, _edited: true } : o.bill, amt, occ: o });
+    } else {
+      sl.bills.push({ bill: { name: o.label, amount: o.amount, _expected: true, _edited: !!o.edited, id: o.srcKey }, amt: o.amount, occ: o });
+    }
+  }
+
   for(let i = 0; i <= days; i++) {
     const d       = new Date(today); d.setDate(today.getDate()+i);
     const dayNum  = d.getDate();
-    const dateKey = localYMD(d);
     // Day 0 credits NO income, for EVERY income without exception — today's deposits are already in
     // the posted balance we seeded from. The old shape applied this guard to incomes[0] only, while
     // secondary income came from a helper that took day-of-month and could not see the loop index, so
     // it fired on day 0 and left a permanent overstatement on all 90 days (which could mask a real
     // overdraft). Guarding the single summed lookup makes the rule uniform by construction.
-    const inc      = i > 0 ? (incomeByDate.get(dateKey) || 0) : 0;
-    const isPayday = inc > 0;
-    const deposits = inc > 0 ? (depositsByDate.get(dateKey) || []) : [];
-    const dayBills = bills.filter(b => !isBillArchived(b, today) && billOccursOn(b, d, i));
-    const out      = dayBills.reduce((s,b)=>s+billAmt(b),0) + (i===0?0:avgDaily);
+    const sl       = byDay.get(i) || { deposits: [], bills: [], occurrences: [] };
+    const deposits = i > 0 ? sl.deposits : [];
+    const inc      = deposits.reduce((s, x) => s + x.amount, 0);
+    // Payday means an income SOURCE lands. An expected gift is money in, but not payday.
+    const isPayday = deposits.some(x => x.kind === "income");
+    const dayBills = sl.bills.map(x => x.bill);
+    const out      = sl.bills.reduce((s, x) => s + x.amt, 0) + (i===0?0:avgDaily);
     // Phase 3d-B: apply active scenario impact (purchase day-1, debt/invest monthly on the 1st, never day 0)
     let scenarioOut = 0;
     if (scenario && i > 0) {
@@ -118,7 +114,8 @@ generate(data, days = 90, scenario = null, today = new Date()) {
     running = running + inc - out - scenarioOut;
 
     const entry = { day:i, date:d, balance:running, income:inc, deposits, expenses:out,
-                    isPayday, bills:dayBills };
+                    isPayday, bills:dayBills, occurrences: sl.occurrences,
+                    billOccurrences: sl.bills.map(x => x.occ) }; // parallel to `bills`, for the edit sheet
     forecast.push(entry);
 
     if(running < 0) overdraftRisk.push({ day:i, date:d, balance:running });

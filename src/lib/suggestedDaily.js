@@ -19,6 +19,7 @@
 
 import { formatMoney } from "./format.js";
 import { daysToNextFutureDeposit } from "./incomeSchedule.js";
+import { daysToNextDepositFor } from "./forecastEdits.js";
 
 // Daily safe-to-spend until payday. MOVED HERE from decisionEngine.js so that this file can be the
 // one owner of the pace: AutopilotEngine now reads suggestedDailyView, and a lib cannot import a lib
@@ -36,8 +37,10 @@ export function computeDailySpendLimit(safe, daysToPayday) {
   return { daysLeft, safePerDay, safeToday };
 }
 
-export function suggestedDailyView(safeValue, incomes, transactions, today = new Date()) {
-  const days = daysToNextFutureDeposit(incomes, transactions, today);
+// Pass `data` (the household) so the days run to the next deposit AS THE HOUSEHOLD CORRECTED IT
+// (moved, skipped, stopped); without it, the uncorrected schedule from incomes + transactions.
+export function suggestedDailyView(safeValue, incomes, transactions, today = new Date(), data = null) {
+  const days = data ? daysToNextDepositFor(data, today) : daysToNextFutureDeposit(incomes, transactions, today);
   const { daysLeft, safeToday } = computeDailySpendLimit(safeValue, days);
   const daily = Math.max(0, safeToday);
   const weekly = daily * 7; // a weekly framing is the daily figure times seven — NOT another division of safe

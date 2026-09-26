@@ -158,7 +158,7 @@ export const AutopilotEngine = {
     //
     // It now reads the one helper, on the same input Today and Decisions use: the DISPLAYED
     // safe-to-spend headline, not the engine's raw safeAmount. All three surfaces print one number.
-    const pace = suggestedDailyView(safeToSpendView(ss).headline, data.incomes, data.transactions, currentDate);
+    const pace = suggestedDailyView(safeToSpendView(ss).headline, data.incomes, data.transactions, currentDate, data);
     const daysLeft = pace.daysLeft;   // the pace window (floored at 14) — what the card's label must say
     const safeDaily = pace.daily;
 
@@ -227,13 +227,13 @@ export const AutopilotEngine = {
     if (mode === "high") {
       const msg = forecastDanger
         ? `Balance projected to go negative in ${overdraftRisk[0]?.day} days. Hold all non-essential spending.`
-        : "Cash is critically low. Bills protection mode active — savings and extras paused.";
+        : "Cash is critically low. Bills protection mode active. Savings and extras paused.";
       alerts.push({ type:"danger", msg });
     } else if (nearTermLow) {
       alerts.push({ type:"warning", msg:`Balance drops near your safety floor in ${nearTermLow.day} days.` });
     }
     if (spikeRatio > 1.4 && mode !== "high") {
-      alerts.push({ type:"tip", msg:`Payday spike habit detected (+${Math.round((spikeRatio-1)*100)}%) — most of your spending lands in the days just after payday.` });
+      alerts.push({ type:"tip", msg:`Payday spike habit detected (+${Math.round((spikeRatio-1)*100)}%). Most of your spending lands in the days just after payday.` });
     }
 
     // ── ⑦ Adherence — based on spending stability (0-100) ────────────────────

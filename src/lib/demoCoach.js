@@ -22,7 +22,7 @@
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { safeToSpendView } from "./safeToSpendView.js";
 import { suggestedDailyView } from "./suggestedDaily.js";
-import { nextFutureDeposit, daysToNextFutureDeposit } from "./incomeSchedule.js";
+import { nextDepositFor, daysToNextDepositFor } from "./forecastEdits.js";
 import { selectHighestRateDebt } from "./decisionEngine.js";
 import { meetAgendaFor } from "./meetSnapshot.js";
 import { formatMoney } from "./format.js";
@@ -45,9 +45,9 @@ function _list(parts) {
 function facts(data, today) {
   const ss = SafeSpendEngine.calculate(data, today);
   const view = safeToSpendView(ss);
-  const pace = suggestedDailyView(view.headline, data.incomes, data.transactions, today);
-  const nd = nextFutureDeposit(data.incomes, data.transactions, today);
-  const days = daysToNextFutureDeposit(data.incomes, data.transactions, today);
+  const pace = suggestedDailyView(view.headline, data.incomes, data.transactions, today, data);
+  const nd = nextDepositFor(data, today);
+  const days = daysToNextDepositFor(data, today);
   const debt = selectHighestRateDebt(data.debts || []);
   const decision = (meetAgendaFor(data).decisions || [])[0] || null;
   return { ss, view, pace, nd, days, debt, decision };
@@ -76,14 +76,14 @@ export function demoCoachExchanges(data, today = new Date()) {
     out.push({
       q: "So how much can I spend today?",
       a: `${f.pace.dailyText}. That paces ${f.view.headlineText} over ${f.pace.daysLeft} days. ` +
-         `It's a pace, not a limit — Safe to Spend is what you can afford, this is how to make it last. ` +
+         `It's a pace, not a limit. Safe to Spend is what you can afford, this is how to make it last. ` +
          `I never divide by fewer than 14 days, so a deposit landing soon doesn't tempt you into spending it all at once.`,
     });
   }
 
   // 3 — the highest-rate debt, using the same decision the Meet agenda already shows.
   if (f.debt) {
-    let a = `Your ${f.debt.name} is at ${formatMoney(f.debt.balance)} and ${f.debt.rate}% — the most expensive money you owe, so it's the one worth attacking.`;
+    let a = `Your ${f.debt.name} is at ${formatMoney(f.debt.balance)} and ${f.debt.rate}%, the most expensive money you owe, so it's the one worth attacking.`;
     if (f.decision && (f.decision.options || []).length >= 2) {
       const [d1, d2] = f.decision.options;
       a += ` ${f.decision.text} ${d1.label}: ${d1.outcome}. ${d2.label}: ${d2.outcome}.`;
@@ -95,7 +95,7 @@ export function demoCoachExchanges(data, today = new Date()) {
   if (f.nd) {
     out.push({
       q: "When does money come in next?",
-      a: `${formatMoney(f.nd.amount)} on ${_date(f.nd.date, data.profile?.country)} — your ${f.nd.sourceLabel}, ${f.days} days away. ` +
+      a: `${formatMoney(f.nd.amount)} on ${_date(f.nd.date, data.profile?.country)}, your ${f.nd.sourceLabel}, ${f.days} days away. ` +
          `That's the date every number above is planning towards.`,
     });
   }

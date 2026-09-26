@@ -110,6 +110,9 @@ const CA_FIXTURE = {
     ["t28", 22, "Shopify/Etsy",    38.00,  "Shopping",        "🎁", "#C45898"],
     ["t29", 24, "Costco Gas",      55.80,  "Gas & Transport", "⛽", "#CFA03E"],
     ["t30", 26, "Payroll Deposit", "PAY",  "Income",          "💰", "#6FE494"],
+    // A one-off expense reimbursement. It is money in but not income: Flourish holds it out of the
+    // forecast and asks "Is this income?" (depositClassify), which is what the demo should show.
+    ["t31", 4,  "Expense Reimbursement Northwind", -286.40, "Income", "💼", "#6FE494"],
   ],
 };
 
@@ -201,6 +204,8 @@ const US_FIXTURE = {
     ["s28", 22, "Etsy",             34.50,  "Shopping",        "🎁", "#C45898"],
     ["s29", 24, "Costco Gas",       64.85,  "Gas & Transport", "⛽", "#CFA03E"],
     ["s30", 26, "Payroll Deposit",  "PAY",  "Income",          "💰", "#6FE494"],
+    // A one-off payment from a friend: held out of income and asked about, never guessed.
+    ["s31", 5,  "Zelle From Sam R", -120.00, "Transfer", "🔁", "#6FE494"],
   ],
 };
 
