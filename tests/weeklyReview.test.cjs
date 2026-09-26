@@ -26,13 +26,17 @@ const tx = (daysAgo, cat, amount, name = "Shop") => ({ id: `t${++_seq}`, date: a
 // Three separate days of spending in the week just gone, which is the evidence bar. Every fixture
 // that expects an answer has to clear it, so it is built once here rather than sprinkled about.
 const evidence = (cat = "Groceries", each = 1) => [tx(2, cat, each), tx(4, cat, each), tx(6, cat, each)];
-// Four weeks of history behind it, so `coveredWeeks` is 4 wherever a fixture does not say otherwise.
-const history = () => [tx(35, "Petrol", 1)];
+// Four weeks of ordinary history behind the week just gone. TWO spending days in each of the four
+// baseline weeks is what makes them count: one charge five weeks old is not four weeks of history,
+// and treating it as such let a single $900 sofa speak for a month. `weeks` stops the history short
+// where a fixture needs a household that has been here two weeks rather than five.
+const history = (weeks = 4) => [[8, 9], [15, 16], [22, 23], [29, 30]].slice(0, weeks)
+  .flat().map(n => tx(n, "Petrol", 1));
 
 (async () => {
   const { weekVersusUsual, categoryPaceDeltas, isDiscretionarySpend } = await import("../src/lib/weeklyReview.js");
   const { meetAgendaFor, withWeekAhead, agendaIsEmpty, agendaToText } = await import("../src/lib/meetSnapshot.js");
-  const { everyItemHasSource } = await import("../src/lib/meetingAgenda.js");
+  const { everyItemHasSource, agendaNumbers } = await import("../src/lib/meetingAgenda.js");
   const demo = await import("../src/lib/demoFixture.js");
   const cats = (txns) => categoryPaceDeltas({ transactions: txns, now: NOW });
   const catOf = (txns, name) => cats(txns).find(x => x.category === name) || { thisWeek: null, normal: null, delta: null };
@@ -67,7 +71,7 @@ const history = () => [tx(35, "Petrol", 1)];
   // A bank connected on Thursday, or a week paid for on another card, looks exactly like a frugal
   // week. Both of these used to produce "you spent $220 less than usual".
   {
-    const rich = [tx(9, "Dining", 200), tx(16, "Dining", 200), tx(23, "Dining", 200), tx(30, "Dining", 200)];
+    const rich = [...history(), tx(9, "Dining", 200), tx(16, "Dining", 200), tx(23, "Dining", 200), tx(30, "Dining", 200)];
     t.eq(weekVersusUsual({ transactions: [...rich, tx(3, "Dining", 6)], now: NOW }), null,
       "3a one purchase in the week is not a week: no total is reported");
     t.eq(cats([...rich, tx(3, "Dining", 6)]).length, 0, "3b …and no category is reported either");
@@ -76,9 +80,22 @@ const history = () => [tx(35, "Petrol", 1)];
     t.ok(weekVersusUsual({ transactions: [...rich, tx(2, "Dining", 2), tx(4, "Dining", 2), tx(6, "Dining", 2)], now: NOW }) !== null,
       "3d three separate days of spending is the bar, and it is met");
     t.eq(weekVersusUsual({ transactions: [], now: NOW }), null, "3e no transactions at all, nothing to say");
+    // Three purchases and three DAYS are different things. A Saturday of errands is one day of
+    // evidence about a week, however many receipts it produced.
+    t.eq(weekVersusUsual({ transactions: [...rich, tx(3, "Dining", 20), tx(3, "Groceries", 21), tx(3, "Shopping", 22)], now: NOW }), null,
+      "3j three purchases on one day is one day, not three, whatever they were for");
     // …and the other side: a full week with only a fortnight of history behind it.
-    t.eq(weekVersusUsual({ transactions: [...evidence("Dining", 10), tx(9, "Dining", 50), tx(12, "Dining", 50)], now: NOW }), null,
+    t.eq(weekVersusUsual({ transactions: [...history(2), ...evidence("Dining", 10)], now: NOW }), null,
       "3f two weeks of history is not a 'usual' to compare against");
+    t.ok(weekVersusUsual({ transactions: [...history(3), ...evidence("Dining", 10)], now: NOW }) !== null,
+      "3g three weeks of it is");
+    // The bar is weeks the household SPENT in, not the age of its oldest row. One charge five weeks
+    // back used to unlock a "usual" of a quarter of itself.
+    t.eq(weekVersusUsual({ transactions: [tx(35, "Shopping", 900), ...evidence("Dining", 3)], now: NOW }), null,
+      "3h one $900 charge thirty-five days ago is not four weeks of history");
+    t.eq(weekVersusUsual({ transactions: [...history(), tx(29, "Dining", 400), tx(30, "Dining", 400),
+      tx(2, "Dining", 0.01), tx(4, "Dining", 0.01), tx(6, "Dining", 0.01)], now: NOW }), null,
+      "3i three one-cent taps are not three days of spending: the week was paid for elsewhere");
   }
 
   // ── 4. "Usual" divides by the weeks of HISTORY, not by the weeks that had a purchase ──────────
@@ -86,19 +103,31 @@ const history = () => [tx(35, "Petrol", 1)];
   // "usual" and can invert the verdict.
   {
     // $200 of Dining in weeks 2, 3 and 5; week 4 the household was abroad and bought nothing at all.
-    const txns = [...evidence("Dining", 53.34), tx(9, "Dining", 200), tx(16, "Dining", 200), tx(30, "Dining", 200), tx(35, "Petrol", 1)];
+    // Week 5 still anchors the window, so week 4 sits INSIDE it and is a real zero.
+    const txns = [tx(8, "Petrol", 1), tx(9, "Dining", 200), tx(15, "Petrol", 1), tx(16, "Dining", 200),
+                  tx(29, "Petrol", 1), tx(30, "Dining", 200), ...evidence("Dining", 53.34)];
     const d = catOf(txns, "Dining");
     t.eq(d.normal, 150, "4a usual = $600 over FOUR covered weeks, including the empty one");
     t.eq(d.delta, 10.02, "4b …so a $160 week reads as over usual, which is what happened");
     t.ok(d.delta > 0, "4c …and not as $40 under, which is what dropping the quiet week produced");
+    // …and the mirror image: money from a week too old to be covered must not be in the numerator
+    // either. Moving one lump across the window edge used to swing the verdict by hundreds.
+    // Week 5 here holds nothing but the lump, so it does not anchor the window and is not covered.
+    // Its money must be out of the NUMERATOR too: it used to be summed while being left out of the
+    // divisor, so moving the lump seven days swung the verdict by hundreds and produced an agenda
+    // that congratulated the week and warned about it at once.
+    const wk = (n) => weekVersusUsual({ transactions: [...history(3), ...evidence("Dining", 53.34), tx(n, "Shopping", 2000)], now: NOW });
+    t.eq(JSON.stringify(wk(29)), JSON.stringify(wk(36)),
+      "4d a lump in an uncovered week counts for nothing, whichever side of the edge it sits");
+    t.ok((wk(29) || {}).normal < 100, `4e …and it is not in "usual" either (got ${JSON.stringify(wk(29))})`);
   }
 
   // ── 5. The covered window is four weeks, and its far edge is day 35 ───────────────────────────
   {
-    const withDay35 = [...evidence("Dining", 10), tx(9, "Dining", 100), tx(16, "Dining", 100), tx(35, "Dining", 100)];
+    const withDay35 = [...history(), ...evidence("Dining", 10), tx(9, "Dining", 100), tx(16, "Dining", 100), tx(35, "Dining", 100)];
     const d = catOf(withDay35, "Dining");
     t.eq(d.normal, 75, "5a day 35 is inside the window: $300 over four covered weeks");
-    t.eq(cats([...evidence("Dining", 10), tx(9, "Dining", 100), tx(16, "Dining", 100), tx(36, "Dining", 100), tx(35, "Petrol", 1)])
+    t.eq(cats([...history(), ...evidence("Dining", 10), tx(9, "Dining", 100), tx(16, "Dining", 100), tx(36, "Dining", 100)])
       .find(x => x.category === "Dining"), undefined,
       "5b day 36 is outside it, so Dining is left with two weeks and no usual pace");
   }
@@ -135,12 +164,12 @@ const history = () => [tx(35, "Petrol", 1)];
   // ── 8. Ordering, direction and stability ─────────────────────────────────────────────────────
   {
     const txns = [...history(),
-      tx(2, "Dining", 200), tx(4, "Books", 0.5), tx(6, "Travel", 5),
+      tx(2, "Dining", 200), tx(4, "Books", 1), tx(6, "Travel", 5),
       tx(9, "Dining", 50), tx(16, "Dining", 50), tx(23, "Dining", 50),
       tx(9, "Books", 10), tx(16, "Books", 10), tx(23, "Books", 10),
       tx(10, "Travel", 60), tx(17, "Travel", 60), tx(24, "Travel", 60)];
     const d = cats(txns);
-    t.eq(d.map(x => x.category), ["Dining", "Travel", "Books"], "8a biggest difference first, whichever way it goes");
+    t.eq(d.map(x => x.category).slice(0, 3), ["Dining", "Travel", "Books"], "8a biggest difference first, whichever way it goes");
     t.ok((d[0] || {}).delta > 0, "8b a week above usual reads positive");
     t.ok((d[1] || {}).delta < 0, "8c …and a week below usual reads negative");
     t.eq(JSON.stringify(cats(txns)), JSON.stringify(d), "8d the same transactions give the same answer");
@@ -159,7 +188,7 @@ const history = () => [tx(35, "Petrol", 1)];
     const agenda = meetAgendaFor(data);
     const win = agenda.wins[0] || { text: "(no win)", value: null };
     t.eq(agenda.wins.length, 1, "9a the demo week opens on exactly one win");
-    t.eq(win.text, "Your spending came in $53.44 under a usual week.", "9b …the week against a usual one");
+    t.eq(win.text, "Your spending came in $53.45 under a usual week.", "9b …the week against a usual one");
     t.eq(agenda.changes.map(c => c.text), [
       "Coffee & Dining ran $57.54 below your usual pace.",
       "Groceries ran $47.65 above your usual pace.",
@@ -217,6 +246,41 @@ const history = () => [tx(35, "Petrol", 1)];
     t.eq(JSON.stringify(withWeekAhead(merged, data)), JSON.stringify(merged), "11f adding them again changes nothing");
     const quiet = { wins: [], changes: [], risks: [], progress: [], decisions: [], questions: [], quiet: true };
     t.eq(withWeekAhead(quiet, data), quiet, "11g a quiet-week agenda already carries them and is returned untouched");
+
+    // The household with an overdraft warning is the one most likely to want the safe number, and a
+    // single early return on `risks` was denying it to exactly them: a risk is not a safe-to-spend
+    // figure, so the two halves are decided separately.
+    const risky = withWeekAhead({ ...full, risks: [{ text: "Fri 2: Low balance.", value: 12, source: "forecastEngine" }] }, data);
+    t.ok((risky.progress || []).some(p => /^Safe until next payday: \$/.test(p.text)),
+      "11h an agenda that already warns about a risk still gets its safe-to-spend line");
+    t.eq((risky.upcoming || []).length, 0, "11i …and is not also given a week-ahead list it does not need");
+
+    // Nothing falling due in the next seven days leaves `upcoming` empty, so a guard that read it
+    // would prepend the safe-to-spend line again on every call.
+    const bare = { wins: [], changes: [], risks: [], progress: [], decisions: [], questions: [] };
+    const noUpcoming = { ...data, bills: [] };
+    const once = withWeekAhead(bare, noUpcoming);
+    const twice = withWeekAhead(once, noUpcoming);
+    t.eq((twice.progress || []).filter(x => /^Safe until next payday/.test(x.text)).length, 1,
+      "11j the safe-to-spend line is added once, however many times it is asked for");
+  }
+
+  // ── 12. The two provenance guards cover every section, including what is coming ──────────────
+  // `upcoming` carries dollar values, agendaToText sends them to the coach and the Meet screen
+  // renders them, and both guards walked past the section entirely.
+  {
+    const bad = { wins: [], changes: [], risks: [], progress: [], decisions: [], questions: [],
+                  upcoming: [{ text: "Thu 1: Rent $99,999.99 out.", value: 99999.99 }] };
+    t.eq(everyItemHasSource(bad), false, "12a an upcoming item with no source fails the provenance guard");
+    t.eq(agendaNumbers(bad), [99999.99], "12b …and its figure is one of the numbers that must trace to an engine");
+    const good = { ...bad, upcoming: [{ ...bad.upcoming[0], source: "forecastEngine" }] };
+    t.eq(everyItemHasSource(good), true, "12c …with a source it passes");
+    // The guard must be capable of saying no at all: replacing its body with `return true` used to
+    // leave the whole suite green.
+    t.eq(everyItemHasSource({ wins: [{ text: "x" }] }), false, "12d the guard fails a sourceless win");
+    t.eq(everyItemHasSource({ changes: [{ text: "x" }] }), false, "12e …a sourceless change");
+    t.eq(everyItemHasSource({ risks: [{ text: "x" }] }), false, "12f …a sourceless risk");
+    t.eq(everyItemHasSource({ progress: [{ text: "x" }] }), false, "12g …and a sourceless progress line");
   }
 
   t.summary("weeklyReview.test");

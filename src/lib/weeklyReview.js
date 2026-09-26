@@ -38,6 +38,8 @@ const WEEK = 7;
 const BASELINE_WEEKS = 4;        // the four weeks before this one, which is what "usual" means here
 const MIN_BASELINE_WEEKS = 3;    // fewer than three weeks of history is not a habit to compare against
 const MIN_SPEND_DAYS = 3;        // days of the week that must carry spending before the week is described
+const MIN_WEEK_DAYS = 2;         // days of a BASELINE week that must carry spending before it counts as covered
+const MIN_DAY_SPEND = 1;         // a day carrying less than this is a tap, not a day's spending
 
 const _round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -82,43 +84,75 @@ export function isDiscretionarySpend(t) {
 
 // Everything both public functions need, read from the transactions in one pass.
 //
-// coveredWeeks is the part worth reading twice. It is how far the household's HISTORY reaches, not
-// how many weeks happened to contain a purchase. Counting only weeks with spend silently drops the
-// week they were away from the divisor, which inflates "usual" and can invert the answer: three
-// weeks at $200 and one away week is a $150 usual, but dropped it reads $200, and a $160 week is
-// then reported as $40 under when it was $10 over.
+// ── WHAT "COVERED" MEANS, AND WHY IT IS NOT THE AGE OF THE OLDEST ROW ────────────────────────────
+//
+// Two wrong answers sit either side of this, and both have been in here.
+//
+// Counting only the baseline weeks that HAD a purchase drops the week the household was away from
+// the divisor, which inflates "usual" and can invert the verdict: three weeks at $200 and one away
+// week is a $150 usual, but dropped it reads $200, and a $160 week is then reported as $40 under
+// when it was $10 over.
+//
+// Counting weeks by the age of the oldest row instead lets a single charge speak for a month. One
+// $900 sofa thirty-five days ago, and nothing else ever, made "usual" $225 a week and congratulated
+// the household on spending $216 under it. Worse, the money from a week the code itself declined to
+// count stayed in the NUMERATOR, so moving that one sofa by seven days swung the verdict by several
+// hundred and produced an agenda that congratulated the week and warned about it at the same time.
+//
+// So coverage is anchored by ACTIVITY, and the numerator and the divisor are built from the same
+// weeks. A baseline week ANCHORS the window when it carries spending on at least MIN_WEEK_DAYS
+// separate days; coverage runs from week 2 to the oldest week that anchors. A week with nothing in
+// it INSIDE that span is a real zero and stays in the divisor — that is the away week. A week with
+// nothing in it beyond the span is missing data, and is not counted at all.
 function _scan(transactions, now) {
-  const thisWeek = new Map();                  // category -> total
-  const baseline = new Map();                  // category -> Map(week -> total)
-  const spendDays = new Set();                 // distinct days of the week just gone that carry spend
-  let thisWeekTotal = 0, baselineTotal = 0, oldest = 0;
+  const thisWeek = new Map();                  // category -> total, for the week just gone
+  const perWeek = new Map();                   // week -> { cats: Map(cat -> total), days: Map(dayAgo -> total) }
+  const bucket = (w) => { if (!perWeek.has(w)) perWeek.set(w, { cats: new Map(), days: new Map() }); return perWeek.get(w); };
 
   for (const t of transactions || []) {
     if (!isDiscretionarySpend(t)) continue;
     const ago = _daysAgo(t, now);
-    if (ago == null || ago < 1) continue;
-    if (ago > oldest) oldest = ago;
-    if (ago > WEEK * (1 + BASELINE_WEEKS)) continue;
+    if (ago == null || ago < 1 || ago > WEEK * (1 + BASELINE_WEEKS)) continue;
     const cat = t.cat || "Uncategorised";
     const amt = Math.abs(Number(t.amount) || 0);
-    if (ago <= WEEK) {
-      spendDays.add(ago);
-      thisWeekTotal += amt;
-      thisWeek.set(cat, (thisWeek.get(cat) || 0) + amt);
-      continue;
-    }
-    const w = _weekOf(ago);
-    baselineTotal += amt;
-    if (!baseline.has(cat)) baseline.set(cat, new Map());
-    baseline.get(cat).set(w, (baseline.get(cat).get(w) || 0) + amt);
+    const b = bucket(_weekOf(ago));
+    b.cats.set(cat, (b.cats.get(cat) || 0) + amt);
+    b.days.set(ago, (b.days.get(ago) || 0) + amt);
   }
 
-  // A baseline week counts as covered when the household's history reaches back past the whole of
-  // it. A week inside that span with nothing in it is a real zero and stays in the divisor.
-  let coveredWeeks = 0;
-  for (let w = 2; w <= 1 + BASELINE_WEEKS; w++) if (oldest >= w * WEEK) coveredWeeks++;
+  // Days that carry real spending. A one-cent tap is not a day's spending, and three of them is not
+  // a week's: without this floor, a household who paid for the week on another card cleared both
+  // bars and was told it had come in $400 under.
+  const realDays = (w) => {
+    const b = perWeek.get(w);
+    if (!b) return 0;
+    let n = 0;
+    for (const v of b.days.values()) if (v >= MIN_DAY_SPEND) n++;
+    return n;
+  };
 
-  return { thisWeek, baseline, thisWeekTotal, baselineTotal, coveredWeeks, spendDays: spendDays.size };
+  let lastCovered = 0;
+  for (let w = 2; w <= 1 + BASELINE_WEEKS; w++) if (realDays(w) >= MIN_WEEK_DAYS) lastCovered = w;
+  const coveredWeeks = lastCovered ? lastCovered - 1 : 0;
+
+  // The numerator, restricted to exactly the weeks the divisor counts.
+  const baseline = new Map();                  // category -> Map(week -> total)
+  let baselineTotal = 0;
+  for (let w = 2; w <= lastCovered; w++) {
+    const b = perWeek.get(w);
+    if (!b) continue;
+    for (const [cat, amt] of b.cats) {
+      baselineTotal += amt;
+      if (!baseline.has(cat)) baseline.set(cat, new Map());
+      baseline.get(cat).set(w, amt);
+    }
+  }
+
+  const wk = perWeek.get(1);
+  let thisWeekTotal = 0;
+  if (wk) { for (const [cat, amt] of wk.cats) { thisWeek.set(cat, amt); thisWeekTotal += amt; } }
+
+  return { thisWeek, baseline, thisWeekTotal, baselineTotal, coveredWeeks, spendDays: realDays(1) };
 }
 
 // True when the week just gone carries enough spending to be described at all.

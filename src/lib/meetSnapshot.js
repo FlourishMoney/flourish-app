@@ -244,15 +244,25 @@ export function quietWeekFiguresFor(data = {}) {
 // safeToSpendView exactly as every screen that shows them does, refusals included.
 export function withWeekAhead(agenda, data = {}, label = "Safe until next payday") {
   if (!agenda || agenda.quiet) return agenda;
-  if ((agenda.risks || []).length || (agenda.upcoming || []).length) return agenda;
   let f;
   try { f = quietWeekFiguresFor(data); } catch { return agenda; }
-  const upcoming = (f.upcoming || []).filter(u => u && u.text)
-    .map(u => ({ text: u.text, value: u.value != null ? u.value : null, source: "forecastEngine" }));
-  if (f.truncated) upcoming.push({ text: "More items follow in the week ahead.", value: null, source: "meetSnapshot" });
+  // The two halves are decided SEPARATELY. A single early return on `risks` meant the household
+  // with an overdraft warning — the one most likely to want the number — was the one denied its
+  // safe-to-spend line, because a risk is not a safe-to-spend figure.
+  const already = (agenda.upcoming || []);
+  const upcoming = already.length || (agenda.risks || []).length ? already
+    : (f.upcoming || []).filter(u => u && u.text)
+        .map(u => ({ text: u.text, value: u.value != null ? u.value : null, source: "forecastEngine" }))
+        .concat(f.truncated ? [{ text: "More items follow in the week ahead.", value: null, source: "meetSnapshot" }] : []);
   const progress = [...(agenda.progress || [])];
-  if (f.safeToSpendText) progress.unshift({ text: `${label}: ${f.safeToSpendText}.`, value: f.safeToSpend, source: "safeSpendEngine" });
-  if (!upcoming.length && progress.length === (agenda.progress || []).length) return agenda;
+  // Keyed on the line itself, not on whether anything else was added: with nothing falling due in
+  // the next seven days the upcoming list comes back empty, so a guard that read it would prepend
+  // this line again on every call.
+  const line = f.safeToSpendText ? `${label}: ${f.safeToSpendText}.` : null;
+  if (line && !progress.some(p => p && p.text === line)) {
+    progress.unshift({ text: line, value: f.safeToSpend, source: "safeSpendEngine" });
+  }
+  if (upcoming === already && progress.length === (agenda.progress || []).length) return agenda;
   return { ...agenda, upcoming, progress };
 }
 

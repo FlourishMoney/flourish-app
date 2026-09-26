@@ -470,15 +470,57 @@ const { create } = require("./_runner.cjs");
           return out;
         };
         const fallbacks = [
-          ...strings("netlify/functions/_lib/facilitatorGuard.js", /^SAFE_[A-Z_]*FALLBACK$/),
-          ...strings("netlify/functions/_lib/snapshotGuard.js", /^SAFE_[A-Z_]*FALLBACK$/),
+          strings("netlify/functions/_lib/facilitatorGuard.js", /^SAFE_[A-Z_]*FALLBACK$/).join(" "),
+          strings("netlify/functions/_lib/snapshotGuard.js", /^SAFE_[A-Z_]*FALLBACK$/).join(" "),
         ];
-        // If either constant is renamed, this drops to zero and the check would pass silently.
-        t.ok(fallbacks.length >= 4, `the two SAFE_*_FALLBACK replies were found and read (${fallbacks.length} pieces)`);
+        // Joined, so joining either constant into one literal is not a spurious failure; non-empty,
+        // so renaming one of them cannot switch the check off in silence.
+        t.eq(fallbacks.filter(x => x.trim().length > 40).length, 2,
+          `both SAFE_*_FALLBACK replies were found and read (${fallbacks.map(x => x.length).join(", ")} chars)`);
         t.eq(fallbacks.filter(x => /[\u2013\u2014]/.test(x)), [], "no em or en dash in the replies a household reads when the coach is overruled");
         t.eq(fallbacks.filter(x => /\bengines?\b/i.test(x)), [], "…and neither of them calls Flourish's machinery an engine");
         // The coach's own system prompt is not read by a household, but it is where the model learns
         // what to call things, and it taught it the word this branch is removing.
+        // ── And every sentence a function hands back in a response body ────────────────────────
+        // The scope above was justified with "the rest of netlify/functions is console logs and
+        // model prompts, which no household reads". That was wrong: coach.js and plaid.js return
+        // `message` and `error` strings that this app renders, four of them with em dashes, and one
+        // of those appears on the Meet screen itself when the coach is rate-limited.
+        {
+          const walk = (file) => {
+            const ast = parser.parse(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), { sourceType: "unambiguous" });
+            const out = [];
+            (function go(n) {
+              if (!n || typeof n.type !== "string") return;
+              const key = n.type === "ObjectProperty" && n.key ? (n.key.name || n.key.value) : null;
+              // A sentence, not a machine code: "rate_limited" and "plan_limit" carry no space.
+              if (/^(message|error)$/.test(key || "") && n.value && n.value.type === "StringLiteral" && /\s/.test(n.value.value)) {
+                out.push(`${path.basename(file)}:${n.loc.start.line} ${n.value.value}`);
+              }
+              for (const k of Object.keys(n)) {
+                if (["loc", "start", "end", "leadingComments", "trailingComments", "innerComments", "extra"].includes(k)) continue;
+                const v = n[k];
+                if (Array.isArray(v)) v.forEach(x => x && typeof x.type === "string" && go(x));
+                else if (v && typeof v.type === "string") go(v);
+              }
+            })(ast.program);
+            return out;
+          };
+          const fnDir = path.join(__dirname, "..", "netlify", "functions");
+          const fnFiles = [];
+          (function collect(dir) {
+            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+              const p2 = path.join(dir, e.name);
+              if (e.isDirectory()) collect(p2);
+              else if (/\.(js|mjs|cjs)$/.test(e.name)) fnFiles.push(path.relative(path.join(__dirname, ".."), p2));
+            }
+          })(fnDir);
+          const replies = fnFiles.flatMap(walk);
+          t.ok(replies.length > 30, `every sentence a function returns as message/error was read (${replies.length} of them, across ${fnFiles.length} files)`);
+          t.eq(replies.filter(x => /[\u2013\u2014]/.test(x)), [], "no em or en dash in anything a function hands back for the app to show");
+          t.eq(replies.filter(x => /\bengines?\b/i.test(x)), [], "…and none of them calls Flourish's machinery an engine");
+        }
+
         const prompts = strings("netlify/functions/_lib/coachPrompt.js", /^[A-Z_]+$/);
         t.eq(prompts.length, 3, `the three coach prompt constants were found and read (got ${prompts.length})`);
         t.eq(prompts.filter(x => /\bengines?\b/i.test(x)), [], "the coach is never told Flourish's numbers come from its engines");

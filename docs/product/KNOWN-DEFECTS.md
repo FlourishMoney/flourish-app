@@ -966,3 +966,37 @@ other than this week against an average that is itself rising. The trend hides i
 **Fix (suggested, not built)** Compare the four baseline weeks against each other as well as against
 this one, and surface a direction rather than only a difference.
 
+---
+
+## 42. The Meet screen does not label a win as a win
+
+**Rating: LOW.** Second adversarial review of PR #28.
+
+**Where** `src/App.jsx`, `MeetAgenda` — `items` flattens `wins`, `changes`, `risks`, `upcoming` and
+`progress` into one unlabelled bullet list under "Flourish noticed".
+
+**What happens** `meetingAgenda.js` routes the week's figure by its sign so a week that cost more
+than usual is a change rather than a win, which is what the facilitator receives under the `Wins:`
+and `Changes:` headings. On screen there are no headings, so the distinction the routing exists to
+make is invisible to the household: a good week and a bad one read as the same bullet.
+
+**Fix (suggested, not built)** Give the card the same two groups the agenda has, or at least a
+marker on the items that are wins.
+
+---
+
+## 43. The demo's category breakdown is not pinned
+
+**Rating: LOW.** Same review.
+
+**Where** `src/lib/demoFixture.js`, `tests/demoFixtureUS.test.cjs`.
+
+**What happens** The published demo signature pins safe-to-spend, the daily figure, the next
+deposit, the committed bills, the buffer, the savings allocation and the balance. It pins nothing
+about the category breakdown, so the eleven days of history added in PR #28 moved the demo's largest
+spending category from Shopping to Groceries, and its totals by 37%, with the gate green throughout.
+Any store screenshot of a category breakdown or a "this month" total is therefore unguarded.
+
+**Fix (suggested, not built)** Extend the signature with the top three categories and the 30-day
+discretionary total.
+

@@ -323,7 +323,7 @@ exports.handler = async (event) => {
             return {
               statusCode: 429,
               headers: corsHeaders,
-              body: JSON.stringify({ error: "rate_limited", message: "Coach is briefly unavailable — please try again in a few minutes." }),
+              body: JSON.stringify({ error: "rate_limited", message: "Coach is briefly unavailable. Please try again in a few minutes." }),
             };
           }
         }
