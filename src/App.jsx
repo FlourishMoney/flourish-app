@@ -4504,16 +4504,19 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const [affordInput, setAffordInput] = useState("");
   const [affordResult, setAffordResult] = useState(null);
   const [affordFocused, setAffordFocused] = useState(false);
-  const [dashTab, setDashTab] = useState(()=>{
-    try {
-      const stored = localStorage.getItem("flourish_dash_tab");
-      if (stored === "today" || stored === "decisions") return stored;
-      // First-visit users (no grandfather flag set) land on Decisions to discover the simulator.
-      // Returning/grandfathered users default to Today.
-      const isNewUser = localStorage.getItem("flourish_account_existed_pre_paywall") !== "1";
-      return isNewUser ? "decisions" : "today";
-    } catch { return "today"; }
-  });
+  // A COLD LAUNCH ALWAYS OPENS TODAY. Held in memory only, so it is scoped to the session that set
+  // it and nothing else: switching to Decisions and coming back from the background keeps Decisions,
+  // because the React tree is still alive; killing the app and opening it again starts at Today,
+  // because this state is created fresh. That is what people expect of a phone app, and it is what
+  // Apple's own apps do.
+  //
+  // This used to be written to localStorage ("flourish_dash_tab"), which survives the process, so
+  // whatever tab you happened to close the app on was the first thing you saw days later. The key
+  // is no longer read or written; any value left on a device is simply ignored.
+  //
+  // The first-visit nudge to Decisions went with it. It was a cold-launch behaviour that opened a
+  // tab other than Today, which is the rule this change exists to keep.
+  const [dashTab, setDashTab] = useState("today");
   // Phase 3c: input value for the Decisions tab hero
   const [dashHeroInput, setDashHeroInput] = useState("");
   // Credit score is hand-entered, so it needs its own edit affordance (the card is the only place
@@ -4522,10 +4525,6 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const [editingCredit, setEditingCredit] = useState(false);
   const [creditDraft, setCreditDraft] = useState("");
   useEffect(()=>{const t=setTimeout(()=>setMounted(true),60);return()=>clearTimeout(t);},[]);
-  // Persist tab choice across sessions
-  useEffect(()=>{
-    try { localStorage.setItem("flourish_dash_tab", dashTab); } catch {}
-  }, [dashTab]);
   useEffect(()=>{
     if(data.bankConnected) {
       const { netWorth: nw } = FinancialCalcEngine.netWorth(data);
