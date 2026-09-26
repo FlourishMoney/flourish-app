@@ -15091,7 +15091,7 @@ export default function FlourishApp(){
   // container. On its own it used to cover the wordmark, the bell and the gear and swallow their
   // taps; alongside any other banner it was hidden entirely, one z-index below them.
   const offlineBanner = !isOnline ? (
-    <div style={{width:"100%",maxWidth:430,margin:"0 auto",background:"#180800",borderBottom:`2px solid ${C.orange}44`,padding:"9px 20px",display:"flex",alignItems:"center",gap:10}}>
+    <div style={{width:"100%",background:"#180800",borderBottom:`2px solid ${C.orange}44`,pointerEvents:"auto",padding:"9px 20px",display:"flex",alignItems:"center",gap:10}}>
       <span style={{fontSize:14}}>📡</span>
       <span style={{color:DARK_C.goldBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700}}>Offline. Coach paused, numbers saved.</span>
     </div>
@@ -16176,7 +16176,7 @@ input,button,select,textarea { font-family:inherit; }
 `
   // Sprint 2: shown only after repeated cloud-sync failures — data is safe on-device meanwhile.
   const syncBanner = syncError ? (
-    <div style={{background:C.isDark?"rgba(5,8,16,0.94)":"rgba(244,241,235,0.94)",backdropFilter:"blur(12px)",boxShadow:`inset 0 0 0 999px ${C.gold}22`,borderBottom:`1px solid ${C.gold}55`,color:C.goldBright,fontSize:13,fontWeight:600,textAlign:"center",padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+    <div style={{background:C.isDark?"rgba(5,8,16,0.94)":"rgba(244,241,235,0.94)",backdropFilter:"blur(12px)",boxShadow:`inset 0 0 0 999px ${C.gold}22`,borderBottom:`1px solid ${C.gold}55`,pointerEvents:"auto",color:C.goldBright,fontSize:13,fontWeight:600,textAlign:"center",padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
       Saved on this device. Cloud sync is retrying…
     </div>
   ) : null;
@@ -16186,7 +16186,7 @@ input,button,select,textarea { font-family:inherit; }
   // Sprint Z #15: persistent demo-mode banner so it's always clear the data is sample data and how
   // to switch to real. (The "Try Demo" entry already lives on the onboarding bank-connect step.)
   const demoBanner = appData?.demo && !demoBannerHidden ? (
-    <div style={{background:C.isDark?"rgba(5,8,16,0.94)":"rgba(244,241,235,0.94)",backdropFilter:"blur(12px)",boxShadow:`inset 0 0 0 999px ${C.teal}22`,borderBottom:`1px solid ${C.teal}55`,color:C.tealBright,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 34px",fontFamily:"'Plus Jakarta Sans',sans-serif",flexWrap:"wrap"}}>
+    <div style={{background:C.isDark?"rgba(5,8,16,0.94)":"rgba(244,241,235,0.94)",backdropFilter:"blur(12px)",boxShadow:`inset 0 0 0 999px ${C.teal}22`,borderBottom:`1px solid ${C.teal}55`,pointerEvents:"auto",color:C.tealBright,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 34px",fontFamily:"'Plus Jakarta Sans',sans-serif",flexWrap:"wrap"}}>
       🧪 Demo mode: you're viewing sample data.
       {/* Labelled as an exit, not a "connect your bank" prompt: in demo the numbers are sample data,
           so nagging to connect a bank misreads the context. This button is also the ONLY route out
@@ -16201,7 +16201,7 @@ input,button,select,textarea { font-family:inherit; }
   ) : null;
   // (5) one-time, dismissible — appears after a successful local→DB migration upload.
   const migratedBanner = showMigratedBanner ? (
-    <div style={{background:C.isDark?"rgba(5,8,16,0.94)":"rgba(244,241,235,0.94)",backdropFilter:"blur(12px)",boxShadow:`inset 0 0 0 999px ${C.green}22`,borderBottom:`1px solid ${C.green}55`,color:C.greenBright,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+    <div style={{background:C.isDark?"rgba(5,8,16,0.94)":"rgba(244,241,235,0.94)",backdropFilter:"blur(12px)",boxShadow:`inset 0 0 0 999px ${C.green}22`,borderBottom:`1px solid ${C.green}55`,pointerEvents:"auto",color:C.greenBright,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
       ✓ Your data is now backed up to your Flourish account
       <button aria-label="Dismiss" onClick={dismissMigratedBanner} style={{background:"none",border:"none",color:C.greenBright,cursor:"pointer",fontWeight:800,fontSize:14,padding:"0 4px",lineHeight:1}}>✕</button>
     </div>
@@ -16210,10 +16210,10 @@ input,button,select,textarea { font-family:inherit; }
   if(isDesktop) return (
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>
+      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>
 
       {/* ── DESKTOP SIDEBAR ─────────────────────────────────────────── */}
-      <div style={{width:240,minHeight:`calc(100dvh - var(--banner-h, 0px))`,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:"var(--banner-h, 0px)",height:`calc(100dvh - var(--banner-h, 0px))`,flexShrink:0}}>
+      <div style={{width:240,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:"var(--banner-h, 0px)",height:`calc(100dvh - var(--banner-h, 0px))`,overflowY:"auto",overscrollBehavior:"contain",flexShrink:0}}>
         {/* Logo */}
         <div style={{padding:"28px 24px 20px"}}>
           <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{background:"none",border:"none",cursor:"pointer",padding:0,display:"flex",alignItems:"center",gap:10}}>
@@ -16311,7 +16311,7 @@ input,button,select,textarea { font-family:inherit; }
   return(
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>
+      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>
       {/* Ambient mesh background */}
       <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
         <div style={{position:"absolute",top:-220,left:-180,width:640,height:640,borderRadius:"50%",background:C.isDark?"radial-gradient(circle,rgba(0,204,133,0.055) 0%,transparent 68%)":"radial-gradient(circle,rgba(0,147,95,0.07) 0%,transparent 68%)",animation:"breathe 8s ease-in-out infinite"}}/>

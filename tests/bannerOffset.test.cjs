@@ -30,7 +30,7 @@ const APP = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8"
   const t = create();
 
   // ── 1. one measured container holds every fixed top banner ───────────────────────────────────
-  t.ok(/<div ref=\{bannerRef\} style=\{\{position:"fixed",top:0,left:0,right:0,zIndex:10000\}\}>\{syncBanner\}\{migratedBanner\}\{demoBanner\}\{offlineBanner\}<\/div>/.test(APP),
+  t.ok(/<div ref=\{bannerRef\} style=\{\{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"\}\}>\{syncBanner\}\{migratedBanner\}\{demoBanner\}\{offlineBanner\}<\/div>/.test(APP),
     "1a all four top banners share one fixed container, which is what gets measured");
   t.eq((APP.match(/<div ref=\{bannerRef\}/g) || []).length, 2,
     "1b …in both shells, mobile and desktop");
@@ -60,28 +60,57 @@ const APP = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8"
     "3b the mobile column reserves the banner's height as PADDING, not as a sibling spacer");
   t.ok(!/aria-hidden="true" style=\{\{height:bannerH/.test(APP),
     "3c the zero-width spacer is gone");
+  // Every sticky that sits at the TOP of a shell must clear the banner. Stated as a rule rather
+  // than a count: a sticky table head inside its own scroll container is none of this test's
+  // business, and hard-coding "3" would fail a legitimate fourth consumer.
   const stickies = (APP.match(/position:"sticky",top:"var\(--banner-h, 0px\)"/g) || []).length;
-  t.eq(stickies, 3, "3d every sticky header pins below the banner, not to the viewport top");
-  t.ok(!/position:"sticky",top:0(?![0-9])/.test(APP), "3e …and none is left pinned at 0");
-  // The sidebar takes the offset ONCE. It had both top and paddingTop on a 100dvh box, so sticky
-  // displacement and padding stacked, the box ended a banner's height below the fold, and the
-  // Settings button — desktop's only route to Settings — could not be reached. This assertion used
-  // to REQUIRE that pairing, which is how a source-text test can pin a defect in place.
-  t.ok(!/position:"sticky",top:"var\(--banner-h, 0px\)",paddingTop:"var\(--banner-h, 0px\)"/.test(APP),
-    "3f nothing takes the offset twice: sticky top AND padding on the same box pushes it off screen");
-  t.ok(APP.includes(`width:240,minHeight:\`calc(100dvh - ${V})\``),
-    "3g the desktop sidebar is shortened by the banner, not padded below it");
+  t.ok(stickies >= 3, `3d the shell's sticky headers pin below the banner (${stickies})`);
+  t.ok(!/position:"sticky",top:0,zIndex:(?:20|30)\b/.test(APP),
+    "3e …and no shell header is left pinned to the viewport top");
+  // The sidebar is checked by PARSING its style object, not by matching a literal. The previous
+  // pair of assertions passed against two different reverts of the bug — reordering the properties
+  // defeated one, and leaving the stale minHeight defeated the other.
+  {
+    const at = APP.indexOf('<div style={{width:240,');
+    t.ok(at > 0, "3f the desktop sidebar is where this test thinks it is");
+    const decl = APP.slice(at, APP.indexOf("}}>", at));
+    const has = (k) => new RegExp(`(^|[,{])\\s*${k}\\s*:`).test(decl);
+    t.ok(/position:"sticky"/.test(decl) && /top:"var\(--banner-h, 0px\)"/.test(decl),
+      "3g it is offset below the banner");
+    t.ok(!has("paddingTop"),
+      "3h …ONCE. Sticky top already displaces it; padding as well pushed a full-height box that " +
+      "far below the fold and took the Settings button off screen with it.");
+    t.ok(/height:`calc\(100dvh - var\(--banner-h, 0px\)\)`/.test(decl),
+      "3i and the box is shortened by the same amount, so it ends at the bottom of the viewport");
+    t.ok(!has("minHeight"),
+      "3j with no minHeight fighting that height — it was set to the same calc and was dead");
+    // Shortening alone is not enough: on a short viewport the content is taller than the box, and
+    // without this the footer (Settings, the only route to Settings on desktop) simply falls off.
+    t.ok(/overflowY:"auto"/.test(decl),
+      "3k …and it scrolls its own contents, so nothing is unreachable on a short viewport");
+  }
   t.ok(APP.includes(`maxWidth:"calc(100vw - 240px)",paddingTop:"${V}"`),
-    "3h and the desktop MAIN column reserves the height too, or its top bar lands on its content");
+    "3l the desktop MAIN column reserves the height too, or its top bar lands on its content");
 
-  // Every banner that pins to the top must be inside the measured container, or it is either
-  // covering something or being covered by the others.
-  const fixedTops = (APP.match(/position:"fixed",top:0/g) || []).length;
-  t.eq(fixedTops, 2, `3i exactly one fixed top container per shell, and no banner outside it (${fixedTops})`);
-  t.ok(/\{syncBanner\}\{migratedBanner\}\{demoBanner\}\{offlineBanner\}/.test(APP),
-    "3j the offline banner is in the container with the other three");
-  t.ok(!/zIndex:9999,background:"#180800"/.test(APP),
-    "3k …and no longer pins itself one z-index below them, where it was invisible whenever another showed");
+  // Every banner that pins to the top must be inside the measured container. Checked as a rule —
+  // no fixed top-0 element outside it — rather than as a count, which a future unrelated overlay
+  // would break for the wrong reason.
+  {
+    const container = '<div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"}}>';
+    t.eq((APP.match(/<div ref=\{bannerRef\}/g) || []).length, 2, "3m one container per shell");
+    t.ok(APP.includes(container), "3n the container is fixed to the top and does not take clicks itself");
+    // Counted, not just found: there are two shells, so matching one of them let a mutation that
+    // removed the offline banner from the other pass unnoticed.
+    t.eq((APP.match(/\{syncBanner\}\{migratedBanner\}\{demoBanner\}\{offlineBanner\}/g) || []).length, 2,
+      "3o all four banners are inside the container, in BOTH shells");
+    // Each banner takes its own clicks back, or the container's empty width swallows them.
+    const autos = (APP.match(/pointerEvents:"auto"/g) || []).length;
+    t.ok(autos >= 4, `3p …and each banner takes its own clicks back (${autos})`);
+    t.ok(!/zIndex:9999,background:"#180800"/.test(APP),
+      "3q no banner pins itself below the container, where it would be invisible behind the others");
+    t.ok(!/const offlineBanner[\s\S]{0,200}maxWidth:430/.test(APP),
+      "3r and the offline banner is full width, not a 430px chip floating in a desktop-width bar");
+  }
 
   // ── 4. the fallback is zero, so nothing moves when no banner shows ───────────────────────────
   t.ok(!/var\(--banner-h\)(?!,)/.test(APP),
