@@ -11,14 +11,20 @@
  *   SUPABASE_SECRET_KEY  — your Supabase service_role secret key (NOT the anon key)
  *   RESEND_API_KEY       — OPTIONAL (Production only). Sends the waitlist confirmation email. When it
  *                          is unset, the signup still succeeds and no email is sent (previews, local).
- *   BETA_CODES           — REQUIRED. Comma-separated list of valid beta/access codes. If unset, the
- *                          function fails CLOSED (every code is rejected). There is deliberately no
- *                          hardcoded fallback — a missing config must never mean "accept known codes".
+ *   BETA_CODES           — REQUIRED while signup is invite-only. Comma-separated list of valid
+ *                          beta/access codes. If unset, the function fails CLOSED (every code is
+ *                          rejected). There is deliberately no hardcoded fallback — a missing config
+ *                          must never mean "accept known codes".
+ *   OPEN_SIGNUP          — OPTIONAL. "true" opens signup to anyone, with no code. Anything else,
+ *                          including unset, keeps signup invite-only exactly as it is today. Read
+ *                          server-side only; its value never reaches the client bundle. See
+ *                          _lib/signupGate.js.
  */
 
 "use strict";
 
 const { getAdminClient } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
+const { openSignupEnabled, decideSignup } = require("./_lib/signupGate");
 
 const BETA_CAP = 30;
 
@@ -281,8 +287,11 @@ exports.handler = async (event) => {
     if (!password || typeof password !== "string" || password.length < 8) {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "weak_password" }) };
     }
-    if (!validateBetaCode(code)) {
-      return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "invalid_code" }) };
+    // Invite-only unless OPEN_SIGNUP is exactly "true". With the flag unset this is byte for byte
+    // today's answer: no code, or a code that is not configured, is invalid_code.
+    const gate = decideSignup({ code, open: openSignupEnabled(), isValidCode: validateBetaCode });
+    if (!gate.allow) {
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: gate.error }) };
     }
 
     let admin;
