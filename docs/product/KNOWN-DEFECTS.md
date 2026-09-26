@@ -766,3 +766,64 @@ with it; no change to them is needed.
 **What happens** The component carries the same tappable deposit and bill rows and edit sheet as
 Today and Watch, but no screen renders it, so those rows are unreachable. Either render it or
 delete it.
+
+---
+
+## 32. The signup endpoint has no rate limit and does not verify the email address
+
+**Rating: MEDIUM while signup is invite-only, HIGH the day OPEN_SIGNUP is turned on.** Found while
+building the open door (item 5 of the open-signup work). Reported, not fixed, deliberately: the guards
+that exist were in scope to preserve, not to redesign.
+
+**Where** `netlify/functions/beta.js`, the `signup` action.
+
+**What happens** There is no per-IP limit, no CAPTCHA and no proof-of-work on signup, and the account
+is created with `email_confirm: true`, so any syntactically valid address works, including one nobody
+owns. Today an invite code is the brake. With the door open, one script can create unlimited real,
+immediately usable accounts from one machine.
+
+Each of those accounts is a 14-day trial, and `planRules.js` treats an unexpired trial as
+**unlimited**, so the only per-account brake on coach spend is `CHAT_DAILY_CEILING` (50 a day). The
+only cross-account brake is the per-IP coach cap (100 a day), which a mobile network, a VPN or a
+handful of hosts sidesteps.
+
+**Fix (suggested, not built)** A per-IP signup cap in Netlify Blobs, the same shape as
+`coach_ip_usage`; or require a real email round trip (`email_confirm: false` plus a confirmation
+link) before the account can call `/api/coach`.
+
+---
+
+## 33. A statement upload costs many chat messages but is metered as one
+
+**Rating: MEDIUM.** Same review.
+
+**Where** `src/App.jsx` (the statement parser prompt, sent to `/api/coach`) against
+`netlify/functions/coach.js`.
+
+**What happens** Statement import goes through `/api/coach`, so it is authenticated, fails closed and
+counts against the same ceilings. But it sends a whole statement, so one upload can cost a large
+multiple of a chat message in tokens while costing exactly 1 against the 50-a-day ceiling. A stranger
+with an account can burn the Anthropic budget far faster by uploading documents than by chatting, and
+the ceiling will not notice.
+
+**Fix (suggested, not built)** Weight the counter by input size, or give statement parsing its own
+much smaller daily allowance.
+
+---
+
+## 34. A linked bank keeps billing after the trial is abandoned
+
+**Rating: MEDIUM (cost, not correctness).** Same review.
+
+**Where** Plaid Items created through `netlify/functions/plaid.js` (`create_link_token` is
+auth-required, so an account is needed first).
+
+**What happens** Plaid bills per Item per month for as long as the access token exists.
+`docs/ops/UNIT-ECONOMICS-SUMMARY.md` puts that at 0.30 USD per connected account per month plus a
+0.10 USD allowance, at 2.5 connected accounts for a typical linking user: about **0.85 USD per linked
+user per month**. `/item/remove` is called on unlink and on account deletion, and on no other path, so
+a trial that links a bank, never converts and never deletes its account keeps costing that every month
+indefinitely. Open signup multiplies the number of such accounts.
+
+**Fix (suggested, not built)** A scheduled sweep that removes Items for accounts whose trial ended
+without converting and which have not opened the app in N days.
