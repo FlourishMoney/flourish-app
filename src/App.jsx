@@ -15054,21 +15054,7 @@ export default function FlourishApp(){
   // "sample data" disclosure returns on next open and cannot be dismissed for good. Safe only
   // because Settings carries a second, permanent exit from demo.
   const [demoBannerHidden, setDemoBannerHidden] = useState(false);
-  // How much room the fixed top banners actually need. Measured rather than assumed: the demo
-  // banner wraps to two lines at 375px and grows again with the phone's text size, and at 88px it
-  // was covering the wordmark and the notification bell. A ResizeObserver keeps it honest.
-  const bannerRef = useRef(null);
-  const [bannerH, setBannerH] = useState(0);
-  useEffect(() => {
-    const el = bannerRef.current;
-    if (!el) { setBannerH(0); return; }
-    const measure = () => setBannerH(el.getBoundingClientRect().height || 0);
-    measure();
-    let ro;
-    try { ro = new ResizeObserver(measure); ro.observe(el); } catch {}
-    window.addEventListener("resize", measure);
-    return () => { try { ro && ro.disconnect(); } catch {} window.removeEventListener("resize", measure); };
-  });
+
   const dismissMigratedBanner = ()=>{ try { localStorage.setItem("flourish_db_migrated","seen"); } catch {} setShowMigratedBanner(false); };
   const getSaver = () => {
     if (!saverRef.current) {
@@ -16158,7 +16144,7 @@ input,button,select,textarea { font-family:inherit; }
   // Sprint Z #15: persistent demo-mode banner so it's always clear the data is sample data and how
   // to switch to real. (The "Try Demo" entry already lives on the onboarding bank-connect step.)
   const demoBanner = appData?.demo && !demoBannerHidden ? (
-    <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.isDark?"rgba(5,8,16,0.94)":"rgba(244,241,235,0.94)",backdropFilter:"blur(12px)",boxShadow:`inset 0 0 0 999px ${C.teal}22`,borderBottom:`1px solid ${C.teal}55`,color:C.tealBright,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 34px",fontFamily:"'Plus Jakarta Sans',sans-serif",flexWrap:"wrap"}}>
+    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.isDark?"rgba(5,8,16,0.94)":"rgba(244,241,235,0.94)",backdropFilter:"blur(12px)",boxShadow:`inset 0 0 0 999px ${C.teal}22`,borderBottom:`1px solid ${C.teal}55`,color:C.tealBright,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 34px",fontFamily:"'Plus Jakarta Sans',sans-serif",flexWrap:"wrap"}}>
       🧪 Demo mode: you're viewing sample data.
       {/* Labelled as an exit, not a "connect your bank" prompt: in demo the numbers are sample data,
           so nagging to connect a bank misreads the context. This button is also the ONLY route out
@@ -16182,7 +16168,7 @@ input,button,select,textarea { font-family:inherit; }
   if(isDesktop) return (
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      {syncBanner}{migratedBanner}{demoBanner}<div aria-hidden="true" style={{height:bannerH,flexShrink:0}}/><ModalHost/>
+      {syncBanner}{migratedBanner}{demoBanner}<ModalHost/>
 
       {/* ── DESKTOP SIDEBAR ─────────────────────────────────────────── */}
       <div style={{width:240,minHeight:"100dvh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:0,height:"100dvh",flexShrink:0}}>
@@ -16283,7 +16269,7 @@ input,button,select,textarea { font-family:inherit; }
   return(
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      {syncBanner}{migratedBanner}{demoBanner}<div aria-hidden="true" style={{height:bannerH,flexShrink:0}}/><ModalHost/>
+      {syncBanner}{migratedBanner}{demoBanner}<ModalHost/>
       {/* Ambient mesh background */}
       <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
         <div style={{position:"absolute",top:-220,left:-180,width:640,height:640,borderRadius:"50%",background:C.isDark?"radial-gradient(circle,rgba(0,204,133,0.055) 0%,transparent 68%)":"radial-gradient(circle,rgba(0,147,95,0.07) 0%,transparent 68%)",animation:"breathe 8s ease-in-out infinite"}}/>
@@ -16295,7 +16281,7 @@ input,button,select,textarea { font-family:inherit; }
         {!isOnline&&(
           <div style={{position:"fixed",top:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,zIndex:9999,background:"#180800",borderBottom:`2px solid ${C.orange}44`,padding:"9px 20px",display:"flex",alignItems:"center",gap:10}}>
             <span style={{fontSize:14}}>📡</span>
-            <span style={{color:C.goldBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700}}>Offline. Coach paused, numbers saved.</span>
+            <span style={{color:DARK_C.goldBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700}}>Offline. Coach paused, numbers saved.</span>
           </div>
         )}
         {/* ── TRIAL BANNER ─── Phase D7: only render for users on an active trial ── */}
@@ -16313,13 +16299,13 @@ input,button,select,textarea { font-family:inherit; }
         {!isNativeApp()&&trialExpired&&(
           <div style={{background:"#180800",borderBottom:`2px solid ${C.red}55`,padding:"10px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
             <span style={{fontSize:13}}>🔒</span>
-            <span style={{color:C.redBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,flex:1}}>Your free trial has ended</span>
+            <span style={{color:DARK_C.redBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,flex:1}}>Your free trial has ended</span>
             <button onClick={()=>setShowPaywall(true)} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:8,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
               Upgrade Now
             </button>
           </div>
         )}
-        <div style={{padding:"max(14px, env(safe-area-inset-top)) 20px 12px",background:C.isDark?"rgba(5,8,16,0.90)":"rgba(244,241,235,0.92)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",position:"sticky",top:bannerH,zIndex:30,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 1px 0 rgba(255,255,255,0.025)"}}>
+        <div style={{padding:"max(14px, env(safe-area-inset-top)) 20px 12px",background:C.isDark?"rgba(5,8,16,0.90)":"rgba(244,241,235,0.92)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",position:"sticky",top:0,zIndex:30,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 1px 0 rgba(255,255,255,0.025)"}}>
           <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",padding:0}}>
             <FlourishMark size={36}/>
             <span style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:20,color:C.cream,letterSpacing:-0.3}}>flourish</span>
