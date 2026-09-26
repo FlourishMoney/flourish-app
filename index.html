@@ -22,6 +22,12 @@
          auth/onboarding early returns, so pre-auth screens (landing, auth, reset, MFA) had no webfont
          and silently fell back to Times. Plus Jakarta Sans stops at 800 — nothing may ask for 900. -->
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" />
+    <!-- The browser's default 8px body margin inset every screen by 8px on each edge. On the app shell
+         it showed as dark gutters (globalStyles paints body #060A0E); on the pre-auth screens (landing,
+         login, reset, MFA), which mount before globalStyles and leave body transparent, it showed as a
+         white border, and it added 16px to every page's height. Reset here, not in globalStyles, so
+         it applies to every screen, the native build included (it bundles this file). -->
+    <style>body{margin:0}</style>
   </head>
   <body>
     <div id="root"></div>
