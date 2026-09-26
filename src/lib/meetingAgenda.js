@@ -8,7 +8,7 @@
 // relevant engine (with tests) — do not compute it here.
 //
 // snapshot shape (all values already computed by engines):
-//   safeSpend:      { dailyLog: [{ date, withinSafe: boolean }] }
+//   weekTotal:      { thisWeek, normal, delta }                      // the week just gone vs a usual one
 //   forecastRisks:  [{ date, label, amount, balanceAfter }]          // next 14 days, overdraft/low-balance events
 //   behaviorDeltas: [{ category, delta, normal }]                    // spend vs the user's usual pattern
 //   debts:          [{ name, balance, prevBalance, payoffDate }]
@@ -26,11 +26,17 @@ function _money(v) { const n = _n(v); return n == null ? null : (n < 0 ? `-$${Ma
 export function buildMeetingAgenda(snapshot = {}) {
   const wins = [], changes = [], risks = [], progress = [], decisions = [];
 
-  // ── Wins ────────────────────────────────────────────────────────────────────────────────────
-  const log = Array.isArray(snapshot.safeSpend?.dailyLog) ? snapshot.safeSpend.dailyLog : [];
-  if (log.length) {
-    const within = log.filter(d => d && d.withinSafe).length;
-    wins.push({ text: `You stayed within safe-to-spend ${within} of ${log.length} days.`, value: within, source: "safeSpendEngine" });
+  // ── Wins and the whole-week total ───────────────────────────────────────────────────────────
+  // The same figure, routed by its sign: a week that cost less than usual is a win, a week that
+  // cost more is a change. Routing BOTH to wins is how "you stayed within safe-to-spend 0 of 7
+  // days" came to be filed as a win and read out to the household as one.
+  const wk = snapshot.weekTotal;
+  const wkDelta = wk ? _n(wk.delta) : null;
+  if (wkDelta != null && Math.abs(wkDelta) >= CHANGE_THRESHOLD) {
+    (wkDelta < 0 ? wins : changes).push({
+      text: `Your spending came in ${_money(Math.abs(wkDelta))} ${wkDelta < 0 ? "under" : "over"} a usual week.`,
+      value: wkDelta, source: "weeklyReview",
+    });
   }
   (snapshot.debts || []).forEach(d => {
     const bal = _n(d.balance), prev = _n(d.prevBalance);
@@ -47,7 +53,7 @@ export function buildMeetingAgenda(snapshot = {}) {
   (snapshot.behaviorDeltas || []).forEach(b => {
     const delta = _n(b.delta);
     if (delta != null && Math.abs(delta) >= CHANGE_THRESHOLD) {
-      changes.push({ text: `${b.category} ran ${_money(Math.abs(delta))} ${delta > 0 ? "above" : "below"} your usual pace.`, value: delta, source: "behaviorEngine" });
+      changes.push({ text: `${b.category} ran ${_money(Math.abs(delta))} ${delta > 0 ? "above" : "below"} your usual pace.`, value: delta, source: "weeklyReview" });
     }
   });
 
@@ -116,6 +122,11 @@ export function agendaNumbers(agenda) {
   (agenda.wins || []).forEach(w => push(w.value));
   (agenda.changes || []).forEach(c => push(c.value));
   (agenda.risks || []).forEach(r => push(r.value));
+  // `upcoming` carries dollar values, agendaToText sends it to the facilitator under "Coming up"
+  // and the Meet screen renders it. It was left out of both guards below while only the quiet-week
+  // agenda produced it; withWeekAhead now puts it on ordinary agendas, so a whole section of the
+  // meeting was outside the "every number traces to an engine output" rule.
+  (agenda.upcoming || []).forEach(u => push(u.value));
   // questions carry figures inside their TEXT (never as a value), so there is nothing numeric to
   // collect here — but the section must be named, or a future numeric field would go unchecked.
   (agenda.questions || []).forEach(q => push(q.value));
@@ -126,6 +137,6 @@ export function agendaNumbers(agenda) {
 
 // True if every agenda item carries a `source` (provenance) — no item without an engine origin.
 export function everyItemHasSource(agenda) {
-  const all = [...(agenda.wins||[]), ...(agenda.changes||[]), ...(agenda.risks||[]), ...(agenda.progress||[]), ...(agenda.decisions||[]), ...(agenda.questions||[])];
+  const all = [...(agenda.wins||[]), ...(agenda.changes||[]), ...(agenda.risks||[]), ...(agenda.upcoming||[]), ...(agenda.progress||[]), ...(agenda.decisions||[]), ...(agenda.questions||[])];
   return all.every(i => typeof i.source === "string" && i.source.length > 0);
 }

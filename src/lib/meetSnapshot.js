@@ -15,6 +15,7 @@ import { dismissedEntries, lastMeeting, meetingOpening } from "./meetingRecord.j
 import { formatMoney } from "./format.js";
 import { safeToSpendView } from "./safeToSpendView.js";
 import { isCashAccount, num } from "./financialCalculations.js";
+import { weekVersusUsual, categoryPaceDeltas } from "./weeklyReview.js";
 
 const _round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const _num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
@@ -53,6 +54,24 @@ export function buildMeetSnapshot(data = {}) {
     });
     if (risks.length) snap.forecastRisks = risks.slice(0, 4);
   } catch { /* forecast unavailable → no risk section */ }
+
+  // The week that just went — the wins and changes sections, which nothing used to fill.
+  //
+  // Both figures come from weeklyReview.js, which does the counting; this bridge only forwards, the
+  // way it already forwards the forecast and the decision. One `now` for both, so a meeting opened
+  // a millisecond either side of midnight cannot read two different weeks. weeklyReview returns
+  // null / [] when the week or the history is too thin to describe, and nothing is added then —
+  // which is what keeps a quiet week quiet, and keeps quietWeekAgendaFor reachable.
+  try {
+    const now = new Date();
+    const txns = data.transactions || [];
+    const week = weekVersusUsual({ transactions: txns, now });
+    if (week) snap.weekTotal = week;
+    // Top three by size. The agenda applies its own threshold on top, so a quiet week still says
+    // nothing rather than reading out three differences of four dollars each.
+    const deltas = categoryPaceDeltas({ transactions: txns, now }).slice(0, 3);
+    if (deltas.length) snap.behaviorDeltas = deltas;
+  } catch { /* no usable history → no wins and no changes, which is not a failure */ }
 
   // Debts and goals → progress (values read straight from appData / engine, never recomputed here).
   const debts = (data.debts || []).filter(d => _num(d.balance) > 0);
@@ -211,6 +230,44 @@ export function quietWeekFiguresFor(data = {}) {
     });
   } catch { /* no forecast is not a reason to refuse the meeting */ }
   return { safeToSpendText, safeToSpend, upcoming: upcoming.slice(0, 6), truncated: upcoming.length > 6 };
+}
+
+// ── WHAT IS COMING IS NOT ONLY FOR A QUIET WEEK ─────────────────────────────────────────────────
+// quietWeekAgendaFor was written as a SUBSTITUTE: an empty agenda was replaced wholesale by the
+// safe-to-spend figure and what falls due in the next seven days. That was safe while the wins and
+// changes sections were dead, because almost every agenda without a decision was empty. Now that
+// they fill, a household whose week had something in it would have LOST the rent due on Thursday
+// and the number they came to the meeting for, in exchange for one line about their groceries.
+//
+// So those figures are ADDED instead, to any agenda that does not already carry what is coming.
+// Nothing is computed here either: both come from quietWeekFiguresFor, which reads them through
+// safeToSpendView exactly as every screen that shows them does, refusals included.
+export function withWeekAhead(agenda, data = {}, label = "Safe until next payday") {
+  if (!agenda || agenda.quiet) return agenda;
+  let f;
+  try { f = quietWeekFiguresFor(data); } catch { return agenda; }
+  // The two halves are decided SEPARATELY. A single early return on `risks` meant the household
+  // with an overdraft warning — the one most likely to want the number — was the one denied its
+  // safe-to-spend line, because a risk is not a safe-to-spend figure.
+  const already = (agenda.upcoming || []);
+  const upcoming = already.length || (agenda.risks || []).length ? already
+    : (f.upcoming || []).filter(u => u && u.text)
+        .map(u => ({ text: u.text, value: u.value != null ? u.value : null, source: "forecastEngine" }))
+        .concat(f.truncated ? [{ text: "More items follow in the week ahead.", value: null, source: "meetSnapshot" }] : []);
+  const progress = [...(agenda.progress || [])];
+  // Keyed on the line itself, not on whether anything else was added: with nothing falling due in
+  // the next seven days the upcoming list comes back empty, so a guard that read it would prepend
+  // this line again on every call.
+  const line = f.safeToSpendText ? `${label}: ${f.safeToSpendText}.` : null;
+  if (line && !progress.some(p => p && p.text === line)) {
+    progress.unshift({ text: line, value: f.safeToSpend, source: "safeSpendEngine" });
+  }
+  // Compare by CONTENT, not by identity: with nothing falling due in the next seven days the
+  // computed list is a fresh empty array, so an identity check returned a new object for a call
+  // that changed nothing, and the guard read as if it did not.
+  const sameUpcoming = upcoming.length === already.length && upcoming.every((u, i) => u === already[i]);
+  if (sameUpcoming && progress.length === (agenda.progress || []).length) return agenda;
+  return { ...agenda, upcoming, progress };
 }
 
 // True when the assembled agenda has nothing in it — the case quietWeekAgendaFor exists for.

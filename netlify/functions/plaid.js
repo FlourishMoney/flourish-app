@@ -170,7 +170,7 @@ exports.handler = async (event) => {
         const adminChk = getAdminClient();
         const { count } = await adminChk.from("plaid_items").select("item_id", { count: "exact", head: true }).eq("user_id", user_id).eq("status", "active");
         if ((count || 0) >= 1) {
-          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message: "Connecting more than one bank is a Plus feature — upgrade to add unlimited banks." }) };
+          return { statusCode: 402, headers: CORS, body: JSON.stringify({ error: "plan_limit", message: "Connecting more than one bank is a Plus feature. Upgrade to add unlimited banks." }) };
         }
       }
 
@@ -450,7 +450,7 @@ exports.handler = async (event) => {
     // exchange_token now exchanges AND persists the item atomically server-side,
     // so this token-in-request-body path is permanently closed.
     if (action === "store_item") {
-      return { statusCode: 410, headers: CORS, body: JSON.stringify({ error: "store_item is deprecated — exchange_token now persists the item server-side." }) };
+      return { statusCode: 410, headers: CORS, body: JSON.stringify({ error: "store_item is deprecated: exchange_token now persists the item server-side." }) };
     }
 
     // 10. list_items — auth-required: return all items for the authenticated user
@@ -590,7 +590,7 @@ exports.handler = async (event) => {
           }
           // Free tier: skip NEW banks beyond the one-bank cap (re-migrating an existing item is fine).
           if (capBanks && !existingIds.has(item_id) && activeCount >= 1) {
-            failures.push({ error: "plan_limit", message: "Free plan supports one bank — upgrade to Plus to add more." });
+            failures.push({ error: "plan_limit", message: "Free plan supports one bank. Upgrade to Plus to add more." });
             continue;
           }
           // Upsert (idempotent — re-running migration is safe)
@@ -710,7 +710,7 @@ exports.handler = async (event) => {
     console.error("[Plaid]", err.errorCode || "", err.message);
 
     if (err.errorCode === "ITEM_LOGIN_REQUIRED") {
-      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Bank session expired — please reconnect.", needs_reconnect: true }) };
+      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Bank session expired. Please reconnect.", needs_reconnect: true }) };
     }
     if (err.name === "AbortError") {
       return { statusCode: 504, headers: CORS, body: JSON.stringify({ error: "Plaid request timed out. Please try again." }) };

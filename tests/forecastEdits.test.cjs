@@ -409,22 +409,32 @@ const { create } = require("./_runner.cjs");
     t.ok(/<DepositSheet key=\{depositTxnKey\(depositTxn\)\} txn=\{depositTxn\}[^>]*mode="mark"/.test(fnBody("SpendScreen")) && /This isn't income/.test(fnBody("SpendScreen")), "Activity can mark any past deposit \"This isn't income\"");
     t.ok(/<ExpectedItemSheet /.test(fnBody("PlanAhead")) && /<DailySpendSheet /.test(fnBody("PlanAhead")), "Watch offers expected money in or out, and the daily spend sheet");
     t.ok((app.match(/<PayVariesControl /g) || []).length >= 2, "\"My pay varies\" is on every income source in Settings and in the deposit sheet");
-    // No em or en dash in any user-facing string ANYWHERE in src: every string literal, template text and
-    // JSX text, parsed (so comments, which may use dashes, are not scanned). Regex literals are not
-    // strings, so input-normalising patterns like /[−–—]/ stay.
+    // Two rules over every user-facing string ANYWHERE in src: no em or en dash, and no "engine" or
+    // "engines". Both are read from every string literal, template text and JSX text, parsed (so
+    // comments, which say "ForecastEngine" constantly and may use dashes, are not scanned). Regex
+    // literals are not strings, so input-normalising patterns like /[−–—]/ stay, and an identifier
+    // such as ForecastEngine is not a string either, so the code keeps its names.
+    //
+    // "Engine" is the app describing its own plumbing. Meet used to tell the household "it reads what
+    // the engines already calculated", which asks them to hold a model of how Flourish is built before
+    // they can read their own agenda. What Flourish worked out is the household's business; what it
+    // worked it out WITH is not.
     let parser;
     try { parser = require(path.join(__dirname, "../node_modules/@babel/parser")); } catch { parser = null; }
     t.ok(!!parser, "the copy check can load @babel/parser (installed with @vitejs/plugin-react)");
     if (parser) {
       const srcDir = path.join(__dirname, "../src");
       const files = [path.join(srcDir, "App.jsx"), path.join(srcDir, "main.jsx"), ...fs.readdirSync(path.join(srcDir, "lib")).filter(f => /\.jsx?$/.test(f)).map(f => path.join(srcDir, "lib", f))];
-      const dashed = [];
+      const dashed = [], jargon = [];
       for (const file of files) {
         const ast = parser.parse(fs.readFileSync(file, "utf8"), { sourceType: "module", plugins: ["jsx"] });
         (function walk(n) {
           if (!n || typeof n.type !== "string") return;
           const text = n.type === "StringLiteral" ? n.value : n.type === "TemplateElement" ? (n.value.cooked ?? n.value.raw) : n.type === "JSXText" ? n.value : null;
           if (text && /[\u2013\u2014]/.test(text)) dashed.push(`${path.basename(file)}:${n.loc.start.line} ${text.trim().slice(0, 60)}`);
+          // \bengines?\b on its own, so ForecastEngine inside a string (were one ever written) is not
+          // what this catches: the word standing alone is the one a household is asked to read.
+          if (text && /\bengines?\b/i.test(text)) jargon.push(`${path.basename(file)}:${n.loc.start.line} ${text.trim().slice(0, 60)}`);
           for (const k of Object.keys(n)) {
             if (["loc", "start", "end", "leadingComments", "trailingComments", "innerComments", "extra"].includes(k)) continue;
             const v = n[k];
@@ -434,6 +444,110 @@ const { create } = require("./_runner.cjs");
         })(ast.program);
       }
       t.eq(dashed, [], `no em or en dash in any string in src (${files.length} files scanned)`);
+      t.eq(jargon, [], `no string in src calls Flourish's own machinery an "engine" (${files.length} files scanned)`);
+      // ── The strings a household reads that do NOT live in src/ ──────────────────────────────
+      // Two of them are server-side constants. When the facilitator guard rejects the model's reply
+      // twice, SAFE_FACILITATOR_FALLBACK is what appears in Meet under the coach's own name; the
+      // snapshot guard's is the same. They were carrying em dashes for exactly as long as the gate
+      // only looked at src/. The rest of netlify/functions is console logs and model prompts, which
+      // no household reads, so this names the two constants rather than sweeping the directory.
+      {
+        const strings = (file, pick) => {
+          const ast = parser.parse(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), { sourceType: "unambiguous" });
+          const out = [];
+          (function walk(n, inside) {
+            if (!n || typeof n.type !== "string") return;
+            const here = inside || (n.type === "VariableDeclarator" && n.id && pick.test(n.id.name || ""));
+            const text = n.type === "StringLiteral" ? n.value : n.type === "TemplateElement" ? (n.value.cooked ?? n.value.raw) : null;
+            if (here && text) out.push(text);
+            for (const k of Object.keys(n)) {
+              if (["loc", "start", "end", "leadingComments", "trailingComments", "innerComments", "extra"].includes(k)) continue;
+              const v = n[k];
+              if (Array.isArray(v)) v.forEach(x => x && typeof x.type === "string" && walk(x, here));
+              else if (v && typeof v.type === "string") walk(v, here);
+            }
+          })(ast.program, false);
+          return out;
+        };
+        // ── And everything the functions produce for the app to SHOW ───────────────────────────
+        // The named-constant walker above reads the two guards' fallbacks. It is not enough, and the
+        // scope has now been wrong three times, each way: src/ only (missing both fallbacks);
+        // `message:`/`error:` STRING LITERALS (so the same reply written as a template sailed
+        // through); and SENTENCES, capital-space-full-stop, which is not the house style here —
+        // "Method not allowed" and "Request too large" carry no terminal punctuation, so most of the
+        // replies fell out and the gate got WEAKER as it got wider.
+        //
+        // Two rules, and a value is read whether it is a literal, a template, or the two glued with
+        // +, which is the third form that escaped every earlier version:
+        //   A. every `message:` / `error:` value anywhere in netlify/functions
+        //   B. every sentence in the three modules whose job is household prose
+        // Model prompts are deliberately outside both — coachPrompt.js and the parser instructions
+        // inline in coach.js are the model's copy, not the household's, and policing their
+        // punctuation would be a false positive. The word rule below still holds coachPrompt.js.
+        {
+          const flatten = (n) => {
+            if (!n) return null;
+            if (n.type === "StringLiteral") return n.value;
+            if (n.type === "TemplateLiteral") return n.quasis.map(q => q.value.cooked ?? q.value.raw).join("0");
+            if (n.type === "BinaryExpression" && n.operator === "+") {
+              const l = flatten(n.left), r = flatten(n.right);
+              return l == null || r == null ? null : l + r;
+            }
+            return null;
+          };
+          const SENTENCE = /^[A-Z][^]*\s[^]*[.!?]$/;
+          const PROSE_FILES = ["coachLimits.js", "facilitatorGuard.js", "snapshotGuard.js"];
+          const read = (file) => {
+            const ast = parser.parse(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), { sourceType: "unambiguous" });
+            const base = path.basename(file), out = [];
+            (function go(n, inConsole) {
+              if (!n || typeof n.type !== "string") return;
+              const isConsole = inConsole || (n.type === "CallExpression" && n.callee && n.callee.object && n.callee.object.name === "console");
+              if (!isConsole) {
+                const key = n.type === "ObjectProperty" && n.key ? (n.key.name || n.key.value) : null;
+                // A. "rate_limited" and "plan_limit" carry no space: those are codes, not replies.
+                if (/^(message|error)$/.test(key || "")) {
+                  const text = flatten(n.value);
+                  if (text && /\s/.test(text)) out.push(`${base}:${n.loc.start.line} ${text}`);
+                }
+                if (PROSE_FILES.includes(base)) {                       // B
+                  const text = flatten(n);
+                  if (text && SENTENCE.test(text.trim())) out.push(`${base}:${n.loc.start.line} ${text.trim()}`);
+                }
+              }
+              for (const k of Object.keys(n)) {
+                if (["loc", "start", "end", "leadingComments", "trailingComments", "innerComments", "extra"].includes(k)) continue;
+                const v = n[k];
+                if (Array.isArray(v)) v.forEach(x => x && typeof x.type === "string" && go(x, isConsole));
+                else if (v && typeof v.type === "string") go(v, isConsole);
+              }
+            })(ast.program, false);
+            return out;
+          };
+          const fnFiles = [];
+          (function collect(dir) {
+            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+              const p2 = path.join(dir, e.name);
+              if (e.isDirectory()) collect(p2);
+              else if (/\.(js|mjs|cjs)$/.test(e.name)) fnFiles.push(path.relative(path.join(__dirname, ".."), p2));
+            }
+          })(path.join(__dirname, "..", "netlify", "functions"));
+          const replies = fnFiles.flatMap(read);
+          t.ok(replies.length > 40, `everything the functions show was read (${replies.length} strings, across ${fnFiles.length} files)`);
+          // Named, so a walker that quietly stops reading one of the three forms is caught rather
+          // than passing on a smaller haul.
+          t.ok(replies.some(x => /^coach\.js:\d+ Method not allowed$/.test(x)), "…including a reply with no terminal full stop");
+          t.ok(replies.some(x => /^coachLimits\.js:\d+ .*Coach message limit/.test(x)), "…one written as a template literal");
+          t.ok(replies.filter(x => /^(facilitatorGuard|snapshotGuard)\.js:/.test(x)).length >= 2, "…and both replies shown when the coach is overruled");
+          t.eq(replies.filter(x => /[\u2013\u2014]/.test(x)), [], "no em or en dash in anything a function produces for the app to show");
+          t.eq(replies.filter(x => /\bengines?\b/i.test(x)), [], "…and none of them calls Flourish's machinery an engine");
+        }
+
+        const prompts = strings("netlify/functions/_lib/coachPrompt.js", /^[A-Z_]+$/);
+        t.eq(prompts.length, 3, `the three coach prompt constants were found and read (got ${prompts.length})`);
+        t.eq(prompts.filter(x => /\bengines?\b/i.test(x)), [], "the coach is never told Flourish's numbers come from its engines");
+      }
+
       // index.html's <title> is the one string outside src/ that a person reads, on a browser tab and
       // in a search result, so the same rule applies to it.
       const pageTitle = (fs.readFileSync(path.join(__dirname, "../index.html"), "utf8").match(/<title>([\s\S]*?)<\/title>/) || [])[1] || "";

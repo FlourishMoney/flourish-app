@@ -915,3 +915,122 @@ later has three days less trial.
 
 **Fix (suggested, not built)** Start the trial when the address is confirmed rather than when the row
 is created.
+
+---
+
+## 39. A recategorised merchant reads as a week of restraint
+
+**Rating: MEDIUM.** Adversarial review of the weekly-review work (PR #28).
+
+**Where** `src/lib/weeklyReview.js`, `categoryPaceDeltas`.
+
+**What happens** The comparison is per category, and nothing reconciles a category that disappears
+against one that appears. If a household (or a Plaid recategorisation) moves a regular merchant from
+"Coffee & Dining" to "Restaurants" mid-month, the same $300 of spending is still there, but the
+meeting says "Coffee & Dining ran $300.00 below your usual pace." The money did not move; the label
+did. The three-week habit rule keeps the NEW category out for three weeks, so only the false
+congratulation shows.
+
+**Fix (suggested, not built)** Compare the disappearance against the appearance: when a category
+falls to zero and a category with no history appears at about the same size in the same week, treat
+them as one and say nothing. Or read the category overrides and follow the rename.
+
+---
+
+## 40. The copy gate has no escape hatch
+
+**Rating: LOW.** Same review.
+
+**Where** `tests/forecastEdits.test.cjs`, section 9.
+
+**What happens** The gate rejects `\bengines?\b` in every string in `src/`, with no allow-list. A
+future telemetry key, CSS class or data attribute spelled `"tile-engine"` fails the build; the same
+name spelled `"tile_engine"` passes, because the word boundary falls differently. There is no way to
+opt a legitimate string out short of editing the test.
+
+**Fix (suggested, not built)** An allow-list keyed on the exact string, or restrict the rule to
+strings that are rendered (JSX text and the props that carry copy) rather than every literal.
+
+---
+
+## 41. The money meeting has no way to say a week went badly
+
+**Rating: LOW.** Same review.
+
+**Where** `src/lib/meetingAgenda.js`, `src/lib/weeklyReview.js`.
+
+**What happens** A week that cost more than usual is filed under "changes", which is right, but there
+is nothing that treats a run of heavy weeks, or a category climbing three weeks in a row, as anything
+other than this week against an average that is itself rising. The trend hides inside the baseline.
+
+**Fix (suggested, not built)** Compare the four baseline weeks against each other as well as against
+this one, and surface a direction rather than only a difference.
+
+---
+
+## 42. The Meet screen does not label a win as a win
+
+**Rating: LOW.** Second adversarial review of PR #28.
+
+**Where** `src/App.jsx`, `MeetAgenda` — `items` flattens `wins`, `changes`, `risks`, `upcoming` and
+`progress` into one unlabelled bullet list under "Flourish noticed".
+
+**What happens** `meetingAgenda.js` routes the week's figure by its sign so a week that cost more
+than usual is a change rather than a win, which is what the facilitator receives under the `Wins:`
+and `Changes:` headings. On screen there are no headings, so the distinction the routing exists to
+make is invisible to the household: a good week and a bad one read as the same bullet.
+
+**Fix (suggested, not built)** Give the card the same two groups the agenda has, or at least a
+marker on the items that are wins.
+
+---
+
+## 43. The demo's category breakdown is not pinned
+
+**Rating: LOW.** Same review.
+
+**Where** `src/lib/demoFixture.js`, `tests/demoFixtureUS.test.cjs`.
+
+**What happens** The published demo signature pins safe-to-spend, the daily figure, the next
+deposit, the committed bills, the buffer, the savings allocation and the balance. It pins nothing
+about the category breakdown, so the eleven days of history added in PR #28 moved the demo's largest
+spending category from Shopping to Groceries, and its totals by 37%, with the gate green throughout.
+Any store screenshot of a category breakdown or a "this month" total is therefore unguarded.
+
+**Fix (suggested, not built)** Extend the signature with the top three categories and the 30-day
+discretionary total.
+
+---
+
+## 44. "Usual" is a mean, so one unusual week still bends it
+
+**Rating: MEDIUM.** Fourth adversarial review of PR #28.
+
+**Where** `src/lib/weeklyReview.js`, `_scan` / `weekVersusUsual` / `categoryPaceDeltas`.
+
+**What happens** Three baseline weeks must now carry real spending before there is a "usual" at all,
+which stops one purchase speaking for a month. It does not stop one week speaking louder than the
+rest: three weeks carrying a dollar on two days each is enough to open the window, and a single
+$2,000 week inside it then sets "usual" to about $500. A $300 week is reported as $200 under.
+
+**Fix (suggested, not built)** Use the median of the covered weeks rather than the mean, or drop the
+highest and lowest before averaging. Either needs its own tests: the median changes what "usual"
+means for every household, not only the skewed ones.
+
+---
+
+## 45. The copy gate polices replies, not everything a household reads from the server
+
+**Rating: LOW.** Same review.
+
+**Where** `tests/forecastEdits.test.cjs`, section 9.
+
+**What happens** The rule reads every `message:`/`error:` value in `netlify/functions` and every
+sentence in the three modules that write household prose. A fourth module that starts returning
+prose, or a reply handed back under a different key, is outside it until someone adds the file to
+`PROSE_FILES`. Model prompts are excluded on purpose, so a household-facing string written inside
+`coachPrompt.js` would also be missed.
+
+**Fix (suggested, not built)** Mark household copy at the source — a `copy/` module, or a naming
+convention the walker can key on — instead of a list of files the walker has to be told about.
+

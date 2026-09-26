@@ -79,16 +79,31 @@ const CA_FIXTURE = {
   },
   // [id, daysAgo, name, amount, category, icon, color]. Payrolls sit ~bi-weekly (1/12/26 days ago)
   // and pay the primary income, so the most recent one anchors the cadence off real history.
+  //
+  // THE WEEK JUST GONE HAS SOMETHING IN IT. Meet reads the seven complete days before today and
+  // compares them, and each category, against the four weeks behind (weeklyReview.js). A household
+  // whose sample week is indistinguishable from its other four demonstrates nothing, and the demo
+  // opened the money meeting on "Nothing stood out this week".
+  //
+  // So this household ate out for three weeks and cooked at home in the last one, and did its big
+  // shop in it: the meeting opens on a week under its usual, dining well below pace and groceries
+  // above it. Every one of those figures is computed by the same code a real household's is.
+  //
+  // What moved, and why the published figures did not move with it: t9's takeaway from 4 days ago
+  // to 11, the Shell Gas from 1 to 31, the Amazon order from 3 to 26, and week three's $38 on day 22
+  // from a craft-shop order to a meal out. Moves and one relabel, so no total changes. The eleven
+  // days of older history added below are at this household's own daily rate, for the same reason:
+  // avgDailySpendEstimate is total/span, and both grew together.
   txns: [
     ["t1",  0,  "Loblaws",         67.43,  "Groceries",       "🛒", "#2E8B2E"],
     ["t2",  0,  "Tim Hortons",     4.85,   "Coffee & Dining", "☕", "#D97A3A"],
     ["t3",  0,  "Tim Hortons",     5.10,   "Coffee & Dining", "☕", "#D97A3A"],
     ["t4",  1,  "Payroll Deposit", "PAY",  "Income",          "💰", "#6FE494"],
-    ["t5",  1,  "Shell Gas",       62.10,  "Gas & Transport", "⛽", "#CFA03E"],
+    ["t5",  31, "Shell Gas",       62.10,  "Gas & Transport", "⛽", "#CFA03E"],
     ["t6",  2,  "Starbucks",       6.75,   "Coffee & Dining", "☕", "#D97A3A"],
     ["t7",  3,  "Netflix",         18.99,  "Subscriptions",   "🎬", "#8A5FC8"],
-    ["t8",  3,  "Amazon.ca",       34.99,  "Shopping",        "📦", "#C45898"],
-    ["t9",  4,  "Uber Eats",       28.40,  "Coffee & Dining", "🍕", "#D97A3A"],
+    ["t8",  26, "Amazon.ca",       34.99,  "Shopping",        "📦", "#C45898"],
+    ["t9",  11, "Uber Eats",       28.40,  "Coffee & Dining", "🍕", "#D97A3A"],
     ["t10", 5,  "LCBO",            24.15,  "Shopping",        "🛍️", "#C45898"],
     ["t11", 6,  "Walmart",         89.22,  "Groceries",       "🛒", "#2E8B2E"],
     ["t12", 7,  "Hydro One",       124.00, "Utilities",       "⚡", "#CFA03E"],
@@ -107,12 +122,28 @@ const CA_FIXTURE = {
     ["t25", 17, "Starbucks",       7.10,   "Coffee & Dining", "☕", "#D97A3A"],
     ["t26", 19, "Bell Canada",     65.00,  "Utilities",       "📱", "#CFA03E"],
     ["t27", 20, "Kelsey's",        54.20,  "Coffee & Dining", "🍷", "#D97A3A"],
-    ["t28", 22, "Shopify/Etsy",    38.00,  "Shopping",        "🎁", "#C45898"],
+    ["t28", 22, "Boston Pizza",    38.00,  "Coffee & Dining", "🍝", "#D97A3A"],
     ["t29", 24, "Costco Gas",      55.80,  "Gas & Transport", "⛽", "#CFA03E"],
     ["t30", 26, "Payroll Deposit", "PAY",  "Income",          "💰", "#6FE494"],
     // A one-off expense reimbursement. It is money in but not income: Flourish holds it out of the
     // forecast and asks "Is this income?" (depositClassify), which is what the demo should show.
     ["t31", 4,  "Expense Reimbursement Northwind", -286.40, "Income", "💼", "#6FE494"],
+    // Days 25 to 35. A real Plaid connection returns ninety days; this household had twenty-six,
+    // which is under the three weeks weeklyReview needs behind a week before it will call anything
+    // "usual". These rows total $368.08 over eleven days, which IS this household's own $33.46 a
+    // day, so total/span is unchanged and the published signature ($1,944 safe, $138/day, $3,083)
+    // still holds. They are also what makes the week just gone READABLE: three weeks of eating out
+    // behind a week of cooking at home.
+    ["t32", 25, "Loblaws",         48.90,  "Groceries",       "🛒", "#2E8B2E"],
+    ["t33", 27, "Starbucks",       6.80,   "Coffee & Dining", "☕", "#D97A3A"],
+    ["t40", 28, "Cineplex",        42.30,  "Entertainment",   "🎟️", "#8A5FC8"],
+    ["t34", 29, "Uber Eats",       34.60,  "Coffee & Dining", "🍕", "#D97A3A"],
+    ["t35", 30, "Kelsey's",        58.90,  "Coffee & Dining", "🍷", "#D97A3A"],
+    ["t39", 32, "Petro-Canada",    58.25,  "Gas & Transport", "⛽", "#CFA03E"],
+    ["t36", 33, "Costco",          44.20,  "Groceries",       "🛒", "#2E8B2E"],
+    ["t37", 34, "Tim Hortons",     5.20,   "Coffee & Dining", "☕", "#D97A3A"],
+    ["t38", 35, "Winners",         45.78,  "Shopping",        "🛍️", "#C45898"],
+    ["t41", 35, "Shoppers Drug Mart", 23.15, "Health",        "💊", "#4A8FCC"],
   ],
 };
 
@@ -262,7 +293,11 @@ export function buildDemoBills(now = new Date(), country = "CA") {
 // out of sync with its own declared income the way the CA one silently did (item 8).
 export function buildDemoTxns(now = new Date(), country = "CA") {
   const f = demoFixtureFor(country);
-  const at = (daysAgo) => { const d = new Date(now); d.setDate(d.getDate() - daysAgo); return { date: d.toISOString().slice(0, 10), dow: d.getDay() }; };
+  // _iso, not toISOString: toISOString is UTC, so east of Greenwich in the local early morning every
+  // row here was stamped with YESTERDAY's date. The bills above have always used _iso; the
+  // transactions did not, and the mismatch put the demo's week one day out for a visitor in Sydney
+  // at 2am while being invisible in Toronto at noon.
+  const at = (daysAgo) => { const d = new Date(now); d.setDate(d.getDate() - daysAgo); return { date: _iso(d), dow: d.getDay() }; };
   return f.txns.map(([id, daysAgo, name, amount, cat, icon, color]) => ({
     id, name, amount: amount === "PAY" ? -f.income : amount, cat, icon, color, ...at(daysAgo),
   }));
