@@ -1000,3 +1000,37 @@ Any store screenshot of a category breakdown or a "this month" total is therefor
 **Fix (suggested, not built)** Extend the signature with the top three categories and the 30-day
 discretionary total.
 
+---
+
+## 44. "Usual" is a mean, so one unusual week still bends it
+
+**Rating: MEDIUM.** Fourth adversarial review of PR #28.
+
+**Where** `src/lib/weeklyReview.js`, `_scan` / `weekVersusUsual` / `categoryPaceDeltas`.
+
+**What happens** Three baseline weeks must now carry real spending before there is a "usual" at all,
+which stops one purchase speaking for a month. It does not stop one week speaking louder than the
+rest: three weeks carrying a dollar on two days each is enough to open the window, and a single
+$2,000 week inside it then sets "usual" to about $500. A $300 week is reported as $200 under.
+
+**Fix (suggested, not built)** Use the median of the covered weeks rather than the mean, or drop the
+highest and lowest before averaging. Either needs its own tests: the median changes what "usual"
+means for every household, not only the skewed ones.
+
+---
+
+## 45. The copy gate polices replies, not everything a household reads from the server
+
+**Rating: LOW.** Same review.
+
+**Where** `tests/forecastEdits.test.cjs`, section 9.
+
+**What happens** The rule reads every `message:`/`error:` value in `netlify/functions` and every
+sentence in the three modules that write household prose. A fourth module that starts returning
+prose, or a reply handed back under a different key, is outside it until someone adds the file to
+`PROSE_FILES`. Model prompts are excluded on purpose, so a household-facing string written inside
+`coachPrompt.js` would also be missed.
+
+**Fix (suggested, not built)** Mark household copy at the source — a `copy/` module, or a naming
+convention the walker can key on — instead of a list of files the walker has to be told about.
+

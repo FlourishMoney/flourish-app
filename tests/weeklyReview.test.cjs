@@ -107,6 +107,11 @@ const history = (weeks = 4) => [[8, 9], [15, 16], [22, 23], [29, 30]].slice(0, w
     const awayOk = weekVersusUsual({ transactions: [tx(8, "Dining", 100), tx(9, "Dining", 100), tx(15, "Dining", 100),
       tx(16, "Dining", 100), tx(29, "Dining", 100), tx(30, "Dining", 100), ...evidence("Dining", 20)], now: NOW });
     t.eq(awayOk && awayOk.normal, 150, "3m three anchoring weeks and one empty one is four covered weeks");
+    // The boundary itself: TWO weeks of real spending with two empty ones between them is still one
+    // week speaking for the window, just more quietly.
+    t.eq(weekVersusUsual({ transactions: [tx(8, "Dining", 150), tx(9, "Dining", 150),
+      tx(34, "Dining", 150), tx(35, "Dining", 150), ...evidence("Dining", 100)], now: NOW }), null,
+      "3n two anchoring weeks with two empty ones between them is not four weeks of history");
   }
 
   // ── 4. "Usual" divides by the weeks of HISTORY, not by the weeks that had a purchase ──────────
@@ -282,6 +287,23 @@ const history = (weeks = 4) => [[8, 9], [15, 16], [22, 23], [29, 30]].slice(0, w
     const twice = withWeekAhead(once, noUpcoming);
     t.eq((twice.progress || []).filter(x => /^Safe until next payday/.test(x.text)).length, 1,
       "11j the safe-to-spend line is added once, however many times it is asked for");
+    // …and an agenda that already has the line must still be given the week ahead. Short-circuiting
+    // on "nothing changed" by comparing the wrong thing threw that list away silently.
+    // The line copied VERBATIM from a previous run, so the dedupe really fires and the function
+    // really has nothing to add to `progress`.
+    const line = ((withWeekAhead(bare, data).progress || [])[0] || {}).text;
+    t.ok(/^Safe until next payday: \$/.test(line || ""), `11k the line to re-use was read (got: ${line})`);
+    const hasLine = withWeekAhead({ ...bare, progress: [{ text: line, value: 1, source: "safeSpendEngine" }] }, data);
+    t.eq((hasLine.progress || []).length, 1, "11l …it is not added a second time");
+    t.ok((hasLine.upcoming || []).length > 0,
+      "11m …and an agenda that already carries the safe number is still told what is coming");
+    // Nothing to add at all: the line is already there and nothing falls due this week. The computed
+    // list is a fresh empty array, so comparing it by IDENTITY reported a change that had not
+    // happened and handed back a new object.
+    const settled = withWeekAhead(once, noUpcoming);
+    t.eq((settled.upcoming || []).length, 0, "11n sanity: nothing falls due for this household");
+    t.ok(withWeekAhead(settled, noUpcoming) === settled,
+      "11o …so asking again hands back the very object it was given");
   }
 
   // ── 12. The two provenance guards cover every section, including what is coming ──────────────
@@ -300,6 +322,10 @@ const history = (weeks = 4) => [[8, 9], [15, 16], [22, 23], [29, 30]].slice(0, w
     t.eq(everyItemHasSource({ changes: [{ text: "x" }] }), false, "12e …a sourceless change");
     t.eq(everyItemHasSource({ risks: [{ text: "x" }] }), false, "12f …a sourceless risk");
     t.eq(everyItemHasSource({ progress: [{ text: "x" }] }), false, "12g …and a sourceless progress line");
+    // Every section that carries a figure is in agendaNumbers, not only the ones added recently.
+    t.eq(agendaNumbers({ wins: [{ value: 1 }], changes: [{ value: 2 }], risks: [{ value: 3 }],
+      upcoming: [{ value: 4 }], progress: [{ value: 5 }] }), [1, 2, 3, 4, 5],
+      "12h every section's figure is collected for the traceability check");
   }
 
   t.summary("weeklyReview.test");

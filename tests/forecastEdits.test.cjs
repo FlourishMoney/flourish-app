@@ -469,52 +469,57 @@ const { create } = require("./_runner.cjs");
           })(ast.program, false);
           return out;
         };
-        const fallbacks = [
-          strings("netlify/functions/_lib/facilitatorGuard.js", /^SAFE_[A-Z_]*FALLBACK$/).join(" "),
-          strings("netlify/functions/_lib/snapshotGuard.js", /^SAFE_[A-Z_]*FALLBACK$/).join(" "),
-        ];
-        // Joined, so joining either constant into one literal is not a spurious failure; non-empty,
-        // so renaming one of them cannot switch the check off in silence.
-        t.eq(fallbacks.filter(x => x.trim().length > 40).length, 2,
-          `both SAFE_*_FALLBACK replies were found and read (${fallbacks.map(x => x.length).join(", ")} chars)`);
-        t.eq(fallbacks.filter(x => /[\u2013\u2014]/.test(x)), [], "no em or en dash in the replies a household reads when the coach is overruled");
-        t.eq(fallbacks.filter(x => /\bengines?\b/i.test(x)), [], "…and neither of them calls Flourish's machinery an engine");
-        // The coach's own system prompt is not read by a household, but it is where the model learns
-        // what to call things, and it taught it the word this branch is removing.
-        // ── And every sentence any function produces for the app to show ───────────────────────
-        // The scope was twice too narrow. First it read src/ only, and the two replies a household
-        // sees when the coach is overruled live in netlify/functions/_lib, both with em dashes. Then
-        // it read `message:`/`error:` STRING LITERALS, and the rate-limit reply that appears on the
-        // Meet screen could be turned into a template literal and sail through, as could
-        // coachLimits.freeLimitMessage(), which every free user reads.
+        // ── And everything the functions produce for the app to SHOW ───────────────────────────
+        // The named-constant walker above reads the two guards' fallbacks. It is not enough, and the
+        // scope has now been wrong three times, each way: src/ only (missing both fallbacks);
+        // `message:`/`error:` STRING LITERALS (so the same reply written as a template sailed
+        // through); and SENTENCES, capital-space-full-stop, which is not the house style here —
+        // "Method not allowed" and "Request too large" carry no terminal punctuation, so most of the
+        // replies fell out and the gate got WEAKER as it got wider.
         //
-        // So the rule is shaped like the thing it protects: a SENTENCE — starts with a capital,
-        // contains a space, ends in a full stop, question or exclamation mark — anywhere in
-        // netlify/functions, whether written as a literal or as a template. Console arguments are
-        // excluded because no household reads a log line, and coachPrompt.js is excluded because it
-        // is the model's instructions, not the household's copy; the word rule below still holds it.
+        // Two rules, and a value is read whether it is a literal, a template, or the two glued with
+        // +, which is the third form that escaped every earlier version:
+        //   A. every `message:` / `error:` value anywhere in netlify/functions
+        //   B. every sentence in the three modules whose job is household prose
+        // Model prompts are deliberately outside both — coachPrompt.js and the parser instructions
+        // inline in coach.js are the model's copy, not the household's, and policing their
+        // punctuation would be a false positive. The word rule below still holds coachPrompt.js.
         {
+          const flatten = (n) => {
+            if (!n) return null;
+            if (n.type === "StringLiteral") return n.value;
+            if (n.type === "TemplateLiteral") return n.quasis.map(q => q.value.cooked ?? q.value.raw).join("0");
+            if (n.type === "BinaryExpression" && n.operator === "+") {
+              const l = flatten(n.left), r = flatten(n.right);
+              return l == null || r == null ? null : l + r;
+            }
+            return null;
+          };
           const SENTENCE = /^[A-Z][^]*\s[^]*[.!?]$/;
-          const readSentences = (file) => {
+          const PROSE_FILES = ["coachLimits.js", "facilitatorGuard.js", "snapshotGuard.js"];
+          const read = (file) => {
             const ast = parser.parse(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), { sourceType: "unambiguous" });
-            const out = [];
-            (function go(n, skip) {
+            const base = path.basename(file), out = [];
+            (function go(n, inConsole) {
               if (!n || typeof n.type !== "string") return;
-              const isConsole = n.type === "CallExpression" && n.callee && n.callee.object && n.callee.object.name === "console";
-              if (!skip && !isConsole) {
-                // A template is joined back into ONE sentence before it is read. Taken piece by
-                // piece, `Coach is unavailable ${x} minutes.` is two fragments, neither of which
-                // looks like a sentence — which is exactly how a dash was smuggled back into the
-                // reply that appears on the Meet screen with this check green.
-                const text = n.type === "StringLiteral" ? n.value
-                  : n.type === "TemplateLiteral" ? n.quasis.map(q => q.value.cooked ?? q.value.raw).join("0") : null;
-                if (text && SENTENCE.test(text.trim())) out.push(`${path.basename(file)}:${n.loc.start.line} ${text.trim()}`);
+              const isConsole = inConsole || (n.type === "CallExpression" && n.callee && n.callee.object && n.callee.object.name === "console");
+              if (!isConsole) {
+                const key = n.type === "ObjectProperty" && n.key ? (n.key.name || n.key.value) : null;
+                // A. "rate_limited" and "plan_limit" carry no space: those are codes, not replies.
+                if (/^(message|error)$/.test(key || "")) {
+                  const text = flatten(n.value);
+                  if (text && /\s/.test(text)) out.push(`${base}:${n.loc.start.line} ${text}`);
+                }
+                if (PROSE_FILES.includes(base)) {                       // B
+                  const text = flatten(n);
+                  if (text && SENTENCE.test(text.trim())) out.push(`${base}:${n.loc.start.line} ${text.trim()}`);
+                }
               }
               for (const k of Object.keys(n)) {
                 if (["loc", "start", "end", "leadingComments", "trailingComments", "innerComments", "extra"].includes(k)) continue;
                 const v = n[k];
-                if (Array.isArray(v)) v.forEach(x => x && typeof x.type === "string" && go(x, skip || isConsole));
-                else if (v && typeof v.type === "string") go(v, skip || isConsole);
+                if (Array.isArray(v)) v.forEach(x => x && typeof x.type === "string" && go(x, isConsole));
+                else if (v && typeof v.type === "string") go(v, isConsole);
               }
             })(ast.program, false);
             return out;
@@ -527,9 +532,13 @@ const { create } = require("./_runner.cjs");
               else if (/\.(js|mjs|cjs)$/.test(e.name)) fnFiles.push(path.relative(path.join(__dirname, ".."), p2));
             }
           })(path.join(__dirname, "..", "netlify", "functions"));
-          const scanned = fnFiles.filter(f => path.basename(f) !== "coachPrompt.js");
-          const replies = scanned.flatMap(readSentences);
-          t.ok(replies.length > 30, `every sentence the functions produce was read (${replies.length} of them, across ${scanned.length} files)`);
+          const replies = fnFiles.flatMap(read);
+          t.ok(replies.length > 40, `everything the functions show was read (${replies.length} strings, across ${fnFiles.length} files)`);
+          // Named, so a walker that quietly stops reading one of the three forms is caught rather
+          // than passing on a smaller haul.
+          t.ok(replies.some(x => /^coach\.js:\d+ Method not allowed$/.test(x)), "…including a reply with no terminal full stop");
+          t.ok(replies.some(x => /^coachLimits\.js:\d+ .*Coach message limit/.test(x)), "…one written as a template literal");
+          t.ok(replies.filter(x => /^(facilitatorGuard|snapshotGuard)\.js:/.test(x)).length >= 2, "…and both replies shown when the coach is overruled");
           t.eq(replies.filter(x => /[\u2013\u2014]/.test(x)), [], "no em or en dash in anything a function produces for the app to show");
           t.eq(replies.filter(x => /\bengines?\b/i.test(x)), [], "…and none of them calls Flourish's machinery an engine");
         }

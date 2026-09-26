@@ -171,7 +171,10 @@ function _scan(transactions, now) {
 }
 
 // True when the week just gone carries enough spending to be described at all.
-const _describable = (scan) => scan.spendDays >= MIN_SPEND_DAYS && scan.coveredWeeks >= MIN_BASELINE_WEEKS;
+// The week has to be described-able and the history has to exist. The coverage floor is enforced
+// where it is decided, in _scan: three anchoring weeks, so coveredWeeks is 0 or at least 3 by the
+// time it gets here. Repeating the number here read as a second gate and was not one.
+const _describable = (scan) => scan.spendDays >= MIN_SPEND_DAYS && scan.coveredWeeks > 0;
 
 /**
  * The week's whole discretionary spend against a usual week.
