@@ -79,6 +79,14 @@ const CA_FIXTURE = {
   },
   // [id, daysAgo, name, amount, category, icon, color]. Payrolls sit ~bi-weekly (1/12/26 days ago)
   // and pay the primary income, so the most recent one anchors the cadence off real history.
+  //
+  // THE WEEK JUST GONE HAS SOMETHING IN IT. Meet reads the seven complete days before today and
+  // compares each category against the four weeks behind them (weeklyReview.js). This household
+  // ate out in all three of those weeks and cooked at home in the last one, so the meeting opens on
+  // a real change — Coffee & Dining well under its usual pace — instead of "nothing stood out".
+  // Both edits are spend-neutral, so the published demo signature ($1,944 safe, $138/day, $3,083
+  // balance) is untouched: t9's takeaway moved from 4 days ago to 11, and week three's $38 on day 22
+  // is a meal out rather than a craft-shop order. Same days, same amounts, same totals.
   txns: [
     ["t1",  0,  "Loblaws",         67.43,  "Groceries",       "🛒", "#2E8B2E"],
     ["t2",  0,  "Tim Hortons",     4.85,   "Coffee & Dining", "☕", "#D97A3A"],
@@ -88,7 +96,7 @@ const CA_FIXTURE = {
     ["t6",  2,  "Starbucks",       6.75,   "Coffee & Dining", "☕", "#D97A3A"],
     ["t7",  3,  "Netflix",         18.99,  "Subscriptions",   "🎬", "#8A5FC8"],
     ["t8",  3,  "Amazon.ca",       34.99,  "Shopping",        "📦", "#C45898"],
-    ["t9",  4,  "Uber Eats",       28.40,  "Coffee & Dining", "🍕", "#D97A3A"],
+    ["t9",  11, "Uber Eats",       28.40,  "Coffee & Dining", "🍕", "#D97A3A"],
     ["t10", 5,  "LCBO",            24.15,  "Shopping",        "🛍️", "#C45898"],
     ["t11", 6,  "Walmart",         89.22,  "Groceries",       "🛒", "#2E8B2E"],
     ["t12", 7,  "Hydro One",       124.00, "Utilities",       "⚡", "#CFA03E"],
@@ -107,7 +115,7 @@ const CA_FIXTURE = {
     ["t25", 17, "Starbucks",       7.10,   "Coffee & Dining", "☕", "#D97A3A"],
     ["t26", 19, "Bell Canada",     65.00,  "Utilities",       "📱", "#CFA03E"],
     ["t27", 20, "Kelsey's",        54.20,  "Coffee & Dining", "🍷", "#D97A3A"],
-    ["t28", 22, "Shopify/Etsy",    38.00,  "Shopping",        "🎁", "#C45898"],
+    ["t28", 22, "Boston Pizza",    38.00,  "Coffee & Dining", "🍝", "#D97A3A"],
     ["t29", 24, "Costco Gas",      55.80,  "Gas & Transport", "⛽", "#CFA03E"],
     ["t30", 26, "Payroll Deposit", "PAY",  "Income",          "💰", "#6FE494"],
     // A one-off expense reimbursement. It is money in but not income: Flourish holds it out of the

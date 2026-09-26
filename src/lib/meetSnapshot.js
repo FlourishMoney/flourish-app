@@ -15,6 +15,8 @@ import { dismissedEntries, lastMeeting, meetingOpening } from "./meetingRecord.j
 import { formatMoney } from "./format.js";
 import { safeToSpendView } from "./safeToSpendView.js";
 import { isCashAccount, num } from "./financialCalculations.js";
+import { suggestedDailyView } from "./suggestedDaily.js";
+import { daysWithinPace, categoryPaceDeltas } from "./weeklyReview.js";
 
 const _round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const _num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
@@ -53,6 +55,25 @@ export function buildMeetSnapshot(data = {}) {
     });
     if (risks.length) snap.forecastRisks = risks.slice(0, 4);
   } catch { /* forecast unavailable → no risk section */ }
+
+  // The week that just went — the wins and changes sections, which nothing used to fill.
+  //
+  // Both figures are read from weeklyReview.js, which does the counting; this bridge only forwards,
+  // exactly as it does for the forecast and the decision. Each is wrapped on its own so a household
+  // with no pace (no income yet) still gets its categories, and one with no category history still
+  // gets its day count.
+  try {
+    const ss = SafeSpendEngine.calculate(data) || {};
+    const pace = suggestedDailyView(safeToSpendView(ss).headline, data.incomes, data.transactions, new Date(), data);
+    const dailyLog = daysWithinPace({ transactions: data.transactions || [], dailyPace: pace && pace.daily, now: new Date() });
+    if (dailyLog.length) snap.safeSpend = { dailyLog };
+  } catch { /* no pace to judge against → no win, which is not a failure */ }
+  try {
+    // Top three by size. The agenda applies its own threshold on top, so a quiet week still says
+    // nothing rather than reading out three differences of four dollars each.
+    const deltas = categoryPaceDeltas({ transactions: data.transactions || [], now: new Date() }).slice(0, 3);
+    if (deltas.length) snap.behaviorDeltas = deltas;
+  } catch { /* no usable history → no changes section */ }
 
   // Debts and goals → progress (values read straight from appData / engine, never recomputed here).
   const debts = (data.debts || []).filter(d => _num(d.balance) > 0);
