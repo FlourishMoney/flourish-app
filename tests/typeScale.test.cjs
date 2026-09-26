@@ -61,7 +61,7 @@ const FILES = walk(SRC).filter(f => /\.(jsx?|tsx?)$/.test(f) && !f.endsWith("lib
     `2a no font size below ${T.TYPE_MIN} outside the allow-list. To add one, write ` +
     `/* ${T.SMALL_TEXT_OK}: <why> */ beside it — and say why in the diff.`);
 
-  // ── 3. the allow-list is exactly the two agreed exceptions, and no more ──────────────────────
+  // ── 3. the allow-list is exactly ONE exception, and no more ─────────────────────────────────
   const allowed = [];
   for (const f of FILES) {
     const src = fs.readFileSync(f, "utf8");
@@ -69,11 +69,15 @@ const FILES = walk(SRC).filter(f => /\.(jsx?|tsx?)$/.test(f) && !f.endsWith("lib
     let m;
     while ((m = re.exec(src)) !== null) allowed.push({ size: parseFloat(m[1]), why: m[2].trim() });
   }
-  t.eq(allowed.length, 2, "3a exactly two declarations are excused");
-  t.ok(allowed.every(a => a.size >= 11), "3b …and neither goes below 11, which is Apple's own floor for a tab bar");
-  t.ok(allowed.some(a => /tab bar/i.test(a.why)), "3c one is the tab bar label");
-  t.ok(allowed.some(a => /tag|provenance/i.test(a.why)), "3d the other is the sample-data tag");
-  t.ok(allowed.every(a => a.why.length > 12), "3e each says why, in words, not just that it is allowed");
+  t.eq(allowed.length, 1, "3a exactly one declaration is excused");
+  t.ok(allowed.every(a => a.size >= 11), "3b …and it does not go below 11, which is Apple's own floor for a tab bar");
+  t.ok(allowed.some(a => /tab bar/i.test(a.why)), "3c it is the tab bar label");
+  // The sample-data tag used to be the second exception, at 11px on Meet. It is the label that tells
+  // someone the numbers are not theirs, and on a real phone it was the thing people squinted at, so
+  // it now lives by the floor like everything else. It must never come back to the allow-list.
+  t.ok(!allowed.some(a => /tag|provenance|sample/i.test(a.why)),
+    "3d the sample-data tag is NOT excused — it renders at the floor now");
+  t.ok(allowed.every(a => a.why.length > 12), "3e it says why, in words, not just that it is allowed");
 
   // ── 4. no letter-spaced shouting ─────────────────────────────────────────────────────────────
   const shouty = [];
