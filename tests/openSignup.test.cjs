@@ -324,5 +324,31 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     t.ok(/refreshPlanFromProfile/.test(app), "…and refreshPlanFromProfile remains the thing that sets the plan");
   }
 
+  // ── 10. Web, iOS and Android are the same screen ──────────────────────────────────────────────
+  // "The native sign-up screen shows the code field when the status call fails" is only meaningful if
+  // native IS this screen. There is one AuthScreen; the platform helpers branch the magic-link button
+  // and the demo button, and nothing else. If a platform branch ever appears around the code field or
+  // the status call, this test is where it gets caught.
+  {
+    const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+    const auth = app.slice(app.indexOf("function AuthScreen("), app.indexOf("\nfunction ", app.indexOf("function AuthScreen(") + 10));
+    t.eq((app.match(/<AuthScreen\b/g) || []).length, 1, "there is exactly one AuthScreen render site, for every platform");
+
+    const line = (needle) => auth.split("\n").find(l => l.includes(needle)) || "";
+    // The whole status call, not one line of it: the URL and the action sit on different lines.
+    const statusCall = auth.slice(Math.max(0, auth.indexOf('action: "signup_status"') - 500), auth.indexOf('action: "signup_status"') + 200);
+    t.ok(!/isNativeApp|Capacitor|getPlatform/.test(statusCall), "the status call is not branched by platform");
+    t.ok(!/isNativeApp|Capacitor|getPlatform/.test(line("showCodeInput")), "the code field is not branched by platform");
+    t.ok(!/isNativeApp|Capacitor|getPlatform/.test(line("showCodeLink")), "the invite-code link is not branched by platform");
+    t.ok(!/isNativeApp|Capacitor|getPlatform/.test(line("codeRequired&&!betaCode")), "the Create Account button is not branched by platform");
+    // The two things that ARE platform-specific stay that way, so this is not just matching nothing.
+    t.ok(/!isNativeApp\(\) && <button onClick=\{handleMagicLink\}/.test(auth), "sanity: the magic-link button is still web-only");
+    t.ok(/isNativeApp\(\) && onTryDemo/.test(auth) || /isNativeApp\(\)\s*&&/.test(auth), "sanity: the demo button is still native-only");
+
+    // And the API the screen talks to is the deployed one on native, not a relative path that would
+    // resolve to capacitor://localhost inside the shell.
+    t.ok(/\$\{API_BASE\}\/api\/beta/.test(statusCall), "the status call goes to API_BASE, which native points at flourishmoney.app");
+  }
+
   t.summary("openSignup.test");
 })();
