@@ -1671,7 +1671,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData
                 {/* Row — tappable */}
                 <div
                   onClick={()=>setExpandedDay(isDrilled ? null : ev.day)}
-                  style={{display:"flex",gap:14,paddingBottom:8,cursor:"pointer",borderRadius:12,padding:"8px 6px",background:isDrilled?"rgba(255,255,255,0.03)":"transparent",transition:"background .15s"}}
+                  style={{display:"flex",gap:14,paddingBottom:8,cursor:"pointer",borderRadius:12,padding:"0 8px",minHeight:LAYOUT.minTap,background:isDrilled?"rgba(255,255,255,0.03)":"transparent",transition:"background .15s"}}
                 >
                   <div style={{width:40,display:"flex",justifyContent:"center",flexShrink:0,paddingTop:3}}>
                     <div style={{width:14,height:14,borderRadius:"50%",background:dotColor,border:`3px solid ${C.bg}`,zIndex:1,boxShadow:ev.day===0||ev.isPayday?`0 0 8px ${dotColor}88`:"none",flexShrink:0}}/>
@@ -1812,7 +1812,7 @@ function FinancialTimeline({data, setAppData}) {
             return (
               <div key={idx} style={{paddingBottom:4,position:"relative"}}>
                 <div onClick={()=>setExpandedDay(isDrilled?null:ev.day)}
-                  style={{display:"flex",gap:14,padding:"8px 6px",cursor:"pointer",borderRadius:12,background:isDrilled?"rgba(255,255,255,0.03)":"transparent",transition:"background .15s"}}>
+                  style={{display:"flex",gap:14,padding:"0 8px",minHeight:LAYOUT.minTap,cursor:"pointer",borderRadius:12,background:isDrilled?"rgba(255,255,255,0.03)":"transparent",transition:"background .15s"}}>
                   <div style={{width:40,display:"flex",justifyContent:"center",flexShrink:0,paddingTop:2}}>
                     <div style={{width:14,height:14,borderRadius:"50%",background:dotColor,border:`3px solid ${C.bg}`,zIndex:1,boxShadow:ev.day===0||ev.isPayday?`0 0 10px ${dotColor}88`:"none",flexShrink:0}}/>
                   </div>
@@ -2240,7 +2240,7 @@ Rules: do not invent or quote any number not in the calculated results above. Do
             placeholder="e.g. Buy a $450 TV…"
             style={{flex:1,padding:"12px 16px",borderRadius:14,border:`1.5px solid ${C.border}`,background:C.surface,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,outline:"none"}}
           />
-          <button onClick={()=>simulate()} style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#fff",border:"none",borderRadius:14,padding:"12px 18px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>Simulate →</button>
+          <button onClick={()=>simulate()} style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",border:"none",borderRadius:14,padding:"12px 18px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>Simulate →</button>
         </div>
 
         {/* Loading */}
@@ -3264,7 +3264,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
       </div>
       <div style={{display:"flex",gap:10}}>
         <button onClick={()=>setStep(0)} style={{flex:1,padding:"13px",borderRadius:99,border:`1px solid ${C.border}`,background:"none",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer"}}>← Back</button>
-        <button onClick={()=>setStep(2)} style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"13px",borderRadius:99,border:"none",cursor:"pointer"}}>Next →</button>
+        <button onClick={()=>setStep(2)} style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"13px",borderRadius:99,border:"none",cursor:"pointer"}}>Next →</button>
       </div>
     </div>,
 
@@ -3284,7 +3284,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
       </div>
       <div style={{display:"flex",gap:10}}>
         <button onClick={()=>setStep(1)} style={{flex:1,padding:"13px",borderRadius:99,border:`1px solid ${C.border}`,background:"none",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer"}}>← Back</button>
-        <button onClick={fetchInsight} style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"13px",borderRadius:99,border:"none",cursor:"pointer"}}>{loading?"Getting your coaching...":"Get My Insight →"}</button>
+        <button onClick={fetchInsight} style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"13px",borderRadius:99,border:"none",cursor:"pointer"}}>{loading?"Getting your coaching...":"Get My Insight →"}</button>
       </div>
     </div>,
 
@@ -3309,7 +3309,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
         <div style={{color:C.greenBright,fontWeight:900,fontFamily:"'Playfair Display',serif",fontSize:32,marginTop:4}}>+3 points this week ✦</div>
         <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Check in every week to keep growing</div>
       </div>
-      <button onClick={()=>onComplete(3)} style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"16px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 20px ${C.green}40`}}>Done. See My Score ✦</button>
+      <button onClick={()=>onComplete(3)} style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"16px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 20px ${C.green}40`}}>Done. See My Score ✦</button>
     </div>,
   ];
 
@@ -4712,7 +4712,7 @@ function DataTransparencyPanel({data, onClose}) {
 
   const Row = ({label, value, sub, color, indent=false}) => (
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",
-      padding:"9px 0",borderBottom:`1px solid ${C.border}`,paddingLeft:indent?14:0}}>
+      padding:"0",minHeight:LAYOUT.minTap,borderBottom:`1px solid ${C.border}`,paddingLeft:indent?14:0}}>
       <div>
         <div style={{...s,fontSize:13,color:C.cream,fontWeight:indent?400:600}}>{label}</div>
         {sub&&<div style={{...s,fontSize:13,color:C.muted,marginTop:1}}>{sub}</div>}
@@ -5102,7 +5102,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2}}>{new Date().toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}</span>
-          {setDashLayout&&<button onClick={()=>setShowCustomize(true)} style={{background:`linear-gradient(135deg,${C.green}22,${C.teal}11)`,border:`1px solid ${C.green}44`,borderRadius:99,padding:"5px 12px",color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer",letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}>⠿ Reorder</button>}
+          {setDashLayout&&<button onClick={()=>setShowCustomize(true)} style={{background:`linear-gradient(135deg,${C.green}22,${C.teal}11)`,border:`1px solid ${C.green}44`,borderRadius:99,padding:"0 14px",minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer",letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}>⠿ Reorder</button>}
         </div>
       </div>
 
@@ -5551,8 +5551,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               </div>
             </div>
             <div style={{display:"flex",gap:6}}>
-              {onCheckIn&&<button onClick={onCheckIn} style={{flex:1,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,padding:"8px 6px",borderRadius:99,border:"none",cursor:"pointer",whiteSpace:"nowrap"}}>Check-In ✦</button>}
-              <button onClick={()=>setScreen("coach")} style={{flex:1,background:"none",border:`1px solid ${scoreBase}44`,color:scoreBase,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:13,padding:"8px 6px",borderRadius:99,cursor:"pointer",whiteSpace:"nowrap"}}>Coach →</button>
+              {onCheckIn&&<button onClick={onCheckIn} style={{flex:1,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,padding:"0 8px",minHeight:LAYOUT.minTap,borderRadius:99,border:"none",cursor:"pointer",whiteSpace:"nowrap"}}>Check-In ✦</button>}
+              <button onClick={()=>setScreen("coach")} style={{flex:1,background:"none",border:`1px solid ${scoreBase}44`,color:scoreBase,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:13,padding:"0 8px",minHeight:LAYOUT.minTap,borderRadius:99,cursor:"pointer",whiteSpace:"nowrap"}}>Coach →</button>
             </div>
           </div>
         </div>
@@ -8001,7 +8001,7 @@ function SpendScreen({data, setAppData, setScreen}){
     {/* Only deposits that COUNT as income (they repeat like pay, or the household said so) can be offered as a paycheque. */}
     {!isDemo&&<IncomeDetectionBanner transactions={incomeEvidence({ transactions: txns, depositDecisions: data.depositDecisions, depositRules: data.depositRules })} incomes={data.incomes} setAppData={setAppData} country={data.profile?.country}/>}
     <div style={{display:"flex",gap:6,background:C.surface,borderRadius:16,padding:4}}>
-      {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeBright:C.muted,borderRadius:12,padding:"9px 0",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
+      {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeBright:C.muted,borderRadius:12,padding:"0",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
         {t==="txn"?"Transactions":t==="breakdown"?"Breakdown":"Smart Cuts"}
       </button>)}
     </div>
@@ -10115,7 +10115,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                   if(activeKid) saveKids(kids.map(k=>k.id===activeKid.id?{...k,age}:k));
                   else setGlobalKidAge(age);
                 }}
-                style={{flex:1,background:lessonAge===age?C.pink+"22":C.cardAlt,border:`1px solid ${lessonAge===age?C.pink:C.border}`,color:lessonAge===age?C.pinkBright:C.muted,borderRadius:10,padding:"9px 0",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>
+                style={{flex:1,background:lessonAge===age?C.pink+"22":C.cardAlt,border:`1px solid ${lessonAge===age?C.pink:C.border}`,color:lessonAge===age?C.pinkBright:C.muted,borderRadius:10,padding:"0",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>
                 {age==="4-7"?"🐣 4 to 7":age==="8-12"?"🌱 8 to 12":"🌳 13+"}
               </button>
             ))}
@@ -10324,7 +10324,7 @@ function WidgetScreen({data,onBack}){
       {sizes.map(([s,label])=>(
         <button key={s} onClick={()=>setWSize(s)}
           style={{flex:1,background:wSize===s?C.green+"28":"transparent",border:`1px solid ${wSize===s?C.green+"55":"transparent"}`,
-          color:wSize===s?C.greenBright:C.muted,borderRadius:12,padding:"9px 0",cursor:"pointer",fontSize:13,fontWeight:700,
+          color:wSize===s?C.greenBright:C.muted,borderRadius:12,padding:"0",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,
           fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
           {label}
         </button>
@@ -11250,7 +11250,7 @@ function DesktopSidebar({data,setScreen}){
         <button onClick={()=>setScreen("spend")} style={{background:"none",border:"none",color:C.green,fontSize:13,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>See all →</button>
       </div>
       {txns.filter(t=>t.amount>0).slice(0,5).map((t,i)=>(
-        <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:i<4?`1px solid ${C.border}`:"none"}}>
+        <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0",minHeight:LAYOUT.minTap,borderBottom:i<4?`1px solid ${C.border}`:"none"}}>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
             <div style={{width:32,height:32,borderRadius:10,background:t.color+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>{t.icon}</div>
             <div>
@@ -13109,7 +13109,7 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
           <div style={{display:"flex",gap:8,marginBottom:14}}>
             {["4-7","8-12","13+"].map(age=>(
               <button key={age} onClick={()=>setKidAge(age)}
-                style={{flex:1,background:kidAge===age?theme.primaryDim:theme.cardAlt,border:`1px solid ${kidAge===age?primary:theme.choreBorder}`,color:kidAge===age?primary:theme.textMuted,borderRadius:10,padding:"9px 0",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",transition:"all .2s"}}>
+                style={{flex:1,background:kidAge===age?theme.primaryDim:theme.cardAlt,border:`1px solid ${kidAge===age?primary:theme.choreBorder}`,color:kidAge===age?primary:theme.textMuted,borderRadius:10,padding:"0",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",transition:"all .2s"}}>
                 {age==="4-7"?"🐣 4 to 7":age==="8-12"?"🌱 8 to 12":"🌳 13+"}
               </button>
             ))}
@@ -14403,7 +14403,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
                       const color = bill.paid ? C.green : C.muted;
                       const amtDiff = bill.actualAmt !== null ? bill.actualAmt - bill.expectedAmt : null;
                       return (
-                        <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:i<billsWithStatus.length-1?`1px solid ${C.border}`:"none"}}>
+                        <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"0",minHeight:LAYOUT.minTap,borderBottom:i<billsWithStatus.length-1?`1px solid ${C.border}`:"none"}}>
                           <div style={{width:8,height:8,borderRadius:"50%",background:bill.paid?C.green:C.muted,flexShrink:0}}/>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -16004,11 +16004,11 @@ input,button,select,textarea { font-family:inherit; }
           so nagging to connect a bank misreads the context. This button is also the ONLY route out
           of demo — exitDemo has no other caller, and signOut cannot clear it (it preserves
           flourish_v1, where demo state lives). Do not remove it without adding another exit. */}
-      <button onClick={exitDemo} style={{background:C.teal+"33",border:`1px solid ${C.teal}66`,color:C.tealBright,cursor:"pointer",fontWeight:800,fontSize:13,padding:"3px 12px",borderRadius:99,fontFamily:"inherit"}}>Exit demo →</button>
+      <button onClick={exitDemo} style={{background:C.teal+"33",border:`1px solid ${C.teal}66`,color:C.tealBright,cursor:"pointer",fontWeight:800,fontSize:13,padding:"0 14px",minHeight:LAYOUT.minTap,borderRadius:99,fontFamily:"inherit"}}>Exit demo →</button>
       {/* Hides the banner for this session only (screenshots). Absolutely positioned so the message
           stays optically centred; the banner's 34px side padding reserves its gutter. */}
       <button aria-label="Hide demo banner" title="Hide for now" onClick={()=>setDemoBannerHidden(true)}
-        style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:C.tealBright,cursor:"pointer",fontSize:14,lineHeight:1,padding:"6px 8px",fontFamily:"inherit"}}>✕</button>
+        style={{position:"absolute",right:2,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:C.tealBright,cursor:"pointer",fontSize:14,lineHeight:1,...tap({display:"flex",alignItems:"center",justifyContent:"center"}),fontFamily:"inherit"}}>✕</button>
     </div>
   ) : null;
   // (5) one-time, dismissible — appears after a successful local→DB migration upload.
