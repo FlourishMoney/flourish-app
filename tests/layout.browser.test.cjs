@@ -70,15 +70,19 @@ function SCAN({ scope, textCtrlMin, ctrlCtrlMin, minTap }) {
   const root = scope === "overlay" ? overlayRoot() : document.body;
   if (!root) return { error: "no overlay found on screen" };
 
-  const visible = (el) => {
+  // Displayed-ness and size are two different questions, and conflating them cost this suite two
+  // whole sheets. An ancestor is only asked whether it is displayed: a container whose children are
+  // all fixed or absolute is legitimately 0px tall, and when a modal is open #root and <body> are
+  // exactly that. Requiring size of every ancestor rejected every element inside those modals, so
+  // Check-In and What If measured 0 controls and 0 texts and passed by having nothing to check.
+  const displayed = (el) => {
     const s = cs(el);
-    if (s.display === "none" || s.visibility === "hidden") return false;
-    if (parseFloat(s.opacity) < 0.05) return false;
-    const r = el.getBoundingClientRect();
-    return r.width >= 1 && r.height >= 1;
+    return !(s.display === "none" || s.visibility === "hidden" || parseFloat(s.opacity) < 0.05);
   };
   const shown = (el) => {
-    for (let n = el; n && n !== document.documentElement; n = n.parentElement) if (!visible(n)) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) return false;            // size: the element's own business
+    for (let n = el; n && n !== document.documentElement; n = n.parentElement) if (!displayed(n)) return false;
     return true;
   };
   // Content in different fixed/sticky groups overlaps legitimately: the tab bar scrolls over the page.
@@ -360,7 +364,13 @@ const pool = async (items, n, fn) => {
   for (const p of passes) {
     const missed = p.views.filter((v) => v.unreachable || v.error);
     t.eq(missed.map((v) => `${v.view}: ${v.unreachable || v.error}`), [],
-      `2 [${p.width}px ×${p.scale}] every tab and sheet in the sweep opened`);
+      `2a [${p.width}px ×${p.scale}] every tab and sheet in the sweep opened`);
+    // …and had something in it. A view that measures nothing PASSES every other assertion in this
+    // file, which is how Check-In and What If sat in the sweep contributing nothing while holding
+    // 30px tap targets. Silence is not a pass.
+    const empty = p.views.filter((v) => !v.unreachable && !v.error && (v.counts.controls < 1 || v.counts.texts < 1));
+    t.eq(empty.map((v) => `${v.view}: ${v.counts.controls} controls, ${v.counts.texts} texts`), [],
+      `2b [${p.width}px ×${p.scale}] …and every one of them had controls and text to measure`);
   }
 
   // ── 3. the rule itself, per view ─────────────────────────────────────────────

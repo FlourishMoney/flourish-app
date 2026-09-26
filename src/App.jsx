@@ -2255,34 +2255,34 @@ Rules: do not invent or quote any number not in the calculated results above. Do
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)",zIndex:999,display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div style={{background:C.bg,borderRadius:"28px 28px 0 0",padding:"28px 24px 44px",width:"100%",maxWidth:520,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 -20px 60px rgba(0,0,0,0.2)"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
-          <div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:GAP.textToControl,marginBottom:20}}>
+          <div style={{minWidth:0}}>
             <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream,lineHeight:1.2}}>What If Simulator</div>
             <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3}}>Test any financial decision instantly</div>
           </div>
-          <button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:24,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>×</button>
+          <button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:24,cursor:"pointer",lineHeight:1,...tap({display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0})}}>×</button>
         </div>
 
         {/* Quick presets */}
         <div style={{marginBottom:16}}>
-          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:8}}>Quick scenarios</div>
-          <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:GAP.textToControl}}>Quick scenarios</div>
+          <div style={{display:"flex",gap:GAP.controlToControl,flexWrap:"wrap"}}>
             {presets.map(p=>(
-              <button key={p.label} onClick={()=>simulate(p.label, p.type)} style={{background:query===p.label?C.greenDim:C.cardAlt,border:`1px solid ${query===p.label?C.green+"55":C.border}`,color:query===p.label?C.green:C.mutedHi,borderRadius:99,padding:"6px 12px",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer",transition:"all .15s"}}>{p.label}</button>
+              <button key={p.label} onClick={()=>simulate(p.label, p.type)} style={{background:query===p.label?C.greenDim:C.cardAlt,border:`1px solid ${query===p.label?C.green+"55":C.border}`,color:query===p.label?C.green:C.mutedHi,borderRadius:99,padding:"6px 12px",minHeight:LAYOUT.minTap,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer",transition:"all .15s"}}>{p.label}</button>
             ))}
           </div>
         </div>
 
         {/* Custom input */}
-        <div style={{display:"flex",gap:8,marginBottom:20}}>
+        <div style={{display:"flex",gap:GAP.controlToControl,marginBottom:20}}>
           <input
             value={inputVal}
             onChange={e=>setInputVal(e.target.value)}
             onKeyDown={e=>e.key==="Enter"&&simulate()}
             placeholder="e.g. Buy a $450 TV…"
-            style={{flex:1,padding:"12px 16px",borderRadius:14,border:`1.5px solid ${C.border}`,background:C.surface,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,outline:"none"}}
+            style={{flex:1,minWidth:0,padding:"12px 16px",minHeight:LAYOUT.minTap,boxSizing:"border-box",borderRadius:14,border:`1.5px solid ${C.border}`,background:C.surface,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,outline:"none"}}
           />
-          <button onClick={()=>simulate()} style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",border:"none",borderRadius:14,padding:"12px 18px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>Simulate →</button>
+          <button onClick={()=>simulate()} style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",border:"none",borderRadius:14,padding:"12px 18px",minHeight:LAYOUT.minTap,flexShrink:0,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>Simulate →</button>
         </div>
 
         {/* Loading */}
@@ -3370,7 +3370,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
               <div key={i} style={{width:i<=(step===4?3:step)?28:8,height:8,borderRadius:99,background:i<=(step===4?3:step)?C.green:C.border,transition:"all .3s"}}/>
             ))}
           </div>
-          <button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>×</button>
+          <button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer",lineHeight:1,...tap({display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0})}}>×</button>
         </div>
         {loading
           ? <div style={{textAlign:"center",padding:"40px 20px"}}>
@@ -6121,6 +6121,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                   border:`1px solid ${chip.color}33`,
                   borderRadius:14,
                   padding:"12px 14px",
+                  minHeight:LAYOUT.minTap,
                   cursor:"pointer",
                   textAlign:"left",
                   fontFamily:"'Plus Jakarta Sans',sans-serif",
@@ -11402,7 +11403,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
       <Btn label="Delete Account" onClick={onDeleteData||onReset} color={C.red} small/>
     </div>
     {onReset&&(
-      <button onClick={()=>{confirmModal({title:"Reset app?",message:"This goes back to setup.",confirmLabel:"Reset",destructive:true}).then(ok=>{if(ok)onReset();});}} style={{width:"100%",marginTop:8,background:"none",border:`1px solid ${C.border}`,borderRadius:14,padding:"11px",fontFamily:"inherit",fontWeight:600,color:C.muted,cursor:"pointer",fontSize:13}}>
+      <button onClick={()=>{confirmModal({title:"Reset app?",message:"This goes back to setup.",confirmLabel:"Reset",destructive:true}).then(ok=>{if(ok)onReset();});}} style={{width:"100%",marginTop:GAP.controlToControl,background:"none",border:`1px solid ${C.border}`,borderRadius:14,padding:"11px",minHeight:LAYOUT.minTap,fontFamily:"inherit",fontWeight:600,color:C.muted,cursor:"pointer",fontSize:13}}>
         🔄 Reset to onboarding
       </button>
     )}
