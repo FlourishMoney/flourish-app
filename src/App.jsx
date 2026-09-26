@@ -2126,6 +2126,9 @@ Rules: do not invent or quote any number not in the calculated results above. Do
         headers:{"Content-Type":"application/json", Authorization:`Bearer ${_jwt}`},
         body: JSON.stringify({ type:"simulator", payload:{ prompt } })
       });
+      // Item 6: without this the || "{}" below swallowed every HTTP error, so prose came back empty
+      // and the neutral fallback in the catch — which exists for exactly this — never ran.
+      if (!r.ok) throw new Error(`coach ${r.status}`);
       const d = await r.json();
       const text = d.content?.[0]?.text || "{}";
       const clean = text.replace(/```json|```/g,"").trim();
@@ -3167,6 +3170,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
   const [surprise, setSurprise] = useState("");
   const [win, setWin] = useState("");
   const [insight, setInsight] = useState(null);
+  const [insightError, setInsightError] = useState(null); // the tip failed; the check-in itself did not
   const [loading, setLoading] = useState(false);
 
   const moods = [
@@ -3189,8 +3193,9 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
     // transaction text never rides in the user turn.
     const context = `Financial Health Score: ${score}/100. Money mood this week: ${moods.find(m=>m.val===mood)?.label||"Neutral"}. Biggest spending surprise: ${sanitizeField(surprise||"none",60)}. Financial win: ${sanitizeField(win||"none",60)}. Recent transactions: ${txns}`;
     const prompt = "The user just completed their weekly money check-in. Using only the data provided, give ONE specific, encouraging action they can take this week to improve their Financial Health Score by 2-5 points. Keep it to 2 sentences max. Be warm and concrete.";
+    setInsightError(null);
     try {
-      // Phase D3: AI opt-out — skip the AI tip; existing catch provides neutral fallback
+      // Phase D3: AI opt-out — skip the AI tip; the catch below says so rather than inventing one
       ensureAiEnabled("AI disabled"); // Step 8: single gate — no request reaches /api/coach when AI is off
       const _jwt = await getJwt();
       const r = await fetch(`${API_BASE}/api/coach`, {
@@ -3198,9 +3203,23 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
         headers:{"Content-Type":"application/json", Authorization:`Bearer ${_jwt}`},
         body: JSON.stringify({ type:"checkin", payload:{ context, prompt } })
       });
+      // Item 6: check r.ok BEFORE reading. Without it a 429, a 401 or a 500 all parsed to an empty
+      // body and the || below printed a specific piece of coaching advice — pause a subscription —
+      // that the coach never gave. The catch below says plainly that there is no tip this time.
+      if (!r.ok) throw new Error(`coach ${r.status}`);
       const d = await r.json();
-      setInsight(d.content?.[0]?.text || "Great job checking in! Keep tracking your spending this week and look for one subscription you can pause.");
-    } catch (e) { if (e?.message !== "AI disabled") captureError(e, { area: "coach" }); setInsight("Great job checking in! Focus on one small win this week. Even saving $20 moves your score forward."); }
+      const tip = d.content?.[0]?.text;
+      if (!tip || !String(tip).trim()) throw new Error("coach empty");
+      setInsight(tip);
+    } catch (e) {
+      if (e?.message !== "AI disabled") captureError(e, { area: "coach" });
+      // Not a coaching line. The old text invented advice AND a dollar figure ($20) that no engine
+      // computed, under the coach's name, whenever the request failed. The check-in itself still
+      // succeeded, so the result step still shows — it just says there is no tip this time.
+      setInsightError(e?.message === "AI disabled"
+        ? "The coach is off in Settings, so there's no tip this time. Your check-in is saved."
+        : "The coach didn't answer, so there's no tip this time. Your check-in is saved.");
+    }
     setLoading(false);
     setStep(4);
   };
@@ -3261,13 +3280,20 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
     </div>,
 
     // Step 4: Result (loading is step 3, handled inline)
-    insight && <div key={4} style={{display:"flex",flexDirection:"column",gap:20,textAlign:"center"}}>
+    (insight || insightError) && <div key={4} style={{display:"flex",flexDirection:"column",gap:20,textAlign:"center"}}>
       <div style={{fontSize:48,animation:"fadeUp 0.4s ease both"}}>✦</div>
       <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.green,lineHeight:1.2}}>Check-In Complete!</div>
-      <div style={{background:C.greenDim,border:`1.5px solid ${C.green}33`,borderRadius:20,padding:"18px 20px",textAlign:"left"}}>
-        <div style={{color:C.green,fontSize:10,textTransform:"uppercase",letterSpacing:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>Your AI Coach Says</div>
-        <div style={{color:C.cream,fontSize:14,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{insight}</div>
-      </div>
+      {insight ? (
+        <div style={{background:C.greenDim,border:`1.5px solid ${C.green}33`,borderRadius:20,padding:"18px 20px",textAlign:"left"}}>
+          <div style={{color:C.green,fontSize:10,textTransform:"uppercase",letterSpacing:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>Your AI Coach Says</div>
+          <div style={{color:C.cream,fontSize:14,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{insight}</div>
+        </div>
+      ) : (
+        <div style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:20,padding:"18px 20px",textAlign:"left"}}>
+          <div style={{color:C.mutedHi,fontSize:13.5,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{insightError}</div>
+          <button onClick={fetchInsight} disabled={loading} style={{marginTop:12,background:"none",border:`1px solid ${C.green}66`,borderRadius:10,padding:"8px 16px",color:C.greenBright,fontWeight:700,fontSize:13,cursor:loading?"default":"pointer",fontFamily:"inherit"}}>{loading?"Trying…":"Try again"}</button>
+        </div>
+      )}
       <div style={{background:`linear-gradient(135deg,${C.green}18,${C.greenDim})`,border:`1px solid ${C.green}33`,borderRadius:18,padding:"16px"}}>
         <div style={{fontSize:28,marginBottom:4}}>🎯</div>
         <div style={{color:C.green,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:16}}>Financial Health Score</div>
@@ -3442,6 +3468,10 @@ ${safeText}
     method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${_jwt}`},
     body: JSON.stringify({ type:'document', payload:{ prompt } })
   });
+  // Item 6: a refusal used to parse to '{}' and return zero rows, which reads to the person as
+  // "your statement had nothing in it" rather than "we could not read it". Fail loudly; the caller
+  // already reports a thrown error.
+  if (!r.ok) throw new Error(`coach ${r.status}`);
   const d = await r.json();
   const raw = d.content?.[0]?.text || '{}';
   const clean = raw.replace(/```json|```/g,'').trim();
