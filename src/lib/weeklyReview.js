@@ -28,8 +28,11 @@
 // with another card, has an empty week that looks exactly like a frugal one. Saying "you spent $220
 // less than usual" to someone whose data simply is not there is worse than saying nothing: it is a
 // congratulation they cannot check, on a screen whose whole job is trust. So a week has to carry
-// spending on MIN_SPEND_DAYS separate days before it is described at all, and "usual" needs
-// MIN_BASELINE_WEEKS weeks of history behind it.
+// spending on MIN_SPEND_DAYS separate days, each of at least MIN_DAY_SPEND, before it is described
+// at all, and "usual" needs MIN_BASELINE_WEEKS weeks behind it that clear the same floor.
+//
+// A household whose every day comes in under a dollar is therefore told nothing rather than told
+// something confident. That is the direction to fail in.
 
 import { BILL_CATS, CC_PAYMENT_KEYWORDS, isInternalTransfer } from "./financialCalculations.js";
 
@@ -38,8 +41,9 @@ const WEEK = 7;
 const BASELINE_WEEKS = 4;        // the four weeks before this one, which is what "usual" means here
 const MIN_BASELINE_WEEKS = 3;    // fewer than three weeks of history is not a habit to compare against
 const MIN_SPEND_DAYS = 3;        // days of the week that must carry spending before the week is described
-const MIN_WEEK_DAYS = 2;         // days of a BASELINE week that must carry spending before it counts as covered
+const MIN_WEEK_DAYS = 2;         // days a BASELINE week must carry before it counts as covered
 const MIN_DAY_SPEND = 1;         // a day carrying less than this is a tap, not a day's spending
+                                 // (applied to the week just gone as well as to the baseline weeks)
 
 const _round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -131,8 +135,19 @@ function _scan(transactions, now) {
     return n;
   };
 
-  let lastCovered = 0;
-  for (let w = 2; w <= 1 + BASELINE_WEEKS; w++) if (realDays(w) >= MIN_WEEK_DAYS) lastCovered = w;
+  // ENOUGH of the window has to be evidenced, not just its far edge. Anchoring on the OLDEST
+  // qualifying week alone let one week speak for four: a $900 sofa and a $1.20 coffee five weeks ago,
+  // with nothing in between, put three unexamined empty weeks in the divisor and congratulated the
+  // household on a week $216 under "usual". The mirror was worse — an ordinary $400 week five weeks
+  // back, nothing since, and an identical $400 week just gone was reported as $300 OVER.
+  //
+  // So: at least MIN_BASELINE_WEEKS of the four have to carry real spending before there is a usual
+  // at all, and the window then runs out to the oldest of them. Weeks with nothing in them INSIDE
+  // that window are still real zeros — that is the household who was away, and it is why the rule
+  // counts the anchoring weeks rather than requiring every week to anchor.
+  const anchors = [];
+  for (let w = 2; w <= 1 + BASELINE_WEEKS; w++) if (realDays(w) >= MIN_WEEK_DAYS) anchors.push(w);
+  const lastCovered = anchors.length >= MIN_BASELINE_WEEKS ? anchors[anchors.length - 1] : 0;
   const coveredWeeks = lastCovered ? lastCovered - 1 : 0;
 
   // The numerator, restricted to exactly the weeks the divisor counts.

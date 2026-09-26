@@ -262,7 +262,11 @@ export function withWeekAhead(agenda, data = {}, label = "Safe until next payday
   if (line && !progress.some(p => p && p.text === line)) {
     progress.unshift({ text: line, value: f.safeToSpend, source: "safeSpendEngine" });
   }
-  if (upcoming === already && progress.length === (agenda.progress || []).length) return agenda;
+  // Compare by CONTENT, not by identity: with nothing falling due in the next seven days the
+  // computed list is a fresh empty array, so an identity check returned a new object for a call
+  // that changed nothing, and the guard read as if it did not.
+  const sameUpcoming = upcoming.length === already.length && upcoming.every((u, i) => u === already[i]);
+  if (sameUpcoming && progress.length === (agenda.progress || []).length) return agenda;
   return { ...agenda, upcoming, progress };
 }
 

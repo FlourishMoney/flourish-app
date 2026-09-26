@@ -96,6 +96,17 @@ const history = (weeks = 4) => [[8, 9], [15, 16], [22, 23], [29, 30]].slice(0, w
     t.eq(weekVersusUsual({ transactions: [...history(), tx(29, "Dining", 400), tx(30, "Dining", 400),
       tx(2, "Dining", 0.01), tx(4, "Dining", 0.01), tx(6, "Dining", 0.01)], now: NOW }), null,
       "3i three one-cent taps are not three days of spending: the week was paid for elsewhere");
+    // ENOUGH of the window, not just its far edge. Anchoring on the oldest qualifying week alone let
+    // one week five weeks back put three unexamined empty weeks into the divisor.
+    t.eq(weekVersusUsual({ transactions: [tx(35, "Shopping", 900), tx(34, "Dining", 1.2), ...evidence("Dining", 3)], now: NOW }), null,
+      "3k a sofa and a coffee five weeks ago is one week of history, not four");
+    t.eq(weekVersusUsual({ transactions: [tx(32, "Dining", 100), tx(33, "Dining", 100), tx(34, "Dining", 100), tx(35, "Dining", 100),
+      tx(1, "Dining", 100), tx(2, "Dining", 100), tx(3, "Dining", 100), tx(4, "Dining", 100)], now: NOW }), null,
+      "3l …and one ordinary week five weeks back does not make an identical week now look $300 over");
+    // The away week still works: three weeks of real spending, the fourth empty INSIDE the window.
+    const awayOk = weekVersusUsual({ transactions: [tx(8, "Dining", 100), tx(9, "Dining", 100), tx(15, "Dining", 100),
+      tx(16, "Dining", 100), tx(29, "Dining", 100), tx(30, "Dining", 100), ...evidence("Dining", 20)], now: NOW });
+    t.eq(awayOk && awayOk.normal, 150, "3m three anchoring weeks and one empty one is four covered weeks");
   }
 
   // ── 4. "Usual" divides by the weeks of HISTORY, not by the weeks that had a purchase ──────────
@@ -235,8 +246,8 @@ const history = (weeks = 4) => [[8, 9], [15, 16], [22, 23], [29, 30]].slice(0, w
     const full = meetAgendaFor(data);
     t.eq(agendaIsEmpty(full), false, "11a the demo agenda is not empty, so the quiet-week substitute never runs");
     const merged = withWeekAhead(full, data) || {};
-    t.ok((merged.progress || []).some(p => /^Safe until next payday: \$/.test(p.text)),
-      "11b the safe-to-spend figure is still in the meeting");
+    t.ok(/^Safe until next payday: \$/.test(((merged.progress || [])[0] || {}).text || ""),
+      "11b the safe-to-spend figure leads the meeting's progress, not trails the health score");
     t.ok((merged.upcoming || []).length > 0, "11c …and so is what falls due in the week ahead");
     t.ok(everyItemHasSource(merged), "11d both carry their source");
     const text = agendaToText(merged);
@@ -244,16 +255,24 @@ const history = (weeks = 4) => [[8, 9], [15, 16], [22, 23], [29, 30]].slice(0, w
       t.ok(text.includes(i.text), `11e the facilitator is sent them too: "${i.text.slice(0, 32)}"`));
     // Nothing is added twice, and an agenda that already names what is coming is left alone.
     t.eq(JSON.stringify(withWeekAhead(merged, data)), JSON.stringify(merged), "11f adding them again changes nothing");
+    t.ok(withWeekAhead(merged, data) === merged, "11f2 …and it hands back the very object it was given");
     const quiet = { wins: [], changes: [], risks: [], progress: [], decisions: [], questions: [], quiet: true };
     t.eq(withWeekAhead(quiet, data), quiet, "11g a quiet-week agenda already carries them and is returned untouched");
 
     // The household with an overdraft warning is the one most likely to want the safe number, and a
     // single early return on `risks` was denying it to exactly them: a risk is not a safe-to-spend
     // figure, so the two halves are decided separately.
-    const risky = withWeekAhead({ ...full, risks: [{ text: "Fri 2: Low balance.", value: 12, source: "forecastEngine" }] }, data);
-    t.ok((risky.progress || []).some(p => /^Safe until next payday: \$/.test(p.text)),
-      "11h an agenda that already warns about a risk still gets its safe-to-spend line");
+    // The agenda carries a progress line of its own, so "first" is a real position rather than the
+    // only one: pushed onto the end instead of the front, the number the household came for sits
+    // below the health score and this reads as if nothing were wrong.
+    const risky = withWeekAhead({ ...full,
+      risks: [{ text: "Fri 2: Low balance.", value: 12, source: "forecastEngine" }],
+      progress: [{ text: "Health score 66.", value: 66, source: "healthScore" }] }, data);
+    t.ok(/^Safe until next payday: \$/.test(((risky.progress || [])[0] || {}).text || ""),
+      "11h an agenda that already warns about a risk still gets its safe-to-spend line, first");
     t.eq((risky.upcoming || []).length, 0, "11i …and is not also given a week-ahead list it does not need");
+    t.eq((risky.progress || []).map(p => p.text.slice(0, 12)), ["Safe until n", "Health score"],
+      "11i2 …above the progress lines the agenda already had, not below them");
 
     // Nothing falling due in the next seven days leaves `upcoming` empty, so a guard that read it
     // would prepend the safe-to-spend line again on every call.

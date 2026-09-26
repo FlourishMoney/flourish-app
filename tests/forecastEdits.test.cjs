@@ -481,32 +481,44 @@ const { create } = require("./_runner.cjs");
         t.eq(fallbacks.filter(x => /\bengines?\b/i.test(x)), [], "…and neither of them calls Flourish's machinery an engine");
         // The coach's own system prompt is not read by a household, but it is where the model learns
         // what to call things, and it taught it the word this branch is removing.
-        // ── And every sentence a function hands back in a response body ────────────────────────
-        // The scope above was justified with "the rest of netlify/functions is console logs and
-        // model prompts, which no household reads". That was wrong: coach.js and plaid.js return
-        // `message` and `error` strings that this app renders, four of them with em dashes, and one
-        // of those appears on the Meet screen itself when the coach is rate-limited.
+        // ── And every sentence any function produces for the app to show ───────────────────────
+        // The scope was twice too narrow. First it read src/ only, and the two replies a household
+        // sees when the coach is overruled live in netlify/functions/_lib, both with em dashes. Then
+        // it read `message:`/`error:` STRING LITERALS, and the rate-limit reply that appears on the
+        // Meet screen could be turned into a template literal and sail through, as could
+        // coachLimits.freeLimitMessage(), which every free user reads.
+        //
+        // So the rule is shaped like the thing it protects: a SENTENCE — starts with a capital,
+        // contains a space, ends in a full stop, question or exclamation mark — anywhere in
+        // netlify/functions, whether written as a literal or as a template. Console arguments are
+        // excluded because no household reads a log line, and coachPrompt.js is excluded because it
+        // is the model's instructions, not the household's copy; the word rule below still holds it.
         {
-          const walk = (file) => {
+          const SENTENCE = /^[A-Z][^]*\s[^]*[.!?]$/;
+          const readSentences = (file) => {
             const ast = parser.parse(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), { sourceType: "unambiguous" });
             const out = [];
-            (function go(n) {
+            (function go(n, skip) {
               if (!n || typeof n.type !== "string") return;
-              const key = n.type === "ObjectProperty" && n.key ? (n.key.name || n.key.value) : null;
-              // A sentence, not a machine code: "rate_limited" and "plan_limit" carry no space.
-              if (/^(message|error)$/.test(key || "") && n.value && n.value.type === "StringLiteral" && /\s/.test(n.value.value)) {
-                out.push(`${path.basename(file)}:${n.loc.start.line} ${n.value.value}`);
+              const isConsole = n.type === "CallExpression" && n.callee && n.callee.object && n.callee.object.name === "console";
+              if (!skip && !isConsole) {
+                // A template is joined back into ONE sentence before it is read. Taken piece by
+                // piece, `Coach is unavailable ${x} minutes.` is two fragments, neither of which
+                // looks like a sentence — which is exactly how a dash was smuggled back into the
+                // reply that appears on the Meet screen with this check green.
+                const text = n.type === "StringLiteral" ? n.value
+                  : n.type === "TemplateLiteral" ? n.quasis.map(q => q.value.cooked ?? q.value.raw).join("0") : null;
+                if (text && SENTENCE.test(text.trim())) out.push(`${path.basename(file)}:${n.loc.start.line} ${text.trim()}`);
               }
               for (const k of Object.keys(n)) {
                 if (["loc", "start", "end", "leadingComments", "trailingComments", "innerComments", "extra"].includes(k)) continue;
                 const v = n[k];
-                if (Array.isArray(v)) v.forEach(x => x && typeof x.type === "string" && go(x));
-                else if (v && typeof v.type === "string") go(v);
+                if (Array.isArray(v)) v.forEach(x => x && typeof x.type === "string" && go(x, skip || isConsole));
+                else if (v && typeof v.type === "string") go(v, skip || isConsole);
               }
-            })(ast.program);
+            })(ast.program, false);
             return out;
           };
-          const fnDir = path.join(__dirname, "..", "netlify", "functions");
           const fnFiles = [];
           (function collect(dir) {
             for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -514,10 +526,11 @@ const { create } = require("./_runner.cjs");
               if (e.isDirectory()) collect(p2);
               else if (/\.(js|mjs|cjs)$/.test(e.name)) fnFiles.push(path.relative(path.join(__dirname, ".."), p2));
             }
-          })(fnDir);
-          const replies = fnFiles.flatMap(walk);
-          t.ok(replies.length > 30, `every sentence a function returns as message/error was read (${replies.length} of them, across ${fnFiles.length} files)`);
-          t.eq(replies.filter(x => /[\u2013\u2014]/.test(x)), [], "no em or en dash in anything a function hands back for the app to show");
+          })(path.join(__dirname, "..", "netlify", "functions"));
+          const scanned = fnFiles.filter(f => path.basename(f) !== "coachPrompt.js");
+          const replies = scanned.flatMap(readSentences);
+          t.ok(replies.length > 30, `every sentence the functions produce was read (${replies.length} of them, across ${scanned.length} files)`);
+          t.eq(replies.filter(x => /[\u2013\u2014]/.test(x)), [], "no em or en dash in anything a function produces for the app to show");
           t.eq(replies.filter(x => /\bengines?\b/i.test(x)), [], "…and none of them calls Flourish's machinery an engine");
         }
 
