@@ -40,10 +40,8 @@ const MEET = APP.slice(MEET_AT, APP.indexOf("\nfunction Family({data,", MEET_AT)
 
   // ── 2. FAULT A: the button must not be disabled by an empty agenda ───────────────────────────
   const startBtn = MEET.slice(MEET.indexOf("<button onClick={start}"), MEET.indexOf("</button>", MEET.indexOf("<button onClick={start}")));
-  const startDisabled = (startBtn.match(/disabled=\{([^}]*)\}/) || [])[1];
-  t.eq(startDisabled, "busy",
-    "2a the ONLY thing that switches the start button off is a request already in flight — not an " +
-    "empty agenda, under any spelling");
+  t.eq((startBtn.match(/disabled=\{([^}]*)\}/) || [])[1], undefined,
+    "2a nothing switches the start button off at all — not an empty agenda, under any spelling");
   t.ok(!/hasAgenda|items\.length|agenda\./.test(startBtn),
     "2b …and nothing about the agenda's contents reaches the button at all");
   t.ok(!/const hasAgenda/.test(MEET), "2c the flag that gated it is gone");
@@ -101,10 +99,15 @@ const MEET = APP.slice(MEET_AT, APP.indexOf("\nfunction Family({data,", MEET_AT)
     "5b start() no longer returns silently — the button is not rendered in that state at all");
 
   // ── 6. the tap is acknowledged immediately ───────────────────────────────────────────────────
-  t.ok(/disabled=\{busy\}/.test(MEET), "6a the button is disabled while a reply is in flight");
-  t.ok(/\{busy\?"Starting…"/.test(MEET),
-    "6b …and says Starting… while it waits, so a slow first reply never looks like nothing happened");
-  t.ok(/cursor:busy\?"default":"pointer"/.test(MEET), "6c …and stops looking tappable while it waits");
+  t.ok(/const start = \(\) => \{ setStarted\(true\); sendToFacilitator\(null\); \};/.test(MEET),
+    "6a the tap flips started in the same frame, so the card replaces the button immediately");
+  t.ok(/\{busy && <div[^>]*>\{msgs\.length \? "…" : "Starting the meeting…"\}<\/div>\}/.test(MEET),
+    "6b …and before the first reply the card says what it is doing, so a slow connection never " +
+    "looks like nothing happened");
+  t.ok(!/\{busy\?"Starting…"/.test(MEET),
+    "6c the label is not put on the start button, which unmounts on tap and could never show it");
+  t.ok(/<button onClick=\{send\} disabled=\{busy\}/.test(MEET),
+    "6d and the send button, which DOES stay mounted, is disabled while a reply is in flight");
 
   t.summary("meetStart.test");
 })();

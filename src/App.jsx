@@ -9070,7 +9070,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
       ) : facilitatorGate === "ai-off" ? (
         <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5}}>Coach is off in Settings. Your agenda is above.</div></div>
       ) : !started ? (
-        <button onClick={start} disabled={busy} style={{width:"100%",background:busy?C.cardAlt:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:14,padding:"13px",color:busy?C.muted:"#fff",fontWeight:800,fontSize:14,cursor:busy?"default":"pointer",fontFamily:"inherit"}}>{busy?"Starting…":(isCouple?"Start the meeting":"Start solo check-in")}</button>
+        <button onClick={start} style={{width:"100%",background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:14,padding:"13px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{isCouple?"Start the meeting":"Start solo check-in"}</button>
       ) : (
         <div style={card}>
           <div style={{color:C.muted,fontSize:11,marginBottom:8}}>The facilitator works only from the agenda above. Nothing here moves money; a choice is only recorded after you confirm it.</div>
@@ -9080,7 +9080,10 @@ function MeetAgenda({ data, isCouple, setScreen }){
               <div style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 13px",fontSize:13,lineHeight:1.6,color:C.cream,marginTop:3}}>{renderCoachMarkdown(m.content)}</div>
             </div>
           ))}
-          {busy && <div style={{color:C.muted,fontSize:12,marginBottom:8}}>…</div>}
+          {/* The acknowledgement of the tap: started flips synchronously, so this card replaces the
+              button in the same frame. Before the first reply it says what it is doing — a bare
+              ellipsis on a slow connection still reads as nothing having happened. */}
+          {busy && <div style={{color:C.mutedHi,fontSize:12.5,marginBottom:8}}>{msgs.length ? "…" : "Starting the meeting…"}</div>}
           {/* A refusal, said plainly and attributed to nobody. A limit gets no Try again, because
               trying again is exactly what will not work until the limit lifts. */}
           {meetError && (
