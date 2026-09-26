@@ -6450,9 +6450,9 @@ function HowWeGotThis({ title, value, meaning, inputs = [], changeLabel, onChang
 // "Bills" needs no explanation. "Safe to spend" sounds like a balance and is not one. Everything
 // else explains itself by being tapped, because the number opens HowWeGotThis.
 const TERMS = {
-  "Safe to spend": "Not your balance. What is left after the bills, debt payments and savings already committed before your next deposit — so spending up to it leaves everything else covered.",
+  "Safe to spend": "Not your balance. What is left after the bills, debt payments and savings already committed before your next deposit, so spending up to it leaves everything else covered.",
   "Time Machine": "A what-if. It replays your own numbers forward with one thing changed, so you can see a decision before you make it. Nothing is saved and no money moves.",
-  "Money meeting": "A short, structured check-in on the week — what went well, what changed, what is coming. Flourish writes the agenda from your numbers; you and your coach work through it.",
+  "Money meeting": "A short, structured check-in on the week: what went well, what changed, what is coming. Flourish writes the agenda from your numbers, and you and your coach work through it.",
   "Health score": "A single 0 to 100 read on how your money is holding up, from your buffer, your bills, your debts and how steady your spending is. It moves slowly on purpose.",
 };
 
