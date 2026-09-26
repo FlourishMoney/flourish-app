@@ -32,7 +32,8 @@ import { isNativeApp, billingUiState, offeredPlans, billingReturnNotice, BILLING
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/signupUi.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
-import { TYPE, TYPE_MIN, SPACE, LAYOUT, tap } from "./lib/type.js";
+import { TYPE, TYPE_MIN } from "./lib/type.js";
+import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText } from "./lib/space.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, withWeekAhead, agendaIsEmpty } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
 import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown, formatCompactMoney } from "./lib/format.js";
@@ -1033,8 +1034,8 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
 
   return (
     <div>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-        <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7}}>
+      <div style={row({justifyContent:"space-between",marginBottom:GAP.textToControl})}>
+        <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7,minWidth:0}}>
           <Icon id="zap" size={15} color={C.goldBright} strokeWidth={2}/>
           What to do today
         </div>
@@ -1266,12 +1267,12 @@ function Sheet({ title, subtitle, onClose, children, label }) {
       <div style={{ background: C.card, borderRadius: isDesktop ? "20px" : "24px 24px 0 0", width: "100%", maxWidth: 520, border: `1px solid ${C.border}`, boxShadow: "0 8px 60px rgba(0,0,0,0.5)", display: "flex", flexDirection: "column", maxHeight: isDesktop ? "85vh" : "92vh" }}>
         <div style={{ padding: "16px 20px 12px", flexShrink: 0, borderBottom: `1px solid ${C.border}` }}>
           {!isDesktop && <div style={{ width: 36, height: 4, borderRadius: 99, background: C.border, margin: "0 auto 14px" }} />}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: GAP.textToControl }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ color: C.cream, fontWeight: 800, fontSize: 16 }}>{title}</div>
               {subtitle && <div style={{ color: C.muted, fontSize:13, marginTop: 3, lineHeight: 1.5 }}>{subtitle}</div>}
             </div>
-            <button aria-label="Close" onClick={onClose} style={{ background: "none", border: "none", color: C.muted, fontSize: 20, cursor: "pointer", padding: "2px 6px", lineHeight: 1 }}>✕</button>
+            <button aria-label="Close" onClick={onClose} style={{ background: "none", border: "none", color: C.muted, fontSize: 20, cursor: "pointer", lineHeight: 1, ...tap({ display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }) }}>✕</button>
           </div>
         </div>
         <div style={{ overflowY: "auto", padding: "16px 20px 20px", flex: 1 }}>{children}</div>
@@ -1284,12 +1285,12 @@ function Sheet({ title, subtitle, onClose, children, label }) {
 
 function SegPick({ options, value, onChange, label }) {
   return (
-    <div role="radiogroup" aria-label={label} style={{ display: "flex", gap: 4, background: C.surface, borderRadius: 12, padding: 3 }}>
+    <div role="radiogroup" aria-label={label} style={{ display: "flex", gap: GAP.controlToControl, background: C.surface, borderRadius: 12, padding: SPACE.xs }}>
       {options.map(o => {
         const on = value === o.value;
         return (
           <button key={o.value} role="radio" aria-checked={on} onClick={() => onChange(o.value)}
-            style={{ flex: 1, background: on ? C.teal + "28" : "transparent", border: `1px solid ${on ? C.teal + "55" : "transparent"}`, color: on ? C.tealBright : C.muted, borderRadius: 10, padding: "9px 6px", fontSize:13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", minHeight: 36 }}>
+            style={{ flex: 1, background: on ? C.teal + "28" : "transparent", border: `1px solid ${on ? C.teal + "55" : "transparent"}`, color: on ? C.tealBright : C.muted, borderRadius: 10, padding: "9px 6px", fontSize:13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", minHeight: LAYOUT.minTap }}>
             {o.label}
           </button>
         );
@@ -1299,21 +1300,21 @@ function SegPick({ options, value, onChange, label }) {
 }
 
 // A function, not a constant: C is re-pointed at the light or dark palette on every render.
-const sheetLabel = () => ({ color: C.mutedHi, fontSize:15, fontWeight: 600, margin: "16px 0 6px" });
+const sheetLabel = () => ({ color: C.mutedHi, fontSize:15, fontWeight: 600, margin: `${SPACE.lg}px 0 ${GAP.textToControl}px` });
 function SheetField({ prefix, value, onChange, type = "text", placeholder, min, max, label, inputMode }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-      {prefix && <span style={{ color: C.muted, padding: "0 10px", fontSize: 14 }}>{prefix}</span>}
+    <div style={{ display: "flex", alignItems: "center", position: "relative", background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+      {prefix && <span aria-hidden="true" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.muted, fontSize: 14, pointerEvents: "none" }}>{prefix}</span>}
       <input aria-label={label} type={type} value={value} min={min} max={max} placeholder={placeholder} inputMode={inputMode || (type === "number" ? "decimal" : undefined)}
         onChange={e => onChange(e.target.value)}
-        style={{ flex: 1, minWidth: 0, background: "none", border: "none", outline: "none", color: C.cream, fontSize: 15, padding: prefix ? "12px 12px 12px 0" : "12px", fontFamily: "inherit", colorScheme: C.isDark ? "dark" : "light" }} />
+        style={{ flex: 1, minWidth: 0, background: "none", border: "none", outline: "none", color: C.cream, fontSize: 15, padding: prefix ? "12px 12px 12px 26px" : "12px", minHeight: LAYOUT.minTap, boxSizing: "border-box", fontFamily: "inherit", colorScheme: C.isDark ? "dark" : "light" }} />
     </div>
   );
 }
 function SheetPrimary({ label, onClick, disabled }) {
   return (
     <button onClick={onClick} disabled={disabled}
-      style={{ width: "100%", marginTop: 18, background: disabled ? C.cardAlt : `linear-gradient(135deg,${C.green},${C.greenBright})`, border: "none", borderRadius: 14, padding: "14px", color: disabled ? C.muted : (C.isDark ? "#021208" : "#fff"), fontWeight: 800, fontSize: 14, cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+      style={{ width: "100%", marginTop: 18, minHeight: LAYOUT.minTap, background: disabled ? C.cardAlt : `linear-gradient(135deg,${C.green},${C.greenBright})`, border: "none", borderRadius: 14, padding: "14px", color: disabled ? C.muted : (C.isDark ? "#021208" : "#fff"), fontWeight: 800, fontSize: 14, cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
       {label}
     </button>
   );
@@ -1321,7 +1322,7 @@ function SheetPrimary({ label, onClick, disabled }) {
 function SheetSecondary({ label, onClick, tone }) {
   return (
     <button onClick={onClick}
-      style={{ width: "100%", marginTop: 10, background: C.card, border: `1px solid ${tone || C.border}`, borderRadius: 14, padding: "12px", color: tone || C.mutedHi, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+      style={{ width: "100%", marginTop: GAP.controlToControl, minHeight: LAYOUT.minTap, background: C.card, border: `1px solid ${tone || C.border}`, borderRadius: 14, padding: "12px", color: tone || C.mutedHi, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
       {label}
     </button>
   );
@@ -1332,11 +1333,16 @@ function EditedTag({ text = "Edited" }) {
 
 // A projected deposit or bill on a forecast row. Tapping it opens its edit sheet; tapping the rest of
 // the row still opens the day's breakdown.
+// One line of a forecast day, and a tap target if it opens something. It used to be 23px tall — an
+// emoji and a number, no padding — which is half of what a finger can reliably hit. The height comes
+// from LAYOUT.minTap now; the day card is a flex column, so the gaps between lines come from there.
 function ForecastLine({ onOpen, label, children }) {
   if (!onOpen) return <div>{children}</div>;
   return (
     <button onClick={e => { e.stopPropagation(); onOpen(); }} aria-label={label}
-      style={{ display: "block", background: "none", border: "none", padding: 0, margin: 0, cursor: "pointer", textAlign: "left", font: "inherit", color: "inherit", maxWidth: "100%" }}>
+      style={{ display: "flex", flexDirection: "column", justifyContent: "center", minHeight: LAYOUT.minTap,
+        background: "none", border: "none", padding: 0, margin: 0, cursor: "pointer", textAlign: "left",
+        font: "inherit", color: "inherit", maxWidth: "100%", alignItems: "flex-start" }}>
       {children}
     </button>
   );
@@ -1563,10 +1569,10 @@ function DepositQuestionCard({ data, setAppData, style }) {
         <div style={{ color: C.mutedHi, fontSize:13, lineHeight: 1.6, marginTop: 4 }}>
           <strong style={{ color: C.cream }}>+{formatMoney(Math.abs(Number(t.amount) || 0), { cents: true })}</strong> from <strong style={{ color: C.cream }}>{t.name}</strong>{when ? ` on ${when}` : ""}. Flourish is leaving it out of your forecast until you say.
         </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-          <button onClick={() => setOpen(t)} style={{ background: C.teal, border: "none", borderRadius: 99, padding: "8px 16px", color: "#fff", fontWeight: 700, fontSize:13, cursor: "pointer", fontFamily: "inherit", minHeight: 34 }}>Answer</button>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: GAP.controlToControl, marginTop: GAP.textToControl }}>
+          <button onClick={() => setOpen(t)} style={{ background: C.teal, border: "none", borderRadius: 99, padding: "8px 16px", color: "#fff", fontWeight: 700, fontSize:13, cursor: "pointer", fontFamily: "inherit", minHeight: LAYOUT.minTap }}>Answer</button>
           <button onClick={() => setAppData(prev => ({ ...prev, depositDecisions: decideDeposit(prev.depositDecisions, t, NOT_NOW) }))}
-            style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 99, padding: "8px 14px", color: C.muted, fontSize:13, cursor: "pointer", fontFamily: "inherit", minHeight: 34 }}>Not now</button>
+            style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 99, padding: "8px 14px", color: C.muted, fontSize:13, cursor: "pointer", fontFamily: "inherit", minHeight: LAYOUT.minTap }}>Not now</button>
         </div>
       </div>
       {open && <DepositSheet key={depositTxnKey(open)} txn={open} data={data} setAppData={setAppData} mode="ask" onClose={() => setOpen(null)} />}
@@ -1607,13 +1613,13 @@ function ExpectedItemSheet({ data, setAppData, onClose }) {
         <>
           <div style={sheetLabel()}>Already added</div>
           {items.map(x => (
-            <div key={x.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+            <div key={x.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: GAP.textToControl, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ color: C.cream, fontSize: 13, fontWeight: 600 }}>{x.name}</div>
                 <div style={{ color: C.muted, fontSize:13 }}>{x.direction === "in" ? "+" : "−"}{formatMoney(x.amount)} · {repeatWord[x.repeat] || "Once"} from {fmtOccDay(fromIso(x.date))}</div>
               </div>
               <button aria-label={`Delete ${x.name}`} onClick={() => setAppData(prev => ({ ...prev, forecastEdits: removeExpected(prev.forecastEdits, x.id) }))}
-                style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 14, padding: "4px 8px", minHeight: 34 }}>✕</button>
+                style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 14, ...tap({ display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }) }}>✕</button>
             </div>
           ))}
         </>
@@ -1668,15 +1674,15 @@ function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData
 
   return (
     <div>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-        <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7}}>
+      <div style={row({justifyContent:"space-between",marginBottom:12})}>
+        <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7,minWidth:0}}>
           <span style={{fontSize:15}}>⏳</span> Time Machine
         </div>
-        <button onClick={()=>setExpanded(e=>!e)} style={{background:"none",border:"none",color:C.teal,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer"}}>
+        <button onClick={()=>setExpanded(e=>!e)} style={{background:"none",border:"none",color:C.teal,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer",minHeight:LAYOUT.minTap,flexShrink:0,whiteSpace:"nowrap"}}>
           {expanded?"Collapse ↑":"30 days ↓"}
         </button>
       </div>
-      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginTop:-4,marginBottom:12}}>Drag a what-if onto your forecast. Flourish recalculates the line.</div>
+      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginBottom:12}}>Drag a what-if onto your forecast. Flourish recalculates the line.</div>
 
       {activeScenario && (
         <div style={{background:C.teal+"15",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",marginBottom:12,display:"flex",gap:8,alignItems:"center"}}>
@@ -1703,7 +1709,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData
             const isDrilled = expandedDay === ev.day;
             const avgDaily = FinancialCalcEngine.avgDailySpend(data);
             return (
-              <div key={idx} style={{paddingBottom:6,position:"relative"}}>
+              <div key={idx} style={{paddingBottom:GAP.textToControl,position:"relative"}}>
                 {/* Row — tappable */}
                 <div
                   onClick={()=>setExpandedDay(isDrilled ? null : ev.day)}
@@ -1713,9 +1719,9 @@ function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData
                     <div style={{width:14,height:14,borderRadius:"50%",background:dotColor,border:`3px solid ${C.bg}`,zIndex:1,boxShadow:ev.day===0||ev.isPayday?`0 0 8px ${dotColor}88`:"none",flexShrink:0}}/>
                   </div>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:ev.isPayday||ev.bills.length>0?3:0}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:GAP.textToControl}}>
+                      <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:GAP.textToControl}}>
+                        <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi}}>
                           {ev.day===0?"Today":ev.day===1?"Tomorrow":ev.date.toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}
                           <span style={{color:C.muted,fontSize:13,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
                         </div>
@@ -2784,8 +2790,8 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
 
   return (
     <div>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-        <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7}}>
+      <div style={row({justifyContent:"space-between",marginBottom:GAP.textToControl})}>
+        <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7,minWidth:0}}>
           <span style={{fontSize:15}}>🔍</span> Room Flourish found
         </div>
         <span style={{background:C.goldDim,color:C.goldBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"3px 8px",borderRadius:99}}>{opportunities.length} found</span>
@@ -3077,16 +3083,21 @@ function Chip({label,color,size=TYPE_MIN,icon}){
 function Toggle({on,onChange,label}){
   // Sprint 6b: a real switch for assistive tech + keyboard — role/aria-checked announce state,
   // tabIndex makes it focusable, and Space/Enter toggle it (was a mouse-only div).
+  // The switch is 48x28 because that is what a switch looks like. The thing you TAP is the outer
+  // box, which is 44 tall: the role and the handler live there, so the target matches LAYOUT.minTap
+  // without the pill growing into something that no longer reads as a switch.
   return <div role="switch" aria-checked={on} aria-label={label} tabIndex={0}
     onClick={()=>onChange(!on)}
     onKeyDown={e=>{ if(e.key===" "||e.key==="Enter"){ e.preventDefault(); onChange(!on); } }}
-    style={{width:48,height:28,borderRadius:99,cursor:"pointer",
-    background:on?C.green:C.isDark?"rgba(255,255,255,0.10)":"rgba(0,0,0,0.10)",position:"relative",
-    transition:"background .3s",flexShrink:0,
-    boxShadow:on?`0 0 12px ${C.green}44`:"none"}}>
-    <div style={{position:"absolute",top:4,left:on?24:4,width:20,height:20,borderRadius:"50%",
-    background:on?"#fff":C.isDark?"rgba(237,233,226,0.55)":"rgba(26,32,53,0.40)",transition:"left .28s cubic-bezier(.4,0,.2,1)",
-    boxShadow:"0 1px 6px rgba(0,0,0,0.6)"}}/>
+    style={{...tap({width:48}),display:"flex",alignItems:"center",cursor:"pointer",flexShrink:0}}>
+    <div style={{width:48,height:28,borderRadius:99,
+      background:on?C.green:C.isDark?"rgba(255,255,255,0.10)":"rgba(0,0,0,0.10)",position:"relative",
+      transition:"background .3s",
+      boxShadow:on?`0 0 12px ${C.green}44`:"none"}}>
+      <div style={{position:"absolute",top:4,left:on?24:4,width:20,height:20,borderRadius:"50%",
+      background:on?"#fff":C.isDark?"rgba(237,233,226,0.55)":"rgba(26,32,53,0.40)",transition:"left .28s cubic-bezier(.4,0,.2,1)",
+      boxShadow:"0 1px 6px rgba(0,0,0,0.6)"}}/>
+    </div>
   </div>;
 }
 function Btn({label,onClick,color=C.green,outline,small,disabled,full=true,icon}){
@@ -3094,7 +3105,7 @@ function Btn({label,onClick,color=C.green,outline,small,disabled,full=true,icon}
     style={{background:outline?"transparent":`linear-gradient(135deg,${color} 0%,${color}dd 100%)`,
     border:`1.5px solid ${outline?color+"99":C.isDark?"rgba(255,255,255,0.15)":"rgba(0,0,0,0.12)"}`,
     color:outline?color:C.isDark?"#021208":"#FFFFFF",
-    borderRadius:16,padding:small?"9px 20px":"14px 28px",
+    borderRadius:16,padding:small?"9px 20px":"14px 28px",minHeight:LAYOUT.minTap,boxSizing:"border-box",
     fontWeight:800,fontSize:small?TYPE_MIN:14,letterSpacing:0.2,
     cursor:disabled?"not-allowed":"pointer",opacity:disabled?.35:1,
     display:"flex",alignItems:"center",gap:7,justifyContent:"center",
@@ -3590,48 +3601,48 @@ function DashCustomize({ layout, onChange, onClose }) {
     <div style={{position:'fixed',inset:0,zIndex:9000,display:'flex',alignItems:isDesktop?'center':'flex-end',justifyContent:'center',background:'rgba(0,0,0,0.6)',backdropFilter:'blur(6px)'}} onClick={onClose}>
       <div style={{width:'100%',maxWidth:440,background:C.card,borderRadius:isDesktop?'24px':'24px 24px 0 0',maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 48px rgba(0,0,0,0.5)'}} onClick={e=>e.stopPropagation()}>
         {!isDesktop&&<div style={{width:36,height:4,borderRadius:99,background:C.border,margin:'12px auto 0',flexShrink:0}}/>}
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'20px 20px 0',flexShrink:0}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:GAP.textToControl,padding:'20px 20px 0',minHeight:LAYOUT.minTap,flexShrink:0}}>
           <div style={{color:C.cream,fontWeight:800,fontSize:18,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Reorder Dashboard</div>
-          <button aria-label="Close" onClick={onClose} style={{background:'none',border:'none',color:C.muted,fontSize:22,cursor:'pointer',padding:4,lineHeight:1,fontFamily:'inherit'}}>×</button>
+          <button aria-label="Close" onClick={onClose} style={{background:'none',border:'none',color:C.muted,fontSize:22,cursor:'pointer',lineHeight:1,fontFamily:'inherit',...tap({display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0})}}>×</button>
         </div>
-        <div style={{color:C.muted,fontSize:13,padding:'4px 20px 14px',fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Use ↑↓ to reorder · 🔒 to pin. Show or hide cards in Settings → Dashboard.</div>
-        <div style={{overflowY:'auto',flex:1,padding:'0 16px 8px'}}>
+        <div style={{color:C.muted,fontSize:13,padding:"0 20px 14px",marginTop:GAP.textToControl,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Use ↑↓ to reorder · 🔒 to pin. Show or hide cards in Settings → Dashboard.</div>
+        <div style={{overflowY:'auto',flex:1,minHeight:0,padding:'0 16px 8px'}}>
           {items.map((tile, idx) => {
             const m = meta(tile.id);
             return (
-              <div key={tile.id} style={{display:'flex',alignItems:'center',gap:10,padding:'11px 12px',borderRadius:14,marginBottom:7,
+              <div key={tile.id} style={{display:'flex',alignItems:'center',gap:GAP.textToControl,padding:'11px 12px',borderRadius:14,marginBottom:GAP.controlToControl,
                 background:tile.locked?C.gold+'0A':C.cardAlt,
                 border:`1px solid ${tile.locked?C.gold+'44':tile.visible!==false?C.green+'33':C.border}`,
                 opacity:tile.visible!==false?1:0.5,transition:'all .15s'}}>
-                <div style={{display:'flex',flexDirection:'column',gap:1,flexShrink:0}}>
+                <div style={{display:'flex',gap:GAP.controlToControl,flexShrink:0}}>
                   <button aria-label="Move up" onClick={()=>!tile.locked&&moveUp(tile.id)}
-                    style={{background:'none',border:'none',color:idx===0||tile.locked?C.border:C.muted,cursor:idx===0||tile.locked?'default':'pointer',fontSize:13,lineHeight:1,padding:'3px 6px',borderRadius:6,transition:'color .15s',fontFamily:'inherit'}}>▲</button>
+                    style={{background:'none',border:'none',color:idx===0||tile.locked?C.border:C.muted,cursor:idx===0||tile.locked?'default':'pointer',fontSize:13,lineHeight:1,borderRadius:6,transition:'color .15s',fontFamily:'inherit',...tap({display:'flex',alignItems:'center',justifyContent:'center'})}}>▲</button>
                   <button aria-label="Move down" onClick={()=>!tile.locked&&moveDown(tile.id)}
-                    style={{background:'none',border:'none',color:idx===items.length-1||tile.locked?C.border:C.muted,cursor:idx===items.length-1||tile.locked?'default':'pointer',fontSize:13,lineHeight:1,padding:'3px 6px',borderRadius:6,transition:'color .15s',fontFamily:'inherit'}}>▼</button>
+                    style={{background:'none',border:'none',color:idx===items.length-1||tile.locked?C.border:C.muted,cursor:idx===items.length-1||tile.locked?'default':'pointer',fontSize:13,lineHeight:1,borderRadius:6,transition:'color .15s',fontFamily:'inherit',...tap({display:'flex',alignItems:'center',justifyContent:'center'})}}>▼</button>
                 </div>
                 <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:32,height:32,borderRadius:9,background:tile.visible!==false?C.green+'18':C.cardAlt,border:`1px solid ${tile.visible!==false?C.green+'33':C.border}`,flexShrink:0}}>
                   <TileIcon id={tile.id} size={16} color={tile.visible!==false?C.greenBright:C.muted}/>
                 </div>
-                <div style={{flex:1,color:C.cream,fontWeight:600,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",display:'flex',alignItems:'center',gap:8,minWidth:0}}>
+                <div style={{flex:1,color:C.cream,fontWeight:600,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",display:'flex',alignItems:'center',flexWrap:'wrap',columnGap:8,rowGap:4,minWidth:0,overflow:'hidden'}}>
                   <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.label}</span>
                   {m.alwaysVisible&&<span style={{color:C.gold,fontSize:13,fontWeight:700,flexShrink:0}}>always on</span>}
                   {tile.locked&&<span style={{color:C.gold,fontSize:13,fontWeight:700,flexShrink:0}}>pinned</span>}
                 </div>
                 <button onClick={()=>setItems(prev=>prev.map(t=>t.id===tile.id?{...t,locked:!t.locked}:t))}
-                  style={{background:'none',border:`1px solid ${tile.locked?C.gold+'55':C.border}`,borderRadius:8,width:36,height:36,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,flexShrink:0,color:tile.locked?C.gold:C.muted,transition:'all .15s'}}>
+                  style={{background:'none',border:`1px solid ${tile.locked?C.gold+'55':C.border}`,borderRadius:8,...tap(),cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,flexShrink:0,color:tile.locked?C.gold:C.muted,transition:'all .15s'}}>
                   {tile.locked?'🔒':'🔓'}
                 </button>
               </div>
             );
           })}
         </div>
-        <div style={{padding:'12px 16px 20px',flexShrink:0,borderTop:`1px solid ${C.border}`,display:'flex',gap:10}}>
+        <div style={{padding:'12px 16px 20px',flexShrink:0,borderTop:`1px solid ${C.border}`,display:'flex',gap:GAP.controlToControl}}>
           <button onClick={()=>setItems(DASH_TILES.map(t=>({id:t.id,visible:true,locked:false})))}
-            style={{flex:1,background:'none',border:`1px solid ${C.border}`,borderRadius:12,padding:'12px',color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer',fontWeight:600}}>
+            style={{flex:1,background:'none',border:`1px solid ${C.border}`,borderRadius:12,padding:'12px',minHeight:LAYOUT.minTap,color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer',fontWeight:600}}>
             Reset
           </button>
           <button onClick={save}
-            style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:'none',borderRadius:12,padding:'12px',color:'#021208',fontWeight:800,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer'}}>
+            style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:'none',borderRadius:12,padding:'12px',minHeight:LAYOUT.minTap,color:'#021208',fontWeight:800,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:'pointer'}}>
             Save Layout
           </button>
         </div>
@@ -4454,14 +4465,14 @@ function Notifications({onClose, data, onMarkAllRead}){
     return next;
   });
   return <div style={{color:C.cream}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
-      <div>
+    <div style={row({justifyContent:"space-between",marginBottom:18})}>
+      <div style={rowText()}>
         <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Notifications</div>
         {unread>0&&<div style={{color:C.red,fontSize:13,fontWeight:700}}>{unread} unread</div>}
       </div>
-      <div style={{display:"flex",gap:8}}>
-        {unread>0&&<button onClick={markAll} style={{background:"none",border:`1px solid ${C.border}`,color:C.muted,borderRadius:8,padding:"5px 12px",cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>Mark all read</button>}
-        <button onClick={onClose} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,color:C.muted,borderRadius:8,padding:"5px 12px",cursor:"pointer",fontSize:13}}>← Back</button>
+      <div style={{display:"flex",gap:GAP.controlToControl,flexShrink:0}}>
+        {unread>0&&<button onClick={markAll} style={{background:"none",border:`1px solid ${C.border}`,color:C.muted,borderRadius:8,padding:"5px 12px",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>Mark all read</button>}
+        <button onClick={onClose} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,color:C.muted,borderRadius:8,padding:"5px 12px",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13}}>← Back</button>
       </div>
     </div>
     {notifs.map(n=>(
@@ -4470,11 +4481,11 @@ function Notifications({onClose, data, onMarkAllRead}){
         <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
           <div style={{width:40,height:40,borderRadius:12,background:n.color+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon id={n.icon||"bell"} size={18} color={n.color} strokeWidth={1.5}/></div>
           <div style={{flex:1}}>
-            <div style={{display:"flex",justifyContent:"space-between"}}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:GAP.textToControl}}>
               <div style={{color:n.read?C.cream:n.color,fontWeight:700,fontSize:14}}>{n.title}</div>
-              <button aria-label="Dismiss" onClick={e=>{e.stopPropagation();markRead(n.id);}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",padding:"0 0 0 8px",fontSize:14}}>✕</button>
+              <button aria-label="Dismiss" onClick={e=>{e.stopPropagation();markRead(n.id);}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:14,...tap({display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0})}}>✕</button>
             </div>
-            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.55,marginTop:4}}>{n.body}</div>
+            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.55,marginTop:GAP.textToControl}}>{n.body}</div>
             <div style={{color:C.muted,fontSize:13,marginTop:6}}>{n.time}</div>
           </div>
         </div>
@@ -4739,7 +4750,7 @@ function DataTransparencyPanel({data, onClose}) {
 
   const TabBtn = ({id, label}) => (
     <button onClick={()=>setTab(id)} style={{
-      ...s, flex:1, padding:"9px 6px", fontSize:13, fontWeight:700,
+      ...s, flex:1, padding:"9px 6px", minHeight:LAYOUT.minTap, fontSize:13, fontWeight:700,
       background: tab===id ? C.green+"22" : "transparent",
       border: tab===id ? `1px solid ${C.green}44` : `1px solid transparent`,
       borderRadius:10, color: tab===id ? C.greenBright : C.muted, cursor:"pointer"
@@ -4765,16 +4776,16 @@ function DataTransparencyPanel({data, onClose}) {
 
         {/* Header */}
         <div style={{padding:"18px 20px 12px",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:GAP.textToControl,marginBottom:14}}>
             <div>
               <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.cream}}>How it's calculated</div>
               <div style={{...s,fontSize:13,color:C.muted,marginTop:2}}>Full audit trail of every number in Flourish</div>
             </div>
             <button aria-label="Close" onClick={onClose} style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,
-              borderRadius:10,padding:"8px 12px",color:C.muted,cursor:"pointer",...s,fontSize:13,minHeight:36}}>✕</button>
+              borderRadius:10,color:C.muted,cursor:"pointer",...s,fontSize:13,...tap({display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0})}}>✕</button>
           </div>
           {/* Tabs */}
-          <div style={{display:"flex",gap:6}}>
+          <div style={{display:"flex",gap:GAP.controlToControl}}>
             <TabBtn id="income"  label="💰 Income"/>
             <TabBtn id="spending" label="💸 Spending"/>
             <TabBtn id="balance" label="🏦 Balance"/>
@@ -5166,7 +5177,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             </>;
           })()}
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:8,...(data.demo?{marginLeft:"auto"}:{})}}>
+        <div style={{display:"flex",alignItems:"center",gap:GAP.textToControl,...(data.demo?{marginLeft:"auto"}:{})}}>
           <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2,...(data.demo?{whiteSpace:"nowrap"}:{})}}>{new Date().toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}</span>
           {setDashLayout&&<button onClick={()=>setShowCustomize(true)} style={{background:`linear-gradient(135deg,${C.green}22,${C.teal}11)`,border:`1px solid ${C.green}44`,borderRadius:99,padding:"0 14px",minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer",letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}>⠿ Reorder</button>}
         </div>
@@ -5185,13 +5196,13 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
       </div>
 
       {/* ── Phase 3a: Today / Decisions tab bar ─────────────────────────── */}
-      <div style={{display:"flex",gap:6,marginBottom:14,padding:4,background:C.cardAlt,borderRadius:14,border:`1px solid ${C.border}`}}>
+      <div style={{display:"flex",gap:GAP.controlToControl,marginBottom:SPACE.lg,padding:SPACE.xs,background:C.cardAlt,borderRadius:14,border:`1px solid ${C.border}`}}>
         {[
           {id:"today",     label:"Today"},
           {id:"decisions", label:"Decisions"},
         ].map(t=>(
           <button key={t.id} onClick={()=>setDashTab(t.id)} style={{
-            flex:1,padding:"10px 8px",fontSize:13,fontWeight:700,
+            flex:1,padding:"10px 8px",minHeight:LAYOUT.minTap,fontSize:13,fontWeight:700,
             background: dashTab===t.id ? C.green+"22" : "transparent",
             border:     dashTab===t.id ? `1px solid ${C.green}44` : "1px solid transparent",
             borderRadius:10,
@@ -5288,9 +5299,13 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               </>}
               <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>One thing you could do</div>
               <div style={{color:C.cream,fontSize:13.5,lineHeight:1.55,margin:"3px 0 4px"}}>{doIt}</div>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:8}}>
+              {/* The row this rule was written for. It said space-between with flex:1 on the button:
+                  the button grew until there was no space left to put between anything, and the
+                  sentence ended flush against it. row() wraps instead, and the button no longer
+                  grows. See docs/design/LAYOUT-RULES.md. */}
+              <div style={row({justifyContent:"space-between",marginTop:SPACE.md})}>
                 <CalcByFlourish/>
-                <button onClick={()=>setScreen&&setScreen("coach")} style={{background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Explain this →</button>
+                <button onClick={()=>setScreen&&setScreen("coach")} style={{...rowControl(),background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:99,padding:"11px 14px",color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Explain this →</button>
               </div>
             </div>
           );
@@ -5316,7 +5331,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           {/* Dot grid texture */}
           <div style={{position:"absolute",inset:0,backgroundImage:`radial-gradient(circle,${heroColor}18 1px,transparent 1px)`,backgroundSize:"24px 24px",pointerEvents:"none",opacity:0.45,maskImage:"radial-gradient(ellipse 100% 80% at 50% 50%,black 40%,transparent 100%)"}}/>
           <div style={{position:"relative",padding:"24px 24px 20px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:"0.8em",flexWrap:"wrap"}}>
+            {/* columnGap stays 8 so the pulsing dot sits tight against its label; InfoDot adds its own
+                4px either side, which is what makes the clearance to text 12. rowGap comes from row(). */}
+            <div style={row({columnGap:SPACE.sm,marginBottom:"0.8em"})}>
               <div style={{width:6,height:6,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 10px ${heroColor}`,animation:"pulse 2.5s ease-in-out infinite"}}/>
               <span style={{color:heroColorBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Safe to spend until next payday</span>
               <InfoDot term="Safe to spend" onOpen={setShowTerm}/>
@@ -5461,10 +5478,10 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
 
                 return (
                   <div>
-                    <div style={{color:C.mutedHi,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>
+                    <div style={{color:C.mutedHi,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:GAP.textToControl}}>
                       Can I afford this?
                     </div>
-                    <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <div style={{display:"flex",gap:GAP.controlToControl,alignItems:"center"}}>
                       <div style={{position:"relative",flex:1}}>
                         <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:affordFocused||affordInput?heroColorBright:C.muted,fontSize:14,fontWeight:700,pointerEvents:"none",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$</span>
                         {/* R7: type=text+inputMode=decimal — shows numeric keyboard, respects placeholder */}
@@ -5479,7 +5496,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                           style={{
                             width:"100%",background:"rgba(255,255,255,0.06)",
                             border:`1px solid ${affordFocused?heroColor+"66":heroColor+"22"}`,
-                            borderRadius:12,padding:"10px 12px 10px 26px",
+                            borderRadius:12,padding:"10px 12px 10px 26px",minHeight:LAYOUT.minTap,boxSizing:"border-box",
                             color:C.cream,fontSize:15,fontWeight:700,
                             fontFamily:"'Plus Jakarta Sans',sans-serif",
                             outline:"none",transition:"border-color .15s",
@@ -5490,7 +5507,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                       </div>
                       {affordInput&&(
                         <button onClick={()=>{setAffordInput("");setAffordResult(null);}}
-                          style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${heroColor}22`,borderRadius:10,padding:"10px 12px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0,minHeight:40,minWidth:40,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                          style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${heroColor}22`,borderRadius:10,padding:"10px 12px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0,...tap(),display:"flex",alignItems:"center",justifyContent:"center"}}>
                           ✕
                         </button>
                       )}
@@ -5505,12 +5522,12 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                         .filter((v,i,a) => a.indexOf(v) === i) // dedupe
                         .slice(0, 3);
                       return (
-                        <div style={{display:"flex",gap:6,marginTop:8}}>
+                        <div style={{display:"flex",gap:GAP.controlToControl,marginTop:GAP.controlToControl}}>
                           {presets.map(amt=>(
                             <button key={amt} onClick={()=>{setAffordInput(String(amt));checkAfford(String(amt));}}
                               style={{flex:1,background:heroColor+"0D",border:`1px solid ${heroColor}22`,borderRadius:10,
                                 padding:"7px 0",color:heroColorBright,fontSize:13,fontWeight:700,cursor:"pointer",
-                                fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .15s",minHeight:34}}
+                                fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .15s",minHeight:LAYOUT.minTap}}
                               onMouseEnter={e=>{e.currentTarget.style.background=heroColor+"22";}}
                               onMouseLeave={e=>{e.currentTarget.style.background=heroColor+"0D";}}>
                               {formatMoney(amt)}
@@ -5552,7 +5569,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             {/* ── Bottom row: actions + tap affordance ── */}
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginTop:16,flexWrap:"wrap"}}>
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                {onWhatIf&&<button onClick={e=>{e.stopPropagation();onWhatIf();}} style={{background:"rgba(255,255,255,0.08)",border:`1px solid rgba(255,255,255,0.12)`,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:13,padding:"6px 12px",borderRadius:99,cursor:"pointer",minHeight:36}}>What if? →</button>}
+                {onWhatIf&&<button onClick={e=>{e.stopPropagation();onWhatIf();}} style={{background:"rgba(255,255,255,0.08)",border:`1px solid rgba(255,255,255,0.12)`,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:13,padding:"6px 12px",borderRadius:99,cursor:"pointer",minHeight:LAYOUT.minTap}}>What if? →</button>}
               </div>
               {/* Tap affordance — prominent pill, clear action */}
               <div onClick={e=>{e.stopPropagation();overdraft?setScreen("plan"):setShowTransparency(true);}}
@@ -5628,7 +5645,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2,lineHeight:1.4}}>{scoreInsight}</div>
               </div>
             </div>
-            <div style={{display:"flex",gap:6}}>
+            <div style={{display:"flex",gap:GAP.controlToControl}}>
               {onCheckIn&&<button onClick={onCheckIn} style={{flex:1,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,padding:"0 8px",minHeight:LAYOUT.minTap,borderRadius:99,border:"none",cursor:"pointer",whiteSpace:"nowrap"}}>Check-In ✦</button>}
               <button onClick={()=>setScreen("coach")} style={{flex:1,background:"none",border:`1px solid ${scoreBase}44`,color:scoreBase,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:13,padding:"0 8px",minHeight:LAYOUT.minTap,borderRadius:99,cursor:"pointer",whiteSpace:"nowrap"}}>Coach →</button>
             </div>
@@ -5986,7 +6003,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                     </div>}
                   </div>
                   {setAppData&&<button onClick={()=>{setCreditDraft(String(score));setEditingCredit(true);}}
-                    style={{flexShrink:0,background:scBase+"22",border:`1px solid ${scBase}55`,borderRadius:99,padding:"8px 14px",color:C.cream,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Update Score</button>}
+                    style={{flexShrink:0,background:scBase+"22",border:`1px solid ${scBase}55`,borderRadius:99,padding:"8px 14px",color:C.cream,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:LAYOUT.minTap}}>Update Score</button>}
                 </div>
               )}
             </div>
@@ -6510,11 +6527,15 @@ const TERMS = {
 
 // The ONE ⓘ. Only beside a term a new reader cannot guess from the words themselves — never beside
 // an obvious label, where it is just noise that has to be read and dismissed.
+// The margins used to be -10 each side: a 44px tap box pulled back under its neighbours so the glyph
+// would sit tight against the label. It overlapped the label's box by 2px, which means a finger aimed
+// at the end of "Safe to spend until next payday" opened the glossary instead. The row it sits in has
+// an 8px gap, so +4 here makes the clearance to the text either side exactly GAP.textToControl.
 function InfoDot({ term, onOpen }) {
   return (
     <button onClick={e=>{e.stopPropagation();onOpen(term);}} aria-label={`What ${term} means`}
       style={{background:"none",border:"none",cursor:"pointer",color:C.muted,fontSize:15,lineHeight:1,
-        ...tap({display:"inline-flex",alignItems:"center",justifyContent:"center"}),marginLeft:-10,marginRight:-10,verticalAlign:"middle"}}>ⓘ</button>
+        ...tap({display:"inline-flex",alignItems:"center",justifyContent:"center"}),marginLeft:SPACE.xs,marginRight:SPACE.xs,verticalAlign:"middle"}}>ⓘ</button>
   );
 }
 
@@ -6627,9 +6648,11 @@ function ScreenHeader({title, subtitle, onBack, cta, onCta, ctaColor, controls})
           header lost "Not your bureau score.", which is the part that matters most. Every subtitle
           was also a candidate for truncation at the larger text sizes this release exists to serve.
           The subtitles are short enough to read as one line at the design size, and wrap rather
-          than vanish when the text grows. */}
+          than vanish when the text grows.
+          marginTop was SPACE.xs. The row above is 44px tall because of the back button, so the
+          subtitle sat 4px under a control; GAP.textToControl is the floor. */}
       {subtitle&&(
-        <div style={{color:C.mutedHi,...TYPE.subhead,fontWeight:400,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:SPACE.xs,
+        <div style={{color:C.mutedHi,...TYPE.subhead,fontWeight:400,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:GAP.textToControl,
           overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{subtitle}</div>
       )}
       {controls&&<div style={{marginTop:SPACE.md}}>{controls}</div>}
@@ -6757,7 +6780,7 @@ function ManualBillForm({data, setAppData, onClose}){
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <div style={{color:C.cream,fontSize:16,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your bills</div>
-        {onClose&&<button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer",lineHeight:1,padding:0,fontFamily:"inherit"}}>×</button>}
+        {onClose&&<button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer",lineHeight:1,fontFamily:"inherit",...tap({display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0})}}>×</button>}
       </div>
 
       {/* ── Detected from your bank (origin:"observed") — override amount / remove; name & day are read-only ── */}
@@ -6770,18 +6793,18 @@ function ManualBillForm({data, setAppData, onClose}){
           <div style={{color:C.muted,fontSize:13,marginBottom:9,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your bank told us these. Correct an amount if it's wrong, or remove one from the forecast.</div>
           <div style={{display:"flex",flexDirection:"column",gap:7}}>
             {observedBills.map(x=>(
-              <div key={"obs"+x.i} style={{display:"flex",alignItems:"center",gap:8,background:C.blueDim,border:`1px solid ${C.blue}33`,borderRadius:12,padding:"10px 12px"}}>
+              <div key={"obs"+x.i} style={{display:"flex",alignItems:"center",gap:GAP.textToControl,background:C.blueDim,border:`1px solid ${C.blue}33`,borderRadius:12,padding:"10px 12px"}}>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.b.name}</div>
                   <div style={{color:C.muted,fontSize:13,marginTop:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>day {x.b.date} · {x.b.freq||"monthly"}{x.b.amountOverride?<span style={{color:C.blueBright}}> · edited</span>:""}</div>
                 </div>
-                <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:9,overflow:"hidden",width:96,flexShrink:0}}>
-                  <span style={{color:C.muted,fontSize:13,padding:"0 2px 0 8px"}}>$</span>
+                <div style={{display:"flex",alignItems:"center",position:"relative",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:9,overflow:"hidden",width:96,flexShrink:0}}>
+                  <span aria-hidden="true" style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:C.muted,fontSize:13,pointerEvents:"none"}}>$</span>
                   <input key={x.b.name+"_"+x.b.amount} defaultValue={parseFloat(x.b.amount||0).toFixed(2)} type="number" inputMode="decimal" aria-label={`${x.b.name} amount`}
                     onKeyDown={e=>{if(e.key==="Enter")e.currentTarget.blur();}} onBlur={e=>overrideObserved(x.b, e.currentTarget.value)}
-                    style={{width:"100%",minWidth:0,background:"none",border:"none",padding:"8px 6px 8px 2px",color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
+                    style={{width:"100%",minWidth:0,background:"none",border:"none",padding:"8px 6px 8px 18px",minHeight:LAYOUT.minTap,color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
                 </div>
-                <button aria-label="Remove" onClick={()=>removeBillWithOverride(setAppData, x.i, x.b.name)} style={{background:"none",border:`1px solid ${C.red}44`,borderRadius:8,padding:"6px 9px",color:C.red,fontSize:13,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>✕</button>
+                <button aria-label="Remove" onClick={()=>removeBillWithOverride(setAppData, x.i, x.b.name)} style={{background:"none",border:`1px solid ${C.red}44`,borderRadius:8,color:C.red,fontSize:13,cursor:"pointer",fontFamily:"inherit",flexShrink:0,...tap({display:"flex",alignItems:"center",justifyContent:"center"})}}>✕</button>
               </div>
             ))}
           </div>
@@ -6793,24 +6816,24 @@ function ManualBillForm({data, setAppData, onClose}){
         <span style={{fontSize:13}}>✍️</span>
         <div style={{color:C.tealBright,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Added by you</div>
       </div>
-      <div style={{color:C.muted,fontSize:13,marginBottom:9,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Bills you enter before they're due, so the forecast isn't blind to them.</div>
+      <div style={{color:C.muted,fontSize:13,marginBottom:GAP.textToControl,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Bills you enter before they're due, so the forecast isn't blind to them.</div>
       {editId ? form : (
-        <button onClick={openAdd} style={{width:"100%",background:C.teal+"18",border:`1px dashed ${C.teal}55`,borderRadius:12,padding:"11px",color:C.tealBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>+ Add a bill</button>
+        <button onClick={openAdd} style={{width:"100%",background:C.teal+"18",border:`1px dashed ${C.teal}55`,borderRadius:12,padding:"11px",minHeight:LAYOUT.minTap,color:C.tealBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>+ Add a bill</button>
       )}
       {manualBills.length===0 && !editId && (
         <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"8px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>No manual bills yet. Add bills before they're due so your forecast sees them coming.</div>
       )}
       <div style={{display:"flex",flexDirection:"column",gap:7}}>
         {manualBills.map(b=>(
-          <div key={b.id} style={{display:"flex",alignItems:"center",gap:10,background:C.card,border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 12px"}}>
+          <div key={b.id} style={{display:"flex",alignItems:"center",gap:GAP.textToControl,background:C.card,border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 12px"}}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.name}</div>
               <div style={{color:C.muted,fontSize:13,marginTop:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                 {b.variable&&<span style={{color:C.gold}}>~</span>}${parseFloat(b.amount||0).toFixed(0)} · day {b.dayOfMonth||b.date} · {b.recurring!==false?"monthly":"once"}{b.variable?" · variable":""}
               </div>
             </div>
-            <button onClick={()=>openEdit(b)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",color:C.mutedHi,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Edit</button>
-            <button aria-label="Delete" onClick={()=>del(b.id)} style={{background:"none",border:`1px solid ${C.red}44`,borderRadius:8,padding:"6px 9px",color:C.red,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+            <button onClick={()=>openEdit(b)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",minHeight:LAYOUT.minTap,color:C.mutedHi,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Edit</button>
+            <button aria-label="Delete" onClick={()=>del(b.id)} style={{background:"none",border:`1px solid ${C.red}44`,borderRadius:8,color:C.red,fontSize:13,cursor:"pointer",fontFamily:"inherit",flexShrink:0,...tap({display:"flex",alignItems:"center",justifyContent:"center"})}}>✕</button>
           </div>
         ))}
       </div>
@@ -6904,7 +6927,7 @@ function PlanAhead({data, setAppData, setScreen}){
     <ScreenHeader title="Watch" subtitle="The next 90 days."
       onBack={setScreen?()=>setScreen("home"):null}
       controls={
-          <div style={{display:"flex",gap:SPACE.xs,background:C.surface,borderRadius:12,padding:3,width:"100%"}}>{RANGES.map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",transition:"all .22s"}}>{r}d</button>)}</div>
+          <div style={{display:"flex",gap:GAP.controlToControl,background:C.surface,borderRadius:12,padding:SPACE.xs,width:"100%",boxSizing:"border-box"}}>{RANGES.map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",transition:"all .22s"}}>{r}d</button>)}</div>
       }/>
     {(()=>{
       // Item 1: the starting balance is the SAME displayed value as Today's "In your accounts" — read from
@@ -6923,8 +6946,8 @@ function PlanAhead({data, setAppData, setScreen}){
         <div style={{background:C.isDark?"rgba(255,255,255,0.03)":C.surface,borderRadius:16,padding:LAYOUT.cardPadding,border:`1px solid ${C.border}`}}>
           <div style={{color:C.muted,...TYPE.subhead,fontWeight:400,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Starting balance</div>
           <button onClick={e=>{e.stopPropagation();setExplainWatch(true);}} aria-label="How Flourish got this number"
-            style={{background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",display:"block",
-            color:C.cream,...TYPE.largeTitle,fontFamily:"'Playfair Display',serif",marginTop:SPACE.xs}}>{_fbalText}</button>
+            style={{background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",minHeight:LAYOUT.minTap,
+            color:C.cream,...TYPE.largeTitle,fontFamily:"'Playfair Display',serif",marginTop:GAP.textToControl}}>{_fbalText}</button>
           <SupportingFigures label="What the forecast is built from" rows={[
             {label:"Est. daily spend", value:`$${(_favg||0).toFixed(0)}/day`, onEdit:setAppData?()=>setShowDailySpend(true):null, tag:_fSpendEdited?<EditedTag/>:null},
             {label:"Pay frequency", value:frequencyLabel(_ffreq)},
@@ -6939,20 +6962,20 @@ function PlanAhead({data, setAppData, setScreen}){
       <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.sm}}>The day-by-day list below shows which day, and what lands on it.</div>
     </div>}
     {/* Bills summary — BillManager is the single bill entry point */}
-    <Card style={{display:"flex",justifyContent:"space-between",alignItems:"center",border:`1px solid ${C.teal}33`,background:`linear-gradient(135deg,rgba(0,200,224,0.05) 0%,${C.card} 100%)`}}>
-      <div>
+    <Card style={row({justifyContent:"space-between",border:`1px solid ${C.teal}33`,background:`linear-gradient(135deg,rgba(0,200,224,0.05) 0%,${C.card} 100%)`})}>
+      <div style={rowText()}>
         <div style={{color:C.tealBright,fontWeight:700,fontSize:14}}>📅 Your bills</div>
         <div style={{color:C.muted,fontSize:13,marginTop:2}}>{(data.bills||[]).length} tracked · powers your forecast</div>
       </div>
-      {setAppData&&<button onClick={()=>setShowBillManager(true)} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>+ Add Bill</button>}
+      {setAppData&&<button onClick={()=>setShowBillManager(true)} style={{...rowControl(),background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,borderRadius:99,padding:"11px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>+ Add Bill</button>}
     </Card>
     {/* Money the household knows about that no bill or income covers: a tax refund, a yearly premium, a gift */}
-    {setAppData&&<Card style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,border:`1px solid ${C.green}33`}}>
-      <div style={{minWidth:0}}>
+    {setAppData&&<Card style={row({justifyContent:"space-between",border:`1px solid ${C.green}33`})}>
+      <div style={rowText()}>
         <div style={{color:C.greenBright,fontWeight:700,fontSize:14}}>Expected money in or out</div>
         <div style={{color:C.muted,fontSize:13,marginTop:2}}>{correctionsOf(data).expected.length ? `${correctionsOf(data).expected.length} added · in your forecast` : "A tax refund, a yearly bill, a gift"}</div>
       </div>
-      <button onClick={()=>setShowExpected(true)} style={{background:C.green+"22",border:`1px solid ${C.green}44`,color:C.greenBright,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>+ Add</button>
+      <button onClick={()=>setShowExpected(true)} style={{...rowControl(),background:C.green+"22",border:`1px solid ${C.green}44`,color:C.greenBright,borderRadius:99,padding:"11px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>+ Add</button>
     </Card>}
     <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
     {(()=>{
@@ -6966,17 +6989,19 @@ function PlanAhead({data, setAppData, setScreen}){
         return (
           <div key={i} style={{background:isToday?C.greenDim:neg?C.redDim:C.card,borderRadius:20,border:`1px solid ${borderColor}`,boxShadow:isToday?`0 0 24px ${C.green}18`:neg?`0 0 24px ${C.red}18`:"none",overflow:"hidden"}}>
             <div onClick={()=>setExpandedPlanDay(isDrilled?null:day.idx)} style={{padding:"16px 18px",cursor:"pointer"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-                <div style={{flex:1}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:GAP.textToControl,marginBottom:8}}>
+                {/* A flex column, so every line in the day is GAP.textToControl from the date above it
+                    and from the line before it. The lines used to sit flush against the date. */}
+                <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:GAP.textToControl}}>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
                     <div style={{color:isToday?C.greenBright:C.mutedHi,fontWeight:isToday?700:500,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{isToday?"Today ✦":day.d.toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}</div>
                     <span style={{color:C.muted,fontSize:13}}>{isDrilled?"▲":"▼"}</span>
                   </div>
                   {/* Named after the income entry the forecast credited, as in the Time Machine row. Each line
                       opens its edit sheet. */}
-                {depositLines(day).map((dl,di)=><ForecastLine key={`dep${di}`} label={`Edit ${dl.label}`} onOpen={openOcc&&dl.occurrence?()=>openOcc(dl.occurrence):null}><div style={{color:C.green,fontWeight:700,fontSize:13,marginTop:3}}>💰 +{formatMoney(dl.amount)} {dl.label}{dl.edited&&<EditedTag/>}</div>{dl.low!=null&&<div style={{color:C.muted,fontSize:13,marginTop:1}}>{`Pay varies: ${formatMoney(dl.low)} to ${formatMoney(dl.high)}`}</div>}</ForecastLine>)}
-                  {billLines(day).map((bl,j)=>{ const b=bl.bill||{}; return <ForecastLine key={j} label={`Edit ${bl.label}`} onOpen={openOcc&&bl.occurrence?()=>openOcc(bl.occurrence):null}><div style={{color:C.gold,fontSize:13,marginTop:2}}>📅 {bl.label}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:13,marginLeft:4,fontWeight:700}}>est</span>}: −{b.variable?"~":""}{formatMoney(bl.amount)}{bl.edited&&<EditedTag/>}</div></ForecastLine>; })}
-                  {skippedLines(day).map((sk,si)=><ForecastLine key={`sk${si}`} label={`Edit ${sk.label}, skipped`} onOpen={openOcc?()=>openOcc(sk.occurrence):null}><div style={{color:C.muted,fontSize:13,marginTop:2}}><span style={{textDecoration:"line-through"}}>{sk.moneyIn?"+":"−"}{formatMoney(sk.amount)} {sk.label}</span><EditedTag text="Skipped"/></div></ForecastLine>)}
+                {depositLines(day).map((dl,di)=><ForecastLine key={`dep${di}`} label={`Edit ${dl.label}`} onOpen={openOcc&&dl.occurrence?()=>openOcc(dl.occurrence):null}><div style={{color:C.green,fontWeight:700,fontSize:13}}>💰 +{formatMoney(dl.amount)} {dl.label}{dl.edited&&<EditedTag/>}</div>{dl.low!=null&&<div style={{color:C.muted,fontSize:13,marginTop:1}}>{`Pay varies: ${formatMoney(dl.low)} to ${formatMoney(dl.high)}`}</div>}</ForecastLine>)}
+                  {billLines(day).map((bl,j)=>{ const b=bl.bill||{}; return <ForecastLine key={j} label={`Edit ${bl.label}`} onOpen={openOcc&&bl.occurrence?()=>openOcc(bl.occurrence):null}><div style={{color:C.gold,fontSize:13}}>📅 {bl.label}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:13,marginLeft:4,fontWeight:700}}>est</span>}: −{b.variable?"~":""}{formatMoney(bl.amount)}{bl.edited&&<EditedTag/>}</div></ForecastLine>; })}
+                  {skippedLines(day).map((sk,si)=><ForecastLine key={`sk${si}`} label={`Edit ${sk.label}, skipped`} onOpen={openOcc?()=>openOcc(sk.occurrence):null}><div style={{color:C.muted,fontSize:13}}><span style={{textDecoration:"line-through"}}>{sk.moneyIn?"+":"−"}{formatMoney(sk.amount)} {sk.label}</span><EditedTag text="Skipped"/></div></ForecastLine>)}
                   {isToday&&!day.income&&!day.bills.length&&<div style={{color:C.muted,fontSize:13,marginTop:2}}>Tap to see balance breakdown</div>}
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}>
@@ -8188,7 +8213,7 @@ function SpendScreen({data, setAppData, setScreen}){
 
     {/* Only deposits that COUNT as income (they repeat like pay, or the household said so) can be offered as a paycheque. */}
     {!isDemo&&<IncomeDetectionBanner transactions={incomeEvidence({ transactions: txns, depositDecisions: data.depositDecisions, depositRules: data.depositRules })} incomes={data.incomes} setAppData={setAppData} country={data.profile?.country}/>}
-    <div style={{display:"flex",gap:6,background:C.surface,borderRadius:16,padding:4}}>
+    <div style={{display:"flex",gap:GAP.controlToControl,background:C.surface,borderRadius:16,padding:SPACE.xs}}>
       {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeBright:C.muted,borderRadius:12,padding:"0",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
         {t==="txn"?"Transactions":t==="breakdown"?"Breakdown":"Smart Cuts"}
       </button>)}
@@ -8198,9 +8223,9 @@ function SpendScreen({data, setAppData, setScreen}){
       <div style={{display:"grid",gridTemplateColumns:accountsWithNames.length>1?"1fr 1fr 1fr":"1fr 1fr",gap:8}}>
         {accountsWithNames.length>1&&(
           <div>
-            <div style={{color:C.muted,fontSize:13,marginBottom:4}}>Account</div>
+            <div style={{color:C.muted,fontSize:13,marginBottom:GAP.textToControl}}>Account</div>
             <select value={accountFilter} onChange={e=>{setAccountFilter(e.target.value);setCatFilter("All");}}
-              style={{width:"100%",background:C.card,border:`1px solid ${accountFilter!=="All"?C.blue:C.border}`,borderRadius:10,padding:"9px 10px",color:accountFilter!=="All"?C.blueBright:C.cream,fontSize:13,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
+              style={{width:"100%",background:C.card,border:`1px solid ${accountFilter!=="All"?C.blue:C.border}`,borderRadius:10,padding:"9px 10px",minHeight:LAYOUT.minTap,color:accountFilter!=="All"?C.blueBright:C.cream,fontSize:13,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
               <option value="All">All Accounts</option>
               {accountsWithNames.map(a=>{
                 const icon = isCreditLiability(a)?"💳":isSavingsAccount(a)?"🏦":isInvestmentAccount(a)?"📈":"🏦";
@@ -8210,16 +8235,16 @@ function SpendScreen({data, setAppData, setScreen}){
           </div>
         )}
         <div>
-          <div style={{color:C.muted,fontSize:13,marginBottom:4}}>Category</div>
+          <div style={{color:C.muted,fontSize:13,marginBottom:GAP.textToControl}}>Category</div>
           <select value={catFilter} onChange={e=>setCatFilter(e.target.value)}
-            style={{width:"100%",background:C.card,border:`1px solid ${catFilter!=="All"?C.orange:C.border}`,borderRadius:10,padding:"9px 10px",color:catFilter!=="All"?C.orangeBright:C.cream,fontSize:13,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
+            style={{width:"100%",background:C.card,border:`1px solid ${catFilter!=="All"?C.orange:C.border}`,borderRadius:10,padding:"9px 10px",minHeight:LAYOUT.minTap,color:catFilter!=="All"?C.orangeBright:C.cream,fontSize:13,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
             {cats.map(c=><option key={c} value={c}>{c}</option>)}
           </select>
         </div>
         <div>
-          <div style={{color:C.muted,fontSize:13,marginBottom:4}}>Period</div>
+          <div style={{color:C.muted,fontSize:13,marginBottom:GAP.textToControl}}>Period</div>
           <select value={period} onChange={e=>setPeriod(e.target.value)}
-            style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px",color:C.cream,fontSize:13,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
+            style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px",minHeight:LAYOUT.minTap,color:C.cream,fontSize:13,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
             <option value="week">This week</option>
             <option value="month">{monthLabel}</option>
             <option value="last">Last month</option>
@@ -8260,8 +8285,8 @@ function SpendScreen({data, setAppData, setScreen}){
           </div>
           <div style={{flex:1,minWidth:0}}>
             <div style={{color:C.cream,fontWeight:600,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txn.name}</div>
-            <div style={{display:"flex",gap:6,marginTop:3,alignItems:"center"}}>
-              <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.amount<0?C.green+"18":txnDispColor+"18",border:`1px solid ${txn.amount<0?C.green:txnDispColor}33`,borderRadius:99,padding:"2px 8px",color:txn.amount<0?C.greenBright:txnDispColor,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
+            <div style={{display:"flex",columnGap:GAP.textToControl,rowGap:GAP.textToControl,marginTop:GAP.textToControl,alignItems:"center",flexWrap:"wrap"}}>
+              <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.amount<0?C.green+"18":txnDispColor+"18",border:`1px solid ${txn.amount<0?C.green:txnDispColor}33`,borderRadius:99,padding:"2px 8px",minHeight:LAYOUT.minTap,color:txn.amount<0?C.greenBright:txnDispColor,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",flexWrap:"wrap",gap:3,minWidth:0,maxWidth:"100%",textAlign:"left"}}>
                 {txn.amount<0&&getCat(txn)==="Transfer"?"Received ↓ tap to label":getCat(txn)} <span style={{opacity:0.6,fontSize:13}}>✎</span>
               </button>
               <span style={{color:C.muted,fontSize:13}}>{txn.date}</span>
@@ -8400,9 +8425,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <ScreenHeader title="Do" subtitle="Budget, debts, goals and retirement." onBack={setScreen?()=>setScreen("home"):null} cta={CC[data?.profile?.country||"CA"]?.flag+" "+CC[data?.profile?.country||"CA"]?.currency} ctaColor={CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}/>
-    <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
+    <div style={{display:"flex",gap:GAP.controlToControl,overflowX:"auto",paddingBottom:SPACE.xs,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
       {[["goals","My Goals"],["sim","Debt Sim"],["worth","Net Worth"],["retire","Retirement"],["forecast","Wealth"],["budget","Budget"],["personality","Personality"],["tax","Tax Tips"],["learn","Learn"]].map(([key,lbl])=>(
-        <button key={key} onClick={()=>setTab(key)} style={{flexShrink:0,background:tab===key?C.purple+"22":C.cardAlt,border:`1px solid ${tab===key?C.purple:C.border}`,color:tab===key?C.purpleBright:C.muted,borderRadius:10,padding:"8px 12px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>{lbl}</button>
+        <button key={key} onClick={()=>setTab(key)} style={{flexShrink:0,background:tab===key?C.purple+"22":C.cardAlt,border:`1px solid ${tab===key?C.purple:C.border}`,color:tab===key?C.purpleBright:C.muted,borderRadius:10,padding:"8px 12px",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>{lbl}</button>
       ))}
     </div>
     {/* ── MY GOALS TAB ─────────────────────────────────────── */}
@@ -8445,15 +8470,15 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       return (
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
           {/* Header row */}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
+          <div style={row({justifyContent:"space-between"})}>
+            <div style={rowText()}>
               <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
                 {goals.length===0?"Set goals and track progress toward them."
                   :`${goals.length} goal${goals.length===1?"":"s"} · $${goals.reduce((s,g)=>s+parseFloat(g.saved||g.current||0),0).toLocaleString()} saved so far`}
               </div>
             </div>
             <button onClick={openAdd}
-              style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:36}}>
+              style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:LAYOUT.minTap}}>
               + Add Goal
             </button>
           </div>
@@ -8465,7 +8490,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               <div style={{color:C.cream,fontWeight:800,fontSize:16,fontFamily:"'Playfair Display',serif",marginBottom:8}}>No goals set yet</div>
               <div style={{color:C.muted,fontSize:13,marginBottom:16,lineHeight:1.6}}>Add your RRSP, emergency fund, vacation, anything you're saving toward. The app will track progress and show you how long it'll take.</div>
               <button onClick={openAdd}
-                style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:12,padding:"10px 24px",color:C.purpleBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:12,padding:"10px 24px",minHeight:LAYOUT.minTap,color:C.purpleBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                 Add your first goal →
               </button>
             </div>
@@ -8553,12 +8578,12 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                 {editIdx!=null?"Edit Goal":"New Goal"}
               </div>
               {/* Goal name — type selector */}
-              <div style={{marginBottom:10}}>
-                <div style={{color:C.muted,fontSize:13,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Goal Type</div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <div style={{marginBottom:GAP.textToControl}}>
+                <div style={{color:C.muted,fontSize:13,marginBottom:GAP.textToControl,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Goal Type</div>
+                <div style={{display:"flex",gap:GAP.controlToControl,flexWrap:"wrap"}}>
                   {GOAL_TYPES.map(t=>(
                     <button key={t.label} onClick={()=>setForm(v=>({...v,name:t.label}))}
-                      style={{background:form.name===t.label?t.color+"33":"rgba(255,255,255,0.04)",border:`1px solid ${form.name===t.label?t.color+"66":C.border}`,borderRadius:10,padding:"7px 12px",color:form.name===t.label?t.color:C.muted,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:34}}>
+                      style={{background:form.name===t.label?t.color+"33":"rgba(255,255,255,0.04)",border:`1px solid ${form.name===t.label?t.color+"66":C.border}`,borderRadius:10,padding:"7px 12px",color:form.name===t.label?t.color:C.muted,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:LAYOUT.minTap}}>
                       {t.icon} {t.label}
                     </button>
                   ))}
@@ -8567,28 +8592,28 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                 <input value={GOAL_TYPES.find(t=>t.label===form.name)?"":(form.name||"")}
                   onChange={e=>setForm(v=>({...v,name:e.target.value}))}
                   placeholder="Or type a custom name…"
-                  style={{marginTop:8,width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
+                  style={{marginTop:GAP.controlToControl,width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",minHeight:LAYOUT.minTap,color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
               </div>
               {/* Amounts */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:GAP.textToControl,marginBottom:GAP.textToControl}}>
                 {[["Target $","target"],["Saved so far $","saved"],["Monthly $ contribution","monthly"]].map(([lbl,field])=>(
                   <div key={field}>
-                    <div style={{color:C.muted,fontSize:13,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{lbl}</div>
-                    <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
-                      <span style={{color:C.muted,fontSize:13,padding:"0 5px 0 8px"}}>$</span>
+                    <div style={{color:C.muted,fontSize:13,marginBottom:GAP.textToControl,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{lbl}</div>
+                    <div style={{display:"flex",alignItems:"center",position:"relative",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                      <span aria-hidden="true" style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:C.muted,fontSize:13,pointerEvents:"none"}}>$</span>
                       <input value={form[field]||""} onChange={e=>setForm(v=>({...v,[field]:e.target.value}))}
                         type="number" inputMode="decimal" placeholder="0"
-                        style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:600}}/>
+                        style={{flex:1,minWidth:0,background:"none",border:"none",padding:"10px 8px 10px 18px",minHeight:LAYOUT.minTap,boxSizing:"border-box",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:600}}/>
                     </div>
                   </div>
                 ))}
               </div>
               {/* Notes */}
               <div style={{marginBottom:14}}>
-                <div style={{color:C.muted,fontSize:13,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Notes (optional)</div>
+                <div style={{color:C.muted,fontSize:13,marginBottom:GAP.textToControl,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Notes (optional)</div>
                 <input value={form.notes||""} onChange={e=>setForm(v=>({...v,notes:e.target.value}))}
                   placeholder={payWord(data.profile?.country)==="paycheck"?"e.g. 401(k) at Fidelity, contributing $200/paycheck":"e.g. RRSP at TD Bank, contributing $200/paycheque"}
-                  style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
+                  style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",minHeight:LAYOUT.minTap,color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
               </div>
               {/* Timeline preview */}
               {form.target&&form.monthly&&parseFloat(form.monthly)>0&&(()=>{
@@ -8602,14 +8627,14 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                 ):null;
               })()}
               {/* Buttons */}
-              <div style={{display:"flex",gap:8}}>
+              <div style={{display:"flex",gap:GAP.controlToControl,flexWrap:"wrap"}}>
                 <button onClick={saveGoal}
                   disabled={!form.name||!form.target}
-                  style={{flex:1,background:form.name&&form.target?`linear-gradient(135deg,${C.purple},${C.purpleBright})`:"rgba(255,255,255,0.08)",border:"none",borderRadius:10,padding:"11px",color:form.name&&form.target?"#fff":C.muted,fontWeight:800,fontSize:13,cursor:form.name&&form.target?"pointer":"default",fontFamily:"'Plus Jakarta Sans',sans-serif",opacity:form.name&&form.target?1:0.5}}>
+                  style={{flex:1,minHeight:LAYOUT.minTap,background:form.name&&form.target?`linear-gradient(135deg,${C.purple},${C.purpleBright})`:"rgba(255,255,255,0.08)",border:"none",borderRadius:10,padding:"11px",color:form.name&&form.target?"#fff":C.muted,fontWeight:800,fontSize:13,cursor:form.name&&form.target?"pointer":"default",fontFamily:"'Plus Jakarta Sans',sans-serif",opacity:form.name&&form.target?1:0.5}}>
                   {editIdx!=null?"Save Changes ✓":"Add Goal ✓"}
                 </button>
                 <button onClick={()=>{setShowForm(false);setEditIdx(null);}}
-                  style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 18px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                  style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 18px",minHeight:LAYOUT.minTap,color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                   Cancel
                 </button>
               </div>
@@ -8643,7 +8668,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
           </div>
         </div>
       )}
-      {!noDebts&&debts.length>1&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{debts.map((d,i)=><button key={i} onClick={()=>setSelDebt(i)} style={{background:safeSelDebt===i?C.purple+"33":C.cardAlt,border:`1px solid ${selDebt===i?C.purple:C.border}`,color:safeSelDebt===i?C.purpleBright:C.muted,borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>{d.name}</button>)}</div>}
+      {!noDebts&&debts.length>1&&<div style={{display:"flex",gap:GAP.controlToControl,flexWrap:"wrap"}}>{debts.map((d,i)=><button key={i} onClick={()=>setSelDebt(i)} style={{background:safeSelDebt===i?C.purple+"33":C.cardAlt,border:`1px solid ${selDebt===i?C.purple:C.border}`,color:safeSelDebt===i?C.purpleBright:C.muted,borderRadius:10,padding:"6px 12px",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>{d.name}</button>)}</div>}
       {!noDebts&&<div style={{background:`linear-gradient(135deg,${C.purpleDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"20px 22px",border:`1px solid ${C.purple}44`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
           <div>
@@ -8658,12 +8683,12 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
           </div>
         </div>
         <div style={{marginBottom:16}}>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:GAP.textToControl,marginBottom:GAP.textToControl}}>
             <div style={{color:C.cream,fontSize:13,fontWeight:600}}>Extra monthly payment</div>
             <div style={{color:C.purpleBright,fontWeight:800,fontSize:20}}>+{extra}<span style={{color:C.muted,fontSize:13}}>/mo</span></div>
           </div>
-          <input type="range" min={0} max={500} step={10} value={extra} onChange={e=>setExtra(Number(e.target.value))} style={{width:"100%",accentColor:C.purple,height:6,cursor:"pointer","--thumb-color":C.purple}}/>
-          <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}><span style={{color:C.muted,fontSize:13}}>+$0 (min only)</span><span style={{color:C.muted,fontSize:13}}>+$500/mo</span></div>
+          <input type="range" min={0} max={500} step={10} value={extra} onChange={e=>setExtra(Number(e.target.value))} style={{width:"100%",accentColor:C.purple,height:LAYOUT.minTap,cursor:"pointer","--thumb-color":C.purple}}/>
+          <div style={{display:"flex",justifyContent:"space-between",gap:GAP.textToControl,marginTop:GAP.textToControl}}><span style={{color:C.muted,fontSize:13}}>+$0 (min only)</span><span style={{color:C.muted,fontSize:13}}>+$500/mo</span></div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <div style={{background:C.green+"15",borderRadius:12,padding:"12px 14px",border:`1px solid ${C.green}33`}}>
@@ -10968,7 +10993,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
             </div>
           ))
         }
-        <button onClick={onAddBank} style={{width:"100%",marginTop:12,background:color+"18",border:`1px solid ${color}44`,borderRadius:10,padding:"10px",color,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        <button onClick={onAddBank} style={{width:"100%",marginTop:GAP.textToControl,background:color+"18",border:`1px solid ${color}44`,borderRadius:10,padding:"10px",minHeight:LAYOUT.minTap,color,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
           + Connect Another Bank
         </button>
       </div>
@@ -11126,8 +11151,8 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     } catch { alertModal({message:"Could not export your data. Please try again."}); }
   };
   return <div style={{color:C.cream}}>
-    <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:20}}>
-      <button onClick={onClose} style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.05)",border:`1px solid ${C.border}`,color:C.mutedHi,borderRadius:12,padding:"8px 16px",cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .2s",letterSpacing:0.2}}>← Back</button>
+    <div style={{display:"flex",gap:GAP.textToControl,alignItems:"center",marginBottom:20}}>
+      <button onClick={onClose} style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.05)",border:`1px solid ${C.border}`,color:C.mutedHi,borderRadius:12,padding:"8px 16px",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .2s",letterSpacing:0.2}}>← Back</button>
       <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Settings</div>
     </div>
     {/* ── Exit demo ──────────────────────────────────────────────
@@ -11146,8 +11171,8 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     )}
     {/* ── Appearance ─────────────────────────────────────────── */}
     <div style={{background:C.card,borderRadius:20,border:`1px solid ${C.border}`,overflow:"hidden",marginBottom:10}}>
-      <div style={{padding:"13px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:`1px solid ${C.border}`}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
+      <div style={{padding:"13px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:GAP.textToControl,borderBottom:`1px solid ${C.border}`}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
           <div style={{width:36,height:36,borderRadius:11,background:theme==="dark"?"rgba(155,125,255,0.15)":"rgba(255,200,60,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{theme==="dark"?"🌙":"☀️"}</div>
           <div>
             <div style={{color:C.cream,fontWeight:600,fontSize:14}}>{theme==="dark"?"Dark Mode":"Light Mode"}</div>
@@ -11170,8 +11195,8 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     {/* ── Privacy & AI (Phase D3) ────────────────────────────── */}
     <div style={{background:C.card,borderRadius:18,padding:"16px 18px",border:`1px solid ${C.border}`,marginBottom:14}}>
       <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:10}}>Privacy & AI</div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div style={{flex:1}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:GAP.textToControl}}>
+        <div style={{flex:1,minWidth:0}}>
           <div style={{color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:2}}>AI Coach</div>
           <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>On: Flourish sends your calculated numbers to the coach so it can explain them and run your money meeting. Off: nothing leaves Flourish for AI. Every number, forecast and what-if still works.</div>
         </div>
@@ -11190,8 +11215,8 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
       {/* Sprint Z2 #8: revoke third-party AI consent (not just disable AI) */}
       <div style={{borderTop:`1px solid ${C.border}`,marginTop:14,paddingTop:14}}>
         <div style={{color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:2}}>Third-party AI consent</div>
-        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginBottom:10}}>You agreed to share your financial summary &amp; messages with Anthropic for AI features. Revoking turns AI off and withdraws that consent.</div>
-        <button onClick={onRevokeAIConsent} style={{background:"none",border:`1px solid ${C.orange}66`,color:C.orange,borderRadius:99,padding:"9px 16px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,cursor:"pointer"}}>Revoke AI consent</button>
+        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginBottom:GAP.textToControl}}>You agreed to share your financial summary &amp; messages with Anthropic for AI features. Revoking turns AI off and withdraws that consent.</div>
+        <button onClick={onRevokeAIConsent} style={{background:"none",border:`1px solid ${C.orange}66`,color:C.orange,borderRadius:99,padding:"9px 16px",minHeight:LAYOUT.minTap,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,cursor:"pointer"}}>Revoke AI consent</button>
       </div>
       {pendingAIConsent&&<AIConsentModal
         onEnable={()=>{ applyAICoachEnabled(true); setPendingAIConsent(false); }}
@@ -11221,7 +11246,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         ["meetingReminder","Money meeting reminders","When your next meeting is coming up"],
       ].map(([key,title,desc],i)=>(
         <div key={key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",...(i>0?{borderTop:`1px solid ${C.border}`,marginTop:12,paddingTop:12}:{})}}>
-          <div style={{flex:1,minWidth:0,paddingRight:10}}>
+          <div style={{flex:1,minWidth:0,paddingRight:GAP.textToControl}}>
             <div style={{color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:2}}>{title}</div>
             <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{desc}</div>
           </div>
@@ -11331,7 +11356,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
             }} style={{background:"none",border:`1px solid ${C.orange}44`,borderRadius:8,padding:"4px 10px",color:C.orange,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Disconnect</button>
           </div>
         ))}
-        <button onClick={onAddBank} style={{width:"100%",marginTop:12,background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:10,padding:"10px",color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        <button onClick={onAddBank} style={{width:"100%",marginTop:GAP.textToControl,background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:10,padding:"10px",minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
           + Connect Another Bank
         </button>
       </div>
@@ -11565,12 +11590,14 @@ function CoachReplyFooter({ style = {} }) {
 // Step 6: segmented control for the tabs that hold more than one screen (Watch, Do). Switching a
 // segment just sets `screen` to the underlying screen id, so every existing screen and deep-link
 // keeps working — this is navigation only.
+// The bottom padding used to be 4: the bar sat 4px above the screen title and its back button.
+// It is GAP.textToControl now, which clears both floors at once.
 function SegTabs({ tabs, value, onChange }) {
   return (
-    <div style={{display:"flex",gap:6,padding:"12px 16px 4px",maxWidth:640,margin:"0 auto",width:"100%",boxSizing:"border-box"}}>
+    <div style={{display:"flex",gap:GAP.controlToControl,padding:`${SPACE.md}px ${LAYOUT.sideMargin}px ${GAP.textToControl}px`,maxWidth:640,margin:"0 auto",width:"100%",boxSizing:"border-box"}}>
       {tabs.map(([id,label])=>{
         const on = value===id;
-        return <button key={id} onClick={()=>onChange(id)} style={{flex:1,padding:"9px 10px",borderRadius:11,border:`1px solid ${on?C.green+"66":C.border}`,background:on?C.green+"1E":"transparent",color:on?C.greenBright:C.muted,fontSize:13,fontWeight:on?700:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .15s"}}>{label}</button>;
+        return <button key={id} onClick={()=>onChange(id)} style={{flex:1,padding:"9px 10px",minHeight:LAYOUT.minTap,borderRadius:11,border:`1px solid ${on?C.green+"66":C.border}`,background:on?C.green+"1E":"transparent",color:on?C.greenBright:C.muted,fontSize:13,fontWeight:on?700:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .15s"}}>{label}</button>;
       })}
     </div>
   );
@@ -11891,8 +11918,8 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
     <div style={{display:"flex",flexDirection:"column",height:"calc(100dvh - 120px)",fontFamily:"'Plus Jakarta Sans',sans-serif",maxWidth:430,margin:"0 auto",width:"100%"}}>
       {/* Header */}
       <div style={{padding:"16px 20px 12px",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          {setScreen&&<button onClick={()=>setScreen("home")} style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,borderRadius:12,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,color:C.cream,fontSize:18}}>←</button>}
+        <div style={{display:"flex",alignItems:"center",gap:GAP.textToControl}}>
+          {setScreen&&<button onClick={()=>setScreen("home")} style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,borderRadius:12,...tap(),display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,color:C.cream,fontSize:18}}>←</button>}
           <div style={{width:38,height:38,borderRadius:12,background:`linear-gradient(135deg,${C.purple}33,${C.purple}11)`,border:`1px solid ${C.purple}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
             <Icon id="sparkles" size={19} color={C.purpleBright} strokeWidth={1.5}/>
           </div>
@@ -11908,7 +11935,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
               try{localStorage.removeItem(STORAGE_KEY);}catch{}
               setMessages([WELCOME]);
             }
-          }} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"6px 10px",color:C.muted,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:36,flexShrink:0}} title="Clear history">
+          }} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"6px 10px",color:C.muted,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",...tap({display:"flex",alignItems:"center",justifyContent:"center"}),flexShrink:0}} title="Clear history">
             🗑️
           </button>
           {!isPremium&&<div onClick={isNativeApp()?undefined:onUpgrade} style={{background:freeMsgsLeft>0?C.purple+"22":C.red+"22",border:`1px solid ${freeMsgsLeft>0?C.purple+"44":C.red+"44"}`,borderRadius:10,padding:"5px 10px",cursor:"pointer",textAlign:"center"}}>
@@ -11939,7 +11966,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
           ))}
           <CalcByFlourish style={{marginTop:2}}/>
           <div style={{borderTop:`1px solid ${C.border}`,marginTop:6,paddingTop:14,textAlign:"center"}}>
-            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>That's the coach working on sample data. Create a free account to ask it about your own.</div>
+            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:GAP.textToControl,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>That's the coach working on sample data. Create a free account to ask it about your own.</div>
             {onExitDemo&&<button onClick={onExitDemo} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:99,padding:"13px 24px",color:C.isDark?"#160B2E":"#FFFFFF",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Create free account →</button>}
           </div>
         </div>
@@ -14095,7 +14122,7 @@ function ModalHost() {
           {m.confirmLabel || (isConfirm ? "Confirm" : "OK")}
         </button>
         {(isConfirm||isPrompt) && <button onClick={()=>finish(isConfirm?false:null)}
-          style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer"}}>
+          style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",minHeight:LAYOUT.minTap,color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer"}}>
           {m.cancelLabel || "Cancel"}
         </button>}
       </div>
@@ -16385,16 +16412,16 @@ input,button,select,textarea { font-family:inherit; }
           </div>
         )}
         <div style={{padding:"max(14px, env(safe-area-inset-top)) 20px 12px",background:C.isDark?"rgba(5,8,16,0.90)":"rgba(244,241,235,0.92)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",position:"sticky",top:"var(--banner-h, 0px)",zIndex:30,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 1px 0 rgba(255,255,255,0.025)"}}>
-          <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",padding:0}}>
+          <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",padding:0,minHeight:LAYOUT.minTap}}>
             <FlourishMark size={36}/>
             <span style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:20,color:C.cream,letterSpacing:-0.3}}>flourish</span>
           </button>
           <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>{setShowSettings(false);setShowNotifs(true);}} style={{position:"relative",background:"rgba(255,255,255,0.07)",border:`1px solid ${unread>0?C.red+"55":C.border}`,borderRadius:12,padding:"8px 12px",cursor:"pointer"}}>
+            <button onClick={()=>{setShowSettings(false);setShowNotifs(true);}} aria-label="Notifications" style={{position:"relative",background:"rgba(255,255,255,0.07)",border:`1px solid ${unread>0?C.red+"55":C.border}`,borderRadius:12,padding:"8px 12px",cursor:"pointer",...tap({display:"flex",alignItems:"center",justifyContent:"center"})}}>
               <Icon id="bell" size={17} color={unread>0?C.redBright:C.mutedHi} strokeWidth={1.5}/>
               {unread>0&&<div style={{position:"absolute",top:-4,right:-4,width:17,height:17,borderRadius:99,background:C.red,color:"#fff",fontSize:13,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 8px ${C.red}88`}}>{unread}</div>}
             </button>
-            <button onClick={()=>{setShowNotifs(false);setShowSettings(true);}} style={{background:"rgba(255,255,255,0.07)",border:`1px solid ${C.border}`,borderRadius:12,padding:"8px 12px",cursor:"pointer"}}><Icon id="settings" size={17} color={C.mutedHi} strokeWidth={1.5}/></button>
+            <button onClick={()=>{setShowNotifs(false);setShowSettings(true);}} aria-label="Settings" style={{background:"rgba(255,255,255,0.07)",border:`1px solid ${C.border}`,borderRadius:12,padding:"8px 12px",cursor:"pointer",...tap({display:"flex",alignItems:"center",justifyContent:"center"})}}><Icon id="settings" size={17} color={C.mutedHi} strokeWidth={1.5}/></button>
           </div>
         </div>
         <div style={{flex:1,padding:"16px 18px 120px",overflowY:"auto",overscrollBehavior:"contain"}}>{content()}</div>
@@ -16402,12 +16429,15 @@ input,button,select,textarea { font-family:inherit; }
           <>
           {/* Floating pill nav */}
           <div style={{position:"fixed",bottom:"max(16px, env(safe-area-inset-bottom))",left:"50%",transform:"translateX(-50%)",zIndex:50,width:"calc(100% - 40px)",maxWidth:390}}>
-            <div style={{background:C.isDark?"rgba(10,16,24,0.94)":"rgba(253,252,250,0.95)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",borderRadius:30,border:`1px solid ${C.border}`,boxShadow:"0 12px 48px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.02), inset 0 1px 0 rgba(255,255,255,0.06)",padding:"8px 8px",display:"flex",justifyContent:"space-around"}}>
+            {/* The five buttons were a fixed 56px wide, which is 280 inside a bar that is only 264
+                wide at 320px: they overflowed their own pill and the gaps between them collapsed to
+                zero. They share the width now, with GAP.controlToControl between them. */}
+            <div style={{background:C.isDark?"rgba(10,16,24,0.94)":"rgba(253,252,250,0.95)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",borderRadius:30,border:`1px solid ${C.border}`,boxShadow:"0 12px 48px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.02), inset 0 1px 0 rgba(255,255,255,0.06)",padding:`${SPACE.sm}px ${SPACE.sm}px`,display:"flex",gap:GAP.controlToControl}}>
             {ALL_NAV.map(n=>{
               const active=(tabForScreen(screen)===n.id)&&!showNotifs&&!showSettings;
               return(
-                <button key={n.id} onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen(n.id);}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"5px 8px",borderRadius:22,transition:"all .28s cubic-bezier(.16,1,.3,1)"}}>
-                  <div style={{width:40,height:30,borderRadius:16,
+                <button key={n.id} onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen(n.id);}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"5px 2px",borderRadius:22,flex:"1 1 0",minWidth:0,transition:"all .28s cubic-bezier(.16,1,.3,1)"}}>
+                  <div style={{width:36,height:30,borderRadius:16,flexShrink:0,
                     background:active?`linear-gradient(135deg,rgba(0,204,133,0.22) 0%,rgba(0,232,154,0.12) 100%)`:"transparent",
                     display:"flex",alignItems:"center",justifyContent:"center",
                     transition:"all .28s cubic-bezier(.16,1,.3,1)",

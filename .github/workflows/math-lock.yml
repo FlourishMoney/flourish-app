@@ -27,5 +27,16 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      # test:math now ends with tests/layout.browser.test.cjs, which builds the app and drives
+      # Chromium over the demo at four widths and two text sizes (docs/design/LAYOUT-RULES.md). The
+      # browser binary is not part of npm ci, so it is installed here; without this step the suite
+      # fails with "chromium launches" rather than a layout finding.
+      - name: Install Chromium for the layout suite
+        run: npx playwright install --with-deps chromium
       - name: Run MATH-LOCK suites
         run: npm run test:math
+        env:
+          # Placeholder Supabase values: the layout suite builds the app and drives the demo, which
+          # never authenticates, but the Supabase client throws at import without them.
+          VITE_SUPABASE_URL: https://placeholder.invalid
+          VITE_SUPABASE_PUBLISHABLE_KEY: placeholder

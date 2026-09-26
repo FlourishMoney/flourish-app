@@ -44,16 +44,6 @@ export const TYPE = {
 // The sizes the scale allows, for the test to check against.
 export const TYPE_SIZES = Object.values(TYPE).map(t => t.fontSize);
 
-// Spacing: an 8px grid, so that "a bit more room" is a decision rather than a guess.
-export const SPACE = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };
-
-// The three numbers that decide whether a screen feels calm.
-export const LAYOUT = {
-  sideMargin: 16,   // every screen, both edges
-  cardPadding: 16,  // every card, all four sides
-  cardGap: 12,      // between cards
-  minTap: 44,       // every tappable thing, both dimensions
-};
-
-// A tap target that is at least 44x44 however small its contents are.
-export const tap = (extra = {}) => ({ minWidth: LAYOUT.minTap, minHeight: LAYOUT.minTap, ...extra });
+// SPACE, LAYOUT and tap() used to live here. They are distances, not type, and the layout rule grew
+// its own vocabulary around them (GAP, row, rowControl), so they moved next door to space.js.
+// See docs/design/LAYOUT-RULES.md.
