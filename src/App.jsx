@@ -8942,15 +8942,23 @@ function MeetAgenda({ data, isCouple, setScreen }){
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [meetError, setMeetError] = useState(null);   // {kind, text} — a refusal, shown as one
+  const [lastSent, setLastSent] = useState(null);     // what Try again should resend
 
   const items = [...agenda.wins, ...agenda.changes, ...agenda.risks, ...agenda.progress];
   const card = {background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px 16px",marginBottom:12};
   const sTitle = {color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8};
 
+  // Never put words in the coach's mouth. The response was read as
+  //   d.content?.[0]?.text || <a hard-coded opening line>
+  // with no check on r.ok, so a 401, a rate limit, a plan limit or a 500 all parsed to an empty
+  // body and the app printed that hard-coded sentence under the coach's own name, as though it had
+  // answered. An error is an error: it is shown as one, with a way out.
   const sendToFacilitator = async (userText) => {
-    setBusy(true);
+    setBusy(true); setMeetError(null);
     const history = userText ? [...msgs, { role:"user", content:userText }] : msgs;
     if (userText) setMsgs(history);
+    setLastSent(userText);
     try {
       const jwt = await getJwt();
       const r = await fetch(`${API_BASE}/api/coach`, {
@@ -8958,13 +8966,37 @@ function MeetAgenda({ data, isCouple, setScreen }){
         body: JSON.stringify({ type:"facilitator", payload:{ context: agendaToText(agenda),
           messages: history.length ? history : [{ role:"user", content:"Start the money meeting." }] } }),
       });
-      const d = await r.json();
-      const text = d.content?.[0]?.text || "Let's begin. First, the win. What went well this week?";
+      if (!r.ok) {
+        // A limit reads the same here as it does in the coach chat, and on a store app it names no
+        // price and no website — there is nothing to buy there, so an upsell would be a dead end.
+        if (r.status === 429 || r.status === 402) {
+          const j = await r.json().catch(()=>({}));
+          setMeetError({ kind:"limit", text: isNativeApp()
+            ? `You've used this week's ${FREE_TIER_LIMITS.coachMessagesPerWeek} coach messages. They reset Monday.`
+            : (j.message || `You've used this week's ${FREE_TIER_LIMITS.coachMessagesPerWeek} coach messages. They reset Monday.`) });
+        } else if (r.status === 401 || r.status === 403) {
+          setMeetError({ kind:"auth", text:"Your session expired. Sign in again and the meeting will pick up where it left off." });
+        } else {
+          setMeetError({ kind:"server", text:"The facilitator didn't answer. Your agenda above is unchanged." });
+        }
+        setBusy(false); return;
+      }
+      const d = await r.json().catch(()=>null);
+      const text = d?.content?.[0]?.text;
+      if (!text || !String(text).trim()) {
+        setMeetError({ kind:"empty", text:"The facilitator didn't answer. Your agenda above is unchanged." });
+        setBusy(false); return;
+      }
       setMsgs([...history, { role:"assistant", content:text }]);
-    } catch { setMsgs([...history, { role:"assistant", content:"The facilitator is unavailable right now. Your agenda is above." }]); }
+    } catch {
+      setMeetError({ kind:"offline", text:"Couldn't reach the facilitator. Your agenda above is unchanged." });
+    }
     setBusy(false);
   };
-  const start = () => { if (!aiEnabled()) return; setStarted(true); sendToFacilitator(null); };
+  const retry = () => { setMeetError(null); sendToFacilitator(lastSent); };
+  // aiEnabled() is not re-checked here: the button is not rendered at all in the ai-off state, so
+  // this can never be reached with AI off, and a silent return would be the dead tap all over again.
+  const start = () => { setStarted(true); sendToFacilitator(null); };
   const send  = () => { const tx = input.trim(); if (!tx || busy) return; setInput(""); sendToFacilitator(tx); };
 
   return (
@@ -9019,6 +9051,18 @@ function MeetAgenda({ data, isCouple, setScreen }){
             </div>
           ))}
           {busy && <div style={{color:C.muted,fontSize:12,marginBottom:8}}>…</div>}
+          {/* A refusal, said plainly and attributed to nobody. A limit gets no Try again, because
+              trying again is exactly what will not work until the limit lifts. */}
+          {meetError && (
+            <div style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 13px",marginBottom:10}}>
+              <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>{meetError.text}</div>
+              {meetError.kind !== "limit" && (
+                <button onClick={retry} disabled={busy} style={{marginTop:10,background:"none",border:`1px solid ${C.purple}66`,borderRadius:10,padding:"8px 16px",color:C.purpleBright,fontWeight:700,fontSize:13,cursor:busy?"default":"pointer",fontFamily:"inherit"}}>
+                  {busy ? "Trying…" : "Try again"}
+                </button>
+              )}
+            </div>
+          )}
           <div style={{display:"flex",gap:8}}>
             <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")send();}} placeholder="Your answer…" style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
             <button onClick={send} disabled={busy} style={{background:C.purple,border:"none",borderRadius:10,padding:"9px 16px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Send</button>

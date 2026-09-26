@@ -69,6 +69,16 @@ const MEET = APP.slice(APP.indexOf("function MeetAgenda({ data, isCouple, setScr
       "3f with no figures at all it still produces an opening rather than an empty string");
   }
 
+  // ── 4. FAULT B: a refusal is never dressed up as the coach ───────────────────────────────────
+  t.ok(!/Let's begin\. First, the win\. What went well this week\?/.test(APP),
+    "4a the invented opening line is gone from the app entirely");
+  t.ok(/if \(!r\.ok\)/.test(MEET), "4b the facilitator call checks the response before reading it");
+  t.ok(/setMeetError/.test(MEET), "4c …and a failure sets an error state rather than a fake message");
+  t.ok(/Try again/.test(MEET), "4d …which the card shows with a Try again button");
+  // A limit must read exactly as the coach chat reads it, and sell nothing on a store app.
+  t.ok(/isNativeApp\(\)/.test(MEET) && /They reset Monday/.test(MEET),
+    "4e a weekly limit uses the same no-upsell wording the coach chat uses");
+
 
   t.summary("meetStart.test");
 })();
