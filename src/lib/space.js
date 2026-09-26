@@ -81,3 +81,15 @@ export const rowControl = (extra = {}) => ({
 // The text inside such a row: it may wrap onto more lines, but it is never squeezed narrower than
 // its content by a neighbouring control.
 export const rowText = (extra = {}) => ({ flexShrink: 1, minWidth: 0, ...extra });
+
+// Text that must not be truncated — a name a person chose, a merchant, a bill.
+//
+// Rule 3 forbids the ellipsis that used to do this job, but simply deleting `textOverflow` trades a
+// truncation for an overlap: a flex item cannot shrink below its longest unbreakable word, so
+// "Investment Portfolio" kept its 76px and spilled across the pin button beside it.
+//
+// `overflowWrap: "anywhere"` rather than "break-word" is the whole point. Both break a long word
+// when it would overflow, but only `anywhere` also REDUCES the min-content width, which is what
+// lets the flex item actually give way. With "break-word" the box still refuses to shrink and the
+// overlap survives.
+export const wrapText = (extra = {}) => ({ minWidth: 0, overflowWrap: "anywhere", ...extra });

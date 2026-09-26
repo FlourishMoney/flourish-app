@@ -93,12 +93,26 @@ Pairs are skipped when comparing them would be meaningless:
 - different scroll containers — a row scrolled out of a sheet's list still has a box, and that box
   sits over the sheet's footer. It is not on screen and no finger can reach it.
 
+## Truncation
+
+Rule 3 forbids it, and section 9 of the layout suite enforces it: any visible text with a computed
+`text-overflow: ellipsis` fails. It checks the **declaration**, not the symptom — a row that would
+clip "Investment Portfolio" is a row that clips, and the demo fixture is not going to supply the
+name that proves it.
+
+Use `wrapText()` rather than deleting `textOverflow` by hand. Simply removing it trades a truncation
+for an *overlap*: a flex item cannot shrink below its longest unbreakable word, so the text keeps its
+width and spills across whatever is beside it. `wrapText()` sets `overflowWrap: "anywhere"`, which —
+unlike `break-word` — also reduces the min-content width, so the box actually gives way.
+
+**One exception, marked in the source:** `WTile` on the Widget screen renders a picture of an iOS
+home-screen widget at fixed size, where truncation is the platform's own behaviour rather than ours.
+That screen is deliberately outside the sweep.
+
 ## What it does not check
 
 Being explicit, so nobody mistakes a green gate for more than it is:
 
-- **Truncation.** Rule 3 forbids it, but the test does not detect it. `DashCustomize` still
-  ellipsises long tile names by design.
 - **Contrast and font size.** Those are `tests/typeScale.test.cjs` and the type scale.
 - **Anything unreachable in demo.** The paywall, the upgrade screen and every bank-linking flow need
   a real session, so they are outside the sweep. Apply the rule by hand there.
