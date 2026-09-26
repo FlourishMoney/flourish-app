@@ -9,10 +9,13 @@
 // These are the eight sizes. They are Apple's text styles by another name, and the point of a
 // closed set is that a screen built from it has an order you can see at a glance.
 //
-// THE FLOOR IS 13. Nothing a person reads is smaller. Two exceptions, and only two:
-//   the tab bar labels, which Apple itself sets at 10-12 and which are never read as prose;
-//   the "Example · sample data" tag, which is a marker on top of content, not content.
-// Both are marked in the source with SMALL_TEXT_OK, and tests/typeScale.test.cjs fails the build
+// THE FLOOR IS 13. Nothing a person reads is smaller. One exception, and only one:
+//   the tab bar labels, which Apple itself sets at 10-12 and which are never read as prose.
+//
+// The "Example · sample data" tag used to be the second. The argument was that a marker on top of
+// content is not content — true on paper, wrong on a phone, where it was the thing people squinted
+// at, and it is the one label that says the numbers are not yours. It renders at the floor now.
+// The remaining exception is marked in the source with SMALL_TEXT_OK, and tests/typeScale.test.cjs fails the build
 // on any other font size below the floor. The marker is the allow-list: there is no separate file
 // to forget to update, and adding one is a visible act in a diff.
 // -----------------------------------------------------------------------------

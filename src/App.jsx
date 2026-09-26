@@ -462,6 +462,10 @@ const DARK_C = {
   glassEdge:"rgba(255,255,255,0.06)",glassEdgeHi:"rgba(255,255,255,0.12)",
   green:"#00CC85",greenBright:"#00E89A",greenDim:"rgba(0,204,133,0.12)",
   gold:"#E8B84B",goldBright:"#F5CC6A",goldDim:"rgba(232,184,75,0.11)",
+  // The "Example · sample data" tag. Its own pair rather than reusing gold/goldDim, because the tag
+  // sits on cardAlt — the darkest light-mode surface — and the text must clear AA 4.5:1 ON THE TINT,
+  // not on the card underneath it. Dark: 8.98:1 on cardAlt+tint.
+  tagInk:"#F5CC6A",tagBg:"rgba(232,184,75,0.11)",
   red:"#FF4F6A",redBright:"#FF6B84",redDim:"rgba(255,79,106,0.11)",
   blue:"#4DA8FF",blueBright:"#6DBCFF",blueDim:"rgba(77,168,255,0.11)",
   teal:"#00C8E0",tealBright:"#22D8EE",tealDim:"rgba(0,200,224,0.11)",
@@ -485,6 +489,10 @@ const LIGHT_C = {
   glassEdge:"rgba(0,0,0,0.07)",glassEdgeHi:"rgba(0,0,0,0.13)",
   green:"#00784D",greenBright:"#007A48",greenDim:"rgba(0,147,95,0.10)", // Sprint Q item 8.2: darkened for AA body text (light theme); dark theme unchanged
   gold:"#92580C",goldBright:"#9A5B0D",goldDim:"rgba(184,112,16,0.10)", // Sprint Q item 8.2: darkened for AA
+  // Tag pair (see DARK_C). gold on goldDim over cardAlt measured 4.36:1 — under AA — so the ink is
+  // darkened and the tint lightened: 5.72:1 on cardAlt, 6.08 on bg, 6.82 on card. Scoped to the tag
+  // so every other gold in the light theme is untouched.
+  tagInk:"#7A4A0A",tagBg:"rgba(184,112,16,0.08)",
   red:"#C82944",redBright:"#D0193C",redDim:"rgba(212,46,74,0.08)",
   blue:"#226ABA",blueBright:"#226BB4",blueDim:"rgba(36,114,200,0.09)",
   teal:"#007487",tealBright:"#007486",tealDim:"rgba(0,138,160,0.10)", // Sprint Q item 8.2: darkened for AA
@@ -498,6 +506,28 @@ const LIGHT_C = {
 };
 // Mutable reference — FlourishApp reassigns this before each render pass
 let C = DARK_C;
+
+// The "Example · sample data" tag, in one place so every screen that shows it shows the same thing.
+//
+// It used to render at 11px on Meet with a SMALL_TEXT_OK marker excusing it from the type floor, on
+// the reasoning that a marker on content is not content. That was wrong in practice: on a real phone
+// it was the thing people squinted at, and it is the one label that tells someone the numbers are
+// not theirs. So it lives by the same floor as everything else — TYPE.footnote (13), semibold —
+// and it is no longer on the allow-list. Padding comes off the 8px scale so the pill is not cramped
+// at the larger size. Reads C at call time, because C is reassigned per render pass.
+const exampleTagStyle = () => ({
+  ...TYPE.footnote,
+  fontWeight: 600,
+  color: C.tagInk,
+  background: C.tagBg,
+  border: `1px solid ${C.tagInk}33`,
+  borderRadius: 99,
+  padding: `${SPACE.xs}px ${SPACE.md}px`,
+  fontFamily: "'Plus Jakarta Sans',sans-serif",
+  letterSpacing: 0.3,
+  whiteSpace: "nowrap",
+  display: "inline-block",
+});
 
 
 const CAT_ICON = {
@@ -5131,7 +5161,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             const tone = data.demo ? C.gold : C.green;
             return <>
               <div style={{width:6,height:6,borderRadius:"50%",background:tone,boxShadow:data.demo?"none":`0 0 8px ${C.green}`,animation:data.demo?"none":"pulse 2.8s ease-in-out infinite",flexShrink:0}}/>
-              <span style={{color:tone,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4,...(data.demo?{whiteSpace:"nowrap"}:{})}}>{chip.label}</span>
+              <span style={{color:tone,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4,...(data.demo?{whiteSpace:"nowrap"}:{})}}>{chip.label}</span>
               {chip.detail&&<span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{chip.detail}</span>}
             </>;
           })()}
@@ -5295,7 +5325,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 // wording now comes from demoStatus.js; colours are unchanged (live muted, else gold).
                 const fresh = heroFreshness({demo:!!data.demo, bankConnected:!!data.bankConnected});
                 // Demo: a tag, not a "· suffix", so a wrapped line never starts with a separator.
-                if (fresh.kind==="example") return <span style={{color:C.gold,background:C.gold+"14",border:`1px solid ${C.gold}33`,borderRadius:99,padding:"1px 9px",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3,whiteSpace:"nowrap"}}>{fresh.text}</span>;
+                if (fresh.kind==="example") return <span style={exampleTagStyle()}>{fresh.text}</span>;
                 return <span style={{color:fresh.kind==="live"?C.muted:C.gold,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>{fresh.text}</span>;
               })()}
             </div>
@@ -9323,7 +9353,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
         /* Demo mode: one scripted facilitator line, read from the agenda already above. Local only —
            no /api/coach call. The real "trial" paywall below is unchanged for signed-in free-tier users. */
         <div style={{...card,background:C.cardAlt}}>
-          <div style={{color:C.goldBright,fontSize:11 /* SMALL_TEXT_OK: data-provenance tag, a marker on content rather than content */,fontWeight:800,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{DEMO_STATUS_LABEL}</div>
+          <div style={{marginBottom:SPACE.sm}}><span style={exampleTagStyle()}>{DEMO_STATUS_LABEL}</span></div>
           <div style={{color:C.cream,fontSize:13,lineHeight:1.6}}>{demoFacilitatorLine(data, new Date()) || "Your coach works through the agenda above with you, one item at a time."}</div>
           <div style={{color:C.muted,fontSize:13,lineHeight:1.5,marginTop:8}}>A scripted preview. Create a free account to run this meeting on your own numbers.</div>
         </div>
@@ -11868,7 +11898,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
           </div>
           <div style={{flex:1}}>
             <div style={{color:C.cream,fontWeight:800,fontSize:15}}>AI Coach</div>
-            <div style={{color:isOnline?C.green:C.muted,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",gap:4}}>
+            <div style={{color:isOnline?C.green:C.muted,...TYPE.footnote,fontWeight:600,display:"flex",alignItems:"center",gap:4}}>
               <div style={{width:6,height:6,borderRadius:"50%",background:isOnline?C.green:C.muted}}/>
               {data.demo?DEMO_STATUS_LABEL:isOnline?"Live · Your real data":"Offline"}
             </div>
