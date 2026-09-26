@@ -16213,7 +16213,7 @@ input,button,select,textarea { font-family:inherit; }
       <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,pointerEvents:"none"}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>
 
       {/* ── DESKTOP SIDEBAR ─────────────────────────────────────────── */}
-      <div style={{width:240,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:"var(--banner-h, 0px)",height:`calc(100dvh - var(--banner-h, 0px))`,overflowY:"auto",overscrollBehavior:"contain",flexShrink:0}}>
+      <div style={{width:240,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:"var(--banner-h, 0px)",height:`calc(100dvh - var(--banner-h, 0px))`,overflowY:"auto",overflowX:"hidden",overscrollBehavior:"contain",flexShrink:0}}>
         {/* Logo */}
         <div style={{padding:"28px 24px 20px"}}>
           <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{background:"none",border:"none",cursor:"pointer",padding:0,display:"flex",alignItems:"center",gap:10}}>

@@ -103,13 +103,21 @@ const APP = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8"
     // removed the offline banner from the other pass unnoticed.
     t.eq((APP.match(/\{syncBanner\}\{migratedBanner\}\{demoBanner\}\{offlineBanner\}/g) || []).length, 2,
       "3o all four banners are inside the container, in BOTH shells");
-    // Each banner takes its own clicks back, or the container's empty width swallows them.
-    const autos = (APP.match(/pointerEvents:"auto"/g) || []).length;
-    t.ok(autos >= 4, `3p …and each banner takes its own clicks back (${autos})`);
+    // Each banner takes its own clicks back, or the container's pointerEvents:none leaves it dead.
+    // Checked on EACH banner's own declaration, not as a count across the file: there are two more
+    // pointerEvents:"auto" in an unrelated sheet overlay, so a floor of four let the demo banner —
+    // whose "Exit demo" button is the only route out of demo mode — silently lose its own.
+    for (const name of ["syncBanner", "migratedBanner", "demoBanner", "offlineBanner"]) {
+      const at = APP.indexOf(`const ${name} = `);
+      t.ok(at > 0, `3p ${name} is declared`);
+      const decl = APP.slice(at, APP.indexOf("}}>", at));
+      t.ok(/pointerEvents:"auto"/.test(decl),
+        `3q ${name} takes its own clicks back — without it the banner is visible but dead`);
+    }
     t.ok(!/zIndex:9999,background:"#180800"/.test(APP),
-      "3q no banner pins itself below the container, where it would be invisible behind the others");
+      "3s no banner pins itself below the container, where it would be invisible behind the others");
     t.ok(!/const offlineBanner[\s\S]{0,200}maxWidth:430/.test(APP),
-      "3r and the offline banner is full width, not a 430px chip floating in a desktop-width bar");
+      "3t and the offline banner is full width, not a 430px chip floating in a desktop-width bar");
   }
 
   // ── 4. the fallback is zero, so nothing moves when no banner shows ───────────────────────────
