@@ -274,6 +274,10 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     t.ok(/signupCodeState\(\{ openSignup, showCodeField \}\)/.test(auth), "AuthScreen renders from signupCodeState");
     t.ok(/action: "signup_status"/.test(auth), "…after asking the server");
     t.ok(/useState\(null\)/.test(auth) && /setOpenSignup\(statusFromResponse\(out\)\)/.test(auth), "…starting at null and reading the answer defensively");
+    // Once, and not on the marketing landing: that page is the most visited on the site, has no
+    // sign-up form, and would otherwise spend a function invocation per visitor.
+    t.ok(/if \(!showAuth \|\| askedStatus\.current\) return;/.test(auth), "…only when the auth card is on screen, and only once");
+    t.ok(/\}, \[showAuth\]\);/.test(auth), "…so the effect watches showAuth, not every render");
     t.ok(/catch \{[^}]*setOpenSignup\(false\)/s.test(auth), "…and treating a failed call as invite-only");
     t.ok(/mode==="signup"&&showCodeInput&&\(/.test(auth) && /mode==="signup"&&showCodeLink&&\(/.test(auth), "…the field and the link are the two states");
     t.ok(/Have an invite code\?/.test(auth), "…the link says \"Have an invite code?\"");

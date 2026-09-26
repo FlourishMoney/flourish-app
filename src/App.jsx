@@ -13014,7 +13014,15 @@ function AuthScreen({ onAuth, onTryDemo }) {
   const [openSignup, setOpenSignup] = useState(null);
   const [showCodeField, setShowCodeField] = useState(false);
   const { codeRequired, showField: showCodeInput, showLink: showCodeLink } = signupCodeState({ openSignup, showCodeField });
+  // Asked ONCE, and only when the auth card is actually on screen: on a store app that is at launch,
+  // on the web it is when someone opens Log in or Sign up. The marketing landing is the most visited
+  // page on the site and has no sign-up form on it, so asking there would spend a function invocation
+  // per visitor to answer a question that page never asks. Asking when the card opens still lands the
+  // answer well before anyone switches to the Sign Up tab and types an email.
+  const askedStatus = useRef(false);
   useEffect(() => {
+    if (!showAuth || askedStatus.current) return;
+    askedStatus.current = true;
     let cancelled = false;
     (async () => {
       try {
@@ -13032,7 +13040,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [showAuth]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
