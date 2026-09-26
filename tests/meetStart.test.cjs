@@ -22,8 +22,8 @@ const fs = require("fs");
 const path = require("path");
 
 const APP = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
-const MEET = APP.slice(APP.indexOf("function MeetAgenda({ data, isCouple, setScreen }){"),
-                       APP.indexOf("function MeetAgenda({ data, isCouple, setScreen }){") + 9000);
+const MEET_AT = APP.indexOf("function MeetAgenda({ data, isCouple, setScreen }){");
+const MEET = APP.slice(MEET_AT, APP.indexOf("\nfunction Family({data,", MEET_AT));
 
 (async () => {
   const t = create();
@@ -39,10 +39,14 @@ const MEET = APP.slice(APP.indexOf("function MeetAgenda({ data, isCouple, setScr
   t.eq(hasAgenda(quiet), false, "1b …and a quiet week produces an agenda with nothing in it");
 
   // ── 2. FAULT A: the button must not be disabled by an empty agenda ───────────────────────────
-  t.ok(!/disabled=\{!hasAgenda\}/.test(MEET),
-    "2a the start button is not disabled by an empty agenda — a quiet week is still a meeting");
-  t.ok(!/cursor:hasAgenda\?"pointer":"default"/.test(MEET),
-    "2b …and it does not render as un-tappable either");
+  const startBtn = MEET.slice(MEET.indexOf("<button onClick={start}"), MEET.indexOf("</button>", MEET.indexOf("<button onClick={start}")));
+  const startDisabled = (startBtn.match(/disabled=\{([^}]*)\}/) || [])[1];
+  t.eq(startDisabled, "busy",
+    "2a the ONLY thing that switches the start button off is a request already in flight — not an " +
+    "empty agenda, under any spelling");
+  t.ok(!/hasAgenda|items\.length|agenda\./.test(startBtn),
+    "2b …and nothing about the agenda's contents reaches the button at all");
+  t.ok(!/const hasAgenda/.test(MEET), "2c the flag that gated it is gone");
 
   // ── 3. an empty agenda still gives the facilitator something real to open with ───────────────
   // Whatever it opens with must come from the engines. The facilitator must never receive a figure
@@ -76,9 +80,31 @@ const MEET = APP.slice(APP.indexOf("function MeetAgenda({ data, isCouple, setScr
   t.ok(/setMeetError/.test(MEET), "4c …and a failure sets an error state rather than a fake message");
   t.ok(/Try again/.test(MEET), "4d …which the card shows with a Try again button");
   // A limit must read exactly as the coach chat reads it, and sell nothing on a store app.
-  t.ok(/isNativeApp\(\)/.test(MEET) && /They reset Monday/.test(MEET),
-    "4e a weekly limit uses the same no-upsell wording the coach chat uses");
+  const limitBlock = MEET.slice(MEET.indexOf("r.status === 429"), MEET.indexOf("} else if (r.status === 401"));
+  t.ok(/isNativeApp\(\)/.test(limitBlock), "4e a weekly limit branches on the platform");
+  const nativeLimit = limitBlock.slice(limitBlock.indexOf("isNativeApp()"), limitBlock.indexOf(": (j.message"));
+  t.ok(/They reset Monday\./.test(nativeLimit), "4f the native wording is the coach chat's wording");
+  t.ok(!/[Uu]pgrade|Plus|flourishmoney\.app|subscribe|\$\d/.test(nativeLimit),
+    "4g …and names no price, no Plus, no website — there is nothing to buy in a store app");
+  const limitStrings = (limitBlock.match(/You've used this week's[^`]*/g) || []);
+  t.eq(limitStrings.length, 2, "4h both the native and web limit strings are present");
+  for (const [i, str] of limitStrings.entries()) {
+    t.ok(/They reset Monday\./.test(str), `4i limit string ${i + 1} says when the limit lifts`);
+  }
+  t.ok(/kind:"limit"/.test(limitBlock) && /meetError\.kind !== "limit"/.test(MEET),
+    "4j a limit gets no Try again — retrying is what will not work until it lifts");
 
+  // ── 5. AI off cannot be a silent no-op ───────────────────────────────────────────────────────
+  t.eq(S.facilitatorGateState({ demo: false, canFacilitate: true, aiOn: false }), "ai-off",
+    "5a AI off resolves to its own state");
+  t.ok(!/const start = \(\) => \{ if \(!aiEnabled\(\)\) return;/.test(MEET),
+    "5b start() no longer returns silently — the button is not rendered in that state at all");
+
+  // ── 6. the tap is acknowledged immediately ───────────────────────────────────────────────────
+  t.ok(/disabled=\{busy\}/.test(MEET), "6a the button is disabled while a reply is in flight");
+  t.ok(/\{busy\?"Starting…"/.test(MEET),
+    "6b …and says Starting… while it waits, so a slow first reply never looks like nothing happened");
+  t.ok(/cursor:busy\?"default":"pointer"/.test(MEET), "6c …and stops looking tappable while it waits");
 
   t.summary("meetStart.test");
 })();
