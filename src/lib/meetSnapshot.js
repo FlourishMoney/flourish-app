@@ -15,8 +15,7 @@ import { dismissedEntries, lastMeeting, meetingOpening } from "./meetingRecord.j
 import { formatMoney } from "./format.js";
 import { safeToSpendView } from "./safeToSpendView.js";
 import { isCashAccount, num } from "./financialCalculations.js";
-import { suggestedDailyView } from "./suggestedDaily.js";
-import { daysWithinPace, categoryPaceDeltas } from "./weeklyReview.js";
+import { weekVersusUsual, categoryPaceDeltas } from "./weeklyReview.js";
 
 const _round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const _num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
@@ -58,22 +57,21 @@ export function buildMeetSnapshot(data = {}) {
 
   // The week that just went — the wins and changes sections, which nothing used to fill.
   //
-  // Both figures are read from weeklyReview.js, which does the counting; this bridge only forwards,
-  // exactly as it does for the forecast and the decision. Each is wrapped on its own so a household
-  // with no pace (no income yet) still gets its categories, and one with no category history still
-  // gets its day count.
+  // Both figures come from weeklyReview.js, which does the counting; this bridge only forwards, the
+  // way it already forwards the forecast and the decision. One `now` for both, so a meeting opened
+  // a millisecond either side of midnight cannot read two different weeks. weeklyReview returns
+  // null / [] when the week or the history is too thin to describe, and nothing is added then —
+  // which is what keeps a quiet week quiet, and keeps quietWeekAgendaFor reachable.
   try {
-    const ss = SafeSpendEngine.calculate(data) || {};
-    const pace = suggestedDailyView(safeToSpendView(ss).headline, data.incomes, data.transactions, new Date(), data);
-    const dailyLog = daysWithinPace({ transactions: data.transactions || [], dailyPace: pace && pace.daily, now: new Date() });
-    if (dailyLog.length) snap.safeSpend = { dailyLog };
-  } catch { /* no pace to judge against → no win, which is not a failure */ }
-  try {
+    const now = new Date();
+    const txns = data.transactions || [];
+    const week = weekVersusUsual({ transactions: txns, now });
+    if (week) snap.weekTotal = week;
     // Top three by size. The agenda applies its own threshold on top, so a quiet week still says
     // nothing rather than reading out three differences of four dollars each.
-    const deltas = categoryPaceDeltas({ transactions: data.transactions || [], now: new Date() }).slice(0, 3);
+    const deltas = categoryPaceDeltas({ transactions: txns, now }).slice(0, 3);
     if (deltas.length) snap.behaviorDeltas = deltas;
-  } catch { /* no usable history → no changes section */ }
+  } catch { /* no usable history → no wins and no changes, which is not a failure */ }
 
   // Debts and goals → progress (values read straight from appData / engine, never recomputed here).
   const debts = (data.debts || []).filter(d => _num(d.balance) > 0);
@@ -232,6 +230,30 @@ export function quietWeekFiguresFor(data = {}) {
     });
   } catch { /* no forecast is not a reason to refuse the meeting */ }
   return { safeToSpendText, safeToSpend, upcoming: upcoming.slice(0, 6), truncated: upcoming.length > 6 };
+}
+
+// ── WHAT IS COMING IS NOT ONLY FOR A QUIET WEEK ─────────────────────────────────────────────────
+// quietWeekAgendaFor was written as a SUBSTITUTE: an empty agenda was replaced wholesale by the
+// safe-to-spend figure and what falls due in the next seven days. That was safe while the wins and
+// changes sections were dead, because almost every agenda without a decision was empty. Now that
+// they fill, a household whose week had something in it would have LOST the rent due on Thursday
+// and the number they came to the meeting for, in exchange for one line about their groceries.
+//
+// So those figures are ADDED instead, to any agenda that does not already carry what is coming.
+// Nothing is computed here either: both come from quietWeekFiguresFor, which reads them through
+// safeToSpendView exactly as every screen that shows them does, refusals included.
+export function withWeekAhead(agenda, data = {}, label = "Safe until next payday") {
+  if (!agenda || agenda.quiet) return agenda;
+  if ((agenda.risks || []).length || (agenda.upcoming || []).length) return agenda;
+  let f;
+  try { f = quietWeekFiguresFor(data); } catch { return agenda; }
+  const upcoming = (f.upcoming || []).filter(u => u && u.text)
+    .map(u => ({ text: u.text, value: u.value != null ? u.value : null, source: "forecastEngine" }));
+  if (f.truncated) upcoming.push({ text: "More items follow in the week ahead.", value: null, source: "meetSnapshot" });
+  const progress = [...(agenda.progress || [])];
+  if (f.safeToSpendText) progress.unshift({ text: `${label}: ${f.safeToSpendText}.`, value: f.safeToSpend, source: "safeSpendEngine" });
+  if (!upcoming.length && progress.length === (agenda.progress || []).length) return agenda;
+  return { ...agenda, upcoming, progress };
 }
 
 // True when the assembled agenda has nothing in it — the case quietWeekAgendaFor exists for.

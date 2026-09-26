@@ -105,7 +105,7 @@ function validateFacilitatorProse(prose, agendaText) {
 
 // Safe qualitative fallback — contains NO numbers and no FLOURISH_UPDATE.
 const SAFE_FACILITATOR_FALLBACK =
-  "Let's stick to what Flourish already calculated on your agenda — I don't want to introduce any figure that isn't there. " +
+  "Let's stick to what Flourish already worked out on your agenda: I don't want to introduce any figure that isn't there. " +
   "Tell me which item you'd like to start with: a win, an upcoming bill, or the decision, and I'll reflect back exactly what the agenda says.";
 
 // Decide which output to use: the model's first reply if clean, else a validated retry, else the safe

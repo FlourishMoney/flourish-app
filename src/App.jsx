@@ -33,7 +33,7 @@ import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/signupUi.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { TYPE, TYPE_MIN, SPACE, LAYOUT, tap } from "./lib/type.js";
-import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, agendaIsEmpty } from "./lib/meetSnapshot.js";
+import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, withWeekAhead, agendaIsEmpty } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
 import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown, formatCompactMoney } from "./lib/format.js";
 import { payWord, savingsAccountTerm, retirementAccountsLabel } from "./lib/locale.js";
@@ -6074,7 +6074,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
 
         {/* DECISIONS — Decision engine */}
         {/* padding is load-bearing: with borderRadius + overflow:hidden and none, the 22px corner arc
-            clips whatever sits top-right — here the "Decision Engine" label. Matches the sibling above. */}
+            clips whatever sits top-right — here the "Worked out by Flourish" label. Matches the sibling above. */}
         <div style={{...anim(120),background:C.isDark?"rgba(155,125,255,0.04)":"rgba(155,125,255,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.purple}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden",padding:"18px 18px 14px"}}>
           <DecisionEngine data={data} safe={safe} bal={bal} monthlyIncome={monthlyIncome} soonBills={soonBills} todayDate={new Date()} dailyPace={dailyPace} setScreen={setScreen}/>
         </div>
@@ -9186,7 +9186,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
   const agenda = useMemo(() => {
     try {
       const full = meetAgendaFor(data);
-      return agendaIsEmpty(full) ? quietWeekAgendaFor(quietWeekFiguresFor(data)) : full;
+      return agendaIsEmpty(full) ? quietWeekAgendaFor(quietWeekFiguresFor(data)) : withWeekAhead(full, data);
     } catch {
       // A malformed stored shape must cost the household its agenda, not its app: unguarded, a
       // throw in here escapes render and reaches the top-level boundary, which blanks everything.

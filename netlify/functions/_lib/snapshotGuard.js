@@ -25,7 +25,7 @@ function validateSnapshotProse(prose, factText) {
 // Safe qualitative fallback — contains NO numbers and no FLOURISH_UPDATE.
 const SAFE_SNAPSHOT_FALLBACK =
   "Let me stick to the numbers Flourish has calculated for you rather than introduce a figure that isn't in your data. " +
-  "Tell me which part you want to dig into — your safe-to-spend, a bill, a debt, or a goal — and I'll work from exactly what's there.";
+  "Tell me which part you want to dig into: your safe-to-spend, a bill, a debt, or a goal, and I'll work from exactly what's there.";
 
 // Decide which output to use: clean first reply, else validated retry, else safe fallback. Pure and
 // deterministic (no network) so it is unit-testable directly.

@@ -915,3 +915,54 @@ later has three days less trial.
 
 **Fix (suggested, not built)** Start the trial when the address is confirmed rather than when the row
 is created.
+
+---
+
+## 39. A recategorised merchant reads as a week of restraint
+
+**Rating: MEDIUM.** Adversarial review of the weekly-review work (PR #28).
+
+**Where** `src/lib/weeklyReview.js`, `categoryPaceDeltas`.
+
+**What happens** The comparison is per category, and nothing reconciles a category that disappears
+against one that appears. If a household (or a Plaid recategorisation) moves a regular merchant from
+"Coffee & Dining" to "Restaurants" mid-month, the same $300 of spending is still there, but the
+meeting says "Coffee & Dining ran $300.00 below your usual pace." The money did not move; the label
+did. The three-week habit rule keeps the NEW category out for three weeks, so only the false
+congratulation shows.
+
+**Fix (suggested, not built)** Compare the disappearance against the appearance: when a category
+falls to zero and a category with no history appears at about the same size in the same week, treat
+them as one and say nothing. Or read the category overrides and follow the rename.
+
+---
+
+## 40. The copy gate has no escape hatch
+
+**Rating: LOW.** Same review.
+
+**Where** `tests/forecastEdits.test.cjs`, section 9.
+
+**What happens** The gate rejects `\bengines?\b` in every string in `src/`, with no allow-list. A
+future telemetry key, CSS class or data attribute spelled `"tile-engine"` fails the build; the same
+name spelled `"tile_engine"` passes, because the word boundary falls differently. There is no way to
+opt a legitimate string out short of editing the test.
+
+**Fix (suggested, not built)** An allow-list keyed on the exact string, or restrict the rule to
+strings that are rendered (JSX text and the props that carry copy) rather than every literal.
+
+---
+
+## 41. The money meeting has no way to say a week went badly
+
+**Rating: LOW.** Same review.
+
+**Where** `src/lib/meetingAgenda.js`, `src/lib/weeklyReview.js`.
+
+**What happens** A week that cost more than usual is filed under "changes", which is right, but there
+is nothing that treats a run of heavy weeks, or a category climbing three weeks in a row, as anything
+other than this week against an average that is itself rising. The trend hides inside the baseline.
+
+**Fix (suggested, not built)** Compare the four baseline weeks against each other as well as against
+this one, and surface a direction rather than only a difference.
+

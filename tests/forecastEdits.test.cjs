@@ -445,6 +445,45 @@ const { create } = require("./_runner.cjs");
       }
       t.eq(dashed, [], `no em or en dash in any string in src (${files.length} files scanned)`);
       t.eq(jargon, [], `no string in src calls Flourish's own machinery an "engine" (${files.length} files scanned)`);
+      // ── The strings a household reads that do NOT live in src/ ──────────────────────────────
+      // Two of them are server-side constants. When the facilitator guard rejects the model's reply
+      // twice, SAFE_FACILITATOR_FALLBACK is what appears in Meet under the coach's own name; the
+      // snapshot guard's is the same. They were carrying em dashes for exactly as long as the gate
+      // only looked at src/. The rest of netlify/functions is console logs and model prompts, which
+      // no household reads, so this names the two constants rather than sweeping the directory.
+      {
+        const strings = (file, pick) => {
+          const ast = parser.parse(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), { sourceType: "unambiguous" });
+          const out = [];
+          (function walk(n, inside) {
+            if (!n || typeof n.type !== "string") return;
+            const here = inside || (n.type === "VariableDeclarator" && n.id && pick.test(n.id.name || ""));
+            const text = n.type === "StringLiteral" ? n.value : n.type === "TemplateElement" ? (n.value.cooked ?? n.value.raw) : null;
+            if (here && text) out.push(text);
+            for (const k of Object.keys(n)) {
+              if (["loc", "start", "end", "leadingComments", "trailingComments", "innerComments", "extra"].includes(k)) continue;
+              const v = n[k];
+              if (Array.isArray(v)) v.forEach(x => x && typeof x.type === "string" && walk(x, here));
+              else if (v && typeof v.type === "string") walk(v, here);
+            }
+          })(ast.program, false);
+          return out;
+        };
+        const fallbacks = [
+          ...strings("netlify/functions/_lib/facilitatorGuard.js", /^SAFE_[A-Z_]*FALLBACK$/),
+          ...strings("netlify/functions/_lib/snapshotGuard.js", /^SAFE_[A-Z_]*FALLBACK$/),
+        ];
+        // If either constant is renamed, this drops to zero and the check would pass silently.
+        t.ok(fallbacks.length >= 4, `the two SAFE_*_FALLBACK replies were found and read (${fallbacks.length} pieces)`);
+        t.eq(fallbacks.filter(x => /[\u2013\u2014]/.test(x)), [], "no em or en dash in the replies a household reads when the coach is overruled");
+        t.eq(fallbacks.filter(x => /\bengines?\b/i.test(x)), [], "…and neither of them calls Flourish's machinery an engine");
+        // The coach's own system prompt is not read by a household, but it is where the model learns
+        // what to call things, and it taught it the word this branch is removing.
+        const prompts = strings("netlify/functions/_lib/coachPrompt.js", /^[A-Z_]+$/);
+        t.eq(prompts.length, 3, `the three coach prompt constants were found and read (got ${prompts.length})`);
+        t.eq(prompts.filter(x => /\bengines?\b/i.test(x)), [], "the coach is never told Flourish's numbers come from its engines");
+      }
+
       // index.html's <title> is the one string outside src/ that a person reads, on a browser tab and
       // in a search result, so the same rule applies to it.
       const pageTitle = (fs.readFileSync(path.join(__dirname, "../index.html"), "utf8").match(/<title>([\s\S]*?)<\/title>/) || [])[1] || "";
