@@ -6682,7 +6682,7 @@ function PlanAhead({data, setAppData, setScreen}){
       </ul>
       {dataIssues.length>5&&<div style={{color:C.muted,fontSize:13,marginTop:5}}>…and {dataIssues.length-5} more.</div>}
     </div>}
-    <ScreenHeader title="Watch" subtitle="The next 90 days. What's coming in and going out."
+    <ScreenHeader title="Watch" subtitle="The next 90 days."
       onBack={setScreen?()=>setScreen("home"):null}
       controls={
           <div style={{display:"flex",gap:SPACE.xs,background:C.surface,borderRadius:12,padding:3,width:"100%"}}>{RANGES.map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",transition:"all .22s"}}>{r}d</button>)}</div>
@@ -13533,7 +13533,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-login:hover{ background:rgba(46,139,46,0.08); }
 
             .fll-hero{ text-align:center; padding:38px 0 14px; }
-            .fll-badge{ display:inline-flex; align-items:center; gap:7px; background:rgba(46,139,46,0.09); border:1px solid rgba(46,139,46,0.28); color:#1b5e20; border-radius:99px; padding:7px 15px; font-size:12.5px; font-weight:700; margin-bottom:22px; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-badge{ display:inline-flex; align-items:center; gap:7px; background:rgba(46,139,46,0.09); border:1px solid rgba(46,139,46,0.28); color:#1b5e20; border-radius:99px; padding:7px 15px; font-size:13px; font-weight:700; margin-bottom:22px; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-h1{ font-family:'Playfair Display',serif; font-weight:900; font-size:clamp(33px,6.2vw,58px); line-height:1.06; letter-spacing:-0.6px; color:#15321a; margin:0 auto 18px; max-width:13ch; }
             .fll-h1 em{ font-style:italic; color:#2E8B2E; }
             .fll-sub{ font-family:'Plus Jakarta Sans',sans-serif; font-size:clamp(15px,2.2vw,19px); line-height:1.6; color:#52624f; max-width:560px; margin:0 auto 30px; }
@@ -13547,19 +13547,19 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-btn:hover{ transform:translateY(-1px); box-shadow:0 10px 26px rgba(46,139,46,0.32); }
             .fll-btn:disabled{ opacity:.55; cursor:default; transform:none; box-shadow:none; }
             .fll-country{ display:inline-flex; gap:4px; margin-top:12px; background:rgba(46,139,46,0.06); border:1px solid rgba(46,139,46,0.14); border-radius:99px; padding:3px; }
-            .fll-seg{ border:none; background:transparent; color:#52624f; font-size:12.5px; font-weight:700; padding:6px 14px; border-radius:99px; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-seg{ border:none; background:transparent; color:#52624f; font-size:13px; font-weight:700; padding:6px 14px; border-radius:99px; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-seg-on{ background:#fff; color:#226b22; box-shadow:0 1px 3px rgba(0,0,0,0.10); }
-            .fll-err{ color:#c0392b; font-size:12.5px; margin-top:10px; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-err{ color:#c0392b; font-size:13px; margin-top:10px; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-done{ background:#fff; border:1px solid rgba(46,139,46,0.2); border-radius:18px; padding:22px 20px; box-shadow:0 10px 30px rgba(22,58,28,0.07); }
             .fll-done-t{ font-family:'Playfair Display',serif; font-weight:900; font-size:21px; color:#15321a; margin-bottom:6px; }
             .fll-done-b{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13.5px; line-height:1.55; color:#52624f; max-width:340px; margin:0 auto; }
 
             .fll-demo{ display:inline-block; margin-top:16px; background:none; border:none; color:#52624f; font-size:13px; font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:3px; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-demo:hover{ color:#2E8B2E; }
-            .fll-trust{ display:inline-flex; align-items:center; gap:7px; margin-top:20px; font-size:12.5px; color:#52624f; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-trust{ display:inline-flex; align-items:center; gap:7px; margin-top:20px; font-size:13px; color:#52624f; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; }
 
             .fll-section{ padding:44px 0; }
-            .fll-eyebrow{ text-align:center; font-size:11.5px; font-weight:800; letter-spacing:1.4px; text-transform:uppercase; color:#1b5e20; margin-bottom:10px; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-eyebrow{ text-align:center; font-size:13px; font-weight:800; letter-spacing:1.4px; text-transform:uppercase; color:#1b5e20; margin-bottom:10px; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-h2{ font-family:'Playfair Display',serif; font-weight:900; font-size:clamp(24px,4vw,34px); color:#15321a; text-align:center; line-height:1.15; margin:0 auto 8px; max-width:20ch; }
             .fll-lede{ text-align:center; font-size:15px; color:#52624f; max-width:520px; margin:0 auto 28px; line-height:1.6; font-family:'Plus Jakarta Sans',sans-serif; }
 
@@ -13568,7 +13568,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-shot{ flex:0 0 auto; width:208px; scroll-snap-align:center; }
             .fll-frame{ background:#15271a; border-radius:30px; padding:6px; box-shadow:0 22px 50px rgba(22,58,28,0.18); }
             .fll-frame img{ display:block; width:100%; height:auto; border-radius:25px; }
-            .fll-cap{ text-align:center; font-size:12px; color:#52624f; margin-top:11px; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-cap{ text-align:center; font-size:13px; color:#52624f; margin-top:11px; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; }
 
             .fll-benefits{ display:grid; grid-template-columns:1fr; gap:14px; max-width:760px; margin:0 auto; }
             .fll-card{ background:#fff; border:1px solid rgba(46,139,46,0.13); border-radius:18px; padding:22px; box-shadow:0 6px 22px rgba(22,58,28,0.05); }
@@ -13580,9 +13580,9 @@ function AuthScreen({ onAuth, onTryDemo }) {
 
             .fll-foot{ border-top:1px solid rgba(46,139,46,0.12); margin-top:24px; }
             .fll-foot-in{ width:100%; max-width:1080px; margin:0 auto; padding:24px 22px; display:flex; flex-wrap:wrap; gap:12px 22px; align-items:center; justify-content:space-between; }
-            .fll-foot a{ color:#52624f; font-size:12.5px; text-decoration:none; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-foot a{ color:#52624f; font-size:13px; text-decoration:none; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-foot a:hover{ color:#2E8B2E; }
-            .fll-foot span{ color:#52624f; font-size:12px; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-foot span{ color:#52624f; font-size:13px; font-family:'Plus Jakarta Sans',sans-serif; }
 
             @media(min-width:560px){
               .fll-form{ flex-direction:row; }

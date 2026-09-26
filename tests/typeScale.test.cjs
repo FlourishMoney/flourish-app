@@ -45,7 +45,7 @@ const FILES = walk(SRC).filter(f => /\.(jsx?|tsx?)$/.test(f) && !f.endsWith("lib
   const under = [];
   for (const f of FILES) {
     const src = fs.readFileSync(f, "utf8");
-    const re = /fontSize:\s*([0-9]+(?:\.[0-9]+)?)/g;
+    const re = /(?:fontSize:|font-size:)\s*([0-9]+(?:\.[0-9]+)?)/g;
     let m;
     while ((m = re.exec(src)) !== null) {
       if (parseFloat(m[1]) >= T.TYPE_MIN) continue;
@@ -54,6 +54,9 @@ const FILES = walk(SRC).filter(f => /\.(jsx?|tsx?)$/.test(f) && !f.endsWith("lib
       under.push(`${path.relative(SRC, f)}:${src.slice(0, m.index).split("\n").length} = ${m[1]}`);
     }
   }
+  t.ok(/font-size:/.test(fs.readFileSync(path.join(SRC, "App.jsx"), "utf8")),
+    "2a0 (control) there IS CSS-written type in the file, so the scan below is doing work — the " +
+    "first version of this test only looked at the JS property and missed an entire stylesheet");
   t.eq(under.join(" | ") || "(none)", "(none)",
     `2a no font size below ${T.TYPE_MIN} outside the allow-list. To add one, write ` +
     `/* ${T.SMALL_TEXT_OK}: <why> */ beside it — and say why in the diff.`);
