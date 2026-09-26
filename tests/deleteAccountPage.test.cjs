@@ -79,9 +79,13 @@ const PAGE = APP.slice(APP.indexOf("function DeleteAccount({onBack})"), APP.inde
   // Matched on the flattened text so a reflow of the JSX cannot silently drop it.
   const flat = PAGE.replace(/\s+/g, " ");
   t.ok(flat.includes("Your account and data are deleted within 30 days of your request. Copies in our "
-    + "daily backups are removed automatically within 7 days after that. Nothing else is kept unless "
-    + "the law requires it."),
+    + "daily backups are removed automatically within 7 days after that. Nothing else is kept beyond "
+    + "what is described below."),
     "4h the retention period renders, in the founder's approved wording");
+  // The wording it replaced promised something the page cannot keep: the paragraphs below it do
+  // describe things that are kept for reasons other than the law (the payment processor's own
+  // records), so "unless the law requires it" was contradicted a few lines later on the same page.
+  t.ok(!/unless the law requires it/.test(flat), "4i …and not the old wording, which the rest of the page contradicted");
 
   // ── 5. the date is not in the future ─────────────────────────────────────────────────────────
   const last = (PAGE.match(/const last="([^"]+)"/) || [])[1];

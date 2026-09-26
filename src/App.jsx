@@ -11935,7 +11935,7 @@ function DeleteAccount({onBack}){
       </ul>
       <div style={{...p,marginTop:12}}>
         Your account and data are deleted within 30 days of your request. Copies in our daily backups are
-        removed automatically within 7 days after that. Nothing else is kept unless the law requires it.
+        removed automatically within 7 days after that. Nothing else is kept beyond what is described below.
       </div>
 
       <div style={h2}>What is kept</div>
