@@ -86,7 +86,7 @@ function applyEdit(ed, srcKey, orig, base) {
   if (oDate) date = oDate;
   else if (s && Number.isFinite(Number(s.shiftDays)) && Number(s.shiftDays) !== 0) date = addDays(orig, Math.round(Number(s.shiftDays)));
   const skipped = o && Object.prototype.hasOwnProperty.call(o, "skip") ? !!o.skip : !!(s && s.skip);
-  const edited = (o || s) ? { scope: o ? "one" : "series", from: s ? s.from : null, one: !!o, series: !!s } : null;
+  const edited = (o || s) ? { scope: o ? "one" : "series", from: s ? s.from : null, one: !!o, series: !!s, oneEdit: o, seriesEdit: s } : null;
   return { amount, date, skipped, edited };
 }
 
@@ -445,6 +445,37 @@ export function editOccurrence(fe, occ, scope, change) {
   if (clean.skip) cur.skip = true; else cur.skip = false;
   next.one[key] = cur;
   return next;
+}
+
+// ── The edit sheet's state ──────────────────────────────────────────────────────────────────────
+// Reopening an edited occurrence must show the edit AS SAVED: its scope, its action and its value.
+// Opening on "Just this one" over a "From this date on" edit meant a plain Save silently rewrote a
+// series change into a single-date one.
+export function sheetDefaults(occ) {
+  const e = occ && occ.edited;
+  const amount = String(occ && occ.amount != null ? occ.amount : "");
+  const date = isoOf(occ.date);
+  if (!e) return { action: occ.skipped ? "skip" : "amount", scope: "one", amount, date };
+  const src = e.one ? e.oneEdit : e.seriesEdit;
+  const scope = e.one ? "one" : "series";
+  const action = occ.skipped || (src && src.skip) ? "skip"
+    : e.one ? (src && src.date ? "date" : "amount")
+    : (src && Number(src.shiftDays) ? "date" : "amount");
+  return { action, scope, amount, date };
+}
+
+// Save from the sheet. Nothing changed from how it opened means nothing is written (the same object
+// comes back), so reopening and saving can never alter an edit.
+export function sheetSave(fe, occ, form) {
+  const d = sheetDefaults(occ);
+  const unchanged = form.scope === d.scope && form.action === d.action && (
+    form.action === "amount" ? Number(form.amount) === Number(occ.amount)
+    : form.action === "date" ? form.date === isoOf(occ.date)
+    : !!occ.skipped);
+  if (unchanged) return fe;
+  if (form.action === "amount") return editOccurrence(fe, occ, form.scope, { amount: form.amount });
+  if (form.action === "date") return editOccurrence(fe, occ, form.scope, { date: form.date });
+  return editOccurrence(fe, occ, form.scope, { skip: true });
 }
 
 // "Reset to Flourish's estimate": remove every edit that shapes this occurrence. When that edit is a

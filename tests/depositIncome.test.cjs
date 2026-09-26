@@ -195,6 +195,33 @@ const { create } = require("./_runner.cjs");
     t.eq(D.depositStatus(pays[1], D.depositContext(undone)).counts, true, "undoing the answer restores it");
   }
 
+  // ── 7. The "Always for deposits from ..." toggle starts off, and the payer is shown as the bank wrote it ─
+  {
+    const fs = require("fs"), path = require("path");
+    const r1 = dep("r1", 4, "Expense Reimbursement Northwind", 286.4);
+    const plain = hh([r1]);
+    for (const mode of ["ask", "mark"]) {
+      t.eq(D.depositSheetInitial(r1, D.depositContext(plain), mode).always, false, `"${mode}" sheet: Always starts off`);
+      const ruled = { ...plain, depositRules: D.setDepositRule({}, r1.name, "reimbursement", TODAY) };
+      t.eq(D.depositSheetInitial(r1, D.depositContext(ruled), mode).always, false, `"${mode}" sheet: still off when a rule already exists`);
+      const answered = { ...plain, depositDecisions: D.decideDeposit({}, r1, "refund", TODAY) };
+      const init = D.depositSheetInitial(r1, D.depositContext(answered), mode);
+      t.eq([init.always, init.reason], [false, "refund"], `"${mode}" sheet: off, with the earlier answer selected`);
+    }
+    t.eq(D.depositSheetInitial(r1, D.depositContext({ ...plain, depositDecisions: D.decideDeposit({}, r1, "income", TODAY) }), "mark").reason, null,
+         "\"This isn't income\" does not preselect Yes");
+    const app = fs.readFileSync(path.join(__dirname, "../src/App.jsx"), "utf8");
+    const sheet = app.slice(app.indexOf("function DepositSheet("), app.indexOf("\nfunction ", app.indexOf("function DepositSheet(") + 10));
+    t.ok(/const init = depositSheetInitial\(txn, ctx, mode\)/.test(sheet) && /useState\(init\.always\)/.test(sheet), "the sheet's toggle starts from depositSheetInitial");
+    t.eq((sheet.match(/setAlways\(/g) || []).length, 0, "nothing in the sheet turns it on but the household's own tap");
+    t.ok(/<Toggle on=\{always\} onChange=\{setAlways\}/.test(sheet), "…the toggle itself");
+    t.ok((app.match(/<DepositSheet key=\{depositTxnKey\(/g) || []).length === 2, "each deposit opens a fresh sheet (Today and Activity), so nothing carries over");
+    t.ok(/const payee = String\(txn\.name \|\| ""\)\.trim\(\)/.test(sheet) && !/\{key\}|\$\{key\}/.test(sheet),
+         "the payer is shown as the bank gave it (\"Expense Reimbursement Northwind\"); the lowercased key is for matching only");
+    t.eq(D.depositRuleFor(D.setDepositRule({}, "EXPENSE REIMBURSEMENT NORTHWIND", "reimbursement", TODAY), r1.name), "reimbursement",
+         "and matching still ignores case");
+  }
+
   // ── 6. Bank transactions are never altered ─────────────────────────────────────────────────────
   {
     const txns = [dep("p1", 15, "ACME PAYROLL", 2000), dep("p2", 1, "ACME PAYROLL", 2000), dep("r1", 4, "EXPENSE REIMB", 300), dep("e1", 2, "E-TRANSFER FROM SAM", 90, "Transfer")];

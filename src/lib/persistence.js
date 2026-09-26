@@ -181,7 +181,7 @@ export async function upsertUserData(sb, userId, blob) {
       { onConflict: "user_id" }
     );
     if (error) { console.error("[persist] upsert failed:", error.message); return { ok: false, error }; }
-    console.log("[persist] upsert OK — row written for", userId);
+    console.log("[persist] upsert OK, row written for", userId);
     return { ok: true };
   } catch (e) { console.error("[persist] upsert threw:", e?.message || e); return { ok: false, error: e }; }
 }

@@ -196,7 +196,7 @@ function walk(dir, out = []) {
     [/first \$2,500\/year = \$500|20% on the first \$2,500/, "the CESG grant rate and amount"],
     [/Canada Learning Bond adds another \$500/, "the Canada Learning Bond amount"],
     [/first \$2,000 of eligible pension income/, "the pension income amount"],
-    [/\$300–\$2,000/, "the Quebec solidarity credit range"],
+    [/\$300(?:–| to )\$2,000/, "the Quebec solidarity credit range"],   // either wording: the copy no longer uses dashes
     [/\$20,000 in provincial tax credits/, "the Saskatchewan Graduate Retention amount"],
   ]) t.ok(!pattern.test(app), `6 ${what} stays out of the UI until it has a source`);
 
@@ -204,7 +204,7 @@ function walk(dir, out = []) {
   // Each of these is a sentence the app stated as fact and the official page contradicts.
   for (const [pattern, what] of [
     [/is automatic, but the Guaranteed Income Supplement \(GIS\) is not/, "OAS is automatic and GIS is not (Service Canada may auto-enrol either)"],
-    [/GIS\) is not — you must apply/, "you must apply for GIS"],
+    [/GIS\) is not(?: —|[.,:]) you must apply/i, "you must apply for GIS"],
     [/First Home Buyers Tax Credit \(\$1,500\)/, "a $1,500 Home Buyers' Tax Credit (it is the amount times the lowest rate)"],
     [/\$1,654\/yr \(OEPTC\+OSTC\)/, "a single Ontario Trillium maximum"],
     [/Filing your taxes is the whole application/, "filing is the whole CGEB application (new residents may need to apply)"],

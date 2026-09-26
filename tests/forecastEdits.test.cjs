@@ -406,15 +406,83 @@ const { create } = require("./_runner.cjs");
       t.ok(/<EditedTag\/>/.test(body), `${surface}: an edited row shows its Edited tag`);
     }
     t.ok(/<DepositQuestionCard data=\{data\} setAppData=\{setAppData\}/.test(fnBody("Dashboard")), "Today raises \"Is this income?\"");
-    t.ok(/<DepositSheet txn=\{depositTxn\}[^>]*mode="mark"/.test(fnBody("SpendScreen")) && /This isn't income/.test(fnBody("SpendScreen")), "Activity can mark any past deposit \"This isn't income\"");
+    t.ok(/<DepositSheet key=\{depositTxnKey\(depositTxn\)\} txn=\{depositTxn\}[^>]*mode="mark"/.test(fnBody("SpendScreen")) && /This isn't income/.test(fnBody("SpendScreen")), "Activity can mark any past deposit \"This isn't income\"");
     t.ok(/<ExpectedItemSheet /.test(fnBody("PlanAhead")) && /<DailySpendSheet /.test(fnBody("PlanAhead")), "Watch offers expected money in or out, and the daily spend sheet");
     t.ok((app.match(/<PayVariesControl /g) || []).length >= 2, "\"My pay varies\" is on every income source in Settings and in the deposit sheet");
-    const block = app.slice(app.indexOf("// ══ FORECAST CORRECTIONS"), app.indexOf("function TimeMachine("));
-    t.ok(block.length > 1000 && !/[\u2013\u2014]/.test(block), "the new sheets' copy has no em or en dashes");
+    // No em or en dash in any user-facing string ANYWHERE in src: every string literal, template text and
+    // JSX text, parsed (so comments, which may use dashes, are not scanned). Regex literals are not
+    // strings, so input-normalising patterns like /[−–—]/ stay.
+    let parser;
+    try { parser = require(path.join(__dirname, "../node_modules/@babel/parser")); } catch { parser = null; }
+    t.ok(!!parser, "the copy check can load @babel/parser (installed with @vitejs/plugin-react)");
+    if (parser) {
+      const srcDir = path.join(__dirname, "../src");
+      const files = [path.join(srcDir, "App.jsx"), path.join(srcDir, "main.jsx"), ...fs.readdirSync(path.join(srcDir, "lib")).filter(f => /\.jsx?$/.test(f)).map(f => path.join(srcDir, "lib", f))];
+      const dashed = [];
+      for (const file of files) {
+        const ast = parser.parse(fs.readFileSync(file, "utf8"), { sourceType: "module", plugins: ["jsx"] });
+        (function walk(n) {
+          if (!n || typeof n.type !== "string") return;
+          const text = n.type === "StringLiteral" ? n.value : n.type === "TemplateElement" ? (n.value.cooked ?? n.value.raw) : n.type === "JSXText" ? n.value : null;
+          if (text && /[\u2013\u2014]/.test(text)) dashed.push(`${path.basename(file)}:${n.loc.start.line} ${text.trim().slice(0, 60)}`);
+          for (const k of Object.keys(n)) {
+            if (["loc", "start", "end", "leadingComments", "trailingComments", "innerComments", "extra"].includes(k)) continue;
+            const v = n[k];
+            if (Array.isArray(v)) v.forEach(x => x && typeof x.type === "string" && walk(x));
+            else if (v && typeof v.type === "string") walk(v);
+          }
+        })(ast.program);
+      }
+      t.eq(dashed, [], `no em or en dash in any string in src (${files.length} files scanned)`);
+    }
+    t.ok(/\["Pay frequency", frequencyLabel\(_ffreq\)\]/.test(app) && !/× \$\{r\.freq\}/.test(app), "pay frequency is shown in plain words (\"Every 2 weeks\"), not \"biweekly\"");
     t.ok(/detectIncomeFromTxns\(incomeEvidence\(/.test(app) && !/detectIncomeFromTxns\(markedTxns\)|detectIncomeFromTxns\(txns\)/.test(app),
          "every income detection reads only deposits that count as income");
     t.ok(/FinancialCalcEngine\.cashFlow\(data, getCatOv\(\)\)\.monthlyIncome/.test(app) && /Next deposit \(as the household corrected it\)/.test(app),
          "the live coach snapshot reads corrected monthly income and the corrected next deposit");
+  }
+
+  // ── 11. Reopening an edit keeps it exactly as saved ────────────────────────────────────────────
+  {
+    const { frequencyLabel } = await import("../src/lib/incomeReconcile.js");
+    t.eq(["weekly", "biweekly", "semimonthly", "monthly"].map(frequencyLabel), ["Weekly", "Every 2 weeks", "Twice a month", "Monthly"], "frequencies read as plain words");
+
+    const d = base();
+    const fe = E.editOccurrence(undefined, occOf(d, "income:1", "2026-04-03"), "series", { amount: 2300 });
+    const dd = withEdits(d, fe);
+    const later = (x) => [depOf(on(fc(x), "2026-04-03"), "Job"), depOf(on(fc(x), "2026-04-17"), "Job"), depOf(on(fc(x), "2026-05-01"), "Job")];
+    t.eq(later(dd), [[2300], [2300], [2300]], "sanity: a raise from Apr 3 on");
+    for (const reopenIso of ["2026-04-03", "2026-04-17"]) {
+      const occ = occOf(dd, "income:1", reopenIso);
+      const init = E.sheetDefaults(occ);
+      t.eq([init.scope, init.action, init.amount], ["series", "amount", "2300"], `reopening ${reopenIso} opens on "From this date on", Change amount, $2,300`);
+      const saved = E.sheetSave(dd.forecastEdits, occ, { ...init, amount: Number(init.amount) });
+      t.ok(saved === dd.forecastEdits, `Save with no changes (${reopenIso}) writes nothing`);
+      t.eq(later(withEdits(d, saved)), [[2300], [2300], [2300]], `…and every later date is unchanged (${reopenIso})`);
+    }
+    // What the old default did: "Just this one" on a series edit turned it into a single-date edit.
+    const occ17 = occOf(dd, "income:1", "2026-04-17");
+    t.ok(E.sheetSave(dd.forecastEdits, occ17, { action: "amount", scope: "one", amount: 2300, date: "2026-04-17" }) !== dd.forecastEdits,
+         "sanity: saving with the wrong scope would have written a change (the defect)");
+
+    const shifted = withEdits(d, E.editOccurrence(undefined, occOf(d, "income:1", "2026-04-03"), "series", { date: "2026-04-02" }));
+    const sOcc = occOf(shifted, "income:1", "2026-04-17");
+    t.eq([E.sheetDefaults(sOcc).scope, E.sheetDefaults(sOcc).action, E.sheetDefaults(sOcc).date], ["series", "date", "2026-04-16"], "a date moved from a date on reopens on Move date, with the moved date");
+    t.ok(E.sheetSave(shifted.forecastEdits, sOcc, E.sheetDefaults(sOcc)) === shifted.forecastEdits, "…and an unchanged Save writes nothing");
+
+    const one = withEdits(d, E.editOccurrence(undefined, occOf(d, "income:1", "2026-03-20"), "one", { amount: 2500 }));
+    t.eq(E.sheetDefaults(occOf(one, "income:1", "2026-03-20")).scope, "one", "a \"just this one\" edit reopens on Just this one");
+    const skipped = withEdits(d, E.editOccurrence(undefined, occOf(d, "bill:name:phone", "2026-03-15"), "series", { skip: true }));
+    t.eq([E.sheetDefaults(occOf(skipped, "bill:name:phone", "2026-04-15")).action, E.sheetDefaults(occOf(skipped, "bill:name:phone", "2026-04-15")).scope], ["skip", "series"], "a bill stopped from a date on reopens on Skip, From this date on");
+    const plain = occOf(d, "income:1", "2026-03-20");
+    t.ok(E.sheetSave(d.forecastEdits, plain, E.sheetDefaults(plain)) === d.forecastEdits, "an unedited row saved unchanged writes nothing");
+    const narrowed = E.sheetSave(dd.forecastEdits, occ17, { action: "amount", scope: "one", amount: 2600, date: "2026-04-17" });
+    t.eq(later(withEdits(d, narrowed)), [[2300], [2600], [2300]], "choosing Just this one on purpose changes only that date");
+
+    const app = fs.readFileSync(path.join(__dirname, "../src/App.jsx"), "utf8");
+    const sheet = app.slice(app.indexOf("function OccurrenceSheet("), app.indexOf("\nfunction ", app.indexOf("function OccurrenceSheet(") + 10));
+    t.ok(/const init = sheetDefaults\(occ\)/.test(sheet) && /useState\(init\.scope\)/.test(sheet) && /useState\(init\.action\)/.test(sheet) && /sheetSave\(prev\.forecastEdits, occ,/.test(sheet),
+         "the sheet opens from sheetDefaults and saves through sheetSave");
   }
 
   t.summary("forecastEdits.test");

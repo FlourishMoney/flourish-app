@@ -288,6 +288,16 @@ export function depositsToAsk(data, today = new Date()) {
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
 
+// How the "Is this income?" / "This isn't income" sheet opens. The "Always for deposits from ..." rule
+// is never on by default: a rule changes every future deposit from that payer, so it is only ever the
+// household's own choice, every time the sheet opens.
+export function depositSheetInitial(t, ctx, mode = "ask") {
+  const st = depositStatus(t, ctx);
+  const allowed = mode === "mark" ? NOT_INCOME_REASONS : DEPOSIT_REASONS.map(r => r.key);
+  const decided = st.why === "decided" ? st.reason : null;
+  return { reason: decided && allowed.includes(decided) ? decided : null, always: false };
+}
+
 // ── Writers. Each returns a new map and never mutates. ───────────────────────────────────────────
 export function decideDeposit(decisions, t, reason, now = new Date()) {
   const next = { ...(decisions || {}) };

@@ -80,8 +80,8 @@ export function planNotifications(data, now = new Date()) {
           id: notifId("lowBalance", ""),                  // single stable id → one at a time
           title: "Heads up on your balance",
           body: low.balance < 0
-            ? `You're projected to overdraft around ${fmt(d)} — worth getting ahead of it`
-            : `You're projected to be tight around ${fmt(d)} — about ${money(low.balance)} left`,
+            ? `You're projected to overdraft around ${fmt(d)}. Worth getting ahead of it`
+            : `You're projected to be tight around ${fmt(d)}, with about ${money(low.balance)} left`,
           at,
         });
       }
@@ -110,7 +110,7 @@ export function planNotifications(data, now = new Date()) {
       type: "unusualAmount",
       id: notifId("unusualAmount", `${b.id || b.name}:${tx.id || tx.date}`), // per bill, per charge
       title: b.name,
-      body: `${b.name} was ${money(actual)} — ${money(diff)} more than usual`,
+      body: `${b.name} was ${money(actual)}, ${money(diff)} more than usual`,
       at,
     });
   }
@@ -125,7 +125,7 @@ export function planNotifications(data, now = new Date()) {
         type: "meetingReminder",
         id: notifId("meetingReminder", ""),
         title: "Money meeting today",
-        body: "Time for your money meeting — a few minutes to stay on the same page.",
+        body: "Time for your money meeting, a few minutes to stay on the same page.",
         at,
       });
     }

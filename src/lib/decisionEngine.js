@@ -227,13 +227,13 @@ export const AutopilotEngine = {
     if (mode === "high") {
       const msg = forecastDanger
         ? `Balance projected to go negative in ${overdraftRisk[0]?.day} days. Hold all non-essential spending.`
-        : "Cash is critically low. Bills protection mode active — savings and extras paused.";
+        : "Cash is critically low. Bills protection mode active. Savings and extras paused.";
       alerts.push({ type:"danger", msg });
     } else if (nearTermLow) {
       alerts.push({ type:"warning", msg:`Balance drops near your safety floor in ${nearTermLow.day} days.` });
     }
     if (spikeRatio > 1.4 && mode !== "high") {
-      alerts.push({ type:"tip", msg:`Payday spike habit detected (+${Math.round((spikeRatio-1)*100)}%) — most of your spending lands in the days just after payday.` });
+      alerts.push({ type:"tip", msg:`Payday spike habit detected (+${Math.round((spikeRatio-1)*100)}%). Most of your spending lands in the days just after payday.` });
     }
 
     // ── ⑦ Adherence — based on spending stability (0-100) ────────────────────

@@ -57,7 +57,7 @@ function BootFailure() {
     <div style={{minHeight:"100dvh",background:"#050D09",color:"#EDE9E2",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"24px",fontFamily:"system-ui,-apple-system,sans-serif"}}>
       <div style={{fontSize:40,marginBottom:12}}>🌱</div>
       <div style={{fontSize:20,fontWeight:800,marginBottom:8}}>Something went wrong, please restart</div>
-      <div style={{fontSize:14,color:"#6B7A6E",maxWidth:320,lineHeight:1.6,marginBottom:24}}>Flourish could not start. Close the app completely and open it again. If it keeps happening, reinstalling will not lose anything — your data is on your account.</div>
+      <div style={{fontSize:14,color:"#6B7A6E",maxWidth:320,lineHeight:1.6,marginBottom:24}}>Flourish could not start. Close the app completely and open it again. If it keeps happening, reinstalling will not lose anything. Your data is on your account.</div>
       <button onClick={()=>window.location.reload()} style={{background:"linear-gradient(135deg,#00D68F,#00B37A)",color:"#021208",fontWeight:800,fontSize:15,padding:"14px 28px",borderRadius:14,border:"none",cursor:"pointer",minWidth:200}}>Try again</button>
     </div>
   );

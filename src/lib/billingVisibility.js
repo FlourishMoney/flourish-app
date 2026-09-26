@@ -119,7 +119,7 @@ export function billingReturnNotice(search) {
   })();
   if (value === "success") return {
     kind: "success",
-    text: "Payment received. Your plan updates as soon as Stripe confirms it — usually a few seconds.",
+    text: "Payment received. Your plan updates as soon as Stripe confirms it, usually a few seconds.",
   };
   if (value === "cancelled") return { kind: "cancelled", text: "Checkout cancelled. Nothing was charged." };
   if (value === "portal_return") return { kind: "portal", text: "Subscription settings saved." };
