@@ -26,7 +26,7 @@ const path = require("path");
 const APP = path.join(__dirname, "..", "src", "App.jsx");
 
 // The count on the commit that introduced the rule. It may go down freely.
-const BASELINE = 1374;
+const BASELINE = 1373;
 
 // gap/margin declarations written as a bare number. `gap: SPACE.sm` and `gap: n * 2` are not raw.
 const PATTERNS = {

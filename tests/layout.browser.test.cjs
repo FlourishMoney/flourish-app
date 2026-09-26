@@ -168,7 +168,14 @@ function SCAN({ scope, textCtrlMin, ctrlCtrlMin, minTap }) {
 
   const small = controls.filter((c) => at(c).box.h < minTap).map((c) => ({ h: r1(at(c).box.h), need: minTap, a: at(c).label, tag: c.tagName.toLowerCase() }));
 
-  return { counts: { controls: controls.length, texts: texts.length }, violations: V, small,
+  // Every rendered "Example · sample data" tag, with the colour it actually came out. The sweep is
+  // already standing in front of each screen in demo mode, so this costs nothing and is the only
+  // place that sees the tag the way a person does. Checked in section 8.
+  const exampleTags = [...root.querySelectorAll("*")]
+    .filter((e) => e.children.length === 0 && /^Example · sample data$/i.test((e.textContent || "").trim()) && shown(e))
+    .map((e) => { const s = cs(e); return { color: s.color, fontSize: parseFloat(s.fontSize), fontWeight: s.fontWeight }; });
+
+  return { counts: { controls: controls.length, texts: texts.length }, violations: V, small, exampleTags,
     hOverflow: r1(document.documentElement.scrollWidth - innerWidth) };
 }
 
@@ -378,6 +385,24 @@ const pool = async (items, n, fn) => {
   t.eq(passes.length, WIDTHS.length * SCALES.length, "7a four widths at two text sizes");
   t.eq(measured, WIDTHS.length * SCALES.length * VIEWS.length, "7b every view measured in every pass");
   t.ok(controls > 8 * 150, `7c the sweep saw the whole app, not an error screen (${controls} controls measured)`);
+
+  // ── 8. the example tag never wears the live colour ───────────────────────────
+  //
+  // "Example · sample data" exists to say the numbers are not yours. Rendering it in the green of
+  // "Live · Your real data" says the opposite in the louder channel. PR #15 removed that from the
+  // Today chip and the Coach header went on doing it, which is how a look drifts back: one site at a
+  // time, each one locally reasonable. One tag, one colour, everywhere — asserted on the rendered
+  // page, because that is where the drift happens.
+  const LIVE_GREENS = ["rgb(0, 204, 133)", "rgb(0, 232, 154)", "rgb(0, 120, 77)", "rgb(0, 122, 72)"];
+  const TAG_INKS = ["rgb(245, 204, 106)", "rgb(122, 74, 10)"]; // DARK_C.tagInk, LIGHT_C.tagInk
+  const tags = passes.flatMap((p) => p.views.flatMap((v) => (v.exampleTags || []).map((x) => ({ ...x, at: `${p.width}px ×${p.scale} ${v.view}` }))));
+  t.ok(tags.length >= 8, `8a the sweep actually saw the example tag (${tags.length} rendered)`);
+  t.eq(tags.filter((x) => LIVE_GREENS.includes(x.color)).map((x) => `${x.at}: ${x.color}`), [],
+    "8b no example tag renders in a live green");
+  t.eq(tags.filter((x) => !TAG_INKS.includes(x.color)).map((x) => `${x.at}: ${x.color}`), [],
+    "8c every example tag uses its theme's tagInk, so there is one look rather than four");
+  t.eq(tags.filter((x) => x.fontSize < 13).map((x) => `${x.at}: ${x.fontSize}px`), [],
+    "8d …and none of them is under the type floor");
 
   t.summary("LAYOUT (browser)");
 })().catch((e) => { console.error(e); process.exitCode = 1; });

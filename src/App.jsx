@@ -5163,16 +5163,24 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           demo the row may wrap, each label stays whole, and the date + Reorder group stays right-aligned
           on its own line. Non-demo markup is unchanged. */}
       <div style={{...anim(0),display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:2,...(data.demo?{flexWrap:"wrap",rowGap:8}:{})}}>
-        <div onClick={()=>setShowTransparency(true)} style={{display:"flex",alignItems:"center",gap:7,background:"rgba(0,204,133,0.06)",border:"1px solid rgba(0,204,133,0.12)",borderRadius:99,padding:"4px 10px",cursor:"pointer"}} title="How is this calculated?">
+        {/* In demo this was a GREEN-tinted pill — rgba(0,204,133,…) background and border, the live
+            colour family — with a gold dot and a gold-but-not-tagInk label inside it. A fourth look
+            for the one label whose job is to say the numbers are not yours. In demo the chip IS the
+            example tag: exampleTagStyle(), no dot (a dot beside a label is a liveness signal), and
+            no green. Non-demo markup is unchanged. */}
+        <div onClick={()=>setShowTransparency(true)}
+          style={data.demo
+            ? {...exampleTagStyle(),display:"inline-flex",alignItems:"center",cursor:"pointer"}
+            : {display:"flex",alignItems:"center",gap:7,background:"rgba(0,204,133,0.06)",border:"1px solid rgba(0,204,133,0.12)",borderRadius:99,padding:"4px 10px",cursor:"pointer"}}
+          title="How is this calculated?">
           {(()=>{
             // Wording comes from demoStatus.js: in demo mode every figure is sample data, so this chip
-            // must say so (the same "Example · sample data" Meet uses) rather than "Live". A pulsing
-            // green dot is a live signal too, so demo gets the static gold of Meet's example label.
+            // must say so (the same "Example · sample data" Meet uses) rather than "Live".
             const chip = statusChip({demo:!!data.demo, lastRefreshRaw:localStorage.getItem("flourish_last_refresh"), nowMs:Date.now()});
-            const tone = data.demo ? C.gold : C.green;
+            if (data.demo) return chip.label;
             return <>
-              <div style={{width:6,height:6,borderRadius:"50%",background:tone,boxShadow:data.demo?"none":`0 0 8px ${C.green}`,animation:data.demo?"none":"pulse 2.8s ease-in-out infinite",flexShrink:0}}/>
-              <span style={{color:tone,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4,...(data.demo?{whiteSpace:"nowrap"}:{})}}>{chip.label}</span>
+              <div style={{width:6,height:6,borderRadius:"50%",background:C.green,boxShadow:`0 0 8px ${C.green}`,animation:"pulse 2.8s ease-in-out infinite",flexShrink:0}}/>
+              <span style={{color:C.green,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>{chip.label}</span>
               {chip.detail&&<span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{chip.detail}</span>}
             </>;
           })()}
@@ -11925,10 +11933,16 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
           </div>
           <div style={{flex:1}}>
             <div style={{color:C.cream,fontWeight:800,fontSize:15}}>AI Coach</div>
-            <div style={{color:isOnline?C.green:C.muted,...TYPE.footnote,fontWeight:600,display:"flex",alignItems:"center",gap:4}}>
-              <div style={{width:6,height:6,borderRadius:"50%",background:isOnline?C.green:C.muted}}/>
-              {data.demo?DEMO_STATUS_LABEL:isOnline?"Live · Your real data":"Offline"}
-            </div>
+            {/* In demo this rendered DEMO_STATUS_LABEL in C.green with a green dot — the exact colour
+                and shape of "Live · Your real data", which is the confusion PR #15 removed from the
+                Today chip. The example tag has one look everywhere: exampleTagStyle(), gold, and no
+                dot, because a dot beside a label is a liveness signal. */}
+            {data.demo
+              ? <span style={exampleTagStyle()}>{DEMO_STATUS_LABEL}</span>
+              : <div style={{color:isOnline?C.green:C.muted,...TYPE.footnote,fontWeight:600,display:"flex",alignItems:"center",gap:4}}>
+                  <div style={{width:6,height:6,borderRadius:"50%",background:isOnline?C.green:C.muted}}/>
+                  {isOnline?"Live · Your real data":"Offline"}
+                </div>}
           </div>
           <button onClick={async ()=>{
             if(await confirmModal({title:"Clear chat history?",message:"This cannot be undone.",confirmLabel:"Clear",destructive:true})){

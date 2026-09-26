@@ -44,7 +44,10 @@ Text-to-text is not constrained. Two sentences may sit as close as they read wel
 ### 3. A row that mixes text and a control wraps
 
 Use `row()` for the container, `rowControl()` for the control, `rowText()` for the text. When the row
-runs out of width the control drops to its own line, left-aligned, and the sentence stays whole.
+runs out of width the control drops to its own line, left-aligned, **12px below** — the
+text-to-control clearance, because what is now above it is the text it used to sit beside. (8px is
+the figure for two stacked *controls*; using it here would mean a row passed the rule while it fit on
+one line and failed the moment it wrapped.)
 
 Never shrink the text, never truncate it, never let the two overlap. Those are the three things that
 happen instead of wrapping, and all three are worse.
@@ -101,14 +104,16 @@ Being explicit, so nobody mistakes a green gate for more than it is:
   a real session, so they are outside the sweep. Apply the rule by hand there.
 - **Desktop widths.** The sweep is phone-first because the app is.
 
-## A note on "8px above"
+## The example tag has one colour
 
-The brief for this rule said a wrapped control should land "8px above". It does not: `row()` uses 12.
+`Example · sample data` exists to say the numbers are not yours. It renders through
+`exampleTagStyle()` — the theme's `tagInk` on `tagBg`, at the type floor — everywhere it appears:
+the Today status chip, the safe-to-spend hero, the Meet facilitator label and the Coach header.
 
-8 is right when two controls stack. But the thing directly above a control that has just wrapped is
-the *text* it used to sit beside, so the clearance that applies is text-to-control. Using 8 would
-mean a row passed the rule while it fit on one line and failed the moment it wrapped — the opposite
-of what wrapping is for. The stricter floor wins.
+It is never green. Green is what `Live · Your real data` wears, and a sample-data marker in the live
+colour says the opposite of its own text in the louder channel. That drifted back into the Coach
+header once already after being removed from the Today chip, so section 8 of the layout suite reads
+the colour off every rendered tag in the sweep and fails on any live green.
 
 ## Running it
 

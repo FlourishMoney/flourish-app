@@ -52,11 +52,10 @@ export const tap = (extra = {}) => ({ minWidth: LAYOUT.minTap, minHeight: LAYOUT
 //
 // rowGap is 12, not 8.
 //
-// The brief for this rule said the dropped control should land "8px above", and 8 is right when two
-// controls stack. But the thing directly above a control that has just wrapped is the text it used to
-// sit beside — so the clearance that applies is text-to-control, and that floor is 12. Using 8 here
-// would mean a row PASSED the rule while it fit on one line and FAILED the moment it wrapped, which
-// is the opposite of what wrapping is for. The stricter floor wins; see LAYOUT-RULES.md §"Why 12".
+// 8 is the figure for two controls stacked. But the thing directly above a control that has just
+// wrapped is the text it used to sit beside — so the clearance that applies is text-to-control, and
+// that floor is 12. At 8 a row would PASS the rule while it fit on one line and FAIL the moment it
+// wrapped, which is the opposite of what wrapping is for.
 //
 // columnGap/rowGap rather than the `gap` shorthand: the shorthand would set both and the override
 // would then depend on declaration order, which is not something to rely on in an inline style.
