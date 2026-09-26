@@ -117,9 +117,13 @@ const freshState = (over = {}) => ({ rpc: [], created: [], resends: [], seat: "o
     t.eq(refused.data, { ok: true, source: "self_serve", needsConfirmation: true, sent: false },
          "Supabase refusing the email still reports the account and says it was not sent, so the screen can offer Resend");
     t.eq(refused.state.created.length, 1, "…the account exists either way");
+    // A misconfiguration that makes confirmation IMPOSSIBLE is caught before anything is written.
+    // Creating the account anyway would leave a person holding one that can never be opened.
     const noKey = await signup(OPEN, { code: "" }, { noAnonKey: true });
-    t.eq(noKey.data.sent, false, "a missing SUPABASE_ANON_KEY is survivable and visible, not a 500");
-    t.eq(noKey.data.needsConfirmation, true, "…and the address still has to be confirmed");
+    t.eq([noKey.status, noKey.data], [500, { error: "server_misconfig" }], "a missing SUPABASE_ANON_KEY is refused as a misconfiguration");
+    t.eq(noKey.state.created.length, 0, "…and no account is created that could never be confirmed");
+    const codedNoKey = await signup(OPEN, { code: "BETA100" }, { noAnonKey: true });
+    t.eq(codedNoKey.data, { ok: true, source: "invited" }, "…while a coded signup, which needs no email, is unaffected");
   }
 
   // ── 4. Resend: allowed, and it tells a stranger nothing ───────────────────────────────────────
@@ -202,6 +206,37 @@ const freshState = (over = {}) => ({ rpc: [], created: [], resends: [], seat: "o
     const page = app.slice(app.indexOf("function ConfirmedPage()"), app.indexOf("function DeleteAccount("));
     t.ok(/You're confirmed\./.test(page) && /Open Flourish and sign in\./.test(page), "…which reads \"You're confirmed. Open Flourish and sign in.\"");
     t.ok(!/useState|useEffect|fetch\(|supabase/.test(page), "…and it is a plain page: no state, no request, nothing to fail for a store user");
+  }
+
+  // ── 7. The app itself refuses an unconfirmed session ──────────────────────────────────────────
+  // The functions gate covers coach, plaid, billing and meeting, but most of the app talks to Supabase
+  // DIRECTLY under RLS (profiles, user_data), which a valid JWT reaches whatever the functions think.
+  // Whether Supabase even issues that JWT depends on the project's "Confirm email" setting, which no
+  // code here can read — so the app decides for itself.
+  {
+    const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
+    const sync = app.slice(app.indexOf("const syncSession = (session, fromInit)"), app.indexOf("supabase.auth.getSession().then"));
+    t.ok(/!session\.user\.email_confirmed_at && !session\.user\.confirmed_at/.test(sync), "syncSession checks the session's user is confirmed");
+    t.ok(/supabase\.auth\.signOut\(\)/.test(sync) && /setUser\(null\)/.test(sync), "…and signs an unconfirmed one out rather than handing it to the app");
+    t.ok(/accessTokenRef\.current = null/.test(sync), "…and drops the token, so the exit beacon cannot use it either");
+
+    const login = app.slice(app.indexOf("const handleLogin = async"), app.indexOf("const inpStyle"));
+    t.ok(/!data\.user\.email_confirmed_at && !data\.user\.confirmed_at/.test(login), "the login screen checks it too");
+    t.ok(/setMode\("check_email"\)/.test(login), "…and routes to the check-email screen instead of a silent failure");
+
+    // Both resends go through our endpoint, which owns the redirect and the rate limit.
+    const resend = app.slice(app.indexOf("const handleResend = async"), app.indexOf("const handleSignup = async"));
+    t.ok(/action: "resend_confirmation"/.test(resend), "the check-email screen's Resend goes through our endpoint");
+    // No SIGNUP CONFIRMATION may redirect to window.location.origin: inside a store app that is
+    // capacitor://localhost or https://localhost, a loopback URL that is not on Supabase's allow-list,
+    // so the link in that mail would go nowhere. (The magic link still uses it, and correctly: that
+    // button is web-only, and the origin there is the site.)
+    t.ok(!/type: "signup"[^)]*emailRedirectTo: window\.location\.origin/.test(app),
+         "no signup confirmation is sent with a window.location.origin redirect");
+    t.ok(/signInWithOtp\([^)]*emailRedirectTo: window\.location\.origin/.test(app) && /!isNativeApp\(\) && <button onClick=\{handleMagicLink\}/.test(app),
+         "…the one that still uses it is the magic link, which is web-only");
+    t.ok(/out\.error === "rate_limited"/.test(resend), "…and it shows the rate-limit message rather than claiming the mail was sent");
+    t.ok(/out\.sent === false/.test(app), "a signup whose confirmation could not be sent says so, instead of \"check your email\"");
   }
 
   t.summary("emailConfirmation.test");

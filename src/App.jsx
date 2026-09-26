@@ -13042,6 +13042,15 @@ function AuthScreen({ onAuth, onTryDemo }) {
   // The same helper the tests check, rather than the rule written twice: the button used to re-state
   // "a code is needed unless the door is open" inline, where it could drift from the field beside it.
   const codeOk = mode === "login" || signupSubmittable({ openSignup, code: betaCode });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0); // seconds until "Resend" re-enables
+  const [checkEmailNote, setCheckEmailNote] = useState(""); // contextual line on the check-email screen
+  // Both store apps boot straight into login/signup. The "coming soon" waitlist landing is a web
+  // page for people who cannot use the product yet; someone who has installed the app already can.
+  const [showAuth, setShowAuth] = useState(isNativeApp());
+
   // Asked ONCE, and only when the auth card is actually on screen: on a store app that is at launch,
   // on the web it is when someone opens Log in or Sign up. The marketing landing is the most visited
   // page on the site and has no sign-up form on it, so asking there would spend a function invocation
@@ -13069,14 +13078,6 @@ function AuthScreen({ onAuth, onTryDemo }) {
     })();
     return () => { cancelled = true; };
   }, [showAuth]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [resendCooldown, setResendCooldown] = useState(0); // seconds until "Resend" re-enables
-  const [checkEmailNote, setCheckEmailNote] = useState(""); // contextual line on the check-email screen
-  // Both store apps boot straight into login/signup. The "coming soon" waitlist landing is a web
-  // page for people who cannot use the product yet; someone who has installed the app already can.
-  const [showAuth, setShowAuth] = useState(isNativeApp());
 
   // Phase E1: waitlist email capture (replaces public signup CTAs).
   const [waitlistEmail, setWaitlistEmail] = useState("");
@@ -13105,11 +13106,14 @@ function AuthScreen({ onAuth, onTryDemo }) {
     if (!pendingConfirm || resendConfirmCooldown > 0) return;
     setResendConfirmCooldown(60);
     try {
-      await fetch(`${API_BASE}/api/beta`, {
+      const res = await fetch(`${API_BASE}/api/beta`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "resend_confirmation", email: pendingConfirm }),
       });
+      const out = await res.json().catch(() => ({}));
+      if (out.error === "rate_limited") { setSuccess(""); setError(out.message || "Too many attempts. Try again in an hour."); return; }
+      if (out.error) { setSuccess(""); setError("Couldn't send that email. Try again in a moment."); return; }
       setSuccess("Check your email to confirm your address.");
     } catch {
       setError("Couldn't reach the server. Try again in a moment.");
@@ -13119,10 +13123,24 @@ function AuthScreen({ onAuth, onTryDemo }) {
   const handleResend = async () => {
     if (resendCooldown > 0 || !email || loading) return;
     setError(""); setCheckEmailNote("");
-    const { error } = await supabase.auth.resend({ type: "signup", email, options: { emailRedirectTo: window.location.origin } });
-    if (error) { setError(error.message); return; }
-    setCheckEmailNote("Confirmation email re-sent ✓. Check your inbox (and spam).");
+    // Through our own endpoint, not straight to Supabase: window.location.origin is
+    // capacitor://localhost or https://localhost inside a store app, which is not on the project's
+    // redirect allow-list, so the link in that mail would go nowhere. The server sends every
+    // confirmation to the same /confirmed page, and applies the signup rate limit to this too.
     setResendCooldown(60);
+    try {
+      const res = await fetch(`${API_BASE}/api/beta`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "resend_confirmation", email }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (out.error === "rate_limited") { setError(out.message || "Too many attempts. Try again in an hour."); return; }
+      if (out.error) { setError("Couldn't send that email. Try again in a moment."); return; }
+    } catch {
+      setError("Couldn't reach the server. Try again in a moment."); return;
+    }
+    setCheckEmailNote("Confirmation email re-sent ✓. Check your inbox (and spam).");
   };
 
   const handleSignup = async () => {
@@ -13159,7 +13177,14 @@ function AuthScreen({ onAuth, onTryDemo }) {
       setCheckEmailNote("");
       if (out.needsConfirmation) {
         setPendingConfirm(email);
-        setSuccess("Check your email to confirm your address.");
+        if (out.sent === false) {
+          // The account exists but no mail went out. Saying "check your email" would send them to an
+          // empty inbox and leave them stuck on an account they cannot use.
+          setSuccess("");
+          setError("Your account was created, but we couldn't send the confirmation email. Tap \"Send it again\" below, or contact hello@flourishmoney.app.");
+        } else {
+          setSuccess("Check your email to confirm your address.");
+        }
       } else {
         setPendingConfirm("");
         setSuccess("Account created. You can log in now.");
@@ -13232,6 +13257,13 @@ function AuthScreen({ onAuth, onTryDemo }) {
       }
       // v1 has no 2FA (the AAL2 gate was rolled back; MfaGate is kept unreferenced for v1.1), so a
       // successful password sign-in hands the session straight to the app.
+      // Signed in, but the address was never confirmed: the session is useless (syncSession drops it),
+      // so say so here rather than letting the app flicker and log itself out.
+      if (data?.user && !data.user.email_confirmed_at && !data.user.confirmed_at) {
+        await supabase.auth.signOut().catch(() => {});
+        setError(""); setCheckEmailNote("Your email isn't confirmed yet. Confirm it to log in, or resend below.");
+        setResendCooldown(0); setMode("check_email"); setLoading(false); return;
+      }
       onAuth(data.user);
       setLoading(false);
     } catch (e) {
@@ -14743,6 +14775,18 @@ export default function FlourishApp(){
     // in-tree (unreferenced) for v1.1, when MFA returns as optional (biometric-first on iOS,
     // TOTP fallback, recovery codes, remember-this-device).
     const syncSession = (session, fromInit) => {
+      // AN UNCONFIRMED ADDRESS IS NOT A SESSION. The Netlify functions already refuse one, but most of
+      // the app talks to Supabase directly under RLS (profiles, user_data), which a valid JWT reaches
+      // whatever the functions think. Whether Supabase issues that JWT at all depends on the project's
+      // "Confirm email" setting, which no code here can see — so the app decides for itself, and an
+      // unconfirmed user is signed out rather than handed a working app with four dead endpoints.
+      if (session?.user && !session.user.email_confirmed_at && !session.user.confirmed_at) {
+        supabase.auth.signOut().catch(() => {});
+        setUser(null);
+        accessTokenRef.current = null;
+        if (fromInit) setAuthLoading(false);
+        return;
+      }
       setUser(session?.user ?? null);
       accessTokenRef.current = session?.access_token || null; // Sprint Z2 #12: keep JWT fresh for the exit beacon
       if (fromInit) setAuthLoading(false);

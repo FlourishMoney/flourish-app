@@ -866,3 +866,52 @@ uploaded.
 
 **Fix (suggested, not built)** Add `"https://localhost"` to the three remaining allow-lists, and test
 one call per function from a real Android build before the first Play upload.
+
+
+---
+
+## 36. Signup answers email_exists, and an unconfirmed address is squatted forever
+
+**Rating: MEDIUM.** Found by the review round on the open-signup PR. Reported, not fixed: closing it
+properly changes what a person is told when they have simply forgotten they have an account, which is
+a product decision rather than a patch.
+
+**Where** `netlify/functions/beta.js`, the `signup` action.
+
+**What happens** Once the door is open, anyone can POST an address with no code and learn from
+`email_exists` whether it has an account. Worse, a self-serve signup for `victim@example.com` creates
+an unconfirmed account that is never purged, so the real owner is later told the address is already
+registered and cannot take it.
+
+**Fix (suggested, not built)** Answer the same way whether or not the address exists ("check your
+email"), and delete unconfirmed accounts after a day or two so a squat expires.
+
+---
+
+## 37. Rate-limit buckets are fixed windows, and their keys are never expired
+
+**Rating: LOW.** Same review.
+
+**Where** `netlify/functions/_lib/signupLimit.js`.
+
+**What happens** The hour and day buckets are calendar-aligned, so 5 attempts at 10:59 and 5 more at
+11:00 are 10 in one second. The keys are also written to Netlify Blobs and never deleted, so the store
+grows by one small entry per IP-hour and per inbox-day forever. Neither matters at this scale, and a
+sliding window costs more than the abuse it would prevent here.
+
+**Fix (suggested, not built)** A sliding window, and a scheduled sweep of keys older than two days.
+
+---
+
+## 38. An unconfirmed account's trial clock is already running
+
+**Rating: LOW.** Same review.
+
+**Where** `supabase/migrations/0007_trial_only_signups.sql`, `handle_new_user`.
+
+**What happens** The trigger sets `trial_started_at` and `trial_ends_at` when the auth user is created,
+which for a self-serve signup is before the address is confirmed. Someone who confirms three days
+later has three days less trial.
+
+**Fix (suggested, not built)** Start the trial when the address is confirmed rather than when the row
+is created.

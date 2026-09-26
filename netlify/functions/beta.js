@@ -27,7 +27,7 @@
 
 const { getAdminClient, getPublicClient } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
 const { openSignupEnabled, decideSignup } = require("./_lib/signupGate");
-const { checkSignupLimit } = require("./_lib/signupLimit");
+const { checkSignupLimit, recordEmailSent } = require("./_lib/signupLimit");
 const { getStore } = require("@netlify/blobs");
 
 // The client's IP, from Netlify's trusted header, exactly as coach.js reads it.
@@ -44,7 +44,7 @@ function signupLimitStore() {
   catch (e) { console.error("[signup] blobs store unavailable:", e.message); return null; }
 }
 
-// One gate for both endpoints that create accounts or send mail.
+// One gate for every endpoint that creates an account, sends mail, or lets someone guess a code.
 async function rateLimit(event, email) {
   return checkSignupLimit({ store: signupLimitStore(), ip: clientIp(event), email });
 }
@@ -143,7 +143,7 @@ const CONFIRM_REDIRECT = "https://flourishmoney.app/confirmed";
 // Ask Supabase to send its "Confirm your signup" email through the project's SMTP. Returns true when
 // Supabase accepted it. Never throws: a signup that has already created the account must not be
 // reported as failed because the mail could not be handed over, and the person can press Resend.
-async function sendConfirmation(email) {
+async function sendConfirmation(email, event) {
   try {
     const pub = getPublicClient();
     const { error } = await pub.auth.resend({
@@ -155,6 +155,9 @@ async function sendConfirmation(email) {
       console.error("[beta:signup] confirmation send refused:", error.message);
       return false;
     }
+    // Only a mail that actually went out fills the address's daily bucket, so a stranger's failed
+    // attempts can never spend someone else's allowance.
+    await recordEmailSent({ store: signupLimitStore(), email });
     return true;
   } catch (e) {
     // A missing SUPABASE_ANON_KEY lands here. Loud in the log, and the caller decides what to say.
@@ -203,6 +206,13 @@ exports.handler = async (event) => {
   // Sprint Z #5: beta/promo-code validation lives server-side — codes never ship in the client bundle.
   // Valid codes come ONLY from BETA_CODES; unset env var → validateBetaCode returns false (fail closed).
   if (action === "validate") {
+    // Metered too. It answers yes or no to a guessed code as fast as it can be asked, which is the
+    // same brute force the signup path limits; without this, that limit only moved the attack here.
+    // No address is involved, so only the IP bucket applies.
+    const vLimit = await rateLimit(event, "");
+    if (!vLimit.allowed) {
+      return { statusCode: 429, headers: CORS, body: JSON.stringify({ error: "rate_limited", message: vLimit.message }) };
+    }
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: validateBetaCode(body.code) }) };
   }
 
@@ -220,7 +230,7 @@ exports.handler = async (event) => {
       console.error(`[signup] resend refused: ${limit.reason}`);
       return { statusCode: 429, headers: CORS, body: JSON.stringify({ error: "rate_limited", message: limit.message }) };
     }
-    await sendConfirmation(addr);
+    await sendConfirmation(addr, event);
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
   }
 
@@ -372,6 +382,18 @@ exports.handler = async (event) => {
     try { admin = getAdminClient(); }
     catch (e) { console.error("[beta:signup] admin client unavailable:", e.message); return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_misconfig" }) }; }
 
+    // CHECKED BEFORE THE ACCOUNT EXISTS. A self-serve account is unusable until its address is
+    // confirmed, so creating one we cannot possibly email would leave a person holding an account
+    // that can never be opened and no way to tell. A missing SUPABASE_ANON_KEY is a misconfiguration,
+    // and it is answered as one, before anything is written.
+    if (!gate.usedCode) {
+      try { getPublicClient(); }
+      catch (e) {
+        console.error("[beta:signup] cannot send confirmations:", e.message);
+        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_misconfig" }) };
+      }
+    }
+
     // THE CAP IS THE INVITED COHORT'S CAP, so only a coded signup reserves a seat against it.
     //
     // beta_signups is what BETA_CAP counts. If a self-serve signup took a seat, the first 30 strangers
@@ -458,7 +480,7 @@ exports.handler = async (event) => {
     // of the signup rather than an afterthought. If Supabase would not take it the account still
     // exists and still needs confirming, so the answer says so and the screen offers Resend.
     if (!gate.usedCode) {
-      const sent = await sendConfirmation(email);
+      const sent = await sendConfirmation(email, event);
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, source: gate.source, needsConfirmation: true, sent }) };
     }
 

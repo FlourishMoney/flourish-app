@@ -32,7 +32,7 @@ function memStore(over = {}) {
 }
 
 (async () => {
-  const { checkSignupLimit, IP_HOURLY_LIMIT, EMAIL_DAILY_LIMIT, TOO_MANY_MESSAGE } =
+  const { checkSignupLimit, recordEmailSent, inboxKey, IP_HOURLY_LIMIT, EMAIL_DAILY_LIMIT, TOO_MANY_MESSAGE } =
     require("../netlify/functions/_lib/signupLimit.js");
   const t = create();
   const REPO = path.join(__dirname, "..");
@@ -65,30 +65,59 @@ function memStore(over = {}) {
   // ── 3. Per email, per day ─────────────────────────────────────────────────────────────────────
   {
     const store = memStore();
-    // A different IP each time, so only the email bucket can refuse.
-    const attempt = (n, now = NOW) => checkSignupLimit({ store, ip: `203.0.113.${n}`, email: "target@example.invalid", now });
-    for (let i = 1; i <= 3; i++) t.eq((await attempt(i)).allowed, true, `attempt ${i} for one address is allowed`);
-    const fourth = await attempt(4);
-    t.eq([fourth.allowed, fourth.reason], [false, "email_daily"], "the 4th for that address is refused, even from a fresh IP");
-    t.eq((await attempt(5, at("2026-10-01T23:59:00Z"))).allowed, false, "…still refused later the same day");
-    t.eq((await attempt(6, at("2026-10-02T00:00:00Z"))).allowed, true, "the next day starts again");
+    const EMAIL = "target@example.invalid";
+    // A different IP each time, so only the address bucket can refuse. A send is recorded each time,
+    // which is what fills the bucket.
+    const sent = async (n, now = NOW) => {
+      const r = await checkSignupLimit({ store, ip: `203.0.113.${n}`, email: EMAIL, now });
+      if (r.allowed) await recordEmailSent({ store, email: EMAIL, now });
+      return r;
+    };
+    for (let i = 1; i <= 3; i++) t.eq((await sent(i)).allowed, true, `email ${i} to one address is allowed`);
+    const fourth = await sent(4);
+    t.eq([fourth.allowed, fourth.reason], [false, "email_daily"], "the 4th email to that address is refused, even from a fresh IP");
+    t.eq((await sent(5, at("2026-10-01T23:59:00Z"))).allowed, false, "…still refused later the same day");
+    t.eq((await sent(6, at("2026-10-02T00:00:00Z"))).allowed, true, "the next day starts again");
     t.eq((await checkSignupLimit({ store, ip: "203.0.113.9", email: "someone-else@example.invalid", now: NOW })).allowed, true,
          "another address is unaffected");
+
+    // Plus-addressing lands in the same inbox, so it shares the allowance.
+    t.eq(inboxKey("Victim+7@Gmail.com"), "victim@gmail.com", "a +tag and the case are folded away for counting");
+    t.eq(inboxKey("plain@x.invalid"), "plain@x.invalid", "…an ordinary address is unchanged");
+    const inbox = memStore();
+    for (let i = 1; i <= 3; i++) {
+      const addr = `v+${i}@gmail.com`;
+      const r = await checkSignupLimit({ store: inbox, ip: `198.51.100.${i}`, email: addr, now: NOW });
+      t.eq(r.allowed, true, `v+${i}@gmail.com is allowed`);
+      await recordEmailSent({ store: inbox, email: addr, now: NOW });
+    }
+    t.eq((await checkSignupLimit({ store: inbox, ip: "198.51.100.9", email: "v+4@gmail.com", now: NOW })).reason, "email_daily",
+         "…and the 4th tag on the same inbox is refused");
   }
 
-  // ── 4. A refused attempt still counts against the other bucket ────────────────────────────────
-  // Otherwise the cheapest way past the email limit is to trip the IP limit first.
+  // ── 4. A stranger's failed attempts cannot spend somebody else's day ──────────────────────────
+  // Counting ATTEMPTS against the address made the limit a weapon: three throwaway requests naming a
+  // victim's address, needing no account and no code, locked that person out of their own signup and
+  // their own Resend for the rest of the day, without their receiving anything.
   {
     const store = memStore();
-    for (let i = 1; i <= 5; i++) await checkSignupLimit({ store, ip: "203.0.113.7", email: `f${i}@example.invalid`, now: NOW });
-    // The IP is now spent. Three more attempts at ONE address, all refused for the IP…
+    const VICTIM = "victim@example.invalid";
+    // An attacker, from their own machine, naming the victim's address. Nothing is ever sent.
     for (let i = 0; i < 3; i++) {
-      const r = await checkSignupLimit({ store, ip: "203.0.113.7", email: "victim@example.invalid", now: NOW });
-      t.eq([r.allowed, r.reason], [false, "ip_hourly"], "refused for the IP");
+      const r = await checkSignupLimit({ store, ip: "203.0.113.66", email: VICTIM, now: NOW });
+      t.eq(r.allowed, true, "the attacker's own attempt is allowed (their IP bucket has room)");
     }
-    // …and the address has been counted three times, so a fresh machine cannot continue.
-    const fromElsewhere = await checkSignupLimit({ store, ip: "198.51.100.5", email: "victim@example.invalid", now: NOW });
-    t.eq([fromElsewhere.allowed, fromElsewhere.reason], [false, "email_daily"], "…and those attempts counted against the address too");
+    const victimsOwn = await checkSignupLimit({ store, ip: "198.51.100.5", email: VICTIM, now: NOW });
+    t.eq(victimsOwn.allowed, true, "…and the victim can still sign up: no mail reached them, so nothing was spent");
+
+    // Only real sends fill it.
+    for (let i = 0; i < 3; i++) await recordEmailSent({ store, email: VICTIM, now: NOW });
+    t.eq((await checkSignupLimit({ store, ip: "198.51.100.6", email: VICTIM, now: NOW })).reason, "email_daily",
+         "…once three emails HAVE been sent there, the inbox is protected for the day");
+    // Recording never throws, even when the store is broken: the mail has already gone.
+    await recordEmailSent({ store: memStore({ setJSON: async () => { throw new Error("blobs down"); } }), email: VICTIM, now: NOW });
+    await recordEmailSent({ store: null, email: VICTIM, now: NOW });
+    t.ok(true, "recording a send never throws, whatever the store does");
   }
 
   // ── 5. Fails closed ───────────────────────────────────────────────────────────────────────────
@@ -103,7 +132,7 @@ function memStore(over = {}) {
          "a store that cannot be written: refused");
     // No IP is not a licence to skip the limit.
     const store = memStore();
-    for (let i = 1; i <= 3; i++) await checkSignupLimit({ store, ip: null, email: "noip@example.invalid", now: NOW });
+    for (let i = 1; i <= 3; i++) await recordEmailSent({ store, email: "noip@example.invalid", now: NOW });
     t.eq((await checkSignupLimit({ store, ip: null, email: "noip@example.invalid", now: NOW })).reason, "email_daily",
          "with no client IP the address limit still applies");
     t.eq((await checkSignupLimit({ store, ip: null, email: "", now: NOW })).reason, "unattributable",
@@ -163,6 +192,7 @@ function memStore(over = {}) {
     t.ok(block.indexOf('error: "invalid_email"') < block.indexOf("await rateLimit(event, email)"), "the address is validated before an attempt is counted");
     t.ok(block.indexOf('error: "weak_password"') < block.indexOf("await rateLimit(event, email)"), "…and so is the password");
     t.ok(block.indexOf("await rateLimit(event, email)") < block.indexOf("decideSignup("), "…but the limit is checked before the code is judged, so guessing codes is limited too");
+    t.ok(/if \(action === "validate"\)[\s\S]{0,400}await rateLimit\(event, ""\)/.test(beta), "the code-validation endpoint is metered too, or the limit just moves there");
     t.ok(block.indexOf("await rateLimit(event, email)") < block.indexOf("createUser("), "…and before any account is created");
     t.ok(/if \(action === "resend_confirmation"\)[\s\S]{0,700}await rateLimit\(event, addr\)/.test(beta), "the resend endpoint is limited too");
   }

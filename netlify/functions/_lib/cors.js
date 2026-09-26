@@ -7,7 +7,7 @@
 // could work, coach, plaid, billing and meeting still refused it, which is KNOWN-DEFECTS 35. The list
 // lives here now, so adding an origin is one edit in one place and cannot be half-applied.
 //
-// THE FOUR ORIGINS, AND WHY EACH IS ON THE LIST.
+// THE FIVE ORIGINS, AND WHY EACH IS ON THE LIST.
 //   https://flourishmoney.app  the site.
 //   capacitor://localhost      the iOS shell. capacitor.config.json sets neither iosScheme nor
 //                              hostname, so Capacitor's defaults apply.
