@@ -409,22 +409,32 @@ const { create } = require("./_runner.cjs");
     t.ok(/<DepositSheet key=\{depositTxnKey\(depositTxn\)\} txn=\{depositTxn\}[^>]*mode="mark"/.test(fnBody("SpendScreen")) && /This isn't income/.test(fnBody("SpendScreen")), "Activity can mark any past deposit \"This isn't income\"");
     t.ok(/<ExpectedItemSheet /.test(fnBody("PlanAhead")) && /<DailySpendSheet /.test(fnBody("PlanAhead")), "Watch offers expected money in or out, and the daily spend sheet");
     t.ok((app.match(/<PayVariesControl /g) || []).length >= 2, "\"My pay varies\" is on every income source in Settings and in the deposit sheet");
-    // No em or en dash in any user-facing string ANYWHERE in src: every string literal, template text and
-    // JSX text, parsed (so comments, which may use dashes, are not scanned). Regex literals are not
-    // strings, so input-normalising patterns like /[−–—]/ stay.
+    // Two rules over every user-facing string ANYWHERE in src: no em or en dash, and no "engine" or
+    // "engines". Both are read from every string literal, template text and JSX text, parsed (so
+    // comments, which say "ForecastEngine" constantly and may use dashes, are not scanned). Regex
+    // literals are not strings, so input-normalising patterns like /[−–—]/ stay, and an identifier
+    // such as ForecastEngine is not a string either, so the code keeps its names.
+    //
+    // "Engine" is the app describing its own plumbing. Meet used to tell the household "it reads what
+    // the engines already calculated", which asks them to hold a model of how Flourish is built before
+    // they can read their own agenda. What Flourish worked out is the household's business; what it
+    // worked it out WITH is not.
     let parser;
     try { parser = require(path.join(__dirname, "../node_modules/@babel/parser")); } catch { parser = null; }
     t.ok(!!parser, "the copy check can load @babel/parser (installed with @vitejs/plugin-react)");
     if (parser) {
       const srcDir = path.join(__dirname, "../src");
       const files = [path.join(srcDir, "App.jsx"), path.join(srcDir, "main.jsx"), ...fs.readdirSync(path.join(srcDir, "lib")).filter(f => /\.jsx?$/.test(f)).map(f => path.join(srcDir, "lib", f))];
-      const dashed = [];
+      const dashed = [], jargon = [];
       for (const file of files) {
         const ast = parser.parse(fs.readFileSync(file, "utf8"), { sourceType: "module", plugins: ["jsx"] });
         (function walk(n) {
           if (!n || typeof n.type !== "string") return;
           const text = n.type === "StringLiteral" ? n.value : n.type === "TemplateElement" ? (n.value.cooked ?? n.value.raw) : n.type === "JSXText" ? n.value : null;
           if (text && /[\u2013\u2014]/.test(text)) dashed.push(`${path.basename(file)}:${n.loc.start.line} ${text.trim().slice(0, 60)}`);
+          // \bengines?\b on its own, so ForecastEngine inside a string (were one ever written) is not
+          // what this catches: the word standing alone is the one a household is asked to read.
+          if (text && /\bengines?\b/i.test(text)) jargon.push(`${path.basename(file)}:${n.loc.start.line} ${text.trim().slice(0, 60)}`);
           for (const k of Object.keys(n)) {
             if (["loc", "start", "end", "leadingComments", "trailingComments", "innerComments", "extra"].includes(k)) continue;
             const v = n[k];
@@ -434,6 +444,7 @@ const { create } = require("./_runner.cjs");
         })(ast.program);
       }
       t.eq(dashed, [], `no em or en dash in any string in src (${files.length} files scanned)`);
+      t.eq(jargon, [], `no string in src calls Flourish's own machinery an "engine" (${files.length} files scanned)`);
       // index.html's <title> is the one string outside src/ that a person reads, on a browser tab and
       // in a search result, so the same rule applies to it.
       const pageTitle = (fs.readFileSync(path.join(__dirname, "../index.html"), "utf8").match(/<title>([\s\S]*?)<\/title>/) || [])[1] || "";

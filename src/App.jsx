@@ -1007,7 +1007,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
           <Icon id="zap" size={15} color={C.goldBright} strokeWidth={2}/>
           What to do today
         </div>
-        <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Decision Engine</span>
+        <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Worked out by Flourish</span>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {decisions.map((d,i)=>(
@@ -3357,7 +3357,7 @@ const DASH_TILES = [
   { id: 'networth',    label: 'Net Worth Trend',      lucide:'trending-up'  },
   { id: 'investments', label: 'Investment Portfolio', lucide:'trending-up'  },
   { id: 'forecast',    label: 'Cash Flow Forecast',   lucide:'calendar'     },
-  { id: 'decision',    label: 'Decision Engine',      lucide:'cpu'          },
+  { id: 'decision',    label: 'What to do today',     lucide:'cpu'          },
   { id: 'autopilot',   label: 'Autopilot',            lucide:'navigation'   },
   { id: 'opportunity', label: 'Opportunities',        lucide:'star'         },
   { id: 'health',      label: 'Health Score',         lucide:'shield'       },
@@ -9279,7 +9279,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
   return (
     <div>
       <FirstRunTip id="meet">Tap any number to see how Flourish got it.</FirstRunTip>
-      <div style={{color:C.muted,fontSize:13,marginBottom:14,lineHeight:1.5}}>Flourish wrote this agenda from your week. It doesn't add up your numbers, it reads what the engines already calculated.{facilitatorGate === "ready" ? " The coach keeps it calm and about the numbers." : ""}</div>
+      <div style={{color:C.muted,fontSize:13,marginBottom:14,lineHeight:1.5}}>Flourish writes this agenda from your week, using the numbers it already worked out.{facilitatorGate === "ready" ? " The coach keeps it calm and about the numbers." : ""}</div>
 
       <div style={card}>
         <div style={sTitle}>Flourish noticed</div>
