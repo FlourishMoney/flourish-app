@@ -79,7 +79,7 @@ const FILES = walk(SRC).filter(f => /\.(jsx?|tsx?)$/.test(f) && !f.endsWith("lib
   const shouty = [];
   for (const f of FILES) {
     const src = fs.readFileSync(f, "utf8");
-    const re = /textTransform:\s*"uppercase"/g;
+    const re = /textTransform:\s*"uppercase"|text-transform:\s*uppercase/g;
     let m;
     while ((m = re.exec(src)) !== null) shouty.push(`${path.relative(SRC, f)}:${src.slice(0, m.index).split("\n").length}`);
   }
@@ -90,12 +90,12 @@ const FILES = walk(SRC).filter(f => /\.(jsx?|tsx?)$/.test(f) && !f.endsWith("lib
   const spaced = [];
   for (const f of FILES) {
     const src = fs.readFileSync(f, "utf8");
-    const re = /letterSpacing:\s*([0-9.]+)/g;
+    const re = /letterSpacing:\s*([0-9.]+)|letter-spacing:\s*([0-9.]+)px/g;
     let m;
     while ((m = re.exec(src)) !== null) {
-      if (parseFloat(m[1]) < 1) continue;   // hairline tracking on a wordmark is not a shouted label
+      if (parseFloat(m[1] || m[2]) < 1) continue;   // hairline tracking on a wordmark is not a shouted label
       if (/code field|character/i.test(src.slice(m.index, m.index + 120))) continue;  // a character spacer, marked as one
-      spaced.push(`${path.relative(SRC, f)}:${src.slice(0, m.index).split("\n").length} = ${m[1]}`);
+      spaced.push(`${path.relative(SRC, f)}:${src.slice(0, m.index).split("\n").length} = ${m[1] || m[2]}`);
     }
   }
   t.eq(spaced.join(" | ") || "(none)", "(none)",

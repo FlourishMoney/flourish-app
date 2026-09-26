@@ -32,7 +32,7 @@ import { isNativeApp, billingUiState, offeredPlans, billingReturnNotice, BILLING
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/signupUi.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
-import { TYPE, SPACE, LAYOUT, tap } from "./lib/type.js";
+import { TYPE, TYPE_MIN, SPACE, LAYOUT, tap } from "./lib/type.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, agendaIsEmpty } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
 import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown, formatCompactMoney } from "./lib/format.js";
@@ -1724,12 +1724,12 @@ function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData
                       return (<>
                         {(w.hasWalk ? w.rows : w.billRows).map((r,ri)=>(
                           <div key={ri} style={{display:"flex",justifyContent:"space-between",padding:r.key==="opening"?"5px 0":"6px 0",borderBottom:`1px solid ${C.border}22`}}>
-                            <span style={{color:r.key==="opening"?C.muted:C.mutedHi,fontSize:r.key==="opening"?11:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
+                            <span style={{color:r.key==="opening"?C.muted:C.mutedHi,fontSize:TYPE_MIN,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
                               {DOT[r.key]&&<span style={{width:6,height:6,borderRadius:"50%",background:DOT[r.key],display:"inline-block"}}/>}
                               {ICON[r.key]||""}{r.key==="bill"?r.label:r.label}
                               {r.key==="spend"&&<span style={{color:C.muted,fontSize:13}}>{correctionsOf(data).dailySpend!=null?"(your figure)":"(30d avg)"}</span>}
                             </span>
-                            <span style={{color:COLOR[r.key],fontWeight:r.key==="opening"||r.key==="spend"?400:700,fontSize:r.key==="opening"?11:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign}{r.value}</span>
+                            <span style={{color:COLOR[r.key],fontWeight:r.key==="opening"||r.key==="spend"?400:700,fontSize:TYPE_MIN,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign}{r.value}</span>
                           </div>
                         ))}
                         <div style={{borderTop:`1px solid ${C.border}`,marginTop:4,paddingTop:8,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -3032,9 +3032,9 @@ function Bar({v,max,color=C.green,h=7}){
     boxShadow:`0 0 ${h*1.5}px ${v>max?C.red:color}55`}}/>
   </div>;
 }
-function Chip({label,color,size=11,icon}){
+function Chip({label,color,size=TYPE_MIN,icon}){
   // Padding scales with size so a Chip aligns to hand-rolled pills at the same fontSize (was a fixed
-  // "4px 11px", which made <Chip size={9}> taller than its neighbours and broke the shared baseline).
+  // "4px 11px", which made <Chip size={TYPE_MIN}> taller than its neighbours and broke the shared baseline).
   const chipPad = size <= 9 ? "1px 7px" : size === 10 ? "2px 8px" : "4px 11px";
   return <span style={{background:color+"18",color,borderRadius:99,padding:chipPad,fontSize:size,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"inline-flex",alignItems:"center",gap:4,border:`1px solid ${color}30`,letterSpacing:0.1}}>{icon&&<span style={{fontSize:size}}>{icon}</span>}{label}</span>;
 }
@@ -3059,7 +3059,7 @@ function Btn({label,onClick,color=C.green,outline,small,disabled,full=true,icon}
     border:`1.5px solid ${outline?color+"99":C.isDark?"rgba(255,255,255,0.15)":"rgba(0,0,0,0.12)"}`,
     color:outline?color:C.isDark?"#021208":"#FFFFFF",
     borderRadius:16,padding:small?"9px 20px":"14px 28px",
-    fontWeight:800,fontSize:small?12:14,letterSpacing:0.2,
+    fontWeight:800,fontSize:small?TYPE_MIN:14,letterSpacing:0.2,
     cursor:disabled?"not-allowed":"pointer",opacity:disabled?.35:1,
     display:"flex",alignItems:"center",gap:7,justifyContent:"center",
     width:full?"100%":"auto",
@@ -3164,8 +3164,8 @@ function HealthScoreRing({score, size=110, strokeW=9, bonus=0}) {
       </svg>
       <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:0}}>
         <div style={{fontSize:Math.round(size*0.27),fontWeight:900,color:gradeColor,fontFamily:"'Playfair Display',serif",lineHeight:1}}>{displayed}</div>
-        <div style={{fontSize:Math.round(size*0.094),color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,lineHeight:1.3}}>{grade}</div>
-        {bonus>0&&<div style={{fontSize:Math.round(size*0.082),color:C.greenBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginTop:1}}>+{bonus} ✦</div>}
+        <div style={{fontSize:Math.max(TYPE_MIN,Math.round(size*0.094)),color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,lineHeight:1.3}}>{grade}</div>
+        {bonus>0&&<div style={{fontSize:Math.max(TYPE_MIN,Math.round(size*0.082)),color:C.greenBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginTop:1}}>+{bonus} ✦</div>}
       </div>
     </div>
   );
@@ -5558,9 +5558,12 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         </div>
         )}
 
-        {/* ── HEALTH + STREAK — 2-col row ─────────────────────────────────── */}
+        {/* Two cards across 375px leaves each about 155px of content. At the old 9 and 11px that
+            was merely tight; at the 13px floor the grade, the insight line and the "Coach →" button
+            all ran past the card, which has overflow:hidden — so the button rendered as "Coac".
+            Stacked, each card has the full width and nothing is cut. */}
         {isVisible('healthrow')&&(
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div style={{display:"flex",flexDirection:"column",gap:SPACE.md}}>
         <div style={{...anim(140),...glass(scoreBase),borderRadius:24,padding:"18px 16px 16px",position:"relative",overflow:"hidden"}}>
           <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at 0% 100%,${scoreBase}18 0%,transparent 65%)`,pointerEvents:"none"}}/>
           <div style={{position:"relative"}}>
@@ -6571,9 +6574,14 @@ function ScreenHeader({title, subtitle, onBack, cta, onCta, ctaColor, controls})
           </button>
         )}
       </div>
+      {/* Two lines, not one. A one-line clamp silently deleted the end of a sentence: the Credit
+          header lost "Not your bureau score.", which is the part that matters most. Every subtitle
+          was also a candidate for truncation at the larger text sizes this release exists to serve.
+          The subtitles are short enough to read as one line at the design size, and wrap rather
+          than vanish when the text grows. */}
       {subtitle&&(
         <div style={{color:C.mutedHi,...TYPE.subhead,fontWeight:400,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:SPACE.xs,
-          overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:1,WebkitBoxOrient:"vertical"}}>{subtitle}</div>
+          overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{subtitle}</div>
       )}
       {controls&&<div style={{marginTop:SPACE.md}}>{controls}</div>}
     </div>
@@ -6943,12 +6951,12 @@ function PlanAhead({data, setAppData, setScreen}){
                   return (<>
                     {(w.hasWalk ? w.rows : w.billRows).map((r,ri)=>(
                       <div key={ri} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}>
-                        <span style={{color:r.key==="opening"?C.muted:C.mutedHi,fontSize:r.key==="opening"?11:12}}>
+                        <span style={{color:r.key==="opening"?C.muted:C.mutedHi,fontSize:TYPE_MIN}}>
                           {r.key==="income"?"💰 ":r.key==="bill"?"📅 ":r.key==="spend"?"🛒 ":""}{r.label}
                           {r.key==="bill"&&r.bill&&r.bill.origin==="manual"&&<span style={{color:C.tealBright,fontSize:13,marginLeft:5,fontWeight:700}}>est</span>}
                           {r.key==="spend"&&<span style={{color:C.muted,fontSize:13}}>{correctionsOf(data).dailySpend!=null?" (your figure)":" (30d avg)"}</span>}
                         </span>
-                        <span style={{color:COLOR[r.key],fontWeight:r.key==="opening"||r.key==="spend"?400:700,fontSize:r.key==="opening"?11:12}}>{r.sign}{r.key==="bill"&&r.bill&&r.bill.variable?"~":""}{r.value}</span>
+                        <span style={{color:COLOR[r.key],fontWeight:r.key==="opening"||r.key==="spend"?400:700,fontSize:TYPE_MIN}}>{r.sign}{r.key==="bill"&&r.bill&&r.bill.variable?"~":""}{r.value}</span>
                       </div>
                     ))}
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",borderTop:`1px solid ${C.border}`,paddingTop:8,marginTop:4}}>
@@ -8220,11 +8228,11 @@ function SpendScreen({data, setAppData, setScreen}){
             <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
               {txn.amount<0?"+":"−"}${Math.abs(txn.amount).toFixed(2)}
             </div>
-            {txn.amount<0&&(isCashAdvance(txn)?<div style={{color:C.redBright,fontSize:13,fontWeight:700}}>⚠️ CASH ADVANCE</div>:(()=>{
+            {txn.amount<0&&(isCashAdvance(txn)?<div style={{color:C.redBright,fontSize:13,fontWeight:700}}>⚠️ Cash advance</div>:(()=>{
               // "Income" only when it counts (it repeats like pay, or the household said so). A deposit they
               // answered shows their answer; anything else is simply money received.
               const st = depositStatus(txn, depCtx);
-              const word = st.counts ? "INCOME" : (st.reason && st.reason!=="income") ? reasonLabel(st.reason).toUpperCase() : "RECEIVED";
+              const word = st.counts ? "Income" : (st.reason && st.reason!=="income") ? reasonLabel(st.reason).toUpperCase() : "Received";
               return <div style={{color:st.counts?C.greenBright:C.mutedHi,fontSize:13,fontWeight:700}}>{word}</div>;
             })())}
           </div>
@@ -8342,7 +8350,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
   const { netWorth, liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <ScreenHeader title="Do" subtitle="Budget, debts, goals, retirement. Amounts and dates, nothing vague." onBack={setScreen?()=>setScreen("home"):null} cta={CC[data?.profile?.country||"CA"]?.flag+" "+CC[data?.profile?.country||"CA"]?.currency} ctaColor={CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}/>
+    <ScreenHeader title="Do" subtitle="Budget, debts, goals and retirement." onBack={setScreen?()=>setScreen("home"):null} cta={CC[data?.profile?.country||"CA"]?.flag+" "+CC[data?.profile?.country||"CA"]?.currency} ctaColor={CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}/>
     <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
       {[["goals","My Goals"],["sim","Debt Sim"],["worth","Net Worth"],["retire","Retirement"],["forecast","Wealth"],["budget","Budget"],["personality","Personality"],["tax","Tax Tips"],["learn","Learn"]].map(([key,lbl])=>(
         <button key={key} onClick={()=>setTab(key)} style={{flexShrink:0,background:tab===key?C.purple+"22":C.cardAlt,border:`1px solid ${tab===key?C.purple:C.border}`,color:tab===key?C.purpleBright:C.muted,borderRadius:10,padding:"8px 12px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>{lbl}</button>
@@ -12059,7 +12067,7 @@ function CreditScreen({data,setScreen}){
 
   return(
     <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"20px 20px 80px",maxWidth:430,margin:"0 auto"}}>
-      <ScreenHeader title="Credit" subtitle="Estimated from your payment and utilization patterns. Not your bureau score." onBack={setScreen?()=>setScreen("home"):null} cta="Ask Coach" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
+      <ScreenHeader title="Credit" subtitle="Estimated, not your bureau score." onBack={setScreen?()=>setScreen("home"):null} cta="Ask Coach" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
       {/* Score gauge */}
       <div style={{background:C.card,borderRadius:20,padding:"24px 20px 20px",border:`1px solid ${C.border}`,marginBottom:16,textAlign:"center"}}>
         <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:12}}>Credit Score Estimate</div>
@@ -13726,7 +13734,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-trust{ display:inline-flex; align-items:center; gap:7px; margin-top:20px; font-size:13px; color:#52624f; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; }
 
             .fll-section{ padding:44px 0; }
-            .fll-eyebrow{ text-align:center; font-size:13px; font-weight:800; letter-spacing:1.4px; text-transform:uppercase; color:#1b5e20; margin-bottom:10px; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-eyebrow{ text-align:center; font-size:13px; font-weight:800;   color:#1b5e20; margin-bottom:10px; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-h2{ font-family:'Playfair Display',serif; font-weight:900; font-size:clamp(24px,4vw,34px); color:#15321a; text-align:center; line-height:1.15; margin:0 auto 8px; max-width:20ch; }
             .fll-lede{ text-align:center; font-size:15px; color:#52624f; max-width:520px; margin:0 auto 28px; line-height:1.6; font-family:'Plus Jakarta Sans',sans-serif; }
 
