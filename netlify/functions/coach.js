@@ -159,28 +159,7 @@ const EMERGENCY_IP_DAILY = 10;
 // Reject absurdly large bodies (cheap DoS guard; real coach messages are a few KB).
 const MAX_BODY_BYTES = 100000;
 
-// Phase D2: origin-aware CORS — locks to known origins, falls back to production.
-const ALLOWED_ORIGINS = new Set([
-  "https://flourishmoney.app",
-  // iOS app. The WKWebView serves from capacitor://localhost, so its fetches to this function are
-  // cross-origin. capacitor.config.json sets neither iosScheme nor hostname, so Capacitor's defaults
-  // apply ("capacitor" / "localhost"). Without this the fallback below answers with the production
-  // origin, which does not match the caller — the browser blocks the response and fetch throws.
-  "capacitor://localhost",
-  "http://localhost:5173",
-  "http://localhost:8888",
-]);
-
-function corsHeadersFor(event) {
-  const origin = event.headers?.origin || event.headers?.Origin || "";
-  const allowed = ALLOWED_ORIGINS.has(origin) ? origin : "https://flourishmoney.app";
-  return {
-    "Access-Control-Allow-Origin":  allowed,
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Content-Type":                 "application/json",
-  };
-}
+const { corsHeadersFor } = require("./_lib/cors");
 
 exports.handler = async (event) => {
   const corsHeaders = corsHeadersFor(event);

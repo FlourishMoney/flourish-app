@@ -23,23 +23,7 @@ const { FOUNDING_COHORT_LIMIT, foundingSlotsOpen, countFoundingSubscriptions } =
 const { stripePost } = require("./_lib/stripeApi");
 const { SUBSCRIPTION_PAID_STATUSES: PAID_STATUSES } = require("./_lib/planRules");
 
-const ALLOWED_ORIGINS = new Set([
-  "https://flourishmoney.app",
-  "capacitor://localhost",
-  "http://localhost:5173",
-  "http://localhost:8888",
-]);
-
-function corsHeadersFor(event) {
-  const origin = event.headers?.origin || event.headers?.Origin || "";
-  const allowed = ALLOWED_ORIGINS.has(origin) ? origin : "https://flourishmoney.app";
-  return {
-    "Access-Control-Allow-Origin":  allowed,
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Content-Type":                 "application/json",
-  };
-}
+const { corsHeadersFor } = require("./_lib/cors");
 
 // BILLING IS OFF UNTIL IT IS SWITCHED ON. Billing goes live 2026-10-26, and nothing in src/
 // calls these endpoints — but merging deploys them, and a Netlify function is a public URL: any

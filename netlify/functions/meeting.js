@@ -16,23 +16,7 @@
 
 const { getUserFromRequest, getAdminClient, unauthorized } = require("./_lib/auth");
 
-const ALLOWED_ORIGINS = new Set([
-  "https://flourishmoney.app",
-  "capacitor://localhost",
-  "http://localhost:5173",
-  "http://localhost:8888",
-]);
-
-function corsHeadersFor(event) {
-  const origin = event.headers?.origin || event.headers?.Origin || "";
-  const allowed = ALLOWED_ORIGINS.has(origin) ? origin : "https://flourishmoney.app";
-  return {
-    "Access-Control-Allow-Origin":  allowed,
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Content-Type":                 "application/json",
-  };
-}
+const { corsHeadersFor } = require("./_lib/cors");
 
 const json = (statusCode, headers, body) => ({ statusCode, headers, body: JSON.stringify(body) });
 

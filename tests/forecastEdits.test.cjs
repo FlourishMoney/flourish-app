@@ -434,6 +434,10 @@ const { create } = require("./_runner.cjs");
         })(ast.program);
       }
       t.eq(dashed, [], `no em or en dash in any string in src (${files.length} files scanned)`);
+      // index.html's <title> is the one string outside src/ that a person reads, on a browser tab and
+      // in a search result, so the same rule applies to it.
+      const pageTitle = (fs.readFileSync(path.join(__dirname, "../index.html"), "utf8").match(/<title>([\s\S]*?)<\/title>/) || [])[1] || "";
+      t.ok(pageTitle.trim().length > 0 && !/[\u2013\u2014]/.test(pageTitle), `the page title has no em or en dash (got: "${pageTitle.trim()}")`);
     }
     t.ok(/\["Pay frequency", frequencyLabel\(_ffreq\)\]/.test(app) && !/× \$\{r\.freq\}/.test(app), "pay frequency is shown in plain words (\"Every 2 weeks\"), not \"biweekly\"");
     t.ok(/detectIncomeFromTxns\(incomeEvidence\(/.test(app) && !/detectIncomeFromTxns\(markedTxns\)|detectIncomeFromTxns\(txns\)/.test(app),

@@ -30,6 +30,7 @@ import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parse
 import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
 import { isNativeApp, billingUiState, offeredPlans, billingReturnNotice, BILLING_RETURN_PARAMS } from "./lib/billingVisibility.js";
 import { tabForScreen } from "./lib/navigation.js";
+import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/signupUi.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, agendaIsEmpty } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
@@ -65,10 +66,15 @@ import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebounce
 // module-load, but window.location.protocol is set before any JS runs, so this can't miss the shell.
 const API_BASE = (() => {
   if (typeof window === "undefined") return "";                       // SSR / build
-  const proto = window.location.protocol;
-  const isNativeShell = window.Capacitor?.getPlatform?.() === "ios"
-    || (proto !== "http:" && proto !== "https:");                     // capacitor:, file:, ionic:, …
-  return isNativeShell ? "https://flourishmoney.app" : "";
+  // ANDROID WAS MISSING FROM THIS TEST, and that made every API call from the Android app a request
+  // to itself. The rule was `getPlatform() === "ios"` plus a non-http scheme. Capacitor 8 defaults
+  // androidScheme to "https" and capacitor.config.json does not override it, so the Android shell
+  // serves from https://localhost: the platform check said no and the scheme check said no, API_BASE
+  // came out "", and /api/beta, /api/coach and /api/plaid all resolved against the WebView's own
+  // local server instead of the site. isNativeApp() is the rule the rest of the app already uses for
+  // "is this a store app", and it names both platforms (tests/nativeParity.test.cjs pins that), so
+  // this reuses it rather than keeping a second, narrower copy here.
+  return isNativeApp() ? "https://flourishmoney.app" : "";
 })();
 
 // Sprint Z #5: beta/promo codes live server-side only (netlify/functions/beta.js, action "validate")
@@ -12006,6 +12012,23 @@ function PrivacyPolicy({onBack}){
 // ─── TERMS OF SERVICE ─────────────────────────────────────────────────────────
 // Google Play requires a publicly reachable page where somebody can ask for their account to be
 // deleted WITHOUT installing the app. Same shell as the other two legal pages, same /route pattern.
+// Where the confirmation link lands. Deliberately the whole page and nothing else: it is opened from
+// a mail app, often on a phone whose Flourish is the store app rather than this site, so the one
+// instruction that is true for everybody is "go back to the app and sign in". No auto-redirect, no
+// deep link, nothing to get wrong. Supabase has already marked the address confirmed by the time this
+// renders; this page's only job is to say so.
+function ConfirmedPage(){
+  return (
+    <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+      <div style={{maxWidth:420,textAlign:"center"}}>
+        <div style={{fontSize:40,marginBottom:16}}>✓</div>
+        <h1 style={{color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",fontSize:26,fontWeight:900,margin:"0 0 10px"}}>You're confirmed.</h1>
+        <p style={{color:C.mutedHi,fontSize:15,lineHeight:1.6,margin:0}}>Open Flourish and sign in.</p>
+      </div>
+    </div>
+  );
+}
+
 function DeleteAccount({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
@@ -12050,7 +12073,7 @@ function DeleteAccount({onBack}){
       </ul>
       <div style={{...p,marginTop:12}}>
         Your account and data are deleted within 30 days of your request. Copies in our daily backups are
-        removed automatically within 7 days after that. Nothing else is kept unless the law requires it.
+        removed automatically within 7 days after that. Nothing else is kept beyond what is described below.
       </div>
 
       <div style={h2}>What is kept</div>
@@ -13122,6 +13145,19 @@ function AuthScreen({ onAuth, onTryDemo }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [betaCode, setBetaCode] = useState("");
+  // Is signup open to anyone, or still invite-only? Only the SERVER knows: the store apps bundle this
+  // code at build time, so a binary shipped today cannot carry what Amanda sets in Netlify tomorrow.
+  // null means "not asked yet"; anything other than a clear yes shows the code field, which is exactly
+  // what this screen does today. A server that cannot be reached therefore changes nothing.
+  const [openSignup, setOpenSignup] = useState(null);
+  const [showCodeField, setShowCodeField] = useState(false);
+  // The address a self-serve signup must confirm, and the cooldown on asking for the mail again.
+  const [pendingConfirm, setPendingConfirm] = useState("");
+  const [resendConfirmCooldown, setResendConfirmCooldown] = useState(0);
+  const { codeRequired, showField: showCodeInput, showLink: showCodeLink } = signupCodeState({ openSignup, showCodeField });
+  // The same helper the tests check, rather than the rule written twice: the button used to re-state
+  // "a code is needed unless the door is open" inline, where it could drift from the field beside it.
+  const codeOk = mode === "login" || signupSubmittable({ openSignup, code: betaCode });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -13130,6 +13166,34 @@ function AuthScreen({ onAuth, onTryDemo }) {
   // Both store apps boot straight into login/signup. The "coming soon" waitlist landing is a web
   // page for people who cannot use the product yet; someone who has installed the app already can.
   const [showAuth, setShowAuth] = useState(isNativeApp());
+
+  // Asked ONCE, and only when the auth card is actually on screen: on a store app that is at launch,
+  // on the web it is when someone opens Log in or Sign up. The marketing landing is the most visited
+  // page on the site and has no sign-up form on it, so asking there would spend a function invocation
+  // per visitor to answer a question that page never asks. Asking when the card opens still lands the
+  // answer well before anyone switches to the Sign Up tab and types an email.
+  const askedStatus = useRef(false);
+  useEffect(() => {
+    if (!showAuth || askedStatus.current) return;
+    askedStatus.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/beta`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "signup_status" }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!cancelled) setOpenSignup(statusFromResponse(out));
+      } catch {
+        // Offline, blocked, or the function is down: stay invite-only on screen. The server decides
+        // in the end anyway, so the worst case is a code field shown to someone who does not need one.
+        if (!cancelled) setOpenSignup(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showAuth]);
 
   // Phase E1: waitlist email capture (replaces public signup CTAs).
   const [waitlistEmail, setWaitlistEmail] = useState("");
@@ -13145,13 +13209,54 @@ function AuthScreen({ onAuth, onTryDemo }) {
     return () => clearTimeout(t);
   }, [resendCooldown]);
 
+  // Same ticker for the confirm-email cooldown.
+  useEffect(() => {
+    if (resendConfirmCooldown <= 0) return;
+    const t = setTimeout(() => setResendConfirmCooldown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendConfirmCooldown]);
+
+  // Ask the server to send the confirmation email again. It answers the same way whatever the address
+  // turns out to be, so this cannot be used to find out who has an account.
+  const handleResendConfirm = async () => {
+    if (!pendingConfirm || resendConfirmCooldown > 0) return;
+    setResendConfirmCooldown(60);
+    try {
+      const res = await fetch(`${API_BASE}/api/beta`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "resend_confirmation", email: pendingConfirm }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (out.error === "rate_limited") { setSuccess(""); setError(out.message || "Too many attempts. Try again in an hour."); return; }
+      if (out.error) { setSuccess(""); setError("Couldn't send that email. Try again in a moment."); return; }
+      setSuccess("Check your email to confirm your address.");
+    } catch {
+      setError("Couldn't reach the server. Try again in a moment.");
+    }
+  };
+
   const handleResend = async () => {
     if (resendCooldown > 0 || !email || loading) return;
     setError(""); setCheckEmailNote("");
-    const { error } = await supabase.auth.resend({ type: "signup", email, options: { emailRedirectTo: window.location.origin } });
-    if (error) { setError(error.message); return; }
-    setCheckEmailNote("Confirmation email re-sent ✓. Check your inbox (and spam).");
+    // Through our own endpoint, not straight to Supabase: window.location.origin is
+    // capacitor://localhost or https://localhost inside a store app, which is not on the project's
+    // redirect allow-list, so the link in that mail would go nowhere. The server sends every
+    // confirmation to the same /confirmed page, and applies the signup rate limit to this too.
     setResendCooldown(60);
+    try {
+      const res = await fetch(`${API_BASE}/api/beta`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "resend_confirmation", email }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (out.error === "rate_limited") { setError(out.message || "Too many attempts. Try again in an hour."); return; }
+      if (out.error) { setError("Couldn't send that email. Try again in a moment."); return; }
+    } catch {
+      setError("Couldn't reach the server. Try again in a moment."); return;
+    }
+    setCheckEmailNote("Confirmation email re-sent ✓. Check your inbox (and spam).");
   };
 
   const handleSignup = async () => {
@@ -13174,6 +13279,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
         else if (e === "email_exists")     setError("This email is already registered. Try logging in instead.");
         else if (e === "weak_password")    setError("Choose a password of at least 8 characters.");
         else if (e === "invalid_email")    setError("Enter a valid email address.");
+        else if (e === "rate_limited")     setError(out.message || "Too many attempts. Try again in an hour.");
         else if (e === "server_misconfig") setError("Signups aren't fully configured on the server yet. Please contact hello@flourishmoney.app.");
         else if (e === "reserve_failed")   setError(`Couldn't reserve a beta seat (server error)${out.detail ? `: ${out.detail}`: ""}. Please try again or contact hello@flourishmoney.app.`);
         else if (e === "create_failed" || e === "create_threw") setError(`Couldn't create your account${(out.message || out.detail) ? `: ${out.message || out.detail}`: ""}. Please try again or contact hello@flourishmoney.app.`);
@@ -13181,10 +13287,24 @@ function AuthScreen({ onAuth, onTryDemo }) {
         else                               setError(`Signup failed${e ? ` (${e})`: ` (HTTP ${res.status})`}${out.detail ? `: ${out.detail}`: out.message ? `: ${out.message}`: ""}. Please contact hello@flourishmoney.app.`);
         setLoading(false); return;
       }
-      // Account created + confirmed (option b) — no email to check. Drop the user on the login screen
-      // with a success banner; email + password are still populated so they can log straight in.
+      // A CODED signup is confirmed on creation, so there is no email to check: drop them on the
+      // login screen, where the address and password are still filled in. A SELF-SERVE signup is not
+      // usable until the address is confirmed, so say exactly that and offer to send it again.
       setCheckEmailNote("");
-      setSuccess("Account created. You can log in now.");
+      if (out.needsConfirmation) {
+        setPendingConfirm(email);
+        if (out.sent === false) {
+          // The account exists but no mail went out. Saying "check your email" would send them to an
+          // empty inbox and leave them stuck on an account they cannot use.
+          setSuccess("");
+          setError("Your account was created, but we couldn't send the confirmation email. Tap \"Send it again\" below, or contact hello@flourishmoney.app.");
+        } else {
+          setSuccess("Check your email to confirm your address.");
+        }
+      } else {
+        setPendingConfirm("");
+        setSuccess("Account created. You can log in now.");
+      }
       setMode("login");
       setLoading(false);
     } catch (e) {
@@ -13253,6 +13373,13 @@ function AuthScreen({ onAuth, onTryDemo }) {
       }
       // v1 has no 2FA (the AAL2 gate was rolled back; MfaGate is kept unreferenced for v1.1), so a
       // successful password sign-in hands the session straight to the app.
+      // Signed in, but the address was never confirmed: the session is useless (syncSession drops it),
+      // so say so here rather than letting the app flicker and log itself out.
+      if (data?.user && !data.user.email_confirmed_at && !data.user.confirmed_at) {
+        await supabase.auth.signOut().catch(() => {});
+        setError(""); setCheckEmailNote("Your email isn't confirmed yet. Confirm it to log in, or resend below.");
+        setResendCooldown(0); setMode("check_email"); setLoading(false); return;
+      }
       onAuth(data.user);
       setLoading(false);
     } catch (e) {
@@ -13590,14 +13717,31 @@ function AuthScreen({ onAuth, onTryDemo }) {
                       </button>
                     ))}
                   </div>
-                  {success && <div style={{ color: "#00D68F", fontSize: 13, marginBottom: 16, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10 }}>{success}</div>}
+                  {success && <div style={{ color: "#00D68F", fontSize: 13, marginBottom: pendingConfirm ? 8 : 16, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10 }}>{success}</div>}
+                  {pendingConfirm && mode === "login" && (
+                    <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <span style={{ color: "rgba(237,233,226,0.55)", fontSize: 12, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>No email yet?</span>
+                      <button onClick={handleResendConfirm} disabled={resendConfirmCooldown > 0}
+                        style={{ background: "transparent", border: "1.5px solid rgba(0,214,143,0.4)", color: "#00D68F", borderRadius: 10, padding: "7px 14px", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: 12, fontWeight: 700, cursor: resendConfirmCooldown > 0 ? "default" : "pointer", opacity: resendConfirmCooldown > 0 ? 0.5 : 1 }}>
+                        {resendConfirmCooldown > 0 ? `Send again in ${resendConfirmCooldown}s` : "Send it again"}
+                      </button>
+                    </div>
+                  )}
                   <input style={inpStyle} type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" name="email" />
                   <input style={{ ...inpStyle, marginBottom: mode==="signup"?12:20 }} type="password" placeholder="Password (min 8 characters)" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" name="password" />
-                  {mode==="signup"&&(
-                    <input style={{ ...inpStyle, marginBottom: 20, textTransform:"uppercase", letterSpacing:2 }} type="text" placeholder="Beta access code" value={betaCode} onChange={e => setBetaCode(e.target.value)} autoComplete="off" name="betacode" maxLength={20}/>
+                  {/* Invite-only: the code field, as it has always been. Open: a quiet link, so the
+                      few people holding a code can still use it without asking everyone else for one. */}
+                  {mode==="signup"&&showCodeInput&&(
+                    <input style={{ ...inpStyle, marginBottom: 20, textTransform:"uppercase", letterSpacing:2 }} type="text" placeholder={codeRequired?"Beta access code":"Invite code (optional)"} value={betaCode} onChange={e => setBetaCode(e.target.value)} autoComplete="off" name="betacode" maxLength={20}/>
+                  )}
+                  {mode==="signup"&&showCodeLink&&(
+                    <button onClick={() => setShowCodeField(true)}
+                      style={{ display: "block", width: "100%", marginBottom: 20, background: "transparent", border: "none", padding: 0, color: "rgba(237,233,226,0.55)", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: 12, textAlign: "left", cursor: "pointer", textDecoration: "underline" }}>
+                      Have an invite code?
+                    </button>
                   )}
                   {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
-                  <button style={btnStyle(!loading && email && password.length >= 8 && (mode==="login"||betaCode.trim().length>0))} onClick={mode === "login" ? handleLogin : handleSignup} disabled={loading || !email || password.length < 8 || (mode==="signup"&&!betaCode.trim())}>
+                  <button style={btnStyle(!loading && email && password.length >= 8 && codeOk)} onClick={mode === "login" ? handleLogin : handleSignup} disabled={loading || !email || password.length < 8 || !codeOk}>
                     {loading ? "..." : mode === "login" ? "Log In" : "Create Account"}
                   </button>
                   {mode === "login" && (
@@ -14519,6 +14663,7 @@ export default function FlourishApp(){
     if (path === "/privacy") return "privacy";
     if (path === "/terms")   return "terms";
     if (path === "/delete-account") return "delete-account";
+    if (path === "/confirmed") return "confirmed";
     if (path === "/kids")    return "kids";
     return "home";
   })();
@@ -14746,6 +14891,18 @@ export default function FlourishApp(){
     // in-tree (unreferenced) for v1.1, when MFA returns as optional (biometric-first on iOS,
     // TOTP fallback, recovery codes, remember-this-device).
     const syncSession = (session, fromInit) => {
+      // AN UNCONFIRMED ADDRESS IS NOT A SESSION. The Netlify functions already refuse one, but most of
+      // the app talks to Supabase directly under RLS (profiles, user_data), which a valid JWT reaches
+      // whatever the functions think. Whether Supabase issues that JWT at all depends on the project's
+      // "Confirm email" setting, which no code here can see — so the app decides for itself, and an
+      // unconfirmed user is signed out rather than handed a working app with four dead endpoints.
+      if (session?.user && !session.user.email_confirmed_at && !session.user.confirmed_at) {
+        supabase.auth.signOut().catch(() => {});
+        setUser(null);
+        accessTokenRef.current = null;
+        if (fromInit) setAuthLoading(false);
+        return;
+      }
       setUser(session?.user ?? null);
       accessTokenRef.current = session?.access_token || null; // Sprint Z2 #12: keep JWT fresh for the exit beacon
       if (fromInit) setAuthLoading(false);
@@ -15481,6 +15638,7 @@ export default function FlourishApp(){
   if(screen==="privacy")return <div style={legalShell}><PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="terms")return <div style={legalShell}><TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="delete-account")return <div style={legalShell}><DeleteAccount onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
+  if(screen==="confirmed")return <ConfirmedPage/>;
   if(screen==="kids")return <KidsMiniSite country={appData?.profile?.country}/>;
 
   // ── Auth gate ───────────────────────────────────────────────────
