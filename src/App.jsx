@@ -15087,6 +15087,16 @@ export default function FlourishApp(){
     try { const ro = new ResizeObserver(measure); ro.observe(el); bannerRO.current = ro; } catch {}
   }, []);
 
+  // The offline notice is a top banner like the others, so it belongs in the same measured
+  // container. On its own it used to cover the wordmark, the bell and the gear and swallow their
+  // taps; alongside any other banner it was hidden entirely, one z-index below them.
+  const offlineBanner = !isOnline ? (
+    <div style={{width:"100%",maxWidth:430,margin:"0 auto",background:"#180800",borderBottom:`2px solid ${C.orange}44`,padding:"9px 20px",display:"flex",alignItems:"center",gap:10}}>
+      <span style={{fontSize:14}}>📡</span>
+      <span style={{color:DARK_C.goldBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700}}>Offline. Coach paused, numbers saved.</span>
+    </div>
+  ) : null;
+
   const dismissMigratedBanner = ()=>{ try { localStorage.setItem("flourish_db_migrated","seen"); } catch {} setShowMigratedBanner(false); };
   const getSaver = () => {
     if (!saverRef.current) {
@@ -16200,10 +16210,10 @@ input,button,select,textarea { font-family:inherit; }
   if(isDesktop) return (
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000}}>{syncBanner}{migratedBanner}{demoBanner}</div><ModalHost/>
+      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>
 
       {/* ── DESKTOP SIDEBAR ─────────────────────────────────────────── */}
-      <div style={{width:240,minHeight:"100dvh",background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:"var(--banner-h, 0px)",paddingTop:"var(--banner-h, 0px)",height:"100dvh",flexShrink:0}}>
+      <div style={{width:240,minHeight:`calc(100dvh - var(--banner-h, 0px))`,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:"var(--banner-h, 0px)",height:`calc(100dvh - var(--banner-h, 0px))`,flexShrink:0}}>
         {/* Logo */}
         <div style={{padding:"28px 24px 20px"}}>
           <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{background:"none",border:"none",cursor:"pointer",padding:0,display:"flex",alignItems:"center",gap:10}}>
@@ -16262,7 +16272,7 @@ input,button,select,textarea { font-family:inherit; }
       </div>
 
       {/* ── DESKTOP MAIN CONTENT ────────────────────────────────────── */}
-      <div style={{flex:1,minHeight:"100dvh",display:"flex",flexDirection:"column",maxWidth:"calc(100vw - 240px)"}}>
+      <div style={{flex:1,minHeight:"100dvh",display:"flex",flexDirection:"column",maxWidth:"calc(100vw - 240px)",paddingTop:"var(--banner-h, 0px)"}}>
         {/* Top bar */}
         <div style={{padding:"20px 36px 16px",background:C.isDark?`${C.bg}F8`:`${C.bg}EE`,backdropFilter:"blur(12px)",position:"sticky",top:"var(--banner-h, 0px)",zIndex:20,display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid ${C.border}`}}>
           <div>
@@ -16301,7 +16311,7 @@ input,button,select,textarea { font-family:inherit; }
   return(
     <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",transition:"background .35s,color .35s"}}>
       <style dangerouslySetInnerHTML={{__html:globalStyles}}/>
-      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000}}>{syncBanner}{migratedBanner}{demoBanner}</div><ModalHost/>
+      <div ref={bannerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:10000}}>{syncBanner}{migratedBanner}{demoBanner}{offlineBanner}</div><ModalHost/>
       {/* Ambient mesh background */}
       <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
         <div style={{position:"absolute",top:-220,left:-180,width:640,height:640,borderRadius:"50%",background:C.isDark?"radial-gradient(circle,rgba(0,204,133,0.055) 0%,transparent 68%)":"radial-gradient(circle,rgba(0,147,95,0.07) 0%,transparent 68%)",animation:"breathe 8s ease-in-out infinite"}}/>
@@ -16309,13 +16319,6 @@ input,button,select,textarea { font-family:inherit; }
         <div style={{position:"absolute",top:"40%",right:-100,width:360,height:360,borderRadius:"50%",background:C.isDark?"radial-gradient(circle,rgba(77,168,255,0.025) 0%,transparent 70%)":"radial-gradient(circle,rgba(36,114,200,0.04) 0%,transparent 70%)",animation:"breathe 12s ease-in-out infinite 4s"}}/>
       </div>
       <div style={{width:"100%",maxWidth:430,minHeight:"100dvh",display:"flex",flexDirection:"column",position:"relative",zIndex:1,paddingTop:"var(--banner-h, 0px)"}}>
-        {/* ── OFFLINE BANNER ─────────────────────────── */}
-        {!isOnline&&(
-          <div style={{position:"fixed",top:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,zIndex:9999,background:"#180800",borderBottom:`2px solid ${C.orange}44`,padding:"9px 20px",display:"flex",alignItems:"center",gap:10}}>
-            <span style={{fontSize:14}}>📡</span>
-            <span style={{color:DARK_C.goldBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700}}>Offline. Coach paused, numbers saved.</span>
-          </div>
-        )}
         {/* ── TRIAL BANNER ─── Phase D7: only render for users on an active trial ── */}
         {!isPremium&&!isNativeApp()&&trialActive&&trialDaysLeft<=7&&(
           <div style={{background:trialDaysLeft<=2?"#1A0800":`linear-gradient(90deg,${C.purple}22,${C.purpleDim})`,borderBottom:`1px solid ${trialDaysLeft<=2?C.orange+"55":C.purple+"44"}`,padding:"8px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>

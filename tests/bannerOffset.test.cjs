@@ -30,8 +30,8 @@ const APP = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8"
   const t = create();
 
   // ── 1. one measured container holds every fixed top banner ───────────────────────────────────
-  t.ok(/<div ref=\{bannerRef\} style=\{\{position:"fixed",top:0,left:0,right:0,zIndex:10000\}\}>\{syncBanner\}\{migratedBanner\}\{demoBanner\}<\/div>/.test(APP),
-    "1a the three top banners share one fixed container, which is what gets measured");
+  t.ok(/<div ref=\{bannerRef\} style=\{\{position:"fixed",top:0,left:0,right:0,zIndex:10000\}\}>\{syncBanner\}\{migratedBanner\}\{demoBanner\}\{offlineBanner\}<\/div>/.test(APP),
+    "1a all four top banners share one fixed container, which is what gets measured");
   t.eq((APP.match(/<div ref=\{bannerRef\}/g) || []).length, 2,
     "1b …in both shells, mobile and desktop");
   // None of them may re-fix itself, or it would escape the container and stop being measured.
@@ -63,8 +63,25 @@ const APP = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8"
   const stickies = (APP.match(/position:"sticky",top:"var\(--banner-h, 0px\)"/g) || []).length;
   t.eq(stickies, 3, "3d every sticky header pins below the banner, not to the viewport top");
   t.ok(!/position:"sticky",top:0(?![0-9])/.test(APP), "3e …and none is left pinned at 0");
-  t.ok(APP.includes(`width:240,minHeight:"100dvh"`) && APP.includes(`position:"sticky",top:"${V}",paddingTop:"${V}"`),
-    "3f the desktop sidebar is offset too — the previous attempt fixed only mobile");
+  // The sidebar takes the offset ONCE. It had both top and paddingTop on a 100dvh box, so sticky
+  // displacement and padding stacked, the box ended a banner's height below the fold, and the
+  // Settings button — desktop's only route to Settings — could not be reached. This assertion used
+  // to REQUIRE that pairing, which is how a source-text test can pin a defect in place.
+  t.ok(!/position:"sticky",top:"var\(--banner-h, 0px\)",paddingTop:"var\(--banner-h, 0px\)"/.test(APP),
+    "3f nothing takes the offset twice: sticky top AND padding on the same box pushes it off screen");
+  t.ok(APP.includes(`width:240,minHeight:\`calc(100dvh - ${V})\``),
+    "3g the desktop sidebar is shortened by the banner, not padded below it");
+  t.ok(APP.includes(`maxWidth:"calc(100vw - 240px)",paddingTop:"${V}"`),
+    "3h and the desktop MAIN column reserves the height too, or its top bar lands on its content");
+
+  // Every banner that pins to the top must be inside the measured container, or it is either
+  // covering something or being covered by the others.
+  const fixedTops = (APP.match(/position:"fixed",top:0/g) || []).length;
+  t.eq(fixedTops, 2, `3i exactly one fixed top container per shell, and no banner outside it (${fixedTops})`);
+  t.ok(/\{syncBanner\}\{migratedBanner\}\{demoBanner\}\{offlineBanner\}/.test(APP),
+    "3j the offline banner is in the container with the other three");
+  t.ok(!/zIndex:9999,background:"#180800"/.test(APP),
+    "3k …and no longer pins itself one z-index below them, where it was invisible whenever another showed");
 
   // ── 4. the fallback is zero, so nothing moves when no banner shows ───────────────────────────
   t.ok(!/var\(--banner-h\)(?!,)/.test(APP),
