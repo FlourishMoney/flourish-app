@@ -90,6 +90,11 @@ Native-only behaviour is gated by `isCapacitorIOS()`: the app boots into login/s
 
 ## Key architectural facts
 
+### Type and layout tokens — use them, do not hand-write sizes or gaps
+- **Type:** `src/lib/type.js`. Eight sizes, and `TYPE_MIN = 13` is a floor nothing a person reads goes under. `tests/typeScale.test.cjs` fails the build on any smaller `fontSize` without an inline `/* SMALL_TEXT_OK: why */` marker beside it.
+- **Space:** `src/lib/space.js`. `SPACE` (4/8/12/16/24/32), `LAYOUT.minTap` (44), and `GAP` — **text to a control is never under 12px, control to control never under 8px, and nothing overlaps.** Rows mixing text with a control use `row()` / `rowControl()` / `rowText()` so the control wraps to its own line instead of squeezing the text. Never `flex: 1` on a control in such a row: that is the bug the rule exists for.
+- **The rule in full, and what it deliberately does not cover: [`docs/design/LAYOUT-RULES.md`](docs/design/LAYOUT-RULES.md).** `tests/layout.browser.test.cjs` measures the rendered demo in Chromium at 320/375/390/430px and at 100%/130% text, over every tab and every sheet reachable in demo. It is in the gate; run it alone with `npm run test:layout`, which needs `npx playwright install chromium` once.
+
 ### Engines (now in `src/lib/`, not App.jsx — search by name, never by line number)
 - **FinancialCalcEngine** — `src/lib/financialCalculations.js` — `netWorth`, `cashFlow`, `savingsRate`, `debtRatio`, `emergencyFundMonths`, `avgDailySpend`
 - **SafeSpendEngine** — `src/lib/safeSpendEngine.js` — `calculate(data)` returns `{balance, upcomingBills, debtPayments, safetyBuf, savingsAlloc, safeAmount, riskLevel, overdraft, soonBills}`

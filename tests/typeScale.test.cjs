@@ -27,6 +27,10 @@ const FILES = walk(SRC).filter(f => /\.(jsx?|tsx?)$/.test(f) && !f.endsWith("lib
 (async () => {
   const t = create();
   const T = await import("../src/lib/type.js");
+  // SPACE, LAYOUT and tap() moved to space.js when the layout rule grew its own vocabulary around
+  // them (see docs/design/LAYOUT-RULES.md). Section 5 still checks them from here, because this file
+  // is where "the sizes and the distances are decided, not guessed" has always been asserted.
+  const S = await import("../src/lib/space.js");
 
   // ── 1. one scale, and it is the one Apple uses by another name ───────────────────────────────
   t.eq(T.TYPE_MIN, 13, "1a the floor is 13");
@@ -106,14 +110,14 @@ const FILES = walk(SRC).filter(f => /\.(jsx?|tsx?)$/.test(f) && !f.endsWith("lib
     "4b and none is tracked out by 1px or more, which only ever read as a label shouting");
 
   // ── 5. spacing and touch, as numbers rather than habits ──────────────────────────────────────
-  t.eq(T.LAYOUT.sideMargin, 16, "5a 16px side margins");
-  t.eq(T.LAYOUT.cardPadding, 16, "5b 16px card padding");
-  t.eq(T.LAYOUT.cardGap, 12, "5c 12px between cards");
-  t.eq(T.LAYOUT.minTap, 44, "5d 44px minimum tap target");
-  t.eq(JSON.stringify(Object.values(T.SPACE)), JSON.stringify([4, 8, 12, 16, 24, 32]),
+  t.eq(S.LAYOUT.sideMargin, 16, "5a 16px side margins");
+  t.eq(S.LAYOUT.cardPadding, 16, "5b 16px card padding");
+  t.eq(S.LAYOUT.cardGap, 12, "5c 12px between cards");
+  t.eq(S.LAYOUT.minTap, 44, "5d 44px minimum tap target");
+  t.eq(JSON.stringify(Object.values(S.SPACE)), JSON.stringify([4, 8, 12, 16, 24, 32]),
     "5e and the spacing steps are an 8px grid (with a 4px half-step), not free numbers");
-  t.eq(T.tap().minWidth, 44, "5f tap() gives anything a 44px target");
-  t.eq(T.tap().minHeight, 44, "5g …in both dimensions");
+  t.eq(S.tap().minWidth, 44, "5f tap() gives anything a 44px target");
+  t.eq(S.tap().minHeight, 44, "5g …in both dimensions");
 
   t.summary("typeScale.test");
 })();

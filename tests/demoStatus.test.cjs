@@ -146,8 +146,22 @@ const t = create();
   t.eq(count(/["'`]Example · [Ss]ample data["'`]/g), 0, "6a the example wording is not re-typed anywhere in App.jsx");
   t.ok(count(/\{DEMO_STATUS_LABEL\}/g) >= 1, "6b Meet renders the shared label");
   // The Coach header keeps its non-demo 'Live · Your real data', but only AFTER the demo branch.
-  t.ok(/data\.demo\?DEMO_STATUS_LABEL:isOnline\?"Live · Your real data":"Offline"/.test(code),
-       "6c the Coach header checks demo before it may say 'Live · Your real data'");
+  //
+  // This used to pin the one-line ternary that rendered DEMO_STATUS_LABEL inline. That shape put the
+  // label in C.green with a green dot — the colour AND shape of the live state — so the branch was
+  // right and the styling said the opposite. The demo arm is now the shared example tag, which is
+  // what the regex pins: green is unreachable from the demo branch, not merely unwritten.
+  t.ok(/\{data\.demo\s*\?\s*<span style=\{exampleTagStyle\(\)\}>\{DEMO_STATUS_LABEL\}<\/span>\s*:\s*<div[\s\S]{0,400}?"Live · Your real data"/.test(code),
+       "6c the Coach header renders the shared example tag in demo, and only its else-branch may say 'Live · Your real data'");
+  t.eq(count(/"Live · Your real data"/g), 1,
+       "6e …and there is exactly one place in App.jsx that can say it");
+  // Every render of the shared label goes through the shared style. The browser suite checks the
+  // colour that actually comes out (layout.browser.test.cjs section 8); this is the source-side twin,
+  // so a new site cannot introduce a fourth look without one of the two failing.
+  const labelSites = [...code.matchAll(/\{DEMO_STATUS_LABEL\}/g)];
+  t.ok(labelSites.length >= 2, `6f the shared label is rendered in more than one place (${labelSites.length})`);
+  t.eq(labelSites.filter(m => !/exampleTagStyle\(\)/.test(code.slice(Math.max(0, m.index - 120), m.index))).length, 0,
+       "6g …and every one of them is wrapped in exampleTagStyle()");
   // The Activity subtitle keeps 'Live from your bank', but only behind isDemo (which includes data.demo).
   t.ok(/isDemo\?"Sample data · connect your bank for real insights":"Live from your bank"/.test(code),
        "6d the Activity subtitle checks isDemo before it may say 'Live from your bank'");
