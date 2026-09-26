@@ -172,6 +172,14 @@ function SCAN({ scope, textCtrlMin, ctrlCtrlMin, minTap }) {
 
   const small = controls.filter((c) => at(c).box.h < minTap).map((c) => ({ h: r1(at(c).box.h), need: minTap, a: at(c).label, tag: c.tagName.toLowerCase() }));
 
+  // Rule 3 forbids truncating text, and an ellipsis is truncation with a nicer face on it. This
+  // catches the DECLARATION rather than waiting for a name long enough to trigger it: a row that
+  // clips "Investment Portfolio" only when the name is long is still a row that will clip it, and
+  // the demo fixture is not going to supply the name that proves it. Wrap instead.
+  const clipped = texts
+    .filter((e) => cs(e).textOverflow === "ellipsis")
+    .map((e) => ({ text: at(e).label, tag: e.tagName.toLowerCase() }));
+
   // Every rendered "Example · sample data" tag, with the colour it actually came out. The sweep is
   // already standing in front of each screen in demo mode, so this costs nothing and is the only
   // place that sees the tag the way a person does. Checked in section 8.
@@ -179,7 +187,7 @@ function SCAN({ scope, textCtrlMin, ctrlCtrlMin, minTap }) {
     .filter((e) => e.children.length === 0 && /^Example · sample data$/i.test((e.textContent || "").trim()) && shown(e))
     .map((e) => { const s = cs(e); return { color: s.color, fontSize: parseFloat(s.fontSize), fontWeight: s.fontWeight }; });
 
-  return { counts: { controls: controls.length, texts: texts.length }, violations: V, small, exampleTags,
+  return { counts: { controls: controls.length, texts: texts.length }, violations: V, small, exampleTags, clipped,
     hOverflow: r1(document.documentElement.scrollWidth - innerWidth) };
 }
 
@@ -231,6 +239,12 @@ const VIEWS = [
   { name: "Sheet Clear chat", scope: "overlay", reload: true, go: async (p) => { await TAB(p, "Learn"); await TXT(p, "🗑️"); } },
   // "Do → Goals" opens on Debt Sim, so My Goals and its form are separate views. The goal form is
   // inline rather than an overlay, so it is scanned at page scope.
+  // ── the welcome tour, in a context that lets it appear (see sweep()). It is the first thing a new
+  // user touches and it was the last thing this suite looked at. Both steps, because the last one
+  // swaps "Next →" for "Done ✓".
+  { name: "Tour step 1", tour: true, scope: "overlay", reload: true, go: async () => {} },
+  { name: "Tour last step", tour: true, scope: "overlay", reload: true, go: async (p) => {
+      for (let i = 0; i < 3; i++) { await TXT(p, "Next →"); await p.waitForTimeout(500); } } },
   { name: "Do/My Goals", reload: true, go: async (p) => { await TAB(p, "Do"); await TXT(p, "Goals", true); await TXT(p, "My Goals", true); } },
   { name: "Do/My Goals + new goal form", reload: true, go: async (p) => { await TAB(p, "Do"); await TXT(p, "Goals", true); await TXT(p, "My Goals", true); await TXT(p, "+ Add Goal"); } },
 ];
@@ -266,27 +280,41 @@ function serve(dir) {
 
 // ─── one (width, textScale) pass ──────────────────────────────────────────────
 async function sweep(browser, base, width, scale) {
-  const ctx = await browser.newContext({ viewport: { width, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
-  // The welcome tour is a full-screen overlay that would swallow every click.
-  await ctx.addInitScript(() => {
-    try { localStorage.setItem("flourish_tour_done", "1"); localStorage.setItem("flourish_first_visit_done", "1"); } catch (e) {}
-  });
-  const page = await ctx.newPage();
   const jsErrors = [];
-  page.on("pageerror", (e) => jsErrors.push(String(e.message).slice(0, 120)));
 
-  // Google Fonts may be unreachable in CI, so never wait for the network to fall idle.
-  const enterDemo = async () => {
+  // Two contexts, because the welcome tour is both a thing to measure and a thing in the way.
+  //
+  // It is a full-screen overlay that swallows every click, so the sweep suppresses it with
+  // flourish_tour_done — and suppressing it is exactly why it went unmeasured until production
+  // showed two 39px buttons in it. `suppressTour` is therefore a per-context decision rather than a
+  // blanket one, and the tour gets a context where it is allowed to appear. The flag cannot be
+  // cleared per-view instead: addInitScript re-runs on every navigation and would put it straight
+  // back.
+  const open = async (suppressTour) => {
+    const ctx = await browser.newContext({ viewport: { width, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    await ctx.addInitScript((skipTour) => {
+      try {
+        localStorage.setItem("flourish_first_visit_done", "1");
+        if (skipTour) localStorage.setItem("flourish_tour_done", "1");
+      } catch (e) {}
+    }, suppressTour);
+    const page = await ctx.newPage();
+    page.on("pageerror", (e) => jsErrors.push(String(e.message).slice(0, 120)));
+    // Google Fonts may be unreachable in CI, so never wait for the network to fall idle.
     await page.goto(base, { waitUntil: "domcontentloaded" });
     await page.getByText("preview the app with", { exact: false }).first().click({ timeout: 30000 });
     await page.getByText("I Understand & Accept").first().click({ timeout: 30000 });
     await page.getByText("Demo mode", { exact: false }).first().waitFor({ timeout: 40000 });
     await page.waitForTimeout(700);
+    return { ctx, page };
   };
-  await enterDemo();
 
+  const main = await open(true);
+  let tour = null;                       // opened lazily: only the tour views need it
   const out = [];
   for (const v of VIEWS) {
+    if (v.tour && !tour) tour = await open(false);
+    const page = v.tour ? tour.page : main.page;
     if (v.reload) { await page.reload({ waitUntil: "domcontentloaded" }); await page.getByText("Demo mode", { exact: false }).first().waitFor({ timeout: 40000 }); await page.waitForTimeout(500); }
     try {
       await v.go(page);
@@ -305,7 +333,8 @@ async function sweep(browser, base, width, scale) {
       out.push({ view: v.name, unreachable: String(e.message).split("\n")[0].slice(0, 160) });
     }
   }
-  await ctx.close();
+  await main.ctx.close();
+  if (tour) await tour.ctx.close();
   return { width, scale, views: out, jsErrors };
 }
 
@@ -387,6 +416,8 @@ const pool = async (items, n, fn) => {
       t.eq((v.small || []).map((s) => `<${s.tag}> ${s.h}px tall, needs ${s.need} — "${s.a}"`), [],
         `4 [${p.width}px ×${p.scale}] ${v.view} — tap targets`);
       t.ok(v.hOverflow <= 1, `5 [${p.width}px ×${p.scale}] ${v.view} — no horizontal overflow (${v.hOverflow}px)`);
+      t.eq((v.clipped || []).map((c) => `<${c.tag}> "${c.text}"`), [],
+        `9 [${p.width}px ×${p.scale}] ${v.view} — no text truncated with an ellipsis (rule 3: wrap instead)`);
     }
     t.eq(p.jsErrors, [], `6 [${p.width}px ×${p.scale}] no page errors during the sweep`);
   }

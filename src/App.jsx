@@ -33,7 +33,7 @@ import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/signupUi.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { TYPE, TYPE_MIN } from "./lib/type.js";
-import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText } from "./lib/space.js";
+import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText, wrapText } from "./lib/space.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, withWeekAhead, agendaIsEmpty } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
 import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown, formatCompactMoney } from "./lib/format.js";
@@ -3610,7 +3610,7 @@ function DashCustomize({ layout, onChange, onClose }) {
           {items.map((tile, idx) => {
             const m = meta(tile.id);
             return (
-              <div key={tile.id} style={{display:'flex',alignItems:'center',gap:GAP.textToControl,padding:'11px 12px',borderRadius:14,marginBottom:GAP.controlToControl,
+              <div key={tile.id} style={{...row({alignItems:'center'}),padding:'11px 12px',borderRadius:14,marginBottom:GAP.controlToControl,
                 background:tile.locked?C.gold+'0A':C.cardAlt,
                 border:`1px solid ${tile.locked?C.gold+'44':tile.visible!==false?C.green+'33':C.border}`,
                 opacity:tile.visible!==false?1:0.5,transition:'all .15s'}}>
@@ -3623,8 +3623,8 @@ function DashCustomize({ layout, onChange, onClose }) {
                 <div style={{display:'flex',alignItems:'center',justifyContent:'center',width:32,height:32,borderRadius:9,background:tile.visible!==false?C.green+'18':C.cardAlt,border:`1px solid ${tile.visible!==false?C.green+'33':C.border}`,flexShrink:0}}>
                   <TileIcon id={tile.id} size={16} color={tile.visible!==false?C.greenBright:C.muted}/>
                 </div>
-                <div style={{flex:1,color:C.cream,fontWeight:600,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",display:'flex',alignItems:'center',flexWrap:'wrap',columnGap:8,rowGap:4,minWidth:0,overflow:'hidden'}}>
-                  <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.label}</span>
+                <div style={{...wrapText({flex:'1 1 120px',minWidth:120}),color:C.cream,fontWeight:600,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",display:'flex',alignItems:'center',flexWrap:'wrap',columnGap:8,rowGap:4}}>
+                  <span style={wrapText()}>{m.label}</span>
                   {m.alwaysVisible&&<span style={{color:C.gold,fontSize:13,fontWeight:700,flexShrink:0}}>always on</span>}
                   {tile.locked&&<span style={{color:C.gold,fontSize:13,fontWeight:700,flexShrink:0}}>pinned</span>}
                 </div>
@@ -6804,7 +6804,7 @@ function ManualBillForm({data, setAppData, onClose}){
             {observedBills.map(x=>(
               <div key={"obs"+x.i} style={{display:"flex",alignItems:"center",gap:GAP.textToControl,background:C.blueDim,border:`1px solid ${C.blue}33`,borderRadius:12,padding:"10px 12px"}}>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.b.name}</div>
+                  <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",...wrapText()}}>{x.b.name}</div>
                   <div style={{color:C.muted,fontSize:13,marginTop:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>day {x.b.date} · {x.b.freq||"monthly"}{x.b.amountOverride?<span style={{color:C.blueBright}}> · edited</span>:""}</div>
                 </div>
                 <div style={{display:"flex",alignItems:"center",position:"relative",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:9,overflow:"hidden",width:96,flexShrink:0}}>
@@ -6836,7 +6836,7 @@ function ManualBillForm({data, setAppData, onClose}){
         {manualBills.map(b=>(
           <div key={b.id} style={{display:"flex",alignItems:"center",gap:GAP.textToControl,background:C.card,border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 12px"}}>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.name}</div>
+              <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",...wrapText()}}>{b.name}</div>
               <div style={{color:C.muted,fontSize:13,marginTop:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                 {b.variable&&<span style={{color:C.gold}}>~</span>}${parseFloat(b.amount||0).toFixed(0)} · day {b.dayOfMonth||b.date} · {b.recurring!==false?"monthly":"once"}{b.variable?" · variable":""}
               </div>
@@ -7304,7 +7304,7 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
                     <div key={j} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:j<visible.length-1?`1px solid ${C.border}`:"none"}}>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                          <div style={{color:C.cream,fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:180}}>{t.name}</div>
+                          <div style={{color:C.cream,fontSize:13,fontWeight:600,maxWidth:180,...wrapText()}}>{t.name}</div>
                           {linkedBill&&<span style={{background:C.green+"22",color:C.greenBright,fontSize:13,fontWeight:700,borderRadius:99,padding:"1px 6px",flexShrink:0}}>✓ {linkedBill.name}</span>}
                         </div>
                         <div style={{color:C.muted,fontSize:13}}>{t.date}</div>
@@ -8136,7 +8136,7 @@ function SpendScreen({data, setAppData, setScreen}){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{color:C.cream,fontWeight:800,fontSize:15}}>Change Category</div>
-                <div style={{color:C.muted,fontSize:13,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:240}}>{recatTxn.name}</div>
+                <div style={{color:C.muted,fontSize:13,marginTop:2,maxWidth:240,...wrapText()}}>{recatTxn.name}</div>
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
                 {setAppData&&recatTxn.amount>0&&!isCCPayment(recatTxn,data.debts||[])&&<button onClick={()=>{
@@ -8293,7 +8293,7 @@ function SpendScreen({data, setAppData, setScreen}){
             {!txn.logo&&<span>{txnEmoji}</span>}
           </div>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{color:C.cream,fontWeight:600,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txn.name}</div>
+            <div style={{color:C.cream,fontWeight:600,fontSize:14,...wrapText()}}>{txn.name}</div>
             <div style={{display:"flex",columnGap:GAP.textToControl,rowGap:GAP.textToControl,marginTop:GAP.textToControl,alignItems:"center",flexWrap:"wrap"}}>
               <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.amount<0?C.green+"18":txnDispColor+"18",border:`1px solid ${txn.amount<0?C.green:txnDispColor}33`,borderRadius:99,padding:"2px 8px",minHeight:LAYOUT.minTap,color:txn.amount<0?C.greenBright:txnDispColor,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",flexWrap:"wrap",gap:3,minWidth:0,maxWidth:"100%",textAlign:"left"}}>
                 {txn.amount<0&&getCat(txn)==="Transfer"?"Received ↓ tap to label":getCat(txn)} <span style={{opacity:0.6,fontSize:13}}>✎</span>
@@ -8522,8 +8522,8 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
                     <span style={{fontSize:22,flexShrink:0}}>{goalType.icon}</span>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{color:C.cream,fontWeight:800,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.name||g.label||"Goal"}</div>
-                      {g.notes&&<div style={{color:C.muted,fontSize:13,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.notes}</div>}
+                      <div style={{color:C.cream,fontWeight:800,fontSize:14,...wrapText()}}>{g.name||g.label||"Goal"}</div>
+                      {g.notes&&<div style={{color:C.muted,fontSize:13,marginTop:1,...wrapText()}}>{g.notes}</div>}
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
                       <div style={{color:col,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{pct}%</div>
@@ -10413,6 +10413,9 @@ function WidgetScreen({data,onBack}){
   const wStreak=(()=>{try{return parseInt(localStorage.getItem("flourish_streak")||"0");}catch{return 0;}})();
 
   // Shared widget stat tile (dark always)
+  // LAYOUT-RULES.md rule 3 forbids truncating text, and this is its one marked exception: these two
+  // lines are a PICTURE of an iOS home-screen widget at its fixed platform size, where clipping is
+  // the OS's behaviour and not ours. The Widget screen is deliberately outside the layout sweep.
   const WTile=({label,value,color="rgba(237,233,226,0.9)",bg="rgba(255,255,255,0.05)"})=>(
     <div style={{background:bg,borderRadius:10,padding:"6px 10px",flex:1,minWidth:0}}>
       <div style={{color:"rgba(237,233,226,0.4)",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</div>
@@ -10985,7 +10988,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
           : dedupedDisplay.map((a,i)=>(
             <div key={a.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 0",borderBottom:i<dedupedDisplay.length-1?`1px solid ${C.border}`:"none"}}>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{color:C.cream,fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</div>
+                <div style={{color:C.cream,fontSize:13,fontWeight:600,...wrapText()}}>{a.name}</div>
                 <div style={{color:C.muted,fontSize:13}}>{a.type} · {a.institution}</div>
               </div>
               <span style={{color:a.balance>=0?C.greenBright:C.red,fontWeight:700,fontSize:13,flexShrink:0}}>
@@ -11020,7 +11023,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
           : (data.bills||[]).map((b,i)=>(
             <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderBottom:i<(data.bills||[]).length-1?`1px solid ${C.border}`:"none"}}>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{color:C.cream,fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.name}</div>
+                <div style={{color:C.cream,fontSize:13,fontWeight:600,...wrapText()}}>{b.name}</div>
                 <div style={{color:C.muted,fontSize:13}}>due {b.date}{ord(b.date)}</div>
               </div>
               <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",width:78,flexShrink:0}}>
@@ -16505,12 +16508,12 @@ input,button,select,textarea { font-family:inherit; }
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={dismissTour}
                     style={{background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",
-                      color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit",flex:"0 0 auto"}}>
+                      minHeight:LAYOUT.minTap,color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit",flex:"0 0 auto"}}>
                     Skip Tour
                   </button>
                   <button onClick={()=>{ if(isLast){dismissTour();}else{setTourStep(t=>t+1);setScreen(TOUR[tourStep+1].screen);}}}
                     style={{flex:1,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,
-                      border:"none",borderRadius:12,padding:"10px",color:"#041810",
+                      border:"none",borderRadius:12,padding:"10px",minHeight:LAYOUT.minTap,color:"#041810",
                       fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
                     {isLast?"Done ✓":"Next →"}
                   </button>

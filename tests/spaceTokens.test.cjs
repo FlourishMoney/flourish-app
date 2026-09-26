@@ -64,6 +64,11 @@ const PATTERNS = {
   t.eq(S.row({ justifyContent: "space-between" }).justifyContent, "space-between", "2f row() takes overrides");
   t.eq(S.rowControl(), { flexShrink: 0, whiteSpace: "nowrap", minHeight: 44 }, "2g rowControl() holds its size");
   t.eq(S.rowText(), { flexShrink: 1, minWidth: 0 }, "2h rowText() gives way instead");
+  // "anywhere", not "break-word": both break a long word, but only "anywhere" also reduces the
+  // min-content width, which is what lets the flex item shrink instead of spilling over its
+  // neighbour. Deleting an ellipsis without this trades a truncation for an overlap.
+  t.eq(S.wrapText(), { minWidth: 0, overflowWrap: "anywhere" }, "2j wrapText() wraps and may break a long word");
+  t.eq(S.wrapText({ maxWidth: 180 }).maxWidth, 180, "2k …and takes overrides");
   t.ok(!("flex" in S.rowControl()) && !("flex" in S.row()),
     "2i neither helper offers flex:1 — a growing control is what ate the gap on Today");
 
