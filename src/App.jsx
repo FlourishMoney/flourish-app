@@ -3216,9 +3216,11 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
       // Not a coaching line. The old text invented advice AND a dollar figure ($20) that no engine
       // computed, under the coach's name, whenever the request failed. The check-in itself still
       // succeeded, so the result step still shows — it just says there is no tip this time.
+      // Not "your check-in is saved": nothing is persisted here. The +3 lands only when the person
+      // taps Done on this step, so the copy points at that rather than implying it is already done.
       setInsightError(e?.message === "AI disabled"
-        ? "The coach is off in Settings, so there's no tip this time. Your check-in is saved."
-        : "The coach didn't answer, so there's no tip this time. Your check-in is saved.");
+        ? "The coach is off in Settings, so there's no tip this time. Tap Done to record your check-in."
+        : "The coach didn't answer, so there's no tip this time. Tap Done to record your check-in.");
     }
     setLoading(false);
     setStep(4);
@@ -3471,7 +3473,14 @@ ${safeText}
   // Item 6: a refusal used to parse to '{}' and return zero rows, which reads to the person as
   // "your statement had nothing in it" rather than "we could not read it". Fail loudly; the caller
   // already reports a thrown error.
-  if (!r.ok) throw new Error(`coach ${r.status}`);
+  if (!r.ok) {
+    // The message is shown to the person on the onboarding bank screen, so it has to read like a
+    // sentence and carry the way out. Returning zero rows instead — which is what happened before
+    // this check existed — told them their statement was empty, which was not true.
+    throw new Error(r.status === 429
+      ? "The reader is busy right now. Try again in a minute, or upload a CSV instead."
+      : "We couldn't read this statement. Upload a CSV instead, or enter your numbers by hand.");
+  }
   const d = await r.json();
   const raw = d.content?.[0]?.text || '{}';
   const clean = raw.replace(/```json|```/g,'').trim();
@@ -8961,8 +8970,14 @@ function MeetAgenda({ data, isCouple, setScreen }){
   // figures the engines already calculated. Substituted HERE, before anything reads it, so what the
   // screen renders and what the facilitator receives stay the same object: displayed === sent.
   const agenda = useMemo(() => {
-    const full = meetAgendaFor(data);
-    return agendaIsEmpty(full) ? quietWeekAgendaFor(quietWeekFiguresFor(data)) : full;
+    try {
+      const full = meetAgendaFor(data);
+      return agendaIsEmpty(full) ? quietWeekAgendaFor(quietWeekFiguresFor(data)) : full;
+    } catch {
+      // A malformed stored shape must cost the household its agenda, not its app: unguarded, a
+      // throw in here escapes render and reaches the top-level boundary, which blanks everything.
+      return quietWeekAgendaFor({});
+    }
   }, [data]);
   const canFacilitate = isUnlimited();     // premium, beta_founder, or active trial
   const aiOn = aiEnabled();
@@ -8975,7 +8990,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
   const [meetError, setMeetError] = useState(null);   // {kind, text} — a refusal, shown as one
   const [lastSent, setLastSent] = useState(null);     // what Try again should resend
 
-  const items = [...agenda.wins, ...agenda.changes, ...agenda.risks, ...agenda.progress];
+  const items = [...agenda.wins, ...agenda.changes, ...agenda.risks, ...(agenda.upcoming || []), ...agenda.progress];
   const card = {background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px 16px",marginBottom:12};
   const sTitle = {color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8};
 
@@ -8986,8 +9001,13 @@ function MeetAgenda({ data, isCouple, setScreen }){
   // answered. An error is an error: it is shown as one, with a way out.
   const sendToFacilitator = async (userText) => {
     setBusy(true); setMeetError(null);
-    const history = userText ? [...msgs, { role:"user", content:userText }] : msgs;
-    if (userText) setMsgs(history);
+    // Don't re-append on retry: msgs already ends with this turn, and appending again sent the
+    // coach the same sentence two and three times while the screen (which filters user turns out)
+    // showed nothing amiss.
+    const last = msgs[msgs.length - 1];
+    const alreadyThere = !!userText && last && last.role === "user" && last.content === userText;
+    const history = userText && !alreadyThere ? [...msgs, { role:"user", content:userText }] : msgs;
+    if (userText && !alreadyThere) setMsgs(history);
     setLastSent(userText);
     try {
       const jwt = await getJwt();
@@ -8999,13 +9019,26 @@ function MeetAgenda({ data, isCouple, setScreen }){
       if (!r.ok) {
         // A limit reads the same here as it does in the coach chat, and on a store app it names no
         // price and no website — there is nothing to buy there, so an upsell would be a dead end.
-        if (r.status === 429 || r.status === 402) {
-          const j = await r.json().catch(()=>({}));
+        const j = await r.json().catch(()=>({}));
+        // A 429 here is NOT a plan limit. Every weekly-limit check in netlify/functions/coach.js
+        // lives inside case "chat"; case "facilitator" is not metered at all, and the facilitator
+        // is gated to unlimited plans anyway. The 429 that actually reaches this screen is an
+        // upstream rate limit forwarded verbatim — transient, and retrying IS what works. Telling
+        // a founder they had used two free messages was a reason the server never gave, with a
+        // figure that does not apply to them, and it withheld the one button that would have
+        // helped. Only the server's own rate_limited payload is treated as a limit.
+        if (r.status === 429 && j.error === "rate_limited") {
           setMeetError({ kind:"limit", text: isNativeApp()
             ? `You've used this week's ${FREE_TIER_LIMITS.coachMessagesPerWeek} coach messages. They reset Monday.`
             : (j.message || `You've used this week's ${FREE_TIER_LIMITS.coachMessagesPerWeek} coach messages. They reset Monday.`) });
+        } else if (r.status === 429 || r.status === 503) {
+          setMeetError({ kind:"busy", text:"The coach is busy right now. Your agenda above is unchanged." });
+        } else if (r.status === 403 && j.error === "ai_consent_required") {
+          // Not an expired session: the server has no live AI consent for this account. Saying
+          // "sign in again" sends someone round a loop that ends in the same 403 every time.
+          setMeetError({ kind:"consent", text:"Flourish needs your AI consent again before the coach can join. Open Settings → Privacy & AI, turn the coach on, then come back." });
         } else if (r.status === 401 || r.status === 403) {
-          setMeetError({ kind:"auth", text:"Your session expired. Sign in again and the meeting will pick up where it left off." });
+          setMeetError({ kind:"auth", text:"Your session has expired. Sign in again, then start the meeting." });
         } else {
           setMeetError({ kind:"server", text:"The facilitator didn't answer. Your agenda above is unchanged." });
         }

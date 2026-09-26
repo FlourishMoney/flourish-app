@@ -63,10 +63,14 @@ function callSites() {
   // the same dead tap this whole branch exists to remove.
   t.ok(/\(insight \|\| insightError\) && <div key=\{4\}/.test(APP),
     "2e the result step still shows when the tip failed, because the check-in itself succeeded");
-  t.ok(/The coach didn't answer, so there's no tip this time\. Your check-in is saved\./.test(APP),
+  t.ok(/The coach didn't answer, so there's no tip this time\. Tap Done to record your check-in\./.test(APP),
     "2f …and says so plainly");
   t.ok(/The coach is off in Settings, so there's no tip this time\./.test(APP),
     "2g with AI off it gives the real reason instead");
+  // Nothing is persisted when the tip fails: the +3 lands only when Done is tapped. Copy that says
+  // the check-in is already saved invites closing the modal, which discards it.
+  t.ok(!/no tip this time\. Your check-in is saved/.test(APP),
+    "2g2 …and does not claim the check-in is saved when nothing has been written yet");
   t.ok(/onClick=\{fetchInsight\} disabled=\{loading\}/.test(APP), "2h and offers Try again");
 
   // ── 3. the simulator's own fallback can now fire ─────────────────────────────────────────────
@@ -80,8 +84,14 @@ function callSites() {
   // ── 4. a statement that could not be read does not read as an empty statement ────────────────
   const doc = sites.find(s => /type:'document'/.test(s.body));
   t.ok(!!doc, "4a the statement call site is found");
-  t.ok(/if \(!r\.ok\) throw new Error\(`coach \$\{r\.status\}`\)/.test(doc.body),
+  t.ok(/if \(!r\.ok\) \{/.test(doc.body),
     "4b it throws rather than returning zero rows from a refusal");
+  // The thrown message is rendered verbatim on the onboarding bank screen, so it must be a
+  // sentence with a way out — not "coach 500".
+  t.ok(!/throw new Error\(`coach \$\{r\.status\}`\)/.test(doc.body),
+    "4c …and not with a raw status string, which this one shows to the person");
+  t.ok(/Upload a CSV instead, or enter your numbers by hand\./.test(doc.body),
+    "4d it keeps the remedy the old zero-rows path used to offer");
 
   // ── 5. the chat was already honest, and stays that way ───────────────────────────────────────
   t.ok(/if\(!res\.ok\) throw new Error\(`Server error \$\{res\.status\}`\)/.test(APP),

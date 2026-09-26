@@ -13,6 +13,8 @@ import { detectRecurringBills } from "./plaidNormalize.js";
 import { billPrompts, billChangeQuestion } from "./billsReconcile.js";
 import { dismissedEntries, lastMeeting, meetingOpening } from "./meetingRecord.js";
 import { formatMoney } from "./format.js";
+import { safeToSpendView } from "./safeToSpendView.js";
+import { isCashAccount, num } from "./financialCalculations.js";
 
 const _round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const _num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
@@ -156,22 +158,40 @@ export function meetOpeningFor(data = {}) {
 // adds, rounds or estimates. The text carries no bare number of its own — "in the week ahead"
 // rather than "in the next 7 days" — so anything numeric that reaches the facilitator can be traced
 // to an engine that calculated it.
-export function quietWeekAgendaFor({ safeToSpend = null, safeToSpendLabel = "Safe until next payday", upcoming = [] } = {}) {
+export function quietWeekAgendaFor({ safeToSpendText = null, safeToSpend = null, safeToSpendLabel = "Safe until next payday", upcoming = [], truncated = false } = {}) {
   const progress = [];
-  if (safeToSpend !== null && safeToSpend !== undefined && Number.isFinite(Number(safeToSpend))) {
-    progress.push({ text: `${safeToSpendLabel}: ${formatMoney(Number(safeToSpend))}.`, value: Number(safeToSpend), source: "safeSpendEngine" });
+  // The figure comes PRE-FORMATTED from safeToSpendView, the one owner of how this number is shown.
+  // Formatting the engine's raw safeAmount here produced a different number from the rest of the
+  // app for the same label — it rounds half-up where the display policy floors the balance and
+  // ceils the deductions, so a $2,950 dashboard became a $2,951 agenda. Overstating what is
+  // available is the single thing that policy exists to prevent.
+  if (safeToSpendText) {
+    progress.push({ text: `${safeToSpendLabel}: ${safeToSpendText}.`, value: safeToSpend, source: "safeSpendEngine" });
   }
-  const risks = (upcoming || []).filter(u => u && u.text).map(u => ({ text: u.text, value: u.value ?? null, source: "forecastEngine" }));
-  // Always last, and always present: the reason this agenda is short is itself the news.
-  progress.push({ text: "Nothing unusual came up in the week ahead.", value: null, source: "meetSnapshot" });
-  return { wins: [], changes: [], risks, progress, decisions: [], questions: [], quiet: true };
+  // What is coming is neither a risk nor a win. Listing a paycheque under "Upcoming risks" — which
+  // the facilitator reads out in order — is simply wrong, and mislabels routine rent the same way.
+  const up = (upcoming || []).filter(u => u && u.text).map(u => ({ text: u.text, value: u.value ?? null, source: "forecastEngine" }));
+  if (truncated) up.push({ text: "More items follow in the week ahead.", value: null, source: "meetSnapshot" });
+  // Always last, and always present. It speaks about the week that HAPPENED, so it does not
+  // contradict the items above, which are about the week ahead.
+  progress.push({ text: "Nothing unusual happened this week.", value: null, source: "meetSnapshot" });
+  return { wins: [], changes: [], risks: [], progress, decisions: [], questions: [], upcoming: up, quiet: true };
 }
 
 // The figures for the above, read from the engines exactly as every other part of the agenda does.
 export function quietWeekFiguresFor(data = {}) {
-  let safeToSpend = null;
-  try { const ss = SafeSpendEngine.calculate(data); safeToSpend = Number.isFinite(ss?.safeAmount) ? ss.safeAmount : null; }
-  catch { safeToSpend = null; }
+  // Read the figure through safeToSpendView, exactly as every screen that shows it does — including
+  // its refusals. No cash account means no balance to subtract from, and no income means the app
+  // already declines to show this number anywhere else; the meeting does not get a private version.
+  let safeToSpendText = null, safeToSpend = null;
+  try {
+    const hasCashAccount = (data.accounts || []).filter(a => isCashAccount(a)).length > 0;
+    const hasIncome = (data.incomes || []).some(i => num(i && i.amount) > 0);
+    if (hasCashAccount && hasIncome) {
+      const view = safeToSpendView(SafeSpendEngine.calculate(data), { hasCashAccount, hasIncome });
+      if (!view.needsSetup && view.headlineText) { safeToSpendText = view.headlineText; safeToSpend = view.headline; }
+    }
+  } catch { safeToSpendText = null; safeToSpend = null; }
 
   const upcoming = [];
   try {
@@ -179,25 +199,29 @@ export function quietWeekFiguresFor(data = {}) {
     (fc.forecast || []).forEach(day => {
       if (!day || day.day < 1 || day.day > 7) return;
       (day.bills || []).forEach(b => {
-        const amt = _num(b?.amount);
+        const amt = num(b?.amount);   // num(), not parseFloat: "$1,800" must not read as 1
         if (!b?.name || !amt) return;
         upcoming.push({ text: `${_fmtDate(day.date)}: ${b.name} ${formatMoney(amt)} out.`, value: amt });
       });
       (day.deposits || []).forEach(dep => {
-        const amt = _num(dep?.amount);
+        const amt = num(dep?.amount);
         if (!dep?.label || !amt) return;
         upcoming.push({ text: `${_fmtDate(day.date)}: ${dep.label} ${formatMoney(amt)} in.`, value: amt });
       });
     });
   } catch { /* no forecast is not a reason to refuse the meeting */ }
-  return { safeToSpend, upcoming: upcoming.slice(0, 6) };
+  return { safeToSpendText, safeToSpend, upcoming: upcoming.slice(0, 6), truncated: upcoming.length > 6 };
 }
 
 // True when the assembled agenda has nothing in it — the case quietWeekAgendaFor exists for.
 export function agendaIsEmpty(agenda) {
   if (!agenda) return true;
   const n = (k) => (agenda[k] || []).length;
-  return n("wins") + n("changes") + n("risks") + n("progress") + n("decisions") === 0;
+  // questions MUST be counted. agendaToText sends them, and they are the reconcile loop's whole
+  // output — "is Netflix a new regular bill?" — so treating an agenda that holds only questions as
+  // empty would replace it, throw the questions away, and then tell the household nothing came up
+  // in the very week the app had something to ask.
+  return n("wins") + n("changes") + n("risks") + n("progress") + n("decisions") + n("questions") === 0;
 }
 
 // Which facilitator state the Meet screen shows (item 3). Pure, so it can be unit-tested:
@@ -221,6 +245,7 @@ export function agendaToText(agenda) {
   sect("Wins", agenda.wins, i => i.text);
   sect("Changes", agenda.changes, i => i.text);
   sect("Upcoming risks", agenda.risks, i => i.text);
+  sect("Coming up", agenda.upcoming, i => i.text);
   sect("Progress", agenda.progress, i => i.text);
   if (agenda.decisions && agenda.decisions.length) {
     lines.push("Decisions:");
