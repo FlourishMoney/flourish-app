@@ -22,6 +22,15 @@ const path = require("path");
 
 const AUTH_PATH = require.resolve("../netlify/functions/_lib/auth.js");
 const BETA_PATH = require.resolve("../netlify/functions/beta.js");
+const BLOBS_PATH = require.resolve("@netlify/blobs");
+
+// A fresh in-memory rate-limit store per call, so the signup limiter (tests/signupLimit.test.cjs owns
+// it) never refuses an assertion here. Without this, getStore throws outside Netlify and the limiter
+// correctly fails closed, which would make every case in this file a 429.
+function freshBlobs() {
+  const d = new Map();
+  return { getStore: () => ({ async get(k) { return d.has(k) ? d.get(k) : null; }, async setJSON(k, v) { d.set(k, v); } }) };
+}
 
 // ── a fake admin client: records every call, performs none ───────────────────────────────────────
 function fakeAdmin(state) {
@@ -44,11 +53,13 @@ function fakeAdmin(state) {
 }
 
 // Loads the REAL beta.js against that fake, with `env` applied for this call only.
-function runBeta(state, env, body) {
+async function runBeta(state, env, body) {
   const savedEnv = { ...process.env };
   const savedFetch = global.fetch;
   delete require.cache[AUTH_PATH];
   delete require.cache[BETA_PATH];
+  delete require.cache[BLOBS_PATH];
+  require.cache[BLOBS_PATH] = { id: BLOBS_PATH, filename: BLOBS_PATH, loaded: true, exports: freshBlobs() };
   require.cache[AUTH_PATH] = {
     id: AUTH_PATH, filename: AUTH_PATH, loaded: true,
     exports: {
@@ -67,7 +78,9 @@ function runBeta(state, env, body) {
     delete process.env.BETA_CODES;
     Object.assign(process.env, env);
     const beta = require(BETA_PATH);
-    return beta.handler({
+    // Awaited inside the try: the handler reads process.env after its first await, so restoring the
+    // environment in `finally` before it resolves would pull the configuration out from under it.
+    return await beta.handler({
       httpMethod: "POST",
       headers: { origin: "https://flourishmoney.app" },
       body: JSON.stringify(body),
@@ -75,6 +88,7 @@ function runBeta(state, env, body) {
   } finally {
     delete require.cache[AUTH_PATH];
     delete require.cache[BETA_PATH];
+    delete require.cache[BLOBS_PATH];
     process.env = savedEnv;
     global.fetch = savedFetch;
   }

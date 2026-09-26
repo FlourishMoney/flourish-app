@@ -27,6 +27,27 @@
 
 const { getAdminClient, getPublicClient } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
 const { openSignupEnabled, decideSignup } = require("./_lib/signupGate");
+const { checkSignupLimit } = require("./_lib/signupLimit");
+const { getStore } = require("@netlify/blobs");
+
+// The client's IP, from Netlify's trusted header, exactly as coach.js reads it.
+function clientIp(event) {
+  const h = event.headers || {};
+  const ip = (h["x-nf-client-connection-ip"] || h["x-forwarded-for"] || "").split(",")[0].trim();
+  return ip || null;
+}
+
+// The signup rate-limit store, or null when Blobs is unavailable — which checkSignupLimit treats as
+// a refusal, because an abuse control that opens during an outage is not a control.
+function signupLimitStore() {
+  try { return getStore("signup_attempts"); }
+  catch (e) { console.error("[signup] blobs store unavailable:", e.message); return null; }
+}
+
+// One gate for both endpoints that create accounts or send mail.
+async function rateLimit(event, email) {
+  return checkSignupLimit({ store: signupLimitStore(), ip: clientIp(event), email });
+}
 
 const BETA_CAP = 30;
 
@@ -194,6 +215,11 @@ exports.handler = async (event) => {
     if (!addr || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) {
       return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "invalid_email" }) };
     }
+    const limit = await rateLimit(event, addr);
+    if (!limit.allowed) {
+      console.error(`[signup] resend refused: ${limit.reason}`);
+      return { statusCode: 429, headers: CORS, body: JSON.stringify({ error: "rate_limited", message: limit.message }) };
+    }
     await sendConfirmation(addr);
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
   }
@@ -325,6 +351,15 @@ exports.handler = async (event) => {
     if (!password || typeof password !== "string" || password.length < 8) {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "weak_password" }) };
     }
+    // Counted before an account is created or an email is sent, and after the cheap checks above, so
+    // a typo in the address does not burn an attempt. A refused code still counts: guessing codes is
+    // one of the things this limits.
+    const limit = await rateLimit(event, email);
+    if (!limit.allowed) {
+      console.error(`[signup] refused: ${limit.reason}`);
+      return { statusCode: 429, headers: CORS, body: JSON.stringify({ error: "rate_limited", message: limit.message }) };
+    }
+
     // Invite-only unless OPEN_SIGNUP is exactly "true". With the flag unset this is byte for byte
     // today's answer: no code, or a code that is not configured, is invalid_code.
     const open = openSignupEnabled();

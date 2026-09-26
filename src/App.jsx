@@ -13145,6 +13145,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
         else if (e === "email_exists")     setError("This email is already registered. Try logging in instead.");
         else if (e === "weak_password")    setError("Choose a password of at least 8 characters.");
         else if (e === "invalid_email")    setError("Enter a valid email address.");
+        else if (e === "rate_limited")     setError(out.message || "Too many attempts. Try again in an hour.");
         else if (e === "server_misconfig") setError("Signups aren't fully configured on the server yet. Please contact hello@flourishmoney.app.");
         else if (e === "reserve_failed")   setError(`Couldn't reserve a beta seat (server error)${out.detail ? `: ${out.detail}`: ""}. Please try again or contact hello@flourishmoney.app.`);
         else if (e === "create_failed" || e === "create_threw") setError(`Couldn't create your account${(out.message || out.detail) ? `: ${out.message || out.detail}`: ""}. Please try again or contact hello@flourishmoney.app.`);

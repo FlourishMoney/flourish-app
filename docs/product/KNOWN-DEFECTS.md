@@ -798,6 +798,14 @@ link) before the account can call `/api/coach`.
 
 ---
 
+## 33b. Signup rate limit
+
+**FIXED on the open-signup branch.** 5 attempts per IP per hour and 3 per email per day, counted in
+Netlify Blobs (`netlify/functions/_lib/signupLimit.js`), covering both signup and the confirmation
+resend, failing closed when the store is unreachable. Recorded here because defect 32 named it.
+
+---
+
 ## 33. A statement upload costs many chat messages but is metered as one
 
 **Rating: MEDIUM.** Same review.
