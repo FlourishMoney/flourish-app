@@ -819,8 +819,9 @@ multiple of a chat message in tokens while costing exactly 1 against the 50-a-da
 with an account can burn the Anthropic budget far faster by uploading documents than by chatting, and
 the ceiling will not notice.
 
-**Fix (suggested, not built)** Weight the counter by input size, or give statement parsing its own
-much smaller daily allowance.
+**Fix (suggested, not built)** Weight the counter by the size of what is sent rather than counting
+requests: about one message per 10 KB of body, so a full-size upload (the body cap is 100 KB) costs
+10 of the 50 daily messages instead of 1, and an ordinary chat turn still costs 1.
 
 ---
 
