@@ -13,6 +13,8 @@ import { detectRecurringBills } from "./plaidNormalize.js";
 import { billPrompts, billChangeQuestion } from "./billsReconcile.js";
 import { dismissedEntries, lastMeeting, meetingOpening } from "./meetingRecord.js";
 import { formatMoney } from "./format.js";
+import { safeToSpendView } from "./safeToSpendView.js";
+import { isCashAccount, num } from "./financialCalculations.js";
 
 const _round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const _num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
@@ -147,6 +149,81 @@ export function meetOpeningFor(data = {}) {
   return meetingOpening({ lastRecord: lastMeeting(records), snapshot: buildMeetSnapshot(data) });
 }
 
+// ── A QUIET WEEK IS STILL A MEETING ───────────────────────────────────────────────────────────
+// When nothing stood out, the agenda comes back empty and there is nothing to talk about — which
+// used to grey the start button out, so the one week you most want to check in was the week the
+// app refused. This builds a short agenda for that case.
+//
+// Pure, and deliberately so: every figure is passed IN, already computed by an engine. Nothing here
+// adds, rounds or estimates. The text carries no bare number of its own — "in the week ahead"
+// rather than "in the next 7 days" — so anything numeric that reaches the facilitator can be traced
+// to an engine that calculated it.
+export function quietWeekAgendaFor({ safeToSpendText = null, safeToSpend = null, safeToSpendLabel = "Safe until next payday", upcoming = [], truncated = false } = {}) {
+  const progress = [];
+  // The figure comes PRE-FORMATTED from safeToSpendView, the one owner of how this number is shown.
+  // Formatting the engine's raw safeAmount here produced a different number from the rest of the
+  // app for the same label — it rounds half-up where the display policy floors the balance and
+  // ceils the deductions, so a $2,950 dashboard became a $2,951 agenda. Overstating what is
+  // available is the single thing that policy exists to prevent.
+  if (safeToSpendText) {
+    progress.push({ text: `${safeToSpendLabel}: ${safeToSpendText}.`, value: safeToSpend, source: "safeSpendEngine" });
+  }
+  // What is coming is neither a risk nor a win. Listing a paycheque under "Upcoming risks" — which
+  // the facilitator reads out in order — is simply wrong, and mislabels routine rent the same way.
+  const up = (upcoming || []).filter(u => u && u.text).map(u => ({ text: u.text, value: u.value ?? null, source: "forecastEngine" }));
+  if (truncated) up.push({ text: "More items follow in the week ahead.", value: null, source: "meetSnapshot" });
+  // Always last, and always present. It speaks about the week that HAPPENED, so it does not
+  // contradict the items above, which are about the week ahead.
+  progress.push({ text: "Nothing unusual happened this week.", value: null, source: "meetSnapshot" });
+  return { wins: [], changes: [], risks: [], progress, decisions: [], questions: [], upcoming: up, quiet: true };
+}
+
+// The figures for the above, read from the engines exactly as every other part of the agenda does.
+export function quietWeekFiguresFor(data = {}) {
+  // Read the figure through safeToSpendView, exactly as every screen that shows it does — including
+  // its refusals. No cash account means no balance to subtract from, and no income means the app
+  // already declines to show this number anywhere else; the meeting does not get a private version.
+  let safeToSpendText = null, safeToSpend = null;
+  try {
+    const hasCashAccount = (data.accounts || []).filter(a => isCashAccount(a)).length > 0;
+    const hasIncome = (data.incomes || []).some(i => num(i && i.amount) > 0);
+    if (hasCashAccount && hasIncome) {
+      const view = safeToSpendView(SafeSpendEngine.calculate(data), { hasCashAccount, hasIncome });
+      if (!view.needsSetup && view.headlineText) { safeToSpendText = view.headlineText; safeToSpend = view.headline; }
+    }
+  } catch { safeToSpendText = null; safeToSpend = null; }
+
+  const upcoming = [];
+  try {
+    const fc = ForecastEngine.generate(data, 7) || {};
+    (fc.forecast || []).forEach(day => {
+      if (!day || day.day < 1 || day.day > 7) return;
+      (day.bills || []).forEach(b => {
+        const amt = num(b?.amount);   // num(), not parseFloat: "$1,800" must not read as 1
+        if (!b?.name || !amt) return;
+        upcoming.push({ text: `${_fmtDate(day.date)}: ${b.name} ${formatMoney(amt)} out.`, value: amt });
+      });
+      (day.deposits || []).forEach(dep => {
+        const amt = num(dep?.amount);
+        if (!dep?.label || !amt) return;
+        upcoming.push({ text: `${_fmtDate(day.date)}: ${dep.label} ${formatMoney(amt)} in.`, value: amt });
+      });
+    });
+  } catch { /* no forecast is not a reason to refuse the meeting */ }
+  return { safeToSpendText, safeToSpend, upcoming: upcoming.slice(0, 6), truncated: upcoming.length > 6 };
+}
+
+// True when the assembled agenda has nothing in it — the case quietWeekAgendaFor exists for.
+export function agendaIsEmpty(agenda) {
+  if (!agenda) return true;
+  const n = (k) => (agenda[k] || []).length;
+  // questions MUST be counted. agendaToText sends them, and they are the reconcile loop's whole
+  // output — "is Netflix a new regular bill?" — so treating an agenda that holds only questions as
+  // empty would replace it, throw the questions away, and then tell the household nothing came up
+  // in the very week the app had something to ask.
+  return n("wins") + n("changes") + n("risks") + n("progress") + n("decisions") + n("questions") === 0;
+}
+
 // Which facilitator state the Meet screen shows (item 3). Pure, so it can be unit-tested:
 //   'trial'  — unauthenticated/demo OR free tier: no input; "Start your trial to run the meeting..."
 //   'ai-off' — eligible but AI off: no input; "Coach is off in Settings. Your agenda is above."
@@ -168,6 +245,7 @@ export function agendaToText(agenda) {
   sect("Wins", agenda.wins, i => i.text);
   sect("Changes", agenda.changes, i => i.text);
   sect("Upcoming risks", agenda.risks, i => i.text);
+  sect("Coming up", agenda.upcoming, i => i.text);
   sect("Progress", agenda.progress, i => i.text);
   if (agenda.decisions && agenda.decisions.length) {
     lines.push("Decisions:");
