@@ -832,8 +832,11 @@ without converting and which have not opened the app in N days.
 
 ## 35. The Android app cannot reach coach, plaid or billing: their CORS lists omit its origin
 
-**Rating: HIGH for Android, which has not shipped yet.** Found by the review round on the open-signup
-work, which fixed the signup half of it.
+**FIXED on the open-signup branch.** All five functions now share one allow-list
+(`netlify/functions/_lib/cors.js`), which includes the Android shell origin. Kept here for the record.
+
+**Rating was: HIGH for Android, which has not shipped yet.** Found by the review round on the
+open-signup work, which fixed the signup half of it.
 
 **Where** `ALLOWED_ORIGINS` in `netlify/functions/coach.js`, `plaid.js` and `billing.js`.
 

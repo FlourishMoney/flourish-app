@@ -49,29 +49,7 @@ function validateBetaCode(code) {
   return codes.includes(String(code || "").trim().toUpperCase());
 }
 
-// Phase D2: origin-aware CORS — locks to known origins, falls back to production.
-const ALLOWED_ORIGINS = new Set([
-  "https://flourishmoney.app",
-  "capacitor://localhost", // iOS app WKWebView origin — see coach.js for why. Without it, beta-code signup fails on device.
-  // Android app WebView origin. Capacitor 8 defaults androidScheme to "https" and the config does not
-  // override it, so the Android shell serves from https://localhost and its fetches carry that Origin.
-  // Without this line every signup from the Android app is refused by CORS. The other functions
-  // (coach, plaid, billing) still lack it — see KNOWN-DEFECTS 35.
-  "https://localhost",
-  "http://localhost:5173",
-  "http://localhost:8888",
-]);
-
-function corsHeadersFor(event) {
-  const origin = event.headers?.origin || event.headers?.Origin || "";
-  const allowed = ALLOWED_ORIGINS.has(origin) ? origin : "https://flourishmoney.app";
-  return {
-    "Access-Control-Allow-Origin":  allowed,
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Content-Type":                 "application/json",
-  };
-}
+const { corsHeadersFor } = require("./_lib/cors");
 
 async function getUserCount(supabaseUrl, secretKey) {
   const res = await fetch(`${supabaseUrl}/auth/v1/admin/users?page=1&per_page=1`, {

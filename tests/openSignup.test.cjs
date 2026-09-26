@@ -395,11 +395,16 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     ]) t.eq(vis.isNativeApp(win), true, `…${label} is a store app, so its calls reach flourishmoney.app`);
     t.eq(vis.isNativeApp({ location: { protocol: "https:" } }), false, "…and the web still uses a relative path");
 
-    // CORS: the Android shell's Origin must be allowed, or every signup from it is refused.
-    const beta2 = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "beta.js"), "utf8");
-    const origins = beta2.slice(beta2.indexOf("const ALLOWED_ORIGINS"), beta2.indexOf("]);", beta2.indexOf("const ALLOWED_ORIGINS")));
-    t.ok(/"https:\/\/localhost"/.test(origins), "beta.js allows the Android WebView origin https://localhost");
-    t.ok(/"capacitor:\/\/localhost"/.test(origins), "…and still allows the iOS one");
+    // CORS: the Android shell's Origin must be allowed, or every signup from it is refused. The list
+    // is shared by every function now (tests/cors.test.cjs owns it); this checks beta.js answers with it.
+    const { isAllowedOrigin } = require("../netlify/functions/_lib/cors.js");
+    t.eq(isAllowedOrigin("https://localhost"), true, "the Android WebView origin https://localhost is allowed");
+    t.eq(isAllowedOrigin("capacitor://localhost"), true, "…and the iOS one still is");
+    const preflight = await (async () => {
+      const state = freshState();
+      return runBeta(state, { OPEN_SIGNUP: "true" }, { action: "signup_status" });
+    })();
+    t.ok(!!preflight.headers["Access-Control-Allow-Origin"], "beta.js sets the header on every answer");
   }
 
   t.summary("openSignup.test");
