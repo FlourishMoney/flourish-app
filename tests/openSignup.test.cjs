@@ -50,7 +50,13 @@ function runBeta(state, env, body) {
   delete require.cache[AUTH_PATH];
   delete require.cache[BETA_PATH];
   require.cache[AUTH_PATH] = {
-    id: AUTH_PATH, filename: AUTH_PATH, loaded: true, exports: { getAdminClient: () => fakeAdmin(state) },
+    id: AUTH_PATH, filename: AUTH_PATH, loaded: true,
+    exports: {
+      getAdminClient: () => fakeAdmin(state),
+      // Self-serve signups ask Supabase to send the confirmation email; tests/emailConfirmation.test.cjs
+      // owns that path, so here it just has to succeed.
+      getPublicClient: () => ({ auth: { resend: async (a) => { state.resends.push(a); return { error: null }; } } }),
+    },
   };
   // Any network call at all is a failure of the test's premise, not a pass.
   global.fetch = async (url) => { state.fetches.push(String(url)); throw new Error("network blocked in test"); };
@@ -74,7 +80,7 @@ function runBeta(state, env, body) {
   }
 }
 
-const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches: [], seat: "ok", createResult: null, ...over });
+const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches: [], resends: [], seat: "ok", createResult: null, ...over });
 
 (async () => {
   const { openSignupEnabled, decideSignup } = require("../netlify/functions/_lib/signupGate.js");
@@ -179,10 +185,11 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     const OPEN = { OPEN_SIGNUP: "true", BETA_CODES: CODES };
 
     const self = await signup(OPEN, { code: "" });
-    t.eq([self.status, self.data], [200, { ok: true, source: "self_serve" }], "open: a codeless signup succeeds and is tagged self_serve");
+    t.eq([self.status, self.data], [200, { ok: true, source: "self_serve", needsConfirmation: true, sent: true }],
+         "open: a codeless signup succeeds, is tagged self_serve, and must confirm its address");
     t.eq(self.state.created.length, 1, "…one account is created");
     t.eq(self.state.rpc.length, 0, "…and NO beta seat is reserved: the cap is the invited cohort's");
-    t.eq(self.state.created[0].email_confirm, true, "…it is confirmed, as beta accounts are");
+    t.eq(self.state.created[0].email_confirm, false, "…it is UNCONFIRMED until the address is proved (tests/emailConfirmation.test.cjs)");
     t.eq(self.state.created[0].user_metadata.beta, false, "…and it is not labelled a beta user");
     t.eq(self.state.created[0].user_metadata.signup_source, "self_serve", "…the source is recorded on the user too");
 
@@ -198,13 +205,13 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
 
     // The cap, which is the point of this item.
     const cappedSelf = await signup(OPEN, { code: "" }, { seat: "cap_reached" });
-    t.eq(cappedSelf.data, { ok: true, source: "self_serve" }, "open: a FULL cap never refuses a codeless signup");
+    t.eq(cappedSelf.data, { ok: true, source: "self_serve", needsConfirmation: true, sent: true }, "open: a FULL cap never refuses a codeless signup");
     t.eq(cappedSelf.state.created.length, 1, "…the account is created anyway");
     // A full cap must not refuse someone whose only mistake was typing a code: beta_signups was
     // backfilled from every existing auth user, so it can already be at 30, and refusing here would
     // mean "Beta is full" for a code holder while the same person, field cleared, walks in.
     const cappedInvited = await signup(OPEN, { code: "BETA100" }, { seat: "cap_reached" });
-    t.eq(cappedInvited.data, { ok: true, source: "self_serve" }, "open: a full cap admits a CODED signup as self-serve rather than refusing it");
+    t.eq(cappedInvited.data, { ok: true, source: "self_serve", needsConfirmation: true, sent: true }, "open: a full cap admits a CODED signup as self-serve rather than refusing it");
     t.eq(cappedInvited.state.created.length, 1, "…the account is created");
     t.eq(cappedInvited.state.created[0].user_metadata.beta, false, "…and it took no seat, so it is not in the invited cohort");
     t.eq(cappedInvited.state.deletes.length, 0, "…and nothing is released, because nothing was reserved");

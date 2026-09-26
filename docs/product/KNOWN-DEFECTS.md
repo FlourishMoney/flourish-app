@@ -771,6 +771,11 @@ delete it.
 
 ## 32. The signup endpoint has no rate limit and does not verify the email address
 
+**FIXED on the open-signup branch.** A self-serve signup is now created unconfirmed and must open
+Supabase's confirmation email (sent through the project's SMTP) before its token is accepted;
+`getUserFromRequest` refuses an unconfirmed user, so every function is covered. The rate limit is
+below. Kept here for the record.
+
 **Rating: MEDIUM while signup is invite-only, HIGH the day OPEN_SIGNUP is turned on.** Found while
 building the open door (item 5 of the open-signup work). Reported, not fixed, deliberately: the guards
 that exist were in scope to preserve, not to redesign.

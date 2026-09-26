@@ -11896,6 +11896,23 @@ function PrivacyPolicy({onBack}){
 // ─── TERMS OF SERVICE ─────────────────────────────────────────────────────────
 // Google Play requires a publicly reachable page where somebody can ask for their account to be
 // deleted WITHOUT installing the app. Same shell as the other two legal pages, same /route pattern.
+// Where the confirmation link lands. Deliberately the whole page and nothing else: it is opened from
+// a mail app, often on a phone whose Flourish is the store app rather than this site, so the one
+// instruction that is true for everybody is "go back to the app and sign in". No auto-redirect, no
+// deep link, nothing to get wrong. Supabase has already marked the address confirmed by the time this
+// renders; this page's only job is to say so.
+function ConfirmedPage(){
+  return (
+    <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+      <div style={{maxWidth:420,textAlign:"center"}}>
+        <div style={{fontSize:40,marginBottom:16}}>✓</div>
+        <h1 style={{color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",fontSize:26,fontWeight:900,margin:"0 0 10px"}}>You're confirmed.</h1>
+        <p style={{color:C.mutedHi,fontSize:15,lineHeight:1.6,margin:0}}>Open Flourish and sign in.</p>
+      </div>
+    </div>
+  );
+}
+
 function DeleteAccount({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
@@ -13018,6 +13035,9 @@ function AuthScreen({ onAuth, onTryDemo }) {
   // what this screen does today. A server that cannot be reached therefore changes nothing.
   const [openSignup, setOpenSignup] = useState(null);
   const [showCodeField, setShowCodeField] = useState(false);
+  // The address a self-serve signup must confirm, and the cooldown on asking for the mail again.
+  const [pendingConfirm, setPendingConfirm] = useState("");
+  const [resendConfirmCooldown, setResendConfirmCooldown] = useState(0);
   const { codeRequired, showField: showCodeInput, showLink: showCodeLink } = signupCodeState({ openSignup, showCodeField });
   // The same helper the tests check, rather than the rule written twice: the button used to re-state
   // "a code is needed unless the door is open" inline, where it could drift from the field beside it.
@@ -13072,6 +13092,30 @@ function AuthScreen({ onAuth, onTryDemo }) {
     return () => clearTimeout(t);
   }, [resendCooldown]);
 
+  // Same ticker for the confirm-email cooldown.
+  useEffect(() => {
+    if (resendConfirmCooldown <= 0) return;
+    const t = setTimeout(() => setResendConfirmCooldown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendConfirmCooldown]);
+
+  // Ask the server to send the confirmation email again. It answers the same way whatever the address
+  // turns out to be, so this cannot be used to find out who has an account.
+  const handleResendConfirm = async () => {
+    if (!pendingConfirm || resendConfirmCooldown > 0) return;
+    setResendConfirmCooldown(60);
+    try {
+      await fetch(`${API_BASE}/api/beta`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "resend_confirmation", email: pendingConfirm }),
+      });
+      setSuccess("Check your email to confirm your address.");
+    } catch {
+      setError("Couldn't reach the server. Try again in a moment.");
+    }
+  };
+
   const handleResend = async () => {
     if (resendCooldown > 0 || !email || loading) return;
     setError(""); setCheckEmailNote("");
@@ -13108,10 +13152,17 @@ function AuthScreen({ onAuth, onTryDemo }) {
         else                               setError(`Signup failed${e ? ` (${e})`: ` (HTTP ${res.status})`}${out.detail ? `: ${out.detail}`: out.message ? `: ${out.message}`: ""}. Please contact hello@flourishmoney.app.`);
         setLoading(false); return;
       }
-      // Account created + confirmed (option b) — no email to check. Drop the user on the login screen
-      // with a success banner; email + password are still populated so they can log straight in.
+      // A CODED signup is confirmed on creation, so there is no email to check: drop them on the
+      // login screen, where the address and password are still filled in. A SELF-SERVE signup is not
+      // usable until the address is confirmed, so say exactly that and offer to send it again.
       setCheckEmailNote("");
-      setSuccess("Account created. You can log in now.");
+      if (out.needsConfirmation) {
+        setPendingConfirm(email);
+        setSuccess("Check your email to confirm your address.");
+      } else {
+        setPendingConfirm("");
+        setSuccess("Account created. You can log in now.");
+      }
       setMode("login");
       setLoading(false);
     } catch (e) {
@@ -13517,7 +13568,16 @@ function AuthScreen({ onAuth, onTryDemo }) {
                       </button>
                     ))}
                   </div>
-                  {success && <div style={{ color: "#00D68F", fontSize: 13, marginBottom: 16, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10 }}>{success}</div>}
+                  {success && <div style={{ color: "#00D68F", fontSize: 13, marginBottom: pendingConfirm ? 8 : 16, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10 }}>{success}</div>}
+                  {pendingConfirm && mode === "login" && (
+                    <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <span style={{ color: "rgba(237,233,226,0.55)", fontSize: 12, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>No email yet?</span>
+                      <button onClick={handleResendConfirm} disabled={resendConfirmCooldown > 0}
+                        style={{ background: "transparent", border: "1.5px solid rgba(0,214,143,0.4)", color: "#00D68F", borderRadius: 10, padding: "7px 14px", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: 12, fontWeight: 700, cursor: resendConfirmCooldown > 0 ? "default" : "pointer", opacity: resendConfirmCooldown > 0 ? 0.5 : 1 }}>
+                        {resendConfirmCooldown > 0 ? `Send again in ${resendConfirmCooldown}s` : "Send it again"}
+                      </button>
+                    </div>
+                  )}
                   <input style={inpStyle} type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" name="email" />
                   <input style={{ ...inpStyle, marginBottom: mode==="signup"?12:20 }} type="password" placeholder="Password (min 8 characters)" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" name="password" />
                   {/* Invite-only: the code field, as it has always been. Open: a quiet link, so the
@@ -14454,6 +14514,7 @@ export default function FlourishApp(){
     if (path === "/privacy") return "privacy";
     if (path === "/terms")   return "terms";
     if (path === "/delete-account") return "delete-account";
+    if (path === "/confirmed") return "confirmed";
     if (path === "/kids")    return "kids";
     return "home";
   })();
@@ -15416,6 +15477,7 @@ export default function FlourishApp(){
   if(screen==="privacy")return <div style={legalShell}><PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="terms")return <div style={legalShell}><TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="delete-account")return <div style={legalShell}><DeleteAccount onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
+  if(screen==="confirmed")return <ConfirmedPage/>;
   if(screen==="kids")return <KidsMiniSite country={appData?.profile?.country}/>;
 
   // ── Auth gate ───────────────────────────────────────────────────

@@ -15,6 +15,8 @@
  *                          beta/access codes. If unset, the function fails CLOSED (every code is
  *                          rejected). There is deliberately no hardcoded fallback — a missing config
  *                          must never mean "accept known codes".
+ *   SUPABASE_ANON_KEY    — REQUIRED once OPEN_SIGNUP is on. The publishable key, used only to ask
+ *                          Supabase to send its own confirmation email through the project's SMTP.
  *   OPEN_SIGNUP          — OPTIONAL. "true" opens signup to anyone, with no code. Anything else,
  *                          including unset, keeps signup invite-only exactly as it is today. Read
  *                          server-side only; its value never reaches the client bundle. See
@@ -23,7 +25,7 @@
 
 "use strict";
 
-const { getAdminClient } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
+const { getAdminClient, getPublicClient } = require("./_lib/auth"); // Sprint Z3 #1: supabase-js admin client (service role) for the signup path
 const { openSignupEnabled, decideSignup } = require("./_lib/signupGate");
 
 const BETA_CAP = 30;
@@ -110,6 +112,36 @@ async function waitlistRowExists(supabaseUrl, secretKey, email) {
   }
 }
 
+// Where the confirmation link lands. A real page on the site, so it works for someone who signed up
+// on the web AND for someone who signed up in a store app and opens the mail on the same phone: the
+// page tells them to go back to the app, which is the only instruction that is true for both.
+// Supabase will only redirect to a URL on its own allow-list, so this exact address has to be added
+// to the project's Redirect URLs.
+const CONFIRM_REDIRECT = "https://flourishmoney.app/confirmed";
+
+// Ask Supabase to send its "Confirm your signup" email through the project's SMTP. Returns true when
+// Supabase accepted it. Never throws: a signup that has already created the account must not be
+// reported as failed because the mail could not be handed over, and the person can press Resend.
+async function sendConfirmation(email) {
+  try {
+    const pub = getPublicClient();
+    const { error } = await pub.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: CONFIRM_REDIRECT },
+    });
+    if (error) {
+      console.error("[beta:signup] confirmation send refused:", error.message);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    // A missing SUPABASE_ANON_KEY lands here. Loud in the log, and the caller decides what to say.
+    console.error("[beta:signup] confirmation send failed:", e.message);
+    return false;
+  }
+}
+
 exports.handler = async (event) => {
   // Phase D2: per-request CORS (origin-aware). Inner references can keep using CORS.
   const CORS = corsHeadersFor(event);
@@ -151,6 +183,19 @@ exports.handler = async (event) => {
   // Valid codes come ONLY from BETA_CODES; unset env var → validateBetaCode returns false (fail closed).
   if (action === "validate") {
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: validateBetaCode(body.code) }) };
+  }
+
+  // Send the confirmation email again. The person asked for it, typically because the first one has
+  // not arrived. Deliberately says nothing about whether the address exists or is already confirmed:
+  // this endpoint is public, so a different answer for each case would make it an account oracle.
+  // Supabase rate-limits its own resend endpoint; the per-IP and per-email limits below cover ours.
+  if (action === "resend_confirmation") {
+    const addr = String(body.email || "").trim().toLowerCase();
+    if (!addr || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) {
+      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "invalid_email" }) };
+    }
+    await sendConfirmation(addr);
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
   }
 
   // Phase E1: waitlist email capture (replaces public signup CTAs).
@@ -266,8 +311,9 @@ exports.handler = async (event) => {
 
   // Sprint Z3 #1: server-side signup — the ONLY signup path once public sign-ups are disabled in
   // Supabase. Validates the beta code, ATOMICALLY reserves a seat (closes the count→insert TOCTOU via
-  // reserve_beta_seat's advisory lock), then admin-creates the user. email_confirm:true (option b) —
-  // beta accounts are admin-provisioned + confirmed; no transactional email provider needed (App Review note).
+  // reserve_beta_seat's advisory lock), then admin-creates the user. A CODED signup is created
+  // confirmed, as it always has been: Amanda handed that person the code. A SELF-SERVE signup is
+  // created unconfirmed and must open the email first.
   if (action === "signup") {
     const email = String(body.email || "").trim().toLowerCase();
     const password = body.password;
@@ -340,7 +386,12 @@ exports.handler = async (event) => {
       const { error: createErr } = await admin.auth.admin.createUser({
         email,
         password,
-        email_confirm: true,
+        // A CODED signup is confirmed on creation, exactly as it has always been: Amanda handed that
+        // person the code, so the address is already known to her. A SELF-SERVE signup is created
+        // UNCONFIRMED, because nobody has yet shown they own the address — they prove it by opening
+        // the email. Until they do, _lib/auth.js refuses their token, so the account cannot call
+        // /api/coach or anything else.
+        email_confirm: gate.usedCode,
         // `beta` says whether a code was used, so it stops being true of everyone the day the door
         // opens; `signup_source` is the same word the response and the log carry. Neither grants
         // anything: handle_new_user (migration 0007) gives every new account the 14-day trial and
@@ -367,6 +418,14 @@ exports.handler = async (event) => {
     // The cohort is the whole point of the field: `invited` is someone who was given a code,
     // `self_serve` is a stranger who found the app. No email and no identifier is logged.
     console.log(`[beta:signup] signup_completed source=${gate.source}`);
+
+    // A self-serve account is unusable until the address is confirmed, so the email is the last step
+    // of the signup rather than an afterthought. If Supabase would not take it the account still
+    // exists and still needs confirming, so the answer says so and the screen offers Resend.
+    if (!gate.usedCode) {
+      const sent = await sendConfirmation(email);
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, source: gate.source, needsConfirmation: true, sent }) };
+    }
 
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, source: gate.source }) };
   }
