@@ -147,6 +147,59 @@ export function meetOpeningFor(data = {}) {
   return meetingOpening({ lastRecord: lastMeeting(records), snapshot: buildMeetSnapshot(data) });
 }
 
+// ── A QUIET WEEK IS STILL A MEETING ───────────────────────────────────────────────────────────
+// When nothing stood out, the agenda comes back empty and there is nothing to talk about — which
+// used to grey the start button out, so the one week you most want to check in was the week the
+// app refused. This builds a short agenda for that case.
+//
+// Pure, and deliberately so: every figure is passed IN, already computed by an engine. Nothing here
+// adds, rounds or estimates. The text carries no bare number of its own — "in the week ahead"
+// rather than "in the next 7 days" — so anything numeric that reaches the facilitator can be traced
+// to an engine that calculated it.
+export function quietWeekAgendaFor({ safeToSpend = null, safeToSpendLabel = "Safe until next payday", upcoming = [] } = {}) {
+  const progress = [];
+  if (safeToSpend !== null && safeToSpend !== undefined && Number.isFinite(Number(safeToSpend))) {
+    progress.push({ text: `${safeToSpendLabel}: ${formatMoney(Number(safeToSpend))}.`, value: Number(safeToSpend), source: "safeSpendEngine" });
+  }
+  const risks = (upcoming || []).filter(u => u && u.text).map(u => ({ text: u.text, value: u.value ?? null, source: "forecastEngine" }));
+  // Always last, and always present: the reason this agenda is short is itself the news.
+  progress.push({ text: "Nothing unusual came up in the week ahead.", value: null, source: "meetSnapshot" });
+  return { wins: [], changes: [], risks, progress, decisions: [], questions: [], quiet: true };
+}
+
+// The figures for the above, read from the engines exactly as every other part of the agenda does.
+export function quietWeekFiguresFor(data = {}) {
+  let safeToSpend = null;
+  try { const ss = SafeSpendEngine.calculate(data); safeToSpend = Number.isFinite(ss?.safeAmount) ? ss.safeAmount : null; }
+  catch { safeToSpend = null; }
+
+  const upcoming = [];
+  try {
+    const fc = ForecastEngine.generate(data, 7) || {};
+    (fc.forecast || []).forEach(day => {
+      if (!day || day.day < 1 || day.day > 7) return;
+      (day.bills || []).forEach(b => {
+        const amt = _num(b?.amount);
+        if (!b?.name || !amt) return;
+        upcoming.push({ text: `${_fmtDate(day.date)}: ${b.name} ${formatMoney(amt)} out.`, value: amt });
+      });
+      (day.deposits || []).forEach(dep => {
+        const amt = _num(dep?.amount);
+        if (!dep?.label || !amt) return;
+        upcoming.push({ text: `${_fmtDate(day.date)}: ${dep.label} ${formatMoney(amt)} in.`, value: amt });
+      });
+    });
+  } catch { /* no forecast is not a reason to refuse the meeting */ }
+  return { safeToSpend, upcoming: upcoming.slice(0, 6) };
+}
+
+// True when the assembled agenda has nothing in it — the case quietWeekAgendaFor exists for.
+export function agendaIsEmpty(agenda) {
+  if (!agenda) return true;
+  const n = (k) => (agenda[k] || []).length;
+  return n("wins") + n("changes") + n("risks") + n("progress") + n("decisions") === 0;
+}
+
 // Which facilitator state the Meet screen shows (item 3). Pure, so it can be unit-tested:
 //   'trial'  — unauthenticated/demo OR free tier: no input; "Start your trial to run the meeting..."
 //   'ai-off' — eligible but AI off: no input; "Coach is off in Settings. Your agenda is above."

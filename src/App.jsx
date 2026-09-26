@@ -31,7 +31,7 @@ import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPric
 import { isNativeApp, billingUiState, offeredPlans, billingReturnNotice, BILLING_RETURN_PARAMS } from "./lib/billingVisibility.js";
 import { tabForScreen } from "./lib/navigation.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
-import { meetAgendaFor, agendaToText, facilitatorGateState } from "./lib/meetSnapshot.js";
+import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, agendaIsEmpty } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
 import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown, formatCompactMoney } from "./lib/format.js";
 import { payWord, savingsAccountTerm, retirementAccountsLabel } from "./lib/locale.js";
@@ -8926,7 +8926,14 @@ const HOUSEHOLD_ENABLED = false;
 // with the facilitator gated by plan + AI-on. Free/AI-off users always get the agenda; only unlimited
 // tiers with AI on can start the facilitator, which operates ONLY on the supplied agenda.
 function MeetAgenda({ data, isCouple, setScreen }){
-  const agenda = useMemo(() => meetAgendaFor(data), [data]);
+  // A quiet week used to produce an empty agenda, which greyed the start button out — so the week
+  // nothing happened was the week the app refused to talk. It now falls back to a short agenda of
+  // figures the engines already calculated. Substituted HERE, before anything reads it, so what the
+  // screen renders and what the facilitator receives stay the same object: displayed === sent.
+  const agenda = useMemo(() => {
+    const full = meetAgendaFor(data);
+    return agendaIsEmpty(full) ? quietWeekAgendaFor(quietWeekFiguresFor(data)) : full;
+  }, [data]);
   const canFacilitate = isUnlimited();     // premium, beta_founder, or active trial
   const aiOn = aiEnabled();
   // Item 3: only a signed-in eligible tier with AI on sees the input; demo/free → trial line, AI off → off line.
@@ -8937,7 +8944,6 @@ function MeetAgenda({ data, isCouple, setScreen }){
   const [busy, setBusy] = useState(false);
 
   const items = [...agenda.wins, ...agenda.changes, ...agenda.risks, ...agenda.progress];
-  const hasAgenda = items.length > 0 || agenda.decisions.length > 0;
   const card = {background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px 16px",marginBottom:12};
   const sTitle = {color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8};
 
@@ -9002,7 +9008,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
       ) : facilitatorGate === "ai-off" ? (
         <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5}}>Coach is off in Settings. Your agenda is above.</div></div>
       ) : !started ? (
-        <button onClick={start} disabled={!hasAgenda} style={{width:"100%",background:hasAgenda?`linear-gradient(135deg,${C.purple},${C.purpleBright})`:C.cardAlt,border:"none",borderRadius:14,padding:"13px",color:hasAgenda?"#fff":C.muted,fontWeight:800,fontSize:14,cursor:hasAgenda?"pointer":"default",fontFamily:"inherit"}}>{isCouple?"Start the meeting":"Start solo check-in"}</button>
+        <button onClick={start} style={{width:"100%",background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:14,padding:"13px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{isCouple?"Start the meeting":"Start solo check-in"}</button>
       ) : (
         <div style={card}>
           <div style={{color:C.muted,fontSize:11,marginBottom:8}}>The facilitator works only from the agenda above. Nothing here moves money; a choice is only recorded after you confirm it.</div>
