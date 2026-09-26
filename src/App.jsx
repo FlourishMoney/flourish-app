@@ -5289,7 +5289,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             ) : (
             <button onClick={e=>{e.stopPropagation();setExplain("safeToSpend");}} aria-label="How Flourish got this number"
               style={{background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",
-              fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.88,marginBottom:18,position:"relative",display:"inline-block"}}>
+              fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:1,marginBottom:18,position:"relative",display:"inline-block"}}>
               {ssView.isShort&&<span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,fontWeight:900}}>-</span>}<span style={{fontSize:24,color:heroColorBright,verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
               <span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`,
                 transition:"opacity .3s",opacity:isRefreshing?0.4:1}}>
