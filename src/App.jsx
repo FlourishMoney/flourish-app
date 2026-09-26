@@ -5294,7 +5294,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 // Demo sets bankConnected:true, so this used to say "· live" over sample data. The
                 // wording now comes from demoStatus.js; colours are unchanged (live muted, else gold).
                 const fresh = heroFreshness({demo:!!data.demo, bankConnected:!!data.bankConnected});
-                return <span style={{color:fresh.kind==="live"?C.muted:C.gold,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3,whiteSpace:fresh.kind==="example"?"nowrap":undefined}}>{fresh.text}</span>;
+                // Demo: a tag, not a "· suffix", so a wrapped line never starts with a separator.
+                if (fresh.kind==="example") return <span style={{color:C.gold,background:C.gold+"14",border:`1px solid ${C.gold}33`,borderRadius:99,padding:"1px 9px",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3,whiteSpace:"nowrap"}}>{fresh.text}</span>;
+                return <span style={{color:fresh.kind==="live"?C.muted:C.gold,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>{fresh.text}</span>;
               })()}
             </div>
             {hasCashAccount ? (_ss.noIncome ? (

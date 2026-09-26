@@ -31,8 +31,11 @@ export function statusChip({ demo, lastRefreshRaw, nowMs }) {
 
 // The suffix on the safe-to-spend headline. `kind` lets the caller keep its existing colours:
 // "live" is muted, everything else is gold.
+// In demo the suffix carries NO leading separator: it is long enough to wrap onto its own line at phone
+// width, and a line that starts with "·" separates nothing. App.jsx renders it as a small tag instead,
+// which reads correctly whether it sits inline or wraps.
 export function heroFreshness({ demo, bankConnected }) {
-  if (demo) return { text: `· ${DEMO_STATUS_LABEL}`, kind: "example" };
+  if (demo) return { text: DEMO_STATUS_LABEL, kind: "example" };
   return bankConnected
     ? { text: "· live", kind: "live" }
     : { text: "· estimated", kind: "estimated" };

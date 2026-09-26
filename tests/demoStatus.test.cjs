@@ -53,7 +53,9 @@ const t = create();
       for (const bank of BOOL) {
         const h = heroFreshness({ demo: true, bankConnected: bank });
         heroes++;
-        if (h.text !== `· ${DEMO_STATUS_LABEL}`) leaks.push(`hero ${JSON.stringify(h.text)} bank=${bank}`);
+        if (h.text !== DEMO_STATUS_LABEL) leaks.push(`hero ${JSON.stringify(h.text)} bank=${bank}`);
+        // It can wrap onto its own line at phone width, so it must never START with a separator.
+        if (/^\s*[·•|\-–—]/.test(h.text)) leaks.push(`hero suffix starts with a separator: ${JSON.stringify(h.text)}`);
         if (/live/i.test(h.text)) leaks.push(`hero says live, bank=${bank}`);
         if (h.kind !== "example") leaks.push(`hero kind ${h.kind}`);
 
