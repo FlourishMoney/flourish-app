@@ -5477,7 +5477,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                                 fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .15s",minHeight:34}}
                               onMouseEnter={e=>{e.currentTarget.style.background=heroColor+"22";}}
                               onMouseLeave={e=>{e.currentTarget.style.background=heroColor+"0D";}}>
-                              ${amt}
+                              {formatMoney(amt)}
                             </button>
                           ))}
                         </div>
