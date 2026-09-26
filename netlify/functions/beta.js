@@ -298,22 +298,33 @@ exports.handler = async (event) => {
     try { admin = getAdminClient(); }
     catch (e) { console.error("[beta:signup] admin client unavailable:", e.message); return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "server_misconfig" }) }; }
 
-    // Atomic seat reservation (advisory-locked count+insert in Postgres).
-    let seat;
-    try {
-      const { data, error } = await admin.rpc("reserve_beta_seat", { p_email: email, p_cap: BETA_CAP });
-      if (error) throw error;
-      seat = data; // 'ok' | 'cap_reached' | 'email_exists'
-    } catch (e) {
-      console.error("[beta:signup] reserve_beta_seat failed:", e.message);
-      return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: "reserve_failed", detail: (e.message || "").slice(0, 200) }) };
+    // THE CAP IS THE INVITED COHORT'S CAP, so only a coded signup reserves a seat against it.
+    //
+    // beta_signups is what BETA_CAP counts. If a self-serve signup took a seat, the first 30 strangers
+    // would fill the beta and lock out the people actually holding codes — and then, once full, every
+    // open signup would answer cap_reached, which is exactly the shut door this work removes. So an
+    // open signup skips the reservation entirely: it is never refused for a full cap, and it never
+    // consumes one. A duplicate email is still caught, one step later and just as atomically, by
+    // Supabase's own unique constraint in createUser (the email_exists branch below).
+    let seat = null;
+    if (gate.usedCode) {
+      try {
+        const { data, error } = await admin.rpc("reserve_beta_seat", { p_email: email, p_cap: BETA_CAP });
+        if (error) throw error;
+        seat = data; // 'ok' | 'cap_reached' | 'email_exists'
+      } catch (e) {
+        console.error("[beta:signup] reserve_beta_seat failed:", e.message);
+        return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: "reserve_failed", detail: (e.message || "").slice(0, 200) }) };
+      }
+      if (seat === "cap_reached")  return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "cap_reached" }) };
+      if (seat === "email_exists") return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "email_exists" }) };
     }
-    if (seat === "cap_reached")  return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "cap_reached" }) };
-    if (seat === "email_exists") return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "email_exists" }) };
 
-    // seat === 'ok' → seat reserved. Create the auth user; on ANY failure, RELEASE the seat so the cap
-    // stays accurate (best-effort — if the release itself fails the seat orphans; log loudly for manual SQL).
+    // A coded signup now holds a seat. Create the auth user; on ANY failure, RELEASE it so the cap
+    // stays accurate (best-effort — if the release itself fails the seat orphans; log loudly for manual
+    // SQL). A self-serve signup reserved nothing, so there is nothing to release.
     const releaseSeat = async (why) => {
+      if (seat !== "ok") return;
       try {
         const { error: delErr } = await admin.from("beta_signups").delete().eq("email", email);
         if (delErr) console.error(`[beta:signup] ORPHAN SEAT (${why}) — seat-release FAILED for ${email}; manual cleanup: delete from public.beta_signups where email='${email}';`, delErr.message);
@@ -327,7 +338,11 @@ exports.handler = async (event) => {
         email,
         password,
         email_confirm: true,
-        user_metadata: { beta: true, signed_up: new Date().toISOString() },
+        // `beta` says whether a code was used, so it stops being true of everyone the day the door
+        // opens; `signup_source` is the same word the response and the log carry. Neither grants
+        // anything: handle_new_user (migration 0007) gives every new account the 14-day trial and
+        // founder_flag false, and nothing anywhere reads these fields.
+        user_metadata: { beta: gate.usedCode, signup_source: gate.source, signed_up: new Date().toISOString() },
       });
       if (createErr) {
         await releaseSeat("createUser error");
@@ -344,7 +359,13 @@ exports.handler = async (event) => {
       return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "create_threw", detail: (e.message || "").slice(0, 200) }) };
     }
 
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
+    // signup_completed. There is no analytics pipeline yet (no events table, no Plausible, no GA), so
+    // the funnel's record of this is the function log plus the `source` the client is handed back.
+    // The cohort is the whole point of the field: `invited` is someone who was given a code,
+    // `self_serve` is a stranger who found the app. No email and no identifier is logged.
+    console.log(`[beta:signup] signup_completed source=${gate.source}`);
+
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, source: gate.source }) };
   }
 
   try {

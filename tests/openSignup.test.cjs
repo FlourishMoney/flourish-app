@@ -168,5 +168,63 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
          "…and vite bakes no VITE_OPEN_SIGNUP into the bundle");
   }
 
+  // ── 6. With the door open ─────────────────────────────────────────────────────────────────────
+  {
+    const OPEN = { OPEN_SIGNUP: "true", BETA_CODES: CODES };
+
+    const self = await signup(OPEN, { code: "" });
+    t.eq([self.status, self.data], [200, { ok: true, source: "self_serve" }], "open: a codeless signup succeeds and is tagged self_serve");
+    t.eq(self.state.created.length, 1, "…one account is created");
+    t.eq(self.state.rpc.length, 0, "…and NO beta seat is reserved: the cap is the invited cohort's");
+    t.eq(self.state.created[0].email_confirm, true, "…it is confirmed, as beta accounts are");
+    t.eq(self.state.created[0].user_metadata.beta, false, "…and it is not labelled a beta user");
+    t.eq(self.state.created[0].user_metadata.signup_source, "self_serve", "…the source is recorded on the user too");
+
+    const invited = await signup(OPEN, { code: "BETA100" });
+    t.eq([invited.status, invited.data], [200, { ok: true, source: "invited" }], "open: a valid code still works and is tagged invited");
+    t.eq(invited.state.rpc[0].fn, "reserve_beta_seat", "…and a coded signup still reserves a seat");
+    t.eq(invited.state.rpc[0].args.p_cap, 30, "…against the same cap of 30");
+    t.eq(invited.state.created[0].user_metadata.beta, true, "…and IS labelled a beta user");
+
+    const wrong = await signup(OPEN, { code: "NOPE" });
+    t.eq(wrong.data, { error: "invalid_code" }, "open: a wrong code is still refused, not silently accepted as self-serve");
+    t.eq(wrong.state.created.length, 0, "…and creates nothing");
+
+    // The cap, which is the point of this item.
+    const cappedSelf = await signup(OPEN, { code: "" }, { seat: "cap_reached" });
+    t.eq(cappedSelf.data, { ok: true, source: "self_serve" }, "open: a FULL cap never refuses a codeless signup");
+    t.eq(cappedSelf.state.created.length, 1, "…the account is created anyway");
+    const cappedInvited = await signup(OPEN, { code: "BETA100" }, { seat: "cap_reached" });
+    t.eq(cappedInvited.data, { error: "cap_reached" }, "open: a full cap still refuses a CODED signup");
+    t.eq(cappedInvited.state.created.length, 0, "…and creates nothing");
+
+    // A duplicate email on the open path: caught by Supabase, one step later, just as atomically.
+    const dupe = await signup(OPEN, { code: "" }, { createResult: { error: { code: "email_exists", message: "already registered" } } });
+    t.eq(dupe.data, { error: "email_exists" }, "open: a duplicate email is refused by the auth unique constraint");
+    t.eq(dupe.state.deletes.length, 0, "…and releases no seat, because it never took one");
+    const dupeInvited = await signup(OPEN, { code: "BETA100" }, { seat: "email_exists" });
+    t.eq(dupeInvited.data, { error: "email_exists" }, "open: a coded duplicate is still caught by the seat reservation");
+
+    // A failed create on the coded path still releases the seat; the open path has none to release.
+    const failInvited = await signup(OPEN, { code: "BETA100" }, { createResult: { error: { message: "boom" } } });
+    t.eq(failInvited.data.error, "create_failed", "a failed coded create still reports create_failed");
+    t.eq(failInvited.state.deletes.map(d => d.table), ["beta_signups"], "…and releases the seat it reserved");
+    const failSelf = await signup(OPEN, { code: "" }, { createResult: { error: { message: "boom" } } });
+    t.eq(failSelf.state.deletes.length, 0, "a failed open create releases nothing, because it reserved nothing");
+  }
+
+  // ── 7. UTM and the waitlist are untouched by any of this ──────────────────────────────────────
+  {
+    const beta = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "beta.js"), "utf8");
+    const wl = beta.slice(beta.indexOf('if (action === "join_waitlist")'), beta.indexOf('if (action === "signup")'));
+    t.ok(/metadata: metadata \|\| \{\}/.test(wl) && /source: source \|\| null/.test(wl),
+         "join_waitlist still stores the source and the UTM metadata bag exactly as before");
+    t.ok(!/OPEN_SIGNUP|openSignupEnabled|decideSignup/.test(wl), "…and the open-signup flag touches none of it");
+    const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+    for (const u of ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"]) {
+      t.ok(app.includes(`"${u}"`), `the client still collects ${u} for the waitlist`);
+    }
+  }
+
   t.summary("openSignup.test");
 })();
