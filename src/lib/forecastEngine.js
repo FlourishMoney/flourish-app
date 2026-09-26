@@ -58,10 +58,16 @@ generate(data, days = 90, scenario = null, today = new Date()) {
   // Bug 2: key paydays by LOCAL calendar date (not UTC toISOString) so NA users' paydays land on the right forecast day.
   const localYMD = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
   const incomeByDate = new Map(); // "YYYY-MM-DD" -> total income landing that day
-  const addIncome = (dt, amt) => {
+  // "YYYY-MM-DD" -> the income entries that land that day, one record per deposit. Recorded where the
+  // deposit is generated, from the income entry itself, so a surface can name the source without ever
+  // guessing it back from the amount. The sum above stays the single figure the balance walk uses.
+  const depositsByDate = new Map();
+  const addIncome = (dt, amt, inc) => {
     if(!(amt > 0)) return;
     const k = localYMD(dt);
     incomeByDate.set(k, (incomeByDate.get(k) || 0) + amt);
+    if(!depositsByDate.has(k)) depositsByDate.set(k, []);
+    depositsByDate.get(k).push({ incomeId: inc.id ?? null, label: typeof inc.label === "string" ? inc.label.trim() : "", amount: amt });
   };
 
   const txns    = data.transactions || [];
@@ -71,7 +77,7 @@ generate(data, days = 90, scenario = null, today = new Date()) {
   // match the anchor day. This loop only SUMS each income's projected deposit dates into the
   // date->amount map, so the forecast's output is identical to before the extraction.
   for(const { inc, amt } of incomes) {
-    for(const d of depositDatesFor(inc, amt, txns, today, days)) addIncome(d, amt);
+    for(const d of depositDatesFor(inc, amt, txns, today, days)) addIncome(d, amt, inc);
   }
 
   // Tier 5 / Sprint Q item 1: freq-aware bill placement anchored on nextDueDate (not today /
@@ -99,6 +105,7 @@ generate(data, days = 90, scenario = null, today = new Date()) {
     // overdraft). Guarding the single summed lookup makes the rule uniform by construction.
     const inc      = i > 0 ? (incomeByDate.get(dateKey) || 0) : 0;
     const isPayday = inc > 0;
+    const deposits = inc > 0 ? (depositsByDate.get(dateKey) || []) : [];
     const dayBills = bills.filter(b => !isBillArchived(b, today) && billOccursOn(b, d, i));
     const out      = dayBills.reduce((s,b)=>s+billAmt(b),0) + (i===0?0:avgDaily);
     // Phase 3d-B: apply active scenario impact (purchase day-1, debt/invest monthly on the 1st, never day 0)
@@ -110,7 +117,7 @@ generate(data, days = 90, scenario = null, today = new Date()) {
     }
     running = running + inc - out - scenarioOut;
 
-    const entry = { day:i, date:d, balance:running, income:inc, expenses:out,
+    const entry = { day:i, date:d, balance:running, income:inc, deposits, expenses:out,
                     isPayday, bills:dayBills };
     forecast.push(entry);
 

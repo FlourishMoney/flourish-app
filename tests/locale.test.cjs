@@ -53,12 +53,13 @@ const { create } = require("./_runner.cjs");
 
   // ── 6. A FORECAST ROW MUST NOT NAME THE INCOME IT CANNOT KNOW ──────────────────────────────────
   // Spelling the word correctly is only half of it. forecastEngine sums EVERY income landing on a date
-  // into one bare number (incomeByDate) and attaches no source label, so `ev.income` / `day.income` is
-  // an aggregate whose origin is genuinely unknown to the surface. Both the Time Machine row and the
+  // into one bare number (incomeByDate), so `ev.income` / `day.income` is an aggregate that cannot name
+  // its own origin. Both the Time Machine row and the
   // Watch forecast row used to render it as "+$560 paycheque" — over a $560 Canada Child Benefit.
-  // They now say "deposit", which is true for every income type and matches the Decision Engine card
-  // directly below ("your next deposit of $2,840"). Naming the ACTUAL source is the better answer and
-  // requires the engine to carry it; until it does, this guard keeps the claim from creeping back.
+  // They then said "deposit", which is true for every income type. The engine now carries the source
+  // (ev.deposits, recorded as each income is credited), and the rows render depositLines(ev): one line
+  // per deposit, named after its income entry ("+$560 Canada Child Benefit"), with "deposit" as the
+  // fallback for an unnamed entry. This guard still keeps a pay-word from creeping back onto any of it.
   {
     const fs = require("fs"), path = require("path");
     const raw = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
@@ -71,7 +72,7 @@ const { create } = require("./_runner.cjs");
       .replace(/(?<!:)\/\/[^\n]*/g, (m) => " ".repeat(m.length));
     const app = blanked.split("\n");
     const payish = /paycheque|paycheck|payWord\s*\(/i;
-    const perDayIncome = /\b(?:ev|day)\.income\b/;
+    const perDayIncome = /\b(?:ev|day)\.income\b|\bdepositLines\s*\(/;
     const offenders = [];
     app.forEach((line, i) => {
       if (perDayIncome.test(line) && payish.test(line)) offenders.push(`${i + 1}: ${line.trim().slice(0, 90)}`);
@@ -92,9 +93,13 @@ const { create } = require("./_runner.cjs");
     const nextDeposit = raw.split("\n").filter(l => /until your next deposit/i.test(l) && !l.includes("/*")).length;
     t.ok(nextDeposit >= 3, `…and the surfaces that make that claim say "deposit" (found ${nextDeposit})`);
 
-    // …and the replacement really is in place on both surfaces, so this guard cannot pass vacuously.
-    const depositRows = raw.split("\n").filter(l => /\b(?:ev|day)\.income\b/.test(l) && /\bdeposit\b/.test(l) && !l.includes("/*")).length;
-    t.ok(depositRows >= 3, `both forecast surfaces label a per-day income figure "deposit" (found ${depositRows} rows)`);
+    // …and the replacement really is in place on both surfaces, so this guard cannot pass vacuously:
+    // every forecast row renders depositLines(), whose only generic word is "deposit".
+    const depositRows = raw.split("\n").filter(l => /\bdepositLines\((?:ev|day)\)\.map\(/.test(l) && !l.includes("/*")).length;
+    t.ok(depositRows >= 3, `both forecast surfaces label a per-day income figure by source, else "deposit" (found ${depositRows} rows)`);
+    const view = fs.readFileSync(path.join(__dirname, "..", "src", "lib", "forecastView.js"), "utf8");
+    const fn = view.slice(view.indexOf("export function depositLines"));
+    t.ok(/label: "deposit"/.test(fn) && !payish.test(fn), "depositLines falls back to \"deposit\" and never to a pay-word");
   }
 
   // ── 7. A BENEFIT THAT IS NOT FEDERAL MUST CARRY A PROVINCE ────────────────────────────────────

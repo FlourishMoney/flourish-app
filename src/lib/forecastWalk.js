@@ -47,8 +47,11 @@ const _money = (cents) => formatMoney(cents / 100, { cents: true });
  * @param {number}  o.avgDailySpend    the 30-day average, for the sanity check only
  * @param {number}  o.closing          that day's projected balance — the engine's own number
  * @param {boolean} o.isToday          day 0: a snapshot, not a walk (no opening, no spend row)
+ * @param {Array}   [o.deposits]       depositLines(ev): one income row per source, named after it. Used
+ *                                     only when the lines add up to `income` exactly; otherwise one
+ *                                     "Deposit" row carries the total.
  */
-export function forecastWalk({ opening = 0, income = 0, bills = [], avgDailySpend = 0, closing = 0, isToday = false } = {}) {
+export function forecastWalk({ opening = 0, income = 0, bills = [], avgDailySpend = 0, closing = 0, isToday = false, deposits = null } = {}) {
   const closingCents = _cents(closing);
   const billRows = (bills || []).map((b) => {
     const cents = _cents(b && b.amount);
@@ -78,9 +81,17 @@ export function forecastWalk({ opening = 0, income = 0, bills = [], avgDailySpen
   // The residue lands here, by construction, so the printed equation is exactly true.
   const spendCents = openingCents + incomeCents - billsCents - closingCents;
 
+  const depRows = (Array.isArray(deposits) ? deposits : []).map((d) => {
+    const cents = _cents(d && d.amount);
+    return { key: "income", label: d && d.named ? d.label : "Deposit", sign: "+", cents, value: _money(cents) };
+  });
+  const incomeRows = incomeCents <= 0 ? []
+    : depRows.length && depRows.every((r) => r.cents > 0) && depRows.reduce((s, r) => s + r.cents, 0) === incomeCents ? depRows
+    : [{ key: "income", label: "Deposit", sign: "+", cents: incomeCents, value: _money(incomeCents) }];
+
   const rows = [
     { key: "opening", label: "Opening balance", sign: "", cents: openingCents, value: _money(openingCents) },
-    ...(incomeCents > 0 ? [{ key: "income", label: "Deposit", sign: "+", cents: incomeCents, value: _money(incomeCents) }] : []),
+    ...incomeRows,
     ...billRows,
     { key: "spend", label: "Est. daily spend", sign: "−", cents: spendCents, value: _money(spendCents) },
   ];

@@ -17,3 +17,23 @@ export function paydayLineAmount(ev) {
   const n = Number(ev?.income);
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
+
+// One line per projected deposit, named after the income entry that generated it: "+$560 Canada Child
+// Benefit", "+$2,840 Full-time Job". The name comes from ev.deposits, which the forecast engine records
+// at the moment it credits each income; it is never inferred from the amount. "deposit" is the fallback,
+// used for an income entry with no name and for any event that does not carry its deposits (or whose
+// deposits do not add up to the credited income, in which case one summed line is the honest answer).
+// Each line: { amount, label, named }. The amounts always sum to paydayLineAmount(ev).
+export function depositLines(ev) {
+  const total = paydayLineAmount(ev);
+  if (!(total > 0)) return [];
+  const fallback = [{ amount: total, label: "deposit", named: false }];
+  const deps = Array.isArray(ev.deposits) ? ev.deposits.filter(d => Number(d && d.amount) > 0) : [];
+  if (!deps.length) return fallback;
+  const cents = (n) => Math.round(Number(n) * 100);
+  if (deps.reduce((s, d) => s + cents(d.amount), 0) !== cents(total)) return fallback;
+  return deps.map(d => {
+    const name = typeof d.label === "string" ? d.label.trim() : "";
+    return { amount: Number(d.amount), label: name || "deposit", named: !!name };
+  });
+}

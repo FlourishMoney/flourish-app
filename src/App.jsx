@@ -17,7 +17,7 @@ import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multib
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
-import { paydayLineAmount } from "./lib/forecastView.js";
+import { paydayLineAmount, depositLines } from "./lib/forecastView.js";
 import { shouldPromptIncome, applyDetectedIncome, cadenceLabel } from "./lib/incomeReconcile.js";
 import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill } from "./lib/billReeval.js";
 import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate } from "./lib/statementImport.js";
@@ -1262,12 +1262,9 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
                           {ev.day===0?"Today":ev.day===1?"Tomorrow":ev.date.toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}
                           <span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
                         </div>
-                        {/* "deposit", not "paycheque": ev.income is the SUM of every income landing that day, and the
-                            forecast carries no source label, so this row cannot know which income it was. It said
-                            "paycheque" over a $560 child benefit. "Deposit" is true for every income type, needs no
-                            engine change, and matches the Decision Engine card below ("your next deposit of $2,840").
-                            Naming the actual source is the better answer and needs the engine to carry it. */}
-                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(ev.income||0)} deposit`}</div>}
+                        {/* One line per deposit, named after the income entry the forecast credited ("+$560 Canada
+                            Child Benefit"), never "paycheque" over a benefit. "deposit" only when the entry has no name. */}
+                        {ev.isPayday && depositLines(ev).map((dl,di)=><div key={di} style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(dl.amount)} ${dl.label}`}</div>)}
                         {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −{formatMoney(num(b.amount))}</div>)}
                         {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                       </div>
@@ -1294,6 +1291,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
                       const w = forecastWalk({
                         opening: (forecast[ev.day-1]||{}).balance,
                         income: ev.isPayday ? paydayLineAmount(ev) : 0,
+                        deposits: ev.isPayday ? depositLines(ev) : null,
                         bills: ev.bills, avgDailySpend: avgDaily,
                         closing: baseBalance, isToday: ev.day===0,
                       });
@@ -1398,7 +1396,7 @@ function FinancialTimeline({data}) {
                         <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:2}}>
                           {label}<span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
                         </div>
-                        {ev.isPayday && ev.income>0 && <div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(ev.income||0)} deposit`}</div>}
+                        {ev.isPayday && depositLines(ev).map((dl,di)=><div key={di} style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(dl.amount)} ${dl.label}`}</div>)}
                         {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −{formatMoney(num(b.amount))}</div>)}
                         {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                       </div>
@@ -1412,12 +1410,12 @@ function FinancialTimeline({data}) {
                 {isDrilled&&(
                   <div style={{marginLeft:54,marginBottom:6,background:"rgba(255,255,255,0.03)",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px"}}>
                     <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>Day breakdown</div>
-                    {ev.isPayday&&(
-                      <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
-                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💰 Deposit</span>
-                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+{formatMoney(paydayLineAmount(ev))}</span>
+                    {ev.isPayday&&depositLines(ev).map((dl,di)=>(
+                      <div key={`dep${di}`} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
+                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💰 {dl.named?dl.label:"Deposit"}</span>
+                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+{formatMoney(dl.amount)}</span>
                       </div>
-                    )}
+                    ))}
                     {ev.bills.map((b,bi)=>(
                       <div key={bi} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
                         <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📅 {b.name}</span>
@@ -6147,7 +6145,7 @@ function PlanAhead({data, setAppData, setScreen}){
   const days = _forecast.slice(0, range).map(f => ({
     d: f.date, dayNum: f.date.getDate(),
     isPayday: f.isPayday, bills: f.bills,
-    income: f.income, balance: f.balance, idx: f.day
+    income: f.income, deposits: f.deposits, balance: f.balance, idx: f.day
   }));
   const { balance: bal } = SafeSpendEngine.calculate(data);
   // Item 4 in a second surface: the balance-bar scale is "balance + one real paycheque". Read the primary
@@ -6244,9 +6242,8 @@ function PlanAhead({data, setAppData, setScreen}){
                     <div style={{color:isToday?C.greenBright:C.mutedHi,fontWeight:isToday?700:500,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{isToday?"Today ✦":day.d.toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}</div>
                     <span style={{color:C.muted,fontSize:10}}>{isDrilled?"▲":"▼"}</span>
                   </div>
-                  {/* "deposit", not "paycheque" — same reason as the Time Machine row: day.income is a summed
-                    figure with no source attached, so the surface must not name the income that produced it. */}
-                {day.income>0&&<div style={{color:C.green,fontWeight:700,fontSize:13,marginTop:3}}>💰 +{formatMoney(day.income)} deposit</div>}
+                  {/* Named after the income entry the forecast credited, as in the Time Machine row. */}
+                {depositLines(day).map((dl,di)=><div key={`dep${di}`} style={{color:C.green,fontWeight:700,fontSize:13,marginTop:3}}>💰 +{formatMoney(dl.amount)} {dl.label}</div>)}
                   {day.bills.map((b,j)=><div key={j} style={{color:C.gold,fontSize:12,marginTop:2}}>📅 {b.name}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:4,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}: −{b.variable?"~":""}{formatMoney(b.amount)}</div>)}
                   {isToday&&!day.income&&!day.bills.length&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>Tap to see balance breakdown</div>}
                 </div>
@@ -6265,7 +6262,7 @@ function PlanAhead({data, setAppData, setScreen}){
                 {/* Same owner as the Time Machine drill-down (lib/forecastWalk.js): cents throughout,
                     so the equation is exactly true; the collapsed row above stays floored whole dollars. */}
                 {(() => {
-                  const w = forecastWalk({ opening: prevBalance, income: day.income, bills: day.bills,
+                  const w = forecastWalk({ opening: prevBalance, income: day.income, deposits: depositLines(day), bills: day.bills,
                                            avgDailySpend, closing: day.balance, isToday });
                   const COLOR = { opening:C.muted, income:C.greenBright, bill:C.gold, spend:C.muted };
                   return (<>
