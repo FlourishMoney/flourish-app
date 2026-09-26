@@ -5,6 +5,12 @@ import { initErrorReporting, captureError } from './lib/errorReporting.js'
 // Sprint Z #10: env-gated error reporting. No-op until VITE_SENTRY_DSN is configured.
 initErrorReporting()
 
+// The phone's text size is the app's text size. Applied before the first paint so nothing is
+// rendered at the wrong size and then jumps. Text only: no layout unit moves, and pinch zoom
+// stays off.
+import { initTextScale } from './lib/textScale.js'
+initTextScale()
+
 // Landing fix (2026-06): a pre-Vite build (commit 74216a7) registered a service worker via
 // navigator.serviceWorker.register('sw.js'). The current app ships NO service worker. Safety net:
 // any client that reaches THIS (new) bundle proactively unregisters any leftover worker and clears

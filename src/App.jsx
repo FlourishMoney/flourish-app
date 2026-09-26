@@ -32,6 +32,7 @@ import { isNativeApp, billingUiState, offeredPlans, billingReturnNotice, BILLING
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/signupUi.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
+import { TYPE, TYPE_MIN, SPACE, LAYOUT, tap } from "./lib/type.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, agendaIsEmpty } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
 import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown, formatCompactMoney } from "./lib/format.js";
@@ -1001,7 +1002,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
           <Icon id="zap" size={15} color={C.goldBright} strokeWidth={2}/>
           What to do today
         </div>
-        <span style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Decision Engine</span>
+        <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Decision Engine</span>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {decisions.map((d,i)=>(
@@ -1011,9 +1012,9 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
             <span style={{fontSize:20,flexShrink:0,marginTop:1}}>{d.icon}</span>
             <div style={{flex:1,minWidth:0}}>
               <div style={{color:d.color,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:3}}>{d.title}</div>
-              <div style={{color:C.muted,fontSize:11.5,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.55}}>{d.detail}</div>
+              <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.55}}>{d.detail}</div>
             </div>
-            <div style={{color:d.color,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,whiteSpace:"nowrap",marginTop:3}}>{d.action} →</div>
+            <div style={{color:d.color,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,whiteSpace:"nowrap",marginTop:3}}>{d.action} →</div>
           </button>
         ))}
       </div>
@@ -1107,11 +1108,11 @@ function AutopilotCard({data, setScreen}) {
     <div style={{background:autoBg,borderRadius:26,overflow:"hidden",border:autoBorder,boxShadow:autoShadow,backdropFilter:"blur(12px)"}}>
       {/* Header */}
       <div style={{padding:"18px 20px 0"}}>
-        <div style={{color:autoMuted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:5,whiteSpace:"nowrap"}}>Autopilot · {today}</div>
+        <div style={{color:autoMuted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:5,whiteSpace:"nowrap"}}>Autopilot · {today}</div>
         <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.cream,lineHeight:1.2,marginBottom:8}}>Today's Money Plan</div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <div style={{background:plan.mode==="low"?"rgba(110,240,160,0.15)":plan.mode==="medium"?"rgba(255,193,69,0.15)":"rgba(255,100,100,0.15)",border:`1px solid ${plan.mode==="low"?C.green+"55":plan.mode==="medium"?C.gold+"55":C.red+"55"}`,borderRadius:99,padding:"4px 10px",flexShrink:0,whiteSpace:"nowrap"}}>
-            <span style={{color:plan.mode==="low"?C.greenBright:plan.mode==="medium"?C.goldBright:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>
+            <span style={{color:plan.mode==="low"?C.greenBright:plan.mode==="medium"?C.goldBright:C.redBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>
               {plan.modeLabel}
             </span>
           </div>
@@ -1125,23 +1126,23 @@ function AutopilotCard({data, setScreen}) {
           style={{margin:"12px 20px 0",background:autoAlertBg,border:`1px solid ${autoAlertBdr}`,borderRadius:12,padding:"10px 14px",display:"flex",gap:8,alignItems:"flex-start",cursor:"pointer",userSelect:"none"}}
         >
           <span style={{fontSize:14,flexShrink:0}}>⚠️</span>
-          <span style={{color:autoAlertText,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,flex:1}}>{plan.alerts[0].msg}</span>
-          <span style={{color:autoAlertText,fontSize:11,fontWeight:700,flexShrink:0}}>{showDrillDown?"▲":"▼"}</span>
+          <span style={{color:autoAlertText,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,flex:1}}>{plan.alerts[0].msg}</span>
+          <span style={{color:autoAlertText,fontSize:13,fontWeight:700,flexShrink:0}}>{showDrillDown?"▲":"▼"}</span>
         </div>
       )}
 
       {/* Overdraft drill-down panel */}
       {showDrillDown && overdraftCulprits.length > 0 && (
         <div style={{margin:"8px 20px 0",background:"rgba(255,79,106,0.06)",border:`1px solid ${C.red}33`,borderRadius:14,padding:"14px 16px"}}>
-          <div style={{color:C.redBright,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>📋 Upcoming charges causing this</div>
+          <div style={{color:C.redBright,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>📋 Upcoming charges causing this</div>
           <div style={{display:"flex",flexDirection:"column",gap:7}}>
             {overdraftCulprits.map((item,i)=>(
               <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:7,borderBottom:i<overdraftCulprits.length-1?`1px solid ${C.red}18`:"none"}}>
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
                   <span style={{fontSize:14}}>{item.danger?"🔴":"🟡"}</span>
                   <div>
-                    <div style={{color:C.cream,fontSize:12,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.name}</div>
-                    <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.date}</div>
+                    <div style={{color:C.cream,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.name}</div>
+                    <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.date}</div>
                   </div>
                 </div>
                 <div style={{textAlign:"right"}}>
@@ -1149,7 +1150,7 @@ function AutopilotCard({data, setScreen}) {
                       so it rounds DOWN. Both directions are the conservative ones, and both now come
                       from the shared rule rather than a local toFixed. */}
                   <div style={{color:C.redBright,fontWeight:800,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{formatMoney(-Math.ceil(num(item.amount)))}</div>
-                  <div style={{color:item.runningBalance<0?C.redBright:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:item.runningBalance<0?700:400}}>
+                  <div style={{color:item.runningBalance<0?C.redBright:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:item.runningBalance<0?700:400}}>
                     {item.runningBalance<0
                       ?`${formatMoney(Math.abs(roundBalanceDown(item.runningBalance)))} overdrawn`
                       :`${formatBalance(item.runningBalance)} left`}
@@ -1158,7 +1159,7 @@ function AutopilotCard({data, setScreen}) {
               </div>
             ))}
           </div>
-          <div style={{marginTop:10,padding:"8px 10px",background:"rgba(255,79,106,0.08)",borderRadius:10,color:C.redBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,textAlign:"center"}}>
+          <div style={{marginTop:10,padding:"8px 10px",background:"rgba(255,79,106,0.08)",borderRadius:10,color:C.redBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,textAlign:"center"}}>
             💡 Move money before these hit to avoid NSF fees ($45 to $48 each)
           </div>
         </div>
@@ -1172,7 +1173,7 @@ function AutopilotCard({data, setScreen}) {
               <span style={{fontSize:18,flexShrink:0}}>{item.icon}</span>
               <div>
                 <div style={{color:autoText,fontWeight:600,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.label}</div>
-                <div style={{color:autoSubtle,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>{item.detail}</div>
+                <div style={{color:autoSubtle,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>{item.detail}</div>
               </div>
             </div>
             <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:18,color:item.color==="muted"?autoItemMuted:item.color,flexShrink:0}}>{item.amount}</div>
@@ -1183,8 +1184,8 @@ function AutopilotCard({data, setScreen}) {
       {/* Weekly adherence bar */}
       <div style={{margin:"0 20px",padding:"12px 0 16px",borderTop:`1px solid ${autoDivider}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-          <span style={{color:autoMuted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,textTransform:"uppercase",letterSpacing:0.8}}>Plan adherence</span>
-          <span style={{color:plan.adherence>=75?C.greenBright:plan.adherence>=50?C.goldBright:C.redBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800}}>{plan.adherence}%</span>
+          <span style={{color:autoMuted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Plan adherence</span>
+          <span style={{color:plan.adherence>=75?C.greenBright:plan.adherence>=50?C.goldBright:C.redBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800}}>{plan.adherence}%</span>
         </div>
         <div style={{height:4,borderRadius:99,background:autoTrack,overflow:"hidden"}}>
           <div style={{height:"100%",width:`${plan.adherence}%`,background:`linear-gradient(to right,${plan.adherence>=75?C.green:plan.adherence>=50?C.gold:C.red}88,${plan.adherence>=75?C.greenBright:plan.adherence>=50?C.goldBright:C.redBright})`,borderRadius:99,transition:"width 1.2s ease"}}/>
@@ -1194,7 +1195,7 @@ function AutopilotCard({data, setScreen}) {
       {plan.adaptations && plan.adaptations.length > 0 && (
         <div style={{margin:"0 0 4px",padding:"0 0 12px",display:"flex",gap:5,flexWrap:"wrap"}}>
           {plan.adaptations.map((a,i)=>(
-            <span key={i} style={{background:autoChipBg,color:autoChipText,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,padding:"3px 8px",borderRadius:99,letterSpacing:0.3}}>⚙ {a}</span>
+            <span key={i} style={{background:autoChipBg,color:autoChipText,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,padding:"3px 8px",borderRadius:99,letterSpacing:0.3}}>⚙ {a}</span>
           ))}
         </div>
       )}
@@ -1232,7 +1233,7 @@ function Sheet({ title, subtitle, onClose, children, label }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ color: C.cream, fontWeight: 800, fontSize: 16 }}>{title}</div>
-              {subtitle && <div style={{ color: C.muted, fontSize: 12, marginTop: 3, lineHeight: 1.5 }}>{subtitle}</div>}
+              {subtitle && <div style={{ color: C.muted, fontSize:13, marginTop: 3, lineHeight: 1.5 }}>{subtitle}</div>}
             </div>
             <button aria-label="Close" onClick={onClose} style={{ background: "none", border: "none", color: C.muted, fontSize: 20, cursor: "pointer", padding: "2px 6px", lineHeight: 1 }}>✕</button>
           </div>
@@ -1252,7 +1253,7 @@ function SegPick({ options, value, onChange, label }) {
         const on = value === o.value;
         return (
           <button key={o.value} role="radio" aria-checked={on} onClick={() => onChange(o.value)}
-            style={{ flex: 1, background: on ? C.teal + "28" : "transparent", border: `1px solid ${on ? C.teal + "55" : "transparent"}`, color: on ? C.tealBright : C.muted, borderRadius: 10, padding: "9px 6px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", minHeight: 36 }}>
+            style={{ flex: 1, background: on ? C.teal + "28" : "transparent", border: `1px solid ${on ? C.teal + "55" : "transparent"}`, color: on ? C.tealBright : C.muted, borderRadius: 10, padding: "9px 6px", fontSize:13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", minHeight: 36 }}>
             {o.label}
           </button>
         );
@@ -1262,7 +1263,7 @@ function SegPick({ options, value, onChange, label }) {
 }
 
 // A function, not a constant: C is re-pointed at the light or dark palette on every render.
-const sheetLabel = () => ({ color: C.muted, fontSize: 10, textTransform: "uppercase", letterSpacing: 1.4, fontWeight: 700, margin: "16px 0 6px" });
+const sheetLabel = () => ({ color: C.mutedHi, fontSize:15, fontWeight: 600, margin: "16px 0 6px" });
 function SheetField({ prefix, value, onChange, type = "text", placeholder, min, max, label, inputMode }) {
   return (
     <div style={{ display: "flex", alignItems: "center", background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
@@ -1290,7 +1291,7 @@ function SheetSecondary({ label, onClick, tone }) {
   );
 }
 function EditedTag({ text = "Edited" }) {
-  return <span style={{ marginLeft: 6, background: C.teal + "22", border: `1px solid ${C.teal}44`, color: C.tealBright, borderRadius: 99, padding: "1px 6px", fontSize: 9, fontWeight: 700, letterSpacing: 0.3, verticalAlign: "middle", whiteSpace: "nowrap" }}>{text}</span>;
+  return <span style={{ marginLeft: 6, background: C.teal + "22", border: `1px solid ${C.teal}44`, color: C.tealBright, borderRadius: 99, padding: "1px 6px", fontSize:13, fontWeight: 700, letterSpacing: 0.3, verticalAlign: "middle", whiteSpace: "nowrap" }}>{text}</span>;
 }
 
 // A projected deposit or bill on a forecast row. Tapping it opens its edit sheet; tapping the rest of
@@ -1318,7 +1319,7 @@ function PayVariesControl({ inc, data, onToggle, onExpected }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ color: vp ? C.tealBright : C.mutedHi, fontSize: 13, fontWeight: 700 }}>My pay varies</div>
-          <div style={{ color: C.muted, fontSize: 11, marginTop: 2, lineHeight: 1.5 }}>{summary}</div>
+          <div style={{ color: C.muted, fontSize:13, marginTop: 2, lineHeight: 1.5 }}>{summary}</div>
         </div>
         <Toggle on={!!(inc && inc.isVariable)} onChange={onToggle} label="My pay varies" />
       </div>
@@ -1326,7 +1327,7 @@ function PayVariesControl({ inc, data, onToggle, onExpected }) {
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
           <div style={{ flex: 1 }}><SheetField prefix="$" type="number" value={exp} onChange={setExp} placeholder="Least you expect" label="Least you expect each pay" /></div>
           <button onClick={() => { const a = _parseAmt(exp); if (a > 0) onExpected(a); }} disabled={!(_parseAmt(exp) > 0)}
-            style={{ background: C.teal + "22", border: `1px solid ${C.teal}44`, color: C.tealBright, borderRadius: 12, padding: "0 14px", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+            style={{ background: C.teal + "22", border: `1px solid ${C.teal}44`, color: C.tealBright, borderRadius: 12, padding: "0 14px", fontWeight: 700, fontSize:13, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
         </div>
       )}
     </div>
@@ -1373,12 +1374,12 @@ function OccurrenceSheet({ occ, data, setAppData, onClose }) {
   return (
     <Sheet title={name} subtitle={`${isIn ? "Money in" : "Money out"} · ${fmtOccDay(occ.date)}`} onClose={onClose} label={`Edit ${name}`}>
       <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize:13 }}>
           <span style={{ color: C.muted }}>Flourish's estimate</span>
           <span style={{ color: C.mutedHi, fontWeight: 700 }}>{formatMoney(occ.estimate)} on {fmtOccDay(occ.originalDate)}</span>
         </div>
         {occ.edited && (
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12, marginTop: 6 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize:13, marginTop: 6 }}>
             <span style={{ color: C.muted }}>Now planned <EditedTag text={editedNote} /></span>
             <span style={{ color: C.cream, fontWeight: 800 }}>{nowLine}</span>
           </div>
@@ -1404,18 +1405,18 @@ function OccurrenceSheet({ occ, data, setAppData, onClose }) {
       <div style={sheetLabel()}>Which dates</div>
       <SegPick label="Which dates" value={scope} onChange={setScope}
         options={[{ value: "one", label: "Just this one" }, { value: "series", label: "From this date on" }]} />
-      <div style={{ color: C.muted, fontSize: 11, marginTop: 8, lineHeight: 1.6 }}>
+      <div style={{ color: C.muted, fontSize:13, marginTop: 8, lineHeight: 1.6 }}>
         {scope === "one" ? `Only the ${noun} on ${fmtOccDay(occ.originalDate)} changes.` : scopeHelp}
       </div>
       <SheetPrimary label="Save" onClick={save} disabled={!valid} />
       {occ.edited && (
         <>
           <SheetSecondary label="Reset to Flourish's estimate" onClick={() => write(fe => resetOccurrence(fe, occ))} />
-          {occ.edited.series && !occ.edited.one && <div style={{ color: C.muted, fontSize: 11, marginTop: 6, lineHeight: 1.5, textAlign: "center" }}>This also resets the later dates changed from {fmtOccDay(fromIso(occ.edited.from))} on.</div>}
+          {occ.edited.series && !occ.edited.one && <div style={{ color: C.muted, fontSize:13, marginTop: 6, lineHeight: 1.5, textAlign: "center" }}>This also resets the later dates changed from {fmtOccDay(fromIso(occ.edited.from))} on.</div>}
         </>
       )}
       {item && <SheetSecondary label={`Delete ${item.name}`} tone={C.red} onClick={() => write(fe => removeExpected(fe, item.id))} />}
-      <div style={{ color: C.muted, fontSize: 11, marginTop: 14, lineHeight: 1.6 }}>
+      <div style={{ color: C.muted, fontSize:13, marginTop: 14, lineHeight: 1.6 }}>
         {item
           ? "This changes your forecast only. Your bank transactions stay as they are. Once the money has moved, delete or edit this item."
           : `This changes your forecast only. Your bank transactions stay as they are, and when the real ${noun} arrives it replaces this estimate.`}
@@ -1488,18 +1489,18 @@ function DepositSheet({ txn, data, setAppData, onClose, mode = "ask" }) {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 14, background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px" }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ color: C.mutedHi, fontSize: 13, fontWeight: 700 }}>Always for deposits from {payee}</div>
-            <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>Flourish asks before it saves this.</div>
+            <div style={{ color: C.muted, fontSize:13, marginTop: 2 }}>Flourish asks before it saves this.</div>
           </div>
           <Toggle on={always} onChange={setAlways} label={`Always for deposits from ${payee}`} />
         </div>
       ) : (
-        <div style={{ color: C.muted, fontSize: 11, marginTop: 12, lineHeight: 1.6 }}>The bank doesn't say who sent this, so Flourish can't remember it for next time.</div>
+        <div style={{ color: C.muted, fontSize:13, marginTop: 12, lineHeight: 1.6 }}>The bank doesn't say who sent this, so Flourish can't remember it for next time.</div>
       )}
       {rule && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 12 }}>
-          <div style={{ color: C.muted, fontSize: 11, lineHeight: 1.5 }}>Deposits from <strong style={{ color: C.mutedHi }}>{payee}</strong> are always <strong style={{ color: C.mutedHi }}>{reasonLabel(rule)}</strong>.</div>
+          <div style={{ color: C.muted, fontSize:13, lineHeight: 1.5 }}>Deposits from <strong style={{ color: C.mutedHi }}>{payee}</strong> are always <strong style={{ color: C.mutedHi }}>{reasonLabel(rule)}</strong>.</div>
           <button onClick={() => { setAppData(prev => ({ ...prev, depositRules: clearDepositRule(prev.depositRules, txn.name) })); onClose(); }}
-            style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 99, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontFamily: "inherit", flexShrink: 0 }}>Remove rule</button>
+            style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 99, padding: "5px 12px", cursor: "pointer", fontSize:13, fontFamily: "inherit", flexShrink: 0 }}>Remove rule</button>
         </div>
       )}
       <SheetPrimary label="Save" disabled={!reason} onClick={() => { if (always && canAlways) setConfirming(true); else apply(false); }} />
@@ -1521,15 +1522,15 @@ function DepositQuestionCard({ data, setAppData, style }) {
       <div style={{ background: `linear-gradient(135deg,${C.teal}12,${C.green}08)`, border: `1px solid ${C.teal}44`, borderRadius: 18, padding: "14px 16px", ...(style || {}) }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
           <div style={{ color: C.tealBright, fontWeight: 800, fontSize: 14 }}>Is this income?</div>
-          {list.length > 1 && <div style={{ color: C.muted, fontSize: 11 }}>1 of {list.length}</div>}
+          {list.length > 1 && <div style={{ color: C.muted, fontSize:13 }}>1 of {list.length}</div>}
         </div>
-        <div style={{ color: C.mutedHi, fontSize: 12.5, lineHeight: 1.6, marginTop: 4 }}>
+        <div style={{ color: C.mutedHi, fontSize:13, lineHeight: 1.6, marginTop: 4 }}>
           <strong style={{ color: C.cream }}>+{formatMoney(Math.abs(Number(t.amount) || 0), { cents: true })}</strong> from <strong style={{ color: C.cream }}>{t.name}</strong>{when ? ` on ${when}` : ""}. Flourish is leaving it out of your forecast until you say.
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-          <button onClick={() => setOpen(t)} style={{ background: C.teal, border: "none", borderRadius: 99, padding: "8px 16px", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit", minHeight: 34 }}>Answer</button>
+          <button onClick={() => setOpen(t)} style={{ background: C.teal, border: "none", borderRadius: 99, padding: "8px 16px", color: "#fff", fontWeight: 700, fontSize:13, cursor: "pointer", fontFamily: "inherit", minHeight: 34 }}>Answer</button>
           <button onClick={() => setAppData(prev => ({ ...prev, depositDecisions: decideDeposit(prev.depositDecisions, t, NOT_NOW) }))}
-            style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 99, padding: "8px 14px", color: C.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit", minHeight: 34 }}>Not now</button>
+            style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 99, padding: "8px 14px", color: C.muted, fontSize:13, cursor: "pointer", fontFamily: "inherit", minHeight: 34 }}>Not now</button>
         </div>
       </div>
       {open && <DepositSheet key={depositTxnKey(open)} txn={open} data={data} setAppData={setAppData} mode="ask" onClose={() => setOpen(null)} />}
@@ -1573,7 +1574,7 @@ function ExpectedItemSheet({ data, setAppData, onClose }) {
             <div key={x.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ color: C.cream, fontSize: 13, fontWeight: 600 }}>{x.name}</div>
-                <div style={{ color: C.muted, fontSize: 11 }}>{x.direction === "in" ? "+" : "−"}{formatMoney(x.amount)} · {repeatWord[x.repeat] || "Once"} from {fmtOccDay(fromIso(x.date))}</div>
+                <div style={{ color: C.muted, fontSize:13 }}>{x.direction === "in" ? "+" : "−"}{formatMoney(x.amount)} · {repeatWord[x.repeat] || "Once"} from {fmtOccDay(fromIso(x.date))}</div>
               </div>
               <button aria-label={`Delete ${x.name}`} onClick={() => setAppData(prev => ({ ...prev, forecastEdits: removeExpected(prev.forecastEdits, x.id) }))}
                 style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 14, padding: "4px 8px", minHeight: 34 }}>✕</button>
@@ -1594,11 +1595,11 @@ function DailySpendSheet({ data, setAppData, onClose }) {
   const write = (val) => { setAppData(prev => ({ ...prev, forecastEdits: setDailySpend(prev.forecastEdits, val) })); onClose(); };
   return (
     <Sheet title="Est. daily spend" subtitle="Your everyday spending. Flourish uses it for every day of the forecast and in safe-to-spend." onClose={onClose}>
-      <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12 }}>
+      <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", display: "flex", justifyContent: "space-between", gap: 10, fontSize:13 }}>
         <span style={{ color: C.muted }}>Flourish's estimate</span>
         <span style={{ color: C.mutedHi, fontWeight: 700 }}>{formatMoney(est)}/day</span>
       </div>
-      <div style={{ color: C.muted, fontSize: 11, marginTop: 6, lineHeight: 1.6 }}>From your recent card and account spending, with bills, transfers and income left out.</div>
+      <div style={{ color: C.muted, fontSize:13, marginTop: 6, lineHeight: 1.6 }}>From your recent card and account spending, with bills, transfers and income left out.</div>
       <div style={sheetLabel()}>Your figure, per day</div>
       <SheetField prefix="$" type="number" value={v} onChange={setV} label="Daily spend per day" />
       <SheetPrimary label="Save" disabled={!(a >= 0)} onClick={() => write(a)} />
@@ -1635,20 +1636,20 @@ function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData
         <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7}}>
           <span style={{fontSize:15}}>⏳</span> Time Machine
         </div>
-        <button onClick={()=>setExpanded(e=>!e)} style={{background:"none",border:"none",color:C.teal,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer"}}>
+        <button onClick={()=>setExpanded(e=>!e)} style={{background:"none",border:"none",color:C.teal,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer"}}>
           {expanded?"Collapse ↑":"30 days ↓"}
         </button>
       </div>
-      <div style={{color:C.muted,fontSize:11.5,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginTop:-4,marginBottom:12}}>Drag a what-if onto your forecast. Flourish recalculates the line.</div>
+      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginTop:-4,marginBottom:12}}>Drag a what-if onto your forecast. Flourish recalculates the line.</div>
 
       {activeScenario && (
         <div style={{background:C.teal+"15",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",marginBottom:12,display:"flex",gap:8,alignItems:"center"}}>
           <span style={{fontSize:14}}>🔮</span>
-          <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,flex:1}}>
+          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,flex:1}}>
             Showing impact of: <strong style={{color:C.teal}}>{activeScenario.type === "purchase" ? `$${activeScenario.amount} purchase` : activeScenario.type === "debt" ? `+$${activeScenario.extraPayment}/mo on debt` : `$${activeScenario.monthlyContribution}/mo invested`}</strong>
           </div>
           {setActiveScenario && (
-            <button aria-label="Remove" onClick={()=>setActiveScenario(null)} style={{background:"transparent",border:`1px solid ${C.teal}44`,color:C.teal,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:10,padding:"4px 10px",borderRadius:99,cursor:"pointer",whiteSpace:"nowrap"}}>Clear ✕</button>
+            <button aria-label="Remove" onClick={()=>setActiveScenario(null)} style={{background:"transparent",border:`1px solid ${C.teal}44`,color:C.teal,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,padding:"4px 10px",borderRadius:99,cursor:"pointer",whiteSpace:"nowrap"}}>Clear ✕</button>
           )}
         </div>
       )}
@@ -1670,7 +1671,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData
                 {/* Row — tappable */}
                 <div
                   onClick={()=>setExpandedDay(isDrilled ? null : ev.day)}
-                  style={{display:"flex",gap:14,paddingBottom:8,cursor:"pointer",borderRadius:12,padding:"8px 6px",background:isDrilled?"rgba(255,255,255,0.03)":"transparent",transition:"background .15s"}}
+                  style={{display:"flex",gap:14,paddingBottom:8,cursor:"pointer",borderRadius:12,padding:"0 8px",minHeight:LAYOUT.minTap,background:isDrilled?"rgba(255,255,255,0.03)":"transparent",transition:"background .15s"}}
                 >
                   <div style={{width:40,display:"flex",justifyContent:"center",flexShrink:0,paddingTop:3}}>
                     <div style={{width:14,height:14,borderRadius:"50%",background:dotColor,border:`3px solid ${C.bg}`,zIndex:1,boxShadow:ev.day===0||ev.isPayday?`0 0 8px ${dotColor}88`:"none",flexShrink:0}}/>
@@ -1680,22 +1681,22 @@ function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:ev.isPayday||ev.bills.length>0?3:0}}>
                           {ev.day===0?"Today":ev.day===1?"Tomorrow":ev.date.toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}
-                          <span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
+                          <span style={{color:C.muted,fontSize:13,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
                         </div>
                         {/* One line per deposit, named after the income entry the forecast credited ("+$560 Canada
                             Child Benefit"), never "paycheque" over a benefit. "deposit" only when the entry has no name.
                             Each line opens its edit sheet; a variable pay shows its range. */}
-                        {ev.income>0 && depositLines(ev).map((dl,di)=><ForecastLine key={di} label={`Edit ${dl.label}`} onOpen={openOcc&&dl.occurrence?()=>openOcc(dl.occurrence):null}><div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(dl.amount)} ${dl.label}`}{dl.edited&&<EditedTag/>}</div>{dl.low!=null&&<div style={{color:C.muted,fontSize:9.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{`Pay varies: ${formatMoney(dl.low)} to ${formatMoney(dl.high)}`}</div>}</ForecastLine>)}
-                        {billLines(ev).map((bl,bi)=><ForecastLine key={bi} label={`Edit ${bl.label}`} onOpen={openOcc&&bl.occurrence?()=>openOcc(bl.occurrence):null}><div style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{bl.label} −{formatMoney(num(bl.amount))}{bl.edited&&<EditedTag/>}</div></ForecastLine>)}
-                        {skippedLines(ev).map((sk,si)=><ForecastLine key={`sk${si}`} label={`Edit ${sk.label}, skipped`} onOpen={openOcc?()=>openOcc(sk.occurrence):null}><div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}><span style={{textDecoration:"line-through"}}>{sk.moneyIn?"+":"−"}{formatMoney(sk.amount)} {sk.label}</span><EditedTag text="Skipped"/></div></ForecastLine>)}
-                        {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
+                        {ev.income>0 && depositLines(ev).map((dl,di)=><ForecastLine key={di} label={`Edit ${dl.label}`} onOpen={openOcc&&dl.occurrence?()=>openOcc(dl.occurrence):null}><div style={{color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(dl.amount)} ${dl.label}`}{dl.edited&&<EditedTag/>}</div>{dl.low!=null&&<div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{`Pay varies: ${formatMoney(dl.low)} to ${formatMoney(dl.high)}`}</div>}</ForecastLine>)}
+                        {billLines(ev).map((bl,bi)=><ForecastLine key={bi} label={`Edit ${bl.label}`} onOpen={openOcc&&bl.occurrence?()=>openOcc(bl.occurrence):null}><div style={{color:C.gold,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{bl.label} −{formatMoney(num(bl.amount))}{bl.edited&&<EditedTag/>}</div></ForecastLine>)}
+                        {skippedLines(ev).map((sk,si)=><ForecastLine key={`sk${si}`} label={`Edit ${sk.label}, skipped`} onOpen={openOcc?()=>openOcc(sk.occurrence):null}><div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}><span style={{textDecoration:"line-through"}}>{sk.moneyIn?"+":"−"}{formatMoney(sk.amount)} {sk.label}</span><EditedTag text="Skipped"/></div></ForecastLine>)}
+                        {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                       </div>
                       <div style={{textAlign:"right",flexShrink:0,minWidth:80}}>
                         <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{formatBalance(baseBalance)}</div>
                         {activeScenario && baselineForecast && baselineForecast[ev.day] && roundBalanceDown(baselineForecast[ev.day].balance) !== roundBalanceDown(baseBalance) && (
-                          <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1,textDecoration:"line-through",opacity:0.6}}>{formatBalance(baselineForecast[ev.day].balance)}</div>
+                          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1,textDecoration:"line-through",opacity:0.6}}>{formatBalance(baselineForecast[ev.day].balance)}</div>
                         )}
-                        <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
+                        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
                       </div>
                     </div>
                   </div>
@@ -1703,7 +1704,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData
                 {/* Drill-down panel */}
                 {isDrilled && (
                   <div style={{marginLeft:54,marginBottom:8,background:"rgba(255,255,255,0.03)",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px"}}>
-                    <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>
+                    <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>
                       {ev.day===0?"Today's snapshot":"Cash flow breakdown"}
                     </div>
                     {/* The walk is owned by lib/forecastWalk.js and carries CENTS, so the equation a
@@ -1723,33 +1724,33 @@ function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData
                       return (<>
                         {(w.hasWalk ? w.rows : w.billRows).map((r,ri)=>(
                           <div key={ri} style={{display:"flex",justifyContent:"space-between",padding:r.key==="opening"?"5px 0":"6px 0",borderBottom:`1px solid ${C.border}22`}}>
-                            <span style={{color:r.key==="opening"?C.muted:C.mutedHi,fontSize:r.key==="opening"?11:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
+                            <span style={{color:r.key==="opening"?C.muted:C.mutedHi,fontSize:TYPE_MIN,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
                               {DOT[r.key]&&<span style={{width:6,height:6,borderRadius:"50%",background:DOT[r.key],display:"inline-block"}}/>}
                               {ICON[r.key]||""}{r.key==="bill"?r.label:r.label}
-                              {r.key==="spend"&&<span style={{color:C.muted,fontSize:9}}>{correctionsOf(data).dailySpend!=null?"(your figure)":"(30d avg)"}</span>}
+                              {r.key==="spend"&&<span style={{color:C.muted,fontSize:13}}>{correctionsOf(data).dailySpend!=null?"(your figure)":"(30d avg)"}</span>}
                             </span>
-                            <span style={{color:COLOR[r.key],fontWeight:r.key==="opening"||r.key==="spend"?400:700,fontSize:r.key==="opening"?11:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign}{r.value}</span>
+                            <span style={{color:COLOR[r.key],fontWeight:r.key==="opening"||r.key==="spend"?400:700,fontSize:TYPE_MIN,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign}{r.value}</span>
                           </div>
                         ))}
                         <div style={{borderTop:`1px solid ${C.border}`,marginTop:4,paddingTop:8,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                           <div>
-                            <span style={{color:C.cream,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                            <span style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                               {ev.day===0?"Current balance":"Projected balance (est.)"}
                             </span>
-                            {w.roundedFromText&&<div style={{color:C.muted,fontSize:9,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Shown as {w.headlineText} above: a balance rounds down</div>}
+                            {w.roundedFromText&&<div style={{color:C.muted,fontSize:13,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Shown as {w.headlineText} above: a balance rounds down</div>}
                           </div>
                       <div style={{textAlign:"right"}}>
                         <span style={{color:isLow?C.redBright:baseBalance<0?C.redBright:C.greenBright,fontWeight:900,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
                           {w.closingText}
                         </span>
-                        {isLow&&baseBalance>=0&&<div style={{color:C.goldBright,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>below safety floor</div>}
-                        {baseBalance<0&&<div style={{color:C.redBright,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>overdrawn</div>}
+                        {isLow&&baseBalance>=0&&<div style={{color:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>below safety floor</div>}
+                        {baseBalance<0&&<div style={{color:C.redBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>overdrawn</div>}
                       </div>
                         </div>
                       </>);
                     })()}
                     {isLow&&(
-                      <div style={{marginTop:8,background:baseBalance<0?C.red+"18":C.gold+"11",borderRadius:8,padding:"7px 10px",color:baseBalance<0?C.redBright:C.goldBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
+                      <div style={{marginTop:8,background:baseBalance<0?C.red+"18":C.gold+"11",borderRadius:8,padding:"7px 10px",color:baseBalance<0?C.redBright:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
                         {baseBalance<0
                           ? "⚠ Projected overdraft: NSF fees $45 to $48 each. Transfer funds before this date."
                           : "⚠ Balance near safety floor. Hold non-essential spending until after this date."}
@@ -1795,7 +1796,7 @@ function FinancialTimeline({data, setAppData}) {
           <Icon id="calendar" size={15} color={C.teal} strokeWidth={2}/>
           Financial Timeline
         </div>
-        <button onClick={()=>setExpanded(e=>!e)} style={{background:"none",border:"none",color:C.teal,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer"}}>
+        <button onClick={()=>setExpanded(e=>!e)} style={{background:"none",border:"none",color:C.teal,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer"}}>
           {expanded ? "Collapse ↑" : "See 30 days ↓"}
         </button>
       </div>
@@ -1811,7 +1812,7 @@ function FinancialTimeline({data, setAppData}) {
             return (
               <div key={idx} style={{paddingBottom:4,position:"relative"}}>
                 <div onClick={()=>setExpandedDay(isDrilled?null:ev.day)}
-                  style={{display:"flex",gap:14,padding:"8px 6px",cursor:"pointer",borderRadius:12,background:isDrilled?"rgba(255,255,255,0.03)":"transparent",transition:"background .15s"}}>
+                  style={{display:"flex",gap:14,padding:"0 8px",minHeight:LAYOUT.minTap,cursor:"pointer",borderRadius:12,background:isDrilled?"rgba(255,255,255,0.03)":"transparent",transition:"background .15s"}}>
                   <div style={{width:40,display:"flex",justifyContent:"center",flexShrink:0,paddingTop:2}}>
                     <div style={{width:14,height:14,borderRadius:"50%",background:dotColor,border:`3px solid ${C.bg}`,zIndex:1,boxShadow:ev.day===0||ev.isPayday?`0 0 10px ${dotColor}88`:"none",flexShrink:0}}/>
                   </div>
@@ -1819,46 +1820,46 @@ function FinancialTimeline({data, setAppData}) {
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:2}}>
-                          {label}<span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
+                          {label}<span style={{color:C.muted,fontSize:13,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
                         </div>
-                        {ev.income>0 && depositLines(ev).map((dl,di)=><ForecastLine key={di} label={`Edit ${dl.label}`} onOpen={openOcc&&dl.occurrence?()=>openOcc(dl.occurrence):null}><div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(dl.amount)} ${dl.label}`}{dl.edited&&<EditedTag/>}</div>{dl.low!=null&&<div style={{color:C.muted,fontSize:9.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{`Pay varies: ${formatMoney(dl.low)} to ${formatMoney(dl.high)}`}</div>}</ForecastLine>)}
-                        {billLines(ev).map((bl,bi)=><ForecastLine key={bi} label={`Edit ${bl.label}`} onOpen={openOcc&&bl.occurrence?()=>openOcc(bl.occurrence):null}><div style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{bl.label} −{formatMoney(num(bl.amount))}{bl.edited&&<EditedTag/>}</div></ForecastLine>)}
-                        {skippedLines(ev).map((sk,si)=><ForecastLine key={`sk${si}`} label={`Edit ${sk.label}, skipped`} onOpen={openOcc?()=>openOcc(sk.occurrence):null}><div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}><span style={{textDecoration:"line-through"}}>{sk.moneyIn?"+":"−"}{formatMoney(sk.amount)} {sk.label}</span><EditedTag text="Skipped"/></div></ForecastLine>)}
-                        {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
+                        {ev.income>0 && depositLines(ev).map((dl,di)=><ForecastLine key={di} label={`Edit ${dl.label}`} onOpen={openOcc&&dl.occurrence?()=>openOcc(dl.occurrence):null}><div style={{color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(dl.amount)} ${dl.label}`}{dl.edited&&<EditedTag/>}</div>{dl.low!=null&&<div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{`Pay varies: ${formatMoney(dl.low)} to ${formatMoney(dl.high)}`}</div>}</ForecastLine>)}
+                        {billLines(ev).map((bl,bi)=><ForecastLine key={bi} label={`Edit ${bl.label}`} onOpen={openOcc&&bl.occurrence?()=>openOcc(bl.occurrence):null}><div style={{color:C.gold,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{bl.label} −{formatMoney(num(bl.amount))}{bl.edited&&<EditedTag/>}</div></ForecastLine>)}
+                        {skippedLines(ev).map((sk,si)=><ForecastLine key={`sk${si}`} label={`Edit ${sk.label}, skipped`} onOpen={openOcc?()=>openOcc(sk.occurrence):null}><div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}><span style={{textDecoration:"line-through"}}>{sk.moneyIn?"+":"−"}{formatMoney(sk.amount)} {sk.label}</span><EditedTag text="Skipped"/></div></ForecastLine>)}
+                        {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                       </div>
                       <div style={{textAlign:"right",flexShrink:0}}>
                         <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,color:balColor}}>{formatBalance(ev.balance)}</div>
-                        <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
+                        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>balance</div>
                       </div>
                     </div>
                   </div>
                 </div>
                 {isDrilled&&(
                   <div style={{marginLeft:54,marginBottom:6,background:"rgba(255,255,255,0.03)",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px"}}>
-                    <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>Day breakdown</div>
+                    <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>Day breakdown</div>
                     {ev.income>0&&depositLines(ev).map((dl,di)=>(
                       <div key={`dep${di}`} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
-                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💰 {dl.named?dl.label:"Deposit"}</span>
-                        <span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+{formatMoney(dl.amount)}</span>
+                        <span style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💰 {dl.named?dl.label:"Deposit"}</span>
+                        <span style={{color:C.greenBright,fontWeight:700,fontSize:13}}>+{formatMoney(dl.amount)}</span>
                       </div>
                     ))}
                     {ev.bills.map((b,bi)=>(
                       <div key={bi} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
-                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📅 {b.name}</span>
-                        <span style={{color:C.gold,fontWeight:700,fontSize:12}}>−{formatMoney(num(b.amount))}</span>
+                        <span style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📅 {b.name}</span>
+                        <span style={{color:C.gold,fontWeight:700,fontSize:13}}>−{formatMoney(num(b.amount))}</span>
                       </div>
                     ))}
                     {ev.day>0&&(
                       <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
-                        <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🛒 Est. daily spend</span>
-                        <span style={{color:C.muted,fontSize:12}}>−{formatMoney(avgDaily)}</span>
+                        <span style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🛒 Est. daily spend</span>
+                        <span style={{color:C.muted,fontSize:13}}>−{formatMoney(avgDaily)}</span>
                       </div>
                     )}
                     <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0 0"}}>
-                      <span style={{color:C.cream,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Projected balance</span>
+                      <span style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Projected balance</span>
                       <span style={{color:isLow?C.redBright:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{formatBalance(ev.balance)}</span>
                     </div>
-                    {isLow&&<div style={{marginTop:8,background:C.red+"11",borderRadius:8,padding:"6px 10px",color:C.redBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>⚠ Balance drops below safety floor here</div>}
+                    {isLow&&<div style={{marginTop:8,background:C.red+"11",borderRadius:8,padding:"6px 10px",color:C.redBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>⚠ Balance drops below safety floor here</div>}
                   </div>
                 )}
               </div>
@@ -2215,17 +2216,17 @@ Rules: do not invent or quote any number not in the calculated results above. Do
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
           <div>
             <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream,lineHeight:1.2}}>What If Simulator</div>
-            <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3}}>Test any financial decision instantly</div>
+            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3}}>Test any financial decision instantly</div>
           </div>
           <button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:24,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>×</button>
         </div>
 
         {/* Quick presets */}
         <div style={{marginBottom:16}}>
-          <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:8}}>Quick scenarios</div>
+          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:8}}>Quick scenarios</div>
           <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
             {presets.map(p=>(
-              <button key={p.label} onClick={()=>simulate(p.label, p.type)} style={{background:query===p.label?C.greenDim:C.cardAlt,border:`1px solid ${query===p.label?C.green+"55":C.border}`,color:query===p.label?C.green:C.mutedHi,borderRadius:99,padding:"6px 12px",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer",transition:"all .15s"}}>{p.label}</button>
+              <button key={p.label} onClick={()=>simulate(p.label, p.type)} style={{background:query===p.label?C.greenDim:C.cardAlt,border:`1px solid ${query===p.label?C.green+"55":C.border}`,color:query===p.label?C.green:C.mutedHi,borderRadius:99,padding:"6px 12px",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer",transition:"all .15s"}}>{p.label}</button>
             ))}
           </div>
         </div>
@@ -2239,7 +2240,7 @@ Rules: do not invent or quote any number not in the calculated results above. Do
             placeholder="e.g. Buy a $450 TV…"
             style={{flex:1,padding:"12px 16px",borderRadius:14,border:`1.5px solid ${C.border}`,background:C.surface,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,outline:"none"}}
           />
-          <button onClick={()=>simulate()} style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#fff",border:"none",borderRadius:14,padding:"12px 18px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>Simulate →</button>
+          <button onClick={()=>simulate()} style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",border:"none",borderRadius:14,padding:"12px 18px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>Simulate →</button>
         </div>
 
         {/* Loading */}
@@ -2247,7 +2248,7 @@ Rules: do not invent or quote any number not in the calculated results above. Do
           <div style={{textAlign:"center",padding:"30px 0"}}>
             <div style={{fontSize:36,marginBottom:12,animation:"spin 1s linear infinite"}}>⚙️</div>
             <div style={{color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:15}}>Simulating "{query}"…</div>
-            <div style={{color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,marginTop:6}}>Running your numbers</div>
+            <div style={{color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,marginTop:6}}>Running your numbers</div>
           </div>
         )}
 
@@ -2255,7 +2256,7 @@ Rules: do not invent or quote any number not in the calculated results above. Do
         {result && !loading && (
           <div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeUp 0.3s ease both"}}>
             {/* Tier 2.9: persistent AI disclosure (Apple 5.1.2(i)) — top of result, before AI prose */}
-            <div style={{color:C.muted,fontSize:10,fontStyle:"italic",lineHeight:1.5,textAlign:"center",padding:"0 4px"}}>
+            <div style={{color:C.muted,fontSize:13,fontStyle:"italic",lineHeight:1.5,textAlign:"center",padding:"0 4px"}}>
               Educational guidance only. Not financial, tax, or investment advice. Verify with a professional or official sources (CRA/IRS) before making decisions. AI can make mistakes.
             </div>
             {/* Verdict */}
@@ -2292,10 +2293,10 @@ Rules: do not invent or quote any number not in the calculated results above. Do
                   <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px 14px 12px"}}>
                     <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
                       <span style={{fontSize:16}}>{item.icon}</span>
-                      <span style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{item.label}</span>
+                      <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{item.label}</span>
                     </div>
                     <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,color:i===3?(result.healthScoreDelta>=0?C.greenBright:C.redBright):impactColor(item.val),marginBottom:4}}>{i===3?(result.healthScoreDelta>=0?`+${result.healthScoreDelta}`:`${result.healthScoreDelta}`)+" pts":impactIcon(item.val)+" "+item.val}</div>
-                    <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{item.detail}</div>
+                    <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{item.detail}</div>
                   </div>
                 ))}
               </div>
@@ -2305,28 +2306,28 @@ Rules: do not invent or quote any number not in the calculated results above. Do
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {/* Header: which debt */}
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"12px 14px"}}>
-                  <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>Applied to</div>
+                  <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>Applied to</div>
                   <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,color:C.cream}}>{result.debtName}</div>
-                  <div style={{color:C.muted,fontSize:11,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${result.debtBalance.toFixed(2)} @ {result.debtApr}% APR{result.debtAprEstimated ? " (est.)" : ""} · ${result.currentPayment.toFixed(0)}/mo current payment</div>
+                  <div style={{color:C.muted,fontSize:13,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${result.debtBalance.toFixed(2)} @ {result.debtApr}% APR{result.debtAprEstimated ? " (est.)" : ""} · ${result.currentPayment.toFixed(0)}/mo current payment</div>
                 </div>
                 {/* Before / After comparison */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px"}}>
-                    <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:6}}>Current pace</div>
+                    <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:6}}>Current pace</div>
                     <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream,lineHeight:1.1}}>{Number.isFinite(result.baselineMonths) ? `${result.baselineMonths} mo` : "Never"}</div>
-                    <div style={{color:C.muted,fontSize:11,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${Number.isFinite(result.baselineInterest) ? result.baselineInterest.toFixed(0) : "∞"} interest</div>
+                    <div style={{color:C.muted,fontSize:13,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${Number.isFinite(result.baselineInterest) ? result.baselineInterest.toFixed(0) : "∞"} interest</div>
                   </div>
                   <div style={{background:C.greenDim,border:`1px solid ${C.greenBright}`,borderRadius:16,padding:"14px"}}>
-                    <div style={{color:C.greenBright,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:6}}>+ ${result.extraPayment}/mo</div>
+                    <div style={{color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:6}}>+ ${result.extraPayment}/mo</div>
                     <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.greenBright,lineHeight:1.1}}>{Number.isFinite(result.boostedMonths) ? `${result.boostedMonths} mo` : "Never"}</div>
-                    <div style={{color:C.greenBright,fontSize:11,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${Number.isFinite(result.boostedInterest) ? result.boostedInterest.toFixed(0) : "∞"} interest</div>
+                    <div style={{color:C.greenBright,fontSize:13,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${Number.isFinite(result.boostedInterest) ? result.boostedInterest.toFixed(0) : "∞"} interest</div>
                   </div>
                 </div>
                 {/* Savings highlight */}
                 {result.monthsSaved > 0 && (
                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"12px 14px",textAlign:"center"}}>
                     <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,color:C.greenBright}}>You'd save ${result.interestSaved} in interest</div>
-                    <div style={{color:C.muted,fontSize:11,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>and clear it {result.monthsSaved} months sooner</div>
+                    <div style={{color:C.muted,fontSize:13,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>and clear it {result.monthsSaved} months sooner</div>
                   </div>
                 )}
               </div>
@@ -2343,9 +2344,9 @@ Rules: do not invent or quote any number not in the calculated results above. Do
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {/* Hero number — moderate 30y */}
                 <div style={{background:C.greenDim,border:`1px solid ${C.greenBright}`,borderRadius:16,padding:"18px 16px",textAlign:"center"}}>
-                  <div style={{color:C.greenBright,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:6}}>${result.monthlyContribution}/mo · 30y · 7%</div>
+                  <div style={{color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:6}}>${result.monthlyContribution}/mo · 30y · 7%</div>
                   <div style={{fontFamily:"'Playfair Display',serif",fontSize:32,fontWeight:900,color:C.greenBright,lineHeight:1}}>${Math.round(result.thirtyYr.value).toLocaleString()}</div>
-                  <div style={{color:C.muted,fontSize:11,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${Math.round(result.thirtyYr.growth).toLocaleString()} of growth on top of contributions</div>
+                  <div style={{color:C.muted,fontSize:13,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${Math.round(result.thirtyYr.growth).toLocaleString()} of growth on top of contributions</div>
                 </div>
                 {/* Timeline comparison */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
@@ -2355,7 +2356,7 @@ Rules: do not invent or quote any number not in the calculated results above. Do
                     {label:"30 years", val: Math.round(result.thirtyYr.value)},
                   ].map((t,i)=>(
                     <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"10px 8px",textAlign:"center"}}>
-                      <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>{t.label}</div>
+                      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>{t.label}</div>
                       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:13,color:C.cream}}>${t.val.toLocaleString()}</div>
                     </div>
                   ))}
@@ -2368,7 +2369,7 @@ Rules: do not invent or quote any number not in the calculated results above. Do
                     {label:"9% aggressive",    val: Math.round(result.aggressive30.value),   color: C.greenBright},
                   ].map((r,i)=>(
                     <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"10px 8px",textAlign:"center"}}>
-                      <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>{r.label}</div>
+                      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>{r.label}</div>
                       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:13,color:r.color}}>${r.val.toLocaleString()}</div>
                     </div>
                   ))}
@@ -2380,7 +2381,7 @@ Rules: do not invent or quote any number not in the calculated results above. Do
             {result.tip && (
               <div style={{background:C.tealDim,border:`1px solid ${C.teal}33`,borderRadius:14,padding:"12px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
                 <span style={{fontSize:18,flexShrink:0}}>💡</span>
-                <div style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}><strong style={{color:C.teal}}>Better option:</strong> {result.tip}</div>
+                <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}><strong style={{color:C.teal}}>Better option:</strong> {result.tip}</div>
               </div>
             )}
 
@@ -2488,14 +2489,14 @@ const bars = [
         <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7}}>
           <span style={{fontSize:16}}>{p.emoji}</span> Money Personality
         </div>
-        <span style={{background:p.color+"22",color:p.color,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"3px 8px",borderRadius:99,textTransform:"uppercase",letterSpacing:0.8}}>Your type</span>
+        <span style={{background:p.color+"22",color:p.color,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"3px 8px",borderRadius:99}}>Your type</span>
       </div>
 
   {!hasEnoughData ? (
     <div style={{textAlign:"center",padding:"24px 16px"}}>
       <div style={{fontSize:36,marginBottom:10}}>🔍</div>
       <div style={{color:C.cream,fontWeight:700,fontSize:13,marginBottom:8}}>Not enough data yet</div>
-      <div style={{color:C.muted,fontSize:12,lineHeight:1.7}}>Connect your bank and use the app for a few days. Your money personality is calculated from your real spending patterns.</div>
+      <div style={{color:C.muted,fontSize:13,lineHeight:1.7}}>Connect your bank and use the app for a few days. Your money personality is calculated from your real spending patterns.</div>
     </div>
   ) : !revealed ? (
         <div style={{textAlign:"center",padding:"16px 0 8px"}}>
@@ -2510,20 +2511,20 @@ const bars = [
             <div style={{fontFamily:"'Playfair Display',serif",fontSize:21,fontWeight:900,color:p.color,lineHeight:1.2,marginBottom:8}}>{p.name}</div>
             <div style={{display:"flex",gap:6,justifyContent:"center",flexWrap:"wrap",marginBottom:12}}>
               {p.traits.map((t,i)=>(
-                <span key={i} style={{background:p.color+"18",color:p.color,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,padding:"4px 10px",borderRadius:99}}>{t}</span>
+                <span key={i} style={{background:p.color+"18",color:p.color,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,padding:"4px 10px",borderRadius:99}}>{t}</span>
               ))}
             </div>
             <div style={{background:p.color+"12",border:`1px solid ${p.color}33`,borderRadius:14,padding:"12px 14px",textAlign:"left",marginBottom:14}}>
-              <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:5}}>Coach Insight</div>
-              <div style={{color:C.cream,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.65}}>{p.insight}</div>
+              <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:5}}>Coach Insight</div>
+              <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.65}}>{p.insight}</div>
             </div>
           </div>
           <div style={{marginBottom:14}}>
             {bars.map(b=>(
               <div key={b.label} style={{marginBottom:7}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                  <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{b.label}</span>
-                  <span style={{color:b.color,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{b.pct}%</span>
+                  <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{b.label}</span>
+                  <span style={{color:b.color,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{b.pct}%</span>
                 </div>
                 <div style={{height:5,borderRadius:99,background:C.border,overflow:"hidden"}}>
                   <div style={{height:"100%",width:`${b.pct}%`,background:`linear-gradient(to right,${b.color}88,${b.color})`,borderRadius:99,transition:"width 1s ease"}}/>
@@ -2531,7 +2532,7 @@ const bars = [
               </div>
             ))}
           </div>
-          <button onClick={()=>{if(navigator.share)navigator.share({title:"My Money Personality",text:p.shareText,url:"https://flourishmoney.app"}).catch(()=>{});}} style={{width:"100%",background:"none",border:`1.5px solid ${p.color}44`,color:p.color,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:12,padding:"10px",borderRadius:14,cursor:"pointer"}}>Share My Type 🔗</button>
+          <button onClick={()=>{if(navigator.share)navigator.share({title:"My Money Personality",text:p.shareText,url:"https://flourishmoney.app"}).catch(()=>{});}} style={{width:"100%",background:"none",border:`1.5px solid ${p.color}44`,color:p.color,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,padding:"10px",borderRadius:14,cursor:"pointer"}}>Share My Type 🔗</button>
         </div>
       )}
     </div>
@@ -2594,7 +2595,7 @@ function WealthForecast({data}) {
         </div>
         <div style={{display:"flex",gap:4}}>
           {[10,20,30].map(y=>(
-            <button key={y} onClick={()=>setHorizon(y)} style={{background:horizon===y?C.purple+"33":C.cardAlt,border:`1px solid ${horizon===y?C.purple:C.border}`,color:horizon===y?C.purpleBright:C.muted,borderRadius:8,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{y}y</button>
+            <button key={y} onClick={()=>setHorizon(y)} style={{background:horizon===y?C.purple+"33":C.cardAlt,border:`1px solid ${horizon===y?C.purple:C.border}`,color:horizon===y?C.purpleBright:C.muted,borderRadius:8,padding:"4px 10px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{y}y</button>
           ))}
         </div>
       </div>
@@ -2603,18 +2604,18 @@ function WealthForecast({data}) {
         <div style={{textAlign:"center",padding:"28px 20px"}}>
           <div style={{fontSize:36,marginBottom:12}}>📊</div>
           <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:8}}>No investment data yet</div>
-          <div style={{color:C.muted,fontSize:12,lineHeight:1.7,marginBottom:16}}>
+          <div style={{color:C.muted,fontSize:13,lineHeight:1.7,marginBottom:16}}>
             Add your {isCA?"RRSP, TFSA":"401(k), IRA"} balances and monthly contributions in the <strong style={{color:C.tealBright}}>Retirement</strong> tab to see your wealth forecast.
           </div>
-          <div style={{background:C.tealDim,border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",color:C.tealBright,fontSize:11,fontWeight:600}}>
+          <div style={{background:C.tealDim,border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",color:C.tealBright,fontSize:13,fontWeight:600}}>
             Tip: Even entering $50/month shows the power of compound growth over time.
           </div>
         </div>
       ) : (
         <>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
-            <span style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:99,padding:"2px 8px",color:C.purpleBright,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.5}}>PROJECTED</span>
-            <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            <span style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:99,padding:"2px 8px",color:C.purpleBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.5}}>PROJECTED</span>
+            <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
               ${startingBal.toLocaleString()} balance · ${Math.round(monthlyContrib).toLocaleString()}/mo · 7% avg return
             </span>
           </div>
@@ -2627,10 +2628,10 @@ function WealthForecast({data}) {
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
                     <div style={{display:"flex",alignItems:"center",gap:6}}>
                       <span style={{fontSize:14}}>{s.icon}</span>
-                      <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{s.label}</span>
+                      <span style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{s.label}</span>
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:6}}>
-                      <span style={{background:C.purple+"18",border:`1px solid ${C.purple}33`,borderRadius:99,padding:"1px 6px",color:C.purpleBright,fontSize:10,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>PROJ.</span>
+                      <span style={{background:C.purple+"18",border:`1px solid ${C.purple}33`,borderRadius:99,padding:"1px 6px",color:C.purpleBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>PROJ.</span>
                       <span style={{color:s.color,fontWeight:900,fontFamily:"'Playfair Display',serif",fontSize:18}}>{fmt(vals[i])}</span>
                     </div>
                   </div>
@@ -2645,19 +2646,19 @@ function WealthForecast({data}) {
           {/* Extra investment slider */}
           <div style={{background:C.surface,borderRadius:14,padding:"14px 16px",border:`1px solid ${C.border}`}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
-              <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Extra monthly investment</span>
+              <span style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Extra monthly investment</span>
               <span style={{color:C.greenBright,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{extra}/mo</span>
             </div>
             <input type="range" min={0} max={1000} step={25} value={extra} onChange={e=>setExtra(Number(e.target.value))}
               style={{width:"100%",accentColor:C.green,cursor:"pointer"}}/>
             <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
-              <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$0</span>
-              <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$1,000/mo</span>
+              <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$0</span>
+              <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$1,000/mo</span>
             </div>
           </div>
           {extra > 0 && (
             <div style={{marginTop:10,background:C.greenDim,border:`1px solid ${C.green}33`,borderRadius:12,padding:"10px 14px",textAlign:"center"}}>
-              <span style={{color:C.green,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>
+              <span style={{color:C.green,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>
                 +${extra}/mo → {fmt(project(monthlyInvest+extra,horizon))} in {horizon} years vs {fmt(project(monthlyInvest,horizon))} now
               </span>
             </div>
@@ -2751,7 +2752,7 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
         <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7}}>
           <span style={{fontSize:15}}>🔍</span> Room Flourish found
         </div>
-        <span style={{background:C.goldDim,color:C.goldBright,fontSize:10,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"3px 8px",borderRadius:99}}>{opportunities.length} found</span>
+        <span style={{background:C.goldDim,color:C.goldBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"3px 8px",borderRadius:99}}>{opportunities.length} found</span>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {opportunities.map(o=>(
@@ -2761,12 +2762,12 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
             <span style={{fontSize:20,flexShrink:0,marginTop:1}}>{o.icon}</span>
             <div style={{flex:1,minWidth:0}}>
               <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
-                <span style={{color:o.color,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{o.title}</span>
-                <span style={{background:o.color+"22",color:o.color,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"2px 7px",borderRadius:99}}>{o.badge}</span>
+                <span style={{color:o.color,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{o.title}</span>
+                <span style={{background:o.color+"22",color:o.color,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"2px 7px",borderRadius:99}}>{o.badge}</span>
               </div>
-              <div style={{color:C.muted,fontSize:11.5,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{o.detail}</div>
+              <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{o.detail}</div>
             </div>
-            <div style={{color:o.color,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,whiteSpace:"nowrap",marginTop:3}}>{o.action} →</div>
+            <div style={{color:o.color,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,whiteSpace:"nowrap",marginTop:3}}>{o.action} →</div>
           </button>
         ))}
       </div>
@@ -2804,7 +2805,7 @@ function MoneyWrapped({data, onClose}) {
       content:(
         <div style={{textAlign:"center",padding:"0 8px"}}>
           <div style={{fontSize:56,marginBottom:16}}>🌱</div>
-          <div style={{color:"#ffffff99",fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:3,textTransform:"uppercase",marginBottom:8}}>Your money, right now</div>
+          <div style={{color:"#ffffff99",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>Your money, right now</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:38,fontWeight:900,color:"#fff",lineHeight:1.1,marginBottom:12}}>Money Wrapped</div>
           <div style={{color:"#ffffff88",fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7}}>A snapshot of your spending,<br/>saving, and financial habits.</div>
         </div>
@@ -2815,7 +2816,7 @@ function MoneyWrapped({data, onClose}) {
       bg:`linear-gradient(160deg,${C.teal} 0%,#0A3A4A 100%)`,
       content:(
         <div style={{textAlign:"center"}}>
-          <div style={{color:"#ffffff88",fontSize:11,letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",marginBottom:12}}>{nwHeadline.label}</div>
+          <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>{nwHeadline.label}</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:64,fontWeight:900,color:nwHeadline.positive?"#6EF0A0":"#FF7070",letterSpacing:-2,lineHeight:1,marginBottom:8}}>{nwHeadline.display}</div>
           <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:24}}>{nwHeadline.caption}</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
@@ -2826,7 +2827,7 @@ function MoneyWrapped({data, onClose}) {
               <div key={i} style={{background:"rgba(255,255,255,0.12)",borderRadius:16,padding:"14px 12px",textAlign:"center"}}>
                 <div style={{fontSize:24,marginBottom:6}}>{s.icon}</div>
                 <div style={{color:"#fff",fontWeight:900,fontFamily:"'Playfair Display',serif",fontSize:20}}>{s.val}</div>
-                <div style={{color:"#ffffff77",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3}}>{s.label}</div>
+                <div style={{color:"#ffffff77",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3}}>{s.label}</div>
               </div>
             ))}
           </div>
@@ -2838,7 +2839,7 @@ function MoneyWrapped({data, onClose}) {
       bg:`linear-gradient(160deg,${C.purple} 0%,#1A0A3A 100%)`,
       content:(
         <div style={{textAlign:"center"}}>
-          <div style={{color:"#ffffff88",fontSize:11,letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",marginBottom:12}}>Your spending story</div>
+          <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>Your spending story</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:48,fontWeight:900,color:"#fff",letterSpacing:-1,marginBottom:6}}>{`$${((totalSpent||0)/1000).toFixed(1)}k`}</div>
           <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:20}}>spent across {txns.length} transactions</div>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -2850,7 +2851,7 @@ function MoneyWrapped({data, onClose}) {
               <div key={i} style={{background:"rgba(255,255,255,0.1)",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,textAlign:"left"}}>
                 <span style={{fontSize:22,flexShrink:0}}>{item.icon}</span>
                 <div>
-                  <div style={{color:"#ffffff66",fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:3}}>{item.label}</div>
+                  <div style={{color:"#ffffff66",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:3}}>{item.label}</div>
                   <div style={{color:item.color,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13}}>{item.val}</div>
                 </div>
               </div>
@@ -2866,17 +2867,17 @@ function MoneyWrapped({data, onClose}) {
         const p = calcPersonality(txns, data);
         return (
           <div style={{textAlign:"center"}}>
-            <div style={{color:"#ffffff88",fontSize:11,letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",marginBottom:12}}>Your money personality</div>
+            <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>Your money personality</div>
             <div style={{fontSize:64,marginBottom:10}}>{p.emoji}</div>
             <div style={{fontFamily:"'Playfair Display',serif",fontSize:26,fontWeight:900,color:"#fff",marginBottom:12,lineHeight:1.3}}>{p.name}</div>
             <div style={{display:"flex",gap:6,justifyContent:"center",flexWrap:"wrap",marginBottom:20}}>
               {p.traits.map((t,i)=>(
-                <span key={i} style={{background:"rgba(255,255,255,0.15)",color:"#fff",fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,padding:"5px 12px",borderRadius:99}}>{t}</span>
+                <span key={i} style={{background:"rgba(255,255,255,0.15)",color:"#fff",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,padding:"5px 12px",borderRadius:99}}>{t}</span>
               ))}
             </div>
             <div style={{background:"rgba(255,255,255,0.12)",borderRadius:16,padding:"14px 16px"}}>
-              <div style={{color:"#ffffff88",fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:6}}>Your coach says</div>
-              <div style={{color:"#fff",fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.65}}>{p.insight}</div>
+              <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:6}}>Your coach says</div>
+              <div style={{color:"#fff",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.65}}>{p.insight}</div>
             </div>
           </div>
         );
@@ -2891,9 +2892,9 @@ function MoneyWrapped({data, onClose}) {
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:"#fff",lineHeight:1.2,marginBottom:8}}>Here's to an even better {year+1}</div>
           <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7,marginBottom:24}}>Keep checking in, keep improving your score, and let Flourish guide every money decision.</div>
           <div style={{background:"rgba(255,255,255,0.12)",borderRadius:16,padding:"16px",marginBottom:20}}>
-            <div style={{color:"#ffffff88",fontSize:10,textTransform:"uppercase",letterSpacing:1.4,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>Your {year} number</div>
+            <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>Your {year} number</div>
             <div style={{fontFamily:"'Playfair Display',serif",fontSize:52,fontWeight:900,color:"#6EF0A0",letterSpacing:-2}}>{score}</div>
-            <div style={{color:"#ffffff88",fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Financial Health Score</div>
+            <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Financial Health Score</div>
           </div>
           <button onClick={()=>{if(navigator.share)navigator.share({title:"My Flourish Money Wrapped",text:`My Financial Health Score is ${score}/100. Check yours on Flourish! 🌱`,url:"https://flourishmoney.app"}).catch(()=>{});}} style={{width:"100%",background:"rgba(255,255,255,0.2)",border:"2px solid rgba(255,255,255,0.4)",color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,cursor:"pointer",marginBottom:10}}>Share My Wrapped 🔗</button>
           <button onClick={onClose} style={{width:"100%",background:"none",border:"none",color:"#ffffff66",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:13,padding:"10px",cursor:"pointer"}}>Back to Flourish</button>
@@ -3031,9 +3032,9 @@ function Bar({v,max,color=C.green,h=7}){
     boxShadow:`0 0 ${h*1.5}px ${v>max?C.red:color}55`}}/>
   </div>;
 }
-function Chip({label,color,size=11,icon}){
+function Chip({label,color,size=TYPE_MIN,icon}){
   // Padding scales with size so a Chip aligns to hand-rolled pills at the same fontSize (was a fixed
-  // "4px 11px", which made <Chip size={9}> taller than its neighbours and broke the shared baseline).
+  // "4px 11px", which made <Chip size={TYPE_MIN}> taller than its neighbours and broke the shared baseline).
   const chipPad = size <= 9 ? "1px 7px" : size === 10 ? "2px 8px" : "4px 11px";
   return <span style={{background:color+"18",color,borderRadius:99,padding:chipPad,fontSize:size,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"inline-flex",alignItems:"center",gap:4,border:`1px solid ${color}30`,letterSpacing:0.1}}>{icon&&<span style={{fontSize:size}}>{icon}</span>}{label}</span>;
 }
@@ -3058,7 +3059,7 @@ function Btn({label,onClick,color=C.green,outline,small,disabled,full=true,icon}
     border:`1.5px solid ${outline?color+"99":C.isDark?"rgba(255,255,255,0.15)":"rgba(0,0,0,0.12)"}`,
     color:outline?color:C.isDark?"#021208":"#FFFFFF",
     borderRadius:16,padding:small?"9px 20px":"14px 28px",
-    fontWeight:800,fontSize:small?12:14,letterSpacing:0.2,
+    fontWeight:800,fontSize:small?TYPE_MIN:14,letterSpacing:0.2,
     cursor:disabled?"not-allowed":"pointer",opacity:disabled?.35:1,
     display:"flex",alignItems:"center",gap:7,justifyContent:"center",
     width:full?"100%":"auto",
@@ -3074,19 +3075,19 @@ function Inp({label,value,onChange,type="text",prefix,placeholder,note,sm,inputM
   const [focused,setFocused]=useState(false);
   const _inputMode = inputMode || (type === "number" ? "decimal" : undefined);
   return <div style={{marginBottom:sm?10:16}}>
-    {label&&<div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,marginBottom:6,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>}
+    {label&&<div style={{color:C.muted,fontSize:13,marginBottom:6,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>}
     <div style={{display:"flex",alignItems:"center",background:C.isDark?`rgba(255,255,255,${focused?0.07:0.04})`:focused?C.surface:C.cardAlt,border:`1.5px solid ${focused?C.green+"77":C.border}`,borderRadius:16,overflow:"hidden",transition:"all .2s cubic-bezier(.16,1,.3,1)",boxShadow:focused?`0 0 0 3px ${C.green}18`:""}}>
       {prefix&&<div style={{padding:"0 14px",color:focused?C.mutedHi:C.muted,fontSize:14,borderRight:`1px solid ${C.border}`,transition:"color .2s"}}>{prefix}</div>}
       <input type={type} inputMode={_inputMode} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
         onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
         style={{flex:1,background:"none",border:"none",outline:"none",color:C.cream,fontSize:sm?13:15,padding:sm?"10px 13px":"13px 15px",fontFamily:"inherit"}}/>
     </div>
-    {note&&<div style={{color:C.muted,fontSize:10,marginTop:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{note}</div>}
+    {note&&<div style={{color:C.muted,fontSize:13,marginTop:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{note}</div>}
   </div>;
 }
 function Sel({label,value,onChange,options}){
   return <div style={{marginBottom:16}}>
-    {label&&<div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,marginBottom:6,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>}
+    {label&&<div style={{color:C.muted,fontSize:13,marginBottom:6,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>}
     <select value={value} onChange={e=>onChange(e.target.value)} style={{width:"100%",background:C.isDark?`rgba(255,255,255,0.04)`:C.cardAlt,border:`1.5px solid ${C.border}`,borderRadius:16,color:C.cream,fontSize:14,padding:"13px 15px",fontFamily:"inherit",outline:"none",cursor:"pointer",transition:"border .2s"}}
       onFocus={e=>e.target.style.borderColor=C.green+"77"} onBlur={e=>e.target.style.borderColor=C.border}>
       {options.map(o=><option key={o.value} value={o.value} style={{background:C.bg}}>{o.label}</option>)}
@@ -3163,8 +3164,8 @@ function HealthScoreRing({score, size=110, strokeW=9, bonus=0}) {
       </svg>
       <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:0}}>
         <div style={{fontSize:Math.round(size*0.27),fontWeight:900,color:gradeColor,fontFamily:"'Playfair Display',serif",lineHeight:1}}>{displayed}</div>
-        <div style={{fontSize:Math.round(size*0.094),color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,lineHeight:1.3}}>{grade}</div>
-        {bonus>0&&<div style={{fontSize:Math.round(size*0.082),color:C.greenBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginTop:1}}>+{bonus} ✦</div>}
+        <div style={{fontSize:Math.max(TYPE_MIN,Math.round(size*0.094)),color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,lineHeight:1.3}}>{grade}</div>
+        {bonus>0&&<div style={{fontSize:Math.max(TYPE_MIN,Math.round(size*0.082)),color:C.greenBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginTop:1}}>+{bonus} ✦</div>}
       </div>
     </div>
   );
@@ -3243,7 +3244,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
         {moods.map(m=>(
           <button key={m.val} onClick={()=>setMood(m.val)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,padding:"14px 12px",borderRadius:18,border:`2px solid ${mood===m.val?C.green+"88":C.border}`,background:mood===m.val?C.greenDim:C.card,cursor:"pointer",minWidth:60,transition:"all .15s"}}>
             <span style={{fontSize:28}}>{m.emoji}</span>
-            <span style={{fontSize:10,color:mood===m.val?C.green:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{m.label}</span>
+            <span style={{fontSize:13,color:mood===m.val?C.green:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{m.label}</span>
           </button>
         ))}
       </div>
@@ -3258,12 +3259,12 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
         {surpriseOpts.map(o=>(
-          <button key={o} onClick={()=>setSurprise(o)} style={{padding:"12px 10px",borderRadius:14,border:`1.5px solid ${surprise===o?C.orange+"99":C.border}`,background:surprise===o?C.orangeDim:C.card,color:surprise===o?C.orange:C.mutedHi,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:12,cursor:"pointer",transition:"all .15s"}}>{o}</button>
+          <button key={o} onClick={()=>setSurprise(o)} style={{padding:"12px 10px",borderRadius:14,border:`1.5px solid ${surprise===o?C.orange+"99":C.border}`,background:surprise===o?C.orangeDim:C.card,color:surprise===o?C.orange:C.mutedHi,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:13,cursor:"pointer",transition:"all .15s"}}>{o}</button>
         ))}
       </div>
       <div style={{display:"flex",gap:10}}>
         <button onClick={()=>setStep(0)} style={{flex:1,padding:"13px",borderRadius:99,border:`1px solid ${C.border}`,background:"none",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer"}}>← Back</button>
-        <button onClick={()=>setStep(2)} style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"13px",borderRadius:99,border:"none",cursor:"pointer"}}>Next →</button>
+        <button onClick={()=>setStep(2)} style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"13px",borderRadius:99,border:"none",cursor:"pointer"}}>Next →</button>
       </div>
     </div>,
 
@@ -3283,7 +3284,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
       </div>
       <div style={{display:"flex",gap:10}}>
         <button onClick={()=>setStep(1)} style={{flex:1,padding:"13px",borderRadius:99,border:`1px solid ${C.border}`,background:"none",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer"}}>← Back</button>
-        <button onClick={fetchInsight} style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"13px",borderRadius:99,border:"none",cursor:"pointer"}}>{loading?"Getting your coaching...":"Get My Insight →"}</button>
+        <button onClick={fetchInsight} style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"13px",borderRadius:99,border:"none",cursor:"pointer"}}>{loading?"Getting your coaching...":"Get My Insight →"}</button>
       </div>
     </div>,
 
@@ -3293,7 +3294,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
       <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.green,lineHeight:1.2}}>Check-In Complete!</div>
       {insight ? (
         <div style={{background:C.greenDim,border:`1.5px solid ${C.green}33`,borderRadius:20,padding:"18px 20px",textAlign:"left"}}>
-          <div style={{color:C.green,fontSize:10,textTransform:"uppercase",letterSpacing:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>Your AI Coach Says</div>
+          <div style={{color:C.green,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>Your AI Coach Says</div>
           <div style={{color:C.cream,fontSize:14,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{insight}</div>
         </div>
       ) : (
@@ -3306,9 +3307,9 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
         <div style={{fontSize:28,marginBottom:4}}>🎯</div>
         <div style={{color:C.green,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:16}}>Financial Health Score</div>
         <div style={{color:C.greenBright,fontWeight:900,fontFamily:"'Playfair Display',serif",fontSize:32,marginTop:4}}>+3 points this week ✦</div>
-        <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Check in every week to keep growing</div>
+        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Check in every week to keep growing</div>
       </div>
-      <button onClick={()=>onComplete(3)} style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"16px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 20px ${C.green}40`}}>Done. See My Score ✦</button>
+      <button onClick={()=>onComplete(3)} style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"16px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 20px ${C.green}40`}}>Done. See My Score ✦</button>
     </div>,
   ];
 
@@ -3557,7 +3558,7 @@ function DashCustomize({ layout, onChange, onClose }) {
           <div style={{color:C.cream,fontWeight:800,fontSize:18,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Reorder Dashboard</div>
           <button aria-label="Close" onClick={onClose} style={{background:'none',border:'none',color:C.muted,fontSize:22,cursor:'pointer',padding:4,lineHeight:1,fontFamily:'inherit'}}>×</button>
         </div>
-        <div style={{color:C.muted,fontSize:12,padding:'4px 20px 14px',fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Use ↑↓ to reorder · 🔒 to pin. Show or hide cards in Settings → Dashboard.</div>
+        <div style={{color:C.muted,fontSize:13,padding:'4px 20px 14px',fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Use ↑↓ to reorder · 🔒 to pin. Show or hide cards in Settings → Dashboard.</div>
         <div style={{overflowY:'auto',flex:1,padding:'0 16px 8px'}}>
           {items.map((tile, idx) => {
             const m = meta(tile.id);
@@ -3577,8 +3578,8 @@ function DashCustomize({ layout, onChange, onClose }) {
                 </div>
                 <div style={{flex:1,color:C.cream,fontWeight:600,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",display:'flex',alignItems:'center',gap:8,minWidth:0}}>
                   <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.label}</span>
-                  {m.alwaysVisible&&<span style={{color:C.gold,fontSize:10,fontWeight:700,flexShrink:0}}>always on</span>}
-                  {tile.locked&&<span style={{color:C.gold,fontSize:10,fontWeight:700,flexShrink:0}}>pinned</span>}
+                  {m.alwaysVisible&&<span style={{color:C.gold,fontSize:13,fontWeight:700,flexShrink:0}}>always on</span>}
+                  {tile.locked&&<span style={{color:C.gold,fontSize:13,fontWeight:700,flexShrink:0}}>pinned</span>}
                 </div>
                 <button onClick={()=>setItems(prev=>prev.map(t=>t.id===tile.id?{...t,locked:!t.locked}:t))}
                   style={{background:'none',border:`1px solid ${tile.locked?C.gold+'55':C.border}`,borderRadius:8,width:36,height:36,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,flexShrink:0,color:tile.locked?C.gold:C.muted,transition:'all .15s'}}>
@@ -3645,9 +3646,9 @@ function StatementReview({ batch, onConfirm, onCancel }) {
     <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:16,overflowY:"auto"}}>
       <div style={{maxWidth:560,width:"100%",background:C.bg,borderRadius:20,border:`1px solid ${C.border}`,padding:20,maxHeight:"90vh",display:"flex",flexDirection:"column"}}>
         <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:20,color:C.cream,marginBottom:4}}>Review before importing</div>
-        <div style={{color:C.muted,fontSize:12,marginBottom:12,lineHeight:1.5}}>Flourish read these from your statement. It doesn't add up your numbers, it only copies what's printed. Tick the ones to import; edit anything that's off. Nothing is saved until you confirm.</div>
+        <div style={{color:C.muted,fontSize:13,marginBottom:12,lineHeight:1.5}}>Flourish read these from your statement. It doesn't add up your numbers, it only copies what's printed. Tick the ones to import; edit anything that's off. Nothing is saved until you confirm.</div>
         {recon.applicable && (
-          <div style={{background:(recon.allOk?C.green:C.red)+"14",border:`1px solid ${(recon.allOk?C.green:C.red)}44`,borderRadius:10,padding:"8px 12px",marginBottom:10,fontSize:12,color:C.mutedHi,lineHeight:1.4}}>
+          <div style={{background:(recon.allOk?C.green:C.red)+"14",border:`1px solid ${(recon.allOk?C.green:C.red)}44`,borderRadius:10,padding:"8px 12px",marginBottom:10,fontSize:13,color:C.mutedHi,lineHeight:1.4}}>
             {recon.allOk ? "✓ These match the totals printed on your statement." : "⚠ These don't add up to the totals printed on your statement. Check the flagged rows before importing."}
           </div>
         )}
@@ -3657,12 +3658,12 @@ function StatementReview({ batch, onConfirm, onCancel }) {
               <input type="checkbox" checked={selected.has(r.id) && isSelectable(r)} disabled={!isSelectable(r)} onChange={()=>toggle(r.id)} style={{width:18,height:18,flexShrink:0,marginTop:4,accentColor:C.green,cursor:isSelectable(r)?"pointer":"not-allowed"}}/>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:"flex",gap:6}}>
-                  <input value={r.name} onChange={e=>edit(r.id,"name",e.target.value)} placeholder="Description" style={{flex:1,minWidth:0,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:"5px 7px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none"}}/>
-                  <input value={r.date} onChange={e=>edit(r.id,"date",e.target.value)} placeholder="YYYY-MM-DD" style={{width:100,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:"5px 7px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none"}}/>
-                  <input value={r.amount} onChange={e=>edit(r.id,"amount",e.target.value)} inputMode="decimal" placeholder="0.00" style={{width:80,background:C.cardAlt,border:`1px solid ${col(r.status)}66`,borderRadius:6,padding:"5px 7px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none",textAlign:"right"}}/>
+                  <input value={r.name} onChange={e=>edit(r.id,"name",e.target.value)} placeholder="Description" style={{flex:1,minWidth:0,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:"5px 7px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+                  <input value={r.date} onChange={e=>edit(r.id,"date",e.target.value)} placeholder="YYYY-MM-DD" style={{width:100,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:"5px 7px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+                  <input value={r.amount} onChange={e=>edit(r.id,"amount",e.target.value)} inputMode="decimal" placeholder="0.00" style={{width:80,background:C.cardAlt,border:`1px solid ${col(r.status)}66`,borderRadius:6,padding:"5px 7px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",textAlign:"right"}}/>
                 </div>
                 {(r.edited || (r.reasons && r.reasons.length > 0)) && (
-                  <div style={{fontSize:10.5,marginTop:3,lineHeight:1.35}}>
+                  <div style={{fontSize:13,marginTop:3,lineHeight:1.35}}>
                     {r.edited && <span style={{color:C.tealBright||C.teal,fontWeight:700}}>✎ edited by you{r.reasons && r.reasons.length ? " · " : ""}</span>}
                     {r.reasons && r.reasons.length > 0 && <span style={{color:col(r.status)}}>{r.status==="failed"?"Fix to import: ":"Heads-up: "}{r.reasons.join("; ")}</span>}
                   </div>
@@ -3921,10 +3922,10 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       <FlourishLockup size={84} color={C.cream} style={{marginBottom:16}}/>
       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.mutedHi,fontSize:14,lineHeight:1.6,maxWidth:300,marginBottom:30}}>Know what's safe to spend, every day.</div>
       <button onClick={()=>setStep(1)} style={{background:"linear-gradient(135deg,"+C.green+" 0%,"+C.greenBright+" 100%)",color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:"pointer",boxShadow:"0 8px 32px "+C.green+"33, inset 0 1px 0 rgba(255,255,255,0.30)",letterSpacing:0.3,transition:"all .2s"}}>Get Started →</button>
-      <button onClick={()=>onComplete(buildDemoState(p.country))} style={{marginTop:10,background:"none",border:"1px solid "+C.border,borderRadius:99,padding:"9px 22px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer",fontWeight:600}}>👀 Try Demo (no account needed)</button>
-      <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:12}}>Free to start · Canada & USA · No credit card</div>
+      <button onClick={()=>onComplete(buildDemoState(p.country))} style={{marginTop:10,background:"none",border:"1px solid "+C.border,borderRadius:99,padding:"9px 22px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer",fontWeight:600}}>👀 Try Demo (no account needed)</button>
+      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:12}}>Free to start · Canada & USA · No credit card</div>
       <div style={{marginTop:18,padding:"10px 14px",background:C.card,borderRadius:12,border:"1px solid "+C.border,maxWidth:320,textAlign:"left"}}>
-        <div style={{color:C.mutedHi,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>By continuing you agree to our <button onClick={()=>onViewLegal&&onViewLegal("terms")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Terms</button> and <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Privacy Policy</button>, and consent to data processing per PIPEDA (CA) and US privacy laws.</div>
+        <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>By continuing you agree to our <button onClick={()=>onViewLegal&&onViewLegal("terms")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Terms</button> and <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,color:C.green,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>Privacy Policy</button>, and consent to data processing per PIPEDA (CA) and US privacy laws.</div>
       </div>
     </div>,
 
@@ -3962,7 +3963,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         {(bankError||initError)&&(
           <div style={{background:"#ff444422",border:"1px solid #ff444466",borderRadius:12,padding:"12px 16px",marginBottom:12}}>
             <div style={{color:"#ff8888",fontSize:13,marginBottom:8}}>{bankError||initError}</div>
-            {!initError&&<button onClick={()=>{setLinkToken(null);fetchLinkToken();}} style={{background:"none",border:"1px solid #ff888844",borderRadius:8,padding:"6px 14px",color:"#ff8888",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>↺ Retry</button>}
+            {!initError&&<button onClick={()=>{setLinkToken(null);fetchLinkToken();}} style={{background:"none",border:"1px solid #ff888844",borderRadius:8,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:"#ff8888",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>↺ Retry</button>}
           </div>
         )}
 
@@ -3984,7 +3985,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
           onContinue={()=>{ try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at", new Date().toISOString()); }catch{} setShowBankConsent(false); openPlaidLink(); }}
           onCancel={()=>setShowBankConsent(false)}/>}
 
-        <div style={{color:C.muted,fontSize:11,textAlign:"center",marginBottom:14}}>
+        <div style={{color:C.muted,fontSize:13,textAlign:"center",marginBottom:14}}>
           {initError?"Please refresh and try again":linkTokenLoading?"Preparing secure connection…":"Supports TD, RBC, Chase, BoA, and 11,000+ more"}
         </div>
 
@@ -3992,14 +3993,14 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
             the primary route for accounts Plaid can't reach (employer RRSPs, some credit unions). */}
         <div style={{display:"flex",alignItems:"center",gap:10,margin:"4px 0 12px"}}>
           <div style={{flex:1,height:1,background:C.border}}/>
-          <div style={{color:C.muted,fontSize:11,fontWeight:700,letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>OR</div>
+          <div style={{color:C.muted,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>or</div>
           <div style={{flex:1,height:1,background:C.border}}/>
         </div>
 
         {/* Statement upload — primary path for non-Plaid accounts */}
         <div style={{background:C.cardAlt,borderRadius:14,padding:'12px 14px',border:`1px solid ${C.border}`}}>
           <div style={{color:C.mutedHi,fontWeight:700,fontSize:13,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📄 Upload a statement instead</div>
-          <div style={{color:C.muted,fontSize:12,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Best for accounts Plaid can't connect: employer RRSPs, some credit unions, older institutions.</div>
+          <div style={{color:C.muted,fontSize:13,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Best for accounts Plaid can't connect: employer RRSPs, some credit unions, older institutions.</div>
           <label style={{display:'block',cursor:'pointer'}}>
             <input type="file" accept=".pdf,.csv" style={{display:'none'}} onChange={handleStatementUpload} disabled={stmtStatus==='parsing'}/>
             <div style={{background:stmtStatus==='parsing'?C.card:`linear-gradient(135deg,${C.gold}22,${C.gold}0A)`,border:`1px dashed ${stmtStatus==='error'?C.red:stmtStatus==='done'?C.green:C.gold}`,borderRadius:10,padding:'10px 14px',textAlign:'center',color:stmtStatus==='error'?C.redBright:stmtStatus==='done'?C.greenBright:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,transition:'all .2s'}}>
@@ -4007,7 +4008,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
             </div>
           </label>
           {stmtReview && <StatementReview batch={stmtReview} onConfirm={confirmStatementReview} onCancel={cancelStatementReview}/>}
-          {!stmtStatus&&<div style={{color:C.muted,fontSize:11,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Supports most Canadian & US bank exports. Flourish copies what's printed and shows you every row to confirm before anything is saved.</div>}
+          {!stmtStatus&&<div style={{color:C.muted,fontSize:13,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Supports most Canadian & US bank exports. Flourish copies what's printed and shows you every row to confirm before anything is saved.</div>}
         </div>
 
         <div style={{marginTop:14}}><Btn label="Enter it myself" onClick={skipBank} outline color={C.muted} small/></div>
@@ -4022,7 +4023,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         <div style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.06)",borderRadius:99,height:6,overflow:"hidden",margin:"0 10px"}}>
           <div style={{width:`${bankProg}%`,height:"100%",background:`linear-gradient(90deg,${C.green},${C.teal})`,borderRadius:99,transition:"width .4s ease-out"}}/>
         </div>
-        <div style={{color:C.muted,fontSize:12,marginTop:8}}>{Math.round(bankProg)}%</div>
+        <div style={{color:C.muted,fontSize:13,marginTop:8}}>{Math.round(bankProg)}%</div>
       </div>}
 
       {bankStage==="skipped"&&<div style={{textAlign:"center",padding:"20px 0"}}>
@@ -4043,7 +4044,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
           <div key={i} style={{background:C.cardAlt,border:`1px solid ${C.green}44`,borderRadius:14,padding:"13px 16px",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div>
               <div style={{color:C.cream,fontWeight:700}}>{a.name}</div>
-              <div style={{color:C.muted,fontSize:12}}>{a.institution} · {a.type}{a.pending?" · ⏳ pending":""}</div>
+              <div style={{color:C.muted,fontSize:13}}>{a.institution} · {a.type}{a.pending?" · ⏳ pending":""}</div>
             </div>
             <div style={{textAlign:"right"}}>
               <div style={{color:a.balance>=0?C.greenBright:C.red,fontWeight:800}}>${Math.abs(a.balance).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
@@ -4093,11 +4094,11 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
                 <span style={{fontSize:20}}>{meta.emoji}</span>
                 <div>
                   <div style={{color:C.cream,fontWeight:700,fontSize:14,lineHeight:1.2}}>{inc.label||meta.label||`Income ${i+1}`}</div>
-                  {summaryAmt>0&&<div style={{color:C.greenBright,fontSize:11,fontWeight:600,marginTop:1}}>${summaryAmt.toLocaleString()} {freqLabel}</div>}
+                  {summaryAmt>0&&<div style={{color:C.greenBright,fontSize:13,fontWeight:600,marginTop:1}}>${summaryAmt.toLocaleString()} {freqLabel}</div>}
                 </div>
-                {inc.autoDetected&&<span style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px",color:C.greenBright,fontSize:10,fontWeight:700,marginLeft:4}}>Auto ✓</span>}
-                {inc.isVariable&&<span style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:99,padding:"2px 8px",color:C.purpleBright||C.tealBright,fontSize:10,fontWeight:700}}>Variable</span>}
-                {inc.owner==="partner"&&<span style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:99,padding:"2px 8px",color:C.tealBright,fontSize:10,fontWeight:700}}>{p.partnerName||"Partner"}</span>}
+                {inc.autoDetected&&<span style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px",color:C.greenBright,fontSize:13,fontWeight:700,marginLeft:4}}>Auto ✓</span>}
+                {inc.isVariable&&<span style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:99,padding:"2px 8px",color:C.purpleBright||C.tealBright,fontSize:13,fontWeight:700}}>Variable</span>}
+                {inc.owner==="partner"&&<span style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:99,padding:"2px 8px",color:C.tealBright,fontSize:13,fontWeight:700}}>{p.partnerName||"Partner"}</span>}
               </div>
               {incomes.length>1&&<button aria-label="Remove income" onClick={()=>setIncomes(incomes.filter(x=>x.id!==inc.id))}
                 style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:20,padding:"0 0 0 8px",lineHeight:1}}>×</button>}
@@ -4106,7 +4107,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
             <div style={{padding:"12px 16px 16px"}}>
               {/* Step 1 — Income type chips */}
               <div style={{marginBottom:12}}>
-                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:8}}>Income type <span style={{textTransform:"none",letterSpacing:0,color:C.border}}>· tap all that apply</span></div>
+                <div style={{color:C.muted,fontSize:13,marginBottom:8}}>Income type <span style={{textTransform:"none",letterSpacing:0,color:C.border}}>· tap all that apply</span></div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   {(CC[p.country]?.incomeTypes||CC.CA.incomeTypes).map(([val,lbl])=>{
                     const on=selTypes.includes(val);
@@ -4117,14 +4118,14 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
                       const ft=next.length?next:[val]; // never empty — keep at least the tapped type
                       return {...x,sourceTypes:ft,type:ft[0],label:x.label||(incTypeMeta[ft[0]]?.label||"")};
                     }))}
-                      style={{background:on?C.green+"22":C.cardAlt,border:`1px solid ${on?C.green:C.border}`,color:on?C.greenBright:C.muted,borderRadius:99,padding:"6px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:on?700:400,transition:"all .15s"}}>{lbl}</button>;
+                      style={{background:on?C.green+"22":C.cardAlt,border:`1px solid ${on?C.green:C.border}`,color:on?C.greenBright:C.muted,borderRadius:99,padding:"6px 12px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:on?700:400,transition:"all .15s"}}>{lbl}</button>;
                   })}
                 </div>
               </div>
 
               {/* Sprint 6a-2: spousal income owner (couples only) */}
               {(p.status==="couple"||p.status==="cohabit")&&<div style={{marginBottom:12}}>
-                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:8}}>Whose income?</div>
+                <div style={{color:C.muted,fontSize:13,marginBottom:8}}>Whose income?</div>
                 <div style={{display:"flex",gap:6}}>
                   {[["self",p.name?p.name.split(" ")[0]:"Mine"],["partner",p.partnerName||"Partner"]].map(([val,lbl])=>{
                     const on=(inc.owner||"self")===val;
@@ -4136,7 +4137,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
 
               {/* Step 2 — Label */}
               <div style={{marginBottom:12}}>
-                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>Label <span style={{color:C.border,textTransform:"none",letterSpacing:0}}>(optional, e.g. "Part-time at Tim's")</span></div>
+                <div style={{color:C.muted,fontSize:13,marginBottom:6}}>Label <span style={{color:C.border,textTransform:"none",letterSpacing:0}}>(optional, e.g. "Part-time at Tim's")</span></div>
                 <input value={inc.label} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,label:e.target.value}:x))}
                   placeholder={meta.label}
                   style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:14,fontFamily:"inherit",boxSizing:"border-box",outline:"none"}}/>
@@ -4144,7 +4145,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
 
               {/* Step 3 — Amount + Frequency (always shown for both paths) */}
               <div style={{marginBottom:12}}>
-                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6}}>
+                <div style={{color:C.muted,fontSize:13,marginBottom:6}}>
                   {inc.isVariable ? `Typical ${payWord(p.country)} (take-home)` : `${payWord(p.country,{capital:true})} amount (take-home)`}
                 </div>
                 <div style={{display:"flex",gap:10}}>
@@ -4156,7 +4157,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
                       onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,amount:e.target.value,typicalAmount:e.target.value}:x))}
                       type="number" inputMode="decimal" placeholder="e.g. 2100"
                       style={{flex:1,background:"none",border:"none",padding:"11px 10px 11px 0",color:inc.autoDetected?C.greenBright:C.cream,fontSize:15,fontFamily:"inherit",outline:"none",fontWeight:inc.autoDetected?700:400}}/>
-                    {inc.autoDetected&&<span style={{color:C.green,fontSize:10,fontWeight:700,paddingRight:10,flexShrink:0}}>✓</span>}
+                    {inc.autoDetected&&<span style={{color:C.green,fontSize:13,fontWeight:700,paddingRight:10,flexShrink:0}}>✓</span>}
                   </div>
                   {/* Frequency — always shown */}
                   <div style={{flex:1}}>
@@ -4178,7 +4179,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px"}}>
                   <div style={{minWidth:0}}>
                     <div style={{color:C.mutedHi,fontSize:13,fontWeight:600}}>{inc.freq==="monthly"?"Day of the month you're paid":"First pay day of the month"}</div>
-                    <div style={{color:C.muted,fontSize:11,marginTop:1,lineHeight:1.4}}>{inc.freq==="semimonthly"?"We'll plan the second one about 15 days later.":"Pick 31 and short months use the last day."}</div>
+                    <div style={{color:C.muted,fontSize:13,marginTop:1,lineHeight:1.4}}>{inc.freq==="semimonthly"?"We'll plan the second one about 15 days later.":"Pick 31 and short months use the last day."}</div>
                   </div>
                   <input value={inc.anchorDay??""}
                     onChange={e=>{const raw=e.target.value.replace(/[^0-9]/g,"");const n=parseInt(raw,10);setIncomes(incomes.map(x=>x.id===inc.id?{...x,anchorDay:raw===""?undefined:Math.min(Math.max(Number.isFinite(n)?n:1,1),31)}:x));}}
@@ -4192,7 +4193,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
                 <div>
                   <div style={{color:inc.isVariable?C.purpleBright||C.tealBright:C.mutedHi,fontSize:13,fontWeight:600}}>My pay varies</div>
                   {/* Same setting as Settings and the forecast sheet: plan on the low end, shown as a range. */}
-                  <div style={{color:C.muted,fontSize:11,marginTop:1}}>{inc.isVariable?"Flourish plans on the low end of your recent pays. Until it has seen three, it plans on the amount above.":"Consistent amount every pay period"}</div>
+                  <div style={{color:C.muted,fontSize:13,marginTop:1}}>{inc.isVariable?"Flourish plans on the low end of your recent pays. Until it has seen three, it plans on the amount above.":"Consistent amount every pay period"}</div>
                 </div>
                 <button onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,isVariable:!inc.isVariable}:x))}
                   style={{width:46,height:26,borderRadius:99,background:inc.isVariable?C.purple||C.teal:C.cardAlt,border:`1px solid ${inc.isVariable?C.purple||C.teal:C.border}`,cursor:"pointer",position:"relative",transition:"all .2s",flexShrink:0}}>
@@ -4226,8 +4227,8 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       ):connAccts.some(a=>a.institution!=="Manual")?(
         <div style={{background:C.tealDim,border:`1px solid ${C.teal}33`,borderRadius:14,padding:"12px 16px",marginBottom:14}}>
           <div style={{color:C.tealBright,fontWeight:700,fontSize:13,marginBottom:2}}>✦ Bills will auto-detect</div>
-              <span style={{background:C.gold+"22",border:`1px solid ${C.gold}44`,borderRadius:99,padding:"2px 8px",color:C.goldBright,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"inline-block",marginTop:4}}>Manual · not yet matched to bank</span>
-          <div style={{color:C.muted,fontSize:12}}>Your bank is connected. Recurring bills will be detected automatically once your transactions load. You can also add them manually below.</div>
+              <span style={{background:C.gold+"22",border:`1px solid ${C.gold}44`,borderRadius:99,padding:"2px 8px",color:C.goldBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"inline-block",marginTop:4}}>Manual · not yet matched to bank</span>
+          <div style={{color:C.muted,fontSize:13}}>Your bank is connected. Recurring bills will be detected automatically once your transactions load. You can also add them manually below.</div>
         </div>
       ):(
         <div style={{color:C.muted,fontSize:14,marginBottom:14}}>Add your regular monthly bills. You can always update these later.</div>
@@ -4235,8 +4236,8 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       {bills.map((b,i)=>(
         <div key={i} style={{background:C.cardAlt,borderRadius:16,padding:"14px 16px",border:`1px solid ${b.auto?C.teal+"66":C.border}`,marginBottom:10}}>
           {b.auto&&<div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
-            <span style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:99,padding:"2px 10px",color:C.tealBright,fontSize:11,fontWeight:700}}>✦ Auto-detected</span>
-            {b.avgNote&&<span style={{color:C.muted,fontSize:11}}>{b.avgNote}</span>}
+            <span style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:99,padding:"2px 10px",color:C.tealBright,fontSize:13,fontWeight:700}}>✦ Auto-detected</span>
+            {b.avgNote&&<span style={{color:C.muted,fontSize:13}}>{b.avgNote}</span>}
           </div>}
           <div style={{display:"flex",gap:8}}>
             <div style={{flex:1}}>
@@ -4262,7 +4263,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
           <span style={{fontSize:18,flexShrink:0}}>🏦</span>
           <div>
             <div style={{color:C.greenBright,fontWeight:700,fontSize:13,marginBottom:2}}>Credit cards imported from your bank</div>
-            <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.6}}>We found {connAccts.filter(a=>a.type==="credit"||a.type==="credit card"||a.subtype==="credit card").length} credit card{connAccts.filter(a=>a.type==="credit"||a.type==="credit card"||a.subtype==="credit card").length!==1?"s":""}. Balances are live. Add the interest rate and minimum payment so we can build your payoff plan.</div>
+            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>We found {connAccts.filter(a=>a.type==="credit"||a.type==="credit card"||a.subtype==="credit card").length} credit card{connAccts.filter(a=>a.type==="credit"||a.type==="credit card"||a.subtype==="credit card").length!==1?"s":""}. Balances are live. Add the interest rate and minimum payment so we can build your payoff plan.</div>
           </div>
         </div>
       ):(
@@ -4274,14 +4275,14 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
             <div style={{flex:1}}>
               <div style={{position:"relative"}}>
                 <Inp label="Name" value={d.name} onChange={v=>upDebt(i,"name",v)} placeholder="Visa, Car Loan…" sm/>
-                {d.fromBank&&<span style={{position:"absolute",top:0,right:0,fontSize:9,fontWeight:700,color:C.greenBright,background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px"}}>🏦 live balance</span>}
+                {d.fromBank&&<span style={{position:"absolute",top:0,right:0,fontSize:13,fontWeight:700,color:C.greenBright,background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px"}}>🏦 live balance</span>}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <Inp label="Balance $" value={d.balance} onChange={v=>upDebt(i,"balance",v)} type="number" sm/>
                 <Inp label="Rate %" value={d.rate} onChange={v=>upDebt(i,"rate",v)} type="number" sm placeholder="e.g. 19.99"/>
               </div>
               <Inp label="Min Payment $" value={d.min} onChange={v=>upDebt(i,"min",v)} type="number" sm/>
-              {d.fromBank&&!d.rate&&<div style={{color:C.gold,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2,marginBottom:4}}>⚡ Add the interest rate to run the payoff simulator</div>}
+              {d.fromBank&&!d.rate&&<div style={{color:C.gold,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2,marginBottom:4}}>⚡ Add the interest rate to run the payoff simulator</div>}
             </div>
             {debts.length>1&&<button aria-label="Remove" onClick={()=>rmDebt(i)} style={{background:C.redDim,border:"none",color:C.red,borderRadius:8,padding:"6px 10px",cursor:"pointer",alignSelf:"flex-start",marginTop:18}}>✕</button>}
           </div>
@@ -4301,23 +4302,23 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         {[["✅","Soft pull only, never affects your score"],["✅","Personalized tips tied to your real balances"],["✅","Tracks improvement over time"],["❌","Never shared with lenders or third parties"]].map(([ico,t],i)=><div key={i} style={{display:"flex",gap:8,padding:"3px 0",color:ico==="✅"?C.cream:C.muted,fontSize:13}}><span>{ico}</span><span>{t}</span></div>)}
       </div>
       <div style={{marginBottom:14}}>
-        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:8,fontWeight:700}}>Do you know your current score?</div>
+        <div style={{color:C.muted,fontSize:13,marginBottom:8,fontWeight:700}}>Do you know your current score?</div>
         <div style={{display:"flex",gap:10}}>
           {["Yes, I know it","Not sure / skip"].map(opt=><button key={opt} onClick={()=>setP({...p,creditKnown:opt.startsWith("Yes")})} style={{flex:1,background:((opt.startsWith("Yes")?p.creditKnown:!p.creditKnown))?C.teal+"33":C.cardAlt,border:`1px solid ${(opt.startsWith("Yes")?p.creditKnown:!p.creditKnown)?C.teal:C.border}`,color:(opt.startsWith("Yes")?p.creditKnown:!p.creditKnown)?C.tealBright:C.muted,borderRadius:12,padding:"12px 8px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>{opt}</button>)}
         </div>
       </div>
       {p.creditKnown&&<>
-        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:12,fontWeight:700}}>Drag to your score</div>
+        <div style={{color:C.muted,fontSize:13,marginBottom:12,fontWeight:700}}>Drag to your score</div>
         <div style={{background:`linear-gradient(135deg,${C.tealDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"20px 22px",border:`1px solid ${C.teal}44`,marginBottom:16}}>
           <div style={{textAlign:"center",marginBottom:16}}>
             <div style={{fontSize:52,fontWeight:900,fontFamily:"Georgia,serif",color:p.creditScore>=750?C.greenBright:p.creditScore>=700?C.teal:p.creditScore>=650?C.goldBright:p.creditScore>=600?C.orange:C.redBright}}>{p.creditScore}</div>
             <Chip label={p.creditScore>=750?"Excellent 🌟":p.creditScore>=700?"Very Good 👍":p.creditScore>=650?"Good ✓":p.creditScore>=600?"Fair ⚠️":"Needs Work 🔧"} color={p.creditScore>=750?C.green:p.creditScore>=700?C.teal:p.creditScore>=650?C.gold:p.creditScore>=600?C.orange:C.red} size={13}/>
           </div>
           <input type="range" min={300} max={p.country==="US"?850:900} step={1} value={Math.min(p.creditScore,p.country==="US"?850:900)} onChange={e=>setP({...p,creditScore:Number(e.target.value)})} style={{width:"100%",accentColor:C.teal,height:6,cursor:"pointer",marginBottom:8}}/>
-          <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.red,fontSize:10}}>300 Poor</span><span style={{color:C.gold,fontSize:10}}>650 Good</span><span style={{color:C.greenBright,fontSize:10}}>{p.country==="US"?"850 Excellent":"900 Excellent"}</span></div>
-          <div style={{color:C.muted,fontSize:11,marginTop:4,textAlign:"center",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{p.country==="US"?"FICO scale · 300 to 850":"Equifax / TransUnion Canada · 300 to 900"}</div>
+          <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.red,fontSize:13}}>300 Poor</span><span style={{color:C.gold,fontSize:13}}>650 Good</span><span style={{color:C.greenBright,fontSize:13}}>{p.country==="US"?"850 Excellent":"900 Excellent"}</span></div>
+          <div style={{color:C.muted,fontSize:13,marginTop:4,textAlign:"center",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{p.country==="US"?"FICO scale · 300 to 850":"Equifax / TransUnion Canada · 300 to 900"}</div>
         </div>
-        <div style={{color:C.muted,fontSize:12,textAlign:"center",marginBottom:16}}>Check your score free at Borrowell (CA) or Credit Karma (US/CA), soft pull only.</div>
+        <div style={{color:C.muted,fontSize:13,textAlign:"center",marginBottom:16}}>Check your score free at Borrowell (CA) or Credit Karma (US/CA), soft pull only.</div>
       </>}
       {!p.creditKnown&&<div style={{background:C.cardAlt,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}`,marginBottom:16}}>
         <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>No problem. Flourish will estimate your score range from your debt utilization and payment patterns once you're connected. You can add it later in Settings.</div>
@@ -4420,10 +4421,10 @@ function Notifications({onClose, data, onMarkAllRead}){
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
       <div>
         <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Notifications</div>
-        {unread>0&&<div style={{color:C.red,fontSize:12,fontWeight:700}}>{unread} unread</div>}
+        {unread>0&&<div style={{color:C.red,fontSize:13,fontWeight:700}}>{unread} unread</div>}
       </div>
       <div style={{display:"flex",gap:8}}>
-        {unread>0&&<button onClick={markAll} style={{background:"none",border:`1px solid ${C.border}`,color:C.muted,borderRadius:8,padding:"5px 12px",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Mark all read</button>}
+        {unread>0&&<button onClick={markAll} style={{background:"none",border:`1px solid ${C.border}`,color:C.muted,borderRadius:8,padding:"5px 12px",cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>Mark all read</button>}
         <button onClick={onClose} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,color:C.muted,borderRadius:8,padding:"5px 12px",cursor:"pointer",fontSize:13}}>← Back</button>
       </div>
     </div>
@@ -4438,7 +4439,7 @@ function Notifications({onClose, data, onMarkAllRead}){
               <button aria-label="Dismiss" onClick={e=>{e.stopPropagation();markRead(n.id);}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",padding:"0 0 0 8px",fontSize:14}}>✕</button>
             </div>
             <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.55,marginTop:4}}>{n.body}</div>
-            <div style={{color:C.muted,fontSize:11,marginTop:6}}>{n.time}</div>
+            <div style={{color:C.muted,fontSize:13,marginTop:6}}>{n.time}</div>
           </div>
         </div>
         {!n.read&&<div style={{position:"absolute",top:15,right:42,width:8,height:8,borderRadius:"50%",background:n.color}}/>}
@@ -4497,7 +4498,7 @@ function NetWorthSparkline({history, color}){
         <circle cx={pts.split(" ").slice(-1)[0].split(",")[0]} cy={pts.split(" ").slice(-1)[0].split(",")[1]}
           r="2.5" fill={trendColor}/>
       </svg>
-      <span style={{color:trendColor,fontSize:10,fontWeight:700}}>
+      <span style={{color:trendColor,fontSize:13,fontWeight:700}}>
         {trend==="up"?"↑":trend==="down"?"↓":"→"} {Math.abs(last-first)>0?`$${Math.abs(((last-first)/1000)).toFixed(1)}k ${trend==="up"?"up":"down"} since ${history[0].month}`:"stable"}
       </span>
     </div>
@@ -4702,7 +4703,7 @@ function DataTransparencyPanel({data, onClose}) {
 
   const TabBtn = ({id, label}) => (
     <button onClick={()=>setTab(id)} style={{
-      ...s, flex:1, padding:"9px 6px", fontSize:11, fontWeight:700,
+      ...s, flex:1, padding:"9px 6px", fontSize:13, fontWeight:700,
       background: tab===id ? C.green+"22" : "transparent",
       border: tab===id ? `1px solid ${C.green}44` : `1px solid transparent`,
       borderRadius:10, color: tab===id ? C.greenBright : C.muted, cursor:"pointer"
@@ -4711,10 +4712,10 @@ function DataTransparencyPanel({data, onClose}) {
 
   const Row = ({label, value, sub, color, indent=false}) => (
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",
-      padding:"9px 0",borderBottom:`1px solid ${C.border}`,paddingLeft:indent?14:0}}>
+      padding:"0",minHeight:LAYOUT.minTap,borderBottom:`1px solid ${C.border}`,paddingLeft:indent?14:0}}>
       <div>
-        <div style={{...s,fontSize:12,color:C.cream,fontWeight:indent?400:600}}>{label}</div>
-        {sub&&<div style={{...s,fontSize:10,color:C.muted,marginTop:1}}>{sub}</div>}
+        <div style={{...s,fontSize:13,color:C.cream,fontWeight:indent?400:600}}>{label}</div>
+        {sub&&<div style={{...s,fontSize:13,color:C.muted,marginTop:1}}>{sub}</div>}
       </div>
       <div style={{...s,fontSize:13,fontWeight:800,color:color||C.cream,flexShrink:0,marginLeft:12}}>{value}</div>
     </div>
@@ -4731,7 +4732,7 @@ function DataTransparencyPanel({data, onClose}) {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
             <div>
               <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.cream}}>How it's calculated</div>
-              <div style={{...s,fontSize:11,color:C.muted,marginTop:2}}>Full audit trail of every number in Flourish</div>
+              <div style={{...s,fontSize:13,color:C.muted,marginTop:2}}>Full audit trail of every number in Flourish</div>
             </div>
             <button aria-label="Close" onClick={onClose} style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,
               borderRadius:10,padding:"8px 12px",color:C.muted,cursor:"pointer",...s,fontSize:13,minHeight:36}}>✕</button>
@@ -4749,13 +4750,13 @@ function DataTransparencyPanel({data, onClose}) {
 
           {/* ── INCOME TAB ── */}
           {tab==="income"&&<>
-            <div style={{...s,fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,marginBottom:12}}>
+            <div style={{...s,fontSize:13,color:C.muted,fontWeight:700,marginBottom:12}}>
               Income from your profile (what you told us)
             </div>
             {incomeRows.length===0&&(
               <div style={{background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:14,padding:"14px 16px",marginBottom:8}}>
-                <div style={{...s,fontSize:12,color:C.goldBright,fontWeight:700,marginBottom:4}}>⚠️ No income entered</div>
-                <div style={{...s,fontSize:12,color:C.mutedHi,lineHeight:1.7}}>With no income entered, income-based numbers default to $0 and may be incomplete. Go to <strong style={{color:C.cream}}>Settings → Edit Profile</strong> to enter your real income. This affects every calculation in the app.</div>
+                <div style={{...s,fontSize:13,color:C.goldBright,fontWeight:700,marginBottom:4}}>⚠️ No income entered</div>
+                <div style={{...s,fontSize:13,color:C.mutedHi,lineHeight:1.7}}>With no income entered, income-based numbers default to $0 and may be incomplete. Go to <strong style={{color:C.cream}}>Settings → Edit Profile</strong> to enter your real income. This affects every calculation in the app.</div>
               </div>
             )}
             {incomeRows.map((r,i)=>(
@@ -4773,8 +4774,8 @@ function DataTransparencyPanel({data, onClose}) {
               </div>
             )}
             <div style={{marginTop:16,background:C.blue+"11",border:`1px solid ${C.blue}33`,borderRadius:14,padding:"12px 14px"}}>
-              <div style={{...s,fontSize:11,color:C.blueBright,fontWeight:700,marginBottom:4}}>ℹ️ Why transactions aren't used for income</div>
-              <div style={{...s,fontSize:11,color:C.mutedHi,lineHeight:1.7}}>
+              <div style={{...s,fontSize:13,color:C.blueBright,fontWeight:700,marginBottom:4}}>ℹ️ Why transactions aren't used for income</div>
+              <div style={{...s,fontSize:13,color:C.mutedHi,lineHeight:1.7}}>
                 Credit card payments (Amex, Visa, Mastercard) appear as money coming IN on your chequing account, but they are debt repayment, not income. Using transactions for income detection caused inflated figures. Your income is based only on what you entered during setup.
               </div>
             </div>
@@ -4782,12 +4783,12 @@ function DataTransparencyPanel({data, onClose}) {
 
           {/* ── SPENDING TAB ── */}
           {tab==="spending"&&<>
-            <div style={{...s,fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,marginBottom:12}}>
+            <div style={{...s,fontSize:13,color:C.muted,fontWeight:700,marginBottom:12}}>
               This month's spending: {now.toLocaleDateString("en-CA",{month:"long",year:"numeric"})}
             </div>
 
             {/* Category breakdown */}
-            {catRows.length>0&&<div style={{...s,fontSize:11,color:C.muted,marginBottom:10}}>
+            {catRows.length>0&&<div style={{...s,fontSize:13,color:C.muted,marginBottom:10}}>
               {included.length} transaction{included.length!==1?"s":""} · {excluded.length} excluded
             </div>}
             {catRows.length>0&&<>
@@ -4802,7 +4803,7 @@ function DataTransparencyPanel({data, onClose}) {
 
             {/* Excluded transactions */}
             {excluded.length>0&&<>
-              <div style={{...s,fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,margin:"16px 0 8px"}}>
+              <div style={{...s,fontSize:13,color:C.muted,fontWeight:700,margin:"16px 0 8px"}}>
                 ✅ Excluded from spending (correctly)
               </div>
               {excluded.slice(0,8).map((t,i)=>(
@@ -4824,26 +4825,26 @@ function DataTransparencyPanel({data, onClose}) {
                   indent
                 />
               ))}
-              {excluded.length>8&&<div style={{...s,fontSize:11,color:C.muted,textAlign:"center",padding:"8px 0"}}>+{excluded.length-8} more excluded</div>}
+              {excluded.length>8&&<div style={{...s,fontSize:13,color:C.muted,textAlign:"center",padding:"8px 0"}}>+{excluded.length-8} more excluded</div>}
             </>}
 
             {included.length===0&&excluded.length===0&&(
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"14px 16px",textAlign:"center"}}>
                 <div style={{fontSize:24,marginBottom:8}}>💳</div>
                 <div style={{...s,fontSize:13,color:C.mutedHi,fontWeight:600,marginBottom:4}}>No transactions this month yet</div>
-                <div style={{...s,fontSize:12,color:C.muted,lineHeight:1.65}}>Connect your bank in Settings to see live spending data, or upload a bank statement from the Transactions screen.</div>
+                <div style={{...s,fontSize:13,color:C.muted,lineHeight:1.65}}>Connect your bank in Settings to see live spending data, or upload a bank statement from the Transactions screen.</div>
               </div>
             )}
           </>}
 
           {/* ── BALANCE TAB ── */}
           {tab==="balance"&&<>
-            <div style={{...s,fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,marginBottom:12}}>
+            <div style={{...s,fontSize:13,color:C.muted,fontWeight:700,marginBottom:12}}>
               Accounts used for your balance
             </div>
 
             {chequingAccts.length>0&&<>
-              <div style={{...s,fontSize:11,color:C.greenBright,fontWeight:700,marginBottom:6}}>✅ Included in balance</div>
+              <div style={{...s,fontSize:13,color:C.greenBright,fontWeight:700,marginBottom:6}}>✅ Included in balance</div>
               {chequingAccts.map((a,i)=>(
                 <Row key={i}
                   label={a.name}
@@ -4857,7 +4858,7 @@ function DataTransparencyPanel({data, onClose}) {
                 <div>
                   <div style={{...s,fontSize:13,fontWeight:800,color:C.cream}}>Available balance</div>
                   {cashShown !== totalBalance && (
-                    <div style={{...s,fontSize:10,color:C.muted,marginTop:2}}>
+                    <div style={{...s,fontSize:13,color:C.muted,marginTop:2}}>
                       Rounded down from {formatMoney(totalBalance,{cents:true})}. A balance always rounds down
                     </div>
                   )}
@@ -4872,14 +4873,14 @@ function DataTransparencyPanel({data, onClose}) {
                 whose job is to say what was left out and why. */}
             {_auditSS.mixedCurrencyDetected && (
               <div style={{marginTop:12,background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:12,padding:"10px 12px"}}>
-                <div style={{...s,fontSize:11,color:C.goldBright,lineHeight:1.65}}>
+                <div style={{...s,fontSize:13,color:C.goldBright,lineHeight:1.65}}>
                   🌐 {formatMoney(_auditSS.excludedForeignCash,{cents:true})} of cash is held in another currency and is not included above. Flourish has no exchange rate to convert it with, so it is left out of your {_auditBase} balance rather than counted at a guessed rate.
                 </div>
               </div>
             )}
 
             {creditAccts.length>0&&<>
-              <div style={{...s,fontSize:11,color:C.redBright,fontWeight:700,margin:"16px 0 6px"}}>⚠️ Credit cards: liabilities, not balance</div>
+              <div style={{...s,fontSize:13,color:C.redBright,fontWeight:700,margin:"16px 0 6px"}}>⚠️ Credit cards: liabilities, not balance</div>
               {creditAccts.map((a,i)=>(
                 <Row key={i}
                   label={a.name}
@@ -4890,7 +4891,7 @@ function DataTransparencyPanel({data, onClose}) {
                 />
               ))}
               <div style={{marginTop:8,background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:12,padding:"10px 12px"}}>
-                <div style={{...s,fontSize:11,color:C.goldBright,lineHeight:1.65}}>
+                <div style={{...s,fontSize:13,color:C.goldBright,lineHeight:1.65}}>
                   💡 Your credit card balance is money you owe, not money you have. Flourish tracks it as debt so your Safe-to-Spend only shows cash you can actually spend.
                 </div>
               </div>
@@ -4900,14 +4901,14 @@ function DataTransparencyPanel({data, onClose}) {
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"14px 16px",textAlign:"center"}}>
                 <div style={{fontSize:24,marginBottom:8}}>🏦</div>
                 <div style={{...s,fontSize:13,color:C.mutedHi,fontWeight:600,marginBottom:4}}>No accounts connected</div>
-                <div style={{...s,fontSize:12,color:C.muted}}>Connect your bank in Settings to see live balance data.</div>
+                <div style={{...s,fontSize:13,color:C.muted}}>Connect your bank in Settings to see live balance data.</div>
               </div>
             )}
             {chequingAccts.length>0&&creditAccts.length>0&&(
               <div style={{marginTop:12,background:C.teal+"11",border:`1px solid ${C.teal}33`,borderRadius:14,padding:"12px 14px"}}>
-                <div style={{...s,fontSize:11,color:C.tealBright,fontWeight:700,marginBottom:4}}>📊 Net cash position</div>
+                <div style={{...s,fontSize:13,color:C.tealBright,fontWeight:700,marginBottom:4}}>📊 Net cash position</div>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <div style={{...s,fontSize:12,color:C.mutedHi}}>
+                  <div style={{...s,fontSize:13,color:C.mutedHi}}>
                     Cash ({formatMoney(cashShown)}) − Credit owed ({formatMoney(creditShown)})
                   </div>
                   <div style={{...s,fontSize:14,fontWeight:900,fontFamily:"'Playfair Display',serif",
@@ -4947,7 +4948,7 @@ function IncomeReconcileCard({data, setAppData}){
   }));
   return (
     <div style={{background:C.teal+"12",border:`1px solid ${C.teal}44`,borderRadius:20,padding:"16px 18px",marginBottom:14}}>
-      <div style={{color:C.tealBright,fontSize:11,fontWeight:800,letterSpacing:1.2,textTransform:"uppercase",fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>Your pay looks different</div>
+      <div style={{color:C.tealBright,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>Your pay looks different</div>
       <div style={{color:C.cream,fontSize:14,lineHeight:1.65,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>
         Your bank shows about <strong>{money(d.amount)}</strong> {cadenceLabel(d.freq)}.
       </div>
@@ -4967,6 +4968,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const [expandedTile,setExpandedTile]=useState(null);
   const [showCustomize,setShowCustomize]=useState(false);
   const [showTransparency,setShowTransparency]=useState(false);
+  const [explain,setExplain]=useState(null);   // which main number is being explained
+  const [showTerm,setShowTerm]=useState(null); // which term the one ⓘ was pressed on
   const [nwHistory,setNwHistory]=useState(()=>getNetWorthHistory());
   const [affordInput, setAffordInput] = useState("");
   const [affordResult, setAffordResult] = useState(null);
@@ -5070,7 +5073,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
     boxShadow:"0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04)",
   });
   const label11=(color=C.muted)=>({
-    color,fontSize:9,textTransform:"uppercase",letterSpacing:1.8,
+    color,fontSize:13,
     fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,
   });
 
@@ -5086,22 +5089,42 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       {showCustomize&&dashLayout&&<DashCustomize layout={dashLayout} onChange={setDashLayout} onClose={()=>setShowCustomize(false)}/>}
       {showTransparency&&<DataTransparencyPanel data={data} onClose={()=>setShowTransparency(false)}/>}
+      {/* Every figure below is handed in from an engine; this sheet reads back, it never works out. */}
+      {explain==="safeToSpend"&&(
+        <HowWeGotThis
+          title="Safe to spend until next payday"
+          value={ssView.headlineText}
+          meaning="What is left after the bills, debt payments and savings already committed before your next deposit. Spending up to this leaves everything else covered."
+          inputs={[
+            {label:"In your accounts", value:ssView.balanceText},
+            ...ssView.rows.filter(r=>r.kind!=="balance").map(r=>({label:`${r.sign||""} ${r.label}`.trim(), value:r.value})),
+          ]}
+          changeLabel="See the full working"
+          onChange={()=>{setExplain(null);setShowTransparency(true);}}
+          onClose={()=>setExplain(null)}/>
+      )}
+      {showTerm&&(
+        <HowWeGotThis
+          title={showTerm}
+          meaning={TERMS[showTerm]}
+          onClose={()=>setShowTerm(null)}/>
+      )}
 
       {/* ── Top status bar ───────────────────────────────────────────────── */}
       <div style={{...anim(0),display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:2}}>
         <div onClick={()=>setShowTransparency(true)} style={{display:"flex",alignItems:"center",gap:7,background:"rgba(0,204,133,0.06)",border:"1px solid rgba(0,204,133,0.12)",borderRadius:99,padding:"4px 10px",cursor:"pointer"}} title="How is this calculated?">
           <div style={{width:6,height:6,borderRadius:"50%",background:C.green,boxShadow:`0 0 8px ${C.green}`,animation:"pulse 2.8s ease-in-out infinite",flexShrink:0}}/>
-          <span style={{color:C.green,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>Live</span>
-          <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{
+          <span style={{color:C.green,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>Live</span>
+          <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{
             (()=>{ const l=localStorage.getItem("flourish_last_refresh");
-              if(!l) return "· 6 engines";
+              if(!l) return "· up to date";
               const m=Math.round((Date.now()-parseInt(l))/60000);
-              return m<1?"· just refreshed":m<60?`· updated ${m}m ago`:"· 6 engines"; })()
+              return m<1?"· just refreshed":m<60?`· updated ${m}m ago`:"· up to date"; })()
           }</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2}}>{new Date().toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}</span>
-          {setDashLayout&&<button onClick={()=>setShowCustomize(true)} style={{background:`linear-gradient(135deg,${C.green}22,${C.teal}11)`,border:`1px solid ${C.green}44`,borderRadius:99,padding:"5px 12px",color:C.greenBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer",letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}>⠿ Reorder</button>}
+          <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2}}>{new Date().toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}</span>
+          {setDashLayout&&<button onClick={()=>setShowCustomize(true)} style={{background:`linear-gradient(135deg,${C.green}22,${C.teal}11)`,border:`1px solid ${C.green}44`,borderRadius:99,padding:"0 14px",minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer",letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}>⠿ Reorder</button>}
         </div>
       </div>
 
@@ -5111,7 +5134,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           <div style={{fontSize:27,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",lineHeight:1.15,letterSpacing:-0.5}}>
             Hey {data.profile?.name||"there"} 👋
           </div>
-          <div style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>
+          <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>
             {urgentBill?`⚠️ ${urgentBill.name} due in ${daysUntilDueDay(urgentBill.date, new Date())} day${daysUntilDueDay(urgentBill.date, new Date())===1?"":"s"}`:isPayday?"🎉 Payday: a great time to save":"Here's your financial pulse"}
           </div>
         </div>
@@ -5155,7 +5178,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             border:`1px solid ${hasData?(overspend>0?C.red+"33":C.green+"30"):C.gold+"33"}`,
             borderRadius:16,padding:"14px 16px",cursor:"pointer"}}
             onClick={()=>setScreen("coach")}>
-            <div style={{color:C.muted,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📊 Estimate · Based on your setup. Connect your bank for real numbers</div>
+            <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📊 Estimate · Based on your setup. Connect your bank for real numbers</div>
             <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
               <span style={{fontSize:20,flexShrink:0}}>{hasData?(overspend>0?"⚠️":"💡"):"🔗"}</span>
               <div style={{flex:1}}>
@@ -5166,24 +5189,24 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                         ? `Based on your setup, you may be overspending by $${Math.round(overspend).toLocaleString()}/mo`
                         : `Based on your setup, you have ~$${Math.round(Math.max(0,surplus)).toLocaleString()}/mo to work with`}
                     </div>
-                    <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>
+                    <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>
                       {overspend>0
                         ? "Connect your bank to see exactly where it's going, and fix it."
                         : "Connect your bank to track it live and make it work harder."}
                     </div>
                     <div style={{marginTop:8,display:"flex",gap:8}}>
-                      <button onClick={e=>{e.stopPropagation();setScreen("coach");}} style={{background:overspend>0?C.red+"22":C.green+"22",border:`1px solid ${overspend>0?C.red+"44":C.green+"44"}`,borderRadius:99,padding:"6px 14px",color:overspend>0?C.redBright:C.greenBright,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                      <button onClick={e=>{e.stopPropagation();setScreen("coach");}} style={{background:overspend>0?C.red+"22":C.green+"22",border:`1px solid ${overspend>0?C.red+"44":C.green+"44"}`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:overspend>0?C.redBright:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                         Ask Coach →
                       </button>
-                      <button onClick={e=>{e.stopPropagation();window.dispatchEvent(new CustomEvent("flourish:settings"));}} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,borderRadius:99,padding:"6px 14px",color:C.mutedHi,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                      <button onClick={e=>{e.stopPropagation();window.dispatchEvent(new CustomEvent("flourish:settings"));}} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:C.mutedHi,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                         Connect Bank
                       </button>
                     </div>
                   </>
                 ):(
                   <>
-                    <span style={{color:C.goldBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Estimates based on your setup</span>
-                    <span style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginLeft:6}}>Connect your bank for live data</span>
+                    <span style={{color:C.goldBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Estimates based on your setup</span>
+                    <span style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginLeft:6}}>Connect your bank for live data</span>
                   </>
                 )}
               </div>
@@ -5216,14 +5239,14 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           return (
             <div style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"14px 16px",marginBottom:12}}>
               {know && <>
-              <div style={{color:C.muted,fontSize:9.5,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>One thing to know</div>
+              <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>One thing to know</div>
               <div style={{color:C.cream,fontSize:13.5,lineHeight:1.55,margin:"3px 0 10px"}}>{know}</div>
               </>}
-              <div style={{color:C.muted,fontSize:9.5,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>One thing you could do</div>
+              <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>One thing you could do</div>
               <div style={{color:C.cream,fontSize:13.5,lineHeight:1.55,margin:"3px 0 4px"}}>{doIt}</div>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:8}}>
                 <CalcByFlourish/>
-                <button onClick={()=>setScreen&&setScreen("coach")} style={{background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:99,padding:"6px 14px",color:C.greenBright,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Explain this →</button>
+                <button onClick={()=>setScreen&&setScreen("coach")} style={{background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Explain this →</button>
               </div>
             </div>
           );
@@ -5251,19 +5274,22 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           <div style={{position:"relative",padding:"24px 24px 20px"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
               <div style={{width:6,height:6,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 10px ${heroColor}`,animation:"pulse 2.5s ease-in-out infinite"}}/>
-              <span style={{color:heroColorBright,fontSize:9,textTransform:"uppercase",letterSpacing:2.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Safe to spend until next payday</span>
+              <span style={{color:heroColorBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Safe to spend until next payday</span>
+              <InfoDot term="Safe to spend" onOpen={setShowTerm}/>
               {data.bankConnected
-                ? <span style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· live</span>
-                : <span style={{color:C.gold,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· estimated</span>}
+                ? <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· live</span>
+                : <span style={{color:C.gold,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· estimated</span>}
             </div>
             {hasCashAccount ? (_ss.noIncome ? (
             /* Sprint Q item 3: no income → prompt to set it up, not a misleading safe-to-spend */
             <div style={{marginBottom:18,maxWidth:320}}>
               <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:heroColorBright,fontSize:19,fontWeight:800,lineHeight:1.3}}>Add your income to see what's safe to spend</div>
-              <div style={{color:C.mutedHi,fontSize:12,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Safe-to-spend plans around your bills using your income →</div>
+              <div style={{color:C.mutedHi,fontSize:13,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Safe-to-spend plans around your bills using your income →</div>
             </div>
             ) : (
-            <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.88,marginBottom:18,position:"relative",display:"inline-block"}}>
+            <button onClick={e=>{e.stopPropagation();setExplain("safeToSpend");}} aria-label="How Flourish got this number"
+              style={{background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",
+              fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:1,marginBottom:18,position:"relative",display:"inline-block"}}>
               {ssView.isShort&&<span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,fontWeight:900}}>-</span>}<span style={{fontSize:24,color:heroColorBright,verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
               <span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`,
                 transition:"opacity .3s",opacity:isRefreshing?0.4:1}}>
@@ -5275,15 +5301,15 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                   background:`linear-gradient(90deg,transparent 0%,${heroColorBright} 50%,transparent 100%)`,
                   backgroundSize:"200% 100%",animation:"shimmer 1.2s ease-in-out infinite"}}/>
               )}
-            </div>
+            </button>
             )) : (
             /* Sprint 1: no fake number when no cash account is connected */
             <div style={{marginBottom:18,maxWidth:320}}>
               <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:heroColorBright,fontSize:19,fontWeight:800,lineHeight:1.3}}>Connect an account to see your safe-to-spend</div>
-              <div style={{color:C.mutedHi,fontSize:12,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Add a bank or enter your balances to get started →</div>
+              <div style={{color:C.mutedHi,fontSize:13,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Add a bank or enter your balances to get started →</div>
               {onTryDemo && !data.demo && (
                 /* Sprint Z #15: explore the full app with sample data — no bank login (App reviewers). */
-                <button onClick={onTryDemo} style={{marginTop:16,background:C.teal+"22",border:`1px solid ${C.teal}55`,color:C.tealBright,borderRadius:99,padding:"10px 20px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🧪 Try with demo data</button>
+                <button onClick={onTryDemo} style={{marginTop:16,background:C.teal+"22",border:`1px solid ${C.teal}55`,color:C.tealBright,borderRadius:99,padding:"10px 20px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🧪 Try with demo data</button>
               )}
             </div>
             )}
@@ -5294,7 +5320,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               const mins = Math.round((Date.now()-lastRefresh)/60000);
               const label = mins < 1 ? "just updated" : mins < 60 ? `updated ${mins}m ago` : mins < 1440 ? `updated ${Math.floor(mins/60)}h ago` : "updated today";
               return (
-                <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:500,letterSpacing:0.3,marginBottom:4}}>
+                <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:500,letterSpacing:0.3,marginBottom:4}}>
                   {label}
                 </div>
               );
@@ -5306,7 +5332,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               // Overdraft: show a focused warning instead of the math
               if (overdraft) return (
                 <div style={{marginBottom:14}}>
-                  <div style={{color:C.cream,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
+                  <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
                     {overdraftImmediate
                       ? "Bills exceed your balance. Tap to see forecast and fix it"
                       : "You will overdraft within 7 days. Tap to see what's coming"}
@@ -5321,15 +5347,15 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 <div style={{marginBottom:14}}>
                   {breakdownRows.map((r,i)=>(
                     <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"2px 0"}}>
-                      <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign} {r.label}</span>
-                      <span style={{color:r.color,fontSize:10,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.value}</span>
+                      <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign} {r.label}</span>
+                      <span style={{color:r.color,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.value}</span>
                     </div>
                   ))}
                   <div style={{borderTop:`1px solid ${heroColor}22`,marginTop:5,paddingTop:5,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{color:C.cream,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{ssView.totalLabel}</span>
+                    <span style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{ssView.totalLabel}</span>
                     <span style={{color:heroColorBright,fontSize:13,fontWeight:900,fontFamily:"'Playfair Display',serif"}}>{ssView.headlineText}</span>
                   </div>
-                  {!data.bankConnected&&<div style={{color:C.gold,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>📊 Estimated · Connect bank for real numbers</div>}
+                  {!data.bankConnected&&<div style={{color:C.gold,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>📊 Estimated · Connect bank for real numbers</div>}
                 </div>
               );
             })()}
@@ -5386,7 +5412,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
 
                 return (
                   <div>
-                    <div style={{color:C.mutedHi,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>
+                    <div style={{color:C.mutedHi,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>
                       Can I afford this?
                     </div>
                     <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -5434,7 +5460,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                           {presets.map(amt=>(
                             <button key={amt} onClick={()=>{setAffordInput(String(amt));checkAfford(String(amt));}}
                               style={{flex:1,background:heroColor+"0D",border:`1px solid ${heroColor}22`,borderRadius:10,
-                                padding:"7px 0",color:heroColorBright,fontSize:12,fontWeight:700,cursor:"pointer",
+                                padding:"7px 0",color:heroColorBright,fontSize:13,fontWeight:700,cursor:"pointer",
                                 fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .15s",minHeight:34}}
                               onMouseEnter={e=>{e.currentTarget.style.background=heroColor+"22";}}
                               onMouseLeave={e=>{e.currentTarget.style.background=heroColor+"0D";}}>
@@ -5463,7 +5489,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                           <div style={{color:affordResult.state==="yes"?C.greenBright:affordResult.state==="tight"?C.goldBright:C.redBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.3}}>
                             {affordResult.msg}
                           </div>
-                          <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3,lineHeight:1.5}}>
+                          <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3,lineHeight:1.5}}>
                             {affordResult.sub}
                           </div>
                         </div>
@@ -5477,7 +5503,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             {/* ── Bottom row: actions + tap affordance ── */}
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginTop:16,flexWrap:"wrap"}}>
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                {onWhatIf&&<button onClick={e=>{e.stopPropagation();onWhatIf();}} style={{background:"rgba(255,255,255,0.08)",border:`1px solid rgba(255,255,255,0.12)`,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:10,padding:"6px 12px",borderRadius:99,cursor:"pointer",minHeight:36}}>What if? →</button>}
+                {onWhatIf&&<button onClick={e=>{e.stopPropagation();onWhatIf();}} style={{background:"rgba(255,255,255,0.08)",border:`1px solid rgba(255,255,255,0.12)`,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:13,padding:"6px 12px",borderRadius:99,cursor:"pointer",minHeight:36}}>What if? →</button>}
               </div>
               {/* Tap affordance — prominent pill, clear action */}
               <div onClick={e=>{e.stopPropagation();overdraft?setScreen("plan"):setShowTransparency(true);}}
@@ -5488,47 +5514,56 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                   transition:"all .15s",boxShadow:`0 2px 12px ${heroColor}20`}}
                 onMouseEnter={e=>{e.currentTarget.style.background=`linear-gradient(135deg,${heroColor}33,${heroColor}22)`;e.currentTarget.style.boxShadow=`0 4px 20px ${heroColor}35`;}}
                 onMouseLeave={e=>{e.currentTarget.style.background=`linear-gradient(135deg,${heroColor}22,${heroColor}12)`;e.currentTarget.style.boxShadow=`0 2px 12px ${heroColor}20`;}}>
-                <span style={{color:heroColorBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,letterSpacing:0.2}}>
+                <span style={{color:heroColorBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,letterSpacing:0.2}}>
                   {overdraft?"Fix this":"Why this number?"}
                 </span>
                 <span style={{color:heroColorBright,fontSize:14,lineHeight:1}}>→</span>
               </div>
             </div>
-            {overdraft&&<div style={{marginTop:12,padding:"10px 14px",background:C.red+"18",borderRadius:14,border:`1px solid ${C.red}33`,color:C.cream,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-              <strong style={{color:C.redBright}}>Overdraft risk</strong>: bills exceed your balance. Hold non-essential spending.
+            {overdraft&&<div style={{marginTop:12,padding:"10px 14px",background:C.red+"18",borderRadius:14,border:`1px solid ${C.red}33`,color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+              <strong style={{color:C.redBright}}>Heads up</strong>: your bills come to more than your balance before your next deposit.{setScreen&&<button onClick={e=>{e.stopPropagation();setScreen("plan");}} style={{display:"block",marginTop:SPACE.sm,background:"none",border:"none",padding:`${SPACE.sm}px 0`,minHeight:LAYOUT.minTap,color:C.redBright,...TYPE.footnote,fontWeight:700,fontFamily:"inherit",cursor:"pointer",textAlign:"left"}}>See what's coming →</button>}
             </div>}
           </div>
         </div>
         )}
 
-        {/* ── BENTO ROW 1: 3 mini stat tiles inside 2-col span ──────────── */}
+        <FirstRunTip id="today">Tap any number to see how Flourish got it.</FirstRunTip>
+        {/* Three tiles across 375px gave each about 110px — an icon, a label, a number and a
+            caption stacked in a column narrower than this sentence. They are three separate
+            places to go, not three supporting figures, so they are now three full-width rows:
+            label and caption on the left, the number on the right, each a 44px target. */}
         {isVisible('bento')&&(
-        <div style={{...anim(110),display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+        <div style={{...anim(110),display:"flex",flexDirection:"column",gap:SPACE.sm}}>
           {[
-            {label:"Due Soon",value:`$${(soonTotal||0).toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
-            {label:totalDebt>0?"Total Debt":"Debt Free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
+            {label:"Due soon",value:`$${(soonTotal||0).toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
+            {label:totalDebt>0?"Total debt":"Debt free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
             // Week-2 defect b: colour follows the sign. A negative net worth is not a teal figure —
             // teal is this app's gain colour, and "-$14.5k" painted as a gain is the opposite of the fact.
-            {label:"Net Worth",value:`${netWorth>=0?"+":""}${formatCompactMoney(netWorth)}`,sub:"total net worth",color:netWorth<0?C.red:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
+            {label:"Net worth",value:`${netWorth>=0?"+":""}${formatCompactMoney(netWorth)}`,sub:"total net worth",color:netWorth<0?C.red:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
           ].map((s,i)=>(
-            <div key={i} onClick={()=>{if(s.tab&&setGoalsTab)setGoalsTab(s.tab);setScreen(s.screen);}} style={{...glass(s.color),borderRadius:20,padding:"14px 12px 12px",textAlign:"center",position:"relative",overflow:"hidden",cursor:"pointer",transition:"transform .2s, box-shadow .2s"}}
-              onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 12px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)`;}}
-              onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04)";}}>
-              <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at 50% 0%,${s.color}14 0%,transparent 70%)`,pointerEvents:"none"}}/>
-              <div style={{position:"relative"}}>
-                <div style={{marginBottom:5,display:"flex",justifyContent:"center"}}><Icon id={s.icon} size={16} color={s.color} strokeWidth={1.5}/></div>
-                <div style={{...label11(C.muted),marginBottom:2}}>{s.label}</div>
-                <div style={{fontSize:18,fontWeight:800,color:s.color,fontFamily:"'Playfair Display',Georgia,serif",lineHeight:1.1,marginTop:2}}>{s.value}</div>
-                <div style={{color:C.muted,fontSize:9,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{s.sub}</div>
-              </div>
-            </div>
+            <button key={i} onClick={()=>{if(s.tab&&setGoalsTab)setGoalsTab(s.tab);setScreen(s.screen);}}
+              style={{...glass(s.color),borderRadius:16,padding:LAYOUT.cardPadding,minHeight:LAYOUT.minTap,width:"100%",
+                border:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left",
+                display:"flex",alignItems:"center",justifyContent:"space-between",gap:SPACE.md}}>
+              <span style={{display:"flex",alignItems:"center",gap:SPACE.md,minWidth:0}}>
+                <Icon id={s.icon} size={20} color={s.color} strokeWidth={1.5}/>
+                <span style={{minWidth:0}}>
+                  <span style={{display:"block",color:C.cream,...TYPE.headline,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{s.label}</span>
+                  <span style={{display:"block",color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{s.sub}</span>
+                </span>
+              </span>
+              <span style={{...TYPE.title2,color:s.color,fontFamily:"'Playfair Display',Georgia,serif",whiteSpace:"nowrap"}}>{s.value}</span>
+            </button>
           ))}
         </div>
         )}
 
-        {/* ── HEALTH + STREAK — 2-col row ─────────────────────────────────── */}
+        {/* Two cards across 375px leaves each about 155px of content. At the old 9 and 11px that
+            was merely tight; at the 13px floor the grade, the insight line and the "Coach →" button
+            all ran past the card, which has overflow:hidden — so the button rendered as "Coac".
+            Stacked, each card has the full width and nothing is cut. */}
         {isVisible('healthrow')&&(
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div style={{display:"flex",flexDirection:"column",gap:SPACE.md}}>
         <div style={{...anim(140),...glass(scoreBase),borderRadius:24,padding:"18px 16px 16px",position:"relative",overflow:"hidden"}}>
           <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at 0% 100%,${scoreBase}18 0%,transparent 65%)`,pointerEvents:"none"}}/>
           <div style={{position:"relative"}}>
@@ -5538,15 +5573,15 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               <div>
                 <div style={{display:"flex",alignItems:"baseline",gap:4}}>
                   <span style={{fontSize:34,fontWeight:900,color:scoreColor,fontFamily:"'Playfair Display',serif",lineHeight:1,letterSpacing:-1.5,textShadow:`0 0 24px ${scoreColor}55`}}>{adjScore}</span>
-                  <span style={{color:C.muted,fontSize:11}}>/100</span>
+                  <span style={{color:C.muted,fontSize:13}}>/100</span>
                 </div>
-                <div style={{color:scoreColor,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginTop:3}}>{scoreGrade}</div>
-                <div style={{color:C.mutedHi,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2,lineHeight:1.4}}>{scoreInsight}</div>
+                <div style={{color:scoreColor,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginTop:3}}>{scoreGrade}</div>
+                <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2,lineHeight:1.4}}>{scoreInsight}</div>
               </div>
             </div>
             <div style={{display:"flex",gap:6}}>
-              {onCheckIn&&<button onClick={onCheckIn} style={{flex:1,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:9,padding:"8px 6px",borderRadius:99,border:"none",cursor:"pointer",whiteSpace:"nowrap"}}>Check-In ✦</button>}
-              <button onClick={()=>setScreen("coach")} style={{flex:1,background:"none",border:`1px solid ${scoreBase}44`,color:scoreBase,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:9,padding:"8px 6px",borderRadius:99,cursor:"pointer",whiteSpace:"nowrap"}}>Coach →</button>
+              {onCheckIn&&<button onClick={onCheckIn} style={{flex:1,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,padding:"0 8px",minHeight:LAYOUT.minTap,borderRadius:99,border:"none",cursor:"pointer",whiteSpace:"nowrap"}}>Check-In ✦</button>}
+              <button onClick={()=>setScreen("coach")} style={{flex:1,background:"none",border:`1px solid ${scoreBase}44`,color:scoreBase,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:13,padding:"0 8px",minHeight:LAYOUT.minTap,borderRadius:99,cursor:"pointer",whiteSpace:"nowrap"}}>Coach →</button>
             </div>
           </div>
         </div>
@@ -5561,7 +5596,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               <div style={{fontSize:38,lineHeight:1}}>{streak>=7?"🏆":streak>=4?"🔥":streak>=1?"⚡":"💤"}</div>
               <div>
                 <div style={{fontSize:36,fontWeight:900,color:streakColor,fontFamily:"'Playfair Display',serif",lineHeight:1,letterSpacing:-1}}>{streak}</div>
-                <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>day{streak===1?"":"s"} strong</div>
+                <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>day{streak===1?"":"s"} strong</div>
               </div>
             </div>
             {/* Streak dots */}
@@ -5570,7 +5605,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 <div key={i} style={{flex:1,height:8,borderRadius:99,background:i<streak?`linear-gradient(90deg,${C.gold},${C.goldBright})`:C.glassEdge,transition:"background 0.3s",boxShadow:i<streak?`0 0 8px ${C.gold}55`:"none"}}/>
               ))}
             </div>
-            <div style={{color:C.mutedHi,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
               {streak>=7?"🎉 Weekly goal crushed!":streak>=4?`${streakMax-streak} more to goal`:streak>0?`${streak}-day streak · keep going`:"Start your streak today"}
             </div>
           </div>
@@ -5605,11 +5640,11 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                   <div style={{color:C.goldBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                     {incomeUsingDefault?"Income not set, so every number is an estimate":`Income showing $${totalMoCheck.toLocaleString()}/mo. Does this look right?`}
                   </div>
-                  <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>
+                  <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>
                     {incomeUsingDefault?"Tap to set your income. It takes 30 seconds":"Tap to see how this is calculated"}
                   </div>
                 </div>
-                <span style={{color:C.goldBright,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0}}>Fix →</span>
+                <span style={{color:C.goldBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0}}>Fix →</span>
               </div>
             );
           }
@@ -5622,7 +5657,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 <div style={{width:44,height:44,borderRadius:14,background:C.red+"20",border:`1px solid ${C.red}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>⚠️</div>
                 <div style={{flex:1}}>
                   <div style={{color:C.redBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Projected overdraft in {firstNeg.day} day{firstNeg.day===1?"":"s"}</div>
-                  <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>Your balance will go negative. Tap to see which bills cause this and fix it now.</div>
+                  <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>Your balance will go negative. Tap to see which bills cause this and fix it now.</div>
                 </div>
                 <span style={{color:C.redBright,fontSize:18,fontWeight:700}}>Fix →</span>
               </div>
@@ -5636,7 +5671,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 <div style={{width:44,height:44,borderRadius:14,background:C.gold+"18",border:`1px solid ${C.gold}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>📅</div>
                 <div style={{flex:1}}>
                   <div style={{color:C.goldBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{urgentBill.name} due in {daysUntilDueDay(urgentBill.date, new Date())} day{daysUntilDueDay(urgentBill.date, new Date())===1?"":"s"}</div>
-                  <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>${urgentBill.amount} coming out · Tap to see full forecast</div>
+                  <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>${urgentBill.amount} coming out · Tap to see full forecast</div>
                 </div>
                 <span style={{color:C.goldBright,fontSize:18}}>→</span>
               </div>
@@ -5650,7 +5685,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 <div style={{width:44,height:44,borderRadius:14,background:C.green+"18",border:`1px solid ${C.green}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>💸</div>
                 <div style={{flex:1}}>
                   <div style={{color:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Payday: save before you spend</div>
-                  <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>Transfer ${((safe||0)*0.2).toFixed(0)} now and you'll barely notice it · See your goals</div>
+                  <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>Transfer ${((safe||0)*0.2).toFixed(0)} now and you'll barely notice it · See your goals</div>
                 </div>
                 <span style={{color:C.greenBright,fontSize:18}}>→</span>
               </div>
@@ -5668,7 +5703,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               <div style={{...label11(C.muted),marginBottom:4}}>Net Worth Trend</div>
               <div style={{color:netWorth<0?C.redBright:C.tealBright,fontWeight:900,fontSize:26,fontFamily:"'Playfair Display',Georgia,serif",lineHeight:1,letterSpacing:-1}}>{netWorth>=0?"+":"-"}<span style={{fontSize:14,verticalAlign:"super",marginRight:1}}>$</span><CountUp to={Math.abs(netWorth)} decimals={0} sep/></div>
             </div>
-            <div style={{background:C.teal+"20",border:`1px solid ${C.teal}33`,borderRadius:99,padding:"4px 12px",color:C.tealBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>
+            <div style={{background:C.teal+"20",border:`1px solid ${C.teal}33`,borderRadius:99,padding:"4px 12px",color:C.tealBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>
               {nwHistory.length>1
                 ? (() => { const delta=nwHistory[nwHistory.length-1].v - nwHistory[0].v;
                     return `${delta>=0?"↑ +":"↓ −"}$${Math.abs(delta/1000).toFixed(1)}k since ${nwHistory[0].month}`; })()
@@ -5691,7 +5726,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           {nwHistory.length > 1 && <NetWorthSparkline history={nwHistory} color={C.teal}/>}
           <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
             {(nwHistory.length>1 ? nwHistory : [{month:"·"},{month:"·"},{month:"·"},{month:"Now"}]).map((h,i,arr)=>(
-              <span key={i} style={{color:i===arr.length-1?C.tealBright:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:i===arr.length-1?700:400}}>
+              <span key={i} style={{color:i===arr.length-1?C.tealBright:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:i===arr.length-1?700:400}}>
                 {h.month?.slice(5)||h.month||"·"}
               </span>
             ))}
@@ -5739,7 +5774,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                     <CountUp to={Math.round(totalInvested)} decimals={0}/>
                   </div>
                 </div>
-                <div style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:99,padding:"4px 10px",fontSize:10,fontWeight:700,color:C.tealBright,fontFamily:"'Plus Jakarta Sans',sans-serif",whiteSpace:"nowrap"}}>
+                <div style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,borderRadius:99,padding:"4px 10px",fontSize:13,fontWeight:700,color:C.tealBright,fontFamily:"'Plus Jakarta Sans',sans-serif",whiteSpace:"nowrap"}}>
                   {holdingsCount} holding{holdingsCount===1?"":"s"}
                 </div>
               </div>
@@ -5749,9 +5784,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                   const pct = totalInvested > 0 ? Math.round((val/totalInvested)*100) : 0;
                   return (
                     <div key={label} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"10px 12px"}}>
-                      <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>{label}</div>
+                      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>{label}</div>
                       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,color:val>0?C.cream:C.muted}}>${Math.round(val).toLocaleString()}</div>
-                      <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{pct}%</div>
+                      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{pct}%</div>
                     </div>
                   );
                 })}
@@ -5782,12 +5817,12 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 <div style={{color:C.redBright,fontWeight:800,fontSize:13}}>
                   ⚠️ Over budget · ${Math.round(totalOver).toLocaleString()} this month
                 </div>
-                <span style={{color:C.muted,fontSize:11}}>View →</span>
+                <span style={{color:C.muted,fontSize:13}}>View →</span>
               </div>
               <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
                 {overCats.map(([cat,limit])=>(
                   <span key={cat} style={{background:C.red+"22",border:`1px solid ${C.red}33`,
-                    borderRadius:99,padding:"3px 8px",fontSize:10,color:C.redBright,fontWeight:600}}>
+                    borderRadius:99,padding:"3px 8px",fontSize:13,color:C.redBright,fontWeight:600}}>
                     {catEmojis[cat]||""} {cat} +${Math.round((monthSpend[cat]||0)-limit)}
                   </span>
                 ))}
@@ -5809,7 +5844,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div style={{...label11(C.muted)}}>Score Breakdown</div>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{expandedTile==="pillars"?"collapse":"tap to expand"}</span>
+              <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{expandedTile==="pillars"?"collapse":"tap to expand"}</span>
               <span style={{color:scoreBase,fontSize:14,display:"inline-block",transform:expandedTile==="pillars"?"rotate(180deg)":"none",transition:"transform .25s"}}>▾</span>
             </div>
           </div>
@@ -5820,8 +5855,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 const pc=pct>=0.75?C.green:pct>=0.5?C.teal:pct>=0.25?C.gold:C.red;
                 return <div key={p.label}>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                    <span style={{color:C.mutedHi,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>{p.label}</span>
-                    <span style={{color:pc,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{p.pts}/{p.max}</span>
+                    <span style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{p.label}</span>
+                    <span style={{color:pc,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{p.pts}/{p.max}</span>
                   </div>
                   <div style={{height:5,borderRadius:99,background:C.glassEdge,overflow:"hidden"}}>
                     <div style={{height:"100%",width:`${pct*100}%`,background:pc,borderRadius:99,transition:"width 1s ease"}}/>
@@ -5867,7 +5902,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 </div>
               </div>
               <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
-                <span style={{color:scBase,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Coach →</span>
+                <span style={{color:scBase,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Coach →</span>
                 <div style={{background:C.glassEdge,borderRadius:99,width:5,height:38,overflow:"hidden"}}>
                   <div style={{height:`${Math.round((score-300)/6)}%`,background:`linear-gradient(to top,${sc},${scBase})`,borderRadius:99,transition:"height 1s"}}/>
                 </div>
@@ -5875,7 +5910,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             </div>
             <div style={{position:"relative",marginTop:12,paddingTop:12,borderTop:`1px solid ${C.border}`}}>
               {editingCredit?(<>
-                <div style={{color:C.mutedHi,fontSize:11,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>
+                <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>
                   Credit scores update monthly. Get yours free at Borrowell (Canada) or Credit Karma (US/Canada), then update it here.
                 </div>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -5884,25 +5919,25 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                     onKeyDown={e=>{if(e.key==="Enter")saveScore();if(e.key==="Escape")setEditingCredit(false);}}
                     style={{width:92,background:C.cardAlt,border:`1px solid ${creditDraft&&!draftValid?C.red:C.border}`,borderRadius:10,padding:"9px 11px",color:C.cream,fontSize:15,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
                   <button onClick={saveScore} disabled={!draftValid}
-                    style={{background:draftValid?C.green:"rgba(255,255,255,0.06)",border:"none",borderRadius:10,padding:"10px 16px",color:draftValid?(C.isDark?"#041810":"#fff"):C.muted,fontSize:12,fontWeight:800,cursor:draftValid?"pointer":"default",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Save</button>
+                    style={{background:draftValid?C.green:"rgba(255,255,255,0.06)",border:"none",borderRadius:10,padding:"10px 16px",color:draftValid?(C.isDark?"#041810":"#fff"):C.muted,fontSize:13,fontWeight:800,cursor:draftValid?"pointer":"default",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Save</button>
                   <button onClick={()=>setEditingCredit(false)}
-                    style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.mutedHi,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Cancel</button>
+                    style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.mutedHi,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Cancel</button>
                 </div>
-                <div style={{color:creditDraft&&!draftValid?C.redBright:C.muted,fontSize:10,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                <div style={{color:creditDraft&&!draftValid?C.redBright:C.muted,fontSize:13,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                   {data.profile?.country==="US"?"FICO scale · 300 to 850":"Equifax / TransUnion Canada · 300 to 900"}
                 </div>
               </>):(
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
                   <div style={{minWidth:0}}>
-                    <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                    <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                       {updatedAt?`Updated ${new Date(updatedAt).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}`:"Not updated yet"}
                     </div>
-                    {stale&&<div style={{color:C.goldBright,fontSize:11,marginTop:3,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                    {stale&&<div style={{color:C.goldBright,fontSize:13,marginTop:3,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                       Your score may have changed, consider updating it.
                     </div>}
                   </div>
                   {setAppData&&<button onClick={()=>{setCreditDraft(String(score));setEditingCredit(true);}}
-                    style={{flexShrink:0,background:scBase+"22",border:`1px solid ${scBase}55`,borderRadius:99,padding:"8px 14px",color:C.cream,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Update Score</button>}
+                    style={{flexShrink:0,background:scBase+"22",border:`1px solid ${scBase}55`,borderRadius:99,padding:"8px 14px",color:C.cream,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Update Score</button>}
                 </div>
               )}
             </div>
@@ -5918,7 +5953,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               <div style={{fontSize:24}}>✨</div>
               <div>
                 <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Get Flourish Plus</div>
-                <div style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>AI Coach · Tax Tips · Credit Coaching</div>
+                <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>AI Coach · Tax Tips · Credit Coaching</div>
               </div>
             </div>
             <div style={{color:C.purple,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Try Free →</div>
@@ -5931,7 +5966,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             <span style={{fontSize:22,flexShrink:0}}>{n.icon}</span>
             <div style={{flex:1}}>
               <div style={{color:C.redBright,fontWeight:700,fontSize:13,marginBottom:3,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{n.title}</div>
-              <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{n.body}</div>
+              <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{n.body}</div>
             </div>
             <span style={{color:C.red,fontSize:16,flexShrink:0}}>→</span>
           </div>
@@ -5945,7 +5980,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         {/* DECISIONS — Hero: "What money decision are you working on?" (Phase 3c) */}
         <div style={{...anim(0),...glass(C.teal),borderRadius:22,padding:"22px 20px"}}>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.cream,marginBottom:4}}>What money decision are you working on?</div>
-          <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:14}}>Type a scenario or pick a quick action below.</div>
+          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:14}}>Type a scenario or pick a quick action below.</div>
 
           {/* Free-form input */}
           <div style={{display:"flex",gap:8,marginBottom:14}}>
@@ -6167,28 +6202,28 @@ function BillManager({data, setAppData, onClose}){
           <div style={{flex:1,minWidth:0}}>
             <input value={b.name} onChange={e=>updateBill(i,"name",e.target.value)} placeholder={isOneOff?"Expense name":"Bill name"}
               style={{width:"100%",background:"none",border:"none",borderBottom:`1px solid ${C.border}`,color:C.cream,fontWeight:700,fontSize:13,fontFamily:"inherit",outline:"none",padding:"2px 0",boxSizing:"border-box"}}/>
-            {hasArrears&&<div style={{color:C.goldBright,fontSize:10,fontWeight:700,marginTop:3}}>⚠ ${parseFloat(b.arrears).toFixed(2)} in arrears</div>}
-            {archived&&<div style={{color:C.muted,fontSize:10,fontWeight:700,marginTop:3}}>✓ Past: archived</div>}
+            {hasArrears&&<div style={{color:C.goldBright,fontSize:13,fontWeight:700,marginTop:3}}>⚠ ${parseFloat(b.arrears).toFixed(2)} in arrears</div>}
+            {archived&&<div style={{color:C.muted,fontSize:13,fontWeight:700,marginTop:3}}>✓ Past: archived</div>}
           </div>
           <div>
-            <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:3,textAlign:"center"}}>Amount</div>
+            <div style={{color:C.muted,fontSize:13,marginBottom:3,textAlign:"center"}}>Amount</div>
             <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",width:80}}>
-              <span style={{color:C.muted,fontSize:11,padding:"0 4px 0 6px"}}>$</span>
+              <span style={{color:C.muted,fontSize:13,padding:"0 4px 0 6px"}}>$</span>
               <input value={b.amount} onChange={e=>updateBill(i,"amount",e.target.value)} type="number" inputMode="decimal"
                 style={{flex:1,background:"none",border:"none",padding:"7px 4px 7px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,fontWeight:700}}/>
             </div>
           </div>
           {isOneOff ? (
             <div>
-              <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:3,textAlign:"center"}}>Date</div>
+              <div style={{color:C.muted,fontSize:13,marginBottom:3,textAlign:"center"}}>Date</div>
               <input type="date" value={b.isoDate||""} onChange={e=>updateBill(i,"isoDate",e.target.value)}
-                style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 6px",color:C.cream,fontSize:11,fontFamily:"inherit",outline:"none",minHeight:33}}/>
+                style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 6px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",minHeight:33}}/>
             </div>
           ) : (
             <div>
-              <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:3,textAlign:"center"}}>Due</div>
+              <div style={{color:C.muted,fontSize:13,marginBottom:3,textAlign:"center"}}>Due</div>
               <select value={b.date||"1"} onChange={e=>updateBill(i,"date",e.target.value)}
-                style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 6px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none",minHeight:33}}>
+                style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 6px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",minHeight:33}}>
                 {Array.from({length:28},(_,d)=><option key={d+1} value={String(d+1)}>{d+1}{ord(d+1)}</option>)}
               </select>
             </div>
@@ -6202,11 +6237,11 @@ function BillManager({data, setAppData, onClose}){
             {["fixed","variable"].map(tp=>{
               const on=(b.type||"fixed")===tp; const clr=tp==="variable"?C.teal:C.green;
               return <button key={tp} onClick={()=>setBillCatType(i,b.name,tp)}
-                style={{flex:1,background:on?clr+"22":"none",border:`1px solid ${on?clr:C.border}`,color:on?(tp==="variable"?C.tealBright:C.greenBright):C.muted,borderRadius:8,padding:"5px 6px",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textTransform:"capitalize",minHeight:30}}>{tp}</button>;
+                style={{flex:1,background:on?clr+"22":"none",border:`1px solid ${on?clr:C.border}`,color:on?(tp==="variable"?C.tealBright:C.greenBright):C.muted,borderRadius:8,padding:"5px 6px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textTransform:"capitalize",minHeight:30}}>{tp}</button>;
             })}
           </div>
           <select value={b.freq||"monthly"} onChange={e=>updateBill(i,"freq",e.target.value)}
-            style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 6px",color:C.mutedHi,fontSize:11,fontFamily:"inherit",outline:"none",minHeight:30,textTransform:"capitalize"}}>
+            style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 6px",color:C.mutedHi,fontSize:13,fontFamily:"inherit",outline:"none",minHeight:30,textTransform:"capitalize"}}>
             {FREQS.map(f=><option key={f} value={f}>{f}</option>)}
           </select>
         </div>
@@ -6216,11 +6251,11 @@ function BillManager({data, setAppData, onClose}){
         <div style={{borderTop:`1px solid ${C.border}`,padding:"10px 14px",background:C.cardAlt+"88"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <div style={{flex:1}}>
-              <div style={{color:C.muted,fontSize:10,fontWeight:700,marginBottom:1}}>Amount currently owed (arrears)</div>
-              <div style={{color:C.muted,fontSize:10,lineHeight:1.4}}>{hasArrears?"Payments from Transactions will reduce this balance.":"Behind on this bill? Enter the total you owe, not the monthly amount."}</div>
+              <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:1}}>Amount currently owed (arrears)</div>
+              <div style={{color:C.muted,fontSize:13,lineHeight:1.4}}>{hasArrears?"Payments from Transactions will reduce this balance.":"Behind on this bill? Enter the total you owe, not the monthly amount."}</div>
             </div>
             <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${hasArrears?C.gold+"66":C.border}`,borderRadius:8,overflow:"hidden",width:96}}>
-              <span style={{color:C.muted,fontSize:11,padding:"0 4px 0 6px"}}>$</span>
+              <span style={{color:C.muted,fontSize:13,padding:"0 4px 0 6px"}}>$</span>
               <input value={b.arrears||""} onChange={e=>updateBill(i,"arrears",e.target.value)} type="number" inputMode="decimal" placeholder="0.00"
                 style={{flex:1,background:"none",border:"none",padding:"7px 4px 7px 0",color:hasArrears?C.goldBright:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,fontWeight:700}}/>
             </div>
@@ -6232,7 +6267,7 @@ function BillManager({data, setAppData, onClose}){
   };
 
   const sectionAddBtn = (tp,label) => (
-    <button onClick={()=>openAdd(tp)} style={{width:"100%",background:"none",border:`1px dashed ${C.border}`,borderRadius:12,padding:"11px",color:tp==="one_off"?C.goldBright:tp==="variable"?C.tealBright:C.greenBright,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginTop:2}}>{label}</button>
+    <button onClick={()=>openAdd(tp)} style={{width:"100%",background:"none",border:`1px dashed ${C.border}`,borderRadius:12,padding:"11px",color:tp==="one_off"?C.goldBright:tp==="variable"?C.tealBright:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginTop:2}}>{label}</button>
   );
 
   return (
@@ -6243,7 +6278,7 @@ function BillManager({data, setAppData, onClose}){
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div>
               <div style={{color:C.cream,fontWeight:800,fontSize:17}}>Your Bills</div>
-              <div style={{color:C.muted,fontSize:12,marginTop:2}}>Add regular expenses to power your forecast</div>
+              <div style={{color:C.muted,fontSize:13,marginTop:2}}>Add regular expenses to power your forecast</div>
             </div>
             <button aria-label="Close" onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer",padding:"4px 8px",lineHeight:1}}>✕</button>
           </div>
@@ -6251,26 +6286,26 @@ function BillManager({data, setAppData, onClose}){
         <div style={{overflowY:"auto",flex:1,padding:"16px 20px 32px"}}>
           {/* Tier 4: Fixed commitments */}
           <div style={{marginBottom:18}}>
-            <div style={{color:C.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:10}}>Fixed commitments</div>
+            <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:10}}>Fixed commitments</div>
             {fixedBills.length>0
               ? fixedBills.map(({b,i})=>renderBill(b,i))
-              : <div style={{color:C.muted,fontSize:12,padding:"6px 2px 10px"}}>No fixed bills yet: rent, insurance, subscriptions.</div>}
+              : <div style={{color:C.muted,fontSize:13,padding:"6px 2px 10px"}}>No fixed bills yet: rent, insurance, subscriptions.</div>}
             {sectionAddBtn("fixed","+ Add bill")}
           </div>
           {/* Tier 4: Variable bills */}
           <div style={{marginBottom:18}}>
-            <div style={{color:C.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:10}}>Variable bills</div>
+            <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:10}}>Variable bills</div>
             {variableBills.length>0
               ? variableBills.map(({b,i})=>renderBill(b,i))
-              : <div style={{color:C.muted,fontSize:12,padding:"6px 2px 10px"}}>No variable bills yet: hydro, phone, anything that changes month to month.</div>}
+              : <div style={{color:C.muted,fontSize:13,padding:"6px 2px 10px"}}>No variable bills yet: hydro, phone, anything that changes month to month.</div>}
             {sectionAddBtn("variable","+ Add variable bill")}
           </div>
           {/* Tier 5: One-time expenses */}
           <div style={{marginBottom:18}}>
-            <div style={{color:C.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:10}}>One-time expenses</div>
+            <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:10}}>One-time expenses</div>
             {oneOffBills.length>0
               ? oneOffBills.map(({b,i})=>renderBill(b,i))
-              : <div style={{color:C.muted,fontSize:12,padding:"6px 2px 10px"}}>No one-time expenses: a single upcoming cost like a flight or a repair.</div>}
+              : <div style={{color:C.muted,fontSize:13,padding:"6px 2px 10px"}}>No one-time expenses: a single upcoming cost like a flight or a repair.</div>}
             {sectionAddBtn("one_off","+ Add one-off expense")}
           </div>
           {adding&&(
@@ -6282,7 +6317,7 @@ function BillManager({data, setAppData, onClose}){
               )}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
                 <div>
-                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>{billType==="one_off"?"Amount":"Monthly Amount"}</div>
+                  <div style={{color:C.muted,fontSize:13,marginBottom:5}}>{billType==="one_off"?"Amount":"Monthly Amount"}</div>
                   <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.green}`,borderRadius:10,overflow:"hidden"}}>
                     <span style={{color:C.muted,padding:"0 8px",fontSize:13}}>$</span>
                     <input value={amount} onChange={e=>setAmount(e.target.value)} type="number" inputMode="decimal" placeholder="0.00" autoFocus
@@ -6290,7 +6325,7 @@ function BillManager({data, setAppData, onClose}){
                   </div>
                 </div>
                 <div>
-                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>{billType==="one_off"?"Date":"Day Due"}</div>
+                  <div style={{color:C.muted,fontSize:13,marginBottom:5}}>{billType==="one_off"?"Date":"Day Due"}</div>
                   {billType==="one_off"
                     ? <input type="date" value={oneOffDate} onChange={e=>setOneOffDate(e.target.value)}
                         style={{width:"100%",boxSizing:"border-box",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
@@ -6307,11 +6342,11 @@ function BillManager({data, setAppData, onClose}){
                   {["fixed","variable"].map(tp=>{
                     const on=billType===tp; const clr=tp==="variable"?C.teal:C.green;
                     return <button key={tp} onClick={()=>setBillType(tp)}
-                      style={{flex:1,background:on?clr+"22":"none",border:`1px solid ${on?clr:C.border}`,color:on?(tp==="variable"?C.tealBright:C.greenBright):C.muted,borderRadius:10,padding:"9px 6px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textTransform:"capitalize"}}>{tp}</button>;
+                      style={{flex:1,background:on?clr+"22":"none",border:`1px solid ${on?clr:C.border}`,color:on?(tp==="variable"?C.tealBright:C.greenBright):C.muted,borderRadius:10,padding:"9px 6px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textTransform:"capitalize"}}>{tp}</button>;
                   })}
                 </div>
                 <select value={freq} onChange={e=>setFreq(e.target.value)}
-                  style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 8px",color:C.cream,fontSize:12,fontFamily:"inherit",textTransform:"capitalize"}}>
+                  style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 8px",color:C.cream,fontSize:13,fontFamily:"inherit",textTransform:"capitalize"}}>
                   {FREQS.map(f=><option key={f} value={f}>{f}</option>)}
                 </select>
               </div>
@@ -6329,7 +6364,7 @@ function BillManager({data, setAppData, onClose}){
               </div>
             </div>
           )}
-          <div style={{color:C.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:10}}>Common Bills: Tap to Add</div>
+          <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:10}}>Common Bills: Tap to Add</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
             {templates.filter(t=>!existingNames.has(t.name.toLowerCase())).map((t,i)=>{
               const clr=BILL_CAT_COLORS[t.cat]||C.teal;
@@ -6339,8 +6374,8 @@ function BillManager({data, setAppData, onClose}){
                   onMouseEnter={e=>{e.currentTarget.style.borderColor=clr+"88";e.currentTarget.style.background=clr+"22";}}
                   onMouseLeave={e=>{e.currentTarget.style.borderColor=clr+"33";e.currentTarget.style.background=clr+"12";}}>
                   <div style={{fontSize:20,marginBottom:4}}>{t.icon}</div>
-                  <div style={{color:C.cream,fontWeight:600,fontSize:12,lineHeight:1.3}}>{t.name}</div>
-                  <div style={{color:C.muted,fontSize:10,marginTop:2}}>{t.hint}</div>
+                  <div style={{color:C.cream,fontWeight:600,fontSize:13,lineHeight:1.3}}>{t.name}</div>
+                  <div style={{color:C.muted,fontSize:13,marginTop:2}}>{t.hint}</div>
                 </button>
               );
             })}
@@ -6359,32 +6394,196 @@ function BillManager({data, setAppData, onClose}){
 
 // ─── SHARED SCREEN HEADER ────────────────────────────────────────────────────
 // Consistent back button + title + optional CTA on every main screen
-function ScreenHeader({title, subtitle, onBack, cta, onCta, ctaColor}) {
-  const C_ = typeof C !== "undefined" ? C : {};
+// THE TITLE GETS ITS OWN LINE.
+//
+// This used to lay the back arrow, the title, the subtitle and a control out in ONE row, each
+// fighting for the same 375px. On Watch the subtitle lost and wrapped to four lines in a column
+// about twenty characters wide, which is what "the screens look messy" looks like up close.
+//
+// Now: title on its own line, at most one line of subtitle under it, and controls on their own
+// full-width row below via `controls`. The back arrow only appears when `onBack` is given, so a
+// root tab does not show an arrow that goes nowhere.
+// ── EXPLAINING A NUMBER, WITHOUT A ROW OF QUESTION MARKS ──────────────────────────────────────
+//
+// Every main number is tappable and says where it came from. Not a "?" beside each one — a screen
+// wearing six question marks looks like it does not trust itself, and the reader still has to ask
+// which one to press. The number IS the button.
+//
+// Every figure in here is handed in by the caller from an engine. This sheet computes nothing and
+// asks nothing of the AI; it reads back what was already worked out, which is the only reason it
+// can be trusted as an explanation.
+function HowWeGotThis({ title, value, meaning, inputs = [], changeLabel, onChange, onClose }) {
   return (
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,gap:10}}>
-      <div style={{display:"flex",alignItems:"center",gap:12,flex:1,minWidth:0}}>
-        {onBack&&(
-          <button onClick={onBack} style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,borderRadius:12,
-            width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,
-            color:C.cream,fontSize:18,transition:"all .15s"}}
-            onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.10)"}
-            onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.06)"}>
-            ←
+    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:C.card,width:"100%",maxWidth:480,borderRadius:"22px 22px 0 0",
+        padding:LAYOUT.cardPadding,paddingBottom:SPACE.xl,border:`1px solid ${C.border}`,maxHeight:"85vh",overflowY:"auto"}}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:SPACE.md}}>
+          <div style={{minWidth:0}}>
+            <div style={{color:C.muted,...TYPE.subhead,fontWeight:400,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How Flourish got this</div>
+            <div style={{color:C.cream,...TYPE.title2,fontFamily:"'Playfair Display',serif",marginTop:2}}>{title}</div>
+          </div>
+          <button onClick={onClose} aria-label="Close" style={{background:"none",border:"none",color:C.muted,fontSize:20,cursor:"pointer",...tap({display:"flex",alignItems:"center",justifyContent:"center"}),flexShrink:0}}>✕</button>
+        </div>
+        {value&&<div style={{color:C.greenBright,...TYPE.largeTitle,fontFamily:"'Playfair Display',serif",marginTop:SPACE.md}}>{value}</div>}
+        {meaning&&<div style={{color:C.mutedHi,...TYPE.body,marginTop:SPACE.md,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{meaning}</div>}
+        {inputs.length>0&&(
+          <div style={{marginTop:SPACE.lg}}>
+            <div style={{color:C.mutedHi,...TYPE.subhead,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:SPACE.sm}}>What it used</div>
+            {inputs.filter(Boolean).map((i,ix)=>(
+              <div key={ix} style={{display:"flex",justifyContent:"space-between",gap:SPACE.md,padding:`${SPACE.sm}px 0`,borderBottom:`1px solid ${C.border}44`}}>
+                <span style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{i.label}</span>
+                <span style={{color:C.cream,...TYPE.footnote,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"right"}}>{i.value}</span>
+              </div>
+            ))}
+            <CalcByFlourish style={{marginTop:SPACE.md}}/>
+          </div>
+        )}
+        {changeLabel&&onChange&&(
+          <button onClick={onChange} style={{marginTop:SPACE.lg,width:"100%",background:C.green+"1A",border:`1px solid ${C.green}55`,borderRadius:14,
+            minHeight:LAYOUT.minTap,color:C.greenBright,...TYPE.headline,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:"pointer"}}>{changeLabel}</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// THE ⓘ LIST. Four terms, and the test below pins it at four.
+//
+// The rule for being on it: a new reader cannot work the term out from the words themselves.
+// "Bills" needs no explanation. "Safe to spend" sounds like a balance and is not one. Everything
+// else explains itself by being tapped, because the number opens HowWeGotThis.
+const TERMS = {
+  "Safe to spend": "Not your balance. What is left after the bills, debt payments and savings already committed before your next deposit, so spending up to it leaves everything else covered.",
+  "Time Machine": "A what-if. It replays your own numbers forward with one thing changed, so you can see a decision before you make it. Nothing is saved and no money moves.",
+  "Money meeting": "A short, structured check-in on the week: what went well, what changed, what is coming. Flourish writes the agenda from your numbers, and you and your coach work through it.",
+  "Health score": "A single 0 to 100 read on how your money is holding up, from your buffer, your bills, your debts and how steady your spending is. It moves slowly on purpose.",
+};
+
+// The ONE ⓘ. Only beside a term a new reader cannot guess from the words themselves — never beside
+// an obvious label, where it is just noise that has to be read and dismissed.
+function InfoDot({ term, onOpen }) {
+  return (
+    <button onClick={e=>{e.stopPropagation();onOpen(term);}} aria-label={`What ${term} means`}
+      style={{background:"none",border:"none",cursor:"pointer",color:C.muted,fontSize:15,lineHeight:1,
+        ...tap({display:"inline-flex",alignItems:"center",justifyContent:"center"}),marginLeft:-10,marginRight:-10,verticalAlign:"middle"}}>ⓘ</button>
+  );
+}
+
+// One line, once, then never again. Dismissal is a synced setting, so the household is not told the
+// same thing on the other phone — or again on this one after a reinstall.
+const TIPS_KEY = "flourish_tips_dismissed";
+function readTips(){ try{ return JSON.parse(localStorage.getItem(TIPS_KEY)||"{}")||{}; }catch{ return {}; } }
+function FirstRunTip({ id, children }) {
+  const [gone, setGone] = useState(()=>!!readTips()[id]);
+  if (gone) return null;
+  const dismiss = () => {
+    try{ const t=readTips(); t[id]=Date.now(); localStorage.setItem(TIPS_KEY, JSON.stringify(t)); }catch{}
+    setGone(true);
+  };
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:SPACE.md,background:C.green+"14",border:`1px solid ${C.green}33`,
+      borderRadius:14,padding:`${SPACE.sm}px ${SPACE.md}px`,marginBottom:LAYOUT.cardGap}}>
+      <span style={{color:C.mutedHi,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",flex:1}}>{children}</span>
+      <button onClick={dismiss} aria-label="Dismiss tip" style={{background:"none",border:"none",color:C.muted,fontSize:15,cursor:"pointer",
+        ...tap({display:"flex",alignItems:"center",justifyContent:"center"}),flexShrink:0,marginRight:-10}}>✕</button>
+    </div>
+  );
+}
+
+// ONE MAIN NUMBER, AND THE REST A TAP AWAY.
+//
+// A 2x2 grid of figures has no lead. Four boxes of the same size, the same weight and the same
+// colour ask to be read in no particular order, so the eye lands nowhere and the card reads as
+// clutter — which is most of what "there is so much on them" means.
+//
+// This gives a card one number to lead with and puts its supporting figures behind a row that
+// says what they are. Nothing is removed and nothing is recalculated: the same values, one tap
+// further away, which is where a figure belongs when it explains rather than informs.
+function SupportingFigures({ label = "How this is worked out", rows = [], defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const visible = rows.filter(r => r && r.label);
+  if (!visible.length) return null;
+  return (
+    <div style={{marginTop:SPACE.md}}>
+      <button onClick={()=>setOpen(o=>!o)} aria-expanded={open}
+        style={{width:"100%",background:"none",border:"none",padding:`${SPACE.md}px 0`,minHeight:LAYOUT.minTap,
+          display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",
+          fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.mutedHi,...TYPE.subhead}}>
+        <span>{label}</span>
+        <span aria-hidden="true" style={{color:C.muted,fontSize:13,transform:open?"rotate(180deg)":"none",transition:"transform .2s"}}>⌄</span>
+      </button>
+      {open&&(
+        <div style={{display:"flex",flexDirection:"column",gap:SPACE.sm,paddingBottom:SPACE.sm}}>
+          {visible.map(r=>(
+            <div key={r.label} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:SPACE.md,minHeight:r.onEdit?LAYOUT.minTap:0}}>
+              <span style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.label}</span>
+              {r.onEdit
+                ? <button onClick={r.onEdit} aria-label={`Edit ${r.label}`}
+                    style={{background:"none",border:"none",cursor:"pointer",padding:`${SPACE.sm}px 0`,minHeight:LAYOUT.minTap,
+                      color:C.greenBright,...TYPE.footnote,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:6}}>
+                    {r.value}<span aria-hidden="true" style={{opacity:0.75}}>✎</span>{r.tag}
+                  </button>
+                : <span style={{color:C.cream,...TYPE.footnote,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.value}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A disclaimer is a footnote, not a card.
+//
+// Boxing it, tinting it and giving it an ℹ️ puts it at the same rank as the numbers it qualifies —
+// so it competes for attention every single time the screen is opened, forever, while saying the
+// same thing it said yesterday. As a footnote at the foot of the screen it is still there, still
+// in the same words, and no longer in the way. The words themselves are unchanged: this is a
+// layout change, not a legal one.
+function ScreenFootnote({ children }) {
+  return (
+    <div style={{...TYPE.footnote,color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",
+      marginTop:SPACE.xl,marginBottom:SPACE.md,paddingLeft:SPACE.xs,paddingRight:SPACE.xs}}>
+      {children}
+    </div>
+  );
+}
+
+function ScreenHeader({title, subtitle, onBack, cta, onCta, ctaColor, controls}) {
+  return (
+    <div style={{marginBottom:LAYOUT.cardGap}}>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:SPACE.md}}>
+        <div style={{display:"flex",alignItems:"center",gap:SPACE.md,flex:1,minWidth:0}}>
+          {onBack&&(
+            <button onClick={onBack} aria-label="Back" style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,borderRadius:12,
+              ...tap({width:LAYOUT.minTap,height:LAYOUT.minTap}),display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,
+              color:C.cream,fontSize:18,transition:"all .15s"}}
+              onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.10)"}
+              onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.06)"}>
+              ←
+            </button>
+          )}
+          <div style={{minWidth:0,flex:1}}>
+            <div style={{fontFamily:"'Playfair Display',serif",...TYPE.title,color:C.cream,letterSpacing:-0.5}}>{title}</div>
+          </div>
+        </div>
+        {cta&&onCta&&(
+          <button onClick={onCta} style={{background:(ctaColor||C.green)+"22",border:`1px solid ${(ctaColor||C.green)}44`,
+            borderRadius:99,padding:"10px 16px",color:ctaColor||C.greenBright,...TYPE.footnote,fontWeight:700,
+            cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",whiteSpace:"nowrap",flexShrink:0,minHeight:LAYOUT.minTap}}>
+            {cta}
           </button>
         )}
-        <div style={{minWidth:0}}>
-          <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream,letterSpacing:-0.5,lineHeight:1.15}}>{title}</div>
-          {subtitle&&<div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{subtitle}</div>}
-        </div>
       </div>
-      {cta&&onCta&&(
-        <button onClick={onCta} style={{background:(ctaColor||C.green)+"22",border:`1px solid ${(ctaColor||C.green)}44`,
-          borderRadius:99,padding:"8px 14px",color:ctaColor||C.greenBright,fontSize:11,fontWeight:700,
-          cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",whiteSpace:"nowrap",flexShrink:0,minHeight:36}}>
-          {cta}
-        </button>
+      {/* Two lines, not one. A one-line clamp silently deleted the end of a sentence: the Credit
+          header lost "Not your bureau score.", which is the part that matters most. Every subtitle
+          was also a candidate for truncation at the larger text sizes this release exists to serve.
+          The subtitles are short enough to read as one line at the design size, and wrap rather
+          than vanish when the text grows. */}
+      {subtitle&&(
+        <div style={{color:C.mutedHi,...TYPE.subhead,fontWeight:400,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:SPACE.xs,
+          overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{subtitle}</div>
       )}
+      {controls&&<div style={{marginTop:SPACE.md}}>{controls}</div>}
     </div>
   );
 }
@@ -6467,7 +6666,7 @@ function ManualBillForm({data, setAppData, onClose}){
   };
 
   const fld = {width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"};
-  const lbl = {color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontWeight:700,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"};
+  const lbl = {color:C.muted,fontSize:15,fontWeight:600,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"};
 
   const form = (
     <div style={{background:C.card,border:`1px solid ${C.teal}44`,borderRadius:14,padding:"14px 16px",marginBottom:12}}>
@@ -6495,7 +6694,7 @@ function ManualBillForm({data, setAppData, onClose}){
             <div style={{color:C.cream,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Variable amount</div>
             <Toggle label="Variable amount" on={variable} onChange={setVariable}/>
           </div>
-          <div style={{color:C.muted,fontSize:11,marginTop:4,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Amount changes month to month, like hydro. We'll refine it once your bank confirms the real amount.</div>
+          <div style={{color:C.muted,fontSize:13,marginTop:4,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Amount changes month to month, like hydro. We'll refine it once your bank confirms the real amount.</div>
         </div>
         <div style={{display:"flex",gap:8,marginTop:2}}>
           <button onClick={save} disabled={!canSave} style={{flex:1,background:canSave?`linear-gradient(135deg,${C.teal},${C.tealBright})`:"rgba(255,255,255,0.06)",border:"none",borderRadius:10,padding:"11px",color:canSave?(C.isDark?"#04141A":"#fff"):C.muted,fontSize:13,fontWeight:800,cursor:canSave?"pointer":"default",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{editId&&editId!=="new"?"Save changes":"Add bill"}</button>
@@ -6517,23 +6716,23 @@ function ManualBillForm({data, setAppData, onClose}){
         <div style={{marginBottom:18}}>
           <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:2}}>
             <span style={{fontSize:13}}>🔗</span>
-            <div style={{color:C.blueBright,fontSize:12,fontWeight:800,textTransform:"uppercase",letterSpacing:0.8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Detected from your bank</div>
+            <div style={{color:C.blueBright,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Detected from your bank</div>
           </div>
-          <div style={{color:C.muted,fontSize:11,marginBottom:9,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your bank told us these. Correct an amount if it's wrong, or remove one from the forecast.</div>
+          <div style={{color:C.muted,fontSize:13,marginBottom:9,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your bank told us these. Correct an amount if it's wrong, or remove one from the forecast.</div>
           <div style={{display:"flex",flexDirection:"column",gap:7}}>
             {observedBills.map(x=>(
               <div key={"obs"+x.i} style={{display:"flex",alignItems:"center",gap:8,background:C.blueDim,border:`1px solid ${C.blue}33`,borderRadius:12,padding:"10px 12px"}}>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.b.name}</div>
-                  <div style={{color:C.muted,fontSize:11,marginTop:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>day {x.b.date} · {x.b.freq||"monthly"}{x.b.amountOverride?<span style={{color:C.blueBright}}> · edited</span>:""}</div>
+                  <div style={{color:C.muted,fontSize:13,marginTop:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>day {x.b.date} · {x.b.freq||"monthly"}{x.b.amountOverride?<span style={{color:C.blueBright}}> · edited</span>:""}</div>
                 </div>
                 <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:9,overflow:"hidden",width:96,flexShrink:0}}>
-                  <span style={{color:C.muted,fontSize:12,padding:"0 2px 0 8px"}}>$</span>
+                  <span style={{color:C.muted,fontSize:13,padding:"0 2px 0 8px"}}>$</span>
                   <input key={x.b.name+"_"+x.b.amount} defaultValue={parseFloat(x.b.amount||0).toFixed(2)} type="number" inputMode="decimal" aria-label={`${x.b.name} amount`}
                     onKeyDown={e=>{if(e.key==="Enter")e.currentTarget.blur();}} onBlur={e=>overrideObserved(x.b, e.currentTarget.value)}
                     style={{width:"100%",minWidth:0,background:"none",border:"none",padding:"8px 6px 8px 2px",color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
                 </div>
-                <button aria-label="Remove" onClick={()=>removeBillWithOverride(setAppData, x.i, x.b.name)} style={{background:"none",border:`1px solid ${C.red}44`,borderRadius:8,padding:"6px 9px",color:C.red,fontSize:12,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>✕</button>
+                <button aria-label="Remove" onClick={()=>removeBillWithOverride(setAppData, x.i, x.b.name)} style={{background:"none",border:`1px solid ${C.red}44`,borderRadius:8,padding:"6px 9px",color:C.red,fontSize:13,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>✕</button>
               </div>
             ))}
           </div>
@@ -6543,26 +6742,26 @@ function ManualBillForm({data, setAppData, onClose}){
       {/* ── Added by you (origin:"manual") — full add / edit / delete ── */}
       <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:2}}>
         <span style={{fontSize:13}}>✍️</span>
-        <div style={{color:C.tealBright,fontSize:12,fontWeight:800,textTransform:"uppercase",letterSpacing:0.8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Added by you</div>
+        <div style={{color:C.tealBright,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Added by you</div>
       </div>
-      <div style={{color:C.muted,fontSize:11,marginBottom:9,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Bills you enter before they're due, so the forecast isn't blind to them.</div>
+      <div style={{color:C.muted,fontSize:13,marginBottom:9,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Bills you enter before they're due, so the forecast isn't blind to them.</div>
       {editId ? form : (
         <button onClick={openAdd} style={{width:"100%",background:C.teal+"18",border:`1px dashed ${C.teal}55`,borderRadius:12,padding:"11px",color:C.tealBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>+ Add a bill</button>
       )}
       {manualBills.length===0 && !editId && (
-        <div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>No manual bills yet. Add bills before they're due so your forecast sees them coming.</div>
+        <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"8px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>No manual bills yet. Add bills before they're due so your forecast sees them coming.</div>
       )}
       <div style={{display:"flex",flexDirection:"column",gap:7}}>
         {manualBills.map(b=>(
           <div key={b.id} style={{display:"flex",alignItems:"center",gap:10,background:C.card,border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 12px"}}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.name}</div>
-              <div style={{color:C.muted,fontSize:11,marginTop:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+              <div style={{color:C.muted,fontSize:13,marginTop:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                 {b.variable&&<span style={{color:C.gold}}>~</span>}${parseFloat(b.amount||0).toFixed(0)} · day {b.dayOfMonth||b.date} · {b.recurring!==false?"monthly":"once"}{b.variable?" · variable":""}
               </div>
             </div>
-            <button onClick={()=>openEdit(b)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",color:C.mutedHi,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Edit</button>
-            <button aria-label="Delete" onClick={()=>del(b.id)} style={{background:"none",border:`1px solid ${C.red}44`,borderRadius:8,padding:"6px 9px",color:C.red,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+            <button onClick={()=>openEdit(b)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",color:C.mutedHi,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Edit</button>
+            <button aria-label="Delete" onClick={()=>del(b.id)} style={{background:"none",border:`1px solid ${C.red}44`,borderRadius:8,padding:"6px 9px",color:C.red,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
           </div>
         ))}
       </div>
@@ -6580,7 +6779,7 @@ function ManualBillForm({data, setAppData, onClose}){
         <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:20,color:C.cream,marginBottom:8}}>Want a heads-up before it's due?</div>
         <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:18}}>Flourish can remind you the day before each bill is due, so a payment never slips. You choose which alerts to keep in Settings.</div>
         <button onClick={async()=>{ setShowNotifOffer(false); markAsked(); await requestNotificationPermission(); }} style={{width:"100%",background:`linear-gradient(135deg,${C.teal},${C.tealBright})`,color:C.isDark?"#04141A":"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"13px",borderRadius:99,border:"none",cursor:"pointer",marginBottom:10}}>Turn on reminders</button>
-        <button onClick={()=>{ setShowNotifOffer(false); markAsked(); }} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.mutedHi,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer"}}>Not now</button>
+        <button onClick={()=>{ setShowNotifOffer(false); markAsked(); }} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.mutedHi,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer"}}>Not now</button>
       </div>
     </div>
   ) : null;
@@ -6603,6 +6802,7 @@ function PlanAhead({data, setAppData, setScreen}){
   // what the header says. The day-by-day list below still shows only today, income days and bill
   // days, so 90d is a longer list, not a wall of empty dates.
   const [range,setRange]=useState(30);
+  const [explainWatch,setExplainWatch]=useState(false);
   const RANGES = [7, 30, 90];
   const [showBillManager,setShowBillManager]=useState(false);
   const [expandedPlanDay, setExpandedPlanDay] = useState(null);
@@ -6643,18 +6843,20 @@ function PlanAhead({data, setAppData, setScreen}){
         and name the offending fields so the user can go fix them. */}
     {!canProject&&<div style={{background:C.orange+"14",border:`1px solid ${C.orange}55`,borderRadius:14,padding:"13px 15px"}}>
       <div style={{color:C.orangeBright,fontSize:13.5,fontWeight:700,marginBottom:4}}>We can't project this right now</div>
-      <div style={{color:C.mutedHi,fontSize:12.5,lineHeight:1.6}}>
+      <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>
         Some of your amounts aren't readable as numbers, so any balance we showed you here would be guesswork. Fix {dataIssues.length===1?"this entry":"these entries"} and the forecast will come straight back:
       </div>
-      <ul style={{margin:"7px 0 0",paddingLeft:18,color:C.mutedHi,fontSize:12.5,lineHeight:1.65}}>
+      <ul style={{margin:"7px 0 0",paddingLeft:18,color:C.mutedHi,fontSize:13,lineHeight:1.65}}>
         {dataIssues.slice(0,5).map((it,ix)=><li key={ix}><span style={{color:C.cream}}>{it.field}</span>{it.value&&it.value!=="undefined"?`: "${it.value}"`:""}</li>)}
       </ul>
-      {dataIssues.length>5&&<div style={{color:C.muted,fontSize:11.5,marginTop:5}}>…and {dataIssues.length-5} more.</div>}
+      {dataIssues.length>5&&<div style={{color:C.muted,fontSize:13,marginTop:5}}>…and {dataIssues.length-5} more.</div>}
     </div>}
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <ScreenHeader title="Watch" subtitle="The next 90 days. What's coming in, what's going out, and what happens if." onBack={setScreen?()=>setScreen("home"):null}/>
-      <div style={{display:"flex",gap:4,background:C.surface,borderRadius:12,padding:3,flexShrink:0,marginBottom:16}}>{RANGES.map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"6px 11px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",transition:"all .22s"}}>{r}d</button>)}</div>
-    </div>
+    <FirstRunTip id="watch">Tap any number to see how Flourish got it.</FirstRunTip>
+    <ScreenHeader title="Watch" subtitle="The next 90 days."
+      onBack={setScreen?()=>setScreen("home"):null}
+      controls={
+          <div style={{display:"flex",gap:SPACE.xs,background:C.surface,borderRadius:12,padding:3,width:"100%"}}>{RANGES.map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",transition:"all .22s"}}>{r}d</button>)}</div>
+      }/>
     {(()=>{
       // Item 1: the starting balance is the SAME displayed value as Today's "In your accounts" — read from
       // the one display owner (safeToSpendView.balanceText: whole dollars, rounded down, formatMoney) rather
@@ -6669,55 +6871,41 @@ function PlanAhead({data, setAppData, setScreen}){
       const _inc0 = (data.incomes||[])[0];
       const _fPay = perDepositAmount(_inc0) != null || (_inc0 && _inc0.isVariable) ? monthlyIncomeBasis(_inc0, data, new Date()) : null;
       return (
-        <div style={{background:C.isDark?"rgba(255,255,255,0.03)":C.surface,borderRadius:14,padding:"12px 16px",border:`1px solid ${C.border}`}}>
-          <div style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:8}}>
-            <span style={{fontSize:12,flexShrink:0,marginTop:1}}>ℹ️</span>
-            <span style={{color:C.muted,fontSize:10.5,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>Forecast projects forward from today using your bank balance, income schedule, bills, and average daily spending. Not financial advice.</span>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-            {[
-              ["Starting balance", _fbalText],
-              ["Est. daily spend", `$${(_favg||0).toFixed(0)}/day`],
-              ["Pay frequency", frequencyLabel(_ffreq)],
-              [`Est. ${payWord(data.profile?.country)}`, _fPay!=null ? formatMoney(_fPay) : "Not set"],
-            ].map(([lbl,val])=>{
-              // "Est. daily spend" is the household's to change: tap it to set their own figure.
-              const editable = lbl==="Est. daily spend" && !!setAppData;
-              const cell = (
-                <>
-                  <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>{lbl}{editable&&<span style={{opacity:0.7,marginLeft:4}}>✎</span>}</div>
-                  <div style={{color:C.cream,fontSize:12,fontWeight:700}}>{val}{editable&&_fSpendEdited&&<EditedTag/>}</div>
-                </>
-              );
-              return editable
-                ? <button key={lbl} onClick={()=>setShowDailySpend(true)} aria-label="Edit estimated daily spend" style={{background:C.card,borderRadius:10,padding:"7px 10px",border:`1px solid ${_fSpendEdited?C.teal+"55":C.border}`,textAlign:"left",cursor:"pointer",fontFamily:"inherit"}}>{cell}</button>
-                : <div key={lbl} style={{background:C.card,borderRadius:10,padding:"7px 10px",border:`1px solid ${C.border}`}}>{cell}</div>;
-            })}
-          </div>
+        <div style={{background:C.isDark?"rgba(255,255,255,0.03)":C.surface,borderRadius:16,padding:LAYOUT.cardPadding,border:`1px solid ${C.border}`}}>
+          <div style={{color:C.muted,...TYPE.subhead,fontWeight:400,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Starting balance</div>
+          <button onClick={e=>{e.stopPropagation();setExplainWatch(true);}} aria-label="How Flourish got this number"
+            style={{background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",display:"block",
+            color:C.cream,...TYPE.largeTitle,fontFamily:"'Playfair Display',serif",marginTop:SPACE.xs}}>{_fbalText}</button>
+          <SupportingFigures label="What the forecast is built from" rows={[
+            {label:"Est. daily spend", value:`$${(_favg||0).toFixed(0)}/day`, onEdit:setAppData?()=>setShowDailySpend(true):null, tag:_fSpendEdited?<EditedTag/>:null},
+            {label:"Pay frequency", value:frequencyLabel(_ffreq)},
+            {label:`Est. ${payWord(data.profile?.country)}`, value:_fPay!=null ? formatMoney(_fPay) : "Not set"},
+          ]}/>
         </div>
       );
     })()}
     {willGoNeg&&<div style={{background:C.redDim,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.red}55`}}>
-      <div style={{color:C.redBright,fontWeight:800,marginBottom:4}}>Projected Overdraft</div>
-      <div style={{color:C.cream,fontSize:13,lineHeight:1.5}}>Balance hits <strong style={{color:C.red}}>{formatBalance(minBalance)}</strong> before your next deposit. Reduce spending now.</div>
+      <div style={{color:C.redBright,...TYPE.headline,fontWeight:800,marginBottom:SPACE.xs}}>Projected overdraft</div>
+      <div style={{color:C.cream,...TYPE.callout,lineHeight:1.5}}>Heads up: your balance could dip to <strong style={{color:C.red}}>{formatBalance(minBalance)}</strong> before your next deposit.</div>
+      <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.sm}}>The day-by-day list below shows which day, and what lands on it.</div>
     </div>}
     {/* Bills summary — BillManager is the single bill entry point */}
     <Card style={{display:"flex",justifyContent:"space-between",alignItems:"center",border:`1px solid ${C.teal}33`,background:`linear-gradient(135deg,rgba(0,200,224,0.05) 0%,${C.card} 100%)`}}>
       <div>
         <div style={{color:C.tealBright,fontWeight:700,fontSize:14}}>📅 Your bills</div>
-        <div style={{color:C.muted,fontSize:11,marginTop:2}}>{(data.bills||[]).length} tracked · powers your forecast</div>
+        <div style={{color:C.muted,fontSize:13,marginTop:2}}>{(data.bills||[]).length} tracked · powers your forecast</div>
       </div>
-      {setAppData&&<button onClick={()=>setShowBillManager(true)} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>+ Add Bill</button>}
+      {setAppData&&<button onClick={()=>setShowBillManager(true)} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>+ Add Bill</button>}
     </Card>
     {/* Money the household knows about that no bill or income covers: a tax refund, a yearly premium, a gift */}
     {setAppData&&<Card style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,border:`1px solid ${C.green}33`}}>
       <div style={{minWidth:0}}>
         <div style={{color:C.greenBright,fontWeight:700,fontSize:14}}>Expected money in or out</div>
-        <div style={{color:C.muted,fontSize:11,marginTop:2}}>{correctionsOf(data).expected.length ? `${correctionsOf(data).expected.length} added · in your forecast` : "A tax refund, a yearly bill, a gift"}</div>
+        <div style={{color:C.muted,fontSize:13,marginTop:2}}>{correctionsOf(data).expected.length ? `${correctionsOf(data).expected.length} added · in your forecast` : "A tax refund, a yearly bill, a gift"}</div>
       </div>
-      <button onClick={()=>setShowExpected(true)} style={{background:C.green+"22",border:`1px solid ${C.green}44`,color:C.greenBright,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>+ Add</button>
+      <button onClick={()=>setShowExpected(true)} style={{background:C.green+"22",border:`1px solid ${C.green}44`,color:C.greenBright,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>+ Add</button>
     </Card>}
-    <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.8,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
+    <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
     {(()=>{
       const avgDailySpend = FinancialCalcEngine.avgDailySpend(data);
       return days.filter((d,i)=>i===0||d.income>0||d.bills.length>0||(d.occurrences||[]).length>0).map((day,i)=>{
@@ -6733,27 +6921,27 @@ function PlanAhead({data, setAppData, setScreen}){
                 <div style={{flex:1}}>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
                     <div style={{color:isToday?C.greenBright:C.mutedHi,fontWeight:isToday?700:500,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{isToday?"Today ✦":day.d.toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}</div>
-                    <span style={{color:C.muted,fontSize:10}}>{isDrilled?"▲":"▼"}</span>
+                    <span style={{color:C.muted,fontSize:13}}>{isDrilled?"▲":"▼"}</span>
                   </div>
                   {/* Named after the income entry the forecast credited, as in the Time Machine row. Each line
                       opens its edit sheet. */}
-                {depositLines(day).map((dl,di)=><ForecastLine key={`dep${di}`} label={`Edit ${dl.label}`} onOpen={openOcc&&dl.occurrence?()=>openOcc(dl.occurrence):null}><div style={{color:C.green,fontWeight:700,fontSize:13,marginTop:3}}>💰 +{formatMoney(dl.amount)} {dl.label}{dl.edited&&<EditedTag/>}</div>{dl.low!=null&&<div style={{color:C.muted,fontSize:11,marginTop:1}}>{`Pay varies: ${formatMoney(dl.low)} to ${formatMoney(dl.high)}`}</div>}</ForecastLine>)}
-                  {billLines(day).map((bl,j)=>{ const b=bl.bill||{}; return <ForecastLine key={j} label={`Edit ${bl.label}`} onOpen={openOcc&&bl.occurrence?()=>openOcc(bl.occurrence):null}><div style={{color:C.gold,fontSize:12,marginTop:2}}>📅 {bl.label}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:4,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}: −{b.variable?"~":""}{formatMoney(bl.amount)}{bl.edited&&<EditedTag/>}</div></ForecastLine>; })}
-                  {skippedLines(day).map((sk,si)=><ForecastLine key={`sk${si}`} label={`Edit ${sk.label}, skipped`} onOpen={openOcc?()=>openOcc(sk.occurrence):null}><div style={{color:C.muted,fontSize:12,marginTop:2}}><span style={{textDecoration:"line-through"}}>{sk.moneyIn?"+":"−"}{formatMoney(sk.amount)} {sk.label}</span><EditedTag text="Skipped"/></div></ForecastLine>)}
-                  {isToday&&!day.income&&!day.bills.length&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>Tap to see balance breakdown</div>}
+                {depositLines(day).map((dl,di)=><ForecastLine key={`dep${di}`} label={`Edit ${dl.label}`} onOpen={openOcc&&dl.occurrence?()=>openOcc(dl.occurrence):null}><div style={{color:C.green,fontWeight:700,fontSize:13,marginTop:3}}>💰 +{formatMoney(dl.amount)} {dl.label}{dl.edited&&<EditedTag/>}</div>{dl.low!=null&&<div style={{color:C.muted,fontSize:13,marginTop:1}}>{`Pay varies: ${formatMoney(dl.low)} to ${formatMoney(dl.high)}`}</div>}</ForecastLine>)}
+                  {billLines(day).map((bl,j)=>{ const b=bl.bill||{}; return <ForecastLine key={j} label={`Edit ${bl.label}`} onOpen={openOcc&&bl.occurrence?()=>openOcc(bl.occurrence):null}><div style={{color:C.gold,fontSize:13,marginTop:2}}>📅 {bl.label}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:13,marginLeft:4,fontWeight:700}}>est</span>}: −{b.variable?"~":""}{formatMoney(bl.amount)}{bl.edited&&<EditedTag/>}</div></ForecastLine>; })}
+                  {skippedLines(day).map((sk,si)=><ForecastLine key={`sk${si}`} label={`Edit ${sk.label}, skipped`} onOpen={openOcc?()=>openOcc(sk.occurrence):null}><div style={{color:C.muted,fontSize:13,marginTop:2}}><span style={{textDecoration:"line-through"}}>{sk.moneyIn?"+":"−"}{formatMoney(sk.amount)} {sk.label}</span><EditedTag text="Skipped"/></div></ForecastLine>)}
+                  {isToday&&!day.income&&!day.bills.length&&<div style={{color:C.muted,fontSize:13,marginTop:2}}>Tap to see balance breakdown</div>}
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}>
                   <div style={{fontSize:17,fontWeight:800,fontFamily:"Georgia,serif",color:neg?C.redBright:low?C.goldBright:C.greenBright}}>{formatBalance(day.balance)}</div>
-                  <div style={{color:C.muted,fontSize:9}}>balance</div>
+                  <div style={{color:C.muted,fontSize:13}}>balance</div>
                 </div>
               </div>
               <Bar v={Math.max(0,day.balance)} max={barMax} color={neg?C.red:low?C.gold:C.green} h={4}/>
-              {neg&&<div style={{marginTop:8,color:C.redBright,fontSize:12,fontWeight:600}}>⚠️ Projected overdraft: NSF fees $45 to $48. Move money now.</div>}
-              {low&&!neg&&<div style={{marginTop:6,color:C.goldBright,fontSize:11}}>⚠ Getting low. Hold non-essential spending.</div>}
+              {neg&&<div style={{marginTop:8,color:C.redBright,fontSize:13,fontWeight:600}}>Heads up: an overdraft here usually costs $45 to $48 in NSF fees. Tap the day to see what lands on it.</div>}
+              {low&&!neg&&<div style={{marginTop:6,color:C.goldBright,fontSize:13}}>Heads up: this day runs close to empty.</div>}
             </div>
             {isDrilled&&(
               <div style={{borderTop:`1px solid ${C.border}`,padding:"12px 18px 14px",background:"rgba(0,0,0,0.2)"}}>
-                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,marginBottom:10}}>Cash flow breakdown</div>
+                <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:10}}>Cash flow breakdown</div>
                 {/* Same owner as the Time Machine drill-down (lib/forecastWalk.js): cents throughout,
                     so the equation is exactly true; the collapsed row above stays floored whole dollars. */}
                 {(() => {
@@ -6763,22 +6951,22 @@ function PlanAhead({data, setAppData, setScreen}){
                   return (<>
                     {(w.hasWalk ? w.rows : w.billRows).map((r,ri)=>(
                       <div key={ri} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}>
-                        <span style={{color:r.key==="opening"?C.muted:C.mutedHi,fontSize:r.key==="opening"?11:12}}>
+                        <span style={{color:r.key==="opening"?C.muted:C.mutedHi,fontSize:TYPE_MIN}}>
                           {r.key==="income"?"💰 ":r.key==="bill"?"📅 ":r.key==="spend"?"🛒 ":""}{r.label}
-                          {r.key==="bill"&&r.bill&&r.bill.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:5,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}
-                          {r.key==="spend"&&<span style={{color:C.muted,fontSize:9}}>{correctionsOf(data).dailySpend!=null?" (your figure)":" (30d avg)"}</span>}
+                          {r.key==="bill"&&r.bill&&r.bill.origin==="manual"&&<span style={{color:C.tealBright,fontSize:13,marginLeft:5,fontWeight:700}}>est</span>}
+                          {r.key==="spend"&&<span style={{color:C.muted,fontSize:13}}>{correctionsOf(data).dailySpend!=null?" (your figure)":" (30d avg)"}</span>}
                         </span>
-                        <span style={{color:COLOR[r.key],fontWeight:r.key==="opening"||r.key==="spend"?400:700,fontSize:r.key==="opening"?11:12}}>{r.sign}{r.key==="bill"&&r.bill&&r.bill.variable?"~":""}{r.value}</span>
+                        <span style={{color:COLOR[r.key],fontWeight:r.key==="opening"||r.key==="spend"?400:700,fontSize:TYPE_MIN}}>{r.sign}{r.key==="bill"&&r.bill&&r.bill.variable?"~":""}{r.value}</span>
                       </div>
                     ))}
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",borderTop:`1px solid ${C.border}`,paddingTop:8,marginTop:4}}>
                       <div>
                         <span style={{color:C.cream,fontWeight:700,fontSize:13}}>{isToday?"Current balance":"Projected balance (est.)"}</span>
-                        {w.roundedFromText&&<div style={{color:C.muted,fontSize:9,marginTop:2}}>Shown as {w.headlineText} above: a balance rounds down</div>}
+                        {w.roundedFromText&&<div style={{color:C.muted,fontSize:13,marginTop:2}}>Shown as {w.headlineText} above: a balance rounds down</div>}
                       </div>
                       <span style={{color:neg?C.redBright:low?C.goldBright:C.greenBright,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{w.closingText}</span>
                     </div>
-                    {w.hasWalk&&<div style={{marginTop:6,color:C.muted,fontSize:10,lineHeight:1.7}}>
+                    {w.hasWalk&&<div style={{marginTop:6,color:C.muted,fontSize:13,lineHeight:1.7}}>
                       {w.openingText}{w.incomeCents>0&&<span style={{color:C.green}}> +{w.incomeText}</span>}{w.billsCents>0&&<span style={{color:C.gold}}> −{formatMoney(w.billsCents/100,{cents:true})} bills</span>}<span style={{color:C.muted}}> −{w.spendText} spend</span>
                     </div>}
                   </>);
@@ -6792,6 +6980,21 @@ function PlanAhead({data, setAppData, setScreen}){
     {editOcc&&setAppData&&<OccurrenceSheet occ={editOcc} data={data} setAppData={setAppData} onClose={()=>setEditOcc(null)}/>}
     {showExpected&&setAppData&&<ExpectedItemSheet data={data} setAppData={setAppData} onClose={()=>setShowExpected(false)}/>}
     {showDailySpend&&setAppData&&<DailySpendSheet data={data} setAppData={setAppData} onClose={()=>setShowDailySpend(false)}/>}
+    {explainWatch&&(
+      <HowWeGotThis
+        title="Starting balance"
+        value={safeToSpendView(SafeSpendEngine.calculate(data)).balanceText}
+        meaning="Where the forecast starts from: what is in your everyday accounts right now. Every day after this one adds your expected pay and takes off the bills and average spending."
+        inputs={[
+          {label:"Est. daily spend", value:`$${(FinancialCalcEngine.avgDailySpend(data)||0).toFixed(0)}/day`},
+          {label:"Pay frequency", value:frequencyLabel((data.incomes||[])[0]?.freq||"biweekly")},
+          {label:"Bills tracked", value:`${(data.bills||[]).length}`},
+        ]}
+        changeLabel={setAppData?"Change your daily spend":null}
+        onChange={setAppData?()=>{setExplainWatch(false);setShowDailySpend(true);}:null}
+        onClose={()=>setExplainWatch(false)}/>
+    )}
+    <ScreenFootnote>Forecast projects forward from today using your bank balance, income schedule, bills, and average daily spending. Not financial advice.</ScreenFootnote>
   </div>;
 }
 
@@ -6810,7 +7013,7 @@ function AddCustomCategory({onAdd}){
     setVal(""); setShow(false);
   };
   if(!show) return (
-    <button onClick={()=>setShow(true)} style={{background:"none",border:`1px dashed ${C.green}55`,borderRadius:10,padding:"8px 16px",color:C.green,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",width:"100%"}}>
+    <button onClick={()=>setShow(true)} style={{background:"none",border:`1px dashed ${C.green}55`,borderRadius:10,padding:"8px 16px",color:C.green,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",width:"100%"}}>
       + Add custom category
     </button>
   );
@@ -6820,7 +7023,7 @@ function AddCustomCategory({onAdd}){
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
         {QUICK_CATS.map(c=>(
           <button key={c} onClick={()=>save(c)}
-            style={{background:C.green+"14",border:`1px solid ${C.green}33`,borderRadius:99,padding:"5px 12px",color:C.greenBright,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:30}}>
+            style={{background:C.green+"14",border:`1px solid ${C.green}33`,borderRadius:99,padding:"5px 12px",color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:30}}>
             {c}
           </button>
         ))}
@@ -6830,8 +7033,8 @@ function AddCustomCategory({onAdd}){
         <input value={val} onChange={e=>setVal(e.target.value)} placeholder="Or type a custom name…"
           onKeyDown={e=>{if(e.key==="Enter") save();}}
           style={{flex:1,background:C.cardAlt,border:`1px solid ${C.green}`,borderRadius:10,padding:"8px 12px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}} autoFocus/>
-        <button onClick={()=>save()} style={{background:C.green,border:"none",borderRadius:10,padding:"8px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>Add</button>
-        <button aria-label="Close" onClick={()=>{setShow(false);setVal("");}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 12px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>✕</button>
+        <button onClick={()=>save()} style={{background:C.green,border:"none",borderRadius:10,padding:"8px 14px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>Add</button>
+        <button aria-label="Close" onClick={()=>{setShow(false);setVal("");}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 12px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>✕</button>
       </div>
     </div>
   );
@@ -6913,14 +7116,14 @@ function IncomeDetectionBanner({transactions, incomes, setAppData, country}){ //
       <span style={{fontSize:20,flexShrink:0}}>💡</span>
       <div style={{flex:1,minWidth:0}}>
         <div style={{color:C.greenBright,fontWeight:700,fontSize:13,marginBottom:2}}>Looks like a regular deposit</div>
-        <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5}}>
+        <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5}}>
           <strong style={{color:C.cream}}>{c0.name}</strong> appears {c0.count}× averaging <strong style={{color:C.greenBright}}>${c0.avgAmount.toLocaleString()}</strong>. Is this your {payWord(country)}?
         </div>
         <div style={{display:"flex",gap:8,marginTop:10}}>
-          <button onClick={addIncome} style={{background:C.green,border:"none",borderRadius:99,padding:"7px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>
+          <button onClick={addIncome} style={{background:C.green,border:"none",borderRadius:99,padding:"7px 14px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>
             Yes, add as income ✓
           </button>
-          <button onClick={dismiss} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"7px 12px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>
+          <button onClick={dismiss} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"7px 12px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>
             Not a {payWord(country)}
           </button>
         </div>
@@ -6955,8 +7158,8 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
         </span>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{color:overBudget?C.red:color,fontWeight:700}}>${(amt||0).toFixed(0)}
-            {budget>0&&<span style={{color:overBudget?C.redBright:C.muted,fontSize:11}}> / ${(budget||0).toFixed(0)}</span>}
-            <span style={{color:C.muted,fontSize:11}}> ({catTxns.length}×)</span>
+            {budget>0&&<span style={{color:overBudget?C.redBright:C.muted,fontSize:13}}> / ${(budget||0).toFixed(0)}</span>}
+            <span style={{color:C.muted,fontSize:13}}> ({catTxns.length}×)</span>
           </span>
           <span style={{color:C.muted,fontSize:14,transition:"transform .2s",transform:open?"rotate(90deg)":"none",display:"inline-block"}}>›</span>
         </div>
@@ -6966,46 +7169,46 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
       {/* Budget progress */}
       {budget>0&&(
         <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
-          <div style={{color:overBudget?C.redBright:C.muted,fontSize:11,fontWeight:overBudget?700:400}}>
+          <div style={{color:overBudget?C.redBright:C.muted,fontSize:13,fontWeight:overBudget?700:400}}>
             {overBudget ? `⚠️ $${((amt||0)-(budget||0)).toFixed(0)} over budget` : `${budgetPct||0}% of $${(budget||0).toFixed(0)} budget`}
           </div>
-          <div style={{color:C.muted,fontSize:10}}>{pct}% of total</div>
+          <div style={{color:C.muted,fontSize:13}}>{pct}% of total</div>
         </div>
       )}
-      {!budget&&<div style={{color:C.muted,fontSize:11,marginTop:4}}>{pct}% of spending this month</div>}
+      {!budget&&<div style={{color:C.muted,fontSize:13,marginTop:4}}>{pct}% of spending this month</div>}
       {open&&(
         <div style={{marginTop:12,borderTop:`1px solid ${C.border}`,paddingTop:10}} onClick={e=>e.stopPropagation()}>
           {/* Bills explanation — only show for Bills category */}
           {cat==="Bills"&&(
             <div style={{background:C.teal+"10",border:`1px solid ${C.teal}22`,borderRadius:10,padding:"8px 12px",marginBottom:8}}>
-              <div style={{color:C.tealBright,fontSize:11,fontWeight:600}}>📋 These are payments made this month</div>
-              <div style={{color:C.muted,fontSize:10,marginTop:2,lineHeight:1.5}}>Transactions marked ✓ match your tracked bills. Your tracked bills power the forecast. This list shows what was actually paid.</div>
+              <div style={{color:C.tealBright,fontSize:13,fontWeight:600}}>📋 These are payments made this month</div>
+              <div style={{color:C.muted,fontSize:13,marginTop:2,lineHeight:1.5}}>Transactions marked ✓ match your tracked bills. Your tracked bills power the forecast. This list shows what was actually paid.</div>
             </div>
           )}
           {/* Budget setter */}
           <div style={{marginBottom:10,padding:"8px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
             {editBudget ? (
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                <span style={{color:C.muted,fontSize:12,flexShrink:0}}>Monthly budget:</span>
+                <span style={{color:C.muted,fontSize:13,flexShrink:0}}>Monthly budget:</span>
                 <div style={{display:"flex",alignItems:"center",flex:1,background:C.card,border:`1px solid ${color}`,borderRadius:8,overflow:"hidden"}}>
-                  <span style={{color:C.muted,padding:"0 6px",fontSize:12}}>$</span>
+                  <span style={{color:C.muted,padding:"0 6px",fontSize:13}}>$</span>
                   <input value={budgetVal} onChange={e=>setBudgetVal(e.target.value)} type="number" inputMode="decimal" placeholder="0"
                     autoFocus onKeyDown={e=>e.key==="Enter"&&saveBudget()}
                     style={{flex:1,background:"none",border:"none",padding:"6px 4px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
                 </div>
-                <button onClick={saveBudget} style={{background:color,border:"none",borderRadius:8,padding:"6px 10px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✓</button>
-                <button aria-label="Close" onClick={()=>setEditBudget(false)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 8px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✕</button>
+                <button onClick={saveBudget} style={{background:color,border:"none",borderRadius:8,padding:"6px 10px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✓</button>
+                <button aria-label="Close" onClick={()=>setEditBudget(false)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 8px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✕</button>
               </div>
             ) : (
               <button onClick={e=>{e.stopPropagation();setBudgetVal(budget?String(budget):"");setEditBudget(true);}}
-                style={{background:"none",border:"none",color:budget?color:C.muted,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",padding:0}}>
+                style={{background:"none",border:"none",color:budget?color:C.muted,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",padding:0}}>
                 {budget ? `📊 Budget: $${budget}/mo. Tap to edit`: "＋ Set monthly budget for this category"}
               </button>
             )}
           </div>
           {/* Transaction list */}
           {catTxns.length===0
-            ? <div style={{color:C.muted,fontSize:12}}>No transactions in this category this month.</div>
+            ? <div style={{color:C.muted,fontSize:13}}>No transactions in this category this month.</div>
             : (()=>{
               const sorted = [...catTxns].sort((a,b)=>b.amount-a.amount); // Sprint 6b: copy before sort — catTxns is a prop
               const visible = showAllTxns ? sorted : sorted.slice(0, TXN_LIMIT);
@@ -7018,10 +7221,10 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
                     <div key={j} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:j<visible.length-1?`1px solid ${C.border}`:"none"}}>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                          <div style={{color:C.cream,fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:180}}>{t.name}</div>
-                          {linkedBill&&<span style={{background:C.green+"22",color:C.greenBright,fontSize:9,fontWeight:700,borderRadius:99,padding:"1px 6px",flexShrink:0}}>✓ {linkedBill.name}</span>}
+                          <div style={{color:C.cream,fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:180}}>{t.name}</div>
+                          {linkedBill&&<span style={{background:C.green+"22",color:C.greenBright,fontSize:13,fontWeight:700,borderRadius:99,padding:"1px 6px",flexShrink:0}}>✓ {linkedBill.name}</span>}
                         </div>
-                        <div style={{color:C.muted,fontSize:10}}>{t.date}</div>
+                        <div style={{color:C.muted,fontSize:13}}>{t.date}</div>
                       </div>
                       <span style={{color:linkedBill?C.greenBright:color,fontWeight:700,fontSize:13,flexShrink:0,marginLeft:8}}>${(t.amount||0).toFixed(2)}</span>
                     </div>
@@ -7029,13 +7232,13 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
                 })}
                 {!showAllTxns && hiddenCount > 0 && (
                   <button onClick={e=>{e.stopPropagation();setShowAllTxns(true);}}
-                    style={{width:"100%",marginTop:8,background:color+"12",border:`1px solid ${color}33`,borderRadius:10,padding:"8px",color,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
+                    style={{width:"100%",marginTop:8,background:color+"12",border:`1px solid ${color}33`,borderRadius:10,padding:"8px",color,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
                     Show {hiddenCount} more transaction{hiddenCount===1?"":"s"} ↓
                   </button>
                 )}
                 {showAllTxns && sorted.length > TXN_LIMIT && (
                   <button onClick={e=>{e.stopPropagation();setShowAllTxns(false);}}
-                    style={{width:"100%",marginTop:8,background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px",color:C.muted,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
+                    style={{width:"100%",marginTop:8,background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px",color:C.muted,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
                     Show less ↑
                   </button>
                 )}
@@ -7269,17 +7472,17 @@ function BudgetPlanCard({data, setAppData}) {
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:18}}>{overBudgetCats.length>0?"⚠️":"📊"}</span>
           <div>
-            <div style={{color:overBudgetCats.length>0?C.redBright:C.greenBright,fontWeight:800,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            <div style={{color:overBudgetCats.length>0?C.redBright:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
               {overBudgetCats.length>0?`Over budget in ${overBudgetCats.length} categor${overBudgetCats.length===1?"y":"ies"}`:"Budget Plan Active"}
             </div>
-            <div style={{color:C.muted,fontSize:10}}>
+            <div style={{color:C.muted,fontSize:13}}>
               ${Math.round(totalSpentThisMonth).toLocaleString()} / ${Math.round(totalBudgeted).toLocaleString()} this month ({budgetUsedPct}%)
             </div>
           </div>
         </div>
         <button onClick={handleOpen}
           style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 10px",
-            color:C.muted,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Edit</button>
+            color:C.muted,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Edit</button>
       </div>
       {/* Progress bar */}
       <div style={{height:4,background:C.border,borderRadius:99,overflow:"hidden"}}>
@@ -7287,7 +7490,7 @@ function BudgetPlanCard({data, setAppData}) {
           background:overBudgetCats.length>0?C.red:budgetUsedPct>80?C.orange:C.green}}/>
       </div>
       {overBudgetCats.length>0&&(
-        <div style={{color:C.muted,fontSize:10,marginTop:6}}>
+        <div style={{color:C.muted,fontSize:13,marginTop:6}}>
           {overBudgetCats.map(([cat,limit])=>`${catEmoji[cat]||""}${cat}: $${Math.round((monthSpend[cat]||0)-limit)} over`).join(" · ")}
         </div>
       )}
@@ -7302,17 +7505,17 @@ function BudgetPlanCard({data, setAppData}) {
       display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
       <div style={{flex:1}}>
         <div style={{color:C.greenBright,fontWeight:800,fontSize:13,marginBottom:2}}>✨ Build Your Budget Plan</div>
-        <div style={{color:C.muted,fontSize:11,lineHeight:1.5}}>
+        <div style={{color:C.muted,fontSize:13,lineHeight:1.5}}>
           We'll suggest spending limits for groceries, clothing, extracurriculars and more, based on your ${Math.round(netMo).toLocaleString()}/mo take-home.
         </div>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
         <button onClick={handleOpen}
           style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",
-            borderRadius:10,padding:"8px 14px",color:"#041810",fontWeight:800,fontSize:12,
+            borderRadius:10,padding:"8px 14px",color:"#041810",fontWeight:800,fontSize:13,
             cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>Build Plan</button>
         <button onClick={handleDismiss}
-          style={{background:"none",border:"none",color:C.muted,fontSize:10,cursor:"pointer",
+          style={{background:"none",border:"none",color:C.muted,fontSize:13,cursor:"pointer",
             fontFamily:"inherit",padding:0}}>No thanks</button>
       </div>
     </div>
@@ -7332,7 +7535,7 @@ function BudgetPlanCard({data, setAppData}) {
           <div style={{color:C.greenBright,fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
             {accepted?"✅ Budget Plan Saved!":"📊 Your Budget Plan"}
           </div>
-          <div style={{color:C.muted,fontSize:11,marginTop:2}}>
+          <div style={{color:C.muted,fontSize:13,marginTop:2}}>
             ~${Math.round(discret).toLocaleString()}/mo discretionary · adjust any amount · add categories
           </div>
         </div>
@@ -7346,8 +7549,8 @@ function BudgetPlanCard({data, setAppData}) {
         <div style={{display:"flex",alignItems:"center",gap:6}}>
           <span style={{fontSize:14}}>💰</span>
           <div>
-            <div style={{color:C.greenBright,fontWeight:700,fontSize:11}}>Savings target included</div>
-            <div style={{color:C.muted,fontSize:10}}>${Math.round(savingsMo).toLocaleString()}/mo ({Math.round(savingsRate*100)}% of take-home) set aside before this budget</div>
+            <div style={{color:C.greenBright,fontWeight:700,fontSize:13}}>Savings target included</div>
+            <div style={{color:C.muted,fontSize:13}}>${Math.round(savingsMo).toLocaleString()}/mo ({Math.round(savingsRate*100)}% of take-home) set aside before this budget</div>
           </div>
         </div>
       </div>
@@ -7364,17 +7567,17 @@ function BudgetPlanCard({data, setAppData}) {
               padding:"8px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
               <span style={{fontSize:15,flexShrink:0}}>{emoji}</span>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{cat}</div>
-                {meta?.why&&<div style={{color:C.muted,fontSize:9,marginTop:1}}>{meta.why}</div>}
+                <div style={{color:C.cream,fontSize:13,fontWeight:600}}>{cat}</div>
+                {meta?.why&&<div style={{color:C.muted,fontSize:13,marginTop:1}}>{meta.why}</div>}
               </div>
               <div style={{display:"flex",alignItems:"center",background:C.card,
                 border:`1px solid ${cc}55`,borderRadius:8,overflow:"hidden",width:90,flexShrink:0}}>
-                <span style={{color:C.muted,padding:"0 4px",fontSize:11}}>$</span>
+                <span style={{color:C.muted,padding:"0 4px",fontSize:13}}>$</span>
                 <input type="number" inputMode="decimal" value={val}
                   onChange={e=>setEditVals(prev=>({...prev,[cat]:e.target.value}))}
                   style={{width:50,background:"none",border:"none",padding:"6px 2px",color:C.cream,
-                    fontSize:12,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
-                <span style={{color:C.muted,padding:"0 3px",fontSize:9}}>/mo</span>
+                    fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
+                <span style={{color:C.muted,padding:"0 3px",fontSize:13}}>/mo</span>
               </div>
               <button aria-label="Remove category" onClick={()=>handleDeleteCat(cat)}
                 style={{background:"none",border:"none",color:C.muted,cursor:"pointer",
@@ -7392,17 +7595,17 @@ function BudgetPlanCard({data, setAppData}) {
               placeholder="Category name (e.g. Gym, Art Classes)"
               onKeyDown={e=>e.key==="Enter"&&handleAddCustom()}
               style={{flex:1,background:"none",border:`1px solid ${C.border}`,borderRadius:8,
-                padding:"7px 10px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none"}}/>
+                padding:"7px 10px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
             <button onClick={handleAddCustom}
               style={{background:C.green,border:"none",borderRadius:8,padding:"7px 10px",
-                color:"#041810",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Add</button>
+                color:"#041810",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Add</button>
             <button aria-label="Close" onClick={()=>{setShowAddCat(false);setCustomCat("");}}
               style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0}}>✕</button>
           </div>
         ) : (
           <button onClick={()=>setShowAddCat(true)}
             style={{background:"none",border:`1px dashed ${C.green}44`,borderRadius:10,
-              padding:"9px 10px",color:C.green,fontWeight:700,fontSize:12,
+              padding:"9px 10px",color:C.green,fontWeight:700,fontSize:13,
               cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
             ＋ Add a category
           </button>
@@ -7413,18 +7616,18 @@ function BudgetPlanCard({data, setAppData}) {
       <div style={{padding:"9px 12px",background:overDiscret?C.red+"18":C.green+"12",
         borderRadius:10,marginBottom:10,border:`1px solid ${overDiscret?C.red:C.green}33`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <span style={{color:C.muted,fontSize:11}}>Total budgeted</span>
+          <span style={{color:C.muted,fontSize:13}}>Total budgeted</span>
           <span style={{color:overDiscret?C.redBright:C.greenBright,fontWeight:800,fontSize:13}}>
             ${Math.round(totalEdited).toLocaleString()} / mo
           </span>
         </div>
         {overDiscret&&(
-          <div style={{color:C.redBright,fontSize:10,marginTop:3}}>
+          <div style={{color:C.redBright,fontSize:13,marginTop:3}}>
             ⚠️ ${Math.round(totalEdited-discret).toLocaleString()} over your discretionary budget. Consider trimming some categories
           </div>
         )}
         {!overDiscret&&totalEdited>0&&(
-          <div style={{color:C.muted,fontSize:10,marginTop:3}}>
+          <div style={{color:C.muted,fontSize:13,marginTop:3}}>
             ${Math.round(discret-totalEdited).toLocaleString()} discretionary remaining unallocated
           </div>
         )}
@@ -7439,7 +7642,7 @@ function BudgetPlanCard({data, setAppData}) {
         </button>
         <button onClick={()=>setOpen(false)}
           style={{background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px",
-            color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+            color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
       </div>
     </div>
   );
@@ -7633,23 +7836,23 @@ function SpendScreen({data, setAppData, setScreen}){
               const txAmt = parseFloat(markBillTxn?.amount||0);
               const matchedBill = (data.bills||[]).find(b => Math.abs(parseFloat(b.amount||0) - txAmt) < 5);
               return matchedBill ? (
-                <div style={{color:C.goldBright,fontSize:12,fontWeight:700,marginBottom:6,display:"flex",alignItems:"center",gap:6}}>
+                <div style={{color:C.goldBright,fontSize:13,fontWeight:700,marginBottom:6,display:"flex",alignItems:"center",gap:6}}>
                   <span>⚠️</span> This looks like your tracked <strong>{matchedBill.name}</strong> (${parseFloat(matchedBill.amount).toFixed(2)}/mo)
                 </div>
               ) : null;
             })()}
             <div style={{color:C.cream,fontWeight:800,fontSize:16}}>Add to Monthly Bills</div>
-            <div style={{color:C.muted,fontSize:12,marginTop:3}}>This will add it to your forecast and Plan screen.</div>
+            <div style={{color:C.muted,fontSize:13,marginTop:3}}>This will add it to your forecast and Plan screen.</div>
           </div>
           <div style={{padding:"16px 20px 20px"}}>
             <div style={{marginBottom:12}}>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Bill Name</div>
+              <div style={{color:C.muted,fontSize:13,marginBottom:5}}>Bill Name</div>
               <input value={billForm.name} onChange={e=>setBillForm(v=>({...v,name:e.target.value}))}
                 style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.cream,fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}/>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
               <div>
-                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Monthly Amount</div>
+                <div style={{color:C.muted,fontSize:13,marginBottom:5}}>Monthly Amount</div>
                 <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.green}`,borderRadius:10,overflow:"hidden"}}>
                   <span style={{color:C.muted,padding:"0 10px",fontSize:14}}>$</span>
                   <input value={billForm.amount} onChange={e=>setBillForm(v=>({...v,amount:e.target.value}))} type="number" inputMode="decimal"
@@ -7657,7 +7860,7 @@ function SpendScreen({data, setAppData, setScreen}){
                 </div>
               </div>
               <div>
-                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Day Due</div>
+                <div style={{color:C.muted,fontSize:13,marginBottom:5}}>Day Due</div>
                 <select value={billForm.date} onChange={e=>setBillForm(v=>({...v,date:e.target.value}))}
                   style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}>
                   {Array.from({length:28},(_,i)=>{const n=i+1;const s=[11,12,13].includes(n)?"th":["st","nd","rd"][n%10-1]||"th";return <option key={n} value={String(n)}>{n}{s}</option>;})}
@@ -7666,21 +7869,21 @@ function SpendScreen({data, setAppData, setScreen}){
             </div>
             {/* Fixed / Variable toggle */}
             <div style={{marginBottom:12}}>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Bill Type</div>
+              <div style={{color:C.muted,fontSize:13,marginBottom:5}}>Bill Type</div>
               <div style={{display:"flex",gap:8}}>
                 {[["fixed","📌 Fixed","Same every month"],["variable","🔄 Variable","Changes monthly"]].map(([val,label,hint])=>(
                   <button key={val} onClick={()=>setBillForm(v=>({...v,type:val}))}
                     style={{flex:1,background:billForm.type===val?C.teal+"22":C.card,border:`1px solid ${billForm.type===val?C.teal:C.border}`,
                       borderRadius:10,padding:"9px 10px",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
-                    <div style={{color:billForm.type===val?C.tealBright:C.cream,fontWeight:700,fontSize:12}}>{label}</div>
-                    <div style={{color:C.muted,fontSize:10,marginTop:2}}>{hint}</div>
+                    <div style={{color:billForm.type===val?C.tealBright:C.cream,fontWeight:700,fontSize:13}}>{label}</div>
+                    <div style={{color:C.muted,fontSize:13,marginTop:2}}>{hint}</div>
                   </button>
                 ))}
               </div>
             </div>
             {/* Reports-under category */}
             <div style={{marginBottom:14}}>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Reports under (in Budget)</div>
+              <div style={{color:C.muted,fontSize:13,marginBottom:5}}>Reports under (in Budget)</div>
               <select value={billForm.category||"Other Bills"} onChange={e=>setBillForm(v=>({...v,category:e.target.value}))}
                 style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",
                   color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}>
@@ -7688,11 +7891,11 @@ function SpendScreen({data, setAppData, setScreen}){
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
-              <div style={{color:C.muted,fontSize:10,marginTop:4}}>Keeps bills separate from your discretionary spending budget.</div>
+              <div style={{color:C.muted,fontSize:13,marginTop:4}}>Keeps bills separate from your discretionary spending budget.</div>
             </div>
             <div style={{background:C.teal+"12",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",marginBottom:16}}>
-              <div style={{color:C.tealBright,fontSize:12,fontWeight:600}}>💡 This will also update your cash-flow forecast</div>
-              <div style={{color:C.muted,fontSize:11,marginTop:2}}>Your Plan screen will now include ${billForm.amount}/month on the {billForm.date ? billForm.date+"th" : ""}</div>
+              <div style={{color:C.tealBright,fontSize:13,fontWeight:600}}>💡 This will also update your cash-flow forecast</div>
+              <div style={{color:C.muted,fontSize:13,marginTop:2}}>Your Plan screen will now include ${billForm.amount}/month on the {billForm.date ? billForm.date+"th" : ""}</div>
             </div>
             <div style={{display:"flex",gap:10}}>
               <button
@@ -7742,7 +7945,7 @@ function SpendScreen({data, setAppData, setScreen}){
           <div style={{padding:"16px 20px 14px",borderBottom:`1px solid ${C.border}`}}>
             <div style={{width:36,height:4,borderRadius:99,background:C.border,margin:"0 auto 14px"}}/>
             <div style={{color:C.cream,fontWeight:800,fontSize:16}}>Apply payment to arrears</div>
-            <div style={{color:C.muted,fontSize:12,marginTop:3}}>
+            <div style={{color:C.muted,fontSize:13,marginTop:3}}>
               ${(arrearsPayTxn.amount||0).toFixed(2)} from <strong style={{color:C.mutedHi}}>{arrearsPayTxn.name}</strong>. Which bill does this pay down?
             </div>
           </div>
@@ -7750,7 +7953,7 @@ function SpendScreen({data, setAppData, setScreen}){
             {(data.bills||[]).filter(b=>parseFloat(b.arrears||0)>0).length===0?(
               <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"20px 0"}}>
                 No bills with arrears tracked yet.<br/>
-                <span style={{fontSize:11}}>Add an arrears balance in Your Bills first.</span>
+                <span style={{fontSize:13}}>Add an arrears balance in Your Bills first.</span>
               </div>
             ):(
               (data.bills||[]).filter(b=>parseFloat(b.arrears||0)>0).map((b,i)=>{
@@ -7773,20 +7976,20 @@ function SpendScreen({data, setAppData, setScreen}){
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                       <div>
                         <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{b.name}</div>
-                        <div style={{color:C.muted,fontSize:11,marginTop:2}}>${b.amount}/mo regular payment</div>
+                        <div style={{color:C.muted,fontSize:13,marginTop:2}}>${b.amount}/mo regular payment</div>
                       </div>
                       <div style={{textAlign:"right"}}>
                         <div style={{color:C.goldBright,fontWeight:800,fontSize:13}}>Owes ${arrears.toFixed(2)}</div>
-                        <div style={{color:C.muted,fontSize:10,marginTop:2}}>→ ${newBalance.toFixed(2)} after this</div>
+                        <div style={{color:C.muted,fontSize:13,marginTop:2}}>→ ${newBalance.toFixed(2)} after this</div>
                       </div>
                     </div>
                     {newBalance===0&&(
-                      <div style={{background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:10,padding:"6px 10px",color:C.greenBright,fontSize:11,fontWeight:700,textAlign:"center"}}>
+                      <div style={{background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:10,padding:"6px 10px",color:C.greenBright,fontSize:13,fontWeight:700,textAlign:"center"}}>
                         ✓ This clears the balance entirely
                       </div>
                     )}
                     {newBalance>0&&(
-                      <div style={{background:C.gold+"11",borderRadius:10,padding:"6px 10px",color:C.goldBright,fontSize:11,textAlign:"center"}}>
+                      <div style={{background:C.gold+"11",borderRadius:10,padding:"6px 10px",color:C.goldBright,fontSize:13,textAlign:"center"}}>
                         ${newBalance.toFixed(2)} still owing after this payment
                       </div>
                     )}
@@ -7850,28 +8053,28 @@ function SpendScreen({data, setAppData, setScreen}){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{color:C.cream,fontWeight:800,fontSize:15}}>Change Category</div>
-                <div style={{color:C.muted,fontSize:11,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:240}}>{recatTxn.name}</div>
+                <div style={{color:C.muted,fontSize:13,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:240}}>{recatTxn.name}</div>
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
                 {setAppData&&recatTxn.amount>0&&!isCCPayment(recatTxn,data.debts||[])&&<button onClick={()=>{
                   const day=recatTxn.date?new Date(recatTxn.date+"T12:00:00").getDate():new Date().getDate();
                   setBillForm({name:recatTxn.name,amount:(recatTxn.amount||0).toFixed(2),date:String(day)});
                   setMarkBillTxn(recatTxn);setRecatTxn(null);
-                }} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,borderRadius:99,padding:"6px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                }} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,borderRadius:99,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
                   + Add to Bills
                 </button>}
                 {/* A past deposit that was not income: a reimbursement, refund, gift, shared bill or transfer */}
                 {/* Not on a pending deposit: the bank gives the posted one a new id, and the answer would be lost. */}
                 {setAppData&&recatTxn.amount<0&&!recatTxn.pending&&(
                   <button onClick={()=>{setDepositTxn(recatTxn);setRecatTxn(null);}}
-                    style={{background:C.green+"18",border:`1px solid ${C.green}44`,color:C.greenBright,borderRadius:99,padding:"6px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                    style={{background:C.green+"18",border:`1px solid ${C.green}44`,color:C.greenBright,borderRadius:99,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
                     This isn't income
                   </button>
                 )}
                 {/* Pay arrears button — shows if transaction amount matches a bill with arrears */}
                 {setAppData&&recatTxn.amount>0&&(data.bills||[]).some(b=>parseFloat(b.arrears||0)>0)&&(
                   <button onClick={()=>{setArrearsPayTxn(recatTxn);setRecatTxn(null);}}
-                    style={{background:C.gold+"22",border:`1px solid ${C.gold}44`,color:C.goldBright,borderRadius:99,padding:"6px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                    style={{background:C.gold+"22",border:`1px solid ${C.gold}44`,color:C.goldBright,borderRadius:99,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
                     Pay arrears →
                   </button>
                 )}
@@ -7889,14 +8092,14 @@ function SpendScreen({data, setAppData, setScreen}){
             if (!key || !rules[key]) return null;
             return (
               <div style={{padding:"10px 20px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
-                <div style={{color:C.muted,fontSize:11,lineHeight:1.5,minWidth:0}}>
+                <div style={{color:C.muted,fontSize:13,lineHeight:1.5,minWidth:0}}>
                   Always <strong style={{color:C.mutedHi}}>{rules[key]}</strong> for <strong style={{color:C.mutedHi}}>{key}</strong>
                 </div>
                 <button onClick={()=>{
                   localStorage.setItem("flourish_cat_merchant_overrides", JSON.stringify(clearMerchantOverride(rules, recatTxn.name)));
                   bumpMerchantCatOv();
                   setRecatTxn(null);
-                }} style={{background:"none",border:`1px solid ${C.border}`,color:C.muted,borderRadius:99,padding:"5px 12px",cursor:"pointer",fontSize:11,fontFamily:"inherit",flexShrink:0}}>
+                }} style={{background:"none",border:`1px solid ${C.border}`,color:C.muted,borderRadius:99,padding:"5px 12px",cursor:"pointer",fontSize:13,fontFamily:"inherit",flexShrink:0}}>
                   Remove rule
                 </button>
               </div>
@@ -7907,7 +8110,7 @@ function SpendScreen({data, setAppData, setScreen}){
           <div style={{overflowY:"auto",padding:"16px 20px",flex:1}}>
             <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
               {[...ALL_CATS, ...(safeLoadLS("flourish_custom_cats", []))].map(cat=>(
-                <button key={cat} onClick={()=>recatWithSmartPrompt(recatTxn,cat)} style={{background:getCat(recatTxn)===cat?C.orange+"33":C.cardAlt,border:`1px solid ${getCat(recatTxn)===cat?C.orange:C.border}`,color:getCat(recatTxn)===cat?C.orangeBright:C.muted,borderRadius:99,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",minHeight:36}}>
+                <button key={cat} onClick={()=>recatWithSmartPrompt(recatTxn,cat)} style={{background:getCat(recatTxn)===cat?C.orange+"33":C.cardAlt,border:`1px solid ${getCat(recatTxn)===cat?C.orange:C.border}`,color:getCat(recatTxn)===cat?C.orangeBright:C.muted,borderRadius:99,padding:"8px 16px",cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:"inherit",minHeight:36}}>
                   {cat}
                 </button>
               ))}
@@ -7923,12 +8126,12 @@ function SpendScreen({data, setAppData, setScreen}){
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <div>
         <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Transactions</div>
-        <div style={{color:isDemo?C.gold:C.muted,fontSize:12,marginTop:3}}>{isDemo?"Sample data · connect your bank for real insights":"Live from your bank"}</div>
+        <div style={{color:isDemo?C.gold:C.muted,fontSize:13,marginTop:3}}>{isDemo?"Sample data · connect your bank for real insights":"Live from your bank"}</div>
       </div>
       <div style={{textAlign:"right"}}>
         <div style={{color:C.red,fontWeight:800,fontSize:15}}>−${(totalSpent||0).toFixed(0)}</div>
-        <div style={{color:C.green,fontSize:11}}>+${(totalIn||0).toFixed(0)} in</div>
-        <div style={{color:C.muted,fontSize:10,marginTop:2}}>
+        <div style={{color:C.green,fontSize:13}}>+${(totalIn||0).toFixed(0)} in</div>
+        <div style={{color:C.muted,fontSize:13,marginTop:2}}>
           {period==="week"?"This week":period==="month"?monthLabel:period==="last"?"Last month":period==="3mo"?"Last 3 months":"Last 90 days"}
         </div>
       </div>
@@ -7937,7 +8140,7 @@ function SpendScreen({data, setAppData, setScreen}){
     {/* Only deposits that COUNT as income (they repeat like pay, or the household said so) can be offered as a paycheque. */}
     {!isDemo&&<IncomeDetectionBanner transactions={incomeEvidence({ transactions: txns, depositDecisions: data.depositDecisions, depositRules: data.depositRules })} incomes={data.incomes} setAppData={setAppData} country={data.profile?.country}/>}
     <div style={{display:"flex",gap:6,background:C.surface,borderRadius:16,padding:4}}>
-      {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeBright:C.muted,borderRadius:12,padding:"9px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
+      {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeBright:C.muted,borderRadius:12,padding:"0",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
         {t==="txn"?"Transactions":t==="breakdown"?"Breakdown":"Smart Cuts"}
       </button>)}
     </div>
@@ -7946,9 +8149,9 @@ function SpendScreen({data, setAppData, setScreen}){
       <div style={{display:"grid",gridTemplateColumns:accountsWithNames.length>1?"1fr 1fr 1fr":"1fr 1fr",gap:8}}>
         {accountsWithNames.length>1&&(
           <div>
-            <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Account</div>
+            <div style={{color:C.muted,fontSize:13,marginBottom:4}}>Account</div>
             <select value={accountFilter} onChange={e=>{setAccountFilter(e.target.value);setCatFilter("All");}}
-              style={{width:"100%",background:C.card,border:`1px solid ${accountFilter!=="All"?C.blue:C.border}`,borderRadius:10,padding:"9px 10px",color:accountFilter!=="All"?C.blueBright:C.cream,fontSize:12,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
+              style={{width:"100%",background:C.card,border:`1px solid ${accountFilter!=="All"?C.blue:C.border}`,borderRadius:10,padding:"9px 10px",color:accountFilter!=="All"?C.blueBright:C.cream,fontSize:13,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
               <option value="All">All Accounts</option>
               {accountsWithNames.map(a=>{
                 const icon = isCreditLiability(a)?"💳":isSavingsAccount(a)?"🏦":isInvestmentAccount(a)?"📈":"🏦";
@@ -7958,16 +8161,16 @@ function SpendScreen({data, setAppData, setScreen}){
           </div>
         )}
         <div>
-          <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Category</div>
+          <div style={{color:C.muted,fontSize:13,marginBottom:4}}>Category</div>
           <select value={catFilter} onChange={e=>setCatFilter(e.target.value)}
-            style={{width:"100%",background:C.card,border:`1px solid ${catFilter!=="All"?C.orange:C.border}`,borderRadius:10,padding:"9px 10px",color:catFilter!=="All"?C.orangeBright:C.cream,fontSize:12,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
+            style={{width:"100%",background:C.card,border:`1px solid ${catFilter!=="All"?C.orange:C.border}`,borderRadius:10,padding:"9px 10px",color:catFilter!=="All"?C.orangeBright:C.cream,fontSize:13,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
             {cats.map(c=><option key={c} value={c}>{c}</option>)}
           </select>
         </div>
         <div>
-          <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Period</div>
+          <div style={{color:C.muted,fontSize:13,marginBottom:4}}>Period</div>
           <select value={period} onChange={e=>setPeriod(e.target.value)}
-            style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px",color:C.cream,fontSize:12,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
+            style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px",color:C.cream,fontSize:13,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
             <option value="week">This week</option>
             <option value="month">{monthLabel}</option>
             <option value="last">Last month</option>
@@ -7990,7 +8193,7 @@ function SpendScreen({data, setAppData, setScreen}){
             <>
               <div style={{fontSize:32,marginBottom:10}}>🔍</div>
               <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:6}}>No transactions match this filter</div>
-              <div style={{color:C.muted,fontSize:12}}>Try switching the category or time period above.</div>
+              <div style={{color:C.muted,fontSize:13}}>Try switching the category or time period above.</div>
             </>
           )}
         </div>
@@ -8009,12 +8212,12 @@ function SpendScreen({data, setAppData, setScreen}){
           <div style={{flex:1,minWidth:0}}>
             <div style={{color:C.cream,fontWeight:600,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txn.name}</div>
             <div style={{display:"flex",gap:6,marginTop:3,alignItems:"center"}}>
-              <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.amount<0?C.green+"18":txnDispColor+"18",border:`1px solid ${txn.amount<0?C.green:txnDispColor}33`,borderRadius:99,padding:"2px 8px",color:txn.amount<0?C.greenBright:txnDispColor,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
-                {txn.amount<0&&getCat(txn)==="Transfer"?"Received ↓ tap to label":getCat(txn)} <span style={{opacity:0.6,fontSize:9}}>✎</span>
+              <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.amount<0?C.green+"18":txnDispColor+"18",border:`1px solid ${txn.amount<0?C.green:txnDispColor}33`,borderRadius:99,padding:"2px 8px",color:txn.amount<0?C.greenBright:txnDispColor,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
+                {txn.amount<0&&getCat(txn)==="Transfer"?"Received ↓ tap to label":getCat(txn)} <span style={{opacity:0.6,fontSize:13}}>✎</span>
               </button>
-              <span style={{color:C.muted,fontSize:10}}>{txn.date}</span>
+              <span style={{color:C.muted,fontSize:13}}>{txn.date}</span>
               {txn.account_id&&accountFilter==="All"&&accountMap[txn.account_id]&&(
-                <span style={{color:C.muted,fontSize:9,background:"rgba(255,255,255,0.04)",borderRadius:99,padding:"1px 7px",border:`1px solid ${C.border}`}}>
+                <span style={{color:C.muted,fontSize:13,background:"rgba(255,255,255,0.04)",borderRadius:99,padding:"1px 7px",border:`1px solid ${C.border}`}}>
                   {accountMap[txn.account_id]?.name||"Bank"}
                 </span>
               )}
@@ -8025,12 +8228,12 @@ function SpendScreen({data, setAppData, setScreen}){
             <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
               {txn.amount<0?"+":"−"}${Math.abs(txn.amount).toFixed(2)}
             </div>
-            {txn.amount<0&&(isCashAdvance(txn)?<div style={{color:C.redBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>⚠️ CASH ADVANCE</div>:(()=>{
+            {txn.amount<0&&(isCashAdvance(txn)?<div style={{color:C.redBright,fontSize:13,fontWeight:700}}>⚠️ Cash advance</div>:(()=>{
               // "Income" only when it counts (it repeats like pay, or the household said so). A deposit they
               // answered shows their answer; anything else is simply money received.
               const st = depositStatus(txn, depCtx);
-              const word = st.counts ? "INCOME" : (st.reason && st.reason!=="income") ? reasonLabel(st.reason).toUpperCase() : "RECEIVED";
-              return <div style={{color:st.counts?C.greenBright:C.mutedHi,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>{word}</div>;
+              const word = st.counts ? "Income" : (st.reason && st.reason!=="income") ? reasonLabel(st.reason).toUpperCase() : "Received";
+              return <div style={{color:st.counts?C.greenBright:C.mutedHi,fontSize:13,fontWeight:700}}>{word}</div>;
             })())}
           </div>
         </div>
@@ -8052,19 +8255,19 @@ function SpendScreen({data, setAppData, setScreen}){
       <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
           <div>
-            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Spent · {periodLabel}</div>
+            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Spent · {periodLabel}</div>
             <div style={{fontSize:38,fontWeight:900,color:C.orangeBright,fontFamily:"Georgia,serif"}}>{`$${(bdTotal||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</div>
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
-            <div style={{color:C.muted,fontSize:10,marginBottom:2}}>{bdTxns.length} transactions</div>
-            <div style={{color:C.green,fontSize:11}}>+${(bdIn||0).toLocaleString("en-CA",{minimumFractionDigits:0})} in</div>
+            <div style={{color:C.muted,fontSize:13,marginBottom:2}}>{bdTxns.length} transactions</div>
+            <div style={{color:C.green,fontSize:13}}>+${(bdIn||0).toLocaleString("en-CA",{minimumFractionDigits:0})} in</div>
           </div>
         </div>
       </Card>
       {bdTopCats.length===0&&<div style={{background:C.card,borderRadius:16,padding:"24px 20px",textAlign:"center",border:`1px solid ${C.border}`}}>
         <div style={{fontSize:32,marginBottom:8}}>📊</div>
         <div style={{color:C.cream,fontWeight:700,fontSize:14,marginBottom:4}}>No spending data for this period</div>
-        <div style={{color:C.muted,fontSize:12}}>Try a broader time range above.</div>
+        <div style={{color:C.muted,fontSize:13}}>Try a broader time range above.</div>
       </div>}
       {/* Budget Plan Card — shown above category breakdown */}
       {period==="month"&&<BudgetPlanCard data={data} setAppData={setAppData}/>}
@@ -8083,7 +8286,7 @@ function SpendScreen({data, setAppData, setScreen}){
       {bdAllCats.length>8&&(
         <button onClick={()=>setShowAllBdCats(v=>!v)}
           style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:12,
-            padding:"11px",color:C.muted,fontSize:12,fontWeight:700,cursor:"pointer",
+            padding:"11px",color:C.muted,fontSize:13,fontWeight:700,cursor:"pointer",
             fontFamily:"inherit",marginTop:2}}>
           {showAllBdCats?"▲ Show less":`▼ Show ${bdAllCats.length-8} more categor${bdAllCats.length-8===1?"y":"ies"}`}
         </button>
@@ -8093,7 +8296,7 @@ function SpendScreen({data, setAppData, setScreen}){
     </>}
     {tab==="cuts"&&<>
       <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
-        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Potential Monthly Savings</div>
+        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Potential Monthly Savings</div>
         <div style={{fontSize:32,fontWeight:900,color:C.goldBright,fontFamily:"Georgia,serif"}}>${(()=>{
               const total = cuts.reduce((s,c)=>{
                 // saving field is like "$50/mo" or "$40–70/mo" — extract first number
@@ -8102,7 +8305,7 @@ function SpendScreen({data, setAppData, setScreen}){
               },0);
               return total > 0 ? total.toLocaleString() : "0";
             })()}</div>
-        <div style={{color:C.muted,fontSize:12}}>from {cuts.length} suggestions based on your real transactions</div>
+        <div style={{color:C.muted,fontSize:13}}>from {cuts.length} suggestions based on your real transactions</div>
       </Card>
       {cuts.length===0?<Card style={{textAlign:"center",padding:"30px 20px"}}><div style={{fontSize:40}}>🎉</div><div style={{color:C.greenBright,fontWeight:700,marginTop:10}}>All suggestions reviewed!</div></Card>
         :cuts.map(s=><Card key={s.id} glow={s.color}>
@@ -8147,10 +8350,10 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
   const { netWorth, liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <ScreenHeader title="Do" subtitle="Budget, debts, goals, retirement. Amounts and dates, nothing vague." onBack={setScreen?()=>setScreen("home"):null} cta={CC[data?.profile?.country||"CA"]?.flag+" "+CC[data?.profile?.country||"CA"]?.currency} ctaColor={CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}/>
+    <ScreenHeader title="Do" subtitle="Budget, debts, goals and retirement." onBack={setScreen?()=>setScreen("home"):null} cta={CC[data?.profile?.country||"CA"]?.flag+" "+CC[data?.profile?.country||"CA"]?.currency} ctaColor={CC[data?.profile?.country||"CA"]?.currency==="USD"?C.blue:C.green}/>
     <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
       {[["goals","My Goals"],["sim","Debt Sim"],["worth","Net Worth"],["retire","Retirement"],["forecast","Wealth"],["budget","Budget"],["personality","Personality"],["tax","Tax Tips"],["learn","Learn"]].map(([key,lbl])=>(
-        <button key={key} onClick={()=>setTab(key)} style={{flexShrink:0,background:tab===key?C.purple+"22":C.cardAlt,border:`1px solid ${tab===key?C.purple:C.border}`,color:tab===key?C.purpleBright:C.muted,borderRadius:10,padding:"8px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>{lbl}</button>
+        <button key={key} onClick={()=>setTab(key)} style={{flexShrink:0,background:tab===key?C.purple+"22":C.cardAlt,border:`1px solid ${tab===key?C.purple:C.border}`,color:tab===key?C.purpleBright:C.muted,borderRadius:10,padding:"8px 12px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>{lbl}</button>
       ))}
     </div>
     {/* ── MY GOALS TAB ─────────────────────────────────────── */}
@@ -8195,13 +8398,13 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
           {/* Header row */}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div>
-              <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
+              <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
                 {goals.length===0?"Set goals and track progress toward them."
                   :`${goals.length} goal${goals.length===1?"":"s"} · $${goals.reduce((s,g)=>s+parseFloat(g.saved||g.current||0),0).toLocaleString()} saved so far`}
               </div>
             </div>
             <button onClick={openAdd}
-              style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"8px 16px",color:"#fff",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:36}}>
+              style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:36}}>
               + Add Goal
             </button>
           </div>
@@ -8237,11 +8440,11 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                     <span style={{fontSize:22,flexShrink:0}}>{goalType.icon}</span>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{color:C.cream,fontWeight:800,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.name||g.label||"Goal"}</div>
-                      {g.notes&&<div style={{color:C.muted,fontSize:11,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.notes}</div>}
+                      {g.notes&&<div style={{color:C.muted,fontSize:13,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.notes}</div>}
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
                       <div style={{color:col,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{pct}%</div>
-                      <div style={{color:C.muted,fontSize:9}}>complete</div>
+                      <div style={{color:C.muted,fontSize:13}}>complete</div>
                     </div>
                   </div>
                   {/* Progress bar */}
@@ -8256,12 +8459,12 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                       ["Monthly","monthly", monthly>0?`$${monthly}/mo`:"Not set", monthly>0?col:C.muted],
                     ].map(([lbl,field,display,color])=>(
                       <div key={field} style={{background:C.cardAlt,borderRadius:10,padding:"8px 10px"}}>
-                        <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{lbl}</div>
+                        <div style={{color:C.muted,fontSize:13,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{lbl}</div>
                         <div style={{display:"flex",alignItems:"center",background:C.bg,border:`1px solid ${C.border}`,borderRadius:7,overflow:"hidden"}}>
-                          {field!=="monthly"&&<span style={{color:C.muted,fontSize:10,padding:"0 3px 0 5px"}}>$</span>}
+                          {field!=="monthly"&&<span style={{color:C.muted,fontSize:13,padding:"0 3px 0 5px"}}>$</span>}
                           <input value={g[field]||""} onChange={e=>updateField(i,field,e.target.value)}
                             type="number" inputMode="decimal" placeholder="0"
-                            style={{flex:1,background:"none",border:"none",padding:"5px 4px 5px 0",color,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",width:0,fontWeight:700}}/>
+                            style={{flex:1,background:"none",border:"none",padding:"5px 4px 5px 0",color,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",width:0,fontWeight:700}}/>
                         </div>
                       </div>
                     ))}
@@ -8269,14 +8472,14 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                   {/* Time estimate */}
                   {remaining>0&&(
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                         {moToGo
                           ? `$${remaining.toLocaleString()} to go · ~${moToGo} month${moToGo===1?"":"s"}`
                           : `$${remaining.toLocaleString()} remaining · add monthly contribution to see timeline`}
                       </div>
                       <div style={{display:"flex",gap:6}}>
                         <button onClick={()=>openEdit(g,i)}
-                          style={{background:col+"18",border:`1px solid ${col}33`,borderRadius:8,padding:"5px 10px",color:col,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:28}}>
+                          style={{background:col+"18",border:`1px solid ${col}33`,borderRadius:8,padding:"5px 10px",color:col,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:28}}>
                           Edit
                         </button>
                         <button aria-label="Remove goal" onClick={()=>removeGoal(i)}
@@ -8285,7 +8488,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                     </div>
                   )}
                   {remaining<=0&&(
-                    <div style={{background:C.green+"14",border:`1px solid ${C.green}33`,borderRadius:10,padding:"8px 12px",color:C.greenBright,fontWeight:700,fontSize:12,textAlign:"center"}}>
+                    <div style={{background:C.green+"14",border:`1px solid ${C.green}33`,borderRadius:10,padding:"8px 12px",color:C.greenBright,fontWeight:700,fontSize:13,textAlign:"center"}}>
                       🎉 Goal reached! Congratulations!
                     </div>
                   )}
@@ -8302,11 +8505,11 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               </div>
               {/* Goal name — type selector */}
               <div style={{marginBottom:10}}>
-                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Goal Type</div>
+                <div style={{color:C.muted,fontSize:13,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Goal Type</div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   {GOAL_TYPES.map(t=>(
                     <button key={t.label} onClick={()=>setForm(v=>({...v,name:t.label}))}
-                      style={{background:form.name===t.label?t.color+"33":"rgba(255,255,255,0.04)",border:`1px solid ${form.name===t.label?t.color+"66":C.border}`,borderRadius:10,padding:"7px 12px",color:form.name===t.label?t.color:C.muted,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:34}}>
+                      style={{background:form.name===t.label?t.color+"33":"rgba(255,255,255,0.04)",border:`1px solid ${form.name===t.label?t.color+"66":C.border}`,borderRadius:10,padding:"7px 12px",color:form.name===t.label?t.color:C.muted,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:34}}>
                       {t.icon} {t.label}
                     </button>
                   ))}
@@ -8321,9 +8524,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}>
                 {[["Target $","target"],["Saved so far $","saved"],["Monthly $ contribution","monthly"]].map(([lbl,field])=>(
                   <div key={field}>
-                    <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{lbl}</div>
+                    <div style={{color:C.muted,fontSize:13,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{lbl}</div>
                     <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
-                      <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
+                      <span style={{color:C.muted,fontSize:13,padding:"0 5px 0 8px"}}>$</span>
                       <input value={form[field]||""} onChange={e=>setForm(v=>({...v,[field]:e.target.value}))}
                         type="number" inputMode="decimal" placeholder="0"
                         style={{flex:1,background:"none",border:"none",padding:"10px 8px 10px 0",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:600}}/>
@@ -8333,10 +8536,10 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               </div>
               {/* Notes */}
               <div style={{marginBottom:14}}>
-                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Notes (optional)</div>
+                <div style={{color:C.muted,fontSize:13,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Notes (optional)</div>
                 <input value={form.notes||""} onChange={e=>setForm(v=>({...v,notes:e.target.value}))}
                   placeholder={payWord(data.profile?.country)==="paycheck"?"e.g. 401(k) at Fidelity, contributing $200/paycheck":"e.g. RRSP at TD Bank, contributing $200/paycheque"}
-                  style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
+                  style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
               </div>
               {/* Timeline preview */}
               {form.target&&form.monthly&&parseFloat(form.monthly)>0&&(()=>{
@@ -8344,7 +8547,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                 const months = Math.ceil(remaining/parseFloat(form.monthly));
                 const d = new Date(); d.setMonth(d.getMonth()+months);
                 return remaining>0?(
-                  <div style={{background:C.purple+"12",border:`1px solid ${C.purple}33`,borderRadius:10,padding:"8px 12px",marginBottom:14,color:C.purpleBright,fontSize:12,fontWeight:700,textAlign:"center"}}>
+                  <div style={{background:C.purple+"12",border:`1px solid ${C.purple}33`,borderRadius:10,padding:"8px 12px",marginBottom:14,color:C.purpleBright,fontSize:13,fontWeight:700,textAlign:"center"}}>
                     📅 At ${parseFloat(form.monthly).toLocaleString()}/mo → reached {d.toLocaleDateString("en-CA",{month:"long",year:"numeric"})} (~{months} month{months===1?"":"s"})
                   </div>
                 ):null;
@@ -8370,8 +8573,8 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               onClick={()=>setScreen("coach")}>
               <span style={{fontSize:18}}>🤖</span>
               <div style={{flex:1}}>
-                <div style={{color:C.purpleBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Ask Coach about your goals</div>
-                <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>Your goals are shared with the AI Coach. Ask it to suggest contributions or adjust timelines.</div>
+                <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Ask Coach about your goals</div>
+                <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>Your goals are shared with the AI Coach. Ask it to suggest contributions or adjust timelines.</div>
               </div>
               <span style={{color:C.purpleBright,fontSize:16}}>→</span>
             </div>
@@ -8387,39 +8590,39 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
           <span style={{fontSize:16,flexShrink:0}}>⚡</span>
           <div>
             <div style={{color:C.goldBright,fontWeight:700,fontSize:13,marginBottom:2}}>Add interest rates to run the simulator</div>
-            <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.6}}>Your credit card rate is on your statement or card agreement, typically 19.99% to 29.99%. Add it in Settings → Debts to see your exact debt-free date and total interest saved.</div>
+            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>Your credit card rate is on your statement or card agreement, typically 19.99% to 29.99%. Add it in Settings → Debts to see your exact debt-free date and total interest saved.</div>
           </div>
         </div>
       )}
-      {!noDebts&&debts.length>1&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{debts.map((d,i)=><button key={i} onClick={()=>setSelDebt(i)} style={{background:safeSelDebt===i?C.purple+"33":C.cardAlt,border:`1px solid ${selDebt===i?C.purple:C.border}`,color:safeSelDebt===i?C.purpleBright:C.muted,borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>{d.name}</button>)}</div>}
+      {!noDebts&&debts.length>1&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{debts.map((d,i)=><button key={i} onClick={()=>setSelDebt(i)} style={{background:safeSelDebt===i?C.purple+"33":C.cardAlt,border:`1px solid ${selDebt===i?C.purple:C.border}`,color:safeSelDebt===i?C.purpleBright:C.muted,borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>{d.name}</button>)}</div>}
       {!noDebts&&<div style={{background:`linear-gradient(135deg,${C.purpleDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"20px 22px",border:`1px solid ${C.purple}44`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
           <div>
-            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4}}>{debt.name}</div>
+            <div style={{color:C.muted,fontSize:13}}>{debt.name}</div>
             <div style={{fontSize:36,fontWeight:900,color:C.purpleBright,fontFamily:"Georgia,serif",letterSpacing:-1}}>{`$${bal.toLocaleString()}`}</div>
-            <div style={{color:C.muted,fontSize:12}}>{rate}% interest · ${minPay}/mo minimum</div>
+            <div style={{color:C.muted,fontSize:13}}>{rate}% interest · ${minPay}/mo minimum</div>
           </div>
           <div style={{textAlign:"right",background:C.green+"18",borderRadius:12,padding:"8px 12px",border:`1px solid ${C.green}33`}}>
-            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase"}}>Paid off</div>
+            <div style={{color:C.muted,fontSize:13}}>Paid off</div>
             <div style={{color:C.greenBright,fontWeight:800,fontSize:15}}>{payoffDate()}</div>
-            <div style={{color:C.muted,fontSize:11}}>{toYM(curr.months)}</div>
+            <div style={{color:C.muted,fontSize:13}}>{toYM(curr.months)}</div>
           </div>
         </div>
         <div style={{marginBottom:16}}>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
             <div style={{color:C.cream,fontSize:13,fontWeight:600}}>Extra monthly payment</div>
-            <div style={{color:C.purpleBright,fontWeight:800,fontSize:20}}>+{extra}<span style={{color:C.muted,fontSize:12}}>/mo</span></div>
+            <div style={{color:C.purpleBright,fontWeight:800,fontSize:20}}>+{extra}<span style={{color:C.muted,fontSize:13}}>/mo</span></div>
           </div>
           <input type="range" min={0} max={500} step={10} value={extra} onChange={e=>setExtra(Number(e.target.value))} style={{width:"100%",accentColor:C.purple,height:6,cursor:"pointer","--thumb-color":C.purple}}/>
-          <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}><span style={{color:C.muted,fontSize:10}}>+$0 (min only)</span><span style={{color:C.muted,fontSize:10}}>+$500/mo</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}><span style={{color:C.muted,fontSize:13}}>+$0 (min only)</span><span style={{color:C.muted,fontSize:13}}>+$500/mo</span></div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <div style={{background:C.green+"15",borderRadius:12,padding:"12px 14px",border:`1px solid ${C.green}33`}}>
-            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase"}}>Time saved</div>
+            <div style={{color:C.muted,fontSize:13}}>Time saved</div>
             <div style={{color:C.greenBright,fontWeight:800,fontSize:20,fontFamily:"Georgia,serif"}}>{saved>0?toYM(saved):"None"}</div>
           </div>
           <div style={{background:C.gold+"15",borderRadius:12,padding:"12px 14px",border:`1px solid ${C.gold}33`}}>
-            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase"}}>Interest saved</div>
+            <div style={{color:C.muted,fontSize:13}}>Interest saved</div>
             <div style={{color:C.goldBright,fontWeight:800,fontSize:20,fontFamily:"Georgia,serif"}}>{intSaved>0?`$${Math.round(intSaved).toLocaleString()}`:"None"}</div>
           </div>
         </div>
@@ -8433,7 +8636,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
           {[["avalanche","Avalanche","Highest rate first · saves the most"],["snowball","Snowball","Smallest balance first · fastest wins"]].map(([key,lbl,desc])=>(
             <button key={key} onClick={()=>setMethod(key)} style={{flex:1,background:method===key?C.purple+"22":C.cardAlt,border:`1px solid ${method===key?C.purple:C.border}`,borderRadius:12,padding:"12px 10px",cursor:"pointer",fontFamily:"inherit",textAlign:"center"}}>
               <div style={{color:method===key?C.purpleBright:C.cream,fontWeight:700,fontSize:13}}>{lbl}</div>
-              <div style={{color:C.muted,fontSize:11,marginTop:4,lineHeight:1.4}}>{desc}</div>
+              <div style={{color:C.muted,fontSize:13,marginTop:4,lineHeight:1.4}}>{desc}</div>
             </button>
           ))}
         </div>
@@ -8475,23 +8678,23 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       ];
       return <>
       <div style={{background:`linear-gradient(135deg,${C.tealDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"22px",border:`1px solid ${C.teal}44`}}>
-        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Your Net Worth</div>
+        <div style={{color:C.muted,fontSize:13,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Your Net Worth</div>
         <div style={{fontSize:44,fontWeight:900,color:realNetWorth<0?C.redBright:C.tealBright,fontFamily:"'Playfair Display',serif",letterSpacing:-1}}>{realNetWorth>=0?"+":"-"}$<CountUp to={Math.abs(realNetWorth)} decimals={0} sep/></div>
-        <div style={{color:C.muted,fontSize:12,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Assets minus liabilities · includes investments</div>
+        <div style={{color:C.muted,fontSize:13,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Assets minus liabilities · includes investments</div>
         <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
           {data.bankConnected
-            ? <span style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px",color:C.greenBright,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✓ Bank verified</span>
-            : <span style={{background:C.gold+"22",border:`1px solid ${C.gold}44`,borderRadius:99,padding:"2px 8px",color:C.goldBright,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📊 Estimated</span>}
-          {manualNonBankDebts>0&&<span style={{background:C.orange+"22",border:`1px solid ${C.orange}44`,borderRadius:99,padding:"2px 8px",color:C.orange,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Includes manual debt</span>}
+            ? <span style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:99,padding:"2px 8px",color:C.greenBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✓ Bank verified</span>
+            : <span style={{background:C.gold+"22",border:`1px solid ${C.gold}44`,borderRadius:99,padding:"2px 8px",color:C.goldBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📊 Estimated</span>}
+          {manualNonBankDebts>0&&<span style={{background:C.orange+"22",border:`1px solid ${C.orange}44`,borderRadius:99,padding:"2px 8px",color:C.orange,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Includes manual debt</span>}
         </div>
-        {mixedCurrencyDetected&&<div style={{marginTop:10,background:C.gold+"15",border:`1px solid ${C.gold}33`,borderRadius:10,padding:"8px 12px",color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>Your {foreignCur} account(s) are excluded from these totals ({baseCur} only). Flourish doesn't convert currencies yet. Multi-currency support is coming.</div>}
+        {mixedCurrencyDetected&&<div style={{marginTop:10,background:C.gold+"15",border:`1px solid ${C.gold}33`,borderRadius:10,padding:"8px 12px",color:C.gold,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>Your {foreignCur} account(s) are excluded from these totals ({baseCur} only). Flourish doesn't convert currencies yet. Multi-currency support is coming.</div>}
         {totalInvested>0&&<div style={{marginTop:12,display:"flex",gap:10}}>
           <div style={{flex:1,background:C.purple+"15",borderRadius:12,padding:"10px 14px",border:`1px solid ${C.purple}22`}}>
-            <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Invested</div>
+            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Invested</div>
             <div style={{color:C.purpleBright,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{formatMoney(totalInvested)}</div>
           </div>
           <div style={{flex:1,background:C.green+"15",borderRadius:12,padding:"10px 14px",border:`1px solid ${C.green}22`}}>
-            <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Gain</div>
+            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total Gain</div>
             <div style={{color:C.greenBright,fontWeight:800,fontSize:18,fontFamily:"'Playfair Display',serif"}}>+{formatMoney(totalGain)}</div>
           </div>
         </div>}
@@ -8502,13 +8705,13 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
             <div style={{fontSize:20,width:32,textAlign:"center"}}>{item.icon}</div>
             <div>
               <div style={{color:C.cream,fontWeight:600,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.label}</div>
-              {item.ticker&&<div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.ticker}{item.gainPct?` · +${item.gainPct}%`:""}</div>}
+              {item.ticker&&<div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.ticker}{item.gainPct?` · +${item.gainPct}%`:""}</div>}
               <Chip label={item.type==="investment"?"Investment 📈":item.type==="asset"?"Asset ↑":"Liability ↓"} color={item.color}/>
             </div>
           </div>
           <div style={{textAlign:"right"}}>
             <div style={{color:item.color,fontWeight:800,fontSize:15}}>{item.type==="debt"?"−":"+"}${item.value.toLocaleString()}</div>
-            {item.gain&&<div style={{color:C.greenBright,fontSize:11,fontWeight:600}}>+${item.gain.toLocaleString()}</div>}
+            {item.gain&&<div style={{color:C.greenBright,fontSize:13,fontWeight:600}}>+${item.gain.toLocaleString()}</div>}
           </div>
         </div>
       ))}</>; })()}
@@ -8529,19 +8732,19 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         <div style={{background:`linear-gradient(135deg,${C.gold}18 0%,${C.gold}08 100%)`,border:`1px solid ${C.gold}40`,borderRadius:20,padding:"18px 20px",position:"relative",overflow:"hidden"}}>
           <div style={{position:"absolute",top:-18,right:-18,fontSize:64,opacity:0.08}}>💰</div>
           <div style={{color:C.goldBright,fontWeight:800,fontSize:13,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{cfg.flag} {cfg.name}-Specific Tax Opportunities</div>
-          <div style={{color:C.muted,fontSize:12,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>Most people leave thousands on the table. These are the credits and benefits you may be missing right now.</div>
+          <div style={{color:C.muted,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>Most people leave thousands on the table. These are the credits and benefits you may be missing right now.</div>
           <div style={{display:"flex",gap:10}}>
             <div style={{background:C.gold+"22",borderRadius:12,padding:"8px 14px",textAlign:"center"}}>
               <div style={{color:C.goldBright,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{highPriority.length}</div>
-              <div style={{color:C.muted,fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:0.8}}>High Priority</div>
+              <div style={{color:C.muted,fontSize:13,fontWeight:600}}>High Priority</div>
             </div>
             <div style={{background:C.teal+"18",borderRadius:12,padding:"8px 14px",textAlign:"center"}}>
               <div style={{color:C.tealBright,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{_eligibleBenefits.length}</div>
-              <div style={{color:C.muted,fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:0.8}}>Benefits</div>
+              <div style={{color:C.muted,fontSize:13,fontWeight:600}}>Benefits</div>
             </div>
             <div style={{background:C.green+"18",borderRadius:12,padding:"8px 14px",textAlign:"center",flex:1}}>
               <div style={{color:C.greenBright,fontWeight:900,fontSize:14,fontFamily:"'Playfair Display',serif"}}>$$$</div>
-              <div style={{color:C.muted,fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:0.8}}>Unclaimed</div>
+              <div style={{color:C.muted,fontSize:13,fontWeight:600}}>Unclaimed</div>
             </div>
           </div>
         </div>
@@ -8550,7 +8753,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         {highPriority.length>0&&<>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <div style={{height:1,flex:1,background:C.gold+"33"}}/>
-            <span style={{color:C.goldBright,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🔥 High Priority</span>
+            <span style={{color:C.goldBright,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🔥 High Priority</span>
             <div style={{height:1,flex:1,background:C.gold+"33"}}/>
           </div>
           {highPriority.map((tip,i)=>(
@@ -8559,19 +8762,19 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
                 <div style={{flex:1,paddingRight:12}}>
                   <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif",lineHeight:1.3,marginBottom:6}}>{tip.title}</div>
-                  <div style={{color:C.mutedHi,fontSize:12.5,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{tip.body}</div>
+                  <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{tip.body}</div>
                 </div>
                 <div style={{background:C.gold+"18",borderRadius:12,padding:"8px 10px",textAlign:"center",flexShrink:0,minWidth:56}}>
                   <div style={{fontSize:18}}>{tip.flag}</div>
-                  <div style={{color:C.goldBright,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:0.8,marginTop:3}}>Priority</div>
+                  <div style={{color:C.goldBright,fontSize:13,fontWeight:800,marginTop:3}}>Priority</div>
                 </div>
               </div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:12,borderTop:`1px solid ${C.gold}22`}}>
                 <div>
-                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>Potential savings</div>
+                  <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>Potential savings</div>
                   <div style={{color:C.goldBright,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{tip.savings}</div>
                 </div>
-                <span style={{display:"inline-block",background:`linear-gradient(135deg,${C.gold}33,${C.gold}18)`,border:`1px solid ${C.gold}55`,borderRadius:99,padding:"8px 16px",color:C.goldBright,fontSize:11,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                <span style={{display:"inline-block",background:`linear-gradient(135deg,${C.gold}33,${C.gold}18)`,border:`1px solid ${C.gold}55`,borderRadius:99,padding:"8px 16px",color:C.goldBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                   {tip.action}
                 </span>
               </div>
@@ -8583,7 +8786,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         {medPriority.length>0&&<>
           <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
             <div style={{height:1,flex:1,background:C.border}}/>
-            <span style={{color:C.muted,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Also Worth Reviewing</span>
+            <span style={{color:C.muted,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Also Worth Reviewing</span>
             <div style={{height:1,flex:1,background:C.border}}/>
           </div>
           {medPriority.map((tip,i)=>(
@@ -8591,13 +8794,13 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
                 <div style={{flex:1,paddingRight:10}}>
                   <div style={{color:C.cream,fontWeight:700,fontSize:14,fontFamily:"'Playfair Display',serif",lineHeight:1.3,marginBottom:5}}>{tip.title}</div>
-                  <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.65,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{tip.body}</div>
+                  <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{tip.body}</div>
                 </div>
                 <div style={{fontSize:18,flexShrink:0,marginLeft:8}}>{tip.flag}</div>
               </div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:10,borderTop:`1px solid ${C.border}`}}>
                 <div style={{color:C.tealBright,fontWeight:700,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{tip.savings}</div>
-                <span style={{display:"inline-block",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:99,padding:"6px 14px",color:C.mutedHi,fontSize:11,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                <span style={{display:"inline-block",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:C.mutedHi,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                   {tip.action}
                 </span>
               </div>
@@ -8608,7 +8811,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         {/* Benefits Checker */}
         <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
           <div style={{height:1,flex:1,background:C.teal+"33"}}/>
-          <span style={{color:C.tealBright,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🎁 Benefits You May Not Be Claiming</span>
+          <span style={{color:C.tealBright,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🎁 Benefits You May Not Be Claiming</span>
           <div style={{height:1,flex:1,background:C.teal+"33"}}/>
         </div>
         {_eligibleBenefits.map((b,i)=>(
@@ -8616,12 +8819,12 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
             <div style={{width:44,height:44,borderRadius:14,background:C.teal+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{b.icon}</div>
             <div style={{flex:1,minWidth:0}}>
               <div style={{color:C.cream,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>{b.name}</div>
-              <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>{b.eligible}</div>
+              <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>{b.eligible}</div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{color:C.tealBright,fontWeight:800,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{b.amount}</span>
                 {b.url
-                  ? <a href={b.url} target="_blank" rel="noopener noreferrer" style={{color:C.tealBright,fontSize:11,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif",textDecoration:"underline"}}>{b.apply} →</a>
-                  : <span style={{color:C.tealBright,fontSize:11,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.apply} →</span>}
+                  ? <a href={b.url} target="_blank" rel="noopener noreferrer" style={{color:C.tealBright,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif",textDecoration:"underline"}}>{b.apply} →</a>
+                  : <span style={{color:C.tealBright,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.apply} →</span>}
               </div>
             </div>
           </div>
@@ -8631,7 +8834,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         <div style={{background:C.green+"10",border:`1px solid ${C.green}28`,borderRadius:16,padding:"14px 18px",textAlign:"center",marginTop:4}}>
           <div style={{fontSize:20,marginBottom:6}}>🌱</div>
           <div style={{color:C.greenBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>Not sure what applies to you?</div>
-          <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Ask your AI Coach: tell it your situation and it will identify exactly which credits you qualify for.</div>
+          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Ask your AI Coach: tell it your situation and it will identify exactly which credits you qualify for.</div>
         </div>
 
       </div>;
@@ -8649,7 +8852,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       return <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={{background:C.blueDim,border:`1px solid ${C.blue}33`,borderRadius:16,padding:"14px 16px"}}>
           <div style={{color:C.blueBright,fontWeight:700,fontSize:13,marginBottom:4}}>{cfg.flag} Registered & Tax-Advantaged Accounts</div>
-          <div style={{color:C.muted,fontSize:12,lineHeight:1.6}}>These accounts are legal ways to keep more of your money. Most people don't maximize them.</div>
+          <div style={{color:C.muted,fontSize:13,lineHeight:1.6}}>These accounts are legal ways to keep more of your money. Most people don't maximize them.</div>
         </div>
 
         {/* ── My Balances & Contributions ─────────────────────── */}
@@ -8669,14 +8872,14 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
             ["iraBalance","IRA / Roth IRA Balance","Current IRA value"],
           ]).map(([field,label,hint])=>(
             <div key={field} style={{minWidth:0}}>
-              <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>
+              <div style={{color:C.muted,fontSize:13,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>
               <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
-                <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
+                <span style={{color:C.muted,fontSize:13,padding:"0 5px 0 8px"}}>$</span>
                 <input value={ret[field]||""} onChange={e=>updateRet(field,e.target.value)}
                   type="number" inputMode="decimal" placeholder="0" title={hint}
                   style={{flex:1,minWidth:0,boxSizing:"border-box",background:"none",border:"none",padding:"10px 8px 10px 0",color:C.tealBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700}}/>
               </div>
-              <div style={{color:C.muted,fontSize:9,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{hint}</div>
+              <div style={{color:C.muted,fontSize:13,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{hint}</div>
             </div>
           ))}
           </div>
@@ -8696,17 +8899,17 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
             const mo = toMo(ret[field]||0, freq);
             return (
               <div key={field}>
-                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>
+                <div style={{color:C.muted,fontSize:13,marginBottom:5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>
                 <div style={{display:"flex",gap:6,alignItems:"center"}}>
                   <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
-                    <span style={{color:C.muted,fontSize:11,padding:"0 5px 0 8px"}}>$</span>
+                    <span style={{color:C.muted,fontSize:13,padding:"0 5px 0 8px"}}>$</span>
                     <input value={ret[field]||""} onChange={e=>updateRet(field,e.target.value)}
                       type="number" inputMode="decimal" placeholder="0"
                       style={{flex:1,minWidth:0,boxSizing:"border-box",background:"none",border:"none",padding:"10px 8px 10px 0",color:C.tealBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700}}/>
                   </div>
                   <select value={freq} onChange={e=>updateRet(freqField,e.target.value)}
                     style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 8px",
-                      color:C.mutedHi,fontSize:11,fontFamily:"inherit",outline:"none",flexShrink:0,cursor:"pointer"}}>
+                      color:C.mutedHi,fontSize:13,fontFamily:"inherit",outline:"none",flexShrink:0,cursor:"pointer"}}>
                     <option value="weekly">Weekly</option>
                     <option value="biweekly">Bi-weekly</option>
                     <option value="monthly">Monthly</option>
@@ -8714,7 +8917,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                   </select>
                 </div>
                 {ret[field]&&freq!=="monthly"&&(
-                  <div style={{color:C.teal,fontSize:9,marginTop:3,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                  <div style={{color:C.teal,fontSize:13,marginTop:3,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                     = ${mo.toFixed(0)}/mo
                   </div>
                 )}
@@ -8736,10 +8939,10 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
             const fv = bal*Math.pow(1+r,n) + (monthly>0?monthly*((Math.pow(1+r,n)-1)/r):0);
             return (
               <div style={{marginTop:12,background:C.teal+"10",border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px"}}>
-                <div style={{color:C.tealBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                <div style={{color:C.tealBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                   📈 At this rate, in 30 years: ~${(fv/1000).toFixed(0)}k
                 </div>
-                <div style={{color:C.muted,fontSize:10,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                <div style={{color:C.muted,fontSize:13,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                   Assumes 6% avg annual return · {isCA?"RRSP + TFSA":"401(k) + IRA"} combined · ${bal.toLocaleString()} current + ${monthly}/mo
                 </div>
               </div>
@@ -8754,22 +8957,22 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               <div style={{width:46,height:46,borderRadius:14,background:a.color+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{a.icon}</div>
               <div>
                 <div style={{color:a.color,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{a.name}</div>
-                <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{a.fullName}</div>
+                <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{a.fullName}</div>
               </div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
               <div style={{background:C.cardAlt,borderRadius:10,padding:"10px 12px"}}>
-                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,marginBottom:3,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Annual Limit</div>
+                <div style={{color:C.muted,fontSize:13,marginBottom:3,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Annual Limit</div>
                 <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{a.annualLimit}</div>
               </div>
               <div style={{background:C.cardAlt,borderRadius:10,padding:"10px 12px"}}>
-                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,marginBottom:3,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Tax Treatment</div>
-                <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{a.taxNote}</div>
+                <div style={{color:C.muted,fontSize:13,marginBottom:3,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Tax Treatment</div>
+                <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{a.taxNote}</div>
               </div>
             </div>
             <div style={{background:a.color+"12",border:`1px solid ${a.color}33`,borderRadius:12,padding:"10px 14px"}}>
-              <span style={{color:a.color,fontSize:11,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💡 Pro tip: </span>
-              <span style={{color:C.cream,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{a.tip}</span>
+              <span style={{color:a.color,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💡 Pro tip: </span>
+              <span style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{a.tip}</span>
             </div>
           </div>
         ))}
@@ -8842,7 +9045,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                 ["Available for spending", `${formatMoney(Math.round(spendPool))}/mo`, C.greenBright],
               ].map(([label,val,color])=>(
                 <div key={label} style={{background:C.cardAlt,borderRadius:10,padding:"8px 10px",border:`1px solid ${C.border}`}}>
-                  <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1}}>{label}</div>
+                  <div style={{color:C.muted,fontSize:13}}>{label}</div>
                   <div style={{color,fontWeight:800,fontSize:13,marginTop:2}}>{val}</div>
                 </div>
               ))}
@@ -8852,12 +9055,12 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
           {/* Active goal savings reminder */}
           {localGoalsMo>0&&(
             <div style={{background:C.purple+"18",border:`1px solid ${C.purple}33`,borderRadius:12,padding:"10px 14px"}}>
-              <div style={{color:C.purpleBright,fontWeight:700,fontSize:12,marginBottom:4}}>🎯 Saving for {activeGoals.length} goal{activeGoals.length>1?"s":""}</div>
+              <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,marginBottom:4}}>🎯 Saving for {activeGoals.length} goal{activeGoals.length>1?"s":""}</div>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
                 {activeGoals.map((g,i)=>(
                   <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{color:C.muted,fontSize:11}}>{g.name||"Goal"}</span>
-                    <span style={{color:C.purpleBright,fontSize:11,fontWeight:700}}>${parseFloat(g.monthly||Math.ceil((parseFloat(g.target||0)-parseFloat(g.saved||0))/24)).toFixed(0)}/mo</span>
+                    <span style={{color:C.muted,fontSize:13}}>{g.name||"Goal"}</span>
+                    <span style={{color:C.purpleBright,fontSize:13,fontWeight:700}}>${parseFloat(g.monthly||Math.ceil((parseFloat(g.target||0)-parseFloat(g.saved||0))/24)).toFixed(0)}/mo</span>
                   </div>
                 ))}
               </div>
@@ -8867,14 +9070,14 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
           {/* Where to save suggestions */}
           {saveSuggestions.length>0&&(
             <div style={{background:C.orange+"12",border:`1px solid ${C.orange}33`,borderRadius:12,padding:"12px 14px"}}>
-              <div style={{color:C.orange,fontWeight:800,fontSize:12,marginBottom:8}}>💡 Where you could save</div>
+              <div style={{color:C.orange,fontWeight:800,fontSize:13,marginBottom:8}}>💡 Where you could save</div>
               {saveSuggestions.map(({cat,over,potential})=>(
                 <div key={cat} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                   <div>
-                    <span style={{color:C.cream,fontSize:12}}>{catEmojis[cat]||"📌"} {cat}</span>
-                    <span style={{color:C.redBright,fontSize:10,marginLeft:6}}>${Math.round(over)} over this month</span>
+                    <span style={{color:C.cream,fontSize:13}}>{catEmojis[cat]||"📌"} {cat}</span>
+                    <span style={{color:C.redBright,fontSize:13,marginLeft:6}}>${Math.round(over)} over this month</span>
                   </div>
-                  {potential>0&&<span style={{color:C.green,fontSize:11,fontWeight:700}}>Save ~${potential}/mo</span>}
+                  {potential>0&&<span style={{color:C.green,fontSize:13,fontWeight:700}}>Save ~${potential}/mo</span>}
                 </div>
               ))}
             </div>
@@ -8889,12 +9092,12 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                 Object.entries(budgets).forEach(([k,v])=>{seed[k]=String(v);});
                 Object.entries(displayCats).forEach(([k,v])=>{if(!seed[k])seed[k]=String(v);});
                 if(setAppData) setAppData(prev=>({...prev,_budgetEditOpen:true,_budgetEditSeed:seed}));
-              }} style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:8,padding:"5px 10px",color:C.greenBright,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+              }} style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:8,padding:"5px 10px",color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
                 Edit
               </button>
             </div>
             {!hasBudgets&&(
-              <div style={{textAlign:"center",padding:"16px 0",color:C.muted,fontSize:12}}>
+              <div style={{textAlign:"center",padding:"16px 0",color:C.muted,fontSize:13}}>
                 No budget set yet. Go to <strong style={{color:C.green}}>Activity → This Month</strong> to build your budget plan, then come back here to track it.
               </div>
             )}
@@ -8906,8 +9109,8 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               return (
                 <div key={cat} style={{marginBottom:12}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                    <span style={{color:C.cream,fontSize:12,fontWeight:600}}>{catEmojis[cat]||"📌"} {cat}</span>
-                    <span style={{color:over?C.redBright:C.muted,fontSize:11,fontWeight:over?700:400}}>
+                    <span style={{color:C.cream,fontSize:13,fontWeight:600}}>{catEmojis[cat]||"📌"} {cat}</span>
+                    <span style={{color:over?C.redBright:C.muted,fontSize:13,fontWeight:over?700:400}}>
                       ${Math.round(spent).toLocaleString()} / ${Math.round(limit).toLocaleString()}
                       {over&&<span style={{color:C.redBright}}> ⚠️ ${Math.round(spent-limit)} over</span>}
                     </span>
@@ -8917,8 +9120,8 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                       background:over?C.red:pct>80?C.orange:color}}/>
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between",marginTop:3}}>
-                    <span style={{color:C.muted,fontSize:9}}>{pct}% used</span>
-                    {!over&&<span style={{color:C.muted,fontSize:9}}>${Math.round(limit-spent)} remaining</span>}
+                    <span style={{color:C.muted,fontSize:13}}>{pct}% used</span>
+                    {!over&&<span style={{color:C.muted,fontSize:13}}>${Math.round(limit-spent)} remaining</span>}
                   </div>
                 </div>
               );
@@ -8927,10 +9130,10 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
 
           {/* Savings rate note */}
           <div style={{background:C.tealDim,border:`1px solid ${C.teal}33`,borderRadius:12,padding:"10px 14px",textAlign:"center"}}>
-            <div style={{color:C.tealBright,fontSize:11,fontWeight:700}}>
+            <div style={{color:C.tealBright,fontSize:13,fontWeight:700}}>
               💰 {Math.round(savingsRate*100)}% savings target ({isCA?"RRSP/TFSA/Emergency":"401k/IRA/Emergency"}) = ${Math.round(savingsMo).toLocaleString()}/mo already reserved
             </div>
-            <div style={{color:C.muted,fontSize:10,marginTop:3}}>
+            <div style={{color:C.muted,fontSize:13,marginTop:3}}>
               Budget in Activity → This Month to set or adjust your spending limits.
             </div>
           </div>
@@ -8944,7 +9147,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       return <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div style={{background:C.greenDim,border:`1px solid ${C.green}33`,borderRadius:16,padding:"12px 16px",marginBottom:4}}>
           <div style={{color:C.greenBright,fontWeight:700,fontSize:13}}>{cfg.flag} {cfg.name} Financial Essentials</div>
-          <div style={{color:C.muted,fontSize:12,marginTop:2}}>Country-specific concepts that directly affect your money.</div>
+          <div style={{color:C.muted,fontSize:13,marginTop:2}}>Country-specific concepts that directly affect your money.</div>
         </div>
         {cfg.learnCards.concat([{emoji:"📈",title:"Compound interest: your best friend",body:"$100 at 7% for 30 years becomes $761. The same math works in reverse with debt. Start investing early. Pay debt fast.",key:"Time is the most powerful financial tool."}]).map((l,i)=>(
           <Card key={i}>
@@ -8952,7 +9155,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
             <div style={{color:C.cream,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',Georgia,serif",marginBottom:8,lineHeight:1.3}}>{l.title}</div>
             <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65,marginBottom:12}}>{l.body}</div>
             <div style={{background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:12,padding:"10px 14px"}}>
-              <span style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Key takeaway · </span>
+              <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Key takeaway · </span>
               <span style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{l.key}</span>
             </div>
           </Card>
@@ -8998,7 +9201,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
 
   const items = [...agenda.wins, ...agenda.changes, ...agenda.risks, ...(agenda.upcoming || []), ...agenda.progress];
   const card = {background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px 16px",marginBottom:12};
-  const sTitle = {color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8};
+  const sTitle = {color:C.mutedHi,fontSize:15,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8};
 
   // Never put words in the coach's mouth. The response was read as
   //   d.content?.[0]?.text || <a hard-coded opening line>
@@ -9046,19 +9249,19 @@ function MeetAgenda({ data, isCouple, setScreen }){
         } else if (r.status === 401 || r.status === 403) {
           setMeetError({ kind:"auth", text:"Your session has expired. Sign in again, then start the meeting." });
         } else {
-          setMeetError({ kind:"server", text:"The facilitator didn't answer. Your agenda above is unchanged." });
+          setMeetError({ kind:"server", text:"Your coach didn't answer. Your agenda above is unchanged." });
         }
         setBusy(false); return;
       }
       const d = await r.json().catch(()=>null);
       const text = d?.content?.[0]?.text;
       if (!text || !String(text).trim()) {
-        setMeetError({ kind:"empty", text:"The facilitator didn't answer. Your agenda above is unchanged." });
+        setMeetError({ kind:"empty", text:"Your coach didn't answer. Your agenda above is unchanged." });
         setBusy(false); return;
       }
       setMsgs([...history, { role:"assistant", content:text }]);
     } catch {
-      setMeetError({ kind:"offline", text:"Couldn't reach the facilitator. Your agenda above is unchanged." });
+      setMeetError({ kind:"offline", text:"Couldn't reach your coach. Your agenda above is unchanged." });
     }
     setBusy(false);
   };
@@ -9070,6 +9273,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
 
   return (
     <div>
+      <FirstRunTip id="meet">Tap any number to see how Flourish got it.</FirstRunTip>
       <div style={{color:C.muted,fontSize:13,marginBottom:14,lineHeight:1.5}}>Flourish wrote this agenda from your week. It doesn't add up your numbers, it reads what the engines already calculated.{facilitatorGate === "ready" ? " The coach keeps it calm and about the numbers." : ""}</div>
 
       <div style={card}>
@@ -9087,8 +9291,8 @@ function MeetAgenda({ data, isCouple, setScreen }){
           <div style={{display:"flex",gap:8}}>
             {dec.options.map((o,j)=>(
               <div key={j} style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px"}}>
-                <div style={{color:C.cream,fontSize:12,fontWeight:700,marginBottom:3}}>{o.label}</div>
-                <div style={{color:C.greenBright,fontSize:12,lineHeight:1.4}}>{o.outcome}</div>
+                <div style={{color:C.cream,fontSize:13,fontWeight:700,marginBottom:3}}>{o.label}</div>
+                <div style={{color:C.greenBright,fontSize:13,lineHeight:1.4}}>{o.outcome}</div>
               </div>
             ))}
           </div>
@@ -9100,19 +9304,19 @@ function MeetAgenda({ data, isCouple, setScreen }){
         /* Demo mode: one scripted facilitator line, read from the agenda already above. Local only —
            no /api/coach call. The real "trial" paywall below is unchanged for signed-in free-tier users. */
         <div style={{...card,background:C.cardAlt}}>
-          <div style={{color:C.goldBright,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Example · sample data</div>
-          <div style={{color:C.cream,fontSize:12.5,lineHeight:1.6}}>{demoFacilitatorLine(data, new Date()) || "Your facilitator works through the agenda above with you, one item at a time."}</div>
-          <div style={{color:C.muted,fontSize:11,lineHeight:1.5,marginTop:8}}>A scripted preview. Create a free account to run this meeting on your own numbers.</div>
+          <div style={{color:C.goldBright,fontSize:11 /* SMALL_TEXT_OK: data-provenance tag, a marker on content rather than content */,fontWeight:800,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Example · sample data</div>
+          <div style={{color:C.cream,fontSize:13,lineHeight:1.6}}>{demoFacilitatorLine(data, new Date()) || "Your coach works through the agenda above with you, one item at a time."}</div>
+          <div style={{color:C.muted,fontSize:13,lineHeight:1.5,marginTop:8}}>A scripted preview. Create a free account to run this meeting on your own numbers.</div>
         </div>
       ) : facilitatorGate === "trial" ? (
-        <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5}}>Start your trial to run the meeting with your coach.</div></div>
+        <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5}}>Start your trial to run the meeting with your coach.</div></div>
       ) : facilitatorGate === "ai-off" ? (
-        <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5}}>Coach is off in Settings. Your agenda is above.</div></div>
+        <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5}}>Coach is off in Settings. Your agenda is above.</div></div>
       ) : !started ? (
         <button onClick={start} style={{width:"100%",background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:14,padding:"13px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{isCouple?"Start the meeting":"Start solo check-in"}</button>
       ) : (
         <div style={card}>
-          <div style={{color:C.muted,fontSize:11,marginBottom:8}}>The facilitator works only from the agenda above. Nothing here moves money; a choice is only recorded after you confirm it.</div>
+          <div style={{color:C.muted,fontSize:13,marginBottom:8}}>Your coach works only from the agenda above. Nothing here moves money; a choice is only recorded after you confirm it.</div>
           {msgs.filter(m=>m.role!=="user").map((m,i)=>(
             <div key={i} style={{marginBottom:10}}>
               <YourCoachTag/>
@@ -9122,7 +9326,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
           {/* The acknowledgement of the tap: started flips synchronously, so this card replaces the
               button in the same frame. Before the first reply it says what it is doing — a bare
               ellipsis on a slow connection still reads as nothing having happened. */}
-          {busy && <div style={{color:C.mutedHi,fontSize:12.5,marginBottom:8}}>{msgs.length ? "…" : "Starting the meeting…"}</div>}
+          {busy && <div style={{color:C.mutedHi,fontSize:13,marginBottom:8}}>{msgs.length ? "…" : "Starting the meeting…"}</div>}
           {/* A refusal, said plainly and attributed to nobody. A limit gets no Try again, because
               trying again is exactly what will not work until the limit lifts. */}
           {meetError && (
@@ -9392,7 +9596,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
       if(meetTabs.length<2) return null;
       return <div style={{display:"flex",gap:6}}>
         {meetTabs.map(([t,lbl])=>(
-          <button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.purple+"22":C.cardAlt,border:`1px solid ${tab===t?C.purple:C.border}`,color:tab===t?C.purpleBright:C.muted,borderRadius:12,padding:"10px",cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit"}}>
+          <button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.purple+"22":C.cardAlt,border:`1px solid ${tab===t?C.purple:C.border}`,color:tab===t?C.purpleBright:C.muted,borderRadius:12,padding:"10px",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"inherit"}}>
             {lbl}
           </button>
         ))}
@@ -9412,7 +9616,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
             {label:"Health",value:`${healthScore}/100`,color:healthScore>=70?C.greenBright:healthScore>=50?C.goldBright:C.redBright},
           ].map(m=>(
             <div key={m.label} style={{background:C.cardAlt,borderRadius:14,padding:"12px 10px",border:`1px solid ${C.border}`,textAlign:"center"}}>
-              <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>{m.label}</div>
+              <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>{m.label}</div>
               <div style={{color:m.color,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{m.value}</div>
             </div>
           ))}
@@ -9424,39 +9628,39 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
           {/* ── Schedule — profile.meetingSchedule; next date is derived (computeNextMeeting), never stored ── */}
           {setAppData&&<div style={{marginTop:14,borderTop:`1px solid ${C.purple}33`,paddingTop:12}}>
             {!meetingSchedule.enabled ? (
-              <button onClick={()=>{setSchedule({enabled:true});setEditingSchedule(true);}} style={{background:C.purple+"22",border:`1px solid ${C.purple}55`,borderRadius:99,padding:"8px 16px",color:C.purpleBright,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📅 Set a schedule</button>
+              <button onClick={()=>{setSchedule({enabled:true});setEditingSchedule(true);}} style={{background:C.purple+"22",border:`1px solid ${C.purple}55`,borderRadius:99,padding:"8px 16px",color:C.purpleBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📅 Set a schedule</button>
             ) : editingSchedule ? (
               <div>
-                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontWeight:700,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How often</div>
+                <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How often</div>
                 <div style={{display:"flex",gap:6,marginBottom:12}}>
                   {[["weekly","Weekly"],["biweekly","Biweekly"],["monthly","Monthly"]].map(([v,l])=>(
-                    <button key={v} onClick={()=>setSchedule({cadence:v})} style={{flex:1,background:meetingSchedule.cadence===v?C.purple+"33":C.cardAlt,border:`1px solid ${meetingSchedule.cadence===v?C.purple:C.border}`,borderRadius:10,padding:"8px 4px",color:meetingSchedule.cadence===v?C.purpleBright:C.muted,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{l}</button>
+                    <button key={v} onClick={()=>setSchedule({cadence:v})} style={{flex:1,background:meetingSchedule.cadence===v?C.purple+"33":C.cardAlt,border:`1px solid ${meetingSchedule.cadence===v?C.purple:C.border}`,borderRadius:10,padding:"8px 4px",color:meetingSchedule.cadence===v?C.purpleBright:C.muted,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{l}</button>
                   ))}
                 </div>
-                <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontWeight:700,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Which day</div>
+                <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Which day</div>
                 <div style={{display:"flex",gap:5,marginBottom:12}}>
                   {["Su","Mo","Tu","We","Th","Fr","Sa"].map((l,i)=>(
-                    <button key={i} onClick={()=>setSchedule({dayOfWeek:i})} style={{flex:1,background:(meetingSchedule.dayOfWeek||0)===i?C.purple+"33":C.cardAlt,border:`1px solid ${(meetingSchedule.dayOfWeek||0)===i?C.purple:C.border}`,borderRadius:9,padding:"8px 0",color:(meetingSchedule.dayOfWeek||0)===i?C.purpleBright:C.muted,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{l}</button>
+                    <button key={i} onClick={()=>setSchedule({dayOfWeek:i})} style={{flex:1,background:(meetingSchedule.dayOfWeek||0)===i?C.purple+"33":C.cardAlt,border:`1px solid ${(meetingSchedule.dayOfWeek||0)===i?C.purple:C.border}`,borderRadius:9,padding:"8px 0",color:(meetingSchedule.dayOfWeek||0)===i?C.purpleBright:C.muted,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{l}</button>
                   ))}
                 </div>
-                <div style={{color:C.mutedHi,fontSize:12,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Next: <strong style={{color:C.cream}}>{nextMeeting.nextDate.toLocaleDateString(undefined,{weekday:"long",month:"short",day:"numeric"})}</strong></div>
+                <div style={{color:C.mutedHi,fontSize:13,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Next: <strong style={{color:C.cream}}>{nextMeeting.nextDate.toLocaleDateString(undefined,{weekday:"long",month:"short",day:"numeric"})}</strong></div>
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={()=>setEditingSchedule(false)} style={{flex:1,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:10,padding:"10px",color:C.isDark?"#0A0618":"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Done</button>
-                  <button onClick={()=>{setSchedule({enabled:false});setEditingSchedule(false);}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.mutedHi,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Turn off</button>
+                  <button onClick={()=>{setSchedule({enabled:false});setEditingSchedule(false);}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.mutedHi,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Turn off</button>
                 </div>
               </div>
             ) : (
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
                 <div style={{minWidth:0}}>
-                  <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Next meeting</div>
+                  <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Next meeting</div>
                   <div style={{color:C.cream,fontSize:14,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>{nextMeeting.nextDate.toLocaleDateString(undefined,{weekday:"long",month:"short",day:"numeric"})}{nextMeeting.daysUntil===0?" · today":nextMeeting.daysUntil===1?" · tomorrow":nextMeeting.daysUntil>0?` · in ${nextMeeting.daysUntil} days`:""}</div>
-                  <div style={{color:C.muted,fontSize:11,marginTop:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{meetingSchedule.cadence[0].toUpperCase()+meetingSchedule.cadence.slice(1)} · {["Sundays","Mondays","Tuesdays","Wednesdays","Thursdays","Fridays","Saturdays"][meetingSchedule.dayOfWeek||0]}</div>
+                  <div style={{color:C.muted,fontSize:13,marginTop:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{meetingSchedule.cadence[0].toUpperCase()+meetingSchedule.cadence.slice(1)} · {["Sundays","Mondays","Tuesdays","Wednesdays","Thursdays","Fridays","Saturdays"][meetingSchedule.dayOfWeek||0]}</div>
                 </div>
-                <button onClick={()=>setEditingSchedule(true)} style={{background:"none",border:`1px solid ${C.purple}55`,borderRadius:8,padding:"6px 12px",color:C.purpleBright,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0}}>Change</button>
+                <button onClick={()=>setEditingSchedule(true)} style={{background:"none",border:`1px solid ${C.purple}55`,borderRadius:8,padding:"6px 12px",color:C.purpleBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0}}>Change</button>
               </div>
             )}
             {meetingSchedule.enabled && nextMeeting.overdue && !editingSchedule && (
-              <div style={{marginTop:10,background:C.goldDim,border:`1px solid ${C.gold}44`,borderRadius:12,padding:"10px 12px",color:C.goldBright,fontSize:12,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💜 It's been a while since your last money meeting. No pressure, whenever you're both ready.</div>
+              <div style={{marginTop:10,background:C.goldDim,border:`1px solid ${C.gold}44`,borderRadius:12,padding:"10px 12px",color:C.goldBright,fontSize:13,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💜 It's been a while since your last money meeting. No pressure, whenever you're both ready.</div>
             )}
           </div>}
         </Card>
@@ -9467,7 +9671,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
               <span style={{fontSize:16,flexShrink:0}}>{a.icon}</span>
               <div style={{flex:1}}>
                 <div style={{color:C.mutedHi,fontSize:13}}>{a.title}</div>
-                <div style={{color:a.metricColor,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>{a.metric}</div>
+                <div style={{color:a.metricColor,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>{a.metric}</div>
               </div>
             </div>
           ))}
@@ -9494,20 +9698,20 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
               }).sort((a,b)=>a.days-b.days);
               return <>
                 {allBills.length===0
-                  ? <div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0"}}>No bills tracked yet: add upcoming bills below.</div>
+                  ? <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"8px 0"}}>No bills tracked yet: add upcoming bills below.</div>
                   : <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:8}}>
                 {allBills.slice(0,6).map((b,i)=>{
                   const urgency=b.days<=3?C.redBright:b.days<=7?C.goldBright:C.greenBright;
                   return<div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:C.bg,borderRadius:10,border:`1px solid ${urgency}22`}}>
                     <div style={{width:6,height:6,borderRadius:"50%",background:urgency,flexShrink:0}}/>
-                    <span style={{color:C.cream,fontSize:12,flex:1,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{b.name}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:5,fontWeight:700}}>MANUAL</span>}</span>
-                    <span style={{color:C.muted,fontSize:11}}>{b.days===0?"today":b.days===1?"tomorrow":`${b.days}d`}</span>
-                    <span style={{color:urgency,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.variable?"~":""}${parseFloat(b.amount||0).toFixed(0)}</span>
+                    <span style={{color:C.cream,fontSize:13,flex:1,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{b.name}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:13,marginLeft:5,fontWeight:700}}>MANUAL</span>}</span>
+                    <span style={{color:C.muted,fontSize:13}}>{b.days===0?"today":b.days===1?"tomorrow":`${b.days}d`}</span>
+                    <span style={{color:urgency,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.variable?"~":""}${parseFloat(b.amount||0).toFixed(0)}</span>
                   </div>;
                 })}
                 <div style={{display:"flex",justifyContent:"space-between",padding:"6px 10px",marginTop:2}}>
-                  <span style={{color:C.muted,fontSize:11}}>Total coming up</span>
-                  <span style={{color:C.cream,fontSize:12,fontWeight:700}}>${allBills.reduce((a,b)=>a+parseFloat(b.amount||0),0).toFixed(0)}/mo</span>
+                  <span style={{color:C.muted,fontSize:13}}>Total coming up</span>
+                  <span style={{color:C.cream,fontSize:13,fontWeight:700}}>${allBills.reduce((a,b)=>a+parseFloat(b.amount||0),0).toFixed(0)}/mo</span>
                 </div>
               </div>}
                 {setAppData&&<div style={{marginTop:12,borderTop:`1px solid ${C.border}`,paddingTop:12}}><ManualBillForm data={data} setAppData={setAppData}/></div>}
@@ -9515,7 +9719,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
             }
         if(item.id==="varbills"){
           const varBills=(data.bills||[]).filter(b=>b.type==="variable");
-          if(varBills.length===0) return <div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0"}}>
+          if(varBills.length===0) return <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"8px 0"}}>
             No variable bills set up yet. When adding a bill, mark it as Variable to track it here.
           </div>;
           return <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
@@ -9524,7 +9728,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                 <span style={{color:C.tealBright,fontSize:14,flexShrink:0}}>🔄</span>
                 <span style={{color:C.cream,fontSize:13,fontWeight:600,flex:1}}>{b.name}</span>
                 <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.teal}44`,borderRadius:8,overflow:"hidden"}}>
-                  <span style={{color:C.muted,padding:"0 5px 0 8px",fontSize:11}}>$</span>
+                  <span style={{color:C.muted,padding:"0 5px 0 8px",fontSize:13}}>$</span>
                   <input type="number" inputMode="decimal" defaultValue={b.amount||""} placeholder={b.amount||"0"}
                     onBlur={e=>{
                       const val=parseFloat(e.target.value);
@@ -9535,41 +9739,41 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                       }
                     }}
                     style={{width:60,background:"none",border:"none",padding:"7px 2px",color:C.tealBright,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
-                  <span style={{color:C.muted,padding:"0 6px",fontSize:9}}>/mo</span>
+                  <span style={{color:C.muted,padding:"0 6px",fontSize:13}}>/mo</span>
                 </div>
               </div>
             ))}
-            <div style={{color:C.muted,fontSize:10,marginTop:2}}>Changes save immediately and update your forecast.</div>
+            <div style={{color:C.muted,fontSize:13,marginTop:2}}>Changes save immediately and update your forecast.</div>
           </div>;
         }
             if(item.id==="spend"){
               const cats=Object.entries(topSpend).sort((a,b)=>b[1]-a[1]).slice(0,5);
               const maxAmt=cats[0]?.[1]||1;
               const totalSpend=cats.reduce((a,c)=>a+c[1],0);
-              return cats.length===0?<div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0"}}>No transactions yet</div>:
+              return cats.length===0?<div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"8px 0"}}>No transactions yet</div>:
               <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>
                 {cats.map(([cat,amt],i)=><div key={i}>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                    <span style={{color:C.mutedHi,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{cat}</span>
-                    <span style={{color:C.cream,fontSize:11,fontWeight:700}}>${(amt||0).toFixed(0)}<span style={{color:C.muted,fontSize:10}}> ({((amt/totalSpend)*100).toFixed(0)}%)</span></span>
+                    <span style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{cat}</span>
+                    <span style={{color:C.cream,fontSize:13,fontWeight:700}}>${(amt||0).toFixed(0)}<span style={{color:C.muted,fontSize:13}}> ({((amt/totalSpend)*100).toFixed(0)}%)</span></span>
                   </div>
                   <div style={{height:5,background:C.border,borderRadius:99,overflow:"hidden"}}>
                     <div style={{width:`${(amt/maxAmt)*100}%`,height:"100%",background:i===0?C.tealBright:i===1?C.purpleBright:i===2?C.goldBright:C.muted,borderRadius:99,transition:"width .4s"}}/>
                   </div>
                 </div>)}
                 <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderTop:`1px solid ${C.border}`,marginTop:2}}>
-                  <span style={{color:C.muted,fontSize:11}}>Total tracked spend</span>
-                  <span style={{color:C.cream,fontSize:12,fontWeight:700}}>${(totalSpend||0).toFixed(0)}/mo</span>
+                  <span style={{color:C.muted,fontSize:13}}>Total tracked spend</span>
+                  <span style={{color:C.cream,fontSize:13,fontWeight:700}}>${(totalSpend||0).toFixed(0)}/mo</span>
                 </div>
               </div>;
             }
             if(item.id==="debt"){
               const debts=(data.debts||[]).slice().sort((a,b)=>parseFloat(b.apr||0)-parseFloat(a.apr||0));
-              return debts.length===0?<div style={{color:C.greenBright,fontSize:12,textAlign:"center",padding:"8px 0"}}>No debts tracked.</div>:
+              return debts.length===0?<div style={{color:C.greenBright,fontSize:13,textAlign:"center",padding:"8px 0"}}>No debts tracked.</div>:
               <div style={{display:"flex",flexDirection:"column",gap:5,marginTop:8}}>
                 <div style={{display:"flex",justifyContent:"space-between",padding:"4px 10px"}}>
-                  <span style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1}}>Debts, highest rate first</span>
-                  <span style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1}}>APR</span>
+                  <span style={{color:C.muted,fontSize:13}}>Debts, highest rate first</span>
+                  <span style={{color:C.muted,fontSize:13}}>APR</span>
                 </div>
                 {debts.map((d,i)=>{
                   const bal=parseFloat(d.balance||0);
@@ -9577,22 +9781,22 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                   const interestPerMo=(bal*(apr/100)/12);
                   return<div key={i} style={{padding:"8px 10px",background:C.bg,borderRadius:10,border:`1px solid ${i===0?C.redBright+"33":C.border}`}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
-                      <span style={{color:C.cream,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{d.name||"Debt"}</span>
-                      <span style={{color:i===0?C.redBright:C.muted,fontSize:12,fontWeight:700}}>{apr}%</span>
+                      <span style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{d.name||"Debt"}</span>
+                      <span style={{color:i===0?C.redBright:C.muted,fontSize:13,fontWeight:700}}>{apr}%</span>
                     </div>
                     <div style={{display:"flex",justifyContent:"space-between"}}>
-                      <span style={{color:C.orangeBright,fontSize:11}}>Balance: ${bal.toLocaleString()}</span>
-                      <span style={{color:C.muted,fontSize:10}}>Interest: ${interestPerMo.toFixed(0)}/mo · Min: ${parseFloat(d.min||0).toFixed(0)}/mo</span>
+                      <span style={{color:C.orangeBright,fontSize:13}}>Balance: ${bal.toLocaleString()}</span>
+                      <span style={{color:C.muted,fontSize:13}}>Interest: ${interestPerMo.toFixed(0)}/mo · Min: ${parseFloat(d.min||0).toFixed(0)}/mo</span>
                     </div>
                   </div>;
                 })}
-                <div style={{color:C.muted,fontSize:10,fontStyle:"italic",padding:"4px 2px"}}>Minimums on everything, extra on the highest rate. Payoff dates below are calculated by Flourish; drag the extra payment to move them.</div>
+                <div style={{color:C.muted,fontSize:13,fontStyle:"italic",padding:"4px 2px"}}>Minimums on everything, extra on the highest rate. Payoff dates below are calculated by Flourish; drag the extra payment to move them.</div>
               </div>;
             }
             if(item.id==="goal"){
               const goals=data.goals||[];
               const mSavings=cashFlow>0?cashFlow:0;
-              return goals.length===0?<div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0"}}>No goals set yet: add one in Goals</div>:
+              return goals.length===0?<div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"8px 0"}}>No goals set yet: add one in Goals</div>:
               <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>
                 {goals.map((g,i)=>{
                   const target=parseFloat(g.target||g.amount||1000);
@@ -9602,15 +9806,15 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                   const moToGo=mSavings>0?Math.ceil(remaining/mSavings):null;
                   return<div key={i} style={{padding:"10px 12px",background:C.bg,borderRadius:12,border:`1px solid ${C.border}`}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
-                      <span style={{color:C.cream,fontSize:12,fontWeight:700}}>{g.name||g.label||"Goal"}</span>
-                      <span style={{color:C.purpleBright,fontSize:11,fontWeight:700}}>{(pct||0).toFixed(0)}%</span>
+                      <span style={{color:C.cream,fontSize:13,fontWeight:700}}>{g.name||g.label||"Goal"}</span>
+                      <span style={{color:C.purpleBright,fontSize:13,fontWeight:700}}>{(pct||0).toFixed(0)}%</span>
                     </div>
                     <div style={{height:6,background:C.border,borderRadius:99,overflow:"hidden",marginBottom:4}}>
                       <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${C.purple},${C.purpleBright})`,borderRadius:99}}/>
                     </div>
                     <div style={{display:"flex",justifyContent:"space-between"}}>
-                      <span style={{color:C.muted,fontSize:10}}>${saved.toLocaleString()} saved of ${target.toLocaleString()}</span>
-                      {moToGo&&<span style={{color:C.muted,fontSize:10}}>~{moToGo} mo to go</span>}
+                      <span style={{color:C.muted,fontSize:13}}>${saved.toLocaleString()} saved of ${target.toLocaleString()}</span>
+                      {moToGo&&<span style={{color:C.muted,fontSize:13}}>~{moToGo} mo to go</span>}
                     </div>
                   </div>;
                 })}
@@ -9620,28 +9824,28 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
             const prevKey=`flourish_prev_notes_${item.id}`;
             const prevNote=typeof localStorage!=="undefined"?localStorage.getItem(prevKey):null;
             return prevNote?<div style={{marginTop:8,padding:"8px 12px",background:C.purpleDim,borderRadius:10,border:`1px solid ${C.purple}33`}}>
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Last week</div>
-              <div style={{color:C.cream,fontSize:12,lineHeight:1.5}}>{prevNote}</div>
+              <div style={{color:C.muted,fontSize:13,marginBottom:3}}>Last week</div>
+              <div style={{color:C.cream,fontSize:13,lineHeight:1.5}}>{prevNote}</div>
             </div>:null;
           })();
           return(
           <div key={item.id} style={{background:checks[item.id]?C.purpleDim:C.card,borderRadius:16,padding:"16px 18px",border:`1px solid ${checks[item.id]?C.purple+"66":C.border}`,transition:"all .3s"}}>
             <div style={{display:"flex",gap:12}}>
               <div onClick={()=>setChecks(c=>({...c,[item.id]:!c[item.id]}))} style={{width:22,height:22,borderRadius:6,border:`2px solid ${checks[item.id]?C.purple:C.border}`,background:checks[item.id]?C.purple:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2,transition:"all .2s"}}>
-                {checks[item.id]&&<span style={{color:C.bg,fontSize:12,fontWeight:900}}>✓</span>}
+                {checks[item.id]&&<span style={{color:C.bg,fontSize:13,fontWeight:900}}>✓</span>}
               </div>
               <div style={{flex:1}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:2}}>
                   <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{item.icon} {item.title}</div>
                   <button onClick={()=>setExpandedItem(isExpanded?null:item.id)}
-                    style={{background:isExpanded?C.purple+"33":C.cardAlt,border:`1px solid ${isExpanded?C.purple+"55":C.border}`,borderRadius:8,padding:"3px 8px",color:isExpanded?C.purpleBright:C.muted,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0,marginLeft:8}}>
+                    style={{background:isExpanded?C.purple+"33":C.cardAlt,border:`1px solid ${isExpanded?C.purple+"55":C.border}`,borderRadius:8,padding:"3px 8px",color:isExpanded?C.purpleBright:C.muted,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0,marginLeft:8}}>
                     {isExpanded?"▲ hide":"📊 data"}
                   </button>
                 </div>
-                <div style={{color:item.metricColor,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,background:item.metricColor+"18",borderRadius:8,padding:"4px 10px",display:"inline-block"}}>{item.metric}</div>
-                <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5,marginBottom:8,marginTop:4}}>{item.desc}</div>
+                <div style={{color:item.metricColor,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,background:item.metricColor+"18",borderRadius:8,padding:"4px 10px",display:"inline-block"}}>{item.metric}</div>
+                <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5,marginBottom:8,marginTop:4}}>{item.desc}</div>
                 {isExpanded&&DataPanel&&<div style={{borderTop:`1px solid ${C.border}`,paddingTop:8,marginBottom:8}}>{DataPanel}</div>}
-                <div style={{color:C.muted,fontSize:11,fontStyle:"italic",marginBottom:6}}>{item.prompt}</div>
+                <div style={{color:C.muted,fontSize:13,fontStyle:"italic",marginBottom:6}}>{item.prompt}</div>
                 <textarea value={notes[item.id]||""} onChange={e=>setNotes(n=>({...n,[item.id]:e.target.value}))} placeholder="Notes…"
                   style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,color:C.cream,padding:"9px 12px",fontSize:13,fontFamily:"inherit",resize:"none",outline:"none",height:60,boxSizing:"border-box"}}/>
               </div>
@@ -9675,21 +9879,21 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
               {label:"Total Debt",value:totalDebt>0?`$${totalDebt.toLocaleString()}`:"None 🎉"},
             ].map(m=>(
               <div key={m.label} style={{background:C.cardAlt,borderRadius:10,padding:"10px 12px",border:`1px solid ${C.border}`}}>
-                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{m.label}</div>
+                <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{m.label}</div>
                 <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif",marginTop:2}}>{m.value}</div>
               </div>
             ))}
           </div>
           {Object.entries(notes).filter(([,v])=>v.trim()).length>0&&<>
-            <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:8}}>Your notes this week</div>
+            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:8}}>Your notes this week</div>
             {meetingMetrics.filter(m=>notes[m.id]?.trim()).map(m=>(
               <div key={m.id} style={{marginBottom:8,padding:"8px 12px",background:C.bg,borderRadius:10,border:`1px solid ${C.border}`}}>
-                <div style={{color:C.muted,fontSize:10,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:3}}>{m.title}</div>
+                <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:3}}>{m.title}</div>
                 <div style={{color:C.cream,fontSize:13,lineHeight:1.5}}>{notes[m.id]}</div>
               </div>
             ))}
           </>}
-          {mood&&<div style={{textAlign:"center",marginTop:8}}><span style={{fontSize:11,color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>This week's mood: </span><span style={{fontSize:20}}>{mood}</span></div>}
+          {mood&&<div style={{textAlign:"center",marginTop:8}}><span style={{fontSize:13,color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>This week's mood: </span><span style={{fontSize:20}}>{mood}</span></div>}
         </Card>
         <Btn label="Start New" onClick={()=>{setStarted(false);setDone2(false);setChecks({});setNotes({});setMood(null);}} outline color={C.purple}/>
       </div>}
@@ -9718,8 +9922,8 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                   style={{display:"flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:99,border:`2px solid ${String(activeKidId)===String(k.id)?t.primary:C.border}`,background:String(activeKidId)===String(k.id)?t.bg:C.cardAlt,color:String(activeKidId)===String(k.id)?t.primary:C.cream,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",transition:"all .2s",minHeight:44}}>
                   <span style={{fontSize:20}}>{k.emoji}</span>
                   <span>{k.name}</span>
-                  {(k.streak||0)>0&&<span style={{fontSize:11}}>🔥{k.streak}</span>}
-                  <span style={{fontSize:11,opacity:0.6}}>{String(activeKidId)===String(k.id)?"▲":"▼"}</span>
+                  {(k.streak||0)>0&&<span style={{fontSize:13}}>🔥{k.streak}</span>}
+                  <span style={{fontSize:13,opacity:0.6}}>{String(activeKidId)===String(k.id)?"▲":"▼"}</span>
                 </button>
               );
             })}
@@ -9736,7 +9940,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
         <Card style={{border:`1px solid ${C.pink}44`}}>
           <div style={{color:C.pinkBright,fontWeight:800,fontSize:14,marginBottom:14}}>👧 Add a child</div>
           <div style={{marginBottom:10}}>
-            <div style={{color:C.muted,fontSize:11,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Choose emoji</div>
+            <div style={{color:C.muted,fontSize:13,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Choose emoji</div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               {["🧒","👧","👦","🧒‍♀️","🧒‍♂️","👶","🧑","🌟","🦁","🐼","🦊","🐸"].map(e=>(
                 <button key={e} onClick={()=>setNewKidEmoji(e)} style={{fontSize:22,padding:"6px",borderRadius:8,border:`2px solid ${newKidEmoji===e?C.pink:"transparent"}`,background:newKidEmoji===e?C.pink+"22":"transparent",cursor:"pointer",minHeight:44}}>{e}</button>
@@ -9748,10 +9952,10 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
             placeholder="Child's name"
             style={{width:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 14px",color:C.cream,fontSize:14,fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"}}/>
           <div style={{marginBottom:14}}>
-            <div style={{color:C.muted,fontSize:11,textTransform:"uppercase",letterSpacing:1.2,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Age group</div>
+            <div style={{color:C.muted,fontSize:13,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Age group</div>
             <div style={{display:"flex",gap:8}}>
               {["4-7","8-12","13+"].map(a=>(
-                <button key={a} onClick={()=>setNewKidAge(a)} style={{flex:1,padding:"9px",borderRadius:10,border:`1.5px solid ${newKidAge===a?C.pink:C.border}`,background:newKidAge===a?C.pink+"22":C.cardAlt,color:newKidAge===a?C.pinkBright:C.muted,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>
+                <button key={a} onClick={()=>setNewKidAge(a)} style={{flex:1,padding:"9px",borderRadius:10,border:`1.5px solid ${newKidAge===a?C.pink:C.border}`,background:newKidAge===a?C.pink+"22":C.cardAlt,color:newKidAge===a?C.pinkBright:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>
                   {a==="4-7"?"🐣 4 to 7":a==="8-12"?"🌱 8 to 12":"🌳 13+"}
                 </button>
               ))}
@@ -9789,18 +9993,18 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
               <div style={{flex:1}}>
                 <div style={{color:C.cream,fontWeight:900,fontSize:20,fontFamily:"'Playfair Display',Georgia,serif"}}>{activeKid.name}</div>
                 <div style={{display:"flex",gap:8,alignItems:"center",marginTop:4,flexWrap:"wrap"}}>
-                  <span style={{color:C.muted,fontSize:12}}>Ages {activeKid.age}</span>
-                  {(activeKid.streak||0)>0&&<span style={{background:"#ff8c4222",border:"1px solid #ff8c4244",borderRadius:99,padding:"2px 8px",color:"#FF8C42",fontSize:11,fontWeight:700}}>🔥 {activeKid.streak} week streak</span>}
-                  <span style={{color:C.muted,fontSize:12}}>${totalJars.toFixed(2)} total saved</span>
+                  <span style={{color:C.muted,fontSize:13}}>Ages {activeKid.age}</span>
+                  {(activeKid.streak||0)>0&&<span style={{background:"#ff8c4222",border:"1px solid #ff8c4244",borderRadius:99,padding:"2px 8px",color:"#FF8C42",fontSize:13,fontWeight:700}}>🔥 {activeKid.streak} week streak</span>}
+                  <span style={{color:C.muted,fontSize:13}}>${totalJars.toFixed(2)} total saved</span>
                 </div>
               </div>
               <button onClick={async ()=>{if(await confirmModal({title:`Remove ${activeKid.name}?`,confirmLabel:"Remove",destructive:true})){removeKid(activeKid.id);setActiveKidId(kids.find(k=>String(k.id)!==String(activeKid.id))?.id||null);}}}
-                style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",color:C.muted,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Remove</button>
+                style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Remove</button>
             </div>
 
             {/* Theme picker */}
             <div style={{marginBottom:14}}>
-              <div style={{color:C.muted,fontSize:11,textTransform:"uppercase",letterSpacing:1.2,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>🎨 Colour Theme</div>
+              <div style={{color:C.muted,fontSize:13,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>🎨 Colour Theme</div>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
                 <select value={activeKid.theme||"pink"} onChange={e=>updateKid(activeKid.id,{theme:e.target.value})}
                   style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.cream,fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:"pointer",outline:"none",appearance:"none",WebkitAppearance:"none"}}>
@@ -9815,7 +10019,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
             {/* Share link */}
             <div style={{background:C.bg,borderRadius:12,padding:"12px 14px"}}>
               <div style={{color:kidTheme.primary,fontWeight:800,fontSize:13,marginBottom:6}}>📱 {activeKid.name}'s Flourish Link</div>
-              <div style={{fontSize:11,color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",wordBreak:"break-all",marginBottom:10}}>{kidUrl}</div>
+              <div style={{fontSize:13,color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",wordBreak:"break-all",marginBottom:10}}>{kidUrl}</div>
               <div style={{display:"flex",gap:8}}>
                 <button onClick={()=>{navigator.clipboard.writeText(kidUrl).then(()=>{setCopiedKidId(activeKid.id);setTimeout(()=>setCopiedKidId(null),2500);});}}
                   style={{flex:1,background:copiedKidId===String(activeKid.id)?C.green:kidTheme.primary,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all .2s",minHeight:44}}>
@@ -9840,15 +10044,15 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                 <div key={j.key} style={{flex:1,background:j.color+"18",border:`1px solid ${j.color}33`,borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
                   <div style={{fontSize:22}}>{j.emoji}</div>
                   <div style={{color:j.color,fontWeight:800,fontSize:16,marginTop:4,fontFamily:"'Playfair Display',serif"}}>${(jars[j.key]||0).toFixed(2)}</div>
-                  <div style={{color:j.color,fontWeight:700,fontSize:11,marginTop:2}}>{j.name}</div>
-                  <div style={{color:C.muted,fontSize:9,marginTop:1}}>{j.pct}%</div>
+                  <div style={{color:j.color,fontWeight:700,fontSize:13,marginTop:2}}>{j.name}</div>
+                  <div style={{color:C.muted,fontSize:13,marginTop:1}}>{j.pct}%</div>
                 </div>
               ))}
             </div>
             {/* Jar split editor */}
             <div style={{background:C.cardAlt,borderRadius:12,padding:"12px 14px",marginBottom:12}}>
               <div style={{color:C.purpleBright||C.tealBright,fontWeight:700,fontSize:13,marginBottom:8}}>🫙 Jar Percentages</div>
-              <div style={{color:C.muted,fontSize:11,marginBottom:10}}>How earnings split across Spend / Save / Give (must total 100%)</div>
+              <div style={{color:C.muted,fontSize:13,marginBottom:10}}>How earnings split across Spend / Save / Give (must total 100%)</div>
               {(()=>{
                 const split=activeKid.jarSplit||{spend:50,save:30,give:20};
                 const colors={spend:C.orange,save:C.blue,give:C.pink};
@@ -9857,7 +10061,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                   <>
                     {["spend","save","give"].map(key=>(
                       <div key={key} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-                        <div style={{width:44,color:colors[key],fontWeight:700,fontSize:12,textTransform:"capitalize"}}>{key}</div>
+                        <div style={{width:44,color:colors[key],fontWeight:700,fontSize:13,textTransform:"capitalize"}}>{key}</div>
                         <input type="range" min={0} max={100} value={split[key]}
                           onChange={e=>{
                             const val=parseInt(e.target.value)||0;
@@ -9875,10 +10079,10 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                             updateKid(activeKid.id,{jarSplit:newSplit});
                           }}
                           style={{flex:1,accentColor:colors[key]}}/>
-                        <div style={{width:34,textAlign:"right",color:total===100?colors[key]:C.red,fontWeight:700,fontSize:12}}>{split[key]}%</div>
+                        <div style={{width:34,textAlign:"right",color:total===100?colors[key]:C.red,fontWeight:700,fontSize:13}}>{split[key]}%</div>
                       </div>
                     ))}
-                    {total!==100&&<div style={{color:C.red,fontSize:11,marginTop:4}}>⚠ Must total 100% (currently {total}%)</div>}
+                    {total!==100&&<div style={{color:C.red,fontSize:13,marginTop:4}}>⚠ Must total 100% (currently {total}%)</div>}
                   </>
                 );
               })()}
@@ -9895,12 +10099,12 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                   <div style={{height:8,background:C.bg,borderRadius:4,overflow:"hidden",marginBottom:6}}>
                     <div style={{height:"100%",width:`${goalPct}%`,background:`linear-gradient(90deg,${C.teal},${C.tealBright})`,borderRadius:4,transition:"width .5s"}}/>
                   </div>
-                  <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                  <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                     ${(jars.save||0).toFixed(2)} saved of ${goalAmt.toFixed(2)} goal
                     {goalPct>=100&&<span style={{color:C.greenBright,fontWeight:700}}> 🎉 Goal reached!</span>}
                   </div>
                   <button onClick={()=>updateKid(activeKid.id,{goal:{name:"",amount:"",emoji:"🎯"}})}
-                    style={{marginTop:8,background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 10px",color:C.muted,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Change goal</button>
+                    style={{marginTop:8,background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 10px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Change goal</button>
                 </>
               ):(
                 <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
@@ -9911,10 +10115,10 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                   }}>{goal.emoji||"🎯"}</span>
                   <input value={goal.name||""} onChange={e=>updateKid(activeKid.id,{goal:{...goal,name:e.target.value}})}
                     placeholder="Goal name (e.g. Nintendo game)"
-                    style={{flex:2,background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:12,fontFamily:"inherit"}}/>
+                    style={{flex:2,background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
                   <input value={goal.amount||""} onChange={e=>updateKid(activeKid.id,{goal:{...goal,amount:e.target.value}})}
                     placeholder="$" type="number" inputMode="decimal"
-                    style={{width:60,background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:12,fontFamily:"inherit"}}/>
+                    style={{width:60,background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
                 </div>
               )}
             </div>
@@ -9942,7 +10146,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
 
             {/* Require approval toggle */}
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,padding:"8px 10px",background:C.cardAlt,borderRadius:10}}>
-              <span style={{color:C.muted,fontSize:12,flex:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Require parent approval before chores count</span>
+              <span style={{color:C.muted,fontSize:13,flex:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Require parent approval before chores count</span>
               <button onClick={()=>updateKid(activeKid.id,{requireApproval:!req})}
                 style={{width:44,height:24,borderRadius:99,border:"none",background:req?C.green:"rgba(255,255,255,0.12)",cursor:"pointer",position:"relative",transition:"all .2s",flexShrink:0}}>
                 <div style={{width:18,height:18,borderRadius:99,background:"#fff",position:"absolute",top:3,left:req?23:3,transition:"all .2s"}}/>
@@ -9952,13 +10156,13 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
             {/* Pending approval */}
             {req&&pendingApproval.length>0&&(
               <div style={{background:C.goldDim,border:`1px solid ${C.gold}44`,borderRadius:12,padding:"10px 14px",marginBottom:12}}>
-                <div style={{color:C.goldBright,fontWeight:700,fontSize:12,marginBottom:8}}>⏳ Waiting for your approval</div>
+                <div style={{color:C.goldBright,fontWeight:700,fontSize:13,marginBottom:8}}>⏳ Waiting for your approval</div>
                 {pendingApproval.map(ch=>(
                   <div key={ch.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
                     <span style={{flex:1,color:C.cream,fontSize:13}}>{ch.task}</span>
-                    <span style={{color:C.gold,fontSize:12}}>+${(ch.reward||0).toFixed(2)}</span>
+                    <span style={{color:C.gold,fontSize:13}}>+${(ch.reward||0).toFixed(2)}</span>
                     <button onClick={()=>approveKidChore(activeKid.id,ch.id)}
-                      style={{background:C.green,border:"none",borderRadius:8,padding:"4px 10px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✓ Approve</button>
+                      style={{background:C.green,border:"none",borderRadius:8,padding:"4px 10px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>✓ Approve</button>
                   </div>
                 ))}
               </div>
@@ -9975,10 +10179,10 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                 </div>
                 <div style={{flex:1}}>
                   <div style={{color:ch.done?C.muted:C.cream,fontSize:13,textDecoration:ch.done?"line-through":"none"}}>{ch.task}</div>
-                  <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{FREQ_LABELS[ch.freq||"weekly"]}</div>
+                  <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{FREQ_LABELS[ch.freq||"weekly"]}</div>
                 </div>
-                <span style={{color:C.gold,fontWeight:700,fontSize:12}}>+${(ch.reward||0).toFixed(2)}</span>
-                {ch.done&&req&&ch.approved&&<span style={{color:C.green,fontSize:11}}>✓ approved</span>}
+                <span style={{color:C.gold,fontWeight:700,fontSize:13}}>+${(ch.reward||0).toFixed(2)}</span>
+                {ch.done&&req&&ch.approved&&<span style={{color:C.green,fontSize:13}}>✓ approved</span>}
                 <button aria-label="Remove chore" onClick={()=>removeKidChore(activeKid.id,ch.id)} style={{background:"none",border:"none",color:C.muted,fontSize:18,cursor:"pointer",padding:"0 2px",lineHeight:1,minHeight:30}}>×</button>
               </div>
             ))}
@@ -9998,7 +10202,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
               <div style={{display:"flex",gap:6}}>
                 {[{v:"daily",l:"Daily"},{v:"few",l:"Few/week"},{v:"weekly",l:"Weekly"},{v:"monthly",l:"Monthly"}].map(f=>(
                   <button key={f.v} onClick={()=>setNewChoreFreq(f.v)}
-                    style={{flex:1,padding:"7px 4px",borderRadius:8,border:`1.5px solid ${newChoreFreq===f.v?C.teal:C.border}`,background:newChoreFreq===f.v?C.teal+"22":C.cardAlt,color:newChoreFreq===f.v?C.tealBright:C.muted,fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>
+                    style={{flex:1,padding:"7px 4px",borderRadius:8,border:`1.5px solid ${newChoreFreq===f.v?C.teal:C.border}`,background:newChoreFreq===f.v?C.teal+"22":C.cardAlt,color:newChoreFreq===f.v?C.tealBright:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
                     {f.l}
                   </button>
                 ))}
@@ -10037,7 +10241,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                 <div key={i} style={{flex:1,background:j.color+"18",border:`1px solid ${j.color}33`,borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
                   <div style={{fontSize:22}}>{j.emoji}</div>
                   <div style={{color:j.color,fontWeight:700,fontSize:13,marginTop:4}}>{j.name}</div>
-                  <div style={{color:C.muted,fontSize:10,marginTop:2}}>{j.desc}</div>
+                  <div style={{color:C.muted,fontSize:13,marginTop:2}}>{j.desc}</div>
                 </div>
               ))}
             </div>
@@ -10051,7 +10255,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                   if(activeKid) saveKids(kids.map(k=>k.id===activeKid.id?{...k,age}:k));
                   else setGlobalKidAge(age);
                 }}
-                style={{flex:1,background:lessonAge===age?C.pink+"22":C.cardAlt,border:`1px solid ${lessonAge===age?C.pink:C.border}`,color:lessonAge===age?C.pinkBright:C.muted,borderRadius:10,padding:"9px 0",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
+                style={{flex:1,background:lessonAge===age?C.pink+"22":C.cardAlt,border:`1px solid ${lessonAge===age?C.pink:C.border}`,color:lessonAge===age?C.pinkBright:C.muted,borderRadius:10,padding:"0",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>
                 {age==="4-7"?"🐣 4 to 7":age==="8-12"?"🌱 8 to 12":"🌳 13+"}
               </button>
             ))}
@@ -10062,7 +10266,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
               <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',Georgia,serif",marginBottom:8}}>{l.title}</div>
               <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65,marginBottom:l.activity?10:0}}>{l.body}</div>
               {l.activity&&<div style={{background:C.teal+"18",border:`1px solid ${C.teal}44`,borderRadius:12,padding:"10px 14px",marginBottom:10}}>
-                <div style={{color:C.tealBright,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Try this activity</div>
+                <div style={{color:C.tealBright,fontSize:13,fontWeight:700,marginBottom:4}}>Try this activity</div>
                 <div style={{color:C.cream,fontSize:13}}>{l.activity}</div>
               </div>}
               <Chip label={l.key} color={C.pink} size={12}/>
@@ -10112,9 +10316,9 @@ function WidgetScreen({data,onBack}){
           <div style={{width:8,height:8,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 8px ${heroColor}`}}/>
         </div>
         <div>
-          <div style={{color:heroColorBright+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:3}}>Safe to Spend</div>
+          <div style={{color:heroColorBright+"88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:3}}>Safe to Spend</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:32,color:heroColorBright,letterSpacing:-1,lineHeight:1}}>{formatMoney(ssView.headline)}</div>
-          <div style={{color:"rgba(237,233,226,0.55)",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>{today}</div>
+          <div style={{color:"rgba(237,233,226,0.55)",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>{today}</div>
         </div>
       </div>
     </WShell>
@@ -10128,7 +10332,7 @@ function WidgetScreen({data,onBack}){
   // Shared widget stat tile (dark always)
   const WTile=({label,value,color="rgba(237,233,226,0.9)",bg="rgba(255,255,255,0.05)"})=>(
     <div style={{background:bg,borderRadius:10,padding:"6px 10px",flex:1,minWidth:0}}>
-      <div style={{color:"rgba(237,233,226,0.4)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:1,marginBottom:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</div>
+      <div style={{color:"rgba(237,233,226,0.4)",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</div>
       <div style={{color,fontSize:13,fontWeight:800,fontFamily:"'Playfair Display',serif",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{value}</div>
     </div>
   );
@@ -10160,15 +10364,15 @@ function WidgetScreen({data,onBack}){
         padding:"18px 20px",display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <FlourishMark size={24}/>
-          <div style={{color:"rgba(237,233,226,0.4)",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{today}</div>
+          <div style={{color:"rgba(237,233,226,0.4)",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{today}</div>
         </div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
           <div>
-            <div style={{color:heroColorBright+"88",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:3}}>Safe to Spend</div>
+            <div style={{color:heroColorBright+"88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:3}}>Safe to Spend</div>
             <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:38,color:heroColorBright,letterSpacing:-1,lineHeight:1}}>{formatMoney(ssView.headline)}</div>
           </div>
           {medTiles.length>0&&<div style={{textAlign:"right"}}>
-            <div style={{color:"rgba(237,233,226,0.4)",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",textTransform:"uppercase",letterSpacing:1}}>{medTiles[0].label}</div>
+            <div style={{color:"rgba(237,233,226,0.4)",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{medTiles[0].label}</div>
             <div style={{color:medTiles[0].color,fontSize:16,fontWeight:700,fontFamily:"'Playfair Display',serif"}}>{medTiles[0].value}</div>
           </div>}
         </div>
@@ -10189,18 +10393,18 @@ function WidgetScreen({data,onBack}){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <FlourishMark size={24}/>
           <div style={{background:`rgba(${overdraft?"255,79,106":"0,204,133"},0.15)`,borderRadius:99,padding:"3px 10px",display:"flex",alignItems:"center",gap:5}}>
-            <div style={{width:5,height:5,borderRadius:"50%",background:heroColorBright}}/><span style={{color:heroColorBright,fontSize:9,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{overdraft?"Overdraft risk":"Looking good"}</span>
+            <div style={{width:5,height:5,borderRadius:"50%",background:heroColorBright}}/><span style={{color:heroColorBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{overdraft?"Overdraft risk":"Looking good"}</span>
           </div>
         </div>
         <div style={{background:`rgba(${overdraft?"255,79,106":"0,204,133"},0.08)`,borderRadius:16,padding:"14px 16px",border:`1px solid ${heroColor}28`}}>
-          <div style={{color:heroColorBright+"77",fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:4}}>Safe to Spend Today</div>
+          <div style={{color:heroColorBright+"77",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:4}}>Safe to Spend Today</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:46,color:heroColorBright,letterSpacing:-2,lineHeight:1}}>{formatMoney(ssView.headline)}</div>
-          {wContent.balance&&<div style={{color:"rgba(237,233,226,0.45)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Balance: {ssView.balanceText}</div>}
+          {wContent.balance&&<div style={{color:"rgba(237,233,226,0.45)",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Balance: {ssView.balanceText}</div>}
         </div>
         {largeTiles.length>0&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           {largeTiles.slice(0,4).map((t,i)=>(
             <div key={i} style={{background:t.bg,border:`1px solid ${t.color.replace("0.9","0.15").replace("0.95","0.15")}`,borderRadius:14,padding:"11px 12px"}}>
-              <div style={{color:t.color.replace(/[\d.]+\)$/,"0.5)"),fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{t.label}</div>
+              <div style={{color:t.color.replace(/[\d.]+\)$/,"0.5)"),fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{t.label}</div>
               <div style={{color:t.color,fontWeight:900,fontSize:24,fontFamily:"'Playfair Display',serif",marginTop:3,letterSpacing:-0.5}}>{t.value}</div>
             </div>
           ))}
@@ -10208,11 +10412,11 @@ function WidgetScreen({data,onBack}){
         {wContent.nextBill&&<div>
           {soonBills.slice(0,2).map((b,i)=>(
             <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:i===0?`1px solid rgba(255,255,255,0.06)`:"none"}}>
-              <span style={{color:"rgba(237,233,226,0.55)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name}</span>
-              <span style={{color:DARK_C.goldBright,fontSize:10,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${parseFloat(b.amount).toFixed(0)}</span>
+              <span style={{color:"rgba(237,233,226,0.55)",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name}</span>
+              <span style={{color:DARK_C.goldBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${parseFloat(b.amount).toFixed(0)}</span>
             </div>
           ))}
-          {soonBills.length===0&&<div style={{color:"rgba(237,233,226,0.3)",fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"center",paddingTop:4}}>No bills due soon ✓</div>}
+          {soonBills.length===0&&<div style={{color:"rgba(237,233,226,0.3)",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"center",paddingTop:4}}>No bills due soon ✓</div>}
         </div>}
       </div>
     </WShell>
@@ -10248,10 +10452,10 @@ function WidgetScreen({data,onBack}){
 
   return <div style={{display:"flex",flexDirection:"column",gap:20}}>
     <div style={{display:"flex",gap:10,alignItems:"center"}}>
-      <button onClick={onBack} style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.05)",border:`1px solid ${C.border}`,color:C.mutedHi,borderRadius:12,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>← Back</button>
+      <button onClick={onBack} style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.05)",border:`1px solid ${C.border}`,color:C.mutedHi,borderRadius:12,padding:"8px 16px",cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>← Back</button>
       <div>
         <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Home Screen Widget</div>
-        <div style={{color:C.muted,fontSize:12,marginTop:2}}>Live data on your home screen</div>
+        <div style={{color:C.muted,fontSize:13,marginTop:2}}>Live data on your home screen</div>
       </div>
     </div>
 
@@ -10260,7 +10464,7 @@ function WidgetScreen({data,onBack}){
       {sizes.map(([s,label])=>(
         <button key={s} onClick={()=>setWSize(s)}
           style={{flex:1,background:wSize===s?C.green+"28":"transparent",border:`1px solid ${wSize===s?C.green+"55":"transparent"}`,
-          color:wSize===s?C.greenBright:C.muted,borderRadius:12,padding:"9px 0",cursor:"pointer",fontSize:12,fontWeight:700,
+          color:wSize===s?C.greenBright:C.muted,borderRadius:12,padding:"0",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,
           fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
           {label}
         </button>
@@ -10283,11 +10487,11 @@ function WidgetScreen({data,onBack}){
     {/* iOS setup */}
     <div style={{background:C.isDark?`linear-gradient(135deg,${C.greenDim} 0%,${C.card} 100%)`:C.card,borderRadius:22,border:`1px solid ${C.green}33`,padding:"20px"}}>
       <div style={{fontWeight:700,fontSize:15,color:C.cream,marginBottom:3,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>🍎</span> Add to iPhone Home Screen</div>
-      <div style={{color:C.muted,fontSize:12,marginBottom:14,marginLeft:26}}>iOS 16+ · Safari required</div>
+      <div style={{color:C.muted,fontSize:13,marginBottom:14,marginLeft:26}}>iOS 16+ · Safari required</div>
       {[["1","Open flourishmoney.app in Safari"],["2","Tap the Share button (⬆️) at the bottom"],["3","Scroll and tap 'Add to Home Screen'"],["4","Tap Add. The app icon appears instantly"],["5","Long-press the icon → 'Edit Home Screen' → add as widget"]].map(([n,step])=>(
         <div key={n} style={{display:"flex",gap:12,alignItems:"flex-start",marginBottom:10}}>
           <div style={{width:22,height:22,borderRadius:99,background:C.greenDim,border:`1px solid ${C.green}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-            <span style={{color:C.greenBright,fontSize:10,fontWeight:800}}>{n}</span>
+            <span style={{color:C.greenBright,fontSize:13,fontWeight:800}}>{n}</span>
           </div>
           <span style={{color:C.mutedHi,fontSize:13,lineHeight:1.5,paddingTop:1}}>{step}</span>
         </div>
@@ -10297,11 +10501,11 @@ function WidgetScreen({data,onBack}){
     {/* Android setup */}
     <div style={{background:C.isDark?`linear-gradient(135deg,${C.blueDim} 0%,${C.card} 100%)`:C.card,borderRadius:22,border:`1px solid ${C.blue}33`,padding:"20px"}}>
       <div style={{fontWeight:700,fontSize:15,color:C.cream,marginBottom:3,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>🤖</span> Add to Android Home Screen</div>
-      <div style={{color:C.muted,fontSize:12,marginBottom:14,marginLeft:26}}>Chrome · Android 8+</div>
+      <div style={{color:C.muted,fontSize:13,marginBottom:14,marginLeft:26}}>Chrome · Android 8+</div>
       {[["1","Open flourishmoney.app in Chrome"],["2","Tap the three-dot menu (⋮) top right"],["3","Tap 'Add to Home screen'"],["4","Confirm. The icon appears on your home screen"],["5","On Samsung: long-press icon → 'Add widget' in Home screen editor"]].map(([n,step])=>(
         <div key={n} style={{display:"flex",gap:12,alignItems:"flex-start",marginBottom:10}}>
           <div style={{width:22,height:22,borderRadius:99,background:C.blueDim,border:`1px solid ${C.blue}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-            <span style={{color:C.blueBright,fontSize:10,fontWeight:800}}>{n}</span>
+            <span style={{color:C.blueBright,fontSize:13,fontWeight:800}}>{n}</span>
           </div>
           <span style={{color:C.mutedHi,fontSize:13,lineHeight:1.5,paddingTop:1}}>{step}</span>
         </div>
@@ -10313,7 +10517,7 @@ function WidgetScreen({data,onBack}){
       <span style={{fontSize:16,flexShrink:0}}>⚡</span>
       <div>
         <div style={{color:C.cream,fontWeight:600,fontSize:13,marginBottom:3}}>True native widgets coming soon</div>
-        <div style={{color:C.muted,fontSize:12,lineHeight:1.6}}>Full iOS WidgetKit and Android Glance widgets are on our roadmap, showing live balance and safe-spend right on your lock screen without opening the app.</div>
+        <div style={{color:C.muted,fontSize:13,lineHeight:1.6}}>Full iOS WidgetKit and Android Glance widgets are on our roadmap, showing live balance and safe-spend right on your lock screen without opening the app.</div>
       </div>
     </div>
   </div>;
@@ -10343,13 +10547,13 @@ function InlineDebtEditor({data, setAppData, color, navToScreen}){
         <div style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"14px 16px",marginBottom:12,textAlign:"center"}}>
           <div style={{fontSize:22,marginBottom:6}}>💳</div>
           <div style={{color:C.mutedHi,fontWeight:600,fontSize:13,marginBottom:4}}>No debts tracked yet</div>
-          <div style={{color:C.muted,fontSize:11,lineHeight:1.65}}>Connect your bank to auto-import credit cards, or tap + Add Debt below.</div>
+          <div style={{color:C.muted,fontSize:13,lineHeight:1.65}}>Connect your bank to auto-import credit cards, or tap + Add Debt below.</div>
         </div>
       )}
       {(data.debts||[]).some(d=>d.fromBank)&&(
         <div style={{background:C.green+"0A",border:`1px solid ${C.green}22`,borderRadius:10,padding:"8px 12px",marginBottom:8,display:"flex",gap:6,alignItems:"center"}}>
-          <span style={{fontSize:12}}>🏦</span>
-          <span style={{color:C.green,fontSize:11,fontWeight:600}}>Balances imported live from your bank</span>
+          <span style={{fontSize:13}}>🏦</span>
+          <span style={{color:C.green,fontSize:13,fontWeight:600}}>Balances imported live from your bank</span>
         </div>
       )}
       {(data.debts||[]).map((d,i)=>(
@@ -10357,18 +10561,18 @@ function InlineDebtEditor({data, setAppData, color, navToScreen}){
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
             <div style={{display:"flex",alignItems:"center",gap:7}}>
               <div style={{color:C.cream,fontWeight:600,fontSize:13}}>{d.name}</div>
-              {d.fromBank&&<span style={{fontSize:9,fontWeight:700,color:C.greenBright,background:C.green+"22",border:`1px solid ${C.green}33`,borderRadius:99,padding:"2px 7px",flexShrink:0}}>live</span>}
+              {d.fromBank&&<span style={{fontSize:13,fontWeight:700,color:C.greenBright,background:C.green+"22",border:`1px solid ${C.green}33`,borderRadius:99,padding:"2px 7px",flexShrink:0}}>live</span>}
             </div>
             <button aria-label="Remove" onClick={()=>removeDebt(i)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"4px 8px",minWidth:32,minHeight:32}}>✕</button>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
             {[["Balance","balance","$"],["Rate %","rate","%"],["Min/mo","min","$"]].map(([lbl,field,pre])=>(
               <div key={field}>
-                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",marginBottom:3}}>{lbl}</div>
+                <div style={{color:C.muted,fontSize:13,marginBottom:3}}>{lbl}</div>
                 <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
-                  <span style={{color:C.muted,fontSize:11,padding:"0 4px"}}>{pre}</span>
+                  <span style={{color:C.muted,fontSize:13,padding:"0 4px"}}>{pre}</span>
                   <input value={d[field]||""} onChange={e=>updateDebt(i,field,e.target.value)} type="number" inputMode="decimal"
-                    style={{flex:1,background:"none",border:"none",padding:"6px 4px 6px 0",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none",width:0,minWidth:0}}/>
+                    style={{flex:1,background:"none",border:"none",padding:"6px 4px 6px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,minWidth:0}}/>
                 </div>
               </div>
             ))}
@@ -10385,9 +10589,9 @@ function InlineDebtEditor({data, setAppData, color, navToScreen}){
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
             {[["Balance","balance","$"],["Rate %","rate","%"],["Min/mo","min","$"]].map(([lbl,field,pre])=>(
               <div key={field}>
-                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",marginBottom:4}}>{lbl}</div>
+                <div style={{color:C.muted,fontSize:13,marginBottom:4}}>{lbl}</div>
                 <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
-                  <span style={{color:C.muted,fontSize:11,padding:"0 5px"}}>{pre}</span>
+                  <span style={{color:C.muted,fontSize:13,padding:"0 5px"}}>{pre}</span>
                   <input value={form[field]} onChange={e=>setForm(v=>({...v,[field]:e.target.value}))} type="number" inputMode="decimal" placeholder="0"
                     style={{flex:1,background:"none",border:"none",padding:"7px 4px 7px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,minWidth:0}}/>
                 </div>
@@ -10413,7 +10617,7 @@ function InlineDebtEditor({data, setAppData, color, navToScreen}){
       )}
       {!adding&&navToScreen&&(data.debts||[]).length>0&&(
         <button onClick={()=>navToScreen("goals")}
-          style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+          style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
           View Debt Simulator →
         </button>
       )}
@@ -10449,11 +10653,11 @@ function InlineGoalEditor({data, setAppData, color}){
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:6}}>
               {[["Saved","saved"],["Target","target"]].map(([lbl,field])=>(
                 <div key={field}>
-                  <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",marginBottom:3}}>{lbl}</div>
+                  <div style={{color:C.muted,fontSize:13,marginBottom:3}}>{lbl}</div>
                   <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
-                    <span style={{color:C.muted,fontSize:11,padding:"0 5px"}}>$</span>
+                    <span style={{color:C.muted,fontSize:13,padding:"0 5px"}}>$</span>
                     <input value={g[field]||""} onChange={e=>setAppData(prev=>({...prev,goals:(prev.goals||[]).map((x,j)=>j===i?{...x,[field]:e.target.value}:x)}))} type="number" inputMode="decimal"
-                      style={{flex:1,background:"none",border:"none",padding:"6px 4px 6px 0",color:field==="saved"?C.greenBright:C.cream,fontSize:12,fontFamily:"inherit",outline:"none",fontWeight:field==="saved"?700:400,width:0,minWidth:0}}/>
+                      style={{flex:1,background:"none",border:"none",padding:"6px 4px 6px 0",color:field==="saved"?C.greenBright:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:field==="saved"?700:400,width:0,minWidth:0}}/>
                   </div>
                 </div>
               ))}
@@ -10461,7 +10665,7 @@ function InlineGoalEditor({data, setAppData, color}){
             <div style={{background:C.border,borderRadius:99,height:4,overflow:"hidden"}}>
               <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${color},${color}cc)`,borderRadius:99}}/>
             </div>
-            <div style={{color:C.muted,fontSize:10,marginTop:3}}>{pct}% saved · ${Math.max(0,(parseFloat(g.target||0)-parseFloat(g.saved||0))).toLocaleString()} to go</div>
+            <div style={{color:C.muted,fontSize:13,marginTop:3}}>{pct}% saved · ${Math.max(0,(parseFloat(g.target||0)-parseFloat(g.saved||0))).toLocaleString()} to go</div>
           </div>
         );
       })}
@@ -10475,9 +10679,9 @@ function InlineGoalEditor({data, setAppData, color}){
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
             {[["Target Amount","target"],["Already Saved","saved"]].map(([lbl,field])=>(
               <div key={field}>
-                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",marginBottom:4}}>{lbl}</div>
+                <div style={{color:C.muted,fontSize:13,marginBottom:4}}>{lbl}</div>
                 <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
-                  <span style={{color:C.muted,fontSize:11,padding:"0 5px"}}>$</span>
+                  <span style={{color:C.muted,fontSize:13,padding:"0 5px"}}>$</span>
                   <input value={form[field]} onChange={e=>setForm(v=>({...v,[field]:e.target.value}))} type="number" inputMode="decimal" placeholder="0"
                     style={{flex:1,background:"none",border:"none",padding:"7px 4px 7px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,minWidth:0}}/>
                 </div>
@@ -10509,7 +10713,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
   const s={background:C.card,border:`1px solid ${color}33`,borderRadius:"0 0 18px 18px",padding:"16px 18px",marginBottom:8,borderTop:`1px solid ${color}22`};
   const row={display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.border}`};
   const val={color:C.cream,fontSize:13,fontWeight:600};
-  const lbl={color:C.muted,fontSize:12};
+  const lbl={color:C.muted,fontSize:13};
 
   const updateProfile = (key, value) => {
     if(setAppData) setAppData(prev=>({...prev, profile:{...prev.profile, [key]:value}}));
@@ -10524,7 +10728,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
     });
     return (
       <div style={{ paddingBottom: 6 }}>
-        <div style={{ color: C.muted, fontSize: 12, marginBottom: 12, fontFamily: "'Plus Jakarta Sans',sans-serif", lineHeight: 1.5 }}>Choose which cards appear on your dashboard. Reorder them from the home screen with the ⠿ Reorder button.</div>
+        <div style={{ color: C.muted, fontSize:13, marginBottom: 12, fontFamily: "'Plus Jakarta Sans',sans-serif", lineHeight: 1.5 }}>Choose which cards appear on your dashboard. Reorder them from the home screen with the ⠿ Reorder button.</div>
         {DASH_TILES.filter(t => DASH_HIDEABLE.includes(t.id)).map(t => {
           const isHidden = hidden.includes(t.id), locked = t.alwaysVisible;
           return (
@@ -10533,7 +10737,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
                 <TileIcon id={t.id} size={16} color={!isHidden ? C.greenBright : C.muted} />
               </div>
               <div style={{ flex: 1, color: C.cream, fontWeight: 600, fontSize: 14, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
-                {t.label}{locked && <span style={{ color: C.gold, fontSize: 10, fontWeight: 700, marginLeft: 8 }}>always on</span>}
+                {t.label}{locked && <span style={{ color: C.gold, fontSize:13, fontWeight: 700, marginLeft: 8 }}>always on</span>}
               </div>
               {locked
                 ? <span style={{ color: C.muted, fontSize: 16 }} title="Always visible">🔒</span>
@@ -10592,9 +10796,9 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
       </div>
       {/* BUG 4: the "& Income" half of this section. Status / Has Kids intentionally removed here
           (BUG 2) — they now live ONLY in Family Settings. This edits appData.incomes directly. */}
-      <div style={{color:C.mutedHi,fontSize:12,fontWeight:700,marginTop:14,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Income</div>
+      <div style={{color:C.mutedHi,fontSize:13,fontWeight:700,marginTop:14,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Income</div>
       {(data.incomes||[]).length===0
-        ? <div style={{color:C.muted,fontSize:12,padding:"8px 0"}}>No income sources yet.</div>
+        ? <div style={{color:C.muted,fontSize:13,padding:"8px 0"}}>No income sources yet.</div>
         : (data.incomes||[]).map(inc=>(
           <div key={inc.id} style={{padding:"10px 0",borderBottom:`1px solid ${C.border}`}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
@@ -10628,7 +10832,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
         style={{width:"100%",marginTop:12,background:color+"18",border:`1px solid ${color}44`,borderRadius:10,padding:"10px",color,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
         ＋ Add income source
       </button>
-      <div style={{color:C.muted,fontSize:11,marginTop:10}}>Changes save automatically.</div>
+      <div style={{color:C.muted,fontSize:13,marginTop:10}}>Changes save automatically.</div>
     </div>
   );
   }
@@ -10684,11 +10888,11 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
           <div style={{background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:12,padding:"10px 14px",marginBottom:12,display:"flex",gap:10,alignItems:"center"}}>
             <span style={{fontSize:16}}>⚠️</span>
             <div style={{flex:1}}>
-              <div style={{color:C.goldBright,fontWeight:700,fontSize:12}}>Duplicate accounts detected</div>
-              <div style={{color:C.muted,fontSize:11,marginTop:1}}>The same accounts appear multiple times. Tap to fix.</div>
+              <div style={{color:C.goldBright,fontWeight:700,fontSize:13}}>Duplicate accounts detected</div>
+              <div style={{color:C.muted,fontSize:13,marginTop:1}}>The same accounts appear multiple times. Tap to fix.</div>
             </div>
             <button onClick={()=>setAppData(prev=>({...prev,accounts:dedupedDisplay}))}
-              style={{background:C.gold+"22",border:`1px solid ${C.gold}44`,borderRadius:8,padding:"6px 12px",color:C.goldBright,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0,whiteSpace:"nowrap"}}>
+              style={{background:C.gold+"22",border:`1px solid ${C.gold}44`,borderRadius:8,padding:"6px 12px",color:C.goldBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0,whiteSpace:"nowrap"}}>
               Fix now
             </button>
           </div>
@@ -10699,13 +10903,13 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
             <div key={a.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 0",borderBottom:i<dedupedDisplay.length-1?`1px solid ${C.border}`:"none"}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{color:C.cream,fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</div>
-                <div style={{color:C.muted,fontSize:11}}>{a.type} · {a.institution}</div>
+                <div style={{color:C.muted,fontSize:13}}>{a.type} · {a.institution}</div>
               </div>
               <span style={{color:a.balance>=0?C.greenBright:C.red,fontWeight:700,fontSize:13,flexShrink:0}}>
                 {a.balance>=0?"$":"−$"}{Math.abs(a.balance||0).toFixed(2)}
               </span>
               {isPlaidLinked(a)
-                ? <span style={{color:C.muted,fontSize:11,flexShrink:0,whiteSpace:"nowrap"}}
+                ? <span style={{color:C.muted,fontSize:13,flexShrink:0,whiteSpace:"nowrap"}}
                     title="This account belongs to a connected bank. Disconnect it under Settings → Connected Banks.">Manage in Connected Banks</span>
                 : <button onClick={()=>removeAccount(a.id)}
                     style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"4px 6px",minWidth:32,minHeight:36,flexShrink:0}}
@@ -10734,18 +10938,18 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
             <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderBottom:i<(data.bills||[]).length-1?`1px solid ${C.border}`:"none"}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{color:C.cream,fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.name}</div>
-                <div style={{color:C.muted,fontSize:11}}>due {b.date}{ord(b.date)}</div>
+                <div style={{color:C.muted,fontSize:13}}>due {b.date}{ord(b.date)}</div>
               </div>
               <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",width:78,flexShrink:0}}>
-                <span style={{color:C.muted,fontSize:11,padding:"0 4px",flexShrink:0}}>$</span>
+                <span style={{color:C.muted,fontSize:13,padding:"0 4px",flexShrink:0}}>$</span>
                 <input value={b.amount} onChange={e=>updateBillAmt(i,e.target.value)} type="number" inputMode="decimal"
-                  style={{flex:1,background:"none",border:"none",padding:"5px 4px 5px 0",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none",width:0,fontWeight:600}}/>
+                  style={{flex:1,background:"none",border:"none",padding:"5px 4px 5px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,fontWeight:600}}/>
               </div>
               <button aria-label="Remove" onClick={()=>removeBillS(i,b.name)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:13,padding:"4px",flexShrink:0,minWidth:24,minHeight:24}}>✕</button>
             </div>
           ))
         }
-        {navToScreen&&<button onClick={()=>navToScreen("plan")} style={{width:"100%",marginTop:10,background:color+"18",border:`1px solid ${color}44`,borderRadius:10,padding:"9px",color,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        {navToScreen&&<button onClick={()=>navToScreen("plan")} style={{width:"100%",marginTop:10,background:color+"18",border:`1px solid ${color}44`,borderRadius:10,padding:"9px",color,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
           + Add or Manage Bills →
         </button>}
       </div>
@@ -10778,7 +10982,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
           <option value="no">No</option><option value="yes">Yes</option>
         </select>
       </div>
-      <div style={{color:C.muted,fontSize:11,marginTop:10}}>Changes save automatically.</div>
+      <div style={{color:C.muted,fontSize:13,marginTop:10}}>Changes save automatically.</div>
       {navToScreen&&<button onClick={()=>navToScreen("family")} style={{width:"100%",marginTop:12,background:color+"18",border:`1px solid ${color}44`,borderRadius:10,padding:"10px",color,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
         Open Family Dashboard →
       </button>}
@@ -10874,7 +11078,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
   };
   return <div style={{color:C.cream}}>
     <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:20}}>
-      <button onClick={onClose} style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.05)",border:`1px solid ${C.border}`,color:C.mutedHi,borderRadius:12,padding:"8px 16px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .2s",letterSpacing:0.2}}>← Back</button>
+      <button onClick={onClose} style={{background:C.isDark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.05)",border:`1px solid ${C.border}`,color:C.mutedHi,borderRadius:12,padding:"8px 16px",cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .2s",letterSpacing:0.2}}>← Back</button>
       <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Settings</div>
     </div>
     {/* ── Exit demo ──────────────────────────────────────────────
@@ -10886,7 +11090,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <span style={{fontSize:22,flexShrink:0}}>🧪</span>
         <div style={{flex:1,minWidth:0}}>
           <div style={{color:C.cream,fontSize:14,fontWeight:700,marginBottom:2}}>Exit demo mode</div>
-          <div style={{color:C.mutedHi,fontSize:11,lineHeight:1.5}}>You're viewing sample data. Tap to sign up or log in.</div>
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5}}>You're viewing sample data. Tap to sign up or log in.</div>
         </div>
         <span style={{color:C.mutedHi,fontSize:16,flexShrink:0}}>→</span>
       </button>
@@ -10898,7 +11102,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
           <div style={{width:36,height:36,borderRadius:11,background:theme==="dark"?"rgba(155,125,255,0.15)":"rgba(255,200,60,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{theme==="dark"?"🌙":"☀️"}</div>
           <div>
             <div style={{color:C.cream,fontWeight:600,fontSize:14}}>{theme==="dark"?"Dark Mode":"Light Mode"}</div>
-            <div style={{color:C.muted,fontSize:11,marginTop:1}}>Follows system · manual override</div>
+            <div style={{color:C.muted,fontSize:13,marginTop:1}}>Follows system · manual override</div>
           </div>
         </div>
         <Toggle label={theme==="dark"?"Dark mode":"Light mode"} on={theme==="dark"} onChange={()=>toggleTheme&&toggleTheme()}/>
@@ -10908,7 +11112,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
           <div style={{width:36,height:36,borderRadius:11,background:C.greenDim,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>📱</div>
           <div style={{textAlign:"left"}}>
             <div style={{color:C.cream,fontWeight:600,fontSize:14}}>Home Screen Widget</div>
-            <div style={{color:C.muted,fontSize:11,marginTop:1}}>Preview & install your widget</div>
+            <div style={{color:C.muted,fontSize:13,marginTop:1}}>Preview & install your widget</div>
           </div>
         </div>
         <span style={{color:C.muted,fontSize:18}}>›</span>
@@ -10916,11 +11120,11 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     </div>
     {/* ── Privacy & AI (Phase D3) ────────────────────────────── */}
     <div style={{background:C.card,borderRadius:18,padding:"16px 18px",border:`1px solid ${C.border}`,marginBottom:14}}>
-      <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:10}}>Privacy & AI</div>
+      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:10}}>Privacy & AI</div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div style={{flex:1}}>
           <div style={{color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:2}}>AI Coach</div>
-          <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>On: Flourish sends your calculated numbers to the coach so it can explain them and run your money meeting. Off: nothing leaves Flourish for AI. Every number, forecast and what-if still works.</div>
+          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>On: Flourish sends your calculated numbers to the coach so it can explain them and run your money meeting. Off: nothing leaves Flourish for AI. Every number, forecast and what-if still works.</div>
         </div>
         <Toggle label="AI Coach" on={aiCoachEnabled} onChange={(v)=>{
           // Turning ON without current consent would grant third-party sharing silently — re-disclose
@@ -10932,13 +11136,13 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         }} />
       </div>
       {/* COPY-CHANGES §12: static trust lines */}
-      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginTop:10}}>Flourish is read-only. It cannot move, send or hold money.</div>
-      <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginTop:4}}>Flourish is not a licensed financial adviser. It explains and coaches; you decide.</div>
+      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginTop:10}}>Flourish is read-only. It cannot move, send or hold money.</div>
+      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginTop:4}}>Flourish is not a licensed financial adviser. It explains and coaches; you decide.</div>
       {/* Sprint Z2 #8: revoke third-party AI consent (not just disable AI) */}
       <div style={{borderTop:`1px solid ${C.border}`,marginTop:14,paddingTop:14}}>
         <div style={{color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:2}}>Third-party AI consent</div>
-        <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginBottom:10}}>You agreed to share your financial summary &amp; messages with Anthropic for AI features. Revoking turns AI off and withdraws that consent.</div>
-        <button onClick={onRevokeAIConsent} style={{background:"none",border:`1px solid ${C.orange}66`,color:C.orange,borderRadius:99,padding:"9px 16px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700,cursor:"pointer"}}>Revoke AI consent</button>
+        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5,marginBottom:10}}>You agreed to share your financial summary &amp; messages with Anthropic for AI features. Revoking turns AI off and withdraws that consent.</div>
+        <button onClick={onRevokeAIConsent} style={{background:"none",border:`1px solid ${C.orange}66`,color:C.orange,borderRadius:99,padding:"9px 16px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,cursor:"pointer"}}>Revoke AI consent</button>
       </div>
       {pendingAIConsent&&<AIConsentModal
         onEnable={()=>{ applyAICoachEnabled(true); setPendingAIConsent(false); }}
@@ -10946,10 +11150,10 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     </div>
     {/* ── Notifications (Stage 1: permission + per-type toggles; NOTHING is scheduled yet) ── */}
     <div style={{background:C.card,borderRadius:18,padding:"16px 18px",border:`1px solid ${C.border}`,marginBottom:14}}>
-      <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:10}}>Notifications</div>
+      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:10}}>Notifications</div>
       {!notifPerm.granted && (
         <div style={{background:notifPerm.status==="denied"?C.orange+"14":C.teal+"14",border:`1px solid ${(notifPerm.status==="denied"?C.orange:C.teal)}33`,borderRadius:12,padding:"12px 14px",marginBottom:14}}>
-          <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
             {notifPerm.status==="denied"
               ? <>Notifications are turned <strong style={{color:C.cream}}>off in iOS Settings</strong>. To get bill reminders and money alerts, enable them under <strong style={{color:C.cream}}>Settings → Flourish → Notifications</strong>.</>
               : notifPerm.status==="unsupported"
@@ -10957,7 +11161,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
                 : <>Notifications are <strong style={{color:C.cream}}>off</strong>. Turn them on to get bill reminders and money alerts. You pick which ones below.</>}
           </div>
           {(notifPerm.status==="prompt"||notifPerm.status==="prompt-with-rationale") && (
-            <button onClick={enableNotifications} style={{marginTop:10,background:`linear-gradient(135deg,${C.teal},${C.tealBright})`,border:"none",borderRadius:99,padding:"9px 18px",color:C.isDark?"#04141A":"#fff",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Enable notifications</button>
+            <button onClick={enableNotifications} style={{marginTop:10,background:`linear-gradient(135deg,${C.teal},${C.tealBright})`,border:"none",borderRadius:99,padding:"9px 18px",color:C.isDark?"#04141A":"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Enable notifications</button>
           )}
         </div>
       )}
@@ -10970,12 +11174,12 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <div key={key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",...(i>0?{borderTop:`1px solid ${C.border}`,marginTop:12,paddingTop:12}:{})}}>
           <div style={{flex:1,minWidth:0,paddingRight:10}}>
             <div style={{color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:2}}>{title}</div>
-            <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{desc}</div>
+            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{desc}</div>
           </div>
           <Toggle label={title} on={notifs[key]} onChange={v=>setNotif({[key]:v})}/>
         </div>
       ))}
-      <div style={{color:C.muted,fontSize:11,marginTop:12,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontStyle:"italic"}}>
+      <div style={{color:C.muted,fontSize:13,marginTop:12,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif",fontStyle:"italic"}}>
         {notifPerm.granted ? "Notifications are on. These control which alerts you receive." : "Pick the alerts you'd like. They start once notifications are enabled."}
       </div>
     </div>
@@ -10986,10 +11190,10 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         </div>
         <div style={{textAlign:"left"}}>
           <div style={{color:"#fff",fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15,letterSpacing:-0.3}}>Share Flourish</div>
-          <div style={{color:"rgba(255,255,255,0.62)",fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3}}>Invite a friend · help them thrive</div>
+          <div style={{color:"rgba(255,255,255,0.62)",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3}}>Invite a friend · help them thrive</div>
         </div>
       </div>
-      <div style={{background:"rgba(0,204,133,0.2)",border:"1px solid rgba(0,204,133,0.35)",borderRadius:99,padding:"7px 16px",color:"#00CC85",fontSize:12,fontWeight:700,letterSpacing:0.2,flexShrink:0}}>Share ↗</div>
+      <div style={{background:"rgba(0,204,133,0.2)",border:"1px solid rgba(0,204,133,0.35)",borderRadius:99,padding:"7px 16px",color:"#00CC85",fontSize:13,fontWeight:700,letterSpacing:0.2,flexShrink:0}}>Share ↗</div>
     </button>
     {[
         {icon:"user",  color:C.purple, label:"Profile & Income",    sub:`${data.profile?.name||"You"} · ${data.profile?.country||"CA"}`,   key:"profile"},
@@ -11013,7 +11217,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
             </div>
             <div style={{flex:1,minWidth:0}}>
               <div style={{color:C.cream,fontWeight:600,fontSize:14}}>{item.label}</div>
-              <div style={{color:C.muted,fontSize:12,marginTop:1}}>{item.sub}</div>
+              <div style={{color:C.muted,fontSize:13,marginTop:1}}>{item.sub}</div>
             </div>
             <span style={{color:isActive?item.color:C.muted,fontSize:16,fontWeight:300,transition:"transform .2s",transform:isActive?"rotate(90deg)":"none",display:"inline-block"}}>›</span>
           </div>
@@ -11027,9 +11231,9 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <span style={{fontSize:22}}>🔗</span>
         <div style={{flex:1}}>
           <div style={{color:C.goldBright,fontWeight:700,fontSize:13}}>Bank session expired</div>
-          <div style={{color:C.muted,fontSize:12,marginTop:2}}>Reconnect to refresh your data</div>
+          <div style={{color:C.muted,fontSize:13,marginTop:2}}>Reconnect to refresh your data</div>
         </div>
-        <button onClick={onReconnect} disabled={reconnectLoading} style={{background:C.gold,border:"none",borderRadius:10,padding:"8px 14px",color:"#000",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",opacity:reconnectLoading?0.6:1}}>
+        <button onClick={onReconnect} disabled={reconnectLoading} style={{background:C.gold,border:"none",borderRadius:10,padding:"8px 14px",color:"#000",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",opacity:reconnectLoading?0.6:1}}>
           {reconnectLoading?"…":"Reconnect"}
         </button>
       </div>
@@ -11038,12 +11242,12 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     {(bankConnected || true)&&(
       <div style={{marginTop:10,padding:"14px 16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
         <div style={{color:C.cream,fontWeight:700,fontSize:13,marginBottom:8}}>Connected Banks</div>
-        <div style={{color:C.muted,fontSize:11.5,lineHeight:1.5,marginBottom:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Read-only connections through Plaid. Flourish cannot move your money. Unlink any time.</div>
+        <div style={{color:C.muted,fontSize:13,lineHeight:1.5,marginBottom:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Read-only connections through Plaid. Flourish cannot move your money. Unlink any time.</div>
         {/* Phase D6: bank list driven by Supabase plaid_items via getUserItems */}
         {bankItems === null ? (
-          <div style={{color:C.muted,fontSize:12,padding:"8px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Loading banks…</div>
+          <div style={{color:C.muted,fontSize:13,padding:"8px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Loading banks…</div>
         ) : bankItems.length === 0 ? (
-          <div style={{color:C.muted,fontSize:12,padding:"8px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>No banks connected yet.</div>
+          <div style={{color:C.muted,fontSize:13,padding:"8px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>No banks connected yet.</div>
         ) : bankItems.map((b, i) => (
           <div key={b.id || b.item_id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom: i < bankItems.length - 1 ? `1px solid ${C.border}` : "none"}}>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -11075,7 +11279,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
                 const kept = (prev.accounts || []).filter(a => a._item !== b.item_id);
                 return { ...prev, accounts: kept, bankConnected: kept.some(a => a.institution !== "Manual") };
               });
-            }} style={{background:"none",border:`1px solid ${C.orange}44`,borderRadius:8,padding:"4px 10px",color:C.orange,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Disconnect</button>
+            }} style={{background:"none",border:`1px solid ${C.orange}44`,borderRadius:8,padding:"4px 10px",color:C.orange,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Disconnect</button>
           </div>
         ))}
         <button onClick={onAddBank} style={{width:"100%",marginTop:12,background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:10,padding:"10px",color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
@@ -11116,11 +11320,11 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
       <Btn label="Delete Account" onClick={onDeleteData||onReset} color={C.red} small/>
     </div>
     {onReset&&(
-      <button onClick={()=>{confirmModal({title:"Reset app?",message:"This goes back to setup.",confirmLabel:"Reset",destructive:true}).then(ok=>{if(ok)onReset();});}} style={{width:"100%",marginTop:8,background:"none",border:`1px solid ${C.border}`,borderRadius:14,padding:"11px",fontFamily:"inherit",fontWeight:600,color:C.muted,cursor:"pointer",fontSize:12}}>
+      <button onClick={()=>{confirmModal({title:"Reset app?",message:"This goes back to setup.",confirmLabel:"Reset",destructive:true}).then(ok=>{if(ok)onReset();});}} style={{width:"100%",marginTop:8,background:"none",border:`1px solid ${C.border}`,borderRadius:14,padding:"11px",fontFamily:"inherit",fontWeight:600,color:C.muted,cursor:"pointer",fontSize:13}}>
         🔄 Reset to onboarding
       </button>
     )}
-    <div style={{textAlign:"center",color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:12,letterSpacing:0.3}}>
+    <div style={{textAlign:"center",color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:12,letterSpacing:0.3}}>
       Flourish v1.0 · flourishmoney.app · © 2026 GrowSmart Inc.
       {/* Build SHA baked in at vite build time (see vite.config.js). Lets you eyeball whether this
           iOS/web build matches deployed main — a different SHA than flourishmoney.app means drift. */}
@@ -11145,20 +11349,20 @@ function DesktopSidebar({data,setScreen}){
     {investments.length>0&&<div style={{background:C.card,borderRadius:20,padding:"20px",border:`1px solid ${C.teal}22`}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
         <div>
-          <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Investment Portfolio</div>
+          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Investment Portfolio</div>
           <div style={{color:C.tealBright,fontWeight:900,fontSize:26,fontFamily:"'Playfair Display',serif",marginTop:3}}>{formatMoney(totalInvested)}</div>
         </div>
-        <div style={{background:C.teal+"18",border:`1px solid ${C.teal}33`,borderRadius:99,padding:"5px 12px",color:C.tealBright,fontSize:11,fontWeight:700}}>+{formatMoney(totalGain)} total</div>
+        <div style={{background:C.teal+"18",border:`1px solid ${C.teal}33`,borderRadius:99,padding:"5px 12px",color:C.tealBright,fontSize:13,fontWeight:700}}>+{formatMoney(totalGain)} total</div>
       </div>
       {investments.map((inv,i)=>(
         <div key={i} style={{background:C.cardAlt,borderRadius:12,padding:"12px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div>
             <div style={{color:C.cream,fontWeight:600,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{inv.name}</div>
-            <div style={{color:C.muted,fontSize:11,marginTop:2}}>{inv.ticker}</div>
+            <div style={{color:C.muted,fontSize:13,marginTop:2}}>{inv.ticker}</div>
           </div>
           <div style={{textAlign:"right"}}>
             <div style={{color:C.cream,fontWeight:700,fontSize:14}}>{formatMoney(inv.balance)}</div>
-            <div style={{color:C.greenBright,fontSize:11,fontWeight:600}}>+{inv.gainPct}%</div>
+            <div style={{color:C.greenBright,fontSize:13,fontWeight:600}}>+{inv.gainPct}%</div>
           </div>
         </div>
       ))}
@@ -11166,13 +11370,13 @@ function DesktopSidebar({data,setScreen}){
 
     {/* Upcoming bills */}
     <div style={{background:C.card,borderRadius:20,padding:"20px",border:`1px solid ${C.border}`}}>
-      <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:12}}>Upcoming Bills</div>
+      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:12}}>Upcoming Bills</div>
       {soonBills.length===0&&<div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>No bills due in the next 10 days 🎉</div>}
       {soonBills.map((b,i)=>(
         <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:i<soonBills.length-1?`1px solid ${C.border}`:"none"}}>
           <div>
             <div style={{color:C.cream,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name}</div>
-            <div style={{color:C.muted,fontSize:11}}>Due the {b.date}{ordinalSuffix(b.date)}</div>
+            <div style={{color:C.muted,fontSize:13}}>Due the {b.date}{ordinalSuffix(b.date)}</div>
           </div>
           <div style={{color:C.gold,fontWeight:700,fontSize:14}}>${b.amount}</div>
         </div>
@@ -11182,16 +11386,16 @@ function DesktopSidebar({data,setScreen}){
     {/* Recent transactions */}
     <div style={{background:C.card,borderRadius:20,padding:"20px",border:`1px solid ${C.border}`}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-        <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Recent Activity</div>
-        <button onClick={()=>setScreen("spend")} style={{background:"none",border:"none",color:C.green,fontSize:11,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>See all →</button>
+        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Recent Activity</div>
+        <button onClick={()=>setScreen("spend")} style={{background:"none",border:"none",color:C.green,fontSize:13,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>See all →</button>
       </div>
       {txns.filter(t=>t.amount>0).slice(0,5).map((t,i)=>(
-        <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:i<4?`1px solid ${C.border}`:"none"}}>
+        <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0",minHeight:LAYOUT.minTap,borderBottom:i<4?`1px solid ${C.border}`:"none"}}>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
             <div style={{width:32,height:32,borderRadius:10,background:t.color+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>{t.icon}</div>
             <div>
               <div style={{color:C.cream,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{t.name}</div>
-              <div style={{color:C.muted,fontSize:11}}>{t.date}</div>
+              <div style={{color:C.muted,fontSize:13}}>{t.date}</div>
             </div>
           </div>
           <div style={{color:C.cream,fontWeight:700,fontSize:13}}>${(t.amount||0).toFixed(2)}</div>
@@ -11203,8 +11407,8 @@ function DesktopSidebar({data,setScreen}){
     <div onClick={()=>setScreen("coach")} style={{background:`linear-gradient(135deg,${C.greenDim},${C.card})`,borderRadius:20,padding:"20px",border:`1px solid ${C.green}22`,cursor:"pointer",transition:"all .2s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=C.green+"44";e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=C.green+"22";e.currentTarget.style.transform="none";}}>
       <div style={{marginBottom:10,display:"flex",justifyContent:"center"}}><Icon id="sparkles" size={26} color={C.green} strokeWidth={1.35}/></div>
       <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif",marginBottom:6}}>Ask your AI Coach</div>
-      <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>Get coaching from your own numbers, based on your real transactions and {data.profile?.country==="US"?"401k/IRA":"RRSP/TFSA"} situation.</div>
-      <div style={{color:C.green,fontSize:12,fontWeight:700,marginTop:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Start coaching session →</div>
+      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>Get coaching from your own numbers, based on your real transactions and {data.profile?.country==="US"?"401k/IRA":"RRSP/TFSA"} situation.</div>
+      <div style={{color:C.green,fontSize:13,fontWeight:700,marginTop:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Start coaching session →</div>
     </div>
   </>;
 }
@@ -11258,7 +11462,7 @@ function renderCoachMarkdown(src) {
       while (i < lines.length && lines[i].trim() && lines[i].includes("|")) { rows.push(mdSplitRow(lines[i])); i++; }
       blocks.push(
         <div key={"k"+b++} style={{overflowX:"auto",margin:"7px 0"}}>
-          <table style={{borderCollapse:"collapse",width:"100%",fontSize:12.5}}>
+          <table style={{borderCollapse:"collapse",width:"100%",fontSize:13}}>
             <thead><tr>{header.map((h,ci)=>(
               <th key={ci} style={{textAlign:"left",padding:"6px 10px",borderBottom:`1.5px solid ${brd}`,color:C.cream,fontWeight:800}}>{mdInline(h,"th"+i+ci)}</th>
             ))}</tr></thead>
@@ -11300,13 +11504,13 @@ function renderCoachMarkdown(src) {
 // Step 4 (COPY-CHANGES §2/§9): the two labels for surfaces that mix engine output and coach prose,
 // and the footer under every coach reply. Small, reusable.
 function CalcByFlourish({ style = {} }) {
-  return <span style={{display:"inline-flex",alignItems:"center",gap:4,color:C.greenBright,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:0.7,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>✓ Calculated by Flourish</span>;
+  return <span style={{display:"inline-flex",alignItems:"center",gap:4,color:C.greenBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>✓ Calculated by Flourish</span>;
 }
 function YourCoachTag({ style = {} }) {
-  return <span style={{display:"inline-flex",alignItems:"center",gap:4,color:C.purpleBright||C.purple,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:0.7,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>Your coach</span>;
+  return <span style={{display:"inline-flex",alignItems:"center",gap:4,color:C.purpleBright||C.purple,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>Your coach</span>;
 }
 function CoachReplyFooter({ style = {} }) {
-  return <div style={{color:C.muted,fontSize:9.5,lineHeight:1.4,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>Figures are Flourish calculations from your data. Not investment, legal or tax advice.</div>;
+  return <div style={{color:C.muted,fontSize:13,lineHeight:1.4,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>Figures are Flourish calculations from your data. Not investment, legal or tax advice.</div>;
 }
 
 // Step 6: segmented control for the tabs that hold more than one screen (Watch, Do). Switching a
@@ -11645,7 +11849,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
           </div>
           <div style={{flex:1}}>
             <div style={{color:C.cream,fontWeight:800,fontSize:15}}>AI Coach</div>
-            <div style={{color:isOnline?C.green:C.muted,fontSize:11,fontWeight:600,display:"flex",alignItems:"center",gap:4}}>
+            <div style={{color:isOnline?C.green:C.muted,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",gap:4}}>
               <div style={{width:6,height:6,borderRadius:"50%",background:isOnline?C.green:C.muted}}/>
               {data.demo?"Example · Sample data":isOnline?"Live · Your real data":"Offline"}
             </div>
@@ -11655,12 +11859,12 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
               try{localStorage.removeItem(STORAGE_KEY);}catch{}
               setMessages([WELCOME]);
             }
-          }} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"6px 10px",color:C.muted,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:36,flexShrink:0}} title="Clear history">
+          }} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"6px 10px",color:C.muted,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:36,flexShrink:0}} title="Clear history">
             🗑️
           </button>
           {!isPremium&&<div onClick={isNativeApp()?undefined:onUpgrade} style={{background:freeMsgsLeft>0?C.purple+"22":C.red+"22",border:`1px solid ${freeMsgsLeft>0?C.purple+"44":C.red+"44"}`,borderRadius:10,padding:"5px 10px",cursor:"pointer",textAlign:"center"}}>
-            <div style={{color:freeMsgsLeft>0?C.purpleBright:C.redBright,fontSize:12,fontWeight:800}}>{freeMsgsLeft}/{FREE_LIMIT}</div>
-            <div style={{color:C.muted,fontSize:9,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>left this week</div>
+            <div style={{color:freeMsgsLeft>0?C.purpleBright:C.redBright,fontSize:13,fontWeight:800}}>{freeMsgsLeft}/{FREE_LIMIT}</div>
+            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>left this week</div>
           </div>}
         </div>
       </div>
@@ -11675,8 +11879,8 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
            real coach path below is untouched for signed-in users. */
         <div style={{flex:1,overflowY:"auto",padding:"14px 16px 20px",display:"flex",flexDirection:"column",gap:12}}>
           <div style={{background:C.gold+"14",border:`1px solid ${C.gold}44`,borderRadius:12,padding:"10px 12px"}}>
-            <div style={{color:C.goldBright,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Example conversation · sample data</div>
-            <div style={{color:C.mutedHi,fontSize:11.5,lineHeight:1.55,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>A scripted preview of how your coach answers. Every figure is calculated by Flourish from this demo's numbers, so it matches the rest of the demo, but this is not a live chat.</div>
+            <div style={{color:C.goldBright,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Example conversation · sample data</div>
+            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.55,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>A scripted preview of how your coach answers. Every figure is calculated by Flourish from this demo's numbers, so it matches the rest of the demo, but this is not a live chat.</div>
           </div>
           {demoCoachExchanges(data, new Date()).map((x,i)=>(
             <div key={i} style={{display:"flex",flexDirection:"column",gap:7}}>
@@ -11686,14 +11890,14 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
           ))}
           <CalcByFlourish style={{marginTop:2}}/>
           <div style={{borderTop:`1px solid ${C.border}`,marginTop:6,paddingTop:14,textAlign:"center"}}>
-            <div style={{color:C.mutedHi,fontSize:12.5,lineHeight:1.6,marginBottom:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>That's the coach working on sample data. Create a free account to ask it about your own.</div>
+            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>That's the coach working on sample data. Create a free account to ask it about your own.</div>
             {onExitDemo&&<button onClick={onExitDemo} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:99,padding:"13px 24px",color:C.isDark?"#160B2E":"#FFFFFF",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Create free account →</button>}
           </div>
         </div>
       ) : (<>
       {/* Tier 2.9: persistent AI disclosure (Apple 5.1.2(i)) — inline, non-dismissible */}
       <div style={{padding:"8px 20px",borderBottom:`1px solid ${C.border}`,background:C.cardAlt,flexShrink:0}}>
-        <div style={{color:C.muted,fontSize:10,fontStyle:"italic",lineHeight:1.5,textAlign:"center"}}>
+        <div style={{color:C.muted,fontSize:13,fontStyle:"italic",lineHeight:1.5,textAlign:"center"}}>
           Educational guidance only. Not financial, tax, or investment advice. Verify with a professional or official sources (CRA/IRS) before making decisions. AI can make mistakes.
         </div>
       </div>
@@ -11705,7 +11909,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
             {m.role==="system"
               ? <div style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"4px 0"}}>
                   <div style={{flex:1,height:1,background:C.border}}/>
-                  <span style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,flexShrink:0}}>{m.content}</span>
+                  <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,flexShrink:0}}>{m.content}</span>
                   <div style={{flex:1,height:1,background:C.border}}/>
                 </div>
               : m.role==="user"
@@ -11728,16 +11932,16 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
             </div>
           </div>
         )}
-        {error&&<div style={{color:C.red,fontSize:12,textAlign:"center",padding:"8px 16px",background:C.redDim,borderRadius:10,border:`1px solid ${C.red}33`}}>{error}</div>}
+        {error&&<div style={{color:C.red,fontSize:13,textAlign:"center",padding:"8px 16px",background:C.redDim,borderRadius:10,border:`1px solid ${C.red}33`}}>{error}</div>}
         {pendingAction&&(
           <div style={{alignSelf:"stretch",background:C.purple+"11",border:`1px solid ${C.purple}44`,borderRadius:14,padding:"12px 14px"}}>
             <div style={{color:C.cream,fontSize:13,fontWeight:700,marginBottom:4}}>Apply this change?</div>
-            <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.5,marginBottom:10}}>
+            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5,marginBottom:10}}>
               {pendingAction.action==="add_goal"?"Add a new goal":"Update goal"}: "{sanitizeField(pendingAction.name||"Goal",80)}"{pendingAction.target!=null?`, target $${parseFloat(pendingAction.target)||0}`:""}
             </div>
             <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>applyPendingAction(pendingAction)} style={{flex:1,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:"#fff",border:"none",borderRadius:10,padding:"9px",fontSize:12,fontWeight:700,fontFamily:"inherit",cursor:"pointer",minHeight:38}}>Apply</button>
-              <button onClick={()=>setPendingAction(null)} style={{flex:1,background:"none",border:`1px solid ${C.border}`,color:C.mutedHi,borderRadius:10,padding:"9px",fontSize:12,fontWeight:600,fontFamily:"inherit",cursor:"pointer",minHeight:38}}>Dismiss</button>
+              <button onClick={()=>applyPendingAction(pendingAction)} style={{flex:1,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:"#fff",border:"none",borderRadius:10,padding:"9px",fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:"pointer",minHeight:38}}>Apply</button>
+              <button onClick={()=>setPendingAction(null)} style={{flex:1,background:"none",border:`1px solid ${C.border}`,color:C.mutedHi,borderRadius:10,padding:"9px",fontSize:13,fontWeight:600,fontFamily:"inherit",cursor:"pointer",minHeight:38}}>Dismiss</button>
             </div>
           </div>
         )}
@@ -11748,7 +11952,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
       {messages.length===1&&(
         <div style={{padding:"0 20px 10px",display:"flex",flexWrap:"wrap",gap:7,flexShrink:0}}>
           {suggestions.map((s,i)=>(
-            <button key={i} onClick={()=>{setInput(s);}} style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:99,padding:"7px 13px",color:C.mutedHi,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
+            <button key={i} onClick={()=>{setInput(s);}} style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:99,padding:"7px 13px",color:C.mutedHi,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
               {s}
             </button>
           ))}
@@ -11863,10 +12067,10 @@ function CreditScreen({data,setScreen}){
 
   return(
     <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"20px 20px 80px",maxWidth:430,margin:"0 auto"}}>
-      <ScreenHeader title="Credit" subtitle="Estimated from your payment and utilization patterns. Not your bureau score." onBack={setScreen?()=>setScreen("home"):null} cta="Ask Coach" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
+      <ScreenHeader title="Credit" subtitle="Estimated, not your bureau score." onBack={setScreen?()=>setScreen("home"):null} cta="Ask Coach" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
       {/* Score gauge */}
       <div style={{background:C.card,borderRadius:20,padding:"24px 20px 20px",border:`1px solid ${C.border}`,marginBottom:16,textAlign:"center"}}>
-        <div style={{color:C.muted,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Credit Score Estimate</div>
+        <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:12}}>Credit Score Estimate</div>
         <svg viewBox="0 0 200 120" style={{width:"100%",maxWidth:240,margin:"0 auto",display:"block"}}>
           {/* Track arc */}
           <path d="M 20 95 A 80 80 0 0 1 180 95" fill="none" stroke={C.border} strokeWidth="12" strokeLinecap="round"/>
@@ -11880,14 +12084,14 @@ function CreditScreen({data,setScreen}){
           <text x="100" y="82" textAnchor="middle" fill={scoreColor} fontSize="28" fontWeight="900" fontFamily="Plus Jakarta Sans,sans-serif">{clampedScore}</text>
           <text x="100" y="112" textAnchor="middle" fill={scoreColor} fontSize="11" fontWeight="700" fontFamily="Plus Jakarta Sans,sans-serif">{scoreLabel}</text>
         </svg>
-        <div style={{color:C.muted,fontSize:11,marginTop:8}}>
+        <div style={{color:C.muted,fontSize:13,marginTop:8}}>
           Estimated from your spending behaviour · {isCA?"Equifax/TransUnion scale 300 to 900":"FICO® scale 300 to 850"}
         </div>
         <div style={{display:"flex",justifyContent:"center",gap:6,marginTop:12}}>
           {[["580","Poor",C.red],["670","Fair",C.gold],["740","Good",C.green],["800","Excellent",C.teal]].map(([s,l,col])=>(
             <div key={s} style={{background:col+"22",border:`1px solid ${col}44`,borderRadius:8,padding:"3px 8px",textAlign:"center"}}>
-              <div style={{color:col,fontSize:9,fontWeight:800}}>{s}+</div>
-              <div style={{color:col,fontSize:10,fontWeight:600}}>{l}</div>
+              <div style={{color:col,fontSize:13,fontWeight:800}}>{s}+</div>
+              <div style={{color:col,fontSize:13,fontWeight:600}}>{l}</div>
             </div>
           ))}
         </div>
@@ -11901,15 +12105,15 @@ function CreditScreen({data,setScreen}){
             <div key={i}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
                 <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                  <span style={{color:C.cream,fontSize:12,fontWeight:700}}>{f.label}</span>
-                  <span style={{color:C.muted,fontSize:10,fontWeight:600}}>{f.weight}</span>
+                  <span style={{color:C.cream,fontSize:13,fontWeight:700}}>{f.label}</span>
+                  <span style={{color:C.muted,fontSize:13,fontWeight:600}}>{f.weight}</span>
                 </div>
-                <span style={{color:f.score>=80?C.green:f.score>=60?C.gold:C.red,fontWeight:800,fontSize:12}}>{f.score}/100</span>
+                <span style={{color:f.score>=80?C.green:f.score>=60?C.gold:C.red,fontWeight:800,fontSize:13}}>{f.score}/100</span>
               </div>
               <div style={{background:C.cardAlt,borderRadius:99,height:6,overflow:"hidden"}}>
                 <div style={{height:"100%",width:`${f.score}%`,background:f.score>=80?C.green:f.score>=60?C.gold:C.red,borderRadius:99,transition:"width 1s ease"}}/>
               </div>
-              <div style={{color:C.muted,fontSize:11,marginTop:4,lineHeight:1.5}}>{f.tip}</div>
+              <div style={{color:C.muted,fontSize:13,marginTop:4,lineHeight:1.5}}>{f.tip}</div>
             </div>
           ))}
         </div>
@@ -11923,7 +12127,7 @@ function CreditScreen({data,setScreen}){
             <div style={{fontSize:22,flexShrink:0,marginTop:1}}>{t.icon}</div>
             <div>
               <div style={{color:C.cream,fontWeight:700,fontSize:13,marginBottom:3}}>{t.title}</div>
-              <div style={{color:C.muted,fontSize:12,lineHeight:1.55}}>{t.desc}</div>
+              <div style={{color:C.muted,fontSize:13,lineHeight:1.55}}>{t.desc}</div>
             </div>
           </div>
         ))}
@@ -11931,7 +12135,7 @@ function CreditScreen({data,setScreen}){
 
       {/* Disclaimer */}
       <div style={{marginTop:16,padding:"12px 16px",background:C.cardAlt,borderRadius:14,border:`1px solid ${C.border}`}}>
-        <div style={{color:C.muted,fontSize:10,lineHeight:1.6,textAlign:"center"}}>
+        <div style={{color:C.muted,fontSize:13,lineHeight:1.6,textAlign:"center"}}>
           ⚠️ This is a behavioural estimate, not your official credit score. Connect a bureau account or check {isCA?"Equifax/TransUnion directly":"AnnualCreditReport.com"} for your actual score.
         </div>
       </div>
@@ -11951,7 +12155,7 @@ function PrivacyPolicy({onBack}){
         <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 18px",minHeight:44,color:C.cream,cursor:"pointer",...s,fontSize:13,fontWeight:600}}>← Back</button>
         <div>
           <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream}}>Privacy Policy</div>
-          <div style={{...s,fontSize:11,color:C.muted}}>Last updated {last}</div>
+          <div style={{...s,fontSize:13,color:C.muted}}>Last updated {last}</div>
         </div>
       </div>
 
@@ -12041,7 +12245,7 @@ function DeleteAccount({onBack}){
         <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 18px",minHeight:44,color:C.cream,fontSize:13,cursor:"pointer",...s}}>← Back</button>
         <div>
           <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream}}>Delete your account</div>
-          <div style={{...s,fontSize:11,color:C.muted}}>Last updated {last}</div>
+          <div style={{...s,fontSize:13,color:C.muted}}>Last updated {last}</div>
         </div>
       </div>
 
@@ -12102,7 +12306,7 @@ function TermsOfService({onBack}){
         <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 18px",minHeight:44,color:C.cream,cursor:"pointer",...s,fontSize:13,fontWeight:600}}>← Back</button>
         <div>
           <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream}}>Terms of Service</div>
-          <div style={{...s,fontSize:11,color:C.muted}}>Last updated {last}</div>
+          <div style={{...s,fontSize:13,color:C.muted}}>Last updated {last}</div>
         </div>
       </div>
 
@@ -12179,7 +12383,7 @@ function PremiumGate({feature,desc,onUpgrade}){
           <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish Plus includes:</div>
           <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
             {["AI Coach with real data","Full credit coaching","Tax tips & benefits checker","Investment tracking","Weekly money meeting","Debt simulator"].map((f,i)=>(
-              <div key={i} style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"left",display:"flex",alignItems:"center",gap:7}}><Icon id="check" size={14} color={C.green} strokeWidth={2.0}/>{f}</div>
+              <div key={i} style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"left",display:"flex",alignItems:"center",gap:7}}><Icon id="check" size={14} color={C.green} strokeWidth={2.0}/>{f}</div>
             ))}
           </div>
         </div>
@@ -12188,7 +12392,7 @@ function PremiumGate({feature,desc,onUpgrade}){
         </button>
         {/* Never offer a free trial to someone who has already had one — this gate also renders for
             trial-EXPIRED users, directly under the "Your free trial has ended" banner. */}
-        <div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{getTrialStartedAt() ? "Cancel any time." : "14 days free. Cancel any time."}</div>
+        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{getTrialStartedAt() ? "Cancel any time." : "14 days free. Cancel any time."}</div>
         </>
       )}
     </div>
@@ -12271,16 +12475,16 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
                   <div style={{color:C.cream,fontWeight:800,fontSize:15}}>{plan.label}</div>
                   <div style={{color:C.cream,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{plan.price}</div>
                 </div>
-                {plan.sub&&<div style={{color:C.muted,fontSize:12,marginTop:4}}>{plan.sub}</div>}
-                {plan.note&&<div style={{color:plan.key==="founding_annual"?C.gold:C.mutedHi,fontSize:12,marginTop:6,lineHeight:1.5}}>{plan.note}</div>}
-                {busy===plan.key&&<div style={{color:C.muted,fontSize:12,marginTop:8}}>Opening checkout…</div>}
+                {plan.sub&&<div style={{color:C.muted,fontSize:13,marginTop:4}}>{plan.sub}</div>}
+                {plan.note&&<div style={{color:plan.key==="founding_annual"?C.gold:C.mutedHi,fontSize:13,marginTop:6,lineHeight:1.5}}>{plan.note}</div>}
+                {busy===plan.key&&<div style={{color:C.muted,fontSize:13,marginTop:8}}>Opening checkout…</div>}
               </button>
             ))}
           </div>
         )}
 
         {error&&<div style={{color:C.redBright,fontSize:13,marginTop:14,lineHeight:1.6}}>{error}</div>}
-        <div style={{color:C.muted,fontSize:11,marginTop:18,lineHeight:1.7}}>
+        <div style={{color:C.muted,fontSize:13,marginTop:18,lineHeight:1.7}}>
           Payment is handled by Stripe. Your plan changes once Stripe confirms the payment.
         </div>
       </div>
@@ -12332,11 +12536,11 @@ function Paywall({onClose,onPromoValid,country}){
         <div style={{display:"flex",gap:10,marginBottom:20}}>
           {Object.entries(plans).map(([key,plan])=>(
             <button key={key} onClick={()=>setSelected(key)} style={{flex:1,background:selected===key?C.purple+"22":C.card,border:`2px solid ${selected===key?C.purple:C.border}`,borderRadius:16,padding:"14px 12px",cursor:"pointer",textAlign:"center",position:"relative",transition:"all .2s"}}>
-              {plan.badge&&<div style={{position:"absolute",top:-10,left:"50%",transform:"translateX(-50%)",background:C.purple,color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"3px 10px",whiteSpace:"nowrap"}}>{plan.badge}</div>}
-              <div style={{color:selected===key?C.purpleBright:C.muted,fontWeight:700,fontSize:12,marginBottom:4,fontFamily:"inherit"}}>{plan.label}</div>
+              {plan.badge&&<div style={{position:"absolute",top:-10,left:"50%",transform:"translateX(-50%)",background:C.purple,color:"#fff",fontSize:13,fontWeight:800,borderRadius:99,padding:"3px 10px",whiteSpace:"nowrap"}}>{plan.badge}</div>}
+              <div style={{color:selected===key?C.purpleBright:C.muted,fontWeight:700,fontSize:13,marginBottom:4,fontFamily:"inherit"}}>{plan.label}</div>
               <div style={{color:selected===key?C.cream:C.mutedHi,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{plan.price}</div>
-              {plan.monthly&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>{plan.monthly} · billed annually</div>}
-              {plan.save&&<div style={{color:C.greenBright,fontSize:10,fontWeight:700,marginTop:4}}>{plan.save}</div>}
+              {plan.monthly&&<div style={{color:C.muted,fontSize:13,marginTop:2}}>{plan.monthly} · billed annually</div>}
+              {plan.save&&<div style={{color:C.greenBright,fontSize:13,fontWeight:700,marginTop:4}}>{plan.save}</div>}
             </button>
           ))}
         </div>
@@ -12348,7 +12552,7 @@ function Paywall({onClose,onPromoValid,country}){
               <div style={{flexShrink:0,marginTop:2}}><Icon id={f.icon||"sparkles"} size={20} color={C.purpleBright} strokeWidth={1.5}/></div>
               <div>
                 <div style={{color:C.cream,fontWeight:700,fontSize:13}}>{f.title}</div>
-                <div style={{color:C.muted,fontSize:12,marginTop:2,lineHeight:1.5}}>{f.desc}</div>
+                <div style={{color:C.muted,fontSize:13,marginTop:2,lineHeight:1.5}}>{f.desc}</div>
               </div>
               <div style={{color:C.green,fontSize:16,flexShrink:0,marginTop:2}}>✓</div>
             </div>
@@ -12377,22 +12581,22 @@ function Paywall({onClose,onPromoValid,country}){
             style={{background:C.purple+"22",border:`1.5px solid ${C.purple}44`,borderRadius:12,padding:"11px 16px",color:C.purpleBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",whiteSpace:"nowrap"}}
           >Apply</button>
         </div>
-        {promoError&&<div style={{color:C.red,fontSize:11,marginBottom:8,textAlign:"center"}}>{promoError}</div>}
-        {promoNote&&<div style={{color:C.muted,fontSize:11,marginBottom:8,textAlign:"center",lineHeight:1.5}}>{promoNote}</div>}
+        {promoError&&<div style={{color:C.red,fontSize:13,marginBottom:8,textAlign:"center"}}>{promoError}</div>}
+        {promoNote&&<div style={{color:C.muted,fontSize:13,marginBottom:8,textAlign:"center",lineHeight:1.5}}>{promoNote}</div>}
 
         {/* CTA — says what is true. It changes no plan and charges nothing. */}
         <button onClick={()=>setUpgradeNote("Paid plans aren't open yet. Nothing has been charged and your plan hasn't changed. We'll email you the moment checkout is live.")} style={{width:"100%",background:`linear-gradient(135deg,${C.purple} 0%,${C.purpleBright} 100%)`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:16,padding:"16px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 8px 32px ${C.purple}40`,marginBottom:12}}>
           Start 14 days free →
         </button>
-        {upgradeNote&&<div style={{color:C.purpleBright,fontSize:12,marginBottom:12,textAlign:"center",lineHeight:1.6}}>{upgradeNote}</div>}
-        <div style={{textAlign:"center",color:C.muted,fontSize:11,lineHeight:1.7}}>
+        {upgradeNote&&<div style={{color:C.purpleBright,fontSize:13,marginBottom:12,textAlign:"center",lineHeight:1.6}}>{upgradeNote}</div>}
+        <div style={{textAlign:"center",color:C.muted,fontSize:13,lineHeight:1.7}}>
           Free for 14 days, then {plans[selected].price}. Cancel any time from Settings.
         </div>
 
         {/* Trust footer */}
         <div style={{marginTop:20,display:"flex",justifyContent:"center",gap:16}}>
           {["🔒 Read-only. No money movement.","🇨🇦 Built in Ontario","🔑 Your bank login is never stored"].map((t,i)=>(
-            <div key={i} style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:4}}>{t}</div>
+            <div key={i} style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:4}}>{t}</div>
           ))}
         </div>
       </div>
@@ -12436,7 +12640,7 @@ function FirstVisitScreen({data, onDismiss}) {
 
       <div style={{position:"relative",width:"100%",maxWidth:360}}>
         {/* Welcome */}
-        <div style={{color:C.muted,fontSize:12,fontWeight:700,letterSpacing:2,textTransform:"uppercase",marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+        <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:16,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
           Welcome, {name}
         </div>
 
@@ -12489,21 +12693,21 @@ function FirstVisitScreen({data, onDismiss}) {
             total, so the card would be a heading, nothing, and a labelled blank. */}
         {breakdownOpen&&!ssView.needsSetup&&(
           <div style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:18,padding:"16px 20px",marginBottom:24,textAlign:"left"}}>
-            <div style={{color:C.muted,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How this is calculated</div>
+            <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How this is calculated</div>
             {ssView.rows.map((r)=>{
               const col = r.kind==="balance" ? C.greenBright : (r.key==="upcomingBills"||r.key==="debtPayments") ? C.gold : C.teal;
               return (
                 <div key={r.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${C.border}22`}}>
-                  <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign?`${r.sign} `:""}{r.label}</span>
+                  <span style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign?`${r.sign} `:""}{r.label}</span>
                   <span style={{color:col,fontWeight:700,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{r.value}</span>
                 </div>
               );
             })}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0 2px",borderTop:`1px solid ${C.border}`,marginTop:4}}>
-              <span style={{color:C.cream,fontSize:12,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{ssView.totalLabel}</span>
+              <span style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{ssView.totalLabel}</span>
               <span style={{color:C.greenBright,fontWeight:900,fontSize:14,fontFamily:"'Playfair Display',serif"}}>{ssView.headlineText}</span>
             </div>
-            {!data.bankConnected&&<div style={{marginTop:12,color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>📌 Connect your bank to make this number live and precise.</div>}
+            {!data.bankConnected&&<div style={{marginTop:12,color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>📌 Connect your bank to make this number live and precise.</div>}
           </div>
         )}
 
@@ -12521,10 +12725,10 @@ function FirstVisitScreen({data, onDismiss}) {
           </button>
         )}
 
-        <div style={{marginTop:4,color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,maxWidth:260,margin:"0 auto"}}>
+        <div style={{marginTop:4,color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,maxWidth:260,margin:"0 auto"}}>
           Open Flourish before you spend, not after. That's the whole idea.
         </div>
-        <button onClick={onDismiss} style={{background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"12px 8px 4px"}}>
+        <button onClick={onDismiss} style={{background:"none",border:"none",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"12px 8px 4px"}}>
           Skip for now
         </button>
       </div>
@@ -12557,36 +12761,36 @@ function AIDisclosureScreen({onAccept, onDecline, onViewLegal}){
 
         <div style={{background:C.green+"14",borderRadius:18,padding:"18px 20px",border:`1px solid ${C.green}44`,marginBottom:14}}>
           <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>Educational guidance, not advice</div>
-          <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish uses AI (Anthropic Claude) to provide financial coaching. AI responses are <strong style={{color:C.cream}}>educational guidance, not personal financial, tax, or legal advice</strong>. Information you share is processed by Anthropic per their privacy policy. You can stop using AI features anytime.</div>
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Flourish uses AI (Anthropic Claude) to provide financial coaching. AI responses are <strong style={{color:C.cream}}>educational guidance, not personal financial, tax, or legal advice</strong>. Information you share is processed by Anthropic per their privacy policy. You can stop using AI features anytime.</div>
         </div>
 
         <div style={{background:C.card,borderRadius:18,padding:"18px 20px",border:`1px solid ${C.border}`,marginBottom:14}}>
           <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>What we send to Anthropic (our AI provider)</div>
-          <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your financial summary (balance, income, bills, debts), transaction descriptions, and the messages you send. <strong style={{color:C.cream}}>We never send your name, email, account credentials, or full account numbers.</strong></div>
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your financial summary (balance, income, bills, debts), transaction descriptions, and the messages you send. <strong style={{color:C.cream}}>We never send your name, email, account credentials, or full account numbers.</strong></div>
         </div>
 
         <div style={{background:C.card,borderRadius:18,padding:"18px 20px",border:`1px solid ${C.border}`,marginBottom:14}}>
           <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>What we send to Plaid for transaction cleanup</div>
-          <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Plaid Enrich receives transaction descriptions to return clean merchant names, logos, and categories.</div>
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Plaid Enrich receives transaction descriptions to return clean merchant names, logos, and categories.</div>
         </div>
 
         <div style={{background:C.card,borderRadius:18,padding:"18px 20px",border:`1px solid ${C.border}`,marginBottom:14}}>
           <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>Where AI is used</div>
-          <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>The AI Coach chat, the What-If Simulator's plain-language explanations, your weekly check-in tip, and statement-upload parsing. The actual financial calculations are done in JavaScript on your device. AI only writes the explanations.</div>
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>The AI Coach chat, the What-If Simulator's plain-language explanations, your weekly check-in tip, and statement-upload parsing. The actual financial calculations are done in JavaScript on your device. AI only writes the explanations.</div>
         </div>
 
         <div style={{background:C.card,borderRadius:18,padding:"18px 20px",border:`1px solid ${C.border}`,marginBottom:20}}>
           <div style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>Your control</div>
-          <div style={{color:C.mutedHi,fontSize:12,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Anthropic does not train AI models on your data. You can disable AI features anytime in <strong style={{color:C.cream}}>Settings → Privacy & AI</strong>. Read the <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,font:"inherit",color:C.greenBright,textDecoration:"underline",cursor:"pointer"}}>full Privacy Policy</button> for details.</div>
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Anthropic does not train AI models on your data. You can disable AI features anytime in <strong style={{color:C.cream}}>Settings → Privacy & AI</strong>. Read the <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,font:"inherit",color:C.greenBright,textDecoration:"underline",cursor:"pointer"}}>full Privacy Policy</button> for details.</div>
         </div>
 
-        {failed&&<div style={{background:C.red+"14",border:`1px solid ${C.red}55`,borderRadius:12,padding:"10px 14px",marginBottom:10,color:C.redBright||C.cream,fontSize:12.5,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>We couldn't save your choice. Check your connection and tap Accept again.</div>}
+        {failed&&<div style={{background:C.red+"14",border:`1px solid ${C.red}55`,borderRadius:12,padding:"10px 14px",marginBottom:10,color:C.redBright||C.cream,fontSize:13,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>We couldn't save your choice. Check your connection and tap Accept again.</div>}
         <button onClick={handleAccept} disabled={saving} style={{width:"100%",background:`linear-gradient(135deg,${C.green} 0%,${C.greenBright} 100%)`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"1.5px solid rgba(255,255,255,0.18)",cursor:saving?"default":"pointer",opacity:saving?0.7:1,marginBottom:10}}>{saving?"Saving…":"I Understand & Accept"}</button>
         <button onClick={()=>onViewLegal&&onViewLegal("privacy")} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"12px",color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:10}}>Learn More</button>
         {/* Apple 5.1.2(i) opt-out. AI is not core functionality (all math runs in JS on-device — AI
             only writes the prose), so consent to third-party sharing must not be a condition of
             using the app. Keep this path. */}
-        <button onClick={onDecline} style={{width:"100%",background:"none",border:"none",borderRadius:99,padding:"11px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer"}}>Don't use AI</button>
+        <button onClick={onDecline} style={{width:"100%",background:"none",border:"none",borderRadius:99,padding:"11px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer"}}>Don't use AI</button>
       </div>
     </div>
   );
@@ -12601,7 +12805,7 @@ function AIDisabledNotice({onOpenSettings, onClose}){
         <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:22,color:C.cream,marginBottom:8}}>AI features are off</div>
         <div style={{color:C.muted,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:20}}>You've turned off AI in Settings. Enable it to chat with the Coach and use AI explanations.</div>
         <button onClick={onOpenSettings} style={{background:C.green,color:"#fff",border:"none",borderRadius:99,padding:"11px 24px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer",marginRight:8}}>Open Settings</button>
-        <button onClick={onClose} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px 18px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer"}}>Back</button>
+        <button onClick={onClose} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px 18px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer"}}>Back</button>
       </div>
     </div>
   );
@@ -12622,8 +12826,8 @@ function AIDisabledNotice({onOpenSettings, onClose}){
 //    tell them they revoked bank access when they did not.
 function BankConsentModal({ onContinue, onCancel, onViewLegal }){
   const card={background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"13px 15px",marginBottom:10};
-  const head={color:C.cream,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:5};
-  const body={color:C.mutedHi,fontSize:12,lineHeight:1.65,fontFamily:"'Plus Jakarta Sans',sans-serif"};
+  const head={color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:5};
+  const body={color:C.mutedHi,fontSize:13,lineHeight:1.65,fontFamily:"'Plus Jakarta Sans',sans-serif"};
   return (
     <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,overflowY:"auto"}}
       onClick={e=>{ if(e.target===e.currentTarget) onCancel(); }}>
@@ -12649,7 +12853,7 @@ function BankConsentModal({ onContinue, onCancel, onViewLegal }){
           <div style={body}>Disconnect any bank any time from <strong style={{color:C.cream}}>Settings → Connected Banks</strong>. Deleting your account from <strong style={{color:C.cream}}>Settings → Delete Account</strong> erases your bank data from our servers.{onViewLegal&&<> Full details are in our <button onClick={()=>onViewLegal("privacy")} style={{background:"none",border:"none",padding:0,font:"inherit",color:C.greenBright,textDecoration:"underline",cursor:"pointer"}}>Privacy Policy</button>.</>}</div>
         </div>
         <button onClick={onContinue} style={{width:"100%",background:`linear-gradient(135deg,${C.teal},${C.tealBright})`,color:C.isDark?"#04141A":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"none",cursor:"pointer",marginBottom:10}}>Connect My Bank</button>
-        <button onClick={onCancel} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.mutedHi,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer"}}>Not Now</button>
+        <button onClick={onCancel} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.mutedHi,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer"}}>Not Now</button>
       </div>
     </div>
   );
@@ -12673,7 +12877,7 @@ function AIConsentModal({ onEnable, onCancel }){
           </div>
         </div>
         <button onClick={onEnable} style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:C.isDark?"#041810":"#FFFFFF",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,border:"none",cursor:"pointer",marginBottom:10}}>Enable AI Coach</button>
-        <button onClick={onCancel} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.mutedHi,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,cursor:"pointer"}}>Cancel</button>
+        <button onClick={onCancel} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.mutedHi,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer"}}>Cancel</button>
       </div>
     </div>
   );
@@ -12748,7 +12952,7 @@ function KidsGoal({goal, jars, code, theme, primary, playSound}){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
         <div style={{color:primary,fontWeight:800,fontSize:14}}>🎯 My Goal</div>
         <button onClick={()=>{setGoalName(displayGoal.name||"");setGoalAmt2(displayGoal.amount||"");setGoalEmoji2(displayGoal.emoji||"🎯");setEditingGoal(e=>!e);}}
-          style={{background:"none",border:`1px solid ${theme.primaryBorder}`,borderRadius:8,padding:"4px 10px",color:primary,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+          style={{background:"none",border:`1px solid ${theme.primaryBorder}`,borderRadius:8,padding:"4px 10px",color:primary,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
           {editingGoal?"Cancel":displayGoal.name?"Change":"Set Goal"}
         </button>
       </div>
@@ -12783,7 +12987,7 @@ function KidsGoal({goal, jars, code, theme, primary, playSound}){
           <div style={{height:12,background:"rgba(255,255,255,0.06)",borderRadius:6,overflow:"hidden",marginBottom:8}}>
             <div style={{height:"100%",width:`${dPct}%`,background:`linear-gradient(90deg,${theme.jar1},${theme.jar2})`,borderRadius:6,transition:"width .5s"}}/>
           </div>
-          <div style={{color:theme.textMuted,fontSize:12}}>
+          <div style={{color:theme.textMuted,fontSize:13}}>
             ${(jars.save||0).toFixed(2)} saved · ${Math.max(0,dAmt-(jars.save||0)).toFixed(2)} to go
             {dPct>=100&&<span style={{color:theme.jar1,fontWeight:700}}> 🎉 You did it!</span>}
           </div>
@@ -12953,11 +13157,11 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
           </div>
           <div style={{flex:1}}>
             <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:theme.text,lineHeight:1}}>{kidData?.name?`${kidName}'s Flourish`:"Flourish Kids"}</div>
-            <div style={{color:theme.textMuted,fontSize:12,marginTop:2}}>Your money zone <span style={{color:primary}}>♥</span></div>
+            <div style={{color:theme.textMuted,fontSize:13,marginTop:2}}>Your money zone <span style={{color:primary}}>♥</span></div>
           </div>
           <div style={{textAlign:"right"}}>
             <div style={{color:primary,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>${totalJars.toFixed(2)}</div>
-            <div style={{color:theme.textMuted,fontSize:10}}>total saved</div>
+            <div style={{color:theme.textMuted,fontSize:13}}>total saved</div>
           </div>
         </div>
         {streak>0&&(
@@ -12968,13 +13172,13 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
         )}
         {/* Theme picker — visual swatch grid */}
         <div style={{marginTop:10}}>
-          <span style={{color:theme.dark?"rgba(255,255,255,0.55)":"rgba(0,0,0,0.45)",fontSize:11,fontWeight:700,letterSpacing:0.8,textTransform:"uppercase",display:"block",marginBottom:8}}>🎨 Theme</span>
+          <span style={{color:theme.dark?"rgba(255,255,255,0.55)":"rgba(0,0,0,0.45)",fontSize:13,fontWeight:700,display:"block",marginBottom:8}}>🎨 Theme</span>
           <div style={{display:"flex",gap:7,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
             {Object.entries(THEMES).map(([key,t])=>(
               <button key={key} onClick={()=>saveTheme(key)}
                 style={{flexShrink:0,width:54,padding:"8px 4px 6px",borderRadius:14,background:t.card,border:`2px solid ${activeTheme===key?t.primary:"transparent"}`,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,boxShadow:activeTheme===key?`0 0 14px ${t.primary}77`:"0 2px 6px rgba(0,0,0,0.25)",transition:"all .2s",outline:"none"}}>
                 <span style={{fontSize:18,lineHeight:1}}>{t.emoji}</span>
-                <span style={{fontSize:9,fontWeight:700,color:t.text,fontFamily:"inherit",lineHeight:1,textAlign:"center",letterSpacing:0.2}}>{t.name}</span>
+                <span style={{fontSize:13,fontWeight:700,color:t.text,fontFamily:"inherit",lineHeight:1,textAlign:"center",letterSpacing:0.2}}>{t.name}</span>
                 <div style={{width:20,height:4,borderRadius:99,background:t.primary,marginTop:2}}/>
               </button>
             ))}
@@ -12998,8 +13202,8 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
               <div key={j.key} style={{flex:1,background:j.color+"22",border:`1px solid ${j.color}44`,borderRadius:14,padding:"14px 8px",textAlign:"center"}}>
                 <div style={{fontSize:24,marginBottom:4}}>{j.emoji}</div>
                 <div style={{color:j.color,fontWeight:900,fontSize:17,fontFamily:"'Playfair Display',serif"}}>${(jars[j.key]||0).toFixed(2)}</div>
-                <div style={{color:theme.text,fontWeight:700,fontSize:11,marginTop:2}}>{j.name}</div>
-                <div style={{color:theme.textMuted,fontSize:9,marginTop:1}}>{j.pct}</div>
+                <div style={{color:theme.text,fontWeight:700,fontSize:13,marginTop:2}}>{j.name}</div>
+                <div style={{color:theme.textMuted,fontSize:13,marginTop:1}}>{j.pct}</div>
               </div>
             ))}
           </div>
@@ -13026,7 +13230,7 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
               </div>
               <div style={{flex:1}}>
                 <div style={{color:ch.done?theme.textMuted:theme.text,fontSize:14,fontWeight:600,textDecoration:ch.done?"line-through":"none"}}>{ch.task}</div>
-                {ch.freq&&ch.freq!=="weekly"&&<div style={{color:theme.textMuted,fontSize:10}}>{FREQ[ch.freq]||ch.freq}</div>}
+                {ch.freq&&ch.freq!=="weekly"&&<div style={{color:theme.textMuted,fontSize:13}}>{FREQ[ch.freq]||ch.freq}</div>}
               </div>
               <span style={{color:theme.jar1,fontWeight:800,fontSize:13}}>+${(ch.reward||0).toFixed(2)}</span>
             </div>
@@ -13045,7 +13249,7 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
           <div style={{display:"flex",gap:8,marginBottom:14}}>
             {["4-7","8-12","13+"].map(age=>(
               <button key={age} onClick={()=>setKidAge(age)}
-                style={{flex:1,background:kidAge===age?theme.primaryDim:theme.cardAlt,border:`1px solid ${kidAge===age?primary:theme.choreBorder}`,color:kidAge===age?primary:theme.textMuted,borderRadius:10,padding:"9px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",transition:"all .2s"}}>
+                style={{flex:1,background:kidAge===age?theme.primaryDim:theme.cardAlt,border:`1px solid ${kidAge===age?primary:theme.choreBorder}`,color:kidAge===age?primary:theme.textMuted,borderRadius:10,padding:"0",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",transition:"all .2s"}}>
                 {age==="4-7"?"🐣 4 to 7":age==="8-12"?"🌱 8 to 12":"🌳 13+"}
               </button>
             ))}
@@ -13054,12 +13258,12 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
             <div key={i} style={{background:theme.cardAlt,borderRadius:14,padding:"16px",marginBottom:10,border:`1px solid ${theme.choreBorder}`}}>
               <div style={{fontSize:26,marginBottom:8}}>{l.emoji}</div>
               <div style={{color:theme.text,fontWeight:800,fontSize:14,marginBottom:8}}>{l.title}</div>
-              <div style={{color:theme.textMuted,fontSize:12,lineHeight:1.65,marginBottom:l.activity?10:0}}>{l.body}</div>
+              <div style={{color:theme.textMuted,fontSize:13,lineHeight:1.65,marginBottom:l.activity?10:0}}>{l.body}</div>
               {l.activity&&<div style={{background:theme.primaryDim,border:`1px solid ${theme.primaryBorder}`,borderRadius:10,padding:"8px 12px",marginBottom:8}}>
-                <div style={{color:primary,fontSize:10,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Try this</div>
-                <div style={{color:theme.text,fontSize:12}}>{l.activity}</div>
+                <div style={{color:primary,fontSize:13,fontWeight:700,marginBottom:4}}>Try this</div>
+                <div style={{color:theme.text,fontSize:13}}>{l.activity}</div>
               </div>}
-              <div style={{background:theme.primaryDim,border:`1px solid ${theme.primaryBorder}`,borderRadius:8,padding:"6px 10px",color:primary,fontSize:11,fontWeight:600}}>💡 {l.key}</div>
+              <div style={{background:theme.primaryDim,border:`1px solid ${theme.primaryBorder}`,borderRadius:8,padding:"6px 10px",color:primary,fontSize:13,fontWeight:600}}>💡 {l.key}</div>
             </div>
           ))}
         </div>
@@ -13121,14 +13325,14 @@ function ResetPasswordScreen({ onDone, onCancel }) {
               <div style={{ color: "#6B7A6E", fontSize: 13, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 20, lineHeight: 1.6 }}>Choose a new password for your Flourish account.</div>
               <input style={inp} type="password" placeholder="New password (min 8 characters)" value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password" />
               <input style={{ ...inp, marginBottom: 20 }} type="password" placeholder="Confirm new password" value={pw2} onChange={e => setPw2(e.target.value)} autoComplete="new-password" onKeyDown={e => e.key === "Enter" && submit()} />
-              {err && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>{err}</div>}
+              {err && <div style={{ color: "#FF6B6B", fontSize:13, marginBottom: 12, lineHeight: 1.5 }}>{err}</div>}
               <button onClick={submit} disabled={busy}
                 style={{ width: "100%", background: busy ? "rgba(255,255,255,0.1)" : "linear-gradient(135deg,#00D68F,#00EFA0)", color: busy ? "#6B7A6E" : "#041810", fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 800, fontSize: 15, padding: "15px", borderRadius: 14, border: "none", cursor: busy ? "default" : "pointer" }}>
                 {busy ? "Updating…" : "Update password"}
               </button>
               <div style={{ textAlign: "center", marginTop: 16 }}>
                 <button onClick={cancel} disabled={busy}
-                  style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
+                  style={{ background: "none", border: "none", color: "#6B7A6E", fontSize:13, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
                   Back to log in
                 </button>
               </div>
@@ -13504,7 +13708,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-login:hover{ background:rgba(46,139,46,0.08); }
 
             .fll-hero{ text-align:center; padding:38px 0 14px; }
-            .fll-badge{ display:inline-flex; align-items:center; gap:7px; background:rgba(46,139,46,0.09); border:1px solid rgba(46,139,46,0.28); color:#1b5e20; border-radius:99px; padding:7px 15px; font-size:12.5px; font-weight:700; margin-bottom:22px; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-badge{ display:inline-flex; align-items:center; gap:7px; background:rgba(46,139,46,0.09); border:1px solid rgba(46,139,46,0.28); color:#1b5e20; border-radius:99px; padding:7px 15px; font-size:13px; font-weight:700; margin-bottom:22px; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-h1{ font-family:'Playfair Display',serif; font-weight:900; font-size:clamp(33px,6.2vw,58px); line-height:1.06; letter-spacing:-0.6px; color:#15321a; margin:0 auto 18px; max-width:13ch; }
             .fll-h1 em{ font-style:italic; color:#2E8B2E; }
             .fll-sub{ font-family:'Plus Jakarta Sans',sans-serif; font-size:clamp(15px,2.2vw,19px); line-height:1.6; color:#52624f; max-width:560px; margin:0 auto 30px; }
@@ -13518,19 +13722,19 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-btn:hover{ transform:translateY(-1px); box-shadow:0 10px 26px rgba(46,139,46,0.32); }
             .fll-btn:disabled{ opacity:.55; cursor:default; transform:none; box-shadow:none; }
             .fll-country{ display:inline-flex; gap:4px; margin-top:12px; background:rgba(46,139,46,0.06); border:1px solid rgba(46,139,46,0.14); border-radius:99px; padding:3px; }
-            .fll-seg{ border:none; background:transparent; color:#52624f; font-size:12.5px; font-weight:700; padding:6px 14px; border-radius:99px; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-seg{ border:none; background:transparent; color:#52624f; font-size:13px; font-weight:700; padding:6px 14px; border-radius:99px; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-seg-on{ background:#fff; color:#226b22; box-shadow:0 1px 3px rgba(0,0,0,0.10); }
-            .fll-err{ color:#c0392b; font-size:12.5px; margin-top:10px; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-err{ color:#c0392b; font-size:13px; margin-top:10px; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-done{ background:#fff; border:1px solid rgba(46,139,46,0.2); border-radius:18px; padding:22px 20px; box-shadow:0 10px 30px rgba(22,58,28,0.07); }
             .fll-done-t{ font-family:'Playfair Display',serif; font-weight:900; font-size:21px; color:#15321a; margin-bottom:6px; }
             .fll-done-b{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13.5px; line-height:1.55; color:#52624f; max-width:340px; margin:0 auto; }
 
             .fll-demo{ display:inline-block; margin-top:16px; background:none; border:none; color:#52624f; font-size:13px; font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:3px; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-demo:hover{ color:#2E8B2E; }
-            .fll-trust{ display:inline-flex; align-items:center; gap:7px; margin-top:20px; font-size:12.5px; color:#52624f; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-trust{ display:inline-flex; align-items:center; gap:7px; margin-top:20px; font-size:13px; color:#52624f; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; }
 
             .fll-section{ padding:44px 0; }
-            .fll-eyebrow{ text-align:center; font-size:11.5px; font-weight:800; letter-spacing:1.4px; text-transform:uppercase; color:#1b5e20; margin-bottom:10px; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-eyebrow{ text-align:center; font-size:13px; font-weight:800;   color:#1b5e20; margin-bottom:10px; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-h2{ font-family:'Playfair Display',serif; font-weight:900; font-size:clamp(24px,4vw,34px); color:#15321a; text-align:center; line-height:1.15; margin:0 auto 8px; max-width:20ch; }
             .fll-lede{ text-align:center; font-size:15px; color:#52624f; max-width:520px; margin:0 auto 28px; line-height:1.6; font-family:'Plus Jakarta Sans',sans-serif; }
 
@@ -13539,7 +13743,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-shot{ flex:0 0 auto; width:208px; scroll-snap-align:center; }
             .fll-frame{ background:#15271a; border-radius:30px; padding:6px; box-shadow:0 22px 50px rgba(22,58,28,0.18); }
             .fll-frame img{ display:block; width:100%; height:auto; border-radius:25px; }
-            .fll-cap{ text-align:center; font-size:12px; color:#52624f; margin-top:11px; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-cap{ text-align:center; font-size:13px; color:#52624f; margin-top:11px; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; }
 
             .fll-benefits{ display:grid; grid-template-columns:1fr; gap:14px; max-width:760px; margin:0 auto; }
             .fll-card{ background:#fff; border:1px solid rgba(46,139,46,0.13); border-radius:18px; padding:22px; box-shadow:0 6px 22px rgba(22,58,28,0.05); }
@@ -13551,9 +13755,9 @@ function AuthScreen({ onAuth, onTryDemo }) {
 
             .fll-foot{ border-top:1px solid rgba(46,139,46,0.12); margin-top:24px; }
             .fll-foot-in{ width:100%; max-width:1080px; margin:0 auto; padding:24px 22px; display:flex; flex-wrap:wrap; gap:12px 22px; align-items:center; justify-content:space-between; }
-            .fll-foot a{ color:#52624f; font-size:12.5px; text-decoration:none; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-foot a{ color:#52624f; font-size:13px; text-decoration:none; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-foot a:hover{ color:#2E8B2E; }
-            .fll-foot span{ color:#52624f; font-size:12px; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-foot span{ color:#52624f; font-size:13px; font-family:'Plus Jakarta Sans',sans-serif; }
 
             @media(min-width:560px){
               .fll-form{ flex-direction:row; }
@@ -13689,18 +13893,18 @@ function AuthScreen({ onAuth, onTryDemo }) {
                   <div style={{ color: "#6B7A6E", fontSize: 13, lineHeight: 1.65, marginBottom: checkEmailNote ? 10 : 20, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
                     We sent a confirmation link to <span style={{ color: "#EDE9E2", fontWeight: 600 }}>{email || "your email"}</span>. Click it to activate your account, then come back and log in.
                   </div>
-                  {checkEmailNote && <div style={{ color: "#00D68F", fontSize: 12.5, marginBottom: 18, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10, lineHeight: 1.5 }}>{checkEmailNote}</div>}
-                  {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
+                  {checkEmailNote && <div style={{ color: "#00D68F", fontSize:13, marginBottom: 18, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10, lineHeight: 1.5 }}>{checkEmailNote}</div>}
+                  {error && <div style={{ color: "#FF6B6B", fontSize:13, marginBottom: 12 }}>{error}</div>}
                   <button style={btnStyle(!loading && resendCooldown === 0 && !!email)} onClick={handleResend} disabled={loading || resendCooldown > 0 || !email}>
                     {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend confirmation email"}
                   </button>
                   <div style={{ display: "flex", gap: 18, justifyContent: "center", marginTop: 16 }}>
                     <button onClick={() => { setMode("signup"); setError(""); setSuccess(""); setCheckEmailNote(""); setResendCooldown(0); }}
-                      style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
+                      style={{ background: "none", border: "none", color: "#6B7A6E", fontSize:13, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
                       Wrong email? Start over
                     </button>
                     <button onClick={() => { setMode("login"); setError(""); setSuccess(""); setCheckEmailNote(""); setResendCooldown(0); }}
-                      style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 12, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
+                      style={{ background: "none", border: "none", color: "#6B7A6E", fontSize:13, cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline" }}>
                       Back to log in
                     </button>
                   </div>
@@ -13720,9 +13924,9 @@ function AuthScreen({ onAuth, onTryDemo }) {
                   {success && <div style={{ color: "#00D68F", fontSize: 13, marginBottom: pendingConfirm ? 8 : 16, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10 }}>{success}</div>}
                   {pendingConfirm && mode === "login" && (
                     <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                      <span style={{ color: "rgba(237,233,226,0.55)", fontSize: 12, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>No email yet?</span>
+                      <span style={{ color: "rgba(237,233,226,0.55)", fontSize:13, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>No email yet?</span>
                       <button onClick={handleResendConfirm} disabled={resendConfirmCooldown > 0}
-                        style={{ background: "transparent", border: "1.5px solid rgba(0,214,143,0.4)", color: "#00D68F", borderRadius: 10, padding: "7px 14px", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: 12, fontWeight: 700, cursor: resendConfirmCooldown > 0 ? "default" : "pointer", opacity: resendConfirmCooldown > 0 ? 0.5 : 1 }}>
+                        style={{ background: "transparent", border: "1.5px solid rgba(0,214,143,0.4)", color: "#00D68F", borderRadius: 10, padding: "7px 14px", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize:13, fontWeight: 700, cursor: resendConfirmCooldown > 0 ? "default" : "pointer", opacity: resendConfirmCooldown > 0 ? 0.5 : 1 }}>
                         {resendConfirmCooldown > 0 ? `Send again in ${resendConfirmCooldown}s` : "Send it again"}
                       </button>
                     </div>
@@ -13732,15 +13936,15 @@ function AuthScreen({ onAuth, onTryDemo }) {
                   {/* Invite-only: the code field, as it has always been. Open: a quiet link, so the
                       few people holding a code can still use it without asking everyone else for one. */}
                   {mode==="signup"&&showCodeInput&&(
-                    <input style={{ ...inpStyle, marginBottom: 20, textTransform:"uppercase", letterSpacing:2 }} type="text" placeholder={codeRequired?"Beta access code":"Invite code (optional)"} value={betaCode} onChange={e => setBetaCode(e.target.value)} autoComplete="off" name="betacode" maxLength={20}/>
+                    <input style={{ ...inpStyle, marginBottom: 20,   }} type="text" placeholder={codeRequired?"Beta access code":"Invite code (optional)"} value={betaCode} onChange={e => setBetaCode(e.target.value)} autoComplete="off" name="betacode" maxLength={20}/>
                   )}
                   {mode==="signup"&&showCodeLink&&(
                     <button onClick={() => setShowCodeField(true)}
-                      style={{ display: "block", width: "100%", marginBottom: 20, background: "transparent", border: "none", padding: 0, color: "rgba(237,233,226,0.55)", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: 12, textAlign: "left", cursor: "pointer", textDecoration: "underline" }}>
+                      style={{ display: "block", width: "100%", marginBottom: 20, background: "transparent", border: "none", padding: 0, color: "rgba(237,233,226,0.55)", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize:13, textAlign: "left", cursor: "pointer", textDecoration: "underline" }}>
                       Have an invite code?
                     </button>
                   )}
-                  {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
+                  {error && <div style={{ color: "#FF6B6B", fontSize:13, marginBottom: 12 }}>{error}</div>}
                   <button style={btnStyle(!loading && email && password.length >= 8 && codeOk)} onClick={mode === "login" ? handleLogin : handleSignup} disabled={loading || !email || password.length < 8 || !codeOk}>
                     {loading ? "..." : mode === "login" ? "Log In" : "Create Account"}
                   </button>
@@ -13755,14 +13959,14 @@ function AuthScreen({ onAuth, onTryDemo }) {
                       </button>}
                       <div style={{ textAlign: "center", marginTop: 14 }}>
                         <button onClick={handleForgotPassword} disabled={loading || resendCooldown > 0}
-                          style={{ background: "none", border: "none", color: "#6B7A6E", fontSize: 12, cursor: (loading || resendCooldown > 0) ? "default" : "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline", opacity: resendCooldown > 0 ? 0.6 : 1 }}>
+                          style={{ background: "none", border: "none", color: "#6B7A6E", fontSize:13, cursor: (loading || resendCooldown > 0) ? "default" : "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", textDecoration: "underline", opacity: resendCooldown > 0 ? 0.6 : 1 }}>
                           {resendCooldown > 0 ? `Forgot password? (wait ${resendCooldown}s)` : "Forgot password?"}
                         </button>
                       </div>
                     </>
                   )}
                   {mode === "signup" && (
-                    <div style={{ color: "#6B7A6E", fontSize: 11, textAlign: "center", marginTop: 14, lineHeight: 1.5 }}>
+                    <div style={{ color: "#6B7A6E", fontSize:13, textAlign: "center", marginTop: 14, lineHeight: 1.5 }}>
                       By signing up you agree to our{" "}
                       <a href="/terms" style={{ color: "#00D68F", textDecoration: "none" }}>Terms of Service</a>
                       {" "}and{" "}
@@ -13777,7 +13981,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
               /* App Store reviewers: enter with sample data — no account or beta code needed (iOS only). */
               <div style={{ textAlign: "center", marginTop: 22 }}>
                 <button onClick={() => onTryDemo(waitlistCountry)} style={{ background: "rgba(0,200,224,0.14)", border: "1px solid rgba(0,200,224,0.4)", color: "#00C8E0", borderRadius: 99, padding: "11px 22px", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>🧪 Try the demo, no account needed</button>
-                <div style={{ color: "#6B7A6E", fontSize: 11, marginTop: 8, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Explore flourish with sample data</div>
+                <div style={{ color: "#6B7A6E", fontSize:13, marginTop: 8, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Explore flourish with sample data</div>
               </div>
             )}
           </div>
@@ -13892,7 +14096,7 @@ function MfaGate({ onPass, onSignOut }) {
     } catch (e) { setErr(e?.message || "Verification failed."); setBusy(false); }
   };
 
-  const inp = { width:"100%", padding:"14px 16px", borderRadius:14, background:"rgba(255,255,255,0.06)", border:"1.5px solid rgba(255,255,255,0.12)", color:"#EDE9E2", fontSize:22, letterSpacing:6, textAlign:"center", fontFamily:"'Plus Jakarta Sans',sans-serif", outline:"none", boxSizing:"border-box", marginBottom:16 };
+  const inp = { width:"100%", padding:"14px 16px", borderRadius:14, background:"rgba(255,255,255,0.06)", border:"1.5px solid rgba(255,255,255,0.12)", color:"#EDE9E2", fontSize:22, letterSpacing:6 /* code field: spacing separates the characters, it is not a label */, textAlign:"center", fontFamily:"'Plus Jakarta Sans',sans-serif", outline:"none", boxSizing:"border-box", marginBottom:16 };
   const btnS = (active) => ({ width:"100%", padding:15, borderRadius:14, border:"none", fontFamily:"'Plus Jakarta Sans',sans-serif", fontWeight:700, fontSize:15, cursor:active?"pointer":"default", background:active?"#00D68F":"rgba(255,255,255,0.1)", color:active?"#021208":"#6B7A6E" });
   const wrap = (children) => (
     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100dvh", padding:24, background:"#050D09" }}>
@@ -13900,7 +14104,7 @@ function MfaGate({ onPass, onSignOut }) {
         <div style={{ display:"flex", justifyContent:"center", marginBottom:18 }}><FlourishLockup size={56} color="#EDE9E2" /></div>
         <div style={{ background:"#0D1F12", borderRadius:24, padding:28, border:"1px solid rgba(255,255,255,0.08)" }}>{children}</div>
         <div style={{ textAlign:"center", marginTop:16 }}>
-          <button onClick={onSignOut} style={{ background:"none", border:"none", color:"#6B7A6E", fontSize:12, cursor:"pointer", fontFamily:"'Plus Jakarta Sans',sans-serif", textDecoration:"underline" }}>Sign out</button>
+          <button onClick={onSignOut} style={{ background:"none", border:"none", color:"#6B7A6E", fontSize:13, cursor:"pointer", fontFamily:"'Plus Jakarta Sans',sans-serif", textDecoration:"underline" }}>Sign out</button>
         </div>
       </div>
     </div>
@@ -13923,7 +14127,7 @@ function MfaGate({ onPass, onSignOut }) {
       </div>
       {stage === "setup" && qrUrl && <img src={qrUrl} alt="Authenticator QR code" style={{ width:"100%", borderRadius:12, marginBottom:16, background:"#fff", padding:8, boxSizing:"border-box" }} />}
       <input style={inp} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" value={code} onChange={e => setCode(e.target.value.replace(/\D/g,"").slice(0,6))} maxLength={6} onKeyDown={e => e.key === "Enter" && verify()} />
-      {err && <div style={{ color:"#FF6B6B", fontSize:12, marginBottom:12 }}>{err}</div>}
+      {err && <div style={{ color:"#FF6B6B", fontSize:13, marginBottom:12 }}>{err}</div>}
       <button style={btnS(!busy && code.length === 6)} onClick={verify} disabled={busy || code.length !== 6}>{busy ? "Verifying…" : stage === "setup" ? "Verify & Continue" : "Verify"}</button>
     </div>
   );
@@ -14048,25 +14252,20 @@ function BudgetScreen({data, setAppData, setScreen}) {
         ctaColor={editMode ? C.green : C.purple}
       />
 
-      {/* Money math strip */}
-      <div style={{ background: C.card, borderRadius: 18, padding: "14px 16px", border: `1px solid ${C.border}` }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          {[
-            ["Take-home", `$${Math.round(netMo).toLocaleString()}/mo`, C.green, "💵"],
-            ["Fixed bills & debt", `${formatMoney(-Math.round(fixedMo))}/mo`, C.red, "🏠"],
-            ["Savings target", `${formatMoney(-Math.round(savingsMo))}/mo`, C.teal, "💰"],
-            ...(goalsMo > 0 ? [["Goal savings", `${formatMoney(-Math.round(goalsMo))}/mo`, C.purple, "🎯"]] : []),
-            ["Available to spend", `$${Math.round(discret).toLocaleString()}/mo`, C.greenBright, "✅"],
-          ].map(([label, val, color, emoji]) => (
-            <div key={label} style={{ background: C.cardAlt, borderRadius: 12, padding: "10px 12px", border: `1px solid ${C.border}` }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
-                <span style={{ fontSize: 12 }}>{emoji}</span>
-                <span style={{ color: C.muted, fontSize: 9, textTransform: "uppercase", letterSpacing: 1, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{label}</span>
-              </div>
-              <div style={{ color, fontWeight: 800, fontSize: 14, fontFamily: "'Playfair Display',serif" }}>{val}</div>
-            </div>
-          ))}
+      {/* The one number this card exists to give: what is left to spend. The four figures that
+          produce it are the working, and working belongs behind a tap — as a 2x2 grid of five
+          equal boxes it had no lead at all, and the answer was just one tile among the inputs. */}
+      <div style={{ background: C.card, borderRadius: 18, padding: LAYOUT.cardPadding, border: `1px solid ${C.border}` }}>
+        <div style={{ color: C.muted, ...TYPE.subhead, fontWeight: 400, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Available to spend</div>
+        <div style={{ color: C.greenBright, ...TYPE.largeTitle, fontFamily: "'Playfair Display',serif", marginTop: SPACE.xs }}>
+          {`$${Math.round(discret).toLocaleString()}`}<span style={{ ...TYPE.title2, color: C.muted, fontWeight: 600 }}>/mo</span>
         </div>
+        <SupportingFigures label="How that is worked out" rows={[
+          { label: "Take-home", value: `$${Math.round(netMo).toLocaleString()}/mo` },
+          { label: "Fixed bills & debt", value: `${formatMoney(-Math.round(fixedMo))}/mo` },
+          { label: "Savings target", value: `${formatMoney(-Math.round(savingsMo))}/mo` },
+          ...(goalsMo > 0 ? [{ label: "Goal savings", value: `${formatMoney(-Math.round(goalsMo))}/mo` }] : []),
+        ]}/>
       </div>
 
       {/* ── EDIT MODE ───────────────────────────────────────────────── */}
@@ -14077,14 +14276,14 @@ function BudgetScreen({data, setAppData, setScreen}) {
           {/* Step 1 — Fixed commitments (read-only, auto-filled) */}
           <div style={{background:C.card,borderRadius:18,padding:"16px",border:`1px solid ${C.border}`}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
-              <div style={{width:24,height:24,borderRadius:"50%",background:C.green,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,color:"#041810",flexShrink:0}}>1</div>
+              <div style={{width:24,height:24,borderRadius:"50%",background:C.green,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:"#041810",flexShrink:0}}>1</div>
               <div>
                 <div style={{color:C.cream,fontWeight:800,fontSize:14}}>Your fixed commitments</div>
-                <div style={{color:C.muted,fontSize:11,marginTop:1}}>These come out first, before anything else is planned</div>
+                <div style={{color:C.muted,fontSize:13,marginTop:1}}>These come out first, before anything else is planned</div>
               </div>
             </div>
             {(data.bills||[]).length===0&&(data.debts||[]).length===0?(
-              <div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"10px 0"}}>
+              <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"10px 0"}}>
                 No bills or debts added yet. Add them in <strong style={{color:C.green}}>Settings → Bills</strong> to auto-fill this section.
               </div>
             ):(
@@ -14094,12 +14293,12 @@ function BudgetScreen({data, setAppData, setScreen}) {
                   <div style={{display:"flex",alignItems:"center",gap:7,flex:1,minWidth:0}}>
                     <span style={{fontSize:14}}>{b.type==="variable"?"🔄":"📌"}</span>
                     <div style={{minWidth:0}}>
-                      <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{b.name}</div>
-                      {b.category&&<div style={{color:C.muted,fontSize:9}}>{b.category}</div>}
+                      <div style={{color:C.cream,fontSize:13,fontWeight:600}}>{b.name}</div>
+                      {b.category&&<div style={{color:C.muted,fontSize:13}}>{b.category}</div>}
                     </div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.teal}44`,borderRadius:8,overflow:"hidden",flexShrink:0}}>
-                    <span style={{color:C.muted,padding:"0 4px 0 8px",fontSize:11}}>$</span>
+                    <span style={{color:C.muted,padding:"0 4px 0 8px",fontSize:13}}>$</span>
                     <input type="number" inputMode="decimal" defaultValue={parseFloat(b.amount||0).toFixed(0)}
                       onBlur={e=>{
                         const val=parseFloat(e.target.value);
@@ -14108,7 +14307,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
                         }
                       }}
                       style={{width:56,background:"none",border:"none",padding:"6px 2px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
-                    <span style={{color:C.muted,padding:"0 6px",fontSize:9}}>/mo</span>
+                    <span style={{color:C.muted,padding:"0 6px",fontSize:13}}>/mo</span>
                   </div>
                 </div>
               ))}
@@ -14117,15 +14316,15 @@ function BudgetScreen({data, setAppData, setScreen}) {
                     <div style={{display:"flex",alignItems:"center",gap:7}}>
                       <span style={{fontSize:14}}>💳</span>
                       <div>
-                        <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{d.name||"Debt"}</div>
-                        <div style={{color:C.muted,fontSize:9}}>minimum payment</div>
+                        <div style={{color:C.cream,fontSize:13,fontWeight:600}}>{d.name||"Debt"}</div>
+                        <div style={{color:C.muted,fontSize:13}}>minimum payment</div>
                       </div>
                     </div>
-                    <span style={{color:C.muted,fontWeight:700,fontSize:12}}>${parseFloat(d.min||0).toFixed(0)}/mo</span>
+                    <span style={{color:C.muted,fontWeight:700,fontSize:13}}>${parseFloat(d.min||0).toFixed(0)}/mo</span>
                   </div>
                 ))}
                 <div style={{display:"flex",justifyContent:"space-between",padding:"6px 10px",borderTop:`1px solid ${C.border}`,marginTop:2}}>
-                  <span style={{color:C.muted,fontSize:11}}>Total fixed</span>
+                  <span style={{color:C.muted,fontSize:13}}>Total fixed</span>
                   <span style={{color:C.cream,fontWeight:800,fontSize:13}}>${Math.round(fixedMo).toLocaleString()}/mo</span>
                 </div>
               </div>
@@ -14135,14 +14334,14 @@ function BudgetScreen({data, setAppData, setScreen}) {
           {/* Step 2 — Your spending plan (situation-based, all adjustable) */}
           <div style={{background:C.card,borderRadius:18,padding:"16px",border:`1px solid ${C.green}33`}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-              <div style={{width:24,height:24,borderRadius:"50%",background:C.green,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,color:"#041810",flexShrink:0}}>2</div>
+              <div style={{width:24,height:24,borderRadius:"50%",background:C.green,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:"#041810",flexShrink:0}}>2</div>
               <div>
                 <div style={{color:C.cream,fontWeight:800,fontSize:14}}>Your spending plan</div>
-                <div style={{color:C.muted,fontSize:11,marginTop:1}}>Based on your household: adjust any amount</div>
+                <div style={{color:C.muted,fontSize:13,marginTop:1}}>Based on your household: adjust any amount</div>
               </div>
             </div>
             <div style={{background:C.green+"10",borderRadius:10,padding:"8px 12px",marginBottom:12,border:`1px solid ${C.green}22`}}>
-              <div style={{color:C.greenBright,fontSize:11,fontWeight:700}}>
+              <div style={{color:C.greenBright,fontSize:13,fontWeight:700}}>
                 ${Math.round(discret).toLocaleString()}/mo available after bills + savings{goalsMo>0?` + goal savings`:""} 
               </div>
             </div>
@@ -14156,15 +14355,15 @@ function BudgetScreen({data, setAppData, setScreen}) {
                   <div key={cat} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
                     <span style={{fontSize:15,flexShrink:0}}>{emoji}</span>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{cat}</div>
-                      {isSugg&&<div style={{color:C.muted,fontSize:9,marginTop:1}}>Suggested for your household</div>}
+                      <div style={{color:C.cream,fontSize:13,fontWeight:600}}>{cat}</div>
+                      {isSugg&&<div style={{color:C.muted,fontSize:13,marginTop:1}}>Suggested for your household</div>}
                     </div>
                     <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${color}55`,borderRadius:8,overflow:"hidden",flexShrink:0}}>
-                      <span style={{color:C.muted,padding:"0 4px 0 8px",fontSize:11}}>$</span>
+                      <span style={{color:C.muted,padding:"0 4px 0 8px",fontSize:13}}>$</span>
                       <input type="number" inputMode="decimal" value={val}
                         onChange={e=>setEditVals(prev=>({...prev,[cat]:e.target.value}))}
                         style={{width:54,background:"none",border:"none",padding:"7px 2px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
-                      <span style={{color:C.muted,padding:"0 4px",fontSize:9}}>/mo</span>
+                      <span style={{color:C.muted,padding:"0 4px",fontSize:13}}>/mo</span>
                     </div>
                     <button aria-label="Remove category" onClick={()=>deleteCat(cat)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,padding:2,flexShrink:0,opacity:0.6,lineHeight:1}}>×</button>
                   </div>
@@ -14176,12 +14375,12 @@ function BudgetScreen({data, setAppData, setScreen}) {
                   <input value={customCat} onChange={e=>setCustomCat(e.target.value)}
                     placeholder="Category (e.g. Gym, Art Classes)"
                     onKeyDown={e=>e.key==="Enter"&&addCustom()}
-                    style={{flex:1,background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px",color:C.cream,fontSize:12,fontFamily:"inherit",outline:"none"}}/>
-                  <button onClick={addCustom} style={{background:C.green,border:"none",borderRadius:8,padding:"7px 12px",color:"#041810",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Add</button>
+                    style={{flex:1,background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+                  <button onClick={addCustom} style={{background:C.green,border:"none",borderRadius:8,padding:"7px 12px",color:"#041810",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Add</button>
                   <button aria-label="Close" onClick={()=>{setShowAddCat(false);setCustomCat("");}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18,padding:0}}>✕</button>
                 </div>
               ):(
-                <button onClick={()=>setShowAddCat(true)} style={{background:"none",border:`1px dashed ${C.green}44`,borderRadius:10,padding:"9px 12px",color:C.green,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+                <button onClick={()=>setShowAddCat(true)} style={{background:"none",border:`1px dashed ${C.green}44`,borderRadius:10,padding:"9px 12px",color:C.green,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
                   ＋ Add a category
                 </button>
               )}
@@ -14190,13 +14389,13 @@ function BudgetScreen({data, setAppData, setScreen}) {
             {/* Running total */}
             <div style={{padding:"10px 12px",background:totalEdited>discret?C.red+"18":C.green+"10",borderRadius:10,border:`1px solid ${totalEdited>discret?C.red:C.green}33`}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{color:C.muted,fontSize:11}}>Total budgeted</span>
+                <span style={{color:C.muted,fontSize:13}}>Total budgeted</span>
                 <span style={{color:totalEdited>discret?C.redBright:C.greenBright,fontWeight:800,fontSize:14}}>${Math.round(totalEdited).toLocaleString()}/mo</span>
               </div>
-              {totalEdited>discret&&<div style={{color:C.muted,fontSize:10,marginTop:3}}>
+              {totalEdited>discret&&<div style={{color:C.muted,fontSize:13,marginTop:3}}>
                 ${Math.round(totalEdited-discret).toLocaleString()} over, see suggested cuts below
               </div>}
-              {totalEdited<=discret&&totalEdited>0&&<div style={{color:C.muted,fontSize:10,marginTop:3}}>
+              {totalEdited<=discret&&totalEdited>0&&<div style={{color:C.muted,fontSize:13,marginTop:3}}>
                 ${Math.round(discret-totalEdited).toLocaleString()} unallocated. Consider adding to savings
               </div>}
             </div>
@@ -14219,10 +14418,10 @@ function BudgetScreen({data, setAppData, setScreen}) {
             return(
               <div style={{background:C.red+"10",border:`1px solid ${C.red}33`,borderRadius:18,padding:"16px"}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
-                  <div style={{width:24,height:24,borderRadius:"50%",background:C.red,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,color:"#fff",flexShrink:0}}>3</div>
+                  <div style={{width:24,height:24,borderRadius:"50%",background:C.red,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:"#fff",flexShrink:0}}>3</div>
                   <div>
                     <div style={{color:C.redBright,fontWeight:800,fontSize:14}}>This doesn't quite fit</div>
-                    <div style={{color:C.muted,fontSize:11,marginTop:1}}>You're ${Math.round(totalEdited-discret).toLocaleString()} over, here's what to trim</div>
+                    <div style={{color:C.muted,fontSize:13,marginTop:1}}>You're ${Math.round(totalEdited-discret).toLocaleString()} over, here's what to trim</div>
                   </div>
                 </div>
                 {liveCuts.length>0?(
@@ -14230,24 +14429,24 @@ function BudgetScreen({data, setAppData, setScreen}) {
                     {liveCuts.map(({cat,current,suggested,saving})=>(
                       <div key={cat} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 12px",background:C.card,borderRadius:12,border:`1px solid ${C.border}`}}>
                         <div>
-                          <div style={{color:C.cream,fontSize:12,fontWeight:600}}>{catEmoji[cat]||"📌"} {cat}</div>
-                          <div style={{color:C.muted,fontSize:10,marginTop:1}}>${current} → ${suggested}/mo</div>
+                          <div style={{color:C.cream,fontSize:13,fontWeight:600}}>{catEmoji[cat]||"📌"} {cat}</div>
+                          <div style={{color:C.muted,fontSize:13,marginTop:1}}>${current} → ${suggested}/mo</div>
                         </div>
                         <div style={{textAlign:"right"}}>
                           <div style={{color:C.green,fontWeight:700,fontSize:13}}>{formatMoney(-saving)}/mo</div>
                           <button onClick={()=>setEditVals(prev=>({...prev,[cat]:String(suggested)}))}
-                            style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:6,padding:"3px 8px",color:C.greenBright,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginTop:3}}>
+                            style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:6,padding:"3px 8px",color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginTop:3}}>
                             Apply
                           </button>
                         </div>
                       </div>
                     ))}
-                    {remaining>0&&<div style={{color:C.muted,fontSize:10,textAlign:"center",padding:"4px"}}>
+                    {remaining>0&&<div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"4px"}}>
                       ${remaining} still to cut. Consider reducing more categories or removing one
                     </div>}
                   </div>
                 ):(
-                  <div style={{color:C.muted,fontSize:12,textAlign:"center",padding:"8px 0"}}>
+                  <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"8px 0"}}>
                     Consider removing a category or reducing your savings rate temporarily.
                   </div>
                 )}
@@ -14262,7 +14461,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
               fontWeight:800,fontSize:14,cursor:totalEdited<=discret?"pointer":"not-allowed",fontFamily:"inherit",transition:"all .2s"}}>
             {saved?"✅ Budget Plan Saved!":"✓ Save My Budget Plan"}
           </button>
-          {totalEdited>discret&&<div style={{color:C.muted,fontSize:11,textAlign:"center",marginTop:-8}}>Apply the suggested cuts above to start saving</div>}
+          {totalEdited>discret&&<div style={{color:C.muted,fontSize:13,textAlign:"center",marginTop:-8}}>Apply the suggested cuts above to start saving</div>}
 
         </div>
       )}
@@ -14283,13 +14482,13 @@ function BudgetScreen({data, setAppData, setScreen}) {
                 </div>
               </div>
               <div style={{ background: C.cardAlt, borderRadius: 12, padding: "12px 14px", marginBottom: 14, border: `1px solid ${C.border}` }}>
-                <div style={{ color: C.cream, fontWeight: 700, fontSize: 12, marginBottom: 8 }}>Based on your situation:</div>
+                <div style={{ color: C.cream, fontWeight: 700, fontSize:13, marginBottom: 8 }}>Based on your situation:</div>
                 {[
                   [`💵 $${Math.round(netMo).toLocaleString()}/mo take-home`, C.green],
                   [`🏠 $${Math.round(fixedMo).toLocaleString()}/mo in fixed bills`, C.muted],
                   [`✅ $${Math.round(discret).toLocaleString()}/mo available for variable spending`, C.greenBright],
                 ].map(([txt, color]) => (
-                  <div key={txt} style={{ color, fontSize: 12, marginBottom: 4 }}>• {txt}</div>
+                  <div key={txt} style={{ color, fontSize:13, marginBottom: 4 }}>• {txt}</div>
                 ))}
               </div>
               <button onClick={openEdit} style={{ width: "100%", background: `linear-gradient(135deg,${C.green},${C.greenBright})`, border: "none", borderRadius: 12, padding: "14px", color: "#041810", fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
@@ -14332,11 +14531,11 @@ function BudgetScreen({data, setAppData, setScreen}) {
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
                       <div>
                         <div style={{color:C.cream,fontWeight:800,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Monthly Bills</div>
-                        <div style={{color:C.muted,fontSize:11,marginTop:2}}>{paidCount}/{billsWithStatus.length} paid · ${Math.round(totalBillsAmt).toLocaleString()}/mo</div>
+                        <div style={{color:C.muted,fontSize:13,marginTop:2}}>{paidCount}/{billsWithStatus.length} paid · ${Math.round(totalBillsAmt).toLocaleString()}/mo</div>
                       </div>
                       {variableBills.length>0&&(
                         <div style={{background:C.gold+"18",border:`1px solid ${C.gold}33`,borderRadius:8,padding:"4px 8px"}}>
-                          <span style={{color:C.goldBright,fontSize:10,fontWeight:700}}>🔄 {variableBills.length} variable</span>
+                          <span style={{color:C.goldBright,fontSize:13,fontWeight:700}}>🔄 {variableBills.length} variable</span>
                         </div>
                       )}
                     </div>
@@ -14344,16 +14543,16 @@ function BudgetScreen({data, setAppData, setScreen}) {
                       const color = bill.paid ? C.green : C.muted;
                       const amtDiff = bill.actualAmt !== null ? bill.actualAmt - bill.expectedAmt : null;
                       return (
-                        <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:i<billsWithStatus.length-1?`1px solid ${C.border}`:"none"}}>
+                        <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"0",minHeight:LAYOUT.minTap,borderBottom:i<billsWithStatus.length-1?`1px solid ${C.border}`:"none"}}>
                           <div style={{width:8,height:8,borderRadius:"50%",background:bill.paid?C.green:C.muted,flexShrink:0}}/>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{display:"flex",alignItems:"center",gap:6}}>
                               <span style={{color:C.cream,fontSize:13,fontWeight:600}}>{bill.name}</span>
-                              {bill.isVariable&&<span style={{background:C.teal+"18",color:C.tealBright,fontSize:9,padding:"2px 5px",borderRadius:99,border:`1px solid ${C.teal}33`}}>variable</span>}
-                              {bill.category&&<span style={{color:C.muted,fontSize:10}}>{bill.category}</span>}
+                              {bill.isVariable&&<span style={{background:C.teal+"18",color:C.tealBright,fontSize:13,padding:"2px 5px",borderRadius:99,border:`1px solid ${C.teal}33`}}>variable</span>}
+                              {bill.category&&<span style={{color:C.muted,fontSize:13}}>{bill.category}</span>}
                             </div>
                             {bill.paid&&bill.linkedTxn&&(
-                              <div style={{color:C.muted,fontSize:10,marginTop:1}}>
+                              <div style={{color:C.muted,fontSize:13,marginTop:1}}>
                                 Paid {new Date(bill.linkedTxn.date+"T12:00:00").toLocaleDateString("en",{month:"short",day:"numeric"})}
                                 {amtDiff!==null&&Math.abs(amtDiff)>2&&(
                                   <span style={{color:amtDiff>0?C.redBright:C.greenBright,marginLeft:6}}>
@@ -14363,14 +14562,14 @@ function BudgetScreen({data, setAppData, setScreen}) {
                               </div>
                             )}
                             {!bill.paid&&(
-                              <div style={{color:C.muted,fontSize:10,marginTop:1}}>No payment found this month</div>
+                              <div style={{color:C.muted,fontSize:13,marginTop:1}}>No payment found this month</div>
                             )}
                           </div>
                           <div style={{textAlign:"right",flexShrink:0}}>
                             <div style={{color:bill.paid?C.green:C.cream,fontWeight:700,fontSize:13}}>
                               {bill.actualAmt!==null?`$${Math.round(bill.actualAmt)}`:`$${Math.round(bill.expectedAmt)}`}
                             </div>
-                            {bill.paid&&<div style={{color:C.greenBright,fontSize:9}}>✓ paid</div>}
+                            {bill.paid&&<div style={{color:C.greenBright,fontSize:13}}>✓ paid</div>}
                           </div>
                         </div>
                       );
@@ -14378,12 +14577,12 @@ function BudgetScreen({data, setAppData, setScreen}) {
                     {/* Variable bill update prompt */}
                     {variableBills.length>0&&(
                       <div style={{marginTop:10,background:C.teal+"10",border:`1px solid ${C.teal}28`,borderRadius:10,padding:"10px 12px"}}>
-                        <div style={{color:C.tealBright,fontWeight:700,fontSize:11,marginBottom:6}}>🔄 Update variable bills</div>
+                        <div style={{color:C.tealBright,fontWeight:700,fontSize:13,marginBottom:6}}>🔄 Update variable bills</div>
                         {variableBills.map((bill,i)=>(
                           <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:i<variableBills.length-1?6:0}}>
-                            <span style={{color:C.muted,fontSize:12,flex:1}}>{bill.name}</span>
+                            <span style={{color:C.muted,fontSize:13,flex:1}}>{bill.name}</span>
                             <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.teal}44`,borderRadius:8,overflow:"hidden"}}>
-                              <span style={{color:C.muted,padding:"0 6px",fontSize:11}}>$</span>
+                              <span style={{color:C.muted,padding:"0 6px",fontSize:13}}>$</span>
                               <input type="number" inputMode="decimal" defaultValue={bill.actualAmt||bill.expectedAmt||""}
                                 placeholder={String(bill.expectedAmt||"")}
                                 onBlur={e=>{
@@ -14395,7 +14594,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
                                   }
                                 }}
                                 style={{width:60,background:"none",border:"none",padding:"6px 4px",color:C.tealBright,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
-                              <span style={{color:C.muted,padding:"0 4px",fontSize:9}}>/mo</span>
+                              <span style={{color:C.muted,padding:"0 4px",fontSize:13}}>/mo</span>
                             </div>
                           </div>
                         ))}
@@ -14404,7 +14603,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
                   </div>
                 );
               })()}
-              <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.2,marginBottom:4,paddingLeft:2}}>Discretionary Spending</div>
+              <div style={{color:C.muted,fontSize:13,marginBottom:4,paddingLeft:2}}>Discretionary Spending</div>
               {/* Overall month progress */}
               <div style={{ background: C.card, borderRadius: 18, padding: "16px 18px", border: `1px solid ${overBudgetCats.length > 0 ? C.red + "44" : C.green + "33"}` }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
@@ -14412,13 +14611,13 @@ function BudgetScreen({data, setAppData, setScreen}) {
                     <div style={{ color: overBudgetCats.length > 0 ? C.redBright : C.greenBright, fontWeight: 800, fontSize: 15, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
                       {overBudgetCats.length > 0 ? `⚠️ Over budget in ${overBudgetCats.length} categor${overBudgetCats.length === 1 ? "y" : "ies"}` : "📊 On track this month"}
                     </div>
-                    <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>{monthLabel}</div>
+                    <div style={{ color: C.muted, fontSize:13, marginTop: 2 }}>{monthLabel}</div>
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontFamily: "'Playfair Display',serif", fontWeight: 900, fontSize: 20, color: overBudgetCats.length > 0 ? C.redBright : C.cream }}>
                       ${Math.round(totalSpentBudgeted).toLocaleString()}
                     </div>
-                    <div style={{ color: C.muted, fontSize: 11 }}>of ${Math.round(totalBudgeted).toLocaleString()} budgeted</div>
+                    <div style={{ color: C.muted, fontSize:13 }}>of ${Math.round(totalBudgeted).toLocaleString()} budgeted</div>
                   </div>
                 </div>
                 {/* Overall progress bar */}
@@ -14426,8 +14625,8 @@ function BudgetScreen({data, setAppData, setScreen}) {
                   <div style={{ height: "100%", width: `${overallPct}%`, borderRadius: 99, transition: "width .5s ease", background: overBudgetCats.length > 0 ? C.red : overallPct > 80 ? C.orange : `linear-gradient(to right,${C.green},${C.greenBright})` }} />
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: C.muted, fontSize: 10 }}>{overallPct}% used</span>
-                  <span style={{ color: overBudgetCats.length > 0 ? C.redBright : C.muted, fontSize: 10 }}>
+                  <span style={{ color: C.muted, fontSize:13 }}>{overallPct}% used</span>
+                  <span style={{ color: overBudgetCats.length > 0 ? C.redBright : C.muted, fontSize:13 }}>
                     {overBudgetCats.length > 0 ? `$${Math.round(totalOver)} over total` : `$${Math.round(totalBudgeted - totalSpentBudgeted)} remaining`}
                   </span>
                 </div>
@@ -14440,12 +14639,12 @@ function BudgetScreen({data, setAppData, setScreen}) {
                   {saveSuggestions.map(({ cat, over, potential }) => (
                     <div key={cat} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, paddingBottom: 8, borderBottom: `1px solid ${C.border}` }}>
                       <div>
-                        <div style={{ color: C.cream, fontSize: 12, fontWeight: 600 }}>{catEmoji[cat] || "📌"} {cat}</div>
-                        <div style={{ color: C.redBright, fontSize: 10, marginTop: 2 }}>${Math.round(over)} over budget this month</div>
+                        <div style={{ color: C.cream, fontSize:13, fontWeight: 600 }}>{catEmoji[cat] || "📌"} {cat}</div>
+                        <div style={{ color: C.redBright, fontSize:13, marginTop: 2 }}>${Math.round(over)} over budget this month</div>
                       </div>
                       {potential > 0 && <div style={{ textAlign: "right" }}>
-                        <div style={{ color: C.green, fontSize: 12, fontWeight: 700 }}>Save ~${potential}</div>
-                        <div style={{ color: C.muted, fontSize: 9 }}>per month</div>
+                        <div style={{ color: C.green, fontSize:13, fontWeight: 700 }}>Save ~${potential}</div>
+                        <div style={{ color: C.muted, fontSize:13 }}>per month</div>
                       </div>}
                     </div>
                   ))}
@@ -14455,7 +14654,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
               {/* Goal savings reminder */}
               {goalsMo > 0 && (
                 <div style={{ background: C.purple + "14", border: `1px solid ${C.purple}33`, borderRadius: 14, padding: "12px 14px" }}>
-                  <div style={{ color: C.purpleBright, fontWeight: 700, fontSize: 12, marginBottom: 6 }}>🎯 Saving toward {activeGoals.length} goal{activeGoals.length > 1 ? "s" : ""}</div>
+                  <div style={{ color: C.purpleBright, fontWeight: 700, fontSize:13, marginBottom: 6 }}>🎯 Saving toward {activeGoals.length} goal{activeGoals.length > 1 ? "s" : ""}</div>
                   {activeGoals.map((g, i) => {
                     const target = parseFloat(g.target || 0);
                     const current = parseFloat(g.saved || 0);
@@ -14464,8 +14663,8 @@ function BudgetScreen({data, setAppData, setScreen}) {
                     return (
                       <div key={i} style={{ marginBottom: i < activeGoals.length - 1 ? 8 : 0 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-                          <span style={{ color: C.cream, fontSize: 12, fontWeight: 600 }}>{g.name || "Goal"}</span>
-                          <span style={{ color: C.purpleBright, fontSize: 11, fontWeight: 700 }}>${Math.round(mo)}/mo · {pct}% saved</span>
+                          <span style={{ color: C.cream, fontSize:13, fontWeight: 600 }}>{g.name || "Goal"}</span>
+                          <span style={{ color: C.purpleBright, fontSize:13, fontWeight: 700 }}>${Math.round(mo)}/mo · {pct}% saved</span>
                         </div>
                         <div style={{ height: 4, background: C.border, borderRadius: 99, overflow: "hidden" }}>
                           <div style={{ height: "100%", width: `${pct}%`, background: C.purple, borderRadius: 99, transition: "width .4s" }} />
@@ -14496,19 +14695,19 @@ function BudgetScreen({data, setAppData, setScreen}) {
                         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                           <span style={{ fontSize: 15 }}>{catEmoji[cat] || "📌"}</span>
                           <span style={{ color: C.cream, fontSize: 13, fontWeight: 600 }}>{cat}</span>
-                          {over && <span style={{ background: C.red + "22", color: C.redBright, fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 99, border: `1px solid ${C.red}44` }}>OVER</span>}
+                          {over && <span style={{ background: C.red + "22", color: C.redBright, fontSize:13, fontWeight: 700, padding: "2px 6px", borderRadius: 99, border: `1px solid ${C.red}44` }}>OVER</span>}
                         </div>
                         <div style={{ textAlign: "right" }}>
                           <span style={{ color: over ? C.redBright : C.cream, fontWeight: 700, fontSize: 13 }}>${Math.round(spent).toLocaleString()}</span>
-                          <span style={{ color: C.muted, fontSize: 11 }}> / ${Math.round(limit).toLocaleString()}</span>
+                          <span style={{ color: C.muted, fontSize:13 }}> / ${Math.round(limit).toLocaleString()}</span>
                         </div>
                       </div>
                       <div style={{ height: 7, background: C.border, borderRadius: 99, overflow: "hidden", marginBottom: 3 }}>
                         <div style={{ height: "100%", width: `${over ? 100 : pct}%`, borderRadius: 99, transition: "width .4s ease", background: over ? `linear-gradient(to right,${C.orange},${C.red})` : pct > 80 ? C.orange : `linear-gradient(to right,${color}88,${color})` }} />
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ color: C.muted, fontSize: 9 }}>{pct}% used</span>
-                        <span style={{ color: over ? C.redBright : C.muted, fontSize: 9 }}>
+                        <span style={{ color: C.muted, fontSize:13 }}>{pct}% used</span>
+                        <span style={{ color: over ? C.redBright : C.muted, fontSize:13 }}>
                           {over ? `$${Math.round(spent - limit)} over` : `$${Math.round(limit - spent)} left`}
                         </span>
                       </div>
@@ -14523,14 +14722,14 @@ function BudgetScreen({data, setAppData, setScreen}) {
                 if (unbudgeted.length === 0) return null;
                 return (
                   <div style={{ background: C.cardAlt, borderRadius: 14, padding: "12px 14px", border: `1px solid ${C.border}` }}>
-                    <div style={{ color: C.mutedHi, fontWeight: 700, fontSize: 12, marginBottom: 8 }}>📋 Spending outside your budget</div>
+                    <div style={{ color: C.mutedHi, fontWeight: 700, fontSize:13, marginBottom: 8 }}>📋 Spending outside your budget</div>
                     {unbudgeted.sort((a, b) => b[1] - a[1]).slice(0, 5).map(([cat, amt]) => (
                       <div key={cat} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-                        <span style={{ color: C.muted, fontSize: 12 }}>{catEmoji[cat] || "📌"} {cat}</span>
-                        <span style={{ color: C.mutedHi, fontSize: 12, fontWeight: 600 }}>${Math.round(amt).toLocaleString()}</span>
+                        <span style={{ color: C.muted, fontSize:13 }}>{catEmoji[cat] || "📌"} {cat}</span>
+                        <span style={{ color: C.mutedHi, fontSize:13, fontWeight: 600 }}>${Math.round(amt).toLocaleString()}</span>
                       </div>
                     ))}
-                    <button onClick={openEdit} style={{ marginTop: 6, background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                    <button onClick={openEdit} style={{ marginTop: 6, background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", color: C.muted, fontSize:13, cursor: "pointer", fontFamily: "inherit" }}>
                       + Add these to my budget
                     </button>
                   </div>
@@ -15929,7 +16128,7 @@ input,button,select,textarea { font-family:inherit; }
 `
   // Sprint 2: shown only after repeated cloud-sync failures — data is safe on-device meanwhile.
   const syncBanner = syncError ? (
-    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.gold+"22",borderBottom:`1px solid ${C.gold}55`,color:C.goldBright,fontSize:12,fontWeight:600,textAlign:"center",padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.gold+"22",borderBottom:`1px solid ${C.gold}55`,color:C.goldBright,fontSize:13,fontWeight:600,textAlign:"center",padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
       Saved on this device. Cloud sync is retrying…
     </div>
   ) : null;
@@ -15939,22 +16138,22 @@ input,button,select,textarea { font-family:inherit; }
   // Sprint Z #15: persistent demo-mode banner so it's always clear the data is sample data and how
   // to switch to real. (The "Try Demo" entry already lives on the onboarding bank-connect step.)
   const demoBanner = appData?.demo && !demoBannerHidden ? (
-    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.teal+"22",borderBottom:`1px solid ${C.teal}55`,color:C.tealBright,fontSize:12,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 34px",fontFamily:"'Plus Jakarta Sans',sans-serif",flexWrap:"wrap"}}>
+    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.teal+"22",borderBottom:`1px solid ${C.teal}55`,color:C.tealBright,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 34px",fontFamily:"'Plus Jakarta Sans',sans-serif",flexWrap:"wrap"}}>
       🧪 Demo mode: you're viewing sample data.
       {/* Labelled as an exit, not a "connect your bank" prompt: in demo the numbers are sample data,
           so nagging to connect a bank misreads the context. This button is also the ONLY route out
           of demo — exitDemo has no other caller, and signOut cannot clear it (it preserves
           flourish_v1, where demo state lives). Do not remove it without adding another exit. */}
-      <button onClick={exitDemo} style={{background:C.teal+"33",border:`1px solid ${C.teal}66`,color:C.tealBright,cursor:"pointer",fontWeight:800,fontSize:11,padding:"3px 12px",borderRadius:99,fontFamily:"inherit"}}>Exit demo →</button>
+      <button onClick={exitDemo} style={{background:C.teal+"33",border:`1px solid ${C.teal}66`,color:C.tealBright,cursor:"pointer",fontWeight:800,fontSize:13,padding:"0 14px",minHeight:LAYOUT.minTap,borderRadius:99,fontFamily:"inherit"}}>Exit demo →</button>
       {/* Hides the banner for this session only (screenshots). Absolutely positioned so the message
           stays optically centred; the banner's 34px side padding reserves its gutter. */}
       <button aria-label="Hide demo banner" title="Hide for now" onClick={()=>setDemoBannerHidden(true)}
-        style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:C.tealBright,cursor:"pointer",fontSize:14,lineHeight:1,padding:"6px 8px",fontFamily:"inherit"}}>✕</button>
+        style={{position:"absolute",right:2,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:C.tealBright,cursor:"pointer",fontSize:14,lineHeight:1,...tap({display:"flex",alignItems:"center",justifyContent:"center"}),fontFamily:"inherit"}}>✕</button>
     </div>
   ) : null;
   // (5) one-time, dismissible — appears after a successful local→DB migration upload.
   const migratedBanner = showMigratedBanner ? (
-    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.green+"22",borderBottom:`1px solid ${C.green}55`,color:C.greenBright,fontSize:12,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:10000,background:C.green+"22",borderBottom:`1px solid ${C.green}55`,color:C.greenBright,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"6px 12px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
       ✓ Your data is now backed up to your Flourish account
       <button aria-label="Dismiss" onClick={dismissMigratedBanner} style={{background:"none",border:"none",color:C.greenBright,cursor:"pointer",fontWeight:800,fontSize:14,padding:"0 4px",lineHeight:1}}>✕</button>
     </div>
@@ -15973,7 +16172,7 @@ input,button,select,textarea { font-family:inherit; }
             <div style={{width:38,height:38,borderRadius:12,background:"rgba(0,214,143,0.10)",border:"1px solid rgba(0,214,143,0.25)",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.12)"}}><FlourishMark size={24}/></div>
             <span style={{fontSize:22,fontWeight:800,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:-0.3}}>flourish</span>
           </button>
-          {appData&&<div style={{color:C.muted,fontSize:11,marginTop:8,fontFamily:"'Plus Jakarta Sans',sans-serif",paddingLeft:2}}>{CC[appData.profile?.country||"CA"]?.flag} {CC[appData.profile?.country||"CA"]?.name} · {CC[appData.profile?.country||"CA"]?.currency}</div>}
+          {appData&&<div style={{color:C.muted,fontSize:13,marginTop:8,fontFamily:"'Plus Jakarta Sans',sans-serif",paddingLeft:2}}>{CC[appData.profile?.country||"CA"]?.flag} {CC[appData.profile?.country||"CA"]?.name} · {CC[appData.profile?.country||"CA"]?.currency}</div>}
         </div>
 
         {/* Nav items */}
@@ -15985,7 +16184,7 @@ input,button,select,textarea { font-family:inherit; }
                 style={{background:active?C.green+"18":"transparent",border:`1px solid ${active?C.green+"33":"transparent"}`,borderRadius:12,padding:"11px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,color:active?C.greenBright:C.muted,fontWeight:active?700:400,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .18s",textAlign:"left",width:"100%"}}>
                 <Icon id={n.icon} size={17} color={active?C.greenBright:C.muted} strokeWidth={active?1.9:1.4}/>
                 {n.label}
-                {n.id==="home"&&unread>0&&<div style={{marginLeft:"auto",width:18,height:18,borderRadius:99,background:C.red,color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{unread}</div>}
+                {n.id==="home"&&unread>0&&<div style={{marginLeft:"auto",width:18,height:18,borderRadius:99,background:C.red,color:"#fff",fontSize:13,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{unread}</div>}
               </button>
             );
           })}
@@ -15996,10 +16195,10 @@ input,button,select,textarea { font-family:inherit; }
           {/* Trial status in sidebar — Phase D7: only render for users on trial or post-trial */}
           {!isPremium&&!isNativeApp()&&(trialActive||trialExpired)&&(
             <div onClick={()=>setShowPaywall(true)} style={{background:trialExpired?"#180800":trialDaysLeft<=2?C.orange+"18":C.purple+"18",border:`1px solid ${trialExpired?C.red+"44":trialDaysLeft<=2?C.orange+"44":C.purple+"33"}`,borderRadius:12,padding:"10px 14px",marginBottom:8,cursor:"pointer",transition:"all .18s"}}>
-              <div style={{color:trialExpired?C.redBright:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontWeight:700,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>
+              <div style={{color:trialExpired?C.redBright:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>
                 {trialExpired?"Trial ended 🔒":trialDaysLeft===0?"Trial ends today ⚠️":`${trialDaysLeft} day${trialDaysLeft===1?"":"s"} left`}
               </div>
-              <div style={{color:C.muted,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Upgrade to Flourish Plus →</div>
+              <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Upgrade to Flourish Plus →</div>
               {!trialExpired&&<div style={{height:3,background:C.border,borderRadius:99,marginTop:6,overflow:"hidden"}}>
                 <div style={{width:`${Math.max(4,(trialDaysLeft/14)*100)}%`,height:"100%",background:trialDaysLeft<=2?C.orange:C.purple,borderRadius:99}}/>
               </div>}
@@ -16010,8 +16209,8 @@ input,button,select,textarea { font-family:inherit; }
               <div style={{width:32,height:32,borderRadius:99,background:C.green+"22",border:`1px solid ${C.green}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}><Icon id="user" size={15} color={C.green} strokeWidth={1.5}/></div>
               <div>
                 <div style={{color:C.cream,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{appData.profile?.name||"User"}</div>
-                {HOUSEHOLD_ENABLED&&household&&<div style={{color:C.green,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🏠 Household connected</div>}
-                {isPremium&&<div style={{color:C.goldBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ Flourish Plus</div>}
+                {HOUSEHOLD_ENABLED&&household&&<div style={{color:C.green,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🏠 Household connected</div>}
+                {isPremium&&<div style={{color:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ Flourish Plus</div>}
               </div>
             </div>
           </div>}
@@ -16032,13 +16231,13 @@ input,button,select,textarea { font-family:inherit; }
             <div style={{color:C.cream,fontWeight:700,fontSize:18,fontFamily:"'Playfair Display',serif"}}>
               {showNotifs?"Notifications":showSettings?"Settings":screen==="home"?"Today":(screen==="watch"||screen==="plan"||screen==="spend")?"Watch":(screen==="do"||screen==="budget"||screen==="goals"||screen==="credit")?"Do":screen==="coach"?"Learn":screen==="family"?"Meet":"Today"}
             </div>
-            <div style={{color:C.muted,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{new Date().toLocaleDateString(CC[appData?.profile?.country||"CA"]?.locale||"en-CA",{weekday:"long",month:"long",day:"numeric"})}</div>
+            <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{new Date().toLocaleDateString(CC[appData?.profile?.country||"CA"]?.locale||"en-CA",{weekday:"long",month:"long",day:"numeric"})}</div>
           </div>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
-            {HOUSEHOLD_ENABLED&&household&&<div style={{background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:99,padding:"6px 14px",color:C.greenBright,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>🏠 Household #{household.code}</div>}
+            {HOUSEHOLD_ENABLED&&household&&<div style={{background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>🏠 Household #{household.code}</div>}
             <button onClick={()=>{setShowSettings(false);setShowNotifs(true);}} style={{position:"relative",background:C.card,border:`1px solid ${unread>0?C.red+"55":C.border}`,borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:18,transition:"all .18s"}} onMouseEnter={e=>e.currentTarget.style.borderColor=C.borderHi} onMouseLeave={e=>e.currentTarget.style.borderColor=unread>0?C.red+"55":C.border}>
               <Icon id="bell" size={18} color={C.mutedHi} strokeWidth={1.5}/>
-              {unread>0&&<div style={{position:"absolute",top:-4,right:-4,width:18,height:18,borderRadius:99,background:C.red,color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{unread}</div>}
+              {unread>0&&<div style={{position:"absolute",top:-4,right:-4,width:18,height:18,borderRadius:99,background:C.red,color:"#fff",fontSize:13,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{unread}</div>}
             </button>
           </div>
         </div>
@@ -16076,17 +16275,17 @@ input,button,select,textarea { font-family:inherit; }
         {!isOnline&&(
           <div style={{position:"fixed",top:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,zIndex:9999,background:"#180800",borderBottom:`2px solid ${C.orange}44`,padding:"9px 20px",display:"flex",alignItems:"center",gap:10}}>
             <span style={{fontSize:14}}>📡</span>
-            <span style={{color:C.goldBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700}}>Offline. Coach paused, numbers saved.</span>
+            <span style={{color:C.goldBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700}}>Offline. Coach paused, numbers saved.</span>
           </div>
         )}
         {/* ── TRIAL BANNER ─── Phase D7: only render for users on an active trial ── */}
         {!isPremium&&!isNativeApp()&&trialActive&&trialDaysLeft<=7&&(
           <div style={{background:trialDaysLeft<=2?"#1A0800":`linear-gradient(90deg,${C.purple}22,${C.purpleDim})`,borderBottom:`1px solid ${trialDaysLeft<=2?C.orange+"55":C.purple+"44"}`,padding:"8px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
             <span style={{fontSize:13}}>{trialDaysLeft<=2?"⚠️":"✨"}</span>
-            <span style={{color:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700,flex:1}}>
+            <span style={{color:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,flex:1}}>
               {trialDaysLeft===0?"Trial ends today":"Trial: "+trialDaysLeft+" day"+(trialDaysLeft===1?"":"s")+" left"}
             </span>
-            <button onClick={()=>setShowPaywall(true)} style={{background:trialDaysLeft<=2?"linear-gradient(135deg,"+C.orange+","+C.gold+")":"linear-gradient(135deg,"+C.purple+","+C.purpleBright+")",border:"none",borderRadius:8,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+            <button onClick={()=>setShowPaywall(true)} style={{background:trialDaysLeft<=2?"linear-gradient(135deg,"+C.orange+","+C.gold+")":"linear-gradient(135deg,"+C.purple+","+C.purpleBright+")",border:"none",borderRadius:8,padding:"5px 12px",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
               Upgrade →
             </button>
           </div>
@@ -16094,8 +16293,8 @@ input,button,select,textarea { font-family:inherit; }
         {!isNativeApp()&&trialExpired&&(
           <div style={{background:"#180800",borderBottom:`2px solid ${C.red}55`,padding:"10px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
             <span style={{fontSize:13}}>🔒</span>
-            <span style={{color:C.redBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:12,fontWeight:700,flex:1}}>Your free trial has ended</span>
-            <button onClick={()=>setShowPaywall(true)} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:8,padding:"6px 14px",color:"#fff",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+            <span style={{color:C.redBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,flex:1}}>Your free trial has ended</span>
+            <button onClick={()=>setShowPaywall(true)} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:8,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
               Upgrade Now
             </button>
           </div>
@@ -16108,7 +16307,7 @@ input,button,select,textarea { font-family:inherit; }
           <div style={{display:"flex",gap:8}}>
             <button onClick={()=>{setShowSettings(false);setShowNotifs(true);}} style={{position:"relative",background:"rgba(255,255,255,0.07)",border:`1px solid ${unread>0?C.red+"55":C.border}`,borderRadius:12,padding:"8px 12px",cursor:"pointer"}}>
               <Icon id="bell" size={17} color={unread>0?C.redBright:C.mutedHi} strokeWidth={1.5}/>
-              {unread>0&&<div style={{position:"absolute",top:-4,right:-4,width:17,height:17,borderRadius:99,background:C.red,color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 8px ${C.red}88`}}>{unread}</div>}
+              {unread>0&&<div style={{position:"absolute",top:-4,right:-4,width:17,height:17,borderRadius:99,background:C.red,color:"#fff",fontSize:13,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 8px ${C.red}88`}}>{unread}</div>}
             </button>
             <button onClick={()=>{setShowNotifs(false);setShowSettings(true);}} style={{background:"rgba(255,255,255,0.07)",border:`1px solid ${C.border}`,borderRadius:12,padding:"8px 12px",cursor:"pointer"}}><Icon id="settings" size={17} color={C.mutedHi} strokeWidth={1.5}/></button>
           </div>
@@ -16130,7 +16329,7 @@ input,button,select,textarea { font-family:inherit; }
                     boxShadow:active?`0 2px 12px rgba(0,204,133,0.30), inset 0 1px 0 rgba(0,232,154,0.20)`:"none"}}>
                     <Icon id={n.icon} size={18} color={active?C.greenBright:C.muted} strokeWidth={active?2.2:1.4}/>
                   </div>
-                  <span style={{fontSize:9.5,fontWeight:active?800:500,fontFamily:"'Plus Jakarta Sans',sans-serif",color:active?C.greenBright:C.muted,letterSpacing:active?0.3:0,transition:"all .28s cubic-bezier(.16,1,.3,1)"}}>{n.label}</span>
+                  <span style={{fontSize:11 /* SMALL_TEXT_OK: tab bar label — never read as prose, and Apple sets its own at 10-12 */,fontWeight:active?800:500,fontFamily:"'Plus Jakarta Sans',sans-serif",color:active?C.greenBright:C.muted,letterSpacing:active?0.3:0,transition:"all .28s cubic-bezier(.16,1,.3,1)"}}>{n.label}</span>
                 </button>
               );
             })}
@@ -16176,7 +16375,7 @@ input,button,select,textarea { font-family:inherit; }
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={dismissTour}
                     style={{background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",
-                      color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",flex:"0 0 auto"}}>
+                      color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit",flex:"0 0 auto"}}>
                     Skip Tour
                   </button>
                   <button onClick={()=>{ if(isLast){dismissTour();}else{setTourStep(t=>t+1);setScreen(TOUR[tourStep+1].screen);}}}

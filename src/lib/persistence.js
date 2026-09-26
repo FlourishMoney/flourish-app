@@ -42,6 +42,9 @@ const SIDE_KEYS = [
   "flourish_ai_disclosed_at",    // timestamp of the AI-disclosure choice (audit trail)
   "flourish_ai_coach_enabled",   // AI on/off choice (synced so it persists across devices)
   "flourish_ai_third_party_consent", // Sprint Z2 #8: explicit consent to share summary+messages with Anthropic (1/0)
+  "flourish_tips_dismissed",     // the one-line first-run tips, dismissed for good. Synced because
+                                 // a household should not be told the same thing again on the
+                                 // other phone, or on the same phone after a reinstall.
   "flourish_plaid_consented_at", // Apple 5.1.1 first-consent timestamp (audit trail only — NOT a gate;
                                  // BankConsentModal shows before every Plaid open, never suppressed)
 ];

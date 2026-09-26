@@ -439,7 +439,12 @@ const { create } = require("./_runner.cjs");
       const pageTitle = (fs.readFileSync(path.join(__dirname, "../index.html"), "utf8").match(/<title>([\s\S]*?)<\/title>/) || [])[1] || "";
       t.ok(pageTitle.trim().length > 0 && !/[\u2013\u2014]/.test(pageTitle), `the page title has no em or en dash (got: "${pageTitle.trim()}")`);
     }
-    t.ok(/\["Pay frequency", frequencyLabel\(_ffreq\)\]/.test(app) && !/× \$\{r\.freq\}/.test(app), "pay frequency is shown in plain words (\"Every 2 weeks\"), not \"biweekly\"");
+    // The rule is that the DISPLAYED value comes from frequencyLabel(), not the raw freq string.
+    // Matched in either spelling, because the Watch card now passes its supporting figures as
+    // objects rather than pairs — the source of the value is what matters, not the punctuation
+    // around it. The second half of the check is unchanged.
+    t.ok(/(?:\["Pay frequency",\s*frequencyLabel\(_ffreq\)\]|label:\s*"Pay frequency",\s*value:\s*frequencyLabel\(_ffreq\))/.test(app)
+      && !/× \$\{r\.freq\}/.test(app), "pay frequency is shown in plain words (\"Every 2 weeks\"), not \"biweekly\"");
     t.ok(/detectIncomeFromTxns\(incomeEvidence\(/.test(app) && !/detectIncomeFromTxns\(markedTxns\)|detectIncomeFromTxns\(txns\)/.test(app),
          "every income detection reads only deposits that count as income");
     t.ok(/FinancialCalcEngine\.cashFlow\(data, getCatOv\(\)\)\.monthlyIncome/.test(app) && /Next deposit \(as the household corrected it\)/.test(app),
