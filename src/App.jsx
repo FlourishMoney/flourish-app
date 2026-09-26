@@ -32,6 +32,7 @@ import { isNativeApp, billingUiState, offeredPlans, billingReturnNotice, BILLING
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/signupUi.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
+import { TYPE, SPACE, LAYOUT, tap } from "./lib/type.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, agendaIsEmpty } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
 import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown, formatCompactMoney } from "./lib/format.js";
@@ -3962,7 +3963,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         {(bankError||initError)&&(
           <div style={{background:"#ff444422",border:"1px solid #ff444466",borderRadius:12,padding:"12px 16px",marginBottom:12}}>
             <div style={{color:"#ff8888",fontSize:13,marginBottom:8}}>{bankError||initError}</div>
-            {!initError&&<button onClick={()=>{setLinkToken(null);fetchLinkToken();}} style={{background:"none",border:"1px solid #ff888844",borderRadius:8,padding:"6px 14px",color:"#ff8888",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>↺ Retry</button>}
+            {!initError&&<button onClick={()=>{setLinkToken(null);fetchLinkToken();}} style={{background:"none",border:"1px solid #ff888844",borderRadius:8,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:"#ff8888",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>↺ Retry</button>}
           </div>
         )}
 
@@ -5094,9 +5095,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           <span style={{color:C.green,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>Live</span>
           <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{
             (()=>{ const l=localStorage.getItem("flourish_last_refresh");
-              if(!l) return "· 6 engines";
+              if(!l) return "· up to date";
               const m=Math.round((Date.now()-parseInt(l))/60000);
-              return m<1?"· just refreshed":m<60?`· updated ${m}m ago`:"· 6 engines"; })()
+              return m<1?"· just refreshed":m<60?`· updated ${m}m ago`:"· up to date"; })()
           }</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -5172,10 +5173,10 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                         : "Connect your bank to track it live and make it work harder."}
                     </div>
                     <div style={{marginTop:8,display:"flex",gap:8}}>
-                      <button onClick={e=>{e.stopPropagation();setScreen("coach");}} style={{background:overspend>0?C.red+"22":C.green+"22",border:`1px solid ${overspend>0?C.red+"44":C.green+"44"}`,borderRadius:99,padding:"6px 14px",color:overspend>0?C.redBright:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                      <button onClick={e=>{e.stopPropagation();setScreen("coach");}} style={{background:overspend>0?C.red+"22":C.green+"22",border:`1px solid ${overspend>0?C.red+"44":C.green+"44"}`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:overspend>0?C.redBright:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                         Ask Coach →
                       </button>
-                      <button onClick={e=>{e.stopPropagation();window.dispatchEvent(new CustomEvent("flourish:settings"));}} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,borderRadius:99,padding:"6px 14px",color:C.mutedHi,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                      <button onClick={e=>{e.stopPropagation();window.dispatchEvent(new CustomEvent("flourish:settings"));}} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:C.mutedHi,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                         Connect Bank
                       </button>
                     </div>
@@ -5223,7 +5224,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               <div style={{color:C.cream,fontSize:13.5,lineHeight:1.55,margin:"3px 0 4px"}}>{doIt}</div>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:8}}>
                 <CalcByFlourish/>
-                <button onClick={()=>setScreen&&setScreen("coach")} style={{background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:99,padding:"6px 14px",color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Explain this →</button>
+                <button onClick={()=>setScreen&&setScreen("coach")} style={{background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Explain this →</button>
               </div>
             </div>
           );
@@ -6359,32 +6360,62 @@ function BillManager({data, setAppData, onClose}){
 
 // ─── SHARED SCREEN HEADER ────────────────────────────────────────────────────
 // Consistent back button + title + optional CTA on every main screen
-function ScreenHeader({title, subtitle, onBack, cta, onCta, ctaColor}) {
-  const C_ = typeof C !== "undefined" ? C : {};
+// THE TITLE GETS ITS OWN LINE.
+//
+// This used to lay the back arrow, the title, the subtitle and a control out in ONE row, each
+// fighting for the same 375px. On Watch the subtitle lost and wrapped to four lines in a column
+// about twenty characters wide, which is what "the screens look messy" looks like up close.
+//
+// Now: title on its own line, at most one line of subtitle under it, and controls on their own
+// full-width row below via `controls`. The back arrow only appears when `onBack` is given, so a
+// root tab does not show an arrow that goes nowhere.
+// A disclaimer is a footnote, not a card.
+//
+// Boxing it, tinting it and giving it an ℹ️ puts it at the same rank as the numbers it qualifies —
+// so it competes for attention every single time the screen is opened, forever, while saying the
+// same thing it said yesterday. As a footnote at the foot of the screen it is still there, still
+// in the same words, and no longer in the way. The words themselves are unchanged: this is a
+// layout change, not a legal one.
+function ScreenFootnote({ children }) {
   return (
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,gap:10}}>
-      <div style={{display:"flex",alignItems:"center",gap:12,flex:1,minWidth:0}}>
-        {onBack&&(
-          <button onClick={onBack} style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,borderRadius:12,
-            width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,
-            color:C.cream,fontSize:18,transition:"all .15s"}}
-            onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.10)"}
-            onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.06)"}>
-            ←
+    <div style={{...TYPE.footnote,color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",
+      marginTop:SPACE.xl,marginBottom:SPACE.md,paddingLeft:SPACE.xs,paddingRight:SPACE.xs}}>
+      {children}
+    </div>
+  );
+}
+
+function ScreenHeader({title, subtitle, onBack, cta, onCta, ctaColor, controls}) {
+  return (
+    <div style={{marginBottom:LAYOUT.cardGap}}>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:SPACE.md}}>
+        <div style={{display:"flex",alignItems:"center",gap:SPACE.md,flex:1,minWidth:0}}>
+          {onBack&&(
+            <button onClick={onBack} aria-label="Back" style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,borderRadius:12,
+              ...tap({width:LAYOUT.minTap,height:LAYOUT.minTap}),display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,
+              color:C.cream,fontSize:18,transition:"all .15s"}}
+              onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.10)"}
+              onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.06)"}>
+              ←
+            </button>
+          )}
+          <div style={{minWidth:0,flex:1}}>
+            <div style={{fontFamily:"'Playfair Display',serif",...TYPE.title,color:C.cream,letterSpacing:-0.5}}>{title}</div>
+          </div>
+        </div>
+        {cta&&onCta&&(
+          <button onClick={onCta} style={{background:(ctaColor||C.green)+"22",border:`1px solid ${(ctaColor||C.green)}44`,
+            borderRadius:99,padding:"10px 16px",color:ctaColor||C.greenBright,...TYPE.footnote,fontWeight:700,
+            cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",whiteSpace:"nowrap",flexShrink:0,minHeight:LAYOUT.minTap}}>
+            {cta}
           </button>
         )}
-        <div style={{minWidth:0}}>
-          <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream,letterSpacing:-0.5,lineHeight:1.15}}>{title}</div>
-          {subtitle&&<div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{subtitle}</div>}
-        </div>
       </div>
-      {cta&&onCta&&(
-        <button onClick={onCta} style={{background:(ctaColor||C.green)+"22",border:`1px solid ${(ctaColor||C.green)}44`,
-          borderRadius:99,padding:"8px 14px",color:ctaColor||C.greenBright,fontSize:13,fontWeight:700,
-          cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",whiteSpace:"nowrap",flexShrink:0,minHeight:36}}>
-          {cta}
-        </button>
+      {subtitle&&(
+        <div style={{color:C.mutedHi,...TYPE.subhead,fontWeight:400,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:SPACE.xs,
+          overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:1,WebkitBoxOrient:"vertical"}}>{subtitle}</div>
       )}
+      {controls&&<div style={{marginTop:SPACE.md}}>{controls}</div>}
     </div>
   );
 }
@@ -6651,10 +6682,11 @@ function PlanAhead({data, setAppData, setScreen}){
       </ul>
       {dataIssues.length>5&&<div style={{color:C.muted,fontSize:13,marginTop:5}}>…and {dataIssues.length-5} more.</div>}
     </div>}
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <ScreenHeader title="Watch" subtitle="The next 90 days. What's coming in, what's going out, and what happens if." onBack={setScreen?()=>setScreen("home"):null}/>
-      <div style={{display:"flex",gap:4,background:C.surface,borderRadius:12,padding:3,flexShrink:0,marginBottom:16}}>{RANGES.map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"6px 11px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",transition:"all .22s"}}>{r}d</button>)}</div>
-    </div>
+    <ScreenHeader title="Watch" subtitle="The next 90 days. What's coming in and going out."
+      onBack={setScreen?()=>setScreen("home"):null}
+      controls={
+          <div style={{display:"flex",gap:SPACE.xs,background:C.surface,borderRadius:12,padding:3,width:"100%"}}>{RANGES.map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",transition:"all .22s"}}>{r}d</button>)}</div>
+      }/>
     {(()=>{
       // Item 1: the starting balance is the SAME displayed value as Today's "In your accounts" — read from
       // the one display owner (safeToSpendView.balanceText: whole dollars, rounded down, formatMoney) rather
@@ -6670,10 +6702,6 @@ function PlanAhead({data, setAppData, setScreen}){
       const _fPay = perDepositAmount(_inc0) != null || (_inc0 && _inc0.isVariable) ? monthlyIncomeBasis(_inc0, data, new Date()) : null;
       return (
         <div style={{background:C.isDark?"rgba(255,255,255,0.03)":C.surface,borderRadius:14,padding:"12px 16px",border:`1px solid ${C.border}`}}>
-          <div style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:8}}>
-            <span style={{fontSize:13,flexShrink:0,marginTop:1}}>ℹ️</span>
-            <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>Forecast projects forward from today using your bank balance, income schedule, bills, and average daily spending. Not financial advice.</span>
-          </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
             {[
               ["Starting balance", _fbalText],
@@ -6707,7 +6735,7 @@ function PlanAhead({data, setAppData, setScreen}){
         <div style={{color:C.tealBright,fontWeight:700,fontSize:14}}>📅 Your bills</div>
         <div style={{color:C.muted,fontSize:13,marginTop:2}}>{(data.bills||[]).length} tracked · powers your forecast</div>
       </div>
-      {setAppData&&<button onClick={()=>setShowBillManager(true)} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>+ Add Bill</button>}
+      {setAppData&&<button onClick={()=>setShowBillManager(true)} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>+ Add Bill</button>}
     </Card>
     {/* Money the household knows about that no bill or income covers: a tax refund, a yearly premium, a gift */}
     {setAppData&&<Card style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,border:`1px solid ${C.green}33`}}>
@@ -6715,7 +6743,7 @@ function PlanAhead({data, setAppData, setScreen}){
         <div style={{color:C.greenBright,fontWeight:700,fontSize:14}}>Expected money in or out</div>
         <div style={{color:C.muted,fontSize:13,marginTop:2}}>{correctionsOf(data).expected.length ? `${correctionsOf(data).expected.length} added · in your forecast` : "A tax refund, a yearly bill, a gift"}</div>
       </div>
-      <button onClick={()=>setShowExpected(true)} style={{background:C.green+"22",border:`1px solid ${C.green}44`,color:C.greenBright,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>+ Add</button>
+      <button onClick={()=>setShowExpected(true)} style={{background:C.green+"22",border:`1px solid ${C.green}44`,color:C.greenBright,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>+ Add</button>
     </Card>}
     <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
     {(()=>{
@@ -6833,6 +6861,7 @@ function AddCustomCategory({onAdd}){
         <button onClick={()=>save()} style={{background:C.green,border:"none",borderRadius:10,padding:"8px 14px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>Add</button>
         <button aria-label="Close" onClick={()=>{setShow(false);setVal("");}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 12px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>✕</button>
       </div>
+      <ScreenFootnote>Forecast projects forward from today using your bank balance, income schedule, bills, and average daily spending. Not financial advice.</ScreenFootnote>
     </div>
   );
 }
@@ -8597,7 +8626,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               </div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:10,borderTop:`1px solid ${C.border}`}}>
                 <div style={{color:C.tealBright,fontWeight:700,fontSize:13,fontFamily:"'Playfair Display',serif"}}>{tip.savings}</div>
-                <span style={{display:"inline-block",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:99,padding:"6px 14px",color:C.mutedHi,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                <span style={{display:"inline-block",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:C.mutedHi,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
                   {tip.action}
                 </span>
               </div>
@@ -9046,19 +9075,19 @@ function MeetAgenda({ data, isCouple, setScreen }){
         } else if (r.status === 401 || r.status === 403) {
           setMeetError({ kind:"auth", text:"Your session has expired. Sign in again, then start the meeting." });
         } else {
-          setMeetError({ kind:"server", text:"The facilitator didn't answer. Your agenda above is unchanged." });
+          setMeetError({ kind:"server", text:"Your coach didn't answer. Your agenda above is unchanged." });
         }
         setBusy(false); return;
       }
       const d = await r.json().catch(()=>null);
       const text = d?.content?.[0]?.text;
       if (!text || !String(text).trim()) {
-        setMeetError({ kind:"empty", text:"The facilitator didn't answer. Your agenda above is unchanged." });
+        setMeetError({ kind:"empty", text:"Your coach didn't answer. Your agenda above is unchanged." });
         setBusy(false); return;
       }
       setMsgs([...history, { role:"assistant", content:text }]);
     } catch {
-      setMeetError({ kind:"offline", text:"Couldn't reach the facilitator. Your agenda above is unchanged." });
+      setMeetError({ kind:"offline", text:"Couldn't reach your coach. Your agenda above is unchanged." });
     }
     setBusy(false);
   };
@@ -9101,7 +9130,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
            no /api/coach call. The real "trial" paywall below is unchanged for signed-in free-tier users. */
         <div style={{...card,background:C.cardAlt}}>
           <div style={{color:C.goldBright,fontSize:11 /* SMALL_TEXT_OK: data-provenance tag, a marker on content rather than content */,fontWeight:800,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Example · sample data</div>
-          <div style={{color:C.cream,fontSize:13,lineHeight:1.6}}>{demoFacilitatorLine(data, new Date()) || "Your facilitator works through the agenda above with you, one item at a time."}</div>
+          <div style={{color:C.cream,fontSize:13,lineHeight:1.6}}>{demoFacilitatorLine(data, new Date()) || "Your coach works through the agenda above with you, one item at a time."}</div>
           <div style={{color:C.muted,fontSize:13,lineHeight:1.5,marginTop:8}}>A scripted preview. Create a free account to run this meeting on your own numbers.</div>
         </div>
       ) : facilitatorGate === "trial" ? (
@@ -9112,7 +9141,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
         <button onClick={start} style={{width:"100%",background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:14,padding:"13px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{isCouple?"Start the meeting":"Start solo check-in"}</button>
       ) : (
         <div style={card}>
-          <div style={{color:C.muted,fontSize:13,marginBottom:8}}>The facilitator works only from the agenda above. Nothing here moves money; a choice is only recorded after you confirm it.</div>
+          <div style={{color:C.muted,fontSize:13,marginBottom:8}}>Your coach works only from the agenda above. Nothing here moves money; a choice is only recorded after you confirm it.</div>
           {msgs.filter(m=>m.role!=="user").map((m,i)=>(
             <div key={i} style={{marginBottom:10}}>
               <YourCoachTag/>
@@ -16035,7 +16064,7 @@ input,button,select,textarea { font-family:inherit; }
             <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{new Date().toLocaleDateString(CC[appData?.profile?.country||"CA"]?.locale||"en-CA",{weekday:"long",month:"long",day:"numeric"})}</div>
           </div>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
-            {HOUSEHOLD_ENABLED&&household&&<div style={{background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:99,padding:"6px 14px",color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>🏠 Household #{household.code}</div>}
+            {HOUSEHOLD_ENABLED&&household&&<div style={{background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>🏠 Household #{household.code}</div>}
             <button onClick={()=>{setShowSettings(false);setShowNotifs(true);}} style={{position:"relative",background:C.card,border:`1px solid ${unread>0?C.red+"55":C.border}`,borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:18,transition:"all .18s"}} onMouseEnter={e=>e.currentTarget.style.borderColor=C.borderHi} onMouseLeave={e=>e.currentTarget.style.borderColor=unread>0?C.red+"55":C.border}>
               <Icon id="bell" size={18} color={C.mutedHi} strokeWidth={1.5}/>
               {unread>0&&<div style={{position:"absolute",top:-4,right:-4,width:18,height:18,borderRadius:99,background:C.red,color:"#fff",fontSize:13,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{unread}</div>}
@@ -16095,7 +16124,7 @@ input,button,select,textarea { font-family:inherit; }
           <div style={{background:"#180800",borderBottom:`2px solid ${C.red}55`,padding:"10px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
             <span style={{fontSize:13}}>🔒</span>
             <span style={{color:C.redBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,flex:1}}>Your free trial has ended</span>
-            <button onClick={()=>setShowPaywall(true)} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:8,padding:"6px 14px",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+            <button onClick={()=>setShowPaywall(true)} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:8,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
               Upgrade Now
             </button>
           </div>
