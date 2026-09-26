@@ -132,10 +132,16 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     t.eq(wrong.data, { error: "invalid_code" }, "flag unset: a wrong code is refused");
 
     const good = await signup({ BETA_CODES: CODES }, { code: "flourish2026" });
-    t.eq([good.status, good.data.ok], [200, true], "flag unset: a valid code still creates the account (lower case still matches)");
+    t.eq([good.status, good.data], [200, { ok: true, source: "invited" }],
+         "flag unset: a valid code still creates the account (lower case still matches). The response gained a `source` field; " +
+         "the client reads only `error`, and nothing else reads it, so this is the one deliberate difference from today");
     t.eq(good.state.created.length, 1, "…one account");
     t.eq(good.state.rpc[0].fn, "reserve_beta_seat", "…and it still reserves a beta seat");
     t.eq(good.state.rpc[0].args.p_cap, 30, "…against the cap of 30");
+
+    const cappedShut = await signup({ BETA_CODES: CODES }, { code: "BETA100" }, { seat: "cap_reached" });
+    t.eq(cappedShut.data, { error: "cap_reached" }, "flag unset: a full cap still refuses a coded signup, exactly as today");
+    t.eq(cappedShut.state.created.length, 0, "…and creates nothing");
 
     const unsetCodes = await signup({}, { code: "FLOURISH2026" });
     t.eq(unsetCodes.data, { error: "invalid_code" }, "flag unset and BETA_CODES unset: still fails closed");
@@ -194,9 +200,14 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     const cappedSelf = await signup(OPEN, { code: "" }, { seat: "cap_reached" });
     t.eq(cappedSelf.data, { ok: true, source: "self_serve" }, "open: a FULL cap never refuses a codeless signup");
     t.eq(cappedSelf.state.created.length, 1, "…the account is created anyway");
+    // A full cap must not refuse someone whose only mistake was typing a code: beta_signups was
+    // backfilled from every existing auth user, so it can already be at 30, and refusing here would
+    // mean "Beta is full" for a code holder while the same person, field cleared, walks in.
     const cappedInvited = await signup(OPEN, { code: "BETA100" }, { seat: "cap_reached" });
-    t.eq(cappedInvited.data, { error: "cap_reached" }, "open: a full cap still refuses a CODED signup");
-    t.eq(cappedInvited.state.created.length, 0, "…and creates nothing");
+    t.eq(cappedInvited.data, { ok: true, source: "self_serve" }, "open: a full cap admits a CODED signup as self-serve rather than refusing it");
+    t.eq(cappedInvited.state.created.length, 1, "…the account is created");
+    t.eq(cappedInvited.state.created[0].user_metadata.beta, false, "…and it took no seat, so it is not in the invited cohort");
+    t.eq(cappedInvited.state.deletes.length, 0, "…and nothing is released, because nothing was reserved");
 
     // A duplicate email on the open path: caught by Supabase, one step later, just as atomically.
     const dupe = await signup(OPEN, { code: "" }, { createResult: { error: { code: "email_exists", message: "already registered" } } });
@@ -211,6 +222,10 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     t.eq(failInvited.state.deletes.map(d => d.table), ["beta_signups"], "…and releases the seat it reserved");
     const failSelf = await signup(OPEN, { code: "" }, { createResult: { error: { message: "boom" } } });
     t.eq(failSelf.state.deletes.length, 0, "a failed open create releases nothing, because it reserved nothing");
+    // Keyed on "was a code used", not on the RPC's return value, so an unrecognised answer from
+    // reserve_beta_seat still releases rather than orphaning the seat.
+    const beta3 = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "beta.js"), "utf8");
+    t.ok(/const releaseSeat = async \(why\) => \{\s*\n\s*if \(!gate\.usedCode\) return;/.test(beta3), "releaseSeat is gated on whether a code was used");
   }
 
   // ── 7. UTM and the waitlist are untouched by any of this ──────────────────────────────────────
@@ -237,6 +252,19 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
       t.eq([res.statusCode, JSON.parse(res.body)], [200, { openSignup: expected }], `signup_status with OPEN_SIGNUP=${JSON.stringify(env.OPEN_SIGNUP)} answers ${expected}`);
       t.eq([state.fetches.length, state.rpc.length], [0, 0], "…without touching Supabase or the network");
       t.eq(JSON.parse(res.body).openSignup !== undefined && Object.keys(JSON.parse(res.body)), ["openSignup"], "…and leaks nothing else about the configuration");
+    }
+
+    // It answers before the Supabase guard, so a preview or local build without those variables still
+    // gets a truthful answer instead of a 500 that would silently pin the screen to invite-only.
+    {
+      const saved = { url: process.env.SUPABASE_URL, key: process.env.SUPABASE_SECRET_KEY };
+      const state = freshState();
+      const res = await (async () => {
+        const r = runBeta(state, { OPEN_SIGNUP: "true", SUPABASE_URL: "", SUPABASE_SECRET_KEY: "" }, { action: "signup_status" });
+        return r;
+      })();
+      t.eq([res.statusCode, JSON.parse(res.body)], [200, { openSignup: true }], "signup_status answers even with no Supabase variables set");
+      process.env.SUPABASE_URL = saved.url; process.env.SUPABASE_SECRET_KEY = saved.key;
     }
 
     // Reading that answer. Anything that is not a clear yes is a no.
@@ -281,7 +309,9 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     t.ok(/catch \{[^}]*setOpenSignup\(false\)/s.test(auth), "…and treating a failed call as invite-only");
     t.ok(/mode==="signup"&&showCodeInput&&\(/.test(auth) && /mode==="signup"&&showCodeLink&&\(/.test(auth), "…the field and the link are the two states");
     t.ok(/Have an invite code\?/.test(auth), "…the link says \"Have an invite code?\"");
-    t.ok(/mode==="signup"&&codeRequired&&!betaCode\.trim\(\)/.test(auth), "…and Create Account only demands a code when one is required");
+    t.ok(/const codeOk = mode === "login" \|\| signupSubmittable\(\{ openSignup, code: betaCode \}\)/.test(auth),
+         "…and Create Account asks signupSubmittable, the same helper the tests check, rather than restating the rule inline");
+    t.ok(/disabled=\{loading \|\| !email \|\| password\.length < 8 \|\| !codeOk\}/.test(auth), "…so the button and the field cannot drift apart");
     t.ok(!/OPEN_SIGNUP/.test(auth), "the flag's value is never in the screen, only the server's answer");
   }
 
@@ -344,14 +374,32 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     t.ok(!/isNativeApp|Capacitor|getPlatform/.test(statusCall), "the status call is not branched by platform");
     t.ok(!/isNativeApp|Capacitor|getPlatform/.test(line("showCodeInput")), "the code field is not branched by platform");
     t.ok(!/isNativeApp|Capacitor|getPlatform/.test(line("showCodeLink")), "the invite-code link is not branched by platform");
-    t.ok(!/isNativeApp|Capacitor|getPlatform/.test(line("codeRequired&&!betaCode")), "the Create Account button is not branched by platform");
+    t.ok(!/isNativeApp|Capacitor|getPlatform/.test(line("const codeOk = mode")), "the Create Account button is not branched by platform");
     // The two things that ARE platform-specific stay that way, so this is not just matching nothing.
     t.ok(/!isNativeApp\(\) && <button onClick=\{handleMagicLink\}/.test(auth), "sanity: the magic-link button is still web-only");
     t.ok(/isNativeApp\(\) && onTryDemo/.test(auth) || /isNativeApp\(\)\s*&&/.test(auth), "sanity: the demo button is still native-only");
 
     // And the API the screen talks to is the deployed one on native, not a relative path that would
     // resolve to capacitor://localhost inside the shell.
-    t.ok(/\$\{API_BASE\}\/api\/beta/.test(statusCall), "the status call goes to API_BASE, which native points at flourishmoney.app");
+    t.ok(/\$\{API_BASE\}\/api\/beta/.test(statusCall), "the status call goes to API_BASE, not a relative path");
+    // API_BASE used to test for iOS and a non-http scheme only. Capacitor 8 serves the ANDROID shell
+    // from https://localhost, so both tests said "web" and every API call from the Android app went to
+    // the WebView's own server. It now uses isNativeApp(), which names both platforms.
+    const apiBase = app.slice(app.indexOf("const API_BASE = (() => {"), app.indexOf("})();", app.indexOf("const API_BASE = (() => {")));
+    t.ok(/return isNativeApp\(\) \? "https:\/\/flourishmoney\.app" : "";/.test(apiBase), "API_BASE is decided by isNativeApp(), so Android is a store app too");
+    t.ok(!/getPlatform\?\.\(\) === "ios"/.test(apiBase), "…and the old iOS-only test is gone");
+    const vis = await import("../src/lib/billingVisibility.js");
+    for (const [label, win] of [
+      ["iOS", { Capacitor: { getPlatform: () => "ios" }, location: { protocol: "capacitor:" } }],
+      ["Android", { Capacitor: { getPlatform: () => "android" }, location: { protocol: "https:" } }],
+    ]) t.eq(vis.isNativeApp(win), true, `…${label} is a store app, so its calls reach flourishmoney.app`);
+    t.eq(vis.isNativeApp({ location: { protocol: "https:" } }), false, "…and the web still uses a relative path");
+
+    // CORS: the Android shell's Origin must be allowed, or every signup from it is refused.
+    const beta2 = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "beta.js"), "utf8");
+    const origins = beta2.slice(beta2.indexOf("const ALLOWED_ORIGINS"), beta2.indexOf("]);", beta2.indexOf("const ALLOWED_ORIGINS")));
+    t.ok(/"https:\/\/localhost"/.test(origins), "beta.js allows the Android WebView origin https://localhost");
+    t.ok(/"capacitor:\/\/localhost"/.test(origins), "…and still allows the iOS one");
   }
 
   t.summary("openSignup.test");

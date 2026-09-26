@@ -30,7 +30,7 @@ import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parse
 import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
 import { isNativeApp, billingUiState, offeredPlans, billingReturnNotice, BILLING_RETURN_PARAMS } from "./lib/billingVisibility.js";
 import { tabForScreen } from "./lib/navigation.js";
-import { signupCodeState, statusFromResponse } from "./lib/signupUi.js";
+import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/signupUi.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
@@ -66,10 +66,15 @@ import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebounce
 // module-load, but window.location.protocol is set before any JS runs, so this can't miss the shell.
 const API_BASE = (() => {
   if (typeof window === "undefined") return "";                       // SSR / build
-  const proto = window.location.protocol;
-  const isNativeShell = window.Capacitor?.getPlatform?.() === "ios"
-    || (proto !== "http:" && proto !== "https:");                     // capacitor:, file:, ionic:, …
-  return isNativeShell ? "https://flourishmoney.app" : "";
+  // ANDROID WAS MISSING FROM THIS TEST, and that made every API call from the Android app a request
+  // to itself. The rule was `getPlatform() === "ios"` plus a non-http scheme. Capacitor 8 defaults
+  // androidScheme to "https" and capacitor.config.json does not override it, so the Android shell
+  // serves from https://localhost: the platform check said no and the scheme check said no, API_BASE
+  // came out "", and /api/beta, /api/coach and /api/plaid all resolved against the WebView's own
+  // local server instead of the site. isNativeApp() is the rule the rest of the app already uses for
+  // "is this a store app", and it names both platforms (tests/nativeParity.test.cjs pins that), so
+  // this reuses it rather than keeping a second, narrower copy here.
+  return isNativeApp() ? "https://flourishmoney.app" : "";
 })();
 
 // Sprint Z #5: beta/promo codes live server-side only (netlify/functions/beta.js, action "validate")
@@ -13014,6 +13019,9 @@ function AuthScreen({ onAuth, onTryDemo }) {
   const [openSignup, setOpenSignup] = useState(null);
   const [showCodeField, setShowCodeField] = useState(false);
   const { codeRequired, showField: showCodeInput, showLink: showCodeLink } = signupCodeState({ openSignup, showCodeField });
+  // The same helper the tests check, rather than the rule written twice: the button used to re-state
+  // "a code is needed unless the door is open" inline, where it could drift from the field beside it.
+  const codeOk = mode === "login" || signupSubmittable({ openSignup, code: betaCode });
   // Asked ONCE, and only when the auth card is actually on screen: on a store app that is at launch,
   // on the web it is when someone opens Log in or Sign up. The marketing landing is the most visited
   // page on the site and has no sign-up form on it, so asking there would spend a function invocation
@@ -13524,7 +13532,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
                     </button>
                   )}
                   {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
-                  <button style={btnStyle(!loading && email && password.length >= 8 && (mode==="login"||!codeRequired||betaCode.trim().length>0))} onClick={mode === "login" ? handleLogin : handleSignup} disabled={loading || !email || password.length < 8 || (mode==="signup"&&codeRequired&&!betaCode.trim())}>
+                  <button style={btnStyle(!loading && email && password.length >= 8 && codeOk)} onClick={mode === "login" ? handleLogin : handleSignup} disabled={loading || !email || password.length < 8 || !codeOk}>
                     {loading ? "..." : mode === "login" ? "Log In" : "Create Account"}
                   </button>
                   {mode === "login" && (

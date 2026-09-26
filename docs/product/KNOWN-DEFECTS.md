@@ -827,3 +827,25 @@ indefinitely. Open signup multiplies the number of such accounts.
 
 **Fix (suggested, not built)** A scheduled sweep that removes Items for accounts whose trial ended
 without converting and which have not opened the app in N days.
+
+---
+
+## 35. The Android app cannot reach coach, plaid or billing: their CORS lists omit its origin
+
+**Rating: HIGH for Android, which has not shipped yet.** Found by the review round on the open-signup
+work, which fixed the signup half of it.
+
+**Where** `ALLOWED_ORIGINS` in `netlify/functions/coach.js`, `plaid.js` and `billing.js`.
+
+**What happens** Capacitor 8 defaults `androidScheme` to `https` and `capacitor.config.json` does not
+override it, so the Android shell serves from `https://localhost` and its requests carry
+`Origin: https://localhost`. Every function's allow-list names `capacitor://localhost` (iOS) and not
+that, so each falls back to the production origin and the browser refuses the response. The same gap
+made `API_BASE` resolve to `""` on Android, which sent every call to the WebView's own server; that
+half is fixed on this branch, and `beta.js` now allows the Android origin.
+
+Nothing has been noticed because Android has never been released: versionCode 4 was built and never
+uploaded.
+
+**Fix (suggested, not built)** Add `"https://localhost"` to the three remaining allow-lists, and test
+one call per function from a real Android build before the first Play upload.

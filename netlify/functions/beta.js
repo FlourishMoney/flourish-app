@@ -53,6 +53,11 @@ function validateBetaCode(code) {
 const ALLOWED_ORIGINS = new Set([
   "https://flourishmoney.app",
   "capacitor://localhost", // iOS app WKWebView origin — see coach.js for why. Without it, beta-code signup fails on device.
+  // Android app WebView origin. Capacitor 8 defaults androidScheme to "https" and the config does not
+  // override it, so the Android shell serves from https://localhost and its fetches carry that Origin.
+  // Without this line every signup from the Android app is refused by CORS. The other functions
+  // (coach, plaid, billing) still lack it — see KNOWN-DEFECTS 35.
+  "https://localhost",
   "http://localhost:5173",
   "http://localhost:8888",
 ]);
@@ -138,6 +143,22 @@ exports.handler = async (event) => {
     return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: "Method not allowed" }) };
   }
 
+  let action = "count";
+  let body = {};
+  try {
+    body = JSON.parse(event.body || "{}");
+    action = body.action || "count";
+  } catch {}
+
+  // Is the door open? Answered BEFORE the Supabase guard below, because it needs neither variable and
+  // a preview or local build without them would otherwise 500 and leave the screen invite-only while
+  // OPEN_SIGNUP said otherwise. The ONE thing the client is told about the flag: the store apps bundle
+  // the web code at build time, so a shipped binary cannot know what Amanda set in Netlify afterwards.
+  // Read-only, no Supabase call, no secret, exactly one boolean.
+  if (action === "signup_status") {
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ openSignup: openSignupEnabled() }) };
+  }
+
   const supabaseUrl = (process.env.SUPABASE_URL || "").trim();
   const secretKey   = (process.env.SUPABASE_SECRET_KEY || "").trim();
 
@@ -148,27 +169,10 @@ exports.handler = async (event) => {
     };
   }
 
-  let action = "count";
-  let body = {};
-  try {
-    body = JSON.parse(event.body || "{}");
-    action = body.action || "count";
-  } catch {}
-
   // Sprint Z #5: beta/promo-code validation lives server-side — codes never ship in the client bundle.
   // Valid codes come ONLY from BETA_CODES; unset env var → validateBetaCode returns false (fail closed).
   if (action === "validate") {
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: validateBetaCode(body.code) }) };
-  }
-
-  // Is the door open? The ONE thing the client is told about OPEN_SIGNUP, and the only reason this
-  // action exists: the store apps bundle the web code at build time, so the sign-up screen inside a
-  // shipped binary cannot know what Amanda set in Netlify afterwards. It must ask.
-  //
-  // Read-only, no Supabase call, no secret, and it answers exactly one boolean. Nothing else about the
-  // configuration leaves the server, and a client that never calls it behaves as it does today.
-  if (action === "signup_status") {
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ openSignup: openSignupEnabled() }) };
   }
 
   // Phase E1: waitlist email capture (replaces public signup CTAs).
@@ -299,7 +303,8 @@ exports.handler = async (event) => {
     }
     // Invite-only unless OPEN_SIGNUP is exactly "true". With the flag unset this is byte for byte
     // today's answer: no code, or a code that is not configured, is invalid_code.
-    const gate = decideSignup({ code, open: openSignupEnabled(), isValidCode: validateBetaCode });
+    const open = openSignupEnabled();
+    let gate = decideSignup({ code, open, isValidCode: validateBetaCode });
     if (!gate.allow) {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: gate.error }) };
     }
@@ -326,7 +331,17 @@ exports.handler = async (event) => {
         console.error("[beta:signup] reserve_beta_seat failed:", e.message);
         return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: "reserve_failed", detail: (e.message || "").slice(0, 200) }) };
       }
-      if (seat === "cap_reached")  return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "cap_reached" }) };
+      // A FULL CAP MUST NOT REFUSE SOMEONE WHOSE ONLY MISTAKE WAS TYPING A CODE. beta_signups was
+      // backfilled from every existing auth user (migration 0005), so it can already be at 30. With the
+      // door open, refusing here would mean "Beta is full, join the waitlist" for a code holder while
+      // the same person, having cleared the field, is admitted instantly. So once the door is open a
+      // full cap simply makes this a self-serve signup: they get in, and they do not take a seat.
+      if (seat === "cap_reached") {
+        if (!open) return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "cap_reached" }) };
+        console.log("[beta:signup] cap full and the door is open: admitting as self_serve");
+        gate = { allow: true, source: "self_serve", usedCode: false };
+        seat = null;
+      }
       if (seat === "email_exists") return { statusCode: 200, headers: CORS, body: JSON.stringify({ error: "email_exists" }) };
     }
 
@@ -334,7 +349,7 @@ exports.handler = async (event) => {
     // stays accurate (best-effort — if the release itself fails the seat orphans; log loudly for manual
     // SQL). A self-serve signup reserved nothing, so there is nothing to release.
     const releaseSeat = async (why) => {
-      if (seat !== "ok") return;
+      if (!gate.usedCode) return; // a self-serve signup reserved nothing
       try {
         const { error: delErr } = await admin.from("beta_signups").delete().eq("email", email);
         if (delErr) console.error(`[beta:signup] ORPHAN SEAT (${why}) — seat-release FAILED for ${email}; manual cleanup: delete from public.beta_signups where email='${email}';`, delErr.message);

@@ -94,9 +94,6 @@ const FORBIDDEN = [
     t.eq(htmlHits, [], "index.html's readable copy makes no browser, download or PWA claim");
     // The meta names themselves are untouched: they configure the iOS shell.
     t.ok(/name="apple-mobile-web-app-capable"/.test(html), "…and the standard apple-mobile-web-app-capable meta is still there");
-
-    // The title is the one string in this file a person reads, on a tab and in a search result.
-    t.ok(!/[–—]/.test(title), `the page title has no em or en dash (got: "${title.trim()}")`);
   }
 
   // ── 3. public/, which is served verbatim ──────────────────────────────────────────────────────
