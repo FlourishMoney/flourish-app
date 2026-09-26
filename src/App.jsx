@@ -30,6 +30,7 @@ import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parse
 import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
 import { isNativeApp, billingUiState, offeredPlans, billingReturnNotice, BILLING_RETURN_PARAMS } from "./lib/billingVisibility.js";
 import { tabForScreen } from "./lib/navigation.js";
+import { signupCodeState, statusFromResponse } from "./lib/signupUi.js";
 import { aiEnabled, ensureAiEnabled } from "./lib/aiGate.js";
 import { meetAgendaFor, agendaToText, facilitatorGateState } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
@@ -13006,6 +13007,32 @@ function AuthScreen({ onAuth, onTryDemo }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [betaCode, setBetaCode] = useState("");
+  // Is signup open to anyone, or still invite-only? Only the SERVER knows: the store apps bundle this
+  // code at build time, so a binary shipped today cannot carry what Amanda sets in Netlify tomorrow.
+  // null means "not asked yet"; anything other than a clear yes shows the code field, which is exactly
+  // what this screen does today. A server that cannot be reached therefore changes nothing.
+  const [openSignup, setOpenSignup] = useState(null);
+  const [showCodeField, setShowCodeField] = useState(false);
+  const { codeRequired, showField: showCodeInput, showLink: showCodeLink } = signupCodeState({ openSignup, showCodeField });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/beta`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "signup_status" }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!cancelled) setOpenSignup(statusFromResponse(out));
+      } catch {
+        // Offline, blocked, or the function is down: stay invite-only on screen. The server decides
+        // in the end anyway, so the worst case is a code field shown to someone who does not need one.
+        if (!cancelled) setOpenSignup(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -13477,11 +13504,19 @@ function AuthScreen({ onAuth, onTryDemo }) {
                   {success && <div style={{ color: "#00D68F", fontSize: 13, marginBottom: 16, background: "rgba(0,214,143,0.1)", padding: "10px 14px", borderRadius: 10 }}>{success}</div>}
                   <input style={inpStyle} type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" name="email" />
                   <input style={{ ...inpStyle, marginBottom: mode==="signup"?12:20 }} type="password" placeholder="Password (min 8 characters)" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" name="password" />
-                  {mode==="signup"&&(
-                    <input style={{ ...inpStyle, marginBottom: 20, textTransform:"uppercase", letterSpacing:2 }} type="text" placeholder="Beta access code" value={betaCode} onChange={e => setBetaCode(e.target.value)} autoComplete="off" name="betacode" maxLength={20}/>
+                  {/* Invite-only: the code field, as it has always been. Open: a quiet link, so the
+                      few people holding a code can still use it without asking everyone else for one. */}
+                  {mode==="signup"&&showCodeInput&&(
+                    <input style={{ ...inpStyle, marginBottom: 20, textTransform:"uppercase", letterSpacing:2 }} type="text" placeholder={codeRequired?"Beta access code":"Invite code (optional)"} value={betaCode} onChange={e => setBetaCode(e.target.value)} autoComplete="off" name="betacode" maxLength={20}/>
+                  )}
+                  {mode==="signup"&&showCodeLink&&(
+                    <button onClick={() => setShowCodeField(true)}
+                      style={{ display: "block", width: "100%", marginBottom: 20, background: "transparent", border: "none", padding: 0, color: "rgba(237,233,226,0.55)", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: 12, textAlign: "left", cursor: "pointer", textDecoration: "underline" }}>
+                      Have an invite code?
+                    </button>
                   )}
                   {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12 }}>{error}</div>}
-                  <button style={btnStyle(!loading && email && password.length >= 8 && (mode==="login"||betaCode.trim().length>0))} onClick={mode === "login" ? handleLogin : handleSignup} disabled={loading || !email || password.length < 8 || (mode==="signup"&&!betaCode.trim())}>
+                  <button style={btnStyle(!loading && email && password.length >= 8 && (mode==="login"||!codeRequired||betaCode.trim().length>0))} onClick={mode === "login" ? handleLogin : handleSignup} disabled={loading || !email || password.length < 8 || (mode==="signup"&&codeRequired&&!betaCode.trim())}>
                     {loading ? "..." : mode === "login" ? "Log In" : "Create Account"}
                   </button>
                   {mode === "login" && (

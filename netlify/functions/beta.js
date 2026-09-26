@@ -161,6 +161,16 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: validateBetaCode(body.code) }) };
   }
 
+  // Is the door open? The ONE thing the client is told about OPEN_SIGNUP, and the only reason this
+  // action exists: the store apps bundle the web code at build time, so the sign-up screen inside a
+  // shipped binary cannot know what Amanda set in Netlify afterwards. It must ask.
+  //
+  // Read-only, no Supabase call, no secret, and it answers exactly one boolean. Nothing else about the
+  // configuration leaves the server, and a client that never calls it behaves as it does today.
+  if (action === "signup_status") {
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ openSignup: openSignupEnabled() }) };
+  }
+
   // Phase E1: waitlist email capture (replaces public signup CTAs).
   if (action === "join_waitlist") {
     const { email, country, source, metadata } = body;

@@ -226,5 +226,60 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
     }
   }
 
+  // ── 8. The client asks the server, and shows the code field unless told otherwise ─────────────
+  {
+    const { signupCodeState, statusFromResponse, signupSubmittable } = await import("../src/lib/signupUi.js");
+
+    // The server side of it: one boolean, no Supabase call.
+    for (const [env, expected] of [[{}, false], [{ OPEN_SIGNUP: "true" }, true], [{ OPEN_SIGNUP: "1" }, false]]) {
+      const state = freshState();
+      const res = await runBeta(state, env, { action: "signup_status" });
+      t.eq([res.statusCode, JSON.parse(res.body)], [200, { openSignup: expected }], `signup_status with OPEN_SIGNUP=${JSON.stringify(env.OPEN_SIGNUP)} answers ${expected}`);
+      t.eq([state.fetches.length, state.rpc.length], [0, 0], "…without touching Supabase or the network");
+      t.eq(JSON.parse(res.body).openSignup !== undefined && Object.keys(JSON.parse(res.body)), ["openSignup"], "…and leaks nothing else about the configuration");
+    }
+
+    // Reading that answer. Anything that is not a clear yes is a no.
+    t.eq(statusFromResponse({ openSignup: true }), true, "a clear yes is a yes");
+    for (const bad of [{ openSignup: false }, {}, null, undefined, { openSignup: "true" }, { openSignup: 1 }, "not json"]) {
+      t.eq(statusFromResponse(bad), false, `${JSON.stringify(bad)} is not a yes`);
+    }
+
+    // The screen. `null` is the state a store app is in for the first moments after launch, and the
+    // state it stays in if the call never lands.
+    t.eq(signupCodeState({ openSignup: null }), { codeRequired: true, showField: true, showLink: false }, "before the server answers: the code field, as today");
+    t.eq(signupCodeState({ openSignup: false }), { codeRequired: true, showField: true, showLink: false }, "server says invite-only: the code field, as today");
+    t.eq(signupCodeState({ openSignup: true }), { codeRequired: false, showField: false, showLink: true }, "server says open: no field, a quiet link instead");
+    t.eq(signupCodeState({ openSignup: true, showCodeField: true }), { codeRequired: false, showField: true, showLink: false }, "…and the link reveals the field for someone holding a code");
+    t.eq(signupCodeState({ openSignup: false, showCodeField: true }), { codeRequired: true, showField: true, showLink: false }, "invite-only never shows the link");
+    t.eq(signupCodeState(), { codeRequired: true, showField: true, showLink: false }, "called with nothing at all: still the code field");
+
+    // Item 9: the native sign-up screen shows the code field when the status call fails. The catch
+    // sets false, which is the same state as a server that answered "invite-only".
+    const failed = statusFromResponse(await (async () => { try { throw new Error("offline"); } catch { return null; } })());
+    t.eq(failed, false, "a failed status call reads as invite-only");
+    t.eq(signupCodeState({ openSignup: failed }).showField, true, "…so the code field is shown, exactly as it is today");
+
+    // The button.
+    t.eq(signupSubmittable({ openSignup: null, code: "" }), false, "before the answer lands, Create Account still needs a code");
+    t.eq(signupSubmittable({ openSignup: false, code: "" }), false, "invite-only: a code is required");
+    t.eq(signupSubmittable({ openSignup: false, code: "  " }), false, "…and whitespace is not a code");
+    t.eq(signupSubmittable({ openSignup: false, code: "BETA100" }), true, "invite-only: with a code it submits");
+    t.eq(signupSubmittable({ openSignup: true, code: "" }), true, "open: no code needed");
+    t.eq(signupSubmittable({ openSignup: true, code: "BETA100" }), true, "open: a code is still allowed");
+
+    // Wiring: one screen serves web, iOS and Android, so there is no per-platform branch to check.
+    const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+    const auth = app.slice(app.indexOf("function AuthScreen("), app.indexOf("\nfunction ", app.indexOf("function AuthScreen(") + 10));
+    t.ok(/signupCodeState\(\{ openSignup, showCodeField \}\)/.test(auth), "AuthScreen renders from signupCodeState");
+    t.ok(/action: "signup_status"/.test(auth), "…after asking the server");
+    t.ok(/useState\(null\)/.test(auth) && /setOpenSignup\(statusFromResponse\(out\)\)/.test(auth), "…starting at null and reading the answer defensively");
+    t.ok(/catch \{[^}]*setOpenSignup\(false\)/s.test(auth), "…and treating a failed call as invite-only");
+    t.ok(/mode==="signup"&&showCodeInput&&\(/.test(auth) && /mode==="signup"&&showCodeLink&&\(/.test(auth), "…the field and the link are the two states");
+    t.ok(/Have an invite code\?/.test(auth), "…the link says \"Have an invite code?\"");
+    t.ok(/mode==="signup"&&codeRequired&&!betaCode\.trim\(\)/.test(auth), "…and Create Account only demands a code when one is required");
+    t.ok(!/OPEN_SIGNUP/.test(auth), "the flag's value is never in the screen, only the server's answer");
+  }
+
   t.summary("openSignup.test");
 })();
