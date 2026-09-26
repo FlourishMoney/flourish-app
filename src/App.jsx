@@ -4968,6 +4968,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const [expandedTile,setExpandedTile]=useState(null);
   const [showCustomize,setShowCustomize]=useState(false);
   const [showTransparency,setShowTransparency]=useState(false);
+  const [explain,setExplain]=useState(null);   // which main number is being explained
+  const [showTerm,setShowTerm]=useState(null); // which term the one ⓘ was pressed on
   const [nwHistory,setNwHistory]=useState(()=>getNetWorthHistory());
   const [affordInput, setAffordInput] = useState("");
   const [affordResult, setAffordResult] = useState(null);
@@ -5087,6 +5089,26 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       {showCustomize&&dashLayout&&<DashCustomize layout={dashLayout} onChange={setDashLayout} onClose={()=>setShowCustomize(false)}/>}
       {showTransparency&&<DataTransparencyPanel data={data} onClose={()=>setShowTransparency(false)}/>}
+      {/* Every figure below is handed in from an engine; this sheet reads back, it never works out. */}
+      {explain==="safeToSpend"&&(
+        <HowWeGotThis
+          title="Safe to spend until next payday"
+          value={ssView.headlineText}
+          meaning="What is left after the bills, debt payments and savings already committed before your next deposit. Spending up to this leaves everything else covered."
+          inputs={[
+            {label:"In your accounts", value:ssView.balanceText},
+            ...ssView.rows.filter(r=>r.kind!=="balance").map(r=>({label:`${r.sign||""} ${r.label}`.trim(), value:r.value})),
+          ]}
+          changeLabel="See the full working"
+          onChange={()=>{setExplain(null);setShowTransparency(true);}}
+          onClose={()=>setExplain(null)}/>
+      )}
+      {showTerm&&(
+        <HowWeGotThis
+          title={showTerm}
+          meaning={TERMS[showTerm]}
+          onClose={()=>setShowTerm(null)}/>
+      )}
 
       {/* ── Top status bar ───────────────────────────────────────────────── */}
       <div style={{...anim(0),display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:2}}>
@@ -5253,6 +5275,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
               <div style={{width:6,height:6,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 10px ${heroColor}`,animation:"pulse 2.5s ease-in-out infinite"}}/>
               <span style={{color:heroColorBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Safe to spend until next payday</span>
+              <InfoDot term="Safe to spend" onOpen={setShowTerm}/>
               {data.bankConnected
                 ? <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· live</span>
                 : <span style={{color:C.gold,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,letterSpacing:0.3}}>· estimated</span>}
@@ -5264,7 +5287,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               <div style={{color:C.mutedHi,fontSize:13,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Safe-to-spend plans around your bills using your income →</div>
             </div>
             ) : (
-            <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.88,marginBottom:18,position:"relative",display:"inline-block"}}>
+            <button onClick={e=>{e.stopPropagation();setExplain("safeToSpend");}} aria-label="How Flourish got this number"
+              style={{background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",
+              fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:0.88,marginBottom:18,position:"relative",display:"inline-block"}}>
               {ssView.isShort&&<span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,fontWeight:900}}>-</span>}<span style={{fontSize:24,color:heroColorBright,verticalAlign:"top",marginTop:11,display:"inline-block",fontWeight:700}}>$</span>
               <span style={{fontSize:76,color:heroColorBright,letterSpacing:-4,textShadow:`0 0 60px ${heroColor}${C.isDark?"40":"30"}`,
                 transition:"opacity .3s",opacity:isRefreshing?0.4:1}}>
@@ -5276,7 +5301,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                   background:`linear-gradient(90deg,transparent 0%,${heroColorBright} 50%,transparent 100%)`,
                   backgroundSize:"200% 100%",animation:"shimmer 1.2s ease-in-out infinite"}}/>
               )}
-            </div>
+            </button>
             )) : (
             /* Sprint 1: no fake number when no cash account is connected */
             <div style={{marginBottom:18,maxWidth:320}}>
@@ -5502,6 +5527,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         </div>
         )}
 
+        <FirstRunTip id="today">Tap any number to see how Flourish got it.</FirstRunTip>
         {/* Three tiles across 375px gave each about 110px — an icon, a label, a number and a
             caption stacked in a column narrower than this sentence. They are three separate
             places to go, not three supporting figures, so they are now three full-width rows:
@@ -6374,6 +6400,93 @@ function BillManager({data, setAppData, onClose}){
 // Now: title on its own line, at most one line of subtitle under it, and controls on their own
 // full-width row below via `controls`. The back arrow only appears when `onBack` is given, so a
 // root tab does not show an arrow that goes nowhere.
+// ── EXPLAINING A NUMBER, WITHOUT A ROW OF QUESTION MARKS ──────────────────────────────────────
+//
+// Every main number is tappable and says where it came from. Not a "?" beside each one — a screen
+// wearing six question marks looks like it does not trust itself, and the reader still has to ask
+// which one to press. The number IS the button.
+//
+// Every figure in here is handed in by the caller from an engine. This sheet computes nothing and
+// asks nothing of the AI; it reads back what was already worked out, which is the only reason it
+// can be trusted as an explanation.
+function HowWeGotThis({ title, value, meaning, inputs = [], changeLabel, onChange, onClose }) {
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:C.card,width:"100%",maxWidth:480,borderRadius:"22px 22px 0 0",
+        padding:LAYOUT.cardPadding,paddingBottom:SPACE.xl,border:`1px solid ${C.border}`,maxHeight:"85vh",overflowY:"auto"}}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:SPACE.md}}>
+          <div style={{minWidth:0}}>
+            <div style={{color:C.muted,...TYPE.subhead,fontWeight:400,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How Flourish got this</div>
+            <div style={{color:C.cream,...TYPE.title2,fontFamily:"'Playfair Display',serif",marginTop:2}}>{title}</div>
+          </div>
+          <button onClick={onClose} aria-label="Close" style={{background:"none",border:"none",color:C.muted,fontSize:20,cursor:"pointer",...tap({display:"flex",alignItems:"center",justifyContent:"center"}),flexShrink:0}}>✕</button>
+        </div>
+        {value&&<div style={{color:C.greenBright,...TYPE.largeTitle,fontFamily:"'Playfair Display',serif",marginTop:SPACE.md}}>{value}</div>}
+        {meaning&&<div style={{color:C.mutedHi,...TYPE.body,marginTop:SPACE.md,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{meaning}</div>}
+        {inputs.length>0&&(
+          <div style={{marginTop:SPACE.lg}}>
+            <div style={{color:C.mutedHi,...TYPE.subhead,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:SPACE.sm}}>What it used</div>
+            {inputs.filter(Boolean).map((i,ix)=>(
+              <div key={ix} style={{display:"flex",justifyContent:"space-between",gap:SPACE.md,padding:`${SPACE.sm}px 0`,borderBottom:`1px solid ${C.border}44`}}>
+                <span style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{i.label}</span>
+                <span style={{color:C.cream,...TYPE.footnote,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",textAlign:"right"}}>{i.value}</span>
+              </div>
+            ))}
+            <CalcByFlourish style={{marginTop:SPACE.md}}/>
+          </div>
+        )}
+        {changeLabel&&onChange&&(
+          <button onClick={onChange} style={{marginTop:SPACE.lg,width:"100%",background:C.green+"1A",border:`1px solid ${C.green}55`,borderRadius:14,
+            minHeight:LAYOUT.minTap,color:C.greenBright,...TYPE.headline,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:"pointer"}}>{changeLabel}</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// THE ⓘ LIST. Four terms, and the test below pins it at four.
+//
+// The rule for being on it: a new reader cannot work the term out from the words themselves.
+// "Bills" needs no explanation. "Safe to spend" sounds like a balance and is not one. Everything
+// else explains itself by being tapped, because the number opens HowWeGotThis.
+const TERMS = {
+  "Safe to spend": "Not your balance. What is left after the bills, debt payments and savings already committed before your next deposit — so spending up to it leaves everything else covered.",
+  "Time Machine": "A what-if. It replays your own numbers forward with one thing changed, so you can see a decision before you make it. Nothing is saved and no money moves.",
+  "Money meeting": "A short, structured check-in on the week — what went well, what changed, what is coming. Flourish writes the agenda from your numbers; you and your coach work through it.",
+  "Health score": "A single 0 to 100 read on how your money is holding up, from your buffer, your bills, your debts and how steady your spending is. It moves slowly on purpose.",
+};
+
+// The ONE ⓘ. Only beside a term a new reader cannot guess from the words themselves — never beside
+// an obvious label, where it is just noise that has to be read and dismissed.
+function InfoDot({ term, onOpen }) {
+  return (
+    <button onClick={e=>{e.stopPropagation();onOpen(term);}} aria-label={`What ${term} means`}
+      style={{background:"none",border:"none",cursor:"pointer",color:C.muted,fontSize:15,lineHeight:1,
+        ...tap({display:"inline-flex",alignItems:"center",justifyContent:"center"}),marginLeft:-10,marginRight:-10,verticalAlign:"middle"}}>ⓘ</button>
+  );
+}
+
+// One line, once, then never again. Dismissal is a synced setting, so the household is not told the
+// same thing on the other phone — or again on this one after a reinstall.
+const TIPS_KEY = "flourish_tips_dismissed";
+function readTips(){ try{ return JSON.parse(localStorage.getItem(TIPS_KEY)||"{}")||{}; }catch{ return {}; } }
+function FirstRunTip({ id, children }) {
+  const [gone, setGone] = useState(()=>!!readTips()[id]);
+  if (gone) return null;
+  const dismiss = () => {
+    try{ const t=readTips(); t[id]=Date.now(); localStorage.setItem(TIPS_KEY, JSON.stringify(t)); }catch{}
+    setGone(true);
+  };
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:SPACE.md,background:C.green+"14",border:`1px solid ${C.green}33`,
+      borderRadius:14,padding:`${SPACE.sm}px ${SPACE.md}px`,marginBottom:LAYOUT.cardGap}}>
+      <span style={{color:C.mutedHi,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",flex:1}}>{children}</span>
+      <button onClick={dismiss} aria-label="Dismiss tip" style={{background:"none",border:"none",color:C.muted,fontSize:15,cursor:"pointer",
+        ...tap({display:"flex",alignItems:"center",justifyContent:"center"}),flexShrink:0,marginRight:-10}}>✕</button>
+    </div>
+  );
+}
+
 // ONE MAIN NUMBER, AND THE REST A TAP AWAY.
 //
 // A 2x2 grid of figures has no lead. Four boxes of the same size, the same weight and the same
@@ -6681,6 +6794,7 @@ function PlanAhead({data, setAppData, setScreen}){
   // what the header says. The day-by-day list below still shows only today, income days and bill
   // days, so 90d is a longer list, not a wall of empty dates.
   const [range,setRange]=useState(30);
+  const [explainWatch,setExplainWatch]=useState(false);
   const RANGES = [7, 30, 90];
   const [showBillManager,setShowBillManager]=useState(false);
   const [expandedPlanDay, setExpandedPlanDay] = useState(null);
@@ -6729,6 +6843,7 @@ function PlanAhead({data, setAppData, setScreen}){
       </ul>
       {dataIssues.length>5&&<div style={{color:C.muted,fontSize:13,marginTop:5}}>…and {dataIssues.length-5} more.</div>}
     </div>}
+    <FirstRunTip id="watch">Tap any number to see how Flourish got it.</FirstRunTip>
     <ScreenHeader title="Watch" subtitle="The next 90 days."
       onBack={setScreen?()=>setScreen("home"):null}
       controls={
@@ -6750,7 +6865,9 @@ function PlanAhead({data, setAppData, setScreen}){
       return (
         <div style={{background:C.isDark?"rgba(255,255,255,0.03)":C.surface,borderRadius:16,padding:LAYOUT.cardPadding,border:`1px solid ${C.border}`}}>
           <div style={{color:C.muted,...TYPE.subhead,fontWeight:400,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Starting balance</div>
-          <div style={{color:C.cream,...TYPE.largeTitle,fontFamily:"'Playfair Display',serif",marginTop:SPACE.xs}}>{_fbalText}</div>
+          <button onClick={e=>{e.stopPropagation();setExplainWatch(true);}} aria-label="How Flourish got this number"
+            style={{background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",display:"block",
+            color:C.cream,...TYPE.largeTitle,fontFamily:"'Playfair Display',serif",marginTop:SPACE.xs}}>{_fbalText}</button>
           <SupportingFigures label="What the forecast is built from" rows={[
             {label:"Est. daily spend", value:`$${(_favg||0).toFixed(0)}/day`, onEdit:setAppData?()=>setShowDailySpend(true):null, tag:_fSpendEdited?<EditedTag/>:null},
             {label:"Pay frequency", value:frequencyLabel(_ffreq)},
@@ -6855,6 +6972,21 @@ function PlanAhead({data, setAppData, setScreen}){
     {editOcc&&setAppData&&<OccurrenceSheet occ={editOcc} data={data} setAppData={setAppData} onClose={()=>setEditOcc(null)}/>}
     {showExpected&&setAppData&&<ExpectedItemSheet data={data} setAppData={setAppData} onClose={()=>setShowExpected(false)}/>}
     {showDailySpend&&setAppData&&<DailySpendSheet data={data} setAppData={setAppData} onClose={()=>setShowDailySpend(false)}/>}
+    {explainWatch&&(
+      <HowWeGotThis
+        title="Starting balance"
+        value={safeToSpendView(SafeSpendEngine.calculate(data)).balanceText}
+        meaning="Where the forecast starts from: what is in your everyday accounts right now. Every day after this one adds your expected pay and takes off the bills and average spending."
+        inputs={[
+          {label:"Est. daily spend", value:`$${(FinancialCalcEngine.avgDailySpend(data)||0).toFixed(0)}/day`},
+          {label:"Pay frequency", value:frequencyLabel((data.incomes||[])[0]?.freq||"biweekly")},
+          {label:"Bills tracked", value:`${(data.bills||[]).length}`},
+        ]}
+        changeLabel={setAppData?"Change your daily spend":null}
+        onChange={setAppData?()=>{setExplainWatch(false);setShowDailySpend(true);}:null}
+        onClose={()=>setExplainWatch(false)}/>
+    )}
+    <ScreenFootnote>Forecast projects forward from today using your bank balance, income schedule, bills, and average daily spending. Not financial advice.</ScreenFootnote>
   </div>;
 }
 
@@ -6896,7 +7028,6 @@ function AddCustomCategory({onAdd}){
         <button onClick={()=>save()} style={{background:C.green,border:"none",borderRadius:10,padding:"8px 14px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>Add</button>
         <button aria-label="Close" onClick={()=>{setShow(false);setVal("");}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 12px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>✕</button>
       </div>
-      <ScreenFootnote>Forecast projects forward from today using your bank balance, income schedule, bills, and average daily spending. Not financial advice.</ScreenFootnote>
     </div>
   );
 }
@@ -9134,6 +9265,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
 
   return (
     <div>
+      <FirstRunTip id="meet">Tap any number to see how Flourish got it.</FirstRunTip>
       <div style={{color:C.muted,fontSize:13,marginBottom:14,lineHeight:1.5}}>Flourish wrote this agenda from your week. It doesn't add up your numbers, it reads what the engines already calculated.{facilitatorGate === "ready" ? " The coach keeps it calm and about the numbers." : ""}</div>
 
       <div style={card}>
