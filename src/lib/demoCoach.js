@@ -22,7 +22,7 @@
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { safeToSpendView } from "./safeToSpendView.js";
 import { suggestedDailyView } from "./suggestedDaily.js";
-import { nextFutureDeposit, daysToNextFutureDeposit } from "./incomeSchedule.js";
+import { nextDepositFor, daysToNextDepositFor } from "./forecastEdits.js";
 import { selectHighestRateDebt } from "./decisionEngine.js";
 import { meetAgendaFor } from "./meetSnapshot.js";
 import { formatMoney } from "./format.js";
@@ -45,9 +45,9 @@ function _list(parts) {
 function facts(data, today) {
   const ss = SafeSpendEngine.calculate(data, today);
   const view = safeToSpendView(ss);
-  const pace = suggestedDailyView(view.headline, data.incomes, data.transactions, today);
-  const nd = nextFutureDeposit(data.incomes, data.transactions, today);
-  const days = daysToNextFutureDeposit(data.incomes, data.transactions, today);
+  const pace = suggestedDailyView(view.headline, data.incomes, data.transactions, today, data);
+  const nd = nextDepositFor(data, today);
+  const days = daysToNextDepositFor(data, today);
   const debt = selectHighestRateDebt(data.debts || []);
   const decision = (meetAgendaFor(data).decisions || [])[0] || null;
   return { ss, view, pace, nd, days, debt, decision };

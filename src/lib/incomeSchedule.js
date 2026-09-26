@@ -119,6 +119,10 @@ function _confidenceFor(inc, incAmt, transactions) {
   return findAnchor(inc, incAmt, transactions) ? "high" : "estimated";
 }
 
+// Exported for the edit-aware next deposit (forecastEdits.nextDepositFor), which reports the same
+// confidence for the same income.
+export function depositConfidence(inc, incAmt, transactions) { return _confidenceFor(inc, incAmt, transactions); }
+
 // The NEXT deposit strictly AFTER today, across every income (earliest wins). A deposit that lands
 // TODAY is deliberately excluded: it is already in the posted balance, so any horizon must run to the
 // next FUTURE money. Returns { date, amount, sourceLabel, confidence } or null when none can project.

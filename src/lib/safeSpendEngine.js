@@ -20,7 +20,7 @@ import {
   baseCurrencyOf,
   accountCurrencyOf,
 } from "./financialCalculations.js";
-import { daysToNextFutureDeposit } from "./incomeSchedule.js";
+import { daysToNextDepositFor, billOccurrences, billSrcKey, isoOf } from "./forecastEdits.js";
 
 // ── Low-balance threshold — THE definition of "this balance is low" ──────────
 // The larger of a proportional band and an absolute floor. Proportional-only degrades to nonsense at
@@ -67,7 +67,8 @@ export const SafeSpendEngine = {
     // must actually reserve everything between today and that payday, or it over-promises coverage it
     // never set aside (payday 14 days out but only 10 reserved = 4 unfunded days). When no deposit can be
     // projected (no income), fall back to the historical 10-day window so income-less behaviour is unchanged.
-    const _daysToDeposit = daysToNextFutureDeposit(data.incomes, data.transactions, todayDate);
+    // Edit-aware (forecastEdits): a payday the household moved, skipped or stopped moves the horizon with it.
+    const _daysToDeposit = daysToNextDepositFor(data, todayDate);
     const horizonDays = (_daysToDeposit != null && _daysToDeposit > 0) ? _daysToDeposit : 10;
 
     // Detect bills already paid this month by matching transactions (current month per todayDate).
@@ -89,27 +90,36 @@ export const SafeSpendEngine = {
         return nameMatch && amtMatch;
       });
     };
-    // Tier 5: count occurrences of each bill in the next 10 days (freq-aware + one-off + skip archived).
-    const occurrencesInWindow = (b) => {
-      if (isBillArchived(b, todayDate)) return 0;
-      if (num(b.amount) <= 0) return 0;
-      // Sprint Q items 1 & 3: count ACTUAL occurrences in the 10-day window via the nextDueDate
-      // anchor. A monthly+ bill already paid this month is done; sub-monthly bills recur multiple
-      // times a month, so the anchor (not "paid this month") governs them.
+    // Tier 5: each bill's occurrences in the window, from the ONE occurrence list (forecastEdits), so a
+    // bill the household skipped, moved or re-priced is reserved exactly as the forecast shows it.
+    // Window: days 0..horizonDays inclusive (Truth-fix item 3: runs to the next deposit, not 10 days).
+    const occ = billOccurrences(data, todayDate, horizonDays, { includeToday: true }).filter(o => !o.skipped);
+    const occByBill = new Map();
+    for (const o of occ) {
+      if (o.kind !== "bill") continue;
+      const k = billSrcKey(o.bill);
+      if (!occByBill.has(k)) occByBill.set(k, []);
+      occByBill.get(k).push(o);
+    }
+    const occurrencesFor = (b) => {
+      if (num(b.amount) <= 0) return [];
+      const all = (occByBill.get(billSrcKey(b)) || []).filter(o => o.bill === b);
+      // An occurrence the household edited (moved, re-priced) stands on its own: it is reserved even when
+      // the bill looks archived or already paid this month. A real payment of it is handled by the
+      // forecastEdits arrival rule, which already removed it from the list.
+      const editedOnly = all.filter(o => o.edited);
+      if (isBillArchived(b, todayDate)) return editedOnly;
+      // Sprint Q items 1 & 3: a monthly+ bill already paid this month is done; sub-monthly bills recur
+      // multiple times a month, so the anchor (not "paid this month") governs them.
       const subMonthly = b.freq === "weekly" || b.freq === "biweekly" || b.freq === "semimonthly";
-      if (b.type !== "one_off" && !subMonthly && isBillPaid(b)) return 0;
-      // MATH-LOCK Group D: pure, DST-safe counter loop (days 0..10 inclusive) — was a date-mutating
-      // `for (dd=todayDate; dd<=in10Days; dd.setDate+1)`. Equivalent 11-day window; setDate keeps it
-      // calendar-correct across DST.
-      let count = 0;
-      for (let i = 0; i <= horizonDays; i++) { // Truth-fix item 3: window runs to the next deposit, not a fixed 10 days
-        const checkDate = new Date(todayDate);
-        checkDate.setDate(checkDate.getDate() + i);
-        if (billOccursOnDate(b, checkDate, todayDate)) count++;
-      }
-      return count;
+      if (b.type !== "one_off" && !subMonthly && isBillPaid(b)) return editedOnly;
+      return all;
     };
-    const upcomingBills = bills.reduce((s,b) => s + num(b.amount) * occurrencesInWindow(b), 0);
+    const occurrencesInWindow = (b) => occurrencesFor(b).length;
+    // Money the household told us is going out (Watch "Add expected money in or out") is reserved too.
+    const expectedOut = occ.filter(o => o.kind === "expected");
+    const upcomingBills = bills.reduce((s,b) => s + occurrencesFor(b).reduce((t,o) => t + num(o.amount), 0), 0)
+                        + expectedOut.reduce((s,o) => s + num(o.amount), 0);
 
     // Minimum debt payments due this month
     const debtPayments = debts
@@ -136,7 +146,14 @@ export const SafeSpendEngine = {
       balance, upcomingBills, debtPayments, safetyBuf, savingsAlloc,
       safeAmount, riskLevel, noIncome,
       overdraft: upcomingBills > balance,
-      soonBills: bills.filter(b => occurrencesInWindow(b) > 0),
+      // A bill whose next occurrence was edited is shown as edited (amount, day); otherwise the bill itself.
+      soonBills: [...bills.map(b => {
+                    const o = occurrencesFor(b)[0];
+                    if (!o) return null;
+                    return o.edited ? { ...b, amount: o.amount, date: String(o.date.getDate()), nextDueDate: isoOf(o.date), _edited: true } : b;
+                  }).filter(Boolean),
+                  ...expectedOut.map(o => ({ name: o.label, amount: o.amount, _expected: true, id: o.srcKey,
+                                             date: String(o.date.getDate()), nextDueDate: isoOf(o.date) }))],
       // Sprint C Fix 1: base currency + what was left out, so the UI can disclose the exclusion.
       baseCurrency: base,
       mixedCurrencyDetected,

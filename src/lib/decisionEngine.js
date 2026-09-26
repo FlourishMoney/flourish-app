@@ -158,7 +158,7 @@ export const AutopilotEngine = {
     //
     // It now reads the one helper, on the same input Today and Decisions use: the DISPLAYED
     // safe-to-spend headline, not the engine's raw safeAmount. All three surfaces print one number.
-    const pace = suggestedDailyView(safeToSpendView(ss).headline, data.incomes, data.transactions, currentDate);
+    const pace = suggestedDailyView(safeToSpendView(ss).headline, data.incomes, data.transactions, currentDate, data);
     const daysLeft = pace.daysLeft;   // the pace window (floored at 14) — what the card's label must say
     const safeDaily = pace.daily;
 

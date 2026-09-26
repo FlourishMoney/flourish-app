@@ -34,6 +34,30 @@ export function depositLines(ev) {
   if (deps.reduce((s, d) => s + cents(d.amount), 0) !== cents(total)) return fallback;
   return deps.map(d => {
     const name = typeof d.label === "string" ? d.label.trim() : "";
-    return { amount: Number(d.amount), label: name || "deposit", named: !!name };
+    const line = { amount: Number(d.amount), label: name || "deposit", named: !!name };
+    // For a tap to open the edit sheet, the "Edited" tag, and a "My pay varies" range.
+    if (d.occurrence) line.occurrence = d.occurrence;
+    if (d.edited) line.edited = true;
+    if (Number.isFinite(d.low) && Number.isFinite(d.high) && d.high > d.low) { line.low = d.low; line.high = d.high; }
+    return line;
   });
+}
+
+// The money-out lines of a day, in the order ev.bills lists them, each with the occurrence behind it
+// (for the edit sheet) and whether the household edited it. { label, amount, occurrence, edited, expected }
+export function billLines(ev) {
+  const bills = Array.isArray(ev && ev.bills) ? ev.bills : [];
+  const occs = Array.isArray(ev && ev.billOccurrences) ? ev.billOccurrences : [];
+  return bills.map((b, i) => {
+    const o = occs[i] || null;
+    return { label: (b && b.name) || "Bill", amount: Number(b && b.amount) || 0, occurrence: o || null,
+             edited: !!(b && b._edited) || !!(o && o.edited), expected: !!(b && b._expected), bill: b };
+  });
+}
+
+// Occurrences the household skipped on this day: shown struck through, so they can be reset.
+export function skippedLines(ev) {
+  return (Array.isArray(ev && ev.occurrences) ? ev.occurrences : []).filter(o => o.skipped)
+    .map(o => ({ label: o.label || (o.kind === "bill" ? "Bill" : "deposit"), amount: o.amount, occurrence: o,
+                 moneyIn: o.kind === "income" || (o.kind === "expected" && o.direction === "in") }));
 }

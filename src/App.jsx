@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import {
   Home, Calendar, CreditCard, Sparkles, Users, User,
   Bell, Settings as LucideSettings, ShoppingCart, Coffee,
@@ -17,7 +18,12 @@ import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multib
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
-import { paydayLineAmount, depositLines } from "./lib/forecastView.js";
+import { paydayLineAmount, depositLines, billLines, skippedLines } from "./lib/forecastView.js";
+import { depositsToAsk, depositStatus, depositContext, incomeEvidence, decideDeposit, clearDepositDecision, setDepositRule, clearDepositRule,
+         depositRuleFor, countDepositsFrom, DEPOSIT_REASONS, NOT_NOW, reasonLabel, reasonPhrase, isUsableDepositKey } from "./lib/depositClassify.js";
+import { editOccurrence, resetOccurrence, upsertExpected, removeExpected, setDailySpend, correctionsOf, validExpectedItem, REPEATS,
+         nextDepositFor, daysToNextDepositFor, isDepositTodayFor, variablePay, monthlyIncomeBasis, incomeSrcKey, isoOf, fromIso,
+         MAX_MOVE_DAYS, MIN_VARIABLE_PAYS } from "./lib/forecastEdits.js";
 import { shouldPromptIncome, applyDetectedIncome, cadenceLabel } from "./lib/incomeReconcile.js";
 import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill } from "./lib/billReeval.js";
 import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate } from "./lib/statementImport.js";
@@ -919,8 +925,9 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
   // Sprint MATH-LOCK Group F: pure decision math lives in lib/decisionEngine.js (tested there); this
   // component calls the helpers, then builds the themed advice cards (colors/labels) below.
   const todayD = todayDate instanceof Date ? todayDate : new Date();
-  const daysToPayday = daysToNextFutureDeposit(data.incomes, data.transactions, todayD); // Truth-fix item 2: real next-deposit date, not a 1st/15th guess
-  const nextDep = nextFutureDeposit(data.incomes, data.transactions, todayD); // Truth-fix item 4: real next deposit (date + per-deposit amount)
+  // Truth-fix items 2 and 4: the real next deposit (date + per-deposit amount), as the household corrected it.
+  const daysToPayday = daysToNextDepositFor(data, todayD);
+  const nextDep = nextDepositFor(data, todayD);
   // Consolidation 1: the suggested daily figure is owned by suggestedDailyView and passed in as dailyPace,
   // so Today and Decisions show the SAME number (this card used to divide safe by a 14-floored divisor here).
   const topDebt = selectHighestRateDebt(debts);
@@ -1190,9 +1197,407 @@ function AutopilotCard({data, setScreen}) {
 }
 
 // ── FINANCIAL TIME MACHINE (Timeline + What-If overlay) ───────────────────────
-function TimeMachine({data, activeScenario = null, setActiveScenario}) {
+// ══ FORECAST CORRECTIONS ═════════════════════════════════════════════════════════════════════════
+// The household corrects what the forecast assumes: a deposit that isn't income, one payday or bill
+// that is different (or every one from a date on), pay that varies, money they know is coming or
+// going, and their everyday spending. Every write is a functional setAppData on household data
+// (forecastEdits / depositDecisions / depositRules / incomes), so it syncs and exports with incomes and
+// bills. Nothing here touches a bank transaction. The engines live in lib/forecastEdits.js and
+// lib/depositClassify.js; these are the sheets.
+const fmtOccDay = (d) => d ? new Date(d).toLocaleDateString("en-CA", { weekday: "short", month: "short", day: "numeric" }) : "";
+const _parseAmt = (v) => { const n = parseFloat(String(v ?? "").replace(/[$,\s]/g, "")); return Number.isFinite(n) ? n : NaN; };
+
+function Sheet({ title, subtitle, onClose, children, label }) {
+  const isDesktop = window.innerWidth >= 960;
+  useEffect(() => {
+    const k = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onClose]);
+  // Rendered into <body>: a forecast card uses backdrop-filter, which would otherwise trap a fixed
+  // overlay inside the card instead of covering the screen.
+  return createPortal(
+    <div role="dialog" aria-modal="true" aria-label={label || title}
+      style={{ position: "fixed", inset: 0, zIndex: 1002, display: "flex", alignItems: isDesktop ? "center" : "flex-end", justifyContent: "center", background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", fontFamily: "'Plus Jakarta Sans',sans-serif", color: C.cream }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: C.card, borderRadius: isDesktop ? "20px" : "24px 24px 0 0", width: "100%", maxWidth: 520, border: `1px solid ${C.border}`, boxShadow: "0 8px 60px rgba(0,0,0,0.5)", display: "flex", flexDirection: "column", maxHeight: isDesktop ? "85vh" : "92vh" }}>
+        <div style={{ padding: "16px 20px 12px", flexShrink: 0, borderBottom: `1px solid ${C.border}` }}>
+          {!isDesktop && <div style={{ width: 36, height: 4, borderRadius: 99, background: C.border, margin: "0 auto 14px" }} />}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: C.cream, fontWeight: 800, fontSize: 16 }}>{title}</div>
+              {subtitle && <div style={{ color: C.muted, fontSize: 12, marginTop: 3, lineHeight: 1.5 }}>{subtitle}</div>}
+            </div>
+            <button aria-label="Close" onClick={onClose} style={{ background: "none", border: "none", color: C.muted, fontSize: 20, cursor: "pointer", padding: "2px 6px", lineHeight: 1 }}>✕</button>
+          </div>
+        </div>
+        <div style={{ overflowY: "auto", padding: "16px 20px 20px", flex: 1 }}>{children}</div>
+        <div style={{ height: "env(safe-area-inset-bottom, 12px)", flexShrink: 0 }} />
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function SegPick({ options, value, onChange, label }) {
+  return (
+    <div role="radiogroup" aria-label={label} style={{ display: "flex", gap: 4, background: C.surface, borderRadius: 12, padding: 3 }}>
+      {options.map(o => {
+        const on = value === o.value;
+        return (
+          <button key={o.value} role="radio" aria-checked={on} onClick={() => onChange(o.value)}
+            style={{ flex: 1, background: on ? C.teal + "28" : "transparent", border: `1px solid ${on ? C.teal + "55" : "transparent"}`, color: on ? C.tealBright : C.muted, borderRadius: 10, padding: "9px 6px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", minHeight: 36 }}>
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// A function, not a constant: C is re-pointed at the light or dark palette on every render.
+const sheetLabel = () => ({ color: C.muted, fontSize: 10, textTransform: "uppercase", letterSpacing: 1.4, fontWeight: 700, margin: "16px 0 6px" });
+function SheetField({ prefix, value, onChange, type = "text", placeholder, min, max, label, inputMode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+      {prefix && <span style={{ color: C.muted, padding: "0 10px", fontSize: 14 }}>{prefix}</span>}
+      <input aria-label={label} type={type} value={value} min={min} max={max} placeholder={placeholder} inputMode={inputMode || (type === "number" ? "decimal" : undefined)}
+        onChange={e => onChange(e.target.value)}
+        style={{ flex: 1, minWidth: 0, background: "none", border: "none", outline: "none", color: C.cream, fontSize: 15, padding: prefix ? "12px 12px 12px 0" : "12px", fontFamily: "inherit", colorScheme: C.isDark ? "dark" : "light" }} />
+    </div>
+  );
+}
+function SheetPrimary({ label, onClick, disabled }) {
+  return (
+    <button onClick={onClick} disabled={disabled}
+      style={{ width: "100%", marginTop: 18, background: disabled ? C.cardAlt : `linear-gradient(135deg,${C.green},${C.greenBright})`, border: "none", borderRadius: 14, padding: "14px", color: disabled ? C.muted : (C.isDark ? "#021208" : "#fff"), fontWeight: 800, fontSize: 14, cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+      {label}
+    </button>
+  );
+}
+function SheetSecondary({ label, onClick, tone }) {
+  return (
+    <button onClick={onClick}
+      style={{ width: "100%", marginTop: 10, background: C.card, border: `1px solid ${tone || C.border}`, borderRadius: 14, padding: "12px", color: tone || C.mutedHi, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+      {label}
+    </button>
+  );
+}
+function EditedTag({ text = "Edited" }) {
+  return <span style={{ marginLeft: 6, background: C.teal + "22", border: `1px solid ${C.teal}44`, color: C.tealBright, borderRadius: 99, padding: "1px 6px", fontSize: 9, fontWeight: 700, letterSpacing: 0.3, verticalAlign: "middle", whiteSpace: "nowrap" }}>{text}</span>;
+}
+
+// A projected deposit or bill on a forecast row. Tapping it opens its edit sheet; tapping the rest of
+// the row still opens the day's breakdown.
+function ForecastLine({ onOpen, label, children }) {
+  if (!onOpen) return <div>{children}</div>;
+  return (
+    <button onClick={e => { e.stopPropagation(); onOpen(); }} aria-label={label}
+      style={{ display: "block", background: "none", border: "none", padding: 0, margin: 0, cursor: "pointer", textAlign: "left", font: "inherit", color: "inherit", maxWidth: "100%" }}>
+      {children}
+    </button>
+  );
+}
+
+// "My pay varies", on any income source: the conservative figure Flourish plans on, and where it came from.
+function PayVariesControl({ inc, data, onToggle, onExpected }) {
+  const vp = inc && inc.isVariable ? variablePay(inc, data, new Date()) : null;
+  const [exp, setExp] = useState(inc && inc.expectedAmount ? String(inc.expectedAmount) : "");
+  const summary = !vp ? "Off. Flourish plans on the amount you entered."
+    : vp.basis === "recent" ? `Flourish plans on ${formatMoney(vp.low)}, the low end of your last ${vp.n} pays${vp.high > vp.low ? ` (${formatMoney(vp.low)} to ${formatMoney(vp.high)})` : ""}.`
+    : vp.basis === "expected" ? `Flourish has seen fewer than ${MIN_VARIABLE_PAYS} pays, so it plans on the ${formatMoney(vp.low)} you expect.`
+    : `Flourish has seen fewer than ${MIN_VARIABLE_PAYS} pays. What is the least you expect each time?`;
+  return (
+    <div style={{ background: C.cardAlt, border: `1px solid ${vp ? C.teal + "44" : C.border}`, borderRadius: 12, padding: "10px 12px", marginTop: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color: vp ? C.tealBright : C.mutedHi, fontSize: 13, fontWeight: 700 }}>My pay varies</div>
+          <div style={{ color: C.muted, fontSize: 11, marginTop: 2, lineHeight: 1.5 }}>{summary}</div>
+        </div>
+        <Toggle on={!!(inc && inc.isVariable)} onChange={onToggle} label="My pay varies" />
+      </div>
+      {vp && vp.basis !== "recent" && onExpected && (
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <div style={{ flex: 1 }}><SheetField prefix="$" type="number" value={exp} onChange={setExp} placeholder="Least you expect" label="Least you expect each pay" /></div>
+          <button onClick={() => { const a = _parseAmt(exp); if (a > 0) onExpected(a); }} disabled={!(_parseAmt(exp) > 0)}
+            style={{ background: C.teal + "22", border: `1px solid ${C.teal}44`, color: C.tealBright, borderRadius: 12, padding: "0 14px", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Tap a projected deposit or bill: change amount, move date, or skip; just this one or from this date on.
+function OccurrenceSheet({ occ, data, setAppData, onClose }) {
+  const isIn = occ.kind === "income" || (occ.kind === "expected" && occ.direction === "in");
+  const noun = occ.kind === "bill" ? "bill" : isIn ? "deposit" : "payment";
+  const name = occ.label || (isIn ? "Deposit" : "Bill");
+  const inc = occ.kind === "income" ? (data.incomes || []).find(i => incomeSrcKey(i) === occ.srcKey) : null;
+  const item = occ.kind === "expected" ? correctionsOf(data).expected.find(x => `expected:${x.id}` === occ.srcKey) : null;
+  const [action, setAction] = useState(occ.skipped ? "skip" : "amount");
+  const [scope, setScope] = useState("one");
+  const [amount, setAmount] = useState(String(occ.amount ?? ""));
+  const [date, setDate] = useState(isoOf(occ.date));
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+  const lo = new Date(occ.originalDate); lo.setDate(lo.getDate() - MAX_MOVE_DAYS);
+  const hi = new Date(occ.originalDate); hi.setDate(hi.getDate() + MAX_MOVE_DAYS);
+  const minIso = isoOf(lo > tomorrow ? lo : tomorrow), maxIso = isoOf(hi);
+  const amt = _parseAmt(amount);
+  const valid = action === "amount" ? amt >= 0 : action === "date" ? (!!date && date >= minIso && date <= maxIso) : true;
+  const write = (fn) => { setAppData(prev => ({ ...prev, forecastEdits: fn(prev.forecastEdits) })); onClose(); };
+  const save = () => {
+    if (!valid) return;
+    if (action === "amount") write(fe => editOccurrence(fe, occ, scope, { amount: amt }));
+    else if (action === "date") write(fe => editOccurrence(fe, occ, scope, { date }));
+    else write(fe => editOccurrence(fe, occ, scope, { skip: true }));
+  };
+  const setIncome = (patch) => setAppData(prev => ({ ...prev, incomes: (prev.incomes || []).map(i => incomeSrcKey(i) === occ.srcKey ? { ...i, ...patch } : i) }));
+  const scopeHelp = occ.kind === "income"
+    ? `From this date on changes every later ${name} deposit too. Use it for a raise, parental leave, EI, a job ending or a benefit change.`
+    : occ.kind === "bill"
+    ? `From this date on changes every later ${name} bill too. Use it for a new price, a new due date or a bill that ended.`
+    : `From this date on changes every later ${name} too.`;
+  const nowLine = occ.skipped ? "Skipped" : `${formatMoney(occ.amount)} on ${fmtOccDay(occ.date)}`;
+  const editedNote = !occ.edited ? null : occ.edited.scope === "one" ? "Just this one" : `From ${fmtOccDay(fromIso(occ.edited.from))} on`;
+  return (
+    <Sheet title={name} subtitle={`${isIn ? "Money in" : "Money out"} · ${fmtOccDay(occ.date)}`} onClose={onClose} label={`Edit ${name}`}>
+      <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12 }}>
+          <span style={{ color: C.muted }}>Flourish's estimate</span>
+          <span style={{ color: C.mutedHi, fontWeight: 700 }}>{formatMoney(occ.estimate)} on {fmtOccDay(occ.originalDate)}</span>
+        </div>
+        {occ.edited && (
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12, marginTop: 6 }}>
+            <span style={{ color: C.muted }}>Now planned <EditedTag text={editedNote} /></span>
+            <span style={{ color: C.cream, fontWeight: 800 }}>{nowLine}</span>
+          </div>
+        )}
+      </div>
+      {inc && (
+        <PayVariesControl inc={inc} data={data}
+          onToggle={v => setIncome({ isVariable: v })}
+          onExpected={a => setIncome({ expectedAmount: String(a) })} />
+      )}
+      <div style={sheetLabel()}>What changes</div>
+      <SegPick label="What changes" value={action} onChange={setAction}
+        options={[{ value: "amount", label: "Change amount" }, { value: "date", label: "Move date" }, { value: "skip", label: "Skip" }]} />
+      <div style={{ marginTop: 10 }}>
+        {action === "amount" && <SheetField prefix="$" type="number" value={amount} onChange={setAmount} label="New amount" />}
+        {action === "date" && <SheetField type="date" value={date} onChange={setDate} min={minIso} max={maxIso} label="New date" />}
+        {action === "skip" && (
+          <div style={{ color: C.mutedHi, fontSize: 13, lineHeight: 1.6 }}>
+            {scope === "one" ? `Flourish won't count this ${noun}.` : `Flourish stops counting ${name} from ${fmtOccDay(occ.originalDate)}.`}
+          </div>
+        )}
+      </div>
+      <div style={sheetLabel()}>Which dates</div>
+      <SegPick label="Which dates" value={scope} onChange={setScope}
+        options={[{ value: "one", label: "Just this one" }, { value: "series", label: "From this date on" }]} />
+      <div style={{ color: C.muted, fontSize: 11, marginTop: 8, lineHeight: 1.6 }}>
+        {scope === "one" ? `Only the ${noun} on ${fmtOccDay(occ.originalDate)} changes.` : scopeHelp}
+      </div>
+      <SheetPrimary label="Save" onClick={save} disabled={!valid} />
+      {occ.edited && (
+        <>
+          <SheetSecondary label="Reset to Flourish's estimate" onClick={() => write(fe => resetOccurrence(fe, occ))} />
+          {occ.edited.series && !occ.edited.one && <div style={{ color: C.muted, fontSize: 11, marginTop: 6, lineHeight: 1.5, textAlign: "center" }}>This also resets the later dates changed from {fmtOccDay(fromIso(occ.edited.from))} on.</div>}
+        </>
+      )}
+      {item && <SheetSecondary label={`Delete ${item.name}`} tone={C.red} onClick={() => write(fe => removeExpected(fe, item.id))} />}
+      <div style={{ color: C.muted, fontSize: 11, marginTop: 14, lineHeight: 1.6 }}>
+        {item
+          ? "This changes your forecast only. Your bank transactions stay as they are. Once the money has moved, delete or edit this item."
+          : `This changes your forecast only. Your bank transactions stay as they are, and when the real ${noun} arrives it replaces this estimate.`}
+      </div>
+    </Sheet>
+  );
+}
+
+// "Is this income?" (asked once, from Today) and "This isn't income" (any past deposit, from Activity).
+function DepositSheet({ txn, data, setAppData, onClose, mode = "ask" }) {
+  const ctx = depositContext(data);
+  const st = depositStatus(txn, ctx);
+  const key = merchantKey(txn.name || "");
+  const canAlways = isUsableDepositKey(key);
+  const rule = depositRuleFor(data.depositRules, txn.name);
+  const reasons = mode === "mark" ? DEPOSIT_REASONS.filter(r => r.key !== "income") : DEPOSIT_REASONS;
+  const decided = st.why === "decided" ? st.reason : null;
+  const [reason, setReason] = useState(decided && reasons.some(r => r.key === decided) ? decided : null);
+  const [always, setAlways] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const count = canAlways ? countDepositsFrom(data.transactions, txn.name) : 0;
+  const amountText = formatMoney(Math.abs(Number(txn.amount) || 0), { cents: true });
+  const when = txn.date ? fmtOccDay(new Date(txn.date + "T12:00:00")) : "";
+  const apply = (withRule) => {
+    setAppData(prev => {
+      const next = { ...prev, depositDecisions: decideDeposit(prev.depositDecisions, txn, reason) };
+      if (withRule) next.depositRules = setDepositRule(prev.depositRules, txn.name, reason);
+      return next;
+    });
+    onClose();
+  };
+  const title = mode === "ask" ? "Is this income?" : "This isn't income";
+  const subtitle = `+${amountText} from ${txn.name}${when ? ` · ${when}` : ""}`;
+  if (confirming) {
+    return (
+      <Sheet title={reason === "income" ? "Always count these as income?" : `Always treat these as ${reasonPhrase(reason)}?`} subtitle={subtitle} onClose={onClose}>
+        <div style={{ color: C.mutedHi, fontSize: 13, lineHeight: 1.65 }}>
+          {count} deposit{count === 1 ? "" : "s"} from <strong style={{ color: C.cream }}>{key}</strong> so far, and every future one, will {reason === "income" ? "count as" : "be treated as"} <strong style={{ color: C.cream }}>{reasonPhrase(reason)}</strong>.
+          This is matched on who sent it. You can remove the rule from any of these deposits in Activity.
+        </div>
+        <SheetPrimary label="Yes, always" onClick={() => apply(true)} />
+        <SheetSecondary label="Just this one" onClick={() => apply(false)} />
+        <SheetSecondary label="Go back" onClick={() => setConfirming(false)} />
+      </Sheet>
+    );
+  }
+  return (
+    <Sheet title={title} subtitle={subtitle} onClose={onClose}>
+      <div style={{ color: C.mutedHi, fontSize: 13, lineHeight: 1.65 }}>
+        {mode === "ask"
+          ? "Flourish only counts a deposit as income once it repeats like pay, or once you say so. Until then it stays out of your forecast."
+          : "Tell Flourish what this was. The transaction stays as it is; it just won't count as income in your forecast."}
+      </div>
+      <div role="radiogroup" aria-label="What was this deposit" style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14 }}>
+        {reasons.map(r => {
+          const on = reason === r.key;
+          return (
+            <button key={r.key} role="radio" aria-checked={on} onClick={() => setReason(r.key)}
+              style={{ display: "flex", alignItems: "center", gap: 10, background: on ? C.green + "18" : C.cardAlt, border: `1px solid ${on ? C.green : C.border}`, borderRadius: 12, padding: "12px 14px", color: on ? C.greenBright : C.mutedHi, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textAlign: "left", minHeight: 44 }}>
+              <span style={{ width: 18, height: 18, borderRadius: "50%", border: `2px solid ${on ? C.green : C.border}`, background: on ? C.green : "transparent", flexShrink: 0 }} />
+              {r.label}
+            </button>
+          );
+        })}
+      </div>
+      {canAlways ? (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 14, background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ color: C.mutedHi, fontSize: 13, fontWeight: 700 }}>Always for deposits from {key}</div>
+            <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>Flourish asks before it saves this.</div>
+          </div>
+          <Toggle on={always} onChange={setAlways} label={`Always for deposits from ${key}`} />
+        </div>
+      ) : (
+        <div style={{ color: C.muted, fontSize: 11, marginTop: 12, lineHeight: 1.6 }}>The bank doesn't say who sent this, so Flourish can't remember it for next time.</div>
+      )}
+      {rule && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 12 }}>
+          <div style={{ color: C.muted, fontSize: 11, lineHeight: 1.5 }}>Deposits from <strong style={{ color: C.mutedHi }}>{key}</strong> are always <strong style={{ color: C.mutedHi }}>{reasonLabel(rule)}</strong>.</div>
+          <button onClick={() => { setAppData(prev => ({ ...prev, depositRules: clearDepositRule(prev.depositRules, txn.name) })); onClose(); }}
+            style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 99, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontFamily: "inherit", flexShrink: 0 }}>Remove rule</button>
+        </div>
+      )}
+      <SheetPrimary label="Save" disabled={!reason} onClick={() => { if (always && canAlways) setConfirming(true); else apply(false); }} />
+      {mode === "ask" && <SheetSecondary label="Not now" onClick={() => { setAppData(prev => ({ ...prev, depositDecisions: decideDeposit(prev.depositDecisions, txn, NOT_NOW) })); onClose(); }} />}
+      {mode === "mark" && decided && <SheetSecondary label="Undo my answer" onClick={() => { setAppData(prev => ({ ...prev, depositDecisions: clearDepositDecision(prev.depositDecisions, txn) })); onClose(); }} />}
+    </Sheet>
+  );
+}
+
+// Today: one held-out deposit at a time, raised once.
+function DepositQuestionCard({ data, setAppData, style }) {
+  const [open, setOpen] = useState(null);
+  const list = useMemo(() => depositsToAsk(data, new Date()), [data.transactions, data.depositDecisions, data.depositRules]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!setAppData || !list.length) return null;
+  const t = list[0];
+  const when = t.date ? fmtOccDay(new Date(t.date + "T12:00:00")) : "";
+  return (
+    <>
+      <div style={{ background: `linear-gradient(135deg,${C.teal}12,${C.green}08)`, border: `1px solid ${C.teal}44`, borderRadius: 18, padding: "14px 16px", ...(style || {}) }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <div style={{ color: C.tealBright, fontWeight: 800, fontSize: 14 }}>Is this income?</div>
+          {list.length > 1 && <div style={{ color: C.muted, fontSize: 11 }}>1 of {list.length}</div>}
+        </div>
+        <div style={{ color: C.mutedHi, fontSize: 12.5, lineHeight: 1.6, marginTop: 4 }}>
+          <strong style={{ color: C.cream }}>+{formatMoney(Math.abs(Number(t.amount) || 0), { cents: true })}</strong> from <strong style={{ color: C.cream }}>{t.name}</strong>{when ? ` on ${when}` : ""}. Flourish is leaving it out of your forecast until you say.
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <button onClick={() => setOpen(t)} style={{ background: C.teal, border: "none", borderRadius: 99, padding: "8px 16px", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit", minHeight: 34 }}>Answer</button>
+          <button onClick={() => setAppData(prev => ({ ...prev, depositDecisions: decideDeposit(prev.depositDecisions, t, NOT_NOW) }))}
+            style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 99, padding: "8px 14px", color: C.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit", minHeight: 34 }}>Not now</button>
+        </div>
+      </div>
+      {open && <DepositSheet txn={open} data={data} setAppData={setAppData} mode="ask" onClose={() => setOpen(null)} />}
+    </>
+  );
+}
+
+// Watch: money the household knows is coming in or going out.
+function ExpectedItemSheet({ data, setAppData, onClose }) {
+  const t1 = new Date(); t1.setDate(t1.getDate() + 1);
+  const [dir, setDir] = useState("in");
+  const [name, setName] = useState("");
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(isoOf(t1));
+  const [repeat, setRepeat] = useState("once");
+  const items = correctionsOf(data).expected;
+  const draft = { name, amount: _parseAmt(amount), direction: dir, date, repeat };
+  const valid = validExpectedItem(draft) && date >= isoOf(t1);
+  const save = () => {
+    if (!valid) return;
+    setAppData(prev => ({ ...prev, forecastEdits: upsertExpected(prev.forecastEdits, draft) }));
+    onClose();
+  };
+  const repeatWord = { once: "Once", monthly: "Monthly", quarterly: "Quarterly", yearly: "Yearly" };
+  return (
+    <Sheet title="Add expected money in or out" subtitle="Flourish adds it to your forecast and labels it by name." onClose={onClose}>
+      <SegPick label="Money in or out" value={dir} onChange={setDir} options={[{ value: "in", label: "Money in" }, { value: "out", label: "Money out" }]} />
+      <div style={sheetLabel()}>Name</div>
+      <SheetField value={name} onChange={setName} placeholder={dir === "in" ? "e.g. Tax refund" : "e.g. Car insurance"} label="Name" />
+      <div style={sheetLabel()}>Amount</div>
+      <SheetField prefix="$" type="number" value={amount} onChange={setAmount} placeholder="0" label="Amount" />
+      <div style={sheetLabel()}>Date</div>
+      <SheetField type="date" value={date} onChange={setDate} min={isoOf(t1)} label="Date" />
+      <div style={sheetLabel()}>Repeats</div>
+      <SegPick label="Repeats" value={repeat} onChange={setRepeat} options={REPEATS.map(r => ({ value: r, label: repeatWord[r] }))} />
+      <SheetPrimary label="Add to forecast" onClick={save} disabled={!valid} />
+      {items.length > 0 && (
+        <>
+          <div style={sheetLabel()}>Already added</div>
+          {items.map(x => (
+            <div key={x.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: C.cream, fontSize: 13, fontWeight: 600 }}>{x.name}</div>
+                <div style={{ color: C.muted, fontSize: 11 }}>{x.direction === "in" ? "+" : "−"}{formatMoney(x.amount)} · {repeatWord[x.repeat] || "Once"} from {fmtOccDay(fromIso(x.date))}</div>
+              </div>
+              <button aria-label={`Delete ${x.name}`} onClick={() => setAppData(prev => ({ ...prev, forecastEdits: removeExpected(prev.forecastEdits, x.id) }))}
+                style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 14, padding: "4px 8px", minHeight: 34 }}>✕</button>
+            </div>
+          ))}
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+// Watch: "Est. daily spend", editable, with a way back to the estimate.
+function DailySpendSheet({ data, setAppData, onClose }) {
+  const est = FinancialCalcEngine.avgDailySpendEstimate(data) || 0;
+  const cur = correctionsOf(data).dailySpend;
+  const [v, setV] = useState(String(Math.round(cur != null ? cur : est)));
+  const a = _parseAmt(v);
+  const write = (val) => { setAppData(prev => ({ ...prev, forecastEdits: setDailySpend(prev.forecastEdits, val) })); onClose(); };
+  return (
+    <Sheet title="Est. daily spend" subtitle="Your everyday spending. Flourish uses it for every day of the forecast and in safe-to-spend." onClose={onClose}>
+      <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12 }}>
+        <span style={{ color: C.muted }}>Flourish's estimate</span>
+        <span style={{ color: C.mutedHi, fontWeight: 700 }}>{formatMoney(est)}/day</span>
+      </div>
+      <div style={{ color: C.muted, fontSize: 11, marginTop: 6, lineHeight: 1.6 }}>From your recent card and account spending, with bills, transfers and income left out.</div>
+      <div style={sheetLabel()}>Your figure, per day</div>
+      <SheetField prefix="$" type="number" value={v} onChange={setV} label="Daily spend per day" />
+      <SheetPrimary label="Save" disabled={!(a >= 0)} onClick={() => write(a)} />
+      {cur != null && <SheetSecondary label="Reset to Flourish's estimate" onClick={() => write(null)} />}
+    </Sheet>
+  );
+}
+
+function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData}) {
   const [expanded, setExpanded] = useState(false);
   const [expandedDay, setExpandedDay] = useState(null); // day index that is drilled into
+  const [editOcc, setEditOcc] = useState(null);          // a projected deposit or bill being corrected
+  const openOcc = setAppData ? (o) => o && setEditOcc(o) : null;
 
   // Single source of truth: ForecastEngine (uses real income schedule, not mocked payday)
   const { forecast } = ForecastEngine.generate(data, 30, activeScenario);
@@ -1203,7 +1608,8 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
   const safeFloor = lowBalanceThreshold(SafeSpendEngine.calculate(data));
 
   // Filter to meaningful events
-  const events = forecast.filter(f => f.isPayday || f.bills.length > 0 || f.day === 0 || f.day === 30);
+  // Money in (pay, or expected money the household added), money out, a skipped item still to show.
+  const events = forecast.filter(f => f.income > 0 || f.bills.length > 0 || (f.occurrences||[]).length > 0 || f.day === 0 || f.day === 30);
   const displayed = expanded ? events : events.slice(0, 5);
 
 
@@ -1263,9 +1669,11 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
                           <span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
                         </div>
                         {/* One line per deposit, named after the income entry the forecast credited ("+$560 Canada
-                            Child Benefit"), never "paycheque" over a benefit. "deposit" only when the entry has no name. */}
-                        {ev.isPayday && depositLines(ev).map((dl,di)=><div key={di} style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(dl.amount)} ${dl.label}`}</div>)}
-                        {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −{formatMoney(num(b.amount))}</div>)}
+                            Child Benefit"), never "paycheque" over a benefit. "deposit" only when the entry has no name.
+                            Each line opens its edit sheet; a variable pay shows its range. */}
+                        {ev.income>0 && depositLines(ev).map((dl,di)=><ForecastLine key={di} label={`Edit ${dl.label}`} onOpen={openOcc&&dl.occurrence?()=>openOcc(dl.occurrence):null}><div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(dl.amount)} ${dl.label}`}{dl.edited&&<EditedTag/>}</div>{dl.low!=null&&<div style={{color:C.muted,fontSize:9.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{`Pay varies: ${formatMoney(dl.low)} to ${formatMoney(dl.high)}`}</div>}</ForecastLine>)}
+                        {billLines(ev).map((bl,bi)=><ForecastLine key={bi} label={`Edit ${bl.label}`} onOpen={openOcc&&bl.occurrence?()=>openOcc(bl.occurrence):null}><div style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{bl.label} −{formatMoney(num(bl.amount))}{bl.edited&&<EditedTag/>}</div></ForecastLine>)}
+                        {skippedLines(ev).map((sk,si)=><ForecastLine key={`sk${si}`} label={`Edit ${sk.label}, skipped`} onOpen={openOcc?()=>openOcc(sk.occurrence):null}><div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}><span style={{textDecoration:"line-through"}}>{sk.moneyIn?"+":"−"}{formatMoney(sk.amount)} {sk.label}</span><EditedTag text="Skipped"/></div></ForecastLine>)}
                         {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                       </div>
                       <div style={{textAlign:"right",flexShrink:0,minWidth:80}}>
@@ -1290,8 +1698,8 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
                     {(() => {
                       const w = forecastWalk({
                         opening: (forecast[ev.day-1]||{}).balance,
-                        income: ev.isPayday ? paydayLineAmount(ev) : 0,
-                        deposits: ev.isPayday ? depositLines(ev) : null,
+                        income: ev.income>0 ? paydayLineAmount(ev) : 0,
+                        deposits: ev.income>0 ? depositLines(ev) : null,
                         bills: ev.bills, avgDailySpend: avgDaily,
                         closing: baseBalance, isToday: ev.day===0,
                       });
@@ -1304,7 +1712,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
                             <span style={{color:r.key==="opening"?C.muted:C.mutedHi,fontSize:r.key==="opening"?11:12,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:5}}>
                               {DOT[r.key]&&<span style={{width:6,height:6,borderRadius:"50%",background:DOT[r.key],display:"inline-block"}}/>}
                               {ICON[r.key]||""}{r.key==="bill"?r.label:r.label}
-                              {r.key==="spend"&&<span style={{color:C.muted,fontSize:9}}>(30d avg)</span>}
+                              {r.key==="spend"&&<span style={{color:C.muted,fontSize:9}}>{correctionsOf(data).dailySpend!=null?"(your figure)":"(30d avg)"}</span>}
                             </span>
                             <span style={{color:COLOR[r.key],fontWeight:r.key==="opening"||r.key==="spend"?400:700,fontSize:r.key==="opening"?11:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign}{r.value}</span>
                           </div>
@@ -1340,6 +1748,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
           })}
         </div>
       </div>
+      {editOcc&&setAppData&&<OccurrenceSheet occ={editOcc} data={data} setAppData={setAppData} onClose={()=>setEditOcc(null)}/>}
     </div>
   );
 }
@@ -1347,9 +1756,11 @@ function TimeMachine({data, activeScenario = null, setActiveScenario}) {
 // ── FINANCIAL TIMELINE — powered exclusively by ForecastEngine ──────────────────
 // Fix: replaced manual payday loop (isPayday = i === 7 mock) with ForecastEngine
 // which reads income frequency from onboarding. Single source of truth.
-function FinancialTimeline({data}) {
+function FinancialTimeline({data, setAppData}) {
   const [expanded, setExpanded] = useState(false);
   const [expandedDay, setExpandedDay] = useState(null);
+  const [editOcc, setEditOcc] = useState(null);
+  const openOcc = setAppData ? (o) => o && setEditOcc(o) : null;
   // ── Delegate to ForecastEngine — no duplicate forecasting logic ──
   const { forecast } = ForecastEngine.generate(data, 30);
   // Shared low-balance definition — proportional band with an absolute floor. Bare balance*0.12
@@ -1360,7 +1771,7 @@ function FinancialTimeline({data}) {
   // prevents the monthly figure from ever being shown against a single per-deposit payday again.
   const avgDaily = FinancialCalcEngine.avgDailySpend(data);
 
-  const events = forecast.filter(f => f.day === 0 || f.isPayday || f.bills.length > 0 || f.day === 30);
+  const events = forecast.filter(f => f.day === 0 || f.income > 0 || f.bills.length > 0 || (f.occurrences||[]).length > 0 || f.day === 30);
   const displayed = expanded ? events : events.slice(0, 4);
 
   return (
@@ -1396,8 +1807,9 @@ function FinancialTimeline({data}) {
                         <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:ev.day===0?800:600,fontSize:13,color:ev.day===0?C.cream:C.mutedHi,marginBottom:2}}>
                           {label}<span style={{color:C.muted,fontSize:10,marginLeft:6}}>{isDrilled?"▲":"▼"}</span>
                         </div>
-                        {ev.isPayday && depositLines(ev).map((dl,di)=><div key={di} style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(dl.amount)} ${dl.label}`}</div>)}
-                        {ev.bills.map((b,bi)=><div key={bi} style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name} −{formatMoney(num(b.amount))}</div>)}
+                        {ev.income>0 && depositLines(ev).map((dl,di)=><ForecastLine key={di} label={`Edit ${dl.label}`} onOpen={openOcc&&dl.occurrence?()=>openOcc(dl.occurrence):null}><div style={{color:C.greenBright,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>{`+${formatMoney(dl.amount)} ${dl.label}`}{dl.edited&&<EditedTag/>}</div>{dl.low!=null&&<div style={{color:C.muted,fontSize:9.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{`Pay varies: ${formatMoney(dl.low)} to ${formatMoney(dl.high)}`}</div>}</ForecastLine>)}
+                        {billLines(ev).map((bl,bi)=><ForecastLine key={bi} label={`Edit ${bl.label}`} onOpen={openOcc&&bl.occurrence?()=>openOcc(bl.occurrence):null}><div style={{color:C.gold,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{bl.label} −{formatMoney(num(bl.amount))}{bl.edited&&<EditedTag/>}</div></ForecastLine>)}
+                        {skippedLines(ev).map((sk,si)=><ForecastLine key={`sk${si}`} label={`Edit ${sk.label}, skipped`} onOpen={openOcc?()=>openOcc(sk.occurrence):null}><div style={{color:C.muted,fontSize:11,fontFamily:"'Plus Jakarta Sans',sans-serif"}}><span style={{textDecoration:"line-through"}}>{sk.moneyIn?"+":"−"}{formatMoney(sk.amount)} {sk.label}</span><EditedTag text="Skipped"/></div></ForecastLine>)}
                         {isLow && !ev.isPayday && <div style={{color:C.redBright,fontSize:10,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginTop:2}}>⚠ Low balance</div>}
                       </div>
                       <div style={{textAlign:"right",flexShrink:0}}>
@@ -1410,7 +1822,7 @@ function FinancialTimeline({data}) {
                 {isDrilled&&(
                   <div style={{marginLeft:54,marginBottom:6,background:"rgba(255,255,255,0.03)",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px"}}>
                     <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:10}}>Day breakdown</div>
-                    {ev.isPayday&&depositLines(ev).map((dl,di)=>(
+                    {ev.income>0&&depositLines(ev).map((dl,di)=>(
                       <div key={`dep${di}`} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
                         <span style={{color:C.mutedHi,fontSize:12,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💰 {dl.named?dl.label:"Deposit"}</span>
                         <span style={{color:C.greenBright,fontWeight:700,fontSize:12}}>+{formatMoney(dl.amount)}</span>
@@ -1440,6 +1852,7 @@ function FinancialTimeline({data}) {
           })}
         </div>
       </div>
+      {editOcc&&setAppData&&<OccurrenceSheet occ={editOcc} data={data} setAppData={setAppData} onClose={()=>setEditOcc(null)}/>}
     </div>
   );
 }
@@ -3724,8 +4137,9 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
               {/* Step 4 — Variable toggle */}
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:inc.isVariable?C.purple+"11":C.cardAlt,border:`1px solid ${inc.isVariable?C.purple+"44":C.border}`,borderRadius:12,padding:"10px 14px",transition:"all .2s"}}>
                 <div>
-                  <div style={{color:inc.isVariable?C.purpleBright||C.tealBright:C.mutedHi,fontSize:13,fontWeight:600}}>Variable income</div>
-                  <div style={{color:C.muted,fontSize:11,marginTop:1}}>{inc.isVariable?`Amount changes — we'll use your typical ${payWord(p.country)} for planning`:"Consistent amount every pay period"}</div>
+                  <div style={{color:inc.isVariable?C.purpleBright||C.tealBright:C.mutedHi,fontSize:13,fontWeight:600}}>My pay varies</div>
+                  {/* Same setting as Settings and the forecast sheet: plan on the low end, shown as a range. */}
+                  <div style={{color:C.muted,fontSize:11,marginTop:1}}>{inc.isVariable?"Flourish plans on the low end of your recent pays. Until it has seen three, it plans on the amount above.":"Consistent amount every pay period"}</div>
                 </div>
                 <button onClick={()=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,isVariable:!inc.isVariable}:x))}
                   style={{width:46,height:26,borderRadius:99,background:inc.isVariable?C.purple||C.teal:C.cardAlt,border:`1px solid ${inc.isVariable?C.purple||C.teal:C.border}`,cursor:"pointer",position:"relative",transition:"all .2s",flexShrink:0}}>
@@ -4547,7 +4961,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
     hasCashAccount: (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0,
     hasIncome: (data.incomes||[]).some(i => num(i && i.amount) > 0),   // num(), not Number(): "$2,600" is a valid amount
   }); // Truth-fix item 5: the ONE safe-to-spend presentation view-model (rows + headline reconcile)
-  const dailyPace   = suggestedDailyView(ssView.headline, data.incomes, data.transactions, new Date()); // Consolidation 1: the ONE suggested daily pace (Today + Decisions read this)
+  const dailyPace   = suggestedDailyView(ssView.headline, data.incomes, data.transactions, new Date(), data); // Consolidation 1: the ONE suggested daily pace (Today + Decisions read this)
   const hasCashAccount = (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0; // Sprint 1: gate safe-to-spend empty state
   // overdraft: either bills in next 10 days exceed balance (immediate)
   // OR forecast shows negative balance within 7 days (imminent)
@@ -4588,7 +5002,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   // Sprint D Fix (Bug 1): daysUntilDueDay rolls a passed due-day to next month, so a bill due the
   // 3rd viewed on the 22nd is ~12 days away — not -19, and no longer mis-selected as urgent.
   const urgentBill = soonBills.find(b=>{ const d=daysUntilDueDay(b.date, new Date()); return d!==null && d<=2; });
-  const isPayday   = isDepositToday(data.incomes, data.transactions, new Date()); // Truth-fix item 2: real cadence, not a 1st/15th guess
+  const isPayday   = isDepositTodayFor(data, new Date()); // Truth-fix item 2: real cadence, not a 1st/15th guess
   // 14-day forecast — shared with "Can I afford this?" widget. No per-keystroke calls.
   const { forecast: afford14Forecast } = ForecastEngine.generate(data, 14);
   const nextPaydayDay = afford14Forecast.find(f => f.isPayday && f.day > 0)?.day || null;
@@ -4761,6 +5175,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             </div>
           );
         })()}
+        {/* Ask, don't guess: a deposit that doesn't yet count as income, raised once */}
+        <DepositQuestionCard data={data} setAppData={setAppData} style={{...anim(55),marginBottom:12}}/>
         {/* ── HERO: Safe to Spend ── full width ─────────────────────────── */}
         {isVisible('hero')&&(
         <div style={{...anim(60),cursor:"pointer",position:"relative",overflow:"hidden",borderRadius:28,
@@ -5560,7 +5976,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
 
         {/* DECISIONS — Time Machine forecast */}
         <div style={{...anim(60),...glass(C.green),borderRadius:22,padding:"18px 18px 14px"}}>
-          <TimeMachine data={data} activeScenario={activeScenario} setActiveScenario={setActiveScenario}/>
+          <TimeMachine data={data} activeScenario={activeScenario} setActiveScenario={setActiveScenario} setAppData={setAppData}/>
         </div>
 
         {/* DECISIONS — Decision engine */}
@@ -6137,6 +6553,11 @@ function PlanAhead({data, setAppData, setScreen}){
   const RANGES = [7, 30, 90];
   const [showBillManager,setShowBillManager]=useState(false);
   const [expandedPlanDay, setExpandedPlanDay] = useState(null);
+  // Forecast corrections: a projected deposit or bill being edited, the expected-money sheet, daily spend.
+  const [editOcc, setEditOcc] = useState(null);
+  const [showExpected, setShowExpected] = useState(false);
+  const [showDailySpend, setShowDailySpend] = useState(false);
+  const openOcc = setAppData ? (o) => o && setEditOcc(o) : null;
   // ── ForecastEngine powers the plan ahead view
   // Math.max keeps the ENGINE's window at 30 days minimum (the risk flags below read further ahead
   // than the list shows); passing `range` straight through would shorten those to 7 days on the 7d
@@ -6145,7 +6566,8 @@ function PlanAhead({data, setAppData, setScreen}){
   const days = _forecast.slice(0, range).map(f => ({
     d: f.date, dayNum: f.date.getDate(),
     isPayday: f.isPayday, bills: f.bills,
-    income: f.income, deposits: f.deposits, balance: f.balance, idx: f.day
+    income: f.income, deposits: f.deposits, balance: f.balance, idx: f.day,
+    occurrences: f.occurrences, billOccurrences: f.billOccurrences
   }));
   const { balance: bal } = SafeSpendEngine.calculate(data);
   // Item 4 in a second surface: the balance-bar scale is "balance + one real paycheque". Read the primary
@@ -6186,10 +6608,13 @@ function PlanAhead({data, setAppData, setScreen}){
       // than re-formatting the raw engine balance here with toFixed (which rounded to nearest, no separator).
       const _fbalText = safeToSpendView(SafeSpendEngine.calculate(data)).balanceText;
       const _favg = FinancialCalcEngine.avgDailySpend(data);
+      const _fSpendEdited = correctionsOf(data).dailySpend != null;
       const _ffreq = (data.incomes||[])[0]?.freq||"biweekly";
       // Est. paycheque: the primary income's REAL per-deposit amount, read from incomeSchedule — never the
       // blended monthlyIncome divided by incomes[0]'s cadence (item 4's bug). null => show an explicit unknown.
-      const _fPay = perDepositAmount((data.incomes||[])[0]);
+      // As the household corrected it: a change from a date on, or the low end when the pay varies.
+      const _inc0 = (data.incomes||[])[0];
+      const _fPay = perDepositAmount(_inc0) != null || (_inc0 && _inc0.isVariable) ? monthlyIncomeBasis(_inc0, data, new Date()) : null;
       return (
         <div style={{background:C.isDark?"rgba(255,255,255,0.03)":C.surface,borderRadius:14,padding:"12px 16px",border:`1px solid ${C.border}`}}>
           <div style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:8}}>
@@ -6202,12 +6627,19 @@ function PlanAhead({data, setAppData, setScreen}){
               ["Est. daily spend", `$${(_favg||0).toFixed(0)}/day`],
               ["Pay frequency", _ffreq],
               [`Est. ${payWord(data.profile?.country)}`, _fPay!=null ? formatMoney(_fPay) : "—"],
-            ].map(([lbl,val])=>(
-              <div key={lbl} style={{background:C.card,borderRadius:10,padding:"7px 10px",border:`1px solid ${C.border}`}}>
-                <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>{lbl}</div>
-                <div style={{color:C.cream,fontSize:12,fontWeight:700}}>{val}</div>
-              </div>
-            ))}
+            ].map(([lbl,val])=>{
+              // "Est. daily spend" is the household's to change: tap it to set their own figure.
+              const editable = lbl==="Est. daily spend" && !!setAppData;
+              const cell = (
+                <>
+                  <div style={{color:C.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>{lbl}{editable&&<span style={{opacity:0.7,marginLeft:4}}>✎</span>}</div>
+                  <div style={{color:C.cream,fontSize:12,fontWeight:700}}>{val}{editable&&_fSpendEdited&&<EditedTag/>}</div>
+                </>
+              );
+              return editable
+                ? <button key={lbl} onClick={()=>setShowDailySpend(true)} aria-label="Edit estimated daily spend" style={{background:C.card,borderRadius:10,padding:"7px 10px",border:`1px solid ${_fSpendEdited?C.teal+"55":C.border}`,textAlign:"left",cursor:"pointer",fontFamily:"inherit"}}>{cell}</button>
+                : <div key={lbl} style={{background:C.card,borderRadius:10,padding:"7px 10px",border:`1px solid ${C.border}`}}>{cell}</div>;
+            })}
           </div>
         </div>
       );
@@ -6224,10 +6656,18 @@ function PlanAhead({data, setAppData, setScreen}){
       </div>
       {setAppData&&<button onClick={()=>setShowBillManager(true)} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>+ Add Bill</button>}
     </Card>
+    {/* Money the household knows about that no bill or income covers: a tax refund, a yearly premium, a gift */}
+    {setAppData&&<Card style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,border:`1px solid ${C.green}33`}}>
+      <div style={{minWidth:0}}>
+        <div style={{color:C.greenBright,fontWeight:700,fontSize:14}}>Expected money in or out</div>
+        <div style={{color:C.muted,fontSize:11,marginTop:2}}>{correctionsOf(data).expected.length ? `${correctionsOf(data).expected.length} added · in your forecast` : "A tax refund, a yearly bill, a gift"}</div>
+      </div>
+      <button onClick={()=>setShowExpected(true)} style={{background:C.green+"22",border:`1px solid ${C.green}44`,color:C.greenBright,borderRadius:99,padding:"6px 14px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>+ Add</button>
+    </Card>}
     <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1.8,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
     {(()=>{
       const avgDailySpend = FinancialCalcEngine.avgDailySpend(data);
-      return days.filter((d,i)=>i===0||d.income>0||d.bills.length>0).map((day,i)=>{
+      return days.filter((d,i)=>i===0||d.income>0||d.bills.length>0||(d.occurrences||[]).length>0).map((day,i)=>{
         const isToday=day.idx===0,neg=day.balance<0,low=day.balance<150&&day.balance>=0;
         const isDrilled=expandedPlanDay===day.idx;
         const prevBalance=day.idx>0?(_forecast[day.idx-1]?.balance||0):day.balance;
@@ -6242,9 +6682,11 @@ function PlanAhead({data, setAppData, setScreen}){
                     <div style={{color:isToday?C.greenBright:C.mutedHi,fontWeight:isToday?700:500,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{isToday?"Today ✦":day.d.toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}</div>
                     <span style={{color:C.muted,fontSize:10}}>{isDrilled?"▲":"▼"}</span>
                   </div>
-                  {/* Named after the income entry the forecast credited, as in the Time Machine row. */}
-                {depositLines(day).map((dl,di)=><div key={`dep${di}`} style={{color:C.green,fontWeight:700,fontSize:13,marginTop:3}}>💰 +{formatMoney(dl.amount)} {dl.label}</div>)}
-                  {day.bills.map((b,j)=><div key={j} style={{color:C.gold,fontSize:12,marginTop:2}}>📅 {b.name}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:4,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}: −{b.variable?"~":""}{formatMoney(b.amount)}</div>)}
+                  {/* Named after the income entry the forecast credited, as in the Time Machine row. Each line
+                      opens its edit sheet. */}
+                {depositLines(day).map((dl,di)=><ForecastLine key={`dep${di}`} label={`Edit ${dl.label}`} onOpen={openOcc&&dl.occurrence?()=>openOcc(dl.occurrence):null}><div style={{color:C.green,fontWeight:700,fontSize:13,marginTop:3}}>💰 +{formatMoney(dl.amount)} {dl.label}{dl.edited&&<EditedTag/>}</div>{dl.low!=null&&<div style={{color:C.muted,fontSize:11,marginTop:1}}>{`Pay varies: ${formatMoney(dl.low)} to ${formatMoney(dl.high)}`}</div>}</ForecastLine>)}
+                  {billLines(day).map((bl,j)=>{ const b=bl.bill||{}; return <ForecastLine key={j} label={`Edit ${bl.label}`} onOpen={openOcc&&bl.occurrence?()=>openOcc(bl.occurrence):null}><div style={{color:C.gold,fontSize:12,marginTop:2}}>📅 {bl.label}{b.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:4,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}: −{b.variable?"~":""}{formatMoney(bl.amount)}{bl.edited&&<EditedTag/>}</div></ForecastLine>; })}
+                  {skippedLines(day).map((sk,si)=><ForecastLine key={`sk${si}`} label={`Edit ${sk.label}, skipped`} onOpen={openOcc?()=>openOcc(sk.occurrence):null}><div style={{color:C.muted,fontSize:12,marginTop:2}}><span style={{textDecoration:"line-through"}}>{sk.moneyIn?"+":"−"}{formatMoney(sk.amount)} {sk.label}</span><EditedTag text="Skipped"/></div></ForecastLine>)}
                   {isToday&&!day.income&&!day.bills.length&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>Tap to see balance breakdown</div>}
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}>
@@ -6271,7 +6713,7 @@ function PlanAhead({data, setAppData, setScreen}){
                         <span style={{color:r.key==="opening"?C.muted:C.mutedHi,fontSize:r.key==="opening"?11:12}}>
                           {r.key==="income"?"💰 ":r.key==="bill"?"📅 ":r.key==="spend"?"🛒 ":""}{r.label}
                           {r.key==="bill"&&r.bill&&r.bill.origin==="manual"&&<span style={{color:C.tealBright,fontSize:9,marginLeft:5,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>est</span>}
-                          {r.key==="spend"&&<span style={{color:C.muted,fontSize:9}}> (30d avg)</span>}
+                          {r.key==="spend"&&<span style={{color:C.muted,fontSize:9}}>{correctionsOf(data).dailySpend!=null?" (your figure)":" (30d avg)"}</span>}
                         </span>
                         <span style={{color:COLOR[r.key],fontWeight:r.key==="opening"||r.key==="spend"?400:700,fontSize:r.key==="opening"?11:12}}>{r.sign}{r.key==="bill"&&r.bill&&r.bill.variable?"~":""}{r.value}</span>
                       </div>
@@ -6294,6 +6736,9 @@ function PlanAhead({data, setAppData, setScreen}){
         );
       });
     })()}
+    {editOcc&&setAppData&&<OccurrenceSheet occ={editOcc} data={data} setAppData={setAppData} onClose={()=>setEditOcc(null)}/>}
+    {showExpected&&setAppData&&<ExpectedItemSheet data={data} setAppData={setAppData} onClose={()=>setShowExpected(false)}/>}
+    {showDailySpend&&setAppData&&<DailySpendSheet data={data} setAppData={setAppData} onClose={()=>setShowDailySpend(false)}/>}
   </div>;
 }
 
@@ -6960,11 +7405,14 @@ function SpendScreen({data, setAppData, setScreen}){
   const [billForm,setBillForm]=useState({name:"",amount:"",date:"1",type:"fixed",category:"Bills"});
   const [arrearsPayTxn,setArrearsPayTxn]=useState(null);
   const [applyAllPrompt, setApplyAllPrompt] = useState(null);
+  const [depositTxn, setDepositTxn] = useState(null); // a past deposit being marked "This isn't income"
   const [showAllBdCats, setShowAllBdCats] = useState(false);
 
   // ── NON-HOOK DERIVED VALUES (after all hooks) ──────────────────────────────
   const isDemo=!!data.demo||!data.bankConnected; // Sprint 3: Try-Demo sets bankConnected:true, so also check the demo flag
   const txns=data.transactions||[];
+  // "Is this income?" status for every deposit row, computed once (depositClassify caches by the txn list).
+  const depCtx=depositContext({ transactions: txns, depositDecisions: data.depositDecisions, depositRules: data.depositRules });
   const now = new Date();
   const thisMonthTxns = txns.filter(t => {
     if(!t.date) return false;
@@ -7337,6 +7785,7 @@ function SpendScreen({data, setAppData, setScreen}){
       </div>
     )}
 
+    {depositTxn&&setAppData&&<DepositSheet txn={depositTxn} data={{...data, transactions: txns}} setAppData={setAppData} mode="mark" onClose={()=>setDepositTxn(null)}/>}
     {/* Re-categorize bottom sheet */}
     {recatTxn&&(
       <div style={{position:"fixed",inset:0,zIndex:999,display:"flex",alignItems:isDesktop?"center":"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}}
@@ -7358,6 +7807,14 @@ function SpendScreen({data, setAppData, setScreen}){
                 }} style={{background:C.teal+"22",border:`1px solid ${C.teal}44`,color:C.tealBright,borderRadius:99,padding:"6px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
                   + Add to Bills
                 </button>}
+                {/* A past deposit that was not income: a reimbursement, refund, gift, shared bill or transfer */}
+                {/* Not on a pending deposit: the bank gives the posted one a new id, and the answer would be lost. */}
+                {setAppData&&recatTxn.amount<0&&!recatTxn.pending&&(
+                  <button onClick={()=>{setDepositTxn(recatTxn);setRecatTxn(null);}}
+                    style={{background:C.green+"18",border:`1px solid ${C.green}44`,color:C.greenBright,borderRadius:99,padding:"6px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                    This isn't income
+                  </button>
+                )}
                 {/* Pay arrears button — shows if transaction amount matches a bill with arrears */}
                 {setAppData&&recatTxn.amount>0&&(data.bills||[]).some(b=>parseFloat(b.arrears||0)>0)&&(
                   <button onClick={()=>{setArrearsPayTxn(recatTxn);setRecatTxn(null);}}
@@ -7424,7 +7881,8 @@ function SpendScreen({data, setAppData, setScreen}){
       </div>
     </div>
 
-    {!isDemo&&<IncomeDetectionBanner transactions={txns} incomes={data.incomes} setAppData={setAppData} country={data.profile?.country}/>}
+    {/* Only deposits that COUNT as income (they repeat like pay, or the household said so) can be offered as a paycheque. */}
+    {!isDemo&&<IncomeDetectionBanner transactions={incomeEvidence({ transactions: txns, depositDecisions: data.depositDecisions, depositRules: data.depositRules })} incomes={data.incomes} setAppData={setAppData} country={data.profile?.country}/>}
     <div style={{display:"flex",gap:6,background:C.surface,borderRadius:16,padding:4}}>
       {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeBright:C.muted,borderRadius:12,padding:"9px 0",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
         {t==="txn"?"Transactions":t==="breakdown"?"Breakdown":"Smart Cuts"}
@@ -7514,7 +7972,13 @@ function SpendScreen({data, setAppData, setScreen}){
             <div style={{color:txn.amount<0?C.greenBright:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>
               {txn.amount<0?"+":"–"}${Math.abs(txn.amount).toFixed(2)}
             </div>
-            {txn.amount<0&&(isCashAdvance(txn)?<div style={{color:C.redBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>⚠️ CASH ADVANCE</div>:<div style={{color:C.greenBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>{getCat(txn)==="Transfer"?"RECEIVED":"INCOME"}</div>)}
+            {txn.amount<0&&(isCashAdvance(txn)?<div style={{color:C.redBright,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>⚠️ CASH ADVANCE</div>:(()=>{
+              // "Income" only when it counts (it repeats like pay, or the household said so). A deposit they
+              // answered shows their answer; anything else is simply money received.
+              const st = depositStatus(txn, depCtx);
+              const word = st.counts ? "INCOME" : (st.reason && st.reason!=="income") ? reasonLabel(st.reason).toUpperCase() : "RECEIVED";
+              return <div style={{color:st.counts?C.greenBright:C.mutedHi,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>{word}</div>;
+            })())}
           </div>
         </div>
         );
@@ -10023,6 +10487,10 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
                 <option value="monthly">Monthly</option>
               </select>
             </div>
+            {/* "My pay varies": plan on a conservative figure, shown as a range on the forecast */}
+            <PayVariesControl inc={inc} data={data}
+              onToggle={v=>updateIncome(inc.id,"isVariable",v)}
+              onExpected={a=>updateIncome(inc.id,"expectedAmount",String(a))}/>
           </div>
         ))
       }
@@ -10255,6 +10723,11 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         accounts: data.accounts || [],
         transactions: data.transactions || [],
         household: data.household || null,
+        // The household's forecast corrections: edited or skipped deposits and bills, "from this date on"
+        // changes, expected money in or out, their daily spend figure, and which deposits are not income.
+        forecastEdits: data.forecastEdits || {},
+        depositDecisions: data.depositDecisions || {},
+        depositRules: data.depositRules || {},
         customCategories: _ls("flourish_custom_cats", "[]"),
         categoryOverrides: _ls("flourish_cat_overrides", "{}"),
         coachHistory: _ls("flourish_coach_history", "null"),
@@ -10778,7 +11251,9 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const country = profile.country||"CA";
     const prov = sanitizeField(profile.province||"", 40);
     const _toMoCtx = toMonthly; // Bug 1: canonical converter
-    const income = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0).reduce((s,i)=>s+_toMoCtx(i.amount,i.freq),0); // Bug 5: no fake income fallback
+    // Monthly income AS THE HOUSEHOLD CORRECTED IT (a change from a date on, a stopped income, variable
+    // pay at its low end), from the same cashFlow every other surface reads. Bug 5: no fake fallback.
+    const income = FinancialCalcEngine.cashFlow(data, getCatOv()).monthlyIncome || 0;
     const balance = (accounts||[]).filter(a=>isCashAccount(a)).reduce((s,a)=>s+parseFloat(a.balance||0),0) || 0; // Sprint 1: no fake DEMO.balance in Coach context
     const spending = txns.filter(t=>t.amount>0 && !t.isTransfer).reduce((s,t)=>s+t.amount,0);
 
@@ -10834,6 +11309,7 @@ Financial snapshot:
 - Balance: $${(balance||0).toFixed(2)} | Income (monthly): $${income>0?income.toFixed(2):"0.00 — not provided; ask before income-dependent advice"}
 - Safe-to-spend RIGHT NOW: $${_safeToSpend.toFixed(2)} (this is the truthful "can-I-afford" number — balance minus upcoming bills, minimum debt payments, safety buffer, savings allocation)
 - Upcoming bills (next ~14 days): $${_upcomingBills.toFixed(2)}
+- Next deposit (as the household corrected it): ${(()=>{ const nd = nextDepositFor(data, new Date()); return nd ? `$${nd.amount.toFixed(2)} from ${sanitizeField(nd.sourceLabel,80)} on ${nd.date.toLocaleDateString("en-CA",{month:"long",day:"numeric"})}${nd.variable&&nd.high>nd.low?` (pay varies: $${nd.low} to $${nd.high}; planning on the low end)`:""}` : "none projected"; })()}
 - Monthly surplus (income − expenses): $${_monthlySurplus.toFixed(2)} | Monthly expenses: $${_monthlyExpenses.toFixed(2)}
 - Avg daily discretionary spend: $${_avgDaily.toFixed(2)}
 - Emergency fund coverage: ${_efMonths.toFixed(1)} months of expenses
@@ -14488,7 +14964,9 @@ export default function FlourishApp(){
           const mergedRaw = removeByIds(mergeById(prev.transactions, enrichedAllTxns), allRemovedIds);
           // Mark transfers FIRST so detection sees t.isTransfer and filters them out.
           const markedTxns = markTransfers(mergedRaw, t => isInternalTransfer(t) || isCCPayment(t, prev.debts || []), isCashAdvance);
-          const detectedIncome = detectIncomeFromTxns(markedTxns);
+          // Ask, don't guess: only deposits that COUNT as income (they repeat like pay, or the household
+          // confirmed them) can create or change an income. A one-off reimbursement or e-transfer cannot.
+          const detectedIncome = detectIncomeFromTxns(incomeEvidence({ transactions: markedTxns, depositDecisions: prev.depositDecisions, depositRules: prev.depositRules }));
           // Tier 4: detect against user overrides + debts (filters transfers & removed merchants).
           const detectedBills = detectRecurringBills(markedTxns, { overrides: prev.userBillOverrides || {}, debts: prev.debts || [] });
           return {
@@ -14557,12 +15035,15 @@ export default function FlourishApp(){
     i: (appData?.incomes || []).map(x => [x.amount, x.freq, x.anchorDay ?? null]),
     d: appData?.incomeSuggestionDismissed || null,
     demo: !!appData?.demo,
-  }), [appData?.transactions, appData?.incomes, appData?.incomeSuggestionDismissed, appData?.demo]);
+    // An answer to "Is this income?" changes what counts, so detection runs again.
+    dd: appData?.depositDecisions || null,
+    dr: appData?.depositRules || null,
+  }), [appData?.transactions, appData?.incomes, appData?.incomeSuggestionDismissed, appData?.demo, appData?.depositDecisions, appData?.depositRules]);
   useEffect(()=>{
     if (!appData || appData.demo) return;
     const txns = appData.transactions || [];
     if (txns.length === 0) return;                       // nothing to detect from yet
-    const detected = detectIncomeFromTxns(txns);
+    const detected = detectIncomeFromTxns(incomeEvidence(appData));
     const d = shouldPromptIncome({
       detected,
       currentIncomes: appData.incomes,
