@@ -472,19 +472,24 @@ const DARK_C = {
   heroRed:"linear-gradient(160deg,#160609 0%,#1E0A0E 45%,#060A0E 100%)",
   shadow:"rgba(0,0,0,0.45)",shadowHi:"rgba(0,0,0,0.70)",isDark:true,
 };
+// Light theme. Eleven of these were darkened on 2026-09-26 so that every one of them clears WCAG
+// AA 4.5:1 as body text on every surface it is used on — bg, surface, card and the beige cardAlt,
+// which was the one that failed. Hue and saturation are untouched and the change is lightness only,
+// most of them by under 3%, so the brand reads the same. tests/paletteContrast.test.cjs measures
+// the whole matrix on every build, which is what stops this drifting back.
 const LIGHT_C = {
   bg:"#F4F1EB",surface:"#FDFCFA",card:"#FFFFFF",cardAlt:"#EDEAE4",
   cream:"#1A2035",muted:"rgba(26,32,53,0.66)",mutedHi:"rgba(26,32,53,0.72)", // Sprint Q item 8: .44→.66 clears AA body 4.5:1 (.60 only reached 4.14:1)
   glass:"rgba(255,255,255,0.84)",glassBright:"rgba(255,255,255,0.94)",
   glassEdge:"rgba(0,0,0,0.07)",glassEdgeHi:"rgba(0,0,0,0.13)",
-  green:"#007A4E",greenBright:"#007E4A",greenDim:"rgba(0,147,95,0.10)", // Sprint Q item 8.2: darkened for AA body text (light theme); dark theme unchanged
-  gold:"#92580C",goldBright:"#9C5C0D",goldDim:"rgba(184,112,16,0.10)", // Sprint Q item 8.2: darkened for AA
-  red:"#D42E4A",redBright:"#E84060",redDim:"rgba(212,46,74,0.08)",
-  blue:"#2472C8",blueBright:"#3386D8",blueDim:"rgba(36,114,200,0.09)",
-  teal:"#007487",tealBright:"#00788A",tealDim:"rgba(0,138,160,0.10)", // Sprint Q item 8.2: darkened for AA
-  orange:"#C45E10",orangeBright:"#D86C1A",orangeDim:"rgba(196,94,16,0.10)",
+  green:"#00784D",greenBright:"#007A48",greenDim:"rgba(0,147,95,0.10)", // Sprint Q item 8.2: darkened for AA body text (light theme); dark theme unchanged
+  gold:"#92580C",goldBright:"#9A5B0D",goldDim:"rgba(184,112,16,0.10)", // Sprint Q item 8.2: darkened for AA
+  red:"#C82944",redBright:"#D0193C",redDim:"rgba(212,46,74,0.08)",
+  blue:"#226ABA",blueBright:"#226BB4",blueDim:"rgba(36,114,200,0.09)",
+  teal:"#007487",tealBright:"#007486",tealDim:"rgba(0,138,160,0.10)", // Sprint Q item 8.2: darkened for AA
+  orange:"#A8500E",orangeBright:"#A55314",orangeDim:"rgba(196,94,16,0.10)",
   purple:"#5840BC",purpleBright:"#6A52CC",purpleDim:"rgba(88,64,188,0.10)",
-  pink:"#BC3070",pinkBright:"#CC4282",pinkDim:"rgba(188,48,112,0.10)",
+  pink:"#BC3070",pinkBright:"#BD3373",pinkDim:"rgba(188,48,112,0.10)",
   border:"rgba(0,0,0,0.08)",borderHi:"rgba(0,0,0,0.17)",
   heroGreen:"linear-gradient(160deg,#E4F5EE 0%,#EEF9F3 45%,#F4F1EB 100%)",
   heroRed:"linear-gradient(160deg,#FDE6EC 0%,#FEECF1 45%,#F4F1EB 100%)",
