@@ -6,3 +6,7 @@ out/
 recordings/
 remotion/public/*
 !remotion/public/.gitkeep
+
+# Agent skills installed via `npx skills add` — 275 vendored files, not our source.
+# skills-lock.json stays TRACKED: it records which skills/versions this factory expects.
+.agents/

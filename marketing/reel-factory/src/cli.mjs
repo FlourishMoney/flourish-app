@@ -327,7 +327,18 @@ if (!fs.existsSync(weekDir)) {
   console.error(`No scripts at ${path.relative(ROOT, weekDir)}. Create it and add reel-01.json.`);
   process.exit(1);
 }
-const scripts = fs.readdirSync(weekDir).filter((f) => f.endsWith(".json")).sort();
+// A reel script, not every .json beside it. The dub (.dub.json) and one-take (.take.json) specs
+// live in the same folder and are inputs to a DIFFERENT pipeline: their `voice` is an object, not
+// a list of lines, so they used to be loaded here and crash on script.voice.entries(). Selected on
+// shape rather than filename, so a spec named anything still cannot be mistaken for a script.
+const isReelScript = (f) => {
+  if (!f.endsWith(".json")) return false;
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(weekDir, f), "utf8"));
+    return Array.isArray(j.voice) && Array.isArray(j.captionLines);
+  } catch { return false; }
+};
+const scripts = fs.readdirSync(weekDir).filter(isReelScript).sort();
 if (!scripts.length) { console.error(`No .json scripts in ${weekDir}.`); process.exit(1); }
 
 console.log(`Flourish reel factory · ${week} · ${scripts.length} script(s)`);

@@ -1,0 +1,45 @@
+{
+  "id": "reel-03-04",
+  "week": "week-03",
+  "pillar": "the-money-meeting",
+  "hook": "Send this to your partner. 15 minutes, no fights about money.",
+  "voice": [
+    {
+      "text": "Money fights usually start with a surprise.",
+      "screen": "today-headline"
+    },
+    {
+      "text": "The money meeting is one 15-minute conversation,",
+      "screen": "meet-agenda"
+    },
+    {
+      "text": "built from your own numbers.",
+      "screen": "meet-agenda"
+    },
+    {
+      "text": "So it's about the plan. Not the blame.",
+      "screen": "meet-agenda"
+    },
+    {
+      "text": "Your money, handled.",
+      "screen": "end-card"
+    }
+  ],
+  "captionLines": [
+    "Money fights usually start with a surprise.",
+    "The money meeting is one 15-minute conversation,",
+    "built from your own numbers.",
+    "So it's about the plan. Not the blame.",
+    "Your money, handled."
+  ],
+  "endCard": [
+    "Your money, handled.",
+    "Join the waitlist. First 50 households get the founding price.",
+    "Link in bio."
+  ],
+  "captions": {
+    "instagram": "Send this to your partner. Flourish's weekly money meeting turns your own numbers into one calm 15-minute conversation, no fights required. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio.",
+    "tiktok": "Send this to your partner. Flourish's weekly money meeting turns your own numbers into one calm 15-minute conversation, no fights required. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio.",
+    "facebook": "Send this to your partner. Flourish's weekly money meeting turns your own numbers into one calm 15-minute conversation, no fights required. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio."
+  }
+}

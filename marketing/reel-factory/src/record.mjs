@@ -40,10 +40,29 @@ export const SCREENS = {
   "watch-top":         { nav: "Watch", anchor: "The next 90 days",  target: null },
   "bills-card":        { nav: "Watch", anchor: "Your bills",        target: "Your bills",        zoom: 2.1 },
   "bill-phone":        { nav: "Watch", anchor: "Phone:",            target: "Phone:",            zoom: 2.2, tight: true },
-  "payday-deposit":    { nav: "Watch", anchor: "+$2,840 deposit",   target: "+$2,840 deposit",   zoom: 2.2, tight: true },
+  // The line used to read "+$2,840 deposit". The app now names a deposit after the income entry
+  // that earned it, so the old anchor matches nothing and the recorder throws. Verified in the
+  // running demo: "💰 +$2,840 Full-time Job".
+  "payday-deposit":    { nav: "Watch", anchor: "+$2,840 Full-time Job", target: "+$2,840 Full-time Job", zoom: 2.2, tight: true },
   // The 90-day view is the point of this shot: tap it, then travel down the list so weeks pass.
   "ninety-day-scroll": { nav: "Watch", tap: "90d", anchor: "DAY-BY-DAY CASH FLOW", target: null, scroll: { to: "Rent:", seconds: 2.2 } },
   "rent-row":          { nav: "Watch", tap: "90d", anchor: "Rent:", target: "Rent:",             zoom: 2.2, tight: true },
+
+  // ── Added for week-03 ────────────────────────────────────────────────────────────────────────
+  // Today's hero, wide: the safe-to-spend figure is 76px and carries the shot on its own, so there
+  // is nothing to push in on. Verified: "Safe to spend until next payday", headline $1,944.
+  "today-headline":    { nav: "Today", anchor: "Safe to spend until next payday", target: null },
+  // The working behind the figure. The button that opens it has no visible label — its accessible
+  // name is the aria-label, which is what `tap` matches on. Verified rows: In your accounts $3,083,
+  // Upcoming bills $65, Min. debt payments $348, Spending buffer $435, Savings set aside $291.
+  "today-breakdown":   { nav: "Today", tap: "How Flourish got this number", anchor: "In your accounts",
+                         target: "Upcoming bills", zoom: 1.9 },
+  // The bill the app raised before it landed. Anchored on the card's own heading rather than the
+  // bill name: which bill is "one thing to know" is computed, and the due date wording moves daily.
+  "bill-due-card":     { nav: "Today", anchor: "One thing to know", target: "One thing to know", zoom: 2.0 },
+  // The agenda, wide: five computed lines plus the decision card do not survive a push-in.
+  // Verified: "Your 15-minute money meeting", "Flourish noticed", "One decision this week".
+  "meet-agenda":       { nav: "Meet",  anchor: "Flourish noticed", target: null },
   "end-card":          null,     // drawn by Remotion, nothing to record
 };
 

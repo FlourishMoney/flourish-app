@@ -1,0 +1,45 @@
+{
+  "id": "reel-03-02",
+  "week": "week-03",
+  "pillar": "it-does-it-for-you",
+  "hook": "You shouldn't have to hunt for your own bills.",
+  "voice": [
+    {
+      "text": "You shouldn't have to hunt for your own bills.",
+      "screen": "watch-top"
+    },
+    {
+      "text": "Flourish finds them in your last 90 days of transactions.",
+      "screen": "bills-card"
+    },
+    {
+      "text": "Every bill, every payday,",
+      "screen": "ninety-day-scroll"
+    },
+    {
+      "text": "laid out for the next 90 days.",
+      "screen": "rent-row"
+    },
+    {
+      "text": "Your money, handled.",
+      "screen": "end-card"
+    }
+  ],
+  "captionLines": [
+    "You shouldn't have to hunt for your own bills.",
+    "Flourish finds them in your last 90 days of transactions.",
+    "Every bill, every payday,",
+    "laid out for the next 90 days.",
+    "Your money, handled."
+  ],
+  "endCard": [
+    "Your money, handled.",
+    "Join the waitlist. First 50 households get the founding price.",
+    "Link in bio."
+  ],
+  "captions": {
+    "instagram": "You shouldn't have to hunt for your own bills. Link your bank once and Flourish finds your bills and paydays from your last 90 days of transactions, laid out for the next 90 days. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio.",
+    "tiktok": "You shouldn't have to hunt for your own bills. Link your bank once and Flourish finds your bills and paydays from your last 90 days of transactions, laid out for the next 90 days. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio.",
+    "facebook": "You shouldn't have to hunt for your own bills. Link your bank once and Flourish finds your bills and paydays from your last 90 days of transactions, laid out for the next 90 days. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio."
+  }
+}
