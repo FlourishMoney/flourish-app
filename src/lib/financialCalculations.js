@@ -969,6 +969,49 @@ export function isCCPayment(txn, debts=[]) {
   return false;
 }
 
+// ── Loan payments ───────────────────────────────────────────────────────────
+// A payment on a loan (car, student, line of credit, mortgage) is money moving to a debt, not
+// spending. The forecast pays each debt's minimum by itself, so a loan payment also counted in the
+// average daily spend would be paid twice. Money out only, and by name only, never by amount.
+export const LOAN_PAYMENT_PATTERNS = [
+  "loan payment", "loan pmt", "loan pymt", "auto loan", "car loan", "student loan",
+  "auto finance", "car finance", "vehicle finance", "auto financing",
+  "line of credit", "mortgage payment", "mortgage pmt",
+];
+export function isLoanPayment(txn) {
+  if (!txn || !(txn.amount > 0)) return false;
+  const name = (txn.name || "").toLowerCase();
+  return LOAN_PAYMENT_PATTERNS.some(p => name.includes(p));
+}
+
+// ── Which bill IS a debt's payment ──────────────────────────────────────────
+// Only when the bill says so: its debtId names the debt, by the debt's own id or by its bank
+// account id. Never by amount, date or name. A $68 phone bill due on the 1st is not the Visa
+// minimum, and a bill someone called "Car Loan" is not the car loan until it is linked to it.
+export function billPaysDebt(bill, debt) {
+  const link = bill && bill.debtId;
+  if (link == null || link === "" || !debt) return false;
+  const l = String(link);
+  return (debt.id != null && debt.id !== "" && l === String(debt.id)) ||
+         (debt.account_id != null && debt.account_id !== "" && l === String(debt.account_id));
+}
+
+// The debt minimums still to pay on their own: every debt with a minimum above zero that no bill
+// already pays. Safe to spend reserves these and the forecast subtracts them, so both screens count
+// the same money once. [{ debt, amount }]
+export function unbilledDebtMinimums(debts, bills) {
+  const bs = bills || [];
+  return (debts || [])
+    .map(debt => ({ debt, amount: num(debt && debt.min) }))
+    .filter(x => x.amount > 0 && !bs.some(b => billPaysDebt(b, x.debt)));
+}
+
+// The day of the month a debt's minimum is due: its dueDay when it has one, otherwise the 1st.
+export function debtMinimumDueDay(debt) {
+  const d = parseInt(debt && debt.dueDay, 10);
+  return d >= 1 && d <= 31 ? d : 1;
+}
+
 export function isCashAdvance(txn) {
   if(!txn) return false; // both directions — CC charge and bank transfer
   const name = (txn.name || "").toLowerCase();
@@ -1170,14 +1213,21 @@ export const FinancialCalcEngine = {
   },
 
   avgDailySpendEstimate(data) {
+    // Card and loan payments, and anything markTransfers flagged as a transfer, are money moving to
+    // a debt or between accounts, not spending. The forecast pays each debt's minimum by itself, so
+    // counting a payment here as well would take it out twice. (isCCPayment includes the keyword
+    // list this line used to check, plus the bank and card-network payment names.)
+    const debts = data.debts || [];
     const txns = (data.transactions || []).filter(t =>
       t.amount > 0 &&
       !t.pending &&
+      !t.isTransfer &&
       !isInternalTransfer(t) &&
       t.cat !== "Income" &&
       t.cat !== "Fees" &&
       !BILL_CATS.has(t.cat) &&
-      !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw))
+      !isCCPayment(t, debts) &&
+      !isLoanPayment(t)
     );
     if(txns.length === 0) return 0;
     const total = txns.reduce((s,t) => s + Math.abs(t.amount), 0);

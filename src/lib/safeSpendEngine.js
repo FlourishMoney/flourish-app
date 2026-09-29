@@ -19,6 +19,7 @@ import {
   num,
   baseCurrencyOf,
   accountCurrencyOf,
+  unbilledDebtMinimums,
 } from "./financialCalculations.js";
 import { daysToNextDepositFor, billOccurrences, billSrcKey, isoOf } from "./forecastEdits.js";
 
@@ -121,9 +122,10 @@ export const SafeSpendEngine = {
     const upcomingBills = bills.reduce((s,b) => s + occurrencesFor(b).reduce((t,o) => t + num(o.amount), 0), 0)
                         + expectedOut.reduce((s,o) => s + num(o.amount), 0);
 
-    // Minimum debt payments due this month
-    const debtPayments = debts
-      .reduce((s,d) => s + num(d.min), 0);
+    // Minimum debt payments due this month, except a debt a bill already pays (billPaysDebt, by
+    // identity only): that bill is reserved above, and the forecast skips the same minimum.
+    const debtPayments = unbilledDebtMinimums(debts, bills)
+      .reduce((s,x) => s + x.amount, 0);
 
     // Safety buffer: `horizonDays` of average daily spend (Truth-fix item 3: scales to the next deposit,
     // not a fixed 10; Sprint Q item 3: NaN-guarded).
