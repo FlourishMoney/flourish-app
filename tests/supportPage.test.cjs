@@ -56,6 +56,32 @@ const launchScreen = (url) => { const u = new URL(url); return new Function("win
   t.ok(/<a href="\/support">Support<\/a>/.test(footer), "3a the landing footer links to /support");
   t.ok(/<Btn label="Open Support" onClick=\{\(\)=>navToScreen&&navToScreen\("support"\)\}/.test(APP), "3b Settings opens it in the app");
 
+  // ── 4. A store build refuses the placeholder ──────────────────────────────────────────────────
+  {
+    const { execFileSync } = require("node:child_process");
+    const os = require("os");
+    const SCRIPT = path.join(__dirname, "..", "scripts", "check-native-build.mjs");
+    const run = (files, args) => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "support-guard-"));
+      try {
+        for (const [rel, body] of Object.entries(files)) { fs.mkdirSync(path.join(dir, path.dirname(rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); }
+        execFileSync(process.execPath, [SCRIPT, ...args], { cwd: dir, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8",
+          env: { ...process.env, NODE_ENV: "production", VITE_SUPABASE_URL: "https://x.supabase.co", VITE_SUPABASE_PUBLISHABLE_KEY: "k-not-real" } });
+        return { code: 0, out: "" };
+      } catch (e) { return { code: e.status, out: (e.stdout || "") + (e.stderr || "") }; }
+      finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    };
+    const PH = 'export const SUPPORT_OPERATOR_NAME_AND_ADDRESS = "TO BE FILLED BY AMANDA";';
+    const FILLED = 'export const SUPPORT_OPERATOR_NAME_AND_ADDRESS = "Operator Inc.\\n1 Example Street";';
+    const BUNDLE_OK = 'const a="https://x.supabase.co",b="k-not-real";';
+    const r1 = run({ "src/lib/supportContact.js": PH }, ["--env"]);
+    t.ok(r1.code !== 0 && /TO BE FILLED BY AMANDA/.test(r1.out), "4a the native build check refuses while the source still has the placeholder");
+    t.eq(run({ "src/lib/supportContact.js": FILLED }, ["--env"]).code, 0, "4b …and passes once it is filled");
+    const r3 = run({ "dist/assets/app.js": BUNDLE_OK + 'const s="TO BE FILLED BY AMANDA";' }, ["--artifact"]);
+    t.ok(r3.code !== 0 && /dist\/ still contains/.test(r3.out), "4c a bundle carrying the placeholder is refused after the build too");
+    t.eq(run({ "dist/assets/app.js": BUNDLE_OK }, ["--artifact"]).code, 0, "4d …and a bundle without it passes");
+  }
+
   if (C.SUPPORT_OPERATOR_NAME_AND_ADDRESS === "TO BE FILLED BY AMANDA") {
     console.log("  note: SUPPORT_OPERATOR_NAME_AND_ADDRESS in src/lib/supportContact.js is still the placeholder");
   }

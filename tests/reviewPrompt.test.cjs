@@ -68,6 +68,10 @@ const path = require("path");
     const d120 = at("2026-10-01T09:00:00").getTime() + days(120);
     const one = withTodayOpen(asked, new Date(d120));
     t.eq(ask(one, T.TODAY_OPEN, new Date(d120)).reason, "not_yet", "after the cooldown, one new day on Today is not enough");
+    // Today opened DURING the cooldown does not count: after it, three new days are needed.
+    const busy = openOn(asked, "2026-10-10T09:00:00", "2026-11-10T09:00:00", "2026-12-10T09:00:00");
+    const d120b = new Date(at("2026-10-01T09:00:00").getTime() + days(120) + 60 * 60 * 1000);
+    t.eq(ask(withTodayOpen(busy, d120b), T.TODAY_OPEN, d120b).reason, "not_yet", "days opened during the 120-day wait do not count toward the next ask");
     // A clock set backwards is not 120 days.
     t.eq(ask(asked, T.CHECKIN_DONE, at("2026-09-01T09:00:00")).reason, "cooldown", "a clock set before the last ask waits");
     // A corrupt ask time must not unlock an early ask.
@@ -107,10 +111,13 @@ const path = require("path");
     P.noteReviewTrouble();
     t.eq([r1.reason, r2.reason], ["web", "web"], "web: neither trigger asks");
     t.eq(Object.keys(store), [], "web: nothing is written, not even the day count");
+    t.ok(!P.REVIEW_STORAGE_KEY.startsWith("flourish_"), "the record's key is outside the flourish_ prefix that sign-out and the shared-device wipe remove");
 
     // On a native shell the ask is recorded before the plugin is called, so a crash mid-sheet
     // cannot lead to a second ask. (The plugin itself cannot run in node; the wrapper swallows that.)
     global.window.Capacitor = { isNativePlatform: () => true };
+    const rd = await P.reviewOnTodayOpen({ demo: true, now: at("2026-10-04T10:00:00") });
+    t.eq([rd.reason, store[P.REVIEW_STORAGE_KEY]], ["demo", undefined], "native demo: Today is not even counted");
     const r3 = await P.reviewOnCheckInDone({ now: at("2026-10-05T10:00:00") });
     t.eq(r3, { ask: true, reason: "checkin_done" }, "native: a finished check-in asks");
     const rec = JSON.parse(store[P.REVIEW_STORAGE_KEY]);
@@ -133,11 +140,18 @@ const path = require("path");
     t.ok(/onExit: \(err, meta\) => \{ if \(err\) \{[^}]*noteReviewTrouble\(\);/.test(app), "a bank link that exits with an error notes trouble");
     t.ok(/if\(res\.status === 429\)\{\s*noteReviewTrouble\(\);/.test(app), "a refused coach chat message notes trouble");
     t.ok(/useEffect\(\(\) => \{ if \(meetError\) noteReviewTrouble\(\); \}, \[meetError\]\);/.test(app), "a refused or failed meeting message notes trouble");
+    t.ok(/useEffect\(\(\)=>\{ if\(limitNote\|\|error\) noteReviewTrouble\(\); \},\[limitNote,error\]\);/.test(app), "the coach's limit note and every coach error (consent refusal, failure) note trouble");
+    t.ok(/useEffect\(\(\)=>\{ if\(bankError\) noteReviewTrouble\(\); \},\[bankError\]\);/.test(app), "every onboarding bank error (link token, exchange, reconnect) notes trouble");
+    t.ok(/useEffect\(\(\) => \{ if \(sdkError\) noteReviewTrouble\(\); \}, \[sdkError\]\);/.test(app), "Plaid's script failing to load notes trouble");
+    t.ok(/catch \{\s*noteReviewTrouble\(\);\s*alertModal\(\{message:"Could not reconnect/.test(app), "a failed reconnect notes trouble");
+    t.ok(/noteReviewTrouble\(\); alertModal\(\{message:"Could not start bank connection/.test(app), "a failed Add Bank start notes trouble");
+    // The sign-out and shared-device wipes only remove flourish_* keys, so the record survives them.
+    t.ok(/k\.startsWith\("flourish_"\) && k !== STORAGE_KEY && k !== STAMP_KEY/.test(app), "(sign-out removes only flourish_* keys)");
 
     const todayCalls = app.match(/reviewOnTodayOpen\(/g) || [];
     t.eq(todayCalls.length, 1, "Today-open asks from exactly one place");
-    t.ok(/if \(screen !== "home" \|\| !onboarded \|\| showSettings\) return;\s*const t = setTimeout\(\(\) => \{ reviewOnTodayOpen\(\{ demo: !!appData\?\.demo \}\); \}, 2500\);\s*return \(\) => clearTimeout\(t\);/.test(app),
-         "…only while Today is the screen, after a pause, cancelled if they leave");
+    t.ok(/if \(screen !== "home" \|\| !onboarded \|\| !user \|\| showSettings\) return;\s*const t = setTimeout\(\(\) => \{ reviewOnTodayOpen\(\{ demo: !!appData\?\.demo \}\); \}, 2500\);\s*return \(\) => clearTimeout\(t\);/.test(app),
+         "…only while Today is the screen for a signed-in person, after a pause, cancelled if they leave");
     const checkCalls = app.match(/reviewOnCheckInDone\(/g) || [];
     t.eq(checkCalls.length, 1, "check-in asks from exactly one place");
     t.ok(/<WeeklyCheckInModal data=\{appData\|\|\{\}\} onClose=\{\(\)=>setShowCheckIn\(false\)\} onComplete=\{\(pts\)=>\{setCheckInBonus\(prev=>Math\.min\(20,prev\+pts\)\);setShowCheckIn\(false\);reviewOnCheckInDone\(\{demo:!!appData\?\.demo\}\);\}\}\/>/.test(app),

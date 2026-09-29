@@ -99,6 +99,10 @@ export function decideReviewAsk({ state, trigger, now, native, demo }) {
     if (since < TROUBLE_QUIET_HOURS * 60 * 60 * 1000) return { ask: false, reason: "recent_trouble" };
   }
   if (trigger === REVIEW_TRIGGERS.CHECKIN_DONE) return { ask: true, reason: "checkin_done" };
-  if (s.todayDays.length >= TODAY_DAYS_TO_ASK) return { ask: true, reason: "third_day" };
+  // Only days on or after the end of the last cooldown count, so after an ask it takes three NEW
+  // days, even if Today was opened during the 120 days.
+  const from = s.lastAskedAt ? localDayKey(Date.parse(s.lastAskedAt) + REVIEW_COOLDOWN_DAYS * DAY_MS) : "";
+  const days = s.todayDays.filter((d) => d >= from);
+  if (days.length >= TODAY_DAYS_TO_ASK) return { ask: true, reason: "third_day" };
   return { ask: false, reason: "not_yet" };
 }

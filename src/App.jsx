@@ -820,6 +820,7 @@ function removeBillWithOverride(setAppData, idx, name) {
 function usePlaidLinkSDK(linkToken, onSuccess) {
   const [sdkReady, setSdkReady] = useState(false);
   const [sdkError, setSdkError] = useState(false);
+  useEffect(() => { if (sdkError) noteReviewTrouble(); }, [sdkError]); // Plaid's script failed: no review ask for a while
   const onSuccessRef = useRef(onSuccess);
   useEffect(() => { onSuccessRef.current = onSuccess; }, [onSuccess]);
 
@@ -3762,6 +3763,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   const [bankStage,setBankStage]=useState("select");
   const [bankProg,setBankProg]=useState(0);
   const [bankError,setBankError]=useState(null);
+  useEffect(()=>{ if(bankError) noteReviewTrouble(); },[bankError]); // any bank link failure rules out a review ask for a while
   // Apple 5.1.1/5.1.2: the CTA opens BankConsentModal rather than Plaid — that modal is the single
   // consent surface for every Plaid path. It replaced an inline card + checkbox whose copy had
   // drifted (it asserted a 30-day erasure the Privacy Policy does not state).
@@ -11645,6 +11647,8 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
   const FREE_LIMIT=FREE_TIER_LIMITS.coachMessagesPerWeek;
   // Native-only: the plain statement shown when the weekly allowance is used up.
   const [limitNote,setLimitNote]=useState("");
+  // A refused coach message (a limit, a consent refusal, a failure) rules out a review ask for a while.
+  useEffect(()=>{ if(limitNote||error) noteReviewTrouble(); },[limitNote,error]);
   const STORAGE_KEY = "flourish_coach_history";
   const WELCOME = {role:"assistant", content:"I'm your Flourish coach. I work from the numbers Flourish has calculated: your safe-to-spend, forecast, spending patterns, debts and goals. I'll tell you what they mean, what needs attention first, and what your options are. I don't move money and I'm not a licensed adviser. Where do you want to start?"};
   const freeMsgsLeft=isPremium?Infinity:Math.max(0,FREE_LIMIT-coachMsgCount);
@@ -15086,10 +15090,10 @@ export default function FlourishApp(){
   // the web and demo mode never ask). A short pause so the ask never lands on a screen still loading,
   // and it is dropped if the person has already moved on.
   useEffect(() => {
-    if (screen !== "home" || !onboarded || showSettings) return;
+    if (screen !== "home" || !onboarded || !user || showSettings) return;
     const t = setTimeout(() => { reviewOnTodayOpen({ demo: !!appData?.demo }); }, 2500);
     return () => clearTimeout(t);
-  }, [screen, onboarded, showSettings]);
+  }, [screen, onboarded, user, showSettings]);
   const [showWhatIf,setShowWhatIf]=useState(false);
   const [whatIfQuery, setWhatIfQuery] = useState("");
   const [whatIfType, setWhatIfType] = useState(null);
@@ -16123,6 +16127,7 @@ export default function FlourishApp(){
       const d = await callPlaid("create_link_token", payload, opts);
       setReconnectToken(d.link_token);
     } catch {
+      noteReviewTrouble();
       alertModal({message:"Could not reconnect. Please try again."});
     } finally {
       setReconnectLoading(false);
@@ -16138,7 +16143,7 @@ export default function FlourishApp(){
     const jwt = await getJwt();
     callPlaid("create_link_token", { country, user_id: user?.id }, {jwt})
       .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
-      .catch(()=>{ setReconnectLoading(false); alertModal({message:"Could not start bank connection. Please try again."}); });
+      .catch(()=>{ setReconnectLoading(false); noteReviewTrouble(); alertModal({message:"Could not start bank connection. Please try again."}); });
   };
   // Apple 5.1.1/5.1.2: EVERY Plaid open is gated on the consent disclosure, every time. These
   // handlers only record intent — BankConsentModal's "Connect My Bank" runs the real action.

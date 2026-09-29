@@ -15,7 +15,10 @@ import {
   decideReviewAsk, normalizeReviewState, withTodayOpen, withTrouble, withAsked, REVIEW_TRIGGERS,
 } from "./reviewRules.js";
 
-export const REVIEW_STORAGE_KEY = "flourish_review_v1";
+// Deliberately NOT under the "flourish_" prefix: sign-out and the shared-device wipe remove every
+// flourish_* key, and this record is per INSTALL. Wiped with the rest, signing out and back in would
+// reset both the 120-day limit and the memory of recent trouble.
+export const REVIEW_STORAGE_KEY = "flourishReviewPrompt_v1";
 
 function isNative() {
   try { return typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.() === true; }
@@ -56,6 +59,8 @@ async function askIfAllowed(trigger, { demo = false, now = new Date() } = {}) {
 // Today was opened. Counts the day, then asks only if this is the third separate day.
 export function reviewOnTodayOpen(opts = {}) {
   if (!isNative()) return Promise.resolve({ ask: false, reason: "web" });
+  // A demo visit is a tour of sample data, not a day of use, so it is not counted at all.
+  if (opts.demo) return Promise.resolve({ ask: false, reason: "demo" });
   const now = opts.now || new Date();
   try { save(withTodayOpen(load(), now)); } catch {}
   return askIfAllowed(REVIEW_TRIGGERS.TODAY_OPEN, { ...opts, now });
