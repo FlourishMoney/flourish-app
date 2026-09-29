@@ -8,7 +8,7 @@
 // cashFlow, so no catOverrides needed.
 // -----------------------------------------------------------------------------
 
-import { FinancialCalcEngine, isBillArchived, billOccursOnDate, parseMoney, clampDayToMonth, unbilledDebtMinimums, debtMinimumDueDay } from "./financialCalculations.js";
+import { FinancialCalcEngine, isBillArchived, billOccursOnDate, parseMoney, debtMinimumDates } from "./financialCalculations.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./safeSpendEngine.js";
 import { incomeOccurrences, billOccurrences } from "./forecastEdits.js";
 
@@ -91,18 +91,12 @@ generate(data, days = 90, scenario = null, today = new Date()) {
 
   // Debt minimums. Safe to spend reserves every debt's minimum; the forecast used to pay none of
   // them, so each projected balance from the 1st on was the minimums too high ($348 a month in the
-  // demo). Each debt's minimum now leaves on its due day (debtMinimumDueDay: the 1st when it has
-  // none) as a named line in that day's bills, so the day row and the drill-down both show it. A debt
-  // that a bill already pays is skipped (unbilledDebtMinimums: identity only, never amount or date),
-  // so that money leaves once, as the bill. Day 0 is skipped as recurring bills are: today's balance
-  // already reflects anything paid today.
-  for(const { debt, amount } of unbilledDebtMinimums(data.debts, bills)) {
-    const dueDay = debtMinimumDueDay(debt);
-    for(let i = 1; i <= days; i++) {
-      const d = new Date(today); d.setDate(today.getDate()+i);
-      if(d.getDate() !== clampDayToMonth(dueDay, d.getFullYear(), d.getMonth())) continue;
-      slot(i).bills.push({ bill: { name: `${debt.name || "Debt"} minimum payment`, amount, _debt: true }, amt: amount, occ: null });
-    }
+  // demo). Each debt's minimum now leaves on its due day (debtMinimumDates: the 1st when it has
+  // none, never today) as a named line in that day's bills, so the day row and the drill-down both
+  // show it. A debt that a bill already pays is skipped (unbilledDebtMinimums: identity only, never
+  // amount or date), so that money leaves once, as the bill.
+  for(const m of debtMinimumDates(data, today, days)) {
+    slot(m.day).bills.push({ bill: { name: `${m.debt.name || "Debt"} minimum payment`, amount: m.amount, _debt: true }, amt: m.amount, occ: null });
   }
 
   for(let i = 0; i <= days; i++) {

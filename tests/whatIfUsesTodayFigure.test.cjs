@@ -74,6 +74,10 @@ const path = require("path");
   const noCash = { ...demo, accounts: demo.accounts.filter(a => !isCashAccount(a)) };
   t.eq(todayHeadline(noCash, now), null, "3a no cash account: Today shows no figure");
   t.eq(DE.displayedSafeToSpend(noCash, now), 0, "3b …and What-If and Meet start from 0, as they did from the clamped engine figure");
+  const noIncome = { ...demo, incomes: [] };
+  t.eq(SafeSpendEngine.calculate(noIncome, now).noIncome, true, "3d no income: Today asks for the income instead of showing a figure");
+  t.eq(DE.displayedSafeToSpend(noIncome, now), 0, "3e …so the displayed figure is 0 for What-If, Meet and Decisions too");
+  t.eq((buildMeetSnapshot(noIncome).decisions || []).length, 0, "3f …and Meet offers no extra payment out of a figure Today does not show");
   t.eq(DE.computeSavingsOpportunity(DE.displayedSafeToSpend({ ...demo, accounts: [{ id: "c", type: "checking", balance: 100 }] }, now)), 0,
        "3c over-committed: Today shows a negative figure, and there is nothing to move to savings");
 

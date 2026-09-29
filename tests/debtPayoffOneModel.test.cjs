@@ -88,5 +88,32 @@ const path = require("path");
   t.eq((fc.match(/while \(remaining > 0/g) || []).length, 1, "5g financialCalculations has exactly one amortization loop");
   t.eq((fc.match(/Math\.max\(25, .*\* 0\.02\)/g) || []).length, 1, "5h …and exactly one max($25, 2%) rule, in debtMinimumPayment");
 
+  // ── 6. A bank-linked card: Meet, Decisions and What-If model the same debt ───────────────────
+  // The debt entry for a bank-imported card has no rate or minimum; the bank's liability record has
+  // both. Meet and Decisions used the entry (19.99% and the 2% estimate) while What-If used the bank's
+  // APR and minimum. All three now take the top debt from buildDebtListForSimulator.
+  {
+    const linked = {
+      profile: { name: "Sam", country: "CA" },
+      accounts: [{ id: "chq", type: "checking", balance: 4000 }, { id: "c1", type: "credit", balance: -3000 }],
+      incomes: [{ id: 1, label: "Pay", amount: "2500", freq: "biweekly" }],
+      bills: [], transactions: [],
+      debts: [{ name: "Visa ••1234", balance: "3000", rate: "", min: "", fromBank: true, account_id: "c1" }],
+      liabilities: { credit: [{ account_id: "c1", name: "Visa ••1234", balance: 3000, apr: 22.99, minPayment: 95 }] },
+    };
+    const listTop = DE.selectHighestRateDebt(FC.buildDebtListForSimulator(linked.debts, linked.liabilities));
+    t.eq([listTop.rate, listTop.min], [22.99, 95], "6a the list carries the bank's APR and minimum");
+    const whatIfBase = FC.simulateDebtPayoffForDebt(listTop, 0).baseline.monthsToPayoff;
+    t.eq(DE.debtPayoffMonths(listTop, 0), Math.min(whatIfBase, 240), "6b Decisions' and Meet's months at the minimum are What-If's");
+    const meetDec = (buildMeetSnapshot(linked).decisions || [])[0];
+    const extra = DE.computeSavingsOpportunity(DE.displayedSafeToSpend(linked));
+    const fmt = (m) => (m >= 240 ? "20+ yrs" : m >= 24 ? `${Math.round(m / 12)} yrs` : `${m} mo`);
+    t.eq(meetDec && meetDec.options[0].outcome,
+         `paid off in ${fmt(DE.debtPayoffMonths(listTop, extra))} instead of ${fmt(DE.debtPayoffMonths(listTop, 0))}`,
+         "6c Meet's outcome is built from the bank's APR and minimum");
+    t.ok(/const top = selectHighestRateDebt\(buildDebtListForSimulator\(data\.debts, data\.liabilities\)\);/.test(meet), "6d Meet picks from the What-If list");
+    t.ok(/const topDebt = selectHighestRateDebt\(buildDebtListForSimulator\(debts, data\.liabilities\)\);/.test(app), "6e Decisions picks from the What-If list");
+  }
+
   t.summary("debtPayoffOneModel.test");
 })();

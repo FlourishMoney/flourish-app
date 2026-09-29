@@ -702,6 +702,19 @@ export function daysUntilDueDay(dueDay, today = new Date()) {
 // still pays TWICE. Returns a sorted array of two day-numbers (or one only in a degenerate case that
 // valid semimonthly inputs cannot reach). Low anchors and the 1st-and-15th default are unchanged: they
 // never collide, so they fall straight through.
+// THE semimonthly pair for a known anchor day, shared by income and bills: the anchor and the day
+// half a month away IN THE SAME MONTH, +15 when that fits in a 31-day month and -15 when it does
+// not. So a 10th-and-25th schedule is (10, 25) whether it was anchored on the 10th or the 25th, and
+// a 15th-and-month-end one is (15, 30) from either end. The old anchor + 15, clamped, piled both
+// dates at month end for any anchor after the 16th (anchor 25: the 25th and the 31st, and no 10th).
+// semimonthlyDays then clamps the pair into each month (Feb 28/29, 30-day months). With no anchor
+// at all: the 1st and the 15th.
+export function semimonthlyPair(anchorDay) {
+  const d = parseInt(anchorDay, 10);
+  if (!(d >= 1 && d <= 31)) return [1, 15];
+  return d + 15 <= 31 ? [d, d + 15] : [d - 15, d];
+}
+
 export function semimonthlyDays(dayA, dayB, y, m) {
   const a = clampDayToMonth(dayA, y, m);
   let b = clampDayToMonth(dayB, y, m);
@@ -716,14 +729,12 @@ export function semimonthlyDays(dayA, dayB, y, m) {
 const _daysInMonth = daysInMonth;
 function _domDate(y, m, day) { return new Date(y, m, clampDayToMonth(day, y, m), 12, 0, 0); }
 
-// A semimonthly bill's two intended days, by the rule income uses (incomeSchedule: a known anchor
-// day and the anchor + 15, or the 1st and the 15th with no anchor). semimonthlyDays then clamps
-// both into the month and keeps them distinct, so a bill and an income on the same schedule land
-// on the same days. The old ((d1 + 14) % 28) + 1 put a bill anchored on the 15th on the 2nd.
+// A semimonthly bill's two intended days: semimonthlyPair of its anchor day (nextDueDate, or its
+// day of month), the same rule income uses, so a bill and an income on the same schedule land on
+// the same days. The old ((d1 + 14) % 28) + 1 put a bill anchored on the 15th on the 2nd.
 function _billSemimonthlyPair(bill) {
   const anchor = _isoToDate(bill.nextDueDate);
-  const d1 = anchor ? anchor.getDate() : parseInt(bill.date, 10);
-  return d1 > 0 ? [d1, d1 + 15] : [1, 15];
+  return semimonthlyPair(anchor ? anchor.getDate() : bill.date);
 }
 
 // Next occurrence Date on/after `today`. Returns null for non-datable bills.
@@ -977,11 +988,30 @@ export const LOAN_PAYMENT_PATTERNS = [
   "loan payment", "loan pmt", "loan pymt", "auto loan", "car loan", "student loan",
   "auto finance", "car finance", "vehicle finance", "auto financing",
   "line of credit", "mortgage payment", "mortgage pmt",
+  // Lenders and servicers whose payments carry only their name.
+  "navient", "nelnet", "mohela", "aidvantage", "nslsc", "student aid",
+  "honda financial", "toyota financial", "ford credit", "ally auto", "gm financial", "santander consumer",
+  "capital one auto", "td auto",
 ];
+// Card issuers whose payment lines carry only the issuer's name.
+const CARD_PAYEE_PATTERNS = ["capital one", "discover", "american express", "amex", "chase card", "citi card", "barclaycard"];
 export function isLoanPayment(txn) {
   if (!txn || !(txn.amount > 0)) return false;
   const name = (txn.name || "").toLowerCase();
   return LOAN_PAYMENT_PATTERNS.some(p => name.includes(p));
+}
+
+// Is this outflow the payment of one of `minimums` (the minimums the forecast pays)? It must look
+// like a debt payment (a card payment, a loan payment, a card issuer, or a transfer) AND match a
+// minimum's amount within $2 or 5%. Both, because either alone would take real spending out: a card
+// paid in full, or a $68 dinner on the day the Visa minimum is $68.
+export function paysADebtMinimum(txn, minimums, debts = []) {
+  if (!txn || !(txn.amount > 0) || !(minimums && minimums.length)) return false;
+  const name = (txn.name || "").toLowerCase();
+  const looksLikePayment = !!txn.isTransfer || isCCPayment(txn, debts) || isLoanPayment(txn) ||
+    CARD_PAYEE_PATTERNS.some(p => name.includes(p));
+  if (!looksLikePayment) return false;
+  return minimums.some(m => Math.abs(txn.amount - m) <= Math.max(2, m * 0.05));
 }
 
 // ── Which bill IS a debt's payment ──────────────────────────────────────────
@@ -1010,6 +1040,22 @@ export function unbilledDebtMinimums(debts, bills) {
 export function debtMinimumDueDay(debt) {
   const d = parseInt(debt && debt.dueDay, 10);
   return d >= 1 && d <= 31 ? d : 1;
+}
+
+// Every debt minimum paid in days 1..days after `today` (today, day 0, is never included, as
+// recurring bills are not: today's balance already reflects anything paid today), each on its due
+// day clamped to the month. [{ debt, amount, day, date }]. The forecast and Today's "Due soon" both
+// read this, so they list the same minimums on the same days.
+export function debtMinimumDates(data, today = new Date(), days = 90) {
+  const out = [];
+  for (const { debt, amount } of unbilledDebtMinimums(data && data.debts, data && data.bills)) {
+    const dueDay = debtMinimumDueDay(debt);
+    for (let i = 1; i <= days; i++) {
+      const d = new Date(today); d.setDate(today.getDate() + i);
+      if (d.getDate() === clampDayToMonth(dueDay, d.getFullYear(), d.getMonth())) out.push({ debt, amount, day: i, date: d });
+    }
+  }
+  return out;
 }
 
 export function isCashAdvance(txn) {
@@ -1213,21 +1259,21 @@ export const FinancialCalcEngine = {
   },
 
   avgDailySpendEstimate(data) {
-    // Card and loan payments, and anything markTransfers flagged as a transfer, are money moving to
-    // a debt or between accounts, not spending. The forecast pays each debt's minimum by itself, so
-    // counting a payment here as well would take it out twice. (isCCPayment includes the keyword
-    // list this line used to check, plus the bank and card-network payment names.)
-    const debts = data.debts || [];
+    // A payment of a debt minimum the forecast already subtracts is not also daily spend, or the
+    // forecast would take it twice. Only that payment: a card, loan or transfer payment whose amount
+    // matches one of those minimums (paysADebtMinimum). Everything else is as it always was, because
+    // for a statement import a card paid in full, a loan with no debt entered, or a bill paid by
+    // online banking IS the household's spending, and nothing else would count it.
+    const minimums = unbilledDebtMinimums(data.debts, data.bills).map(x => x.amount);
     const txns = (data.transactions || []).filter(t =>
       t.amount > 0 &&
       !t.pending &&
-      !t.isTransfer &&
       !isInternalTransfer(t) &&
       t.cat !== "Income" &&
       t.cat !== "Fees" &&
       !BILL_CATS.has(t.cat) &&
-      !isCCPayment(t, debts) &&
-      !isLoanPayment(t)
+      !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw)) &&
+      !paysADebtMinimum(t, minimums, data.debts || [])
     );
     if(txns.length === 0) return 0;
     const total = txns.reduce((s,t) => s + Math.abs(t.amount), 0);

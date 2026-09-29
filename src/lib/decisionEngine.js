@@ -46,9 +46,12 @@ export function computeDebtPayoffImpact(topDebt, extraPayment) {
 // Today's own setup gate. What-If, Meet and Decisions start from THIS number, not the engine's raw
 // safeAmount, so "spend $800" leaves Today's figure less $800 ($1,944 - $800 = $1,144 in the demo,
 // not $1,144.88). With no cash account Today shows no figure; callers get 0, which is what the
-// engine's clamped amount was in that case.
+// engine's clamped amount was in that case. Today also shows no figure when there is no income
+// (it asks for the income instead), so that is 0 too.
 export function displayedSafeToSpend(data = {}, todayDate = new Date()) {
-  const view = safeToSpendView(SafeSpendEngine.calculate(data, todayDate), {
+  const ss = SafeSpendEngine.calculate(data, todayDate);
+  if (ss.noIncome) return 0;
+  const view = safeToSpendView(ss, {
     hasCashAccount: (data.accounts || []).filter(a => isCashAccount(a)).length > 0,
     hasIncome: (data.incomes || []).some(i => num(i && i.amount) > 0),
   });

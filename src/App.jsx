@@ -977,7 +977,8 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
   const nextDep = nextDepositFor(data, todayD);
   // Consolidation 1: the suggested daily figure is owned by suggestedDailyView and passed in as dailyPace,
   // so Today and Decisions show the SAME number (this card used to divide safe by a 14-floored divisor here).
-  const topDebt = selectHighestRateDebt(debts);
+  // The same debt list What-If and Meet model (a bank-linked card with its bank's APR and minimum).
+  const topDebt = selectHighestRateDebt(buildDebtListForSimulator(debts, data.liabilities));
   const extraPayment = 150;
   const monthsSaved = computeDebtPayoffImpact(topDebt, extraPayment);
   const safeToMove = computeSavingsOpportunity(safe);
@@ -5074,6 +5075,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const overdraftImmediate = _ss.overdraft;
   const soonBills   = _ss.soonBills;
   const soonTotal   = _ss.upcomingBills;
+  // "Due soon" lists what Watch shows leaving before the next deposit: the bills, and the debt
+  // minimums the forecast pays in that window. Display only; safe to spend is unchanged.
+  const dueSoonTotal = soonTotal + (_ss.minimumsDueSoon || []).reduce((s, m) => s + m.amount, 0);
   const today       = new Date().getDate();
   const monthlyIncome = FinancialCalcEngine.cashFlow(data, getCatOv()).monthlyIncome;
   const { netWorth, liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
@@ -5610,7 +5614,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         {isVisible('bento')&&(
         <div style={{...anim(110),display:"flex",flexDirection:"column",gap:SPACE.sm}}>
           {[
-            {label:"Due soon",value:`$${(soonTotal||0).toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
+            {label:"Due soon",value:`$${(dueSoonTotal||0).toFixed(0)}`,sub:`next 10 days`,color:C.gold,icon:"calendar",screen:"plan"},
             {label:totalDebt>0?"Total debt":"Debt free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
             // Week-2 defect b: colour follows the sign. A negative net worth is not a teal figure —
             // teal is this app's gain colour, and "-$14.5k" painted as a gain is the opposite of the fact.

@@ -14,7 +14,7 @@ import { billPrompts, billChangeQuestion } from "./billsReconcile.js";
 import { dismissedEntries, lastMeeting, meetingOpening } from "./meetingRecord.js";
 import { formatMoney } from "./format.js";
 import { safeToSpendView } from "./safeToSpendView.js";
-import { isCashAccount, num } from "./financialCalculations.js";
+import { isCashAccount, num, buildDebtListForSimulator } from "./financialCalculations.js";
 import { weekVersusUsual, categoryPaceDeltas } from "./weeklyReview.js";
 
 const _round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -93,7 +93,9 @@ export function buildMeetSnapshot(data = {}) {
   // shows what the buffer becomes (savingsBufferAfter). "this period" → the actual pay-period end date.
   try {
     const safe = displayedSafeToSpend(data); // the figure Today shows, so the extra is 25% of what the household can see
-    const top = selectHighestRateDebt(debts);
+    // The same debt list What-If models (a bank-linked card with its bank's APR and minimum), so the
+    // payoff months here, on Decisions and in What-If are one model with one set of inputs.
+    const top = selectHighestRateDebt(buildDebtListForSimulator(data.debts, data.liabilities));
     const extra = computeSavingsOpportunity(safe); // engine: suggested spare $ this period
     if (top && extra > 0) {
       const before = debtPayoffMonths(top, 0);      // engine: payoff at the minimum

@@ -100,26 +100,41 @@ const { create } = require("./_runner.cjs");
   t.eq(view.rows.map(r => r.display), [3083, 65, 348, 435, 291], "4a Today: $3,083 - 65 - 348 - 435 - 291");
   t.eq(view.headline, 1944, "4b = $1,944");
 
-  // ── 5. Card and loan payments stay out of the daily spend ─────────────────────────────────────
+  // ── 5. A payment of a minimum the forecast pays is not also daily spend ───────────────────────
+  // Only the payment that IS a minimum is taken out: a card, loan or transfer payment whose amount
+  // matches a minimum the forecast subtracts (within $2 or 5%). Everything else is exactly as it was
+  // on main, because for a statement import a card paid in full, a loan with no debt entered, or a
+  // bill paid by online banking IS the household's spending, and nothing else would count it.
   const day = (n) => FC.dateToISO(new Date(2026, 8, n, 12));
   const spend = [
     { id: "s1", name: "Loblaws", amount: 60, cat: "Groceries", date: day(1) },
     { id: "s2", name: "Tim Hortons", amount: 5, cat: "Coffee & Dining", date: day(15) },
     { id: "s3", name: "Winners", amount: 40, cat: "Shopping", date: day(28) },
   ];
-  const payments = [
-    { id: "p1", name: "MB-VISA 4521", amount: 68, cat: "Shopping", date: day(3) },               // bank's card-payment name
-    { id: "p2", name: "RBC ROYAL BANK MASTERCARD PAYMENT", amount: 120, cat: "Shopping", date: day(4) },
-    { id: "p3", name: "TD AUTO FINANCE", amount: 280, cat: "Gas & Transport", date: day(5) },    // car loan payment
-    { id: "p4", name: "Student loan payment", amount: 195, cat: "Education", date: day(6) },
-    { id: "p5", name: "Transfer to card", amount: 50, cat: "Shopping", date: day(7), isTransfer: true },
+  const minPayments = [
+    { id: "p1", name: "MB-VISA 4521", amount: 68, cat: "Other", date: day(3) },                 // the Visa minimum
+    { id: "p2", name: "TD AUTO FINANCE", amount: 280, cat: "Other", date: day(5) },             // the car loan minimum
+    { id: "p3", name: "NAVIENT", amount: 280.5, cat: "Other", date: day(6) },                   // a lender name, within tolerance
+    { id: "p4", name: "Transfer to loan", amount: 68, cat: "Other", date: day(7), isTransfer: true },
   ];
-  const onlySpend = FC.FinancialCalcEngine.avgDailySpendEstimate({ transactions: spend, debts: demo.debts });
-  const mixed = FC.FinancialCalcEngine.avgDailySpendEstimate({ transactions: [...spend, ...payments], debts: demo.debts });
-  t.eq(mixed, onlySpend, "5a card payments, loan payments and flagged transfers add nothing to the daily spend");
-  t.eq(FC.isLoanPayment(payments[2]) && FC.isLoanPayment(payments[3]), true, "5b TD Auto Finance and a student loan payment are loan payments");
-  t.eq(FC.isLoanPayment(spend[0]) || FC.isLoanPayment({ name: "Loan refund", amount: -100 }), false, "5c groceries, and money coming in, are not");
-  t.eq(FC.FinancialCalcEngine.avgDailySpendEstimate(demo), 33.46171428571429, "5d the demo's own daily spend is unchanged ($33.46, to the last digit it had before)");
+  const realSpending = [
+    { id: "r1", name: "PAYMENT - VISA 4521", amount: 1200, cat: "Other", date: day(8) },        // card paid in full
+    { id: "r2", name: "TD AUTO FINANCE", amount: 450, cat: "Other", date: day(9) },             // a loan with no matching minimum
+    { id: "r3", name: "ONLINE BILL PAYMENT - ROGERS", amount: 95, cat: "Other", date: day(10) },// a bill paid by online banking
+  ];
+  const est = (txns, debts = demo.debts) => FC.FinancialCalcEngine.avgDailySpendEstimate({ transactions: txns, debts, bills: [] });
+  t.eq(est([...spend, ...minPayments]), est(spend), "5a a payment that matches a minimum the forecast pays adds nothing to the daily spend");
+  t.eq(est([...spend, ...realSpending]), (60 + 5 + 40 + 1200 + 450 + 95) / 27, "5b a card paid in full, an unmatched loan payment and an online-banking bill payment still count");
+  t.eq(est([...spend, ...minPayments], []), (60 + 5 + 40 + 68 + 280 + 280.5 + 68) / 27,
+       "5c with no debts entered, nothing is paid as a minimum, so nothing is taken out of the spend");
+  t.eq(FC.isLoanPayment({ name: "TD AUTO FINANCE", amount: 280 }) && FC.isLoanPayment({ name: "Student loan payment", amount: 195 }), true, "5d TD Auto Finance and a student loan payment are loan payments");
+  t.eq(FC.isLoanPayment(spend[0]) || FC.isLoanPayment({ name: "Loan refund", amount: -100 }), false, "5e groceries, and money coming in, are not");
+  t.eq(FC.FinancialCalcEngine.avgDailySpendEstimate(demo), 33.46171428571429, "5f the demo's own daily spend is unchanged ($33.46, to the last digit it had before)");
+  // A linked bill takes the debt off the minimum list, so its payment is ordinary spending again.
+  const carId = { ...demo.debts[1], id: "debt-car" };
+  t.eq(FC.FinancialCalcEngine.avgDailySpendEstimate({ transactions: [...spend, minPayments[1]], debts: [demo.debts[0], carId],
+       bills: [{ name: "Auto loan", amount: "280", freq: "monthly", date: "1", debtId: "debt-car" }] }),
+       (60 + 5 + 40 + 280) / 27, "5g once a bill pays the car loan, the forecast takes no minimum for it, so its payment is not taken out either");
 
   // ── 6. The drill-down still adds up on a day a minimum leaves ─────────────────────────────────
   const oct = fc.forecast.find(f => FC.dateToISO(f.date) === "2026-10-01");
@@ -137,6 +152,26 @@ const { create } = require("./_runner.cjs");
   t.eq(due15.forecast.filter(f => debtLines(f).length).map(f => FC.dateToISO(f.date)), ["2026-10-15", "2026-11-15"], "7c a debt with a due day pays on that day");
   const due31 = ForecastEngine.generate({ ...demo, debts: [{ ...demo.debts[0], dueDay: "31" }] }, 40, null, NOW);
   t.eq(due31.forecast.filter(f => debtLines(f).length).map(f => FC.dateToISO(f.date)), ["2026-09-30", "2026-10-31"], "7d due day 31 clamps to month end (Sep 30, Oct 31)");
+
+  // ── 8. Today's "Due soon" lists the minimums Watch shows in the same window ───────────────────
+  {
+    const ssNow = SafeSpendEngine.calculate(demo, NOW);
+    t.eq(ssNow.minimumsDueSoon.map(m => [m.name, m.amount, FC.dateToISO(m.date)]),
+         [["Visa card minimum payment", 68, "2026-10-01"], ["Car Loan minimum payment", 280, "2026-10-01"]],
+         "8a Sep 29: the two minimums leaving Oct 1 are due soon");
+    const dueSoon = ssNow.upcomingBills + ssNow.minimumsDueSoon.reduce((s, m) => s + m.amount, 0);
+    t.eq(dueSoon, 413, "8b Due soon = the $65 phone bill + $348 of minimums = $413");
+    // The same money out as the forecast shows over those days.
+    const { daysToNextDepositFor } = await import("../src/lib/forecastEdits.js");
+    const horizon = daysToNextDepositFor(demo, NOW); // the window safe to spend reserves over
+    t.eq(horizon, 13, "8c0 (the next deposit is 13 days out)");
+    const watchOut = fc.forecast.filter(f => f.day >= 1 && f.day <= horizon).reduce((s, f) => s + (f.bills || []).reduce((a, b) => a + FC.num(b.amount), 0), 0);
+    t.eq(watchOut, dueSoon, "8c …which is exactly what Watch shows leaving before the next deposit");
+    t.eq(ssNow.debtPayments, 348, "8d (the reservation is unchanged: $348)");
+    const app = require("fs").readFileSync(require("path").join(__dirname, "..", "src", "App.jsx"), "utf8");
+    t.ok(/const dueSoonTotal = soonTotal \+ \(_ss\.minimumsDueSoon \|\| \[\]\)\.reduce/.test(app) && /label:"Due soon",value:`\$\$\{\(dueSoonTotal\|\|0\)/.test(app),
+         "8e the Today card shows bills plus the minimums due in the window");
+  }
 
   t.summary("forecastPaysDebtMinimums.test");
 })();
