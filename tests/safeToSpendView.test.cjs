@@ -25,6 +25,13 @@ const { create } = require("./_runner.cjs");
   t.eq(v.headlineText, "$2,111", "headline is formatted with the shared formatter");
   t.eq(v.headlineNumber, "2,111", "headlineNumber has separators but no symbol (for surfaces with their own $)");
 
+  // The four deduction labels, in order. The savings row is labelled "Savings": a label change only,
+  // so the same key carries the same amount (224 above) and the headline is unchanged.
+  t.eq(v.deductions.map(d => d.label), ["Upcoming bills", "Min. debt payments", "Spending buffer", "Savings"],
+       "the deduction rows read Upcoming bills, Min. debt payments, Spending buffer, Savings");
+  t.eq(v.deductions.find(d => d.label === "Savings").key, "savingsAlloc", "…and Savings is still the savingsAlloc row");
+  t.ok(!v.rows.some(r => /set aside/i.test(r.label || "")), "…and no breakdown row says \"set aside\"");
+
   // Reconciliation invariant: the displayed rows sum EXACTLY to the displayed headline.
   const rowSum = v.rows.reduce((s, r) => s + (r.kind === "balance" ? r.display : -r.display), 0);
   t.eq(rowSum, v.headline, "displayed rows reconcile EXACTLY to the displayed headline");

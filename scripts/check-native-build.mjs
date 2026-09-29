@@ -41,12 +41,27 @@ if (missing.length) {
       `from this directory, then build again.\n    Never commit the values.`);
 }
 
+// /support must show the operator's real name and mailing address (Apple requires real contact
+// information at the support URL). Until Amanda fills SUPPORT_OPERATOR_NAME_AND_ADDRESS in
+// src/lib/supportContact.js, a store build would carry the placeholder, so it is refused here: early
+// from the source, and again from the bundle itself.
+const SUPPORT_PLACEHOLDER = "TO BE FILLED BY AMANDA";
+const supportSrc = path.join(root, "src", "lib", "supportContact.js");
+if (fs.existsSync(supportSrc) && fs.readFileSync(supportSrc, "utf8").includes(`= "${SUPPORT_PLACEHOLDER}"`)) {
+  die(`SUPPORT_OPERATOR_NAME_AND_ADDRESS in src/lib/supportContact.js is still "${SUPPORT_PLACEHOLDER}".\n` +
+      `    The /support page would show it in the store build. Fill in the operator's name and mailing address first.`);
+}
+
 if (mode === "artifact") {
   const dir = path.join(root, "dist", "assets");
   if (!fs.existsSync(dir)) die("dist/assets does not exist — run the build before this check.");
   const js = fs.readdirSync(dir).filter((f) => f.endsWith(".js")).map((f) => path.join(dir, f));
   if (!js.length) die("dist/assets contains no JavaScript — the build produced nothing to check.");
   const blob = js.map((f) => fs.readFileSync(f, "utf8")).join("\n");
+  if (blob.includes(SUPPORT_PLACEHOLDER)) {
+    die(`dist/ still contains "${SUPPORT_PLACEHOLDER}" (the /support operator name and address). ` +
+        `Fill SUPPORT_OPERATOR_NAME_AND_ADDRESS in src/lib/supportContact.js and build again.`);
+  }
   // The literal each variable's value should have been baked into. Compared, never printed.
   const absent = REQUIRED.filter((k) => !blob.includes(String(env[k]).trim()));
   for (const k of REQUIRED) console.log(`  ${absent.includes(k) ? "NOT IN BUNDLE" : "in bundle    "}  ${k}`);

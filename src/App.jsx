@@ -59,6 +59,8 @@ import { derivePlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
+import { noteReviewTrouble, reviewOnTodayOpen, reviewOnCheckInDone } from "./lib/reviewPrompt.js";
+import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
 
@@ -818,6 +820,7 @@ function removeBillWithOverride(setAppData, idx, name) {
 function usePlaidLinkSDK(linkToken, onSuccess) {
   const [sdkReady, setSdkReady] = useState(false);
   const [sdkError, setSdkError] = useState(false);
+  useEffect(() => { if (sdkError) noteReviewTrouble(); }, [sdkError]); // Plaid's script failed: no review ask for a while
   const onSuccessRef = useRef(onSuccess);
   useEffect(() => { onSuccessRef.current = onSuccess; }, [onSuccess]);
 
@@ -851,7 +854,7 @@ function usePlaidLinkSDK(linkToken, onSuccess) {
     window.Plaid.create({
       token: linkToken,
       onSuccess: (...args) => onSuccessRef.current(...args),
-      onExit: (err, meta) => { if (err) console.warn("Plaid exit:", err, meta); },
+      onExit: (err, meta) => { if (err) { console.warn("Plaid exit:", err, meta); noteReviewTrouble(); } },
     }).open();
   }, [sdkReady, linkToken]);
 
@@ -3760,6 +3763,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   const [bankStage,setBankStage]=useState("select");
   const [bankProg,setBankProg]=useState(0);
   const [bankError,setBankError]=useState(null);
+  useEffect(()=>{ if(bankError) noteReviewTrouble(); },[bankError]); // any bank link failure rules out a review ask for a while
   // Apple 5.1.1/5.1.2: the CTA opens BankConsentModal rather than Plaid — that modal is the single
   // consent surface for every Plaid path. It replaced an inline card + checkbox whose copy had
   // drifted (it asserted a 30-day erasure the Privacy Policy does not state).
@@ -9280,6 +9284,8 @@ function MeetAgenda({ data, isCouple, setScreen }){
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [meetError, setMeetError] = useState(null);   // {kind, text} — a refusal, shown as one
+  // A refused or failed meeting message rules out a store review ask for a while (reviewRules.js).
+  useEffect(() => { if (meetError) noteReviewTrouble(); }, [meetError]);
   const [lastSent, setLastSent] = useState(null);     // what Try again should resend
 
   const items = [...agenda.wins, ...agenda.changes, ...agenda.risks, ...(agenda.upcoming || []), ...agenda.progress];
@@ -11387,6 +11393,12 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <Btn label={billingUi.mode==="manage"?"Manage subscription":"See plans"} onClick={onOpenUpgrade} color={C.purpleBright} outline small/>
       </div>
     )}
+    {/* ── Help & Support: opens /support in the app, no reload ──────────── */}
+    <div style={{marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
+      <div style={{color:C.cream,fontWeight:700,marginBottom:SPACE.xs}}>Help & Support</div>
+      <div style={{color:C.mutedHi,fontSize:13,marginBottom:GAP.textToControl}}>How to reach us, who runs Flourish, and links to the privacy policy and account deletion.</div>
+      <Btn label="Open Support" onClick={()=>navToScreen&&navToScreen("support")} color={C.mutedHi} outline small/>
+    </div>
     {/* ── Sign out ─────────────────────────────────────────────── */}
     <div style={{marginTop:10,padding:"16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
       <div style={{color:C.cream,fontWeight:700,marginBottom:4}}>Sign Out</div>
@@ -11635,6 +11647,8 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
   const FREE_LIMIT=FREE_TIER_LIMITS.coachMessagesPerWeek;
   // Native-only: the plain statement shown when the weekly allowance is used up.
   const [limitNote,setLimitNote]=useState("");
+  // A refused coach message (a limit, a consent refusal, a failure) rules out a review ask for a while.
+  useEffect(()=>{ if(limitNote||error) noteReviewTrouble(); },[limitNote,error]);
   const STORAGE_KEY = "flourish_coach_history";
   const WELCOME = {role:"assistant", content:"I'm your Flourish coach. I work from the numbers Flourish has calculated: your safe-to-spend, forecast, spending patterns, debts and goals. I'll tell you what they mean, what needs attention first, and what your options are. I don't move money and I'm not a licensed adviser. Where do you want to start?"};
   const freeMsgsLeft=isPremium?Infinity:Math.max(0,FREE_LIMIT-coachMsgCount);
@@ -11870,6 +11884,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
       }
 
       if(res.status === 429){
+        noteReviewTrouble(); // a refused coach message is never followed by a review ask
         const j = await res.json().catch(()=>({}));
         // The server's limit message sells Plus ("Upgrade to Plus for unlimited…"), which must not
         // appear in a store app — and the client's own gate above cannot prevent this one, because
@@ -12327,6 +12342,42 @@ function ConfirmedPage(){
   );
 }
 
+// /support: the page App Store Connect's support URL points at. Same shell and type as /privacy
+// and /delete-account. Contact details live in src/lib/supportContact.js.
+function SupportPage({onBack}){
+  const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
+  const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:SPACE.xl,marginBottom:SPACE.sm};
+  const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75};
+  const li={...p,marginBottom:SPACE.sm};
+  const last="September 29, 2026";
+  return(
+    <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:GAP.textToControl,marginBottom:SPACE.xl,paddingTop:SPACE.xs}}>
+        <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 18px",minHeight:44,color:C.cream,fontSize:13,cursor:"pointer",...s}}>← Back</button>
+        <div>
+          <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream}}>Support</div>
+          <div style={{...s,fontSize:13,color:C.muted}}>Last updated {last}</div>
+        </div>
+      </div>
+
+      <div style={h2}>Contact us</div>
+      <div style={p}>
+        Email <a href={`mailto:${SUPPORT_EMAIL}`} style={{color:C.greenBright}}>{SUPPORT_EMAIL}</a> with a question, a problem or
+        feedback. Write from the address your account uses so we can find it. Never send a password or a bank login.
+      </div>
+
+      <div style={h2}>Who runs Flourish</div>
+      <div style={{...p,whiteSpace:"pre-line"}}>{SUPPORT_OPERATOR_NAME_AND_ADDRESS}</div>
+
+      <div style={h2}>Your privacy and your account</div>
+      <ul style={{paddingLeft:20,margin:"8px 0 0"}}>
+        <li style={li}><a href="/privacy" style={{color:C.greenBright}}>Privacy Policy</a></li>
+        <li style={li}><a href="/delete-account" style={{color:C.greenBright}}>Delete your account</a></li>
+      </ul>
+    </div>
+  );
+}
+
 function DeleteAccount({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
@@ -12601,7 +12652,7 @@ function Paywall({onClose,onPromoValid,country}){
   };
   const features=[
     {icon:"sparkles",title:"Coach",desc:"Unlimited coaching from your own numbers: what they mean and what to do next"},
-    {icon:"target",title:"Benefits explained",desc:isCA?"CCB, GST/HST credit, Trillium, RRSP, TFSA, FHSA: which rule applies to you and why":"EITC, Child Tax Credit, 401k, HSA and more"},
+    {icon:"target",title:"Benefits explained",desc:isCA?"CCB, Canada Groceries and Essentials Benefit, Trillium, RRSP, TFSA, FHSA: which rule applies to you and why":"EITC, Child Tax Credit, 401k, HSA and more"},
     {icon:"shield",title:"Credit plan",desc:"Factor breakdown with amounts and dates"},
     {icon:"chartUp",title:"Contribution room",desc:isCA?"RRSP, TFSA and FHSA balances and room together":"401k, IRA, Fidelity, Vanguard"},
     {icon:"house2",title:"Weekly money meeting",desc:"Agenda from your week, coach as facilitator, solo or couple"},
@@ -12932,7 +12983,7 @@ function BankConsentModal({ onContinue, onCancel, onViewLegal }){
         </div>
         <div style={card}>
           <div style={head}>Read-only: we cannot move money</div>
-          <div style={body}>Flourish connects through <strong style={{color:C.cream}}>Plaid</strong> in <strong style={{color:C.cream}}>read-only</strong> mode. We can never move your money, and Plaid never receives your bank login credentials.</div>
+          <div style={body}>Flourish connects through <strong style={{color:C.cream}}>Plaid</strong> in <strong style={{color:C.cream}}>read-only</strong> mode. We can never move your money. Flourish never sees your bank login. You sign in with your bank through Plaid.</div>
         </div>
         <div style={card}>
           <div style={head}>What we access</div>
@@ -13954,6 +14005,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
               <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
                 <a href="/privacy">Privacy</a>
                 <a href="/terms">Terms</a>
+                <a href="/support">Support</a>
                 <a href="mailto:hello@flourishmoney.app">hello@flourishmoney.app</a>
               </div>
             </div>
@@ -14956,6 +15008,7 @@ export default function FlourishApp(){
     if (path === "/privacy") return "privacy";
     if (path === "/terms")   return "terms";
     if (path === "/delete-account") return "delete-account";
+    if (path === "/support") return "support";
     if (path === "/confirmed") return "confirmed";
     if (path === "/kids")    return "kids";
     return "home";
@@ -15033,6 +15086,14 @@ export default function FlourishApp(){
   },[]);
   const [checkInBonus,setCheckInBonus]=useState(()=>saved?.checkInBonus||0);
   const [showCheckIn,setShowCheckIn]=useState(false);
+  // Store review prompt, trigger one: opening Today on a third separate day (reviewRules.js decides;
+  // the web and demo mode never ask). A short pause so the ask never lands on a screen still loading,
+  // and it is dropped if the person has already moved on.
+  useEffect(() => {
+    if (screen !== "home" || !onboarded || !user || showSettings) return;
+    const t = setTimeout(() => { reviewOnTodayOpen({ demo: !!appData?.demo }); }, 2500);
+    return () => clearTimeout(t);
+  }, [screen, onboarded, user, showSettings]);
   const [showWhatIf,setShowWhatIf]=useState(false);
   const [whatIfQuery, setWhatIfQuery] = useState("");
   const [whatIfType, setWhatIfType] = useState(null);
@@ -15974,6 +16035,7 @@ export default function FlourishApp(){
   if(screen==="privacy")return <div style={legalShell}><PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="terms")return <div style={legalShell}><TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="delete-account")return <div style={legalShell}><DeleteAccount onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
+  if(screen==="support")return <div style={legalShell}><SupportPage onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="confirmed")return <ConfirmedPage/>;
   if(screen==="kids")return <KidsMiniSite country={appData?.profile?.country}/>;
 
@@ -16003,7 +16065,7 @@ export default function FlourishApp(){
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={()=>setShowPaywall(true)} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
-  if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
+  if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);reviewOnCheckInDone({demo:!!appData?.demo});}}/>;
   if(!onboarded)return <Onboarding
     connectedAccounts={appData?.accounts||[]}
     onAccountsConnected={promoteConnectedAccounts}
@@ -16065,6 +16127,7 @@ export default function FlourishApp(){
       const d = await callPlaid("create_link_token", payload, opts);
       setReconnectToken(d.link_token);
     } catch {
+      noteReviewTrouble();
       alertModal({message:"Could not reconnect. Please try again."});
     } finally {
       setReconnectLoading(false);
@@ -16080,7 +16143,7 @@ export default function FlourishApp(){
     const jwt = await getJwt();
     callPlaid("create_link_token", { country, user_id: user?.id }, {jwt})
       .then(d=>{ setReconnectToken(d.link_token); setReconnectLoading(false); })
-      .catch(()=>{ setReconnectLoading(false); alertModal({message:"Could not start bank connection. Please try again."}); });
+      .catch(()=>{ setReconnectLoading(false); noteReviewTrouble(); alertModal({message:"Could not start bank connection. Please try again."}); });
   };
   // Apple 5.1.1/5.1.2: EVERY Plaid open is gated on the consent disclosure, every time. These
   // handlers only record intent — BankConsentModal's "Connect My Bank" runs the real action.
