@@ -15,6 +15,10 @@
 // @sentry/react chunk is never fetched, so it adds zero weight to the main bundle.
 let _sentry = null;
 
+// An error is also a reason not to ask for a store review for a while (reviewRules.js). Recorded
+// before the DSN check, so it holds whether or not Sentry is configured.
+import { noteReviewTrouble } from "./reviewPrompt.js";
+
 function redact(s) {
   if (typeof s !== "string") return s;
   return s
@@ -82,6 +86,7 @@ export async function initErrorReporting() {
 // Report a handled error with a small, PII-safe context. No-op until Sentry has loaded, so it's safe
 // to call unconditionally. `context` = { area?: string, extra?: object-of-scalars }.
 export function captureError(err, context = {}) {
+  noteReviewTrouble();
   if (!_sentry) return;
   try {
     _sentry.captureException(err instanceof Error ? err : new Error(String(err)), {

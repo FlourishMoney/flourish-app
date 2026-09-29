@@ -59,6 +59,7 @@ import { derivePlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
+import { noteReviewTrouble, reviewOnTodayOpen, reviewOnCheckInDone } from "./lib/reviewPrompt.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
 
@@ -851,7 +852,7 @@ function usePlaidLinkSDK(linkToken, onSuccess) {
     window.Plaid.create({
       token: linkToken,
       onSuccess: (...args) => onSuccessRef.current(...args),
-      onExit: (err, meta) => { if (err) console.warn("Plaid exit:", err, meta); },
+      onExit: (err, meta) => { if (err) { console.warn("Plaid exit:", err, meta); noteReviewTrouble(); } },
     }).open();
   }, [sdkReady, linkToken]);
 
@@ -9280,6 +9281,8 @@ function MeetAgenda({ data, isCouple, setScreen }){
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [meetError, setMeetError] = useState(null);   // {kind, text} — a refusal, shown as one
+  // A refused or failed meeting message rules out a store review ask for a while (reviewRules.js).
+  useEffect(() => { if (meetError) noteReviewTrouble(); }, [meetError]);
   const [lastSent, setLastSent] = useState(null);     // what Try again should resend
 
   const items = [...agenda.wins, ...agenda.changes, ...agenda.risks, ...(agenda.upcoming || []), ...agenda.progress];
@@ -11870,6 +11873,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
       }
 
       if(res.status === 429){
+        noteReviewTrouble(); // a refused coach message is never followed by a review ask
         const j = await res.json().catch(()=>({}));
         // The server's limit message sells Plus ("Upgrade to Plus for unlimited…"), which must not
         // appear in a store app — and the client's own gate above cannot prevent this one, because
@@ -15033,6 +15037,14 @@ export default function FlourishApp(){
   },[]);
   const [checkInBonus,setCheckInBonus]=useState(()=>saved?.checkInBonus||0);
   const [showCheckIn,setShowCheckIn]=useState(false);
+  // Store review prompt, trigger one: opening Today on a third separate day (reviewRules.js decides;
+  // the web and demo mode never ask). A short pause so the ask never lands on a screen still loading,
+  // and it is dropped if the person has already moved on.
+  useEffect(() => {
+    if (screen !== "home" || !onboarded || showSettings) return;
+    const t = setTimeout(() => { reviewOnTodayOpen({ demo: !!appData?.demo }); }, 2500);
+    return () => clearTimeout(t);
+  }, [screen, onboarded, showSettings]);
   const [showWhatIf,setShowWhatIf]=useState(false);
   const [whatIfQuery, setWhatIfQuery] = useState("");
   const [whatIfType, setWhatIfType] = useState(null);
@@ -16003,7 +16015,7 @@ export default function FlourishApp(){
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={()=>setShowPaywall(true)} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
-  if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
+  if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);reviewOnCheckInDone({demo:!!appData?.demo});}}/>;
   if(!onboarded)return <Onboarding
     connectedAccounts={appData?.accounts||[]}
     onAccountsConnected={promoteConnectedAccounts}
