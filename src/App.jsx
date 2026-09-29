@@ -45,7 +45,7 @@ import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting } from "./lib/meetingSchedule.js";
 import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType } from "./lib/notifications.js";
 import { planNotifications } from "./lib/notificationPlanner.js";
-import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
+import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView } from "./lib/suggestedDaily.js";
@@ -1932,12 +1932,6 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
     {label: "Buy a used car for $8,000",type: "purchase"},
   ];
 
-  const _toMoSim = toMonthly; // Bug 1: canonical converter
-  const bal = (data.accounts||[])
-    .filter(a => isCashAccount(a))
-    .reduce((s,a) => s + parseFloat(a.balance||0), 0) || 0; // Sprint 1: no fake DEMO.balance — real $0/unknown
-  const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount||0)>0)
-    .reduce((s,i) => s + _toMoSim(i.amount,i.freq), 0); // Bug 5: no fake income fallback
   const { liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
   const bills = (data.bills||[]).reduce((s,b) => s + billMonthlyAmount(b), 0);
   const {score} = calcHealthScore(data, getCatOv());
@@ -2114,9 +2108,11 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
     const amount = parseAmountFromQuery(qText);
 
     // Step 2: Pull the additional inputs we need from the existing engines.
-    // safeToSpend is the same number Dashboard shows the user — keep them
-    // consistent so the simulator's "newSafeToSpend" matches user expectations.
-    const safeToSpend  = SafeSpendEngine.calculate(data).safeAmount || 0;
+    // safeToSpend is the figure Today shows (displayedSafeToSpend: the view's integer headline, not
+    // the engine's raw amount), so "spend $800" leaves Today's number less $800. The balance and the
+    // monthly income are the engines' own: base-currency cash only, and cashFlow's income.
+    const ssNow        = SafeSpendEngine.calculate(data);
+    const safeToSpend  = displayedSafeToSpend(data);
     const dailySpend   = FinancialCalcEngine.avgDailySpend(data) || 0;
     const cashFlowObj  = FinancialCalcEngine.cashFlow(data, getCatOv());
     const monthlySurplus = cashFlowObj.cashFlow || 0;
@@ -2124,10 +2120,10 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
     // Step 3: Deterministic scenario math (no AI involved)
     const impact  = simulatePurchaseImpact({
       amount,
-      currentBalance:     bal,
+      currentBalance:     ssNow.balance,
       currentSafeToSpend: safeToSpend,
       avgDailySpend:      dailySpend,
-      monthlyIncome,
+      monthlyIncome:      cashFlowObj.monthlyIncome,
       monthlySurplus,
     });
     const verdictObj = calculateScenarioVerdict({
@@ -5068,6 +5064,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
     hasCashAccount: (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0,
     hasIncome: (data.incomes||[]).some(i => num(i && i.amount) > 0),   // num(), not Number(): "$2,600" is a valid amount
   }); // Truth-fix item 5: the ONE safe-to-spend presentation view-model (rows + headline reconcile)
+  const displayedSafe = displayedSafeToSpend(data); // what Today shows; Decisions' move-to-savings is 25% of it, as Meet's extra is
   const dailyPace   = suggestedDailyView(ssView.headline, data.incomes, data.transactions, new Date(), data); // Consolidation 1: the ONE suggested daily pace (Today + Decisions read this)
   const hasCashAccount = (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0; // Sprint 1: gate safe-to-spend empty state
   // overdraft: either bills in next 10 days exceed balance (immediate)
@@ -6150,7 +6147,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         {/* padding is load-bearing: with borderRadius + overflow:hidden and none, the 22px corner arc
             clips whatever sits top-right — here the "Worked out by Flourish" label. Matches the sibling above. */}
         <div style={{...anim(120),background:C.isDark?"rgba(155,125,255,0.04)":"rgba(155,125,255,0.03)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.purple}18`,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",borderRadius:22,overflow:"hidden",padding:"18px 18px 14px"}}>
-          <DecisionEngine data={data} safe={safe} bal={bal} monthlyIncome={monthlyIncome} soonBills={soonBills} todayDate={new Date()} dailyPace={dailyPace} setScreen={setScreen}/>
+          <DecisionEngine data={data} safe={displayedSafe} bal={bal} monthlyIncome={monthlyIncome} soonBills={soonBills} todayDate={new Date()} dailyPace={dailyPace} setScreen={setScreen}/>
         </div>
 
         {/* Income reconcile — bank-detected pay differs from the plan's income (Option B) */}

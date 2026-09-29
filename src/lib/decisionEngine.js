@@ -8,7 +8,7 @@
 // its old themed `insights` array was dead output and was removed (MATH-LOCK finding #3).
 // -----------------------------------------------------------------------------
 
-import { FinancialCalcEngine, isInvestmentAccount, simulateDebtPayoffForDebt } from "./financialCalculations.js";
+import { FinancialCalcEngine, isInvestmentAccount, simulateDebtPayoffForDebt, isCashAccount, num } from "./financialCalculations.js";
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { ForecastEngine } from "./forecastEngine.js";
 import { shelterLabel } from "./locale.js";
@@ -40,6 +40,19 @@ export function selectHighestRateDebt(debts) {
 export function computeDebtPayoffImpact(topDebt, extraPayment) {
   if (!topDebt) return 0;
   return Math.max(0, debtPayoffMonths(topDebt, 0) - debtPayoffMonths(topDebt, extraPayment));
+}
+
+// The safe-to-spend figure exactly as Today shows it: safeToSpendView's integer headline, behind
+// Today's own setup gate. What-If, Meet and Decisions start from THIS number, not the engine's raw
+// safeAmount, so "spend $800" leaves Today's figure less $800 ($1,944 - $800 = $1,144 in the demo,
+// not $1,144.88). With no cash account Today shows no figure; callers get 0, which is what the
+// engine's clamped amount was in that case.
+export function displayedSafeToSpend(data = {}, todayDate = new Date()) {
+  const view = safeToSpendView(SafeSpendEngine.calculate(data, todayDate), {
+    hasCashAccount: (data.accounts || []).filter(a => isCashAccount(a)).length > 0,
+    hasIncome: (data.incomes || []).some(i => num(i && i.amount) > 0),
+  });
+  return view.headline == null ? 0 : view.headline;
 }
 
 // Safe amount to move to savings now (25% of safe-to-spend, floored).

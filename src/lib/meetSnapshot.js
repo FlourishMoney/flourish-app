@@ -7,7 +7,7 @@
 
 import { ForecastEngine } from "./forecastEngine.js";
 import { SafeSpendEngine } from "./safeSpendEngine.js";
-import { selectHighestRateDebt, debtPayoffMonths, savingsBufferAfter, computeSavingsOpportunity } from "./decisionEngine.js";
+import { selectHighestRateDebt, debtPayoffMonths, savingsBufferAfter, computeSavingsOpportunity, displayedSafeToSpend } from "./decisionEngine.js";
 import { buildMeetingAgenda } from "./meetingAgenda.js";
 import { detectRecurringBills } from "./plaidNormalize.js";
 import { billPrompts, billChangeQuestion } from "./billsReconcile.js";
@@ -92,7 +92,7 @@ export function buildMeetSnapshot(data = {}) {
   // the debt option shows before/after payoff (debtPayoffMonths, extra 0 vs extra), the savings option
   // shows what the buffer becomes (savingsBufferAfter). "this period" → the actual pay-period end date.
   try {
-    const safe = (SafeSpendEngine.calculate(data) || {}).safeAmount || 0;
+    const safe = displayedSafeToSpend(data); // the figure Today shows, so the extra is 25% of what the household can see
     const top = selectHighestRateDebt(debts);
     const extra = computeSavingsOpportunity(safe); // engine: suggested spare $ this period
     if (top && extra > 0) {
