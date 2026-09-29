@@ -54,7 +54,7 @@ export function safeToSpendView(ss, setup = null) {
     { key: "upcomingBills", label: "Upcoming bills", raw: ss && ss.upcomingBills },
     { key: "debtPayments", label: "Min. debt payments", raw: ss && ss.debtPayments },
     { key: "safetyBuf", label: "Spending buffer", raw: ss && ss.safetyBuf },
-    { key: "savingsAlloc", label: "Savings set aside", raw: ss && ss.savingsAlloc },
+    { key: "savingsAlloc", label: "Savings", raw: ss && ss.savingsAlloc },
   ].map(d => ({ key: d.key, label: d.label, display: _ceil(d.raw), value: formatMoney(_ceil(d.raw)) }));
 
   const totalDeductions = deductions.reduce((s, d) => s + d.display, 0);
