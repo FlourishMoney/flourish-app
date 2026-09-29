@@ -716,6 +716,16 @@ export function semimonthlyDays(dayA, dayB, y, m) {
 const _daysInMonth = daysInMonth;
 function _domDate(y, m, day) { return new Date(y, m, clampDayToMonth(day, y, m), 12, 0, 0); }
 
+// A semimonthly bill's two intended days, by the rule income uses (incomeSchedule: a known anchor
+// day and the anchor + 15, or the 1st and the 15th with no anchor). semimonthlyDays then clamps
+// both into the month and keeps them distinct, so a bill and an income on the same schedule land
+// on the same days. The old ((d1 + 14) % 28) + 1 put a bill anchored on the 15th on the 2nd.
+function _billSemimonthlyPair(bill) {
+  const anchor = _isoToDate(bill.nextDueDate);
+  const d1 = anchor ? anchor.getDate() : parseInt(bill.date, 10);
+  return d1 > 0 ? [d1, d1 + 15] : [1, 15];
+}
+
 // Next occurrence Date on/after `today`. Returns null for non-datable bills.
 export function billNextDue(bill, today = new Date()) {
   if (!bill) return null;
@@ -729,11 +739,13 @@ export function billNextDue(bill, today = new Date()) {
     return _atNoon(a);
   }
   if (freq === "semimonthly") {
-    const anchor = _isoToDate(bill.nextDueDate);
-    const d1 = anchor ? anchor.getDate() : (parseInt(bill.date) || 1);
-    const d2 = ((d1 + 14) % 28) + 1;
+    const [dA, dB] = _billSemimonthlyPair(bill);
     const cands = [];
-    for (let mo = 0; mo <= 1; mo++) for (const day of [d1, d2]) cands.push(_domDate(t.getFullYear(), t.getMonth() + mo, day));
+    for (let mo = 0; mo <= 1; mo++) {
+      const first = new Date(t.getFullYear(), t.getMonth() + mo, 1, 12);
+      const y = first.getFullYear(), m = first.getMonth();
+      for (const day of semimonthlyDays(dA, dB, y, m)) cands.push(_domDate(y, m, day));
+    }
     return cands.filter(c => c >= t).sort((a, b) => a - b)[0] || null;
   }
   // monthly / quarterly / annual
@@ -770,14 +782,9 @@ export function billOccursOnDate(bill, d, today = new Date()) {
     return Math.round((target - first) / _DAY_MS) % step === 0;
   }
   if (freq === "semimonthly") {
-    const anchor = _isoToDate(bill.nextDueDate);
-    const d1 = anchor ? anchor.getDate() : (parseInt(bill.date) || 1);
-    const d2 = ((d1 + 14) % 28) + 1;
-    // clamp to month length (parity with billNextDue's _domDate) so a day 29–31 anchor still
-    // matches in short months — otherwise the occurrence would be silently dropped.
-    const ty = target.getFullYear(), tm = target.getMonth();
-    const day = target.getDate();
-    return day === clampDayToMonth(d1, ty, tm) || day === clampDayToMonth(d2, ty, tm);
+    // The same two days billNextDue schedules, and the same two an income on this schedule pays.
+    const [dA, dB] = _billSemimonthlyPair(bill);
+    return semimonthlyDays(dA, dB, target.getFullYear(), target.getMonth()).includes(target.getDate());
   }
   // monthly / quarterly / annual — match day-of-month, and (quarterly/annual) the right month
   const aDay = _isoToDate(bill.nextDueDate);
