@@ -12979,7 +12979,7 @@ function BankConsentModal({ onContinue, onCancel, onViewLegal }){
         </div>
         <div style={card}>
           <div style={head}>Read-only: we cannot move money</div>
-          <div style={body}>Flourish connects through <strong style={{color:C.cream}}>Plaid</strong> in <strong style={{color:C.cream}}>read-only</strong> mode. We can never move your money, and Plaid never receives your bank login credentials.</div>
+          <div style={body}>Flourish connects through <strong style={{color:C.cream}}>Plaid</strong> in <strong style={{color:C.cream}}>read-only</strong> mode. We can never move your money. Flourish never sees your bank login. You sign in with your bank through Plaid.</div>
         </div>
         <div style={card}>
           <div style={head}>What we access</div>
