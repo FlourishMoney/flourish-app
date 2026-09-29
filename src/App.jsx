@@ -60,6 +60,7 @@ import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnTodayOpen, reviewOnCheckInDone } from "./lib/reviewPrompt.js";
+import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
 
@@ -11390,6 +11391,12 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <Btn label={billingUi.mode==="manage"?"Manage subscription":"See plans"} onClick={onOpenUpgrade} color={C.purpleBright} outline small/>
       </div>
     )}
+    {/* ── Help & Support: opens /support in the app, no reload ──────────── */}
+    <div style={{marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
+      <div style={{color:C.cream,fontWeight:700,marginBottom:SPACE.xs}}>Help & Support</div>
+      <div style={{color:C.mutedHi,fontSize:13,marginBottom:GAP.textToControl}}>How to reach us, who runs Flourish, and links to the privacy policy and account deletion.</div>
+      <Btn label="Open Support" onClick={()=>navToScreen&&navToScreen("support")} color={C.mutedHi} outline small/>
+    </div>
     {/* ── Sign out ─────────────────────────────────────────────── */}
     <div style={{marginTop:10,padding:"16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
       <div style={{color:C.cream,fontWeight:700,marginBottom:4}}>Sign Out</div>
@@ -12327,6 +12334,42 @@ function ConfirmedPage(){
         <h1 style={{color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",fontSize:26,fontWeight:900,margin:"0 0 10px"}}>You're confirmed.</h1>
         <p style={{color:C.mutedHi,fontSize:15,lineHeight:1.6,margin:0}}>Open Flourish and sign in.</p>
       </div>
+    </div>
+  );
+}
+
+// /support: the page App Store Connect's support URL points at. Same shell and type as /privacy
+// and /delete-account. Contact details live in src/lib/supportContact.js.
+function SupportPage({onBack}){
+  const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
+  const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:SPACE.xl,marginBottom:SPACE.sm};
+  const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75};
+  const li={...p,marginBottom:SPACE.sm};
+  const last="September 29, 2026";
+  return(
+    <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:GAP.textToControl,marginBottom:SPACE.xl,paddingTop:SPACE.xs}}>
+        <button onClick={onBack} style={{background:`rgba(255,255,255,0.05)`,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 18px",minHeight:44,color:C.cream,fontSize:13,cursor:"pointer",...s}}>← Back</button>
+        <div>
+          <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream}}>Support</div>
+          <div style={{...s,fontSize:13,color:C.muted}}>Last updated {last}</div>
+        </div>
+      </div>
+
+      <div style={h2}>Contact us</div>
+      <div style={p}>
+        Email <a href={`mailto:${SUPPORT_EMAIL}`} style={{color:C.greenBright}}>{SUPPORT_EMAIL}</a> with a question, a problem or
+        feedback. Write from the address your account uses so we can find it. Never send a password or a bank login.
+      </div>
+
+      <div style={h2}>Who runs Flourish</div>
+      <div style={{...p,whiteSpace:"pre-line"}}>{SUPPORT_OPERATOR_NAME_AND_ADDRESS}</div>
+
+      <div style={h2}>Your privacy and your account</div>
+      <ul style={{paddingLeft:20,margin:"8px 0 0"}}>
+        <li style={li}><a href="/privacy" style={{color:C.greenBright}}>Privacy Policy</a></li>
+        <li style={li}><a href="/delete-account" style={{color:C.greenBright}}>Delete your account</a></li>
+      </ul>
     </div>
   );
 }
@@ -13958,6 +14001,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
               <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
                 <a href="/privacy">Privacy</a>
                 <a href="/terms">Terms</a>
+                <a href="/support">Support</a>
                 <a href="mailto:hello@flourishmoney.app">hello@flourishmoney.app</a>
               </div>
             </div>
@@ -14960,6 +15004,7 @@ export default function FlourishApp(){
     if (path === "/privacy") return "privacy";
     if (path === "/terms")   return "terms";
     if (path === "/delete-account") return "delete-account";
+    if (path === "/support") return "support";
     if (path === "/confirmed") return "confirmed";
     if (path === "/kids")    return "kids";
     return "home";
@@ -15986,6 +16031,7 @@ export default function FlourishApp(){
   if(screen==="privacy")return <div style={legalShell}><PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="terms")return <div style={legalShell}><TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="delete-account")return <div style={legalShell}><DeleteAccount onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
+  if(screen==="support")return <div style={legalShell}><SupportPage onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="confirmed")return <ConfirmedPage/>;
   if(screen==="kids")return <KidsMiniSite country={appData?.profile?.country}/>;
 
