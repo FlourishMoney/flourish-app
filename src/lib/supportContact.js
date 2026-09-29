@@ -14,4 +14,4 @@
 
 export const SUPPORT_EMAIL = "hello@flourishmoney.app";
 
-export const SUPPORT_OPERATOR_NAME_AND_ADDRESS = "TO BE FILLED BY AMANDA";
+export const SUPPORT_OPERATOR_NAME_AND_ADDRESS = "GrowSmart Inc.\n394 Ashley Street, PO Box 29\nFoxboro, Ontario K0K 2B0\nCanada";
