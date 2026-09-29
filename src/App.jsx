@@ -10,7 +10,7 @@ import {
   Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
-import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffBoost, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
+import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffForDebt, debtMinimumPayment, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
   BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
@@ -2011,7 +2011,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
       const targetDebt = [...debts].sort((a,b) => b.rate - a.rate)[0];
       const balance = targetDebt.balance;
       const apr = targetDebt.rate;
-      const currentPayment = targetDebt.min;
+      const currentPayment = debtMinimumPayment(targetDebt);
       // Phase D9: natural-language label for the debt's type (used in fallback copy)
       const debtTypeLabel = targetDebt.debtType === "mortgage" ? "mortgage"
         : targetDebt.debtType === "student" ? "student loan"
@@ -2020,7 +2020,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
       // Default extra payment from query (or $100/mo if none specified)
       const parsedAmount = parseAmountFromQuery(qText);
       const extraPayment = parsedAmount > 0 && parsedAmount < currentPayment * 5 ? parsedAmount : 100;
-      const result = simulateDebtPayoffBoost({ balance, apr, currentPayment, extraPayment });
+      const result = simulateDebtPayoffForDebt(targetDebt, extraPayment); // the one payoff model (Decisions and Meet use it too)
       // Sprint 4b: when the current payment never fully amortizes (payment <= monthly interest),
       // baseline months/interest are Infinity. Detect it so the verdict stays meaningful instead
       // of implying "already optimal" (and so the UI never renders raw Infinity).

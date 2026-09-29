@@ -184,6 +184,31 @@ export function simulateDebtPayoffBoost({ balance, apr, currentPayment, extraPay
   return { baseline, boosted, monthsSaved, interestSaved };
 }
 
+// ── 4b. THE debt payoff model every surface uses ─────────────────────────────
+// Today's Decisions card, the Meet decision and the What-If simulator all say how long a debt takes
+// to clear, and all three ask this. Decisions and Meet used to run their own loop at max($25, 2% of
+// balance) and ignore the minimum the household entered, while What-If used the entered minimum, so
+// the demo car loan ($8,200 at 6.99%, $280 minimum) cleared in 60 months on two screens and 33 on
+// the third.
+//
+// The payment is the debt's own minimum whenever it has one. Only a debt with no minimum at all
+// falls back to the estimate, max($25, 2% of the balance).
+export function debtMinimumPayment(debt) {
+  const min = num(debt && debt.min);
+  return min > 0 ? min : Math.max(25, num(debt && debt.balance) * 0.02);
+}
+
+// Payoff at the minimum (baseline) and at the minimum plus `extraPayment` (boosted), through the one
+// amortization above. A debt with no rate is modelled at 19.99%, as Decisions and Meet always did.
+export function simulateDebtPayoffForDebt(debt, extraPayment = 0) {
+  return simulateDebtPayoffBoost({
+    balance: num(debt && debt.balance),
+    apr: num((debt && debt.rate) || 19.99),
+    currentPayment: debtMinimumPayment(debt),
+    extraPayment: Math.max(0, num(extraPayment)),
+  });
+}
+
 // ── 5. simulateInvestmentGrowth ──────────────────────────────────────────────
 // Compound growth with periodic contributions.
 // FV = P × (1 + r)^n  +  C × [((1 + r)^n − 1) / r]
@@ -463,7 +488,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
           balance: num(d.balance),
           rate: real > 0 ? real : DEFAULT_APR_CREDIT,
           rateEstimated: !(real > 0), // Sprint 4b: flag fabricated APRs so the UI can label them
-          min: num(d.min) || Math.max(25, num(d.balance) * 0.02),
+          min: debtMinimumPayment(d),
           source: "manual",
           debtType: "manual",
         };
@@ -480,7 +505,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
         balance: c.balance || 0,
         rate: real > 0 ? real : DEFAULT_APR_CREDIT, // Plaid sometimes returns null APR
         rateEstimated: !(real > 0),
-        min: c.minPayment || Math.max(25, (c.balance || 0) * 0.02),
+        min: debtMinimumPayment({ min: c.minPayment, balance: c.balance }),
         source: "plaid_liability",
         debtType: "credit_card",
         account_id: c.account_id,
@@ -529,7 +554,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
         balance: num(d.balance),
         rate: real > 0 ? real : DEFAULT_APR_CREDIT,
         rateEstimated: !(real > 0),
-        min: num(d.min) || Math.max(25, num(d.balance) * 0.02),
+        min: debtMinimumPayment(d),
         source: "manual",
         debtType: "manual",
       };
