@@ -216,7 +216,7 @@ Old copy replaced: "Money is a team sport", "Today's agenda", "Start Meeting ▶
 | Downsell headline | You're leaving money on the table | **What Plus adds** |
 | Downsell body | Most people on free leave unclaimed credits, untracked debt, and zero coaching behind. Plus fixes all of that. | **Live numbers from linked accounts, unlimited coaching, and the weekly meeting with agenda and facilitator. Free keeps Today, Watch and Do with manual entry.** |
 | Feature: AI Coach | Personalized advice from your real transaction data | **Coach** / **Unlimited coaching from your own numbers: what they mean and what to do next** |
-| Feature: Tax Tips & Benefits | RRSP, TFSA, CCB, GST credit, Trillium and more | **Benefits explained** / **CCB, GST/HST credit, Trillium, RRSP, TFSA, FHSA: which rule applies to you and why** |
+| Feature: Tax Tips & Benefits | RRSP, TFSA, CCB, GST credit, Trillium and more | **Benefits explained** / **CCB, Canada Groceries and Essentials Benefit, Trillium, RRSP, TFSA, FHSA: which rule applies to you and why** |
 | Feature: Credit Coaching | Full factor breakdown + improvement plan | **Credit plan** / **Factor breakdown with amounts and dates** |
 | Feature: Investment Tracking | RRSP, TFSA, Questrade, Wealthsimple | **Contribution room** / **RRSP, TFSA and FHSA balances and room together** |
 | Feature: Household Sharing | Connect with a partner, track shared goals | **Weekly money meeting** / **Agenda from your week, coach as facilitator, solo or couple** |

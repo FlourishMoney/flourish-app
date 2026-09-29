@@ -12648,7 +12648,7 @@ function Paywall({onClose,onPromoValid,country}){
   };
   const features=[
     {icon:"sparkles",title:"Coach",desc:"Unlimited coaching from your own numbers: what they mean and what to do next"},
-    {icon:"target",title:"Benefits explained",desc:isCA?"CCB, GST/HST credit, Trillium, RRSP, TFSA, FHSA: which rule applies to you and why":"EITC, Child Tax Credit, 401k, HSA and more"},
+    {icon:"target",title:"Benefits explained",desc:isCA?"CCB, Canada Groceries and Essentials Benefit, Trillium, RRSP, TFSA, FHSA: which rule applies to you and why":"EITC, Child Tax Credit, 401k, HSA and more"},
     {icon:"shield",title:"Credit plan",desc:"Factor breakdown with amounts and dates"},
     {icon:"chartUp",title:"Contribution room",desc:isCA?"RRSP, TFSA and FHSA balances and room together":"401k, IRA, Fidelity, Vanguard"},
     {icon:"house2",title:"Weekly money meeting",desc:"Agenda from your week, coach as facilitator, solo or couple"},
