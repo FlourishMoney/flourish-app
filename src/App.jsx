@@ -47,7 +47,8 @@ import { getNotificationPermission, requestNotificationPermission, scheduleNotif
 import { planNotifications } from "./lib/notificationPlanner.js";
 import { SCREENSHOT_EMAIL, normalizeEmail, isReviewAccount } from "./lib/sampleHouseholdAccount.js";
 import { dueSoonList } from "./lib/dueSoon.js";
-import { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, WAITLIST_SOURCES } from "./lib/waitlistConsent.js";
+import { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
+import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
 import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
@@ -13567,11 +13568,13 @@ function ResetPasswordScreen({ onDone, onCancel }) {
 }
 
 // ─── WAITLIST FORM (CASL) ────────────────────────────────────────────────────────────────────────
-// The one waitlist signup form, used by the homepage (sources "hero", "bottom_cta") and, later, the
+// The one waitlist signup form, used by the homepage (placements "hero", "bottom_cta") and, later, the
 // benefit calendar and CCB clawback pages ("calendar", "clawback"). It carries its own styles, so a page
 // only has to render it. Directly under the email field it shows the consent line and the sender's
 // identity (CASL), word for word from lib/waitlistConsent.js, and it sends that wording's version with
-// the signup; join_waitlist refuses any other version and any source not in WAITLIST_SOURCES.
+// the signup; join_waitlist refuses any other version and any placement not in WAITLIST_PLACEMENTS.
+// The campaign (?src=, kept for the session by lib/waitlistSrc.js) goes with it; the server stores a known
+// one as the row's source and anything else as "direct". The form's position goes in metadata.placement.
 // The only promise it makes is the launch email: no prices, trials, plans or offers. Launch is Canada
 // only (Amanda, 2026-09-30): there is no country choice, and every signup is Canada.
 const WAITLIST_EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -13603,7 +13606,9 @@ const WAITLIST_FORM_CSS = `
 function WaitlistForm({ source = "landing" }) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState(null); // null | "invalid" | "submitting" | "success" | "already" | "error" | "stale"
-  const tag = WAITLIST_SOURCES.includes(source) ? source : "landing";
+  const tag = WAITLIST_PLACEMENTS.includes(source) ? source : "landing";
+  // Read ?src= as the page loads, so a later reload without it still knows the campaign.
+  useEffect(() => { captureWaitlistSrc(); }, []);
 
   const submit = async () => {
     const emailVal = email.trim();
@@ -13621,7 +13626,7 @@ function WaitlistForm({ source = "landing" }) {
       const res = await fetch(`${API_BASE}/api/beta`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "join_waitlist", email: emailVal, country: "CA", source: tag, metadata, consentVersion: CONSENT_VERSION }),
+        body: JSON.stringify({ action: "join_waitlist", email: emailVal, country: "CA", placement: tag, src: captureWaitlistSrc(), metadata, consentVersion: CONSENT_VERSION }),
       });
       const data = await res.json();
       if (data.joined) setStatus(data.alreadyJoined ? "already" : "success");
