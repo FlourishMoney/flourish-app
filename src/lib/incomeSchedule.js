@@ -35,17 +35,17 @@ function _freqDays(freq) { return freq === "weekly" ? 7 : freq === "biweekly" ? 
 // Money in that is within bounds counts as income when it looks like pay (the Income category,
 // "payroll", "direct deposit", "deposit") or carries the income's label as a whole word, so a
 // two-letter label ("UW") works; the old rule ignored any label of three characters or fewer.
-function _amountBounds(inc, incAmt) {
+function _amountBounds(inc, incAmt, loose = false) {
   if (!(incAmt > 0)) return null;
   if (inc && inc.isVariable) {
     const refs = [incAmt, num(inc.expectedAmount), num(inc.typicalAmount)].filter(a => a > 0);
     return [Math.min(...refs) * 0.6, Math.max(...refs) * 1.5];
   }
-  return [incAmt * 0.92, incAmt * 1.08];
+  return loose ? [incAmt * 0.6, incAmt * 1.5] : [incAmt * 0.92, incAmt * 1.08];
 }
 const _escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-function _incomeDepositDates(inc, incAmt, transactions) {
-  const bounds = _amountBounds(inc, incAmt);
+function _incomeDepositDates(inc, incAmt, transactions, loose = false) {
+  const bounds = _amountBounds(inc, incAmt, loose);
   if (!bounds) return [];
   const label = String((inc && inc.label) || "").toLowerCase().trim();
   const labelRx = label.length >= 2 ? new RegExp(`(^|[^a-z0-9])${_escape(label)}([^a-z0-9]|$)`) : null;
@@ -68,21 +68,9 @@ function _incomeDepositDates(inc, incAmt, transactions) {
 // How far a weekly or biweekly pay date may drift and still be the same cycle (weekends, holidays).
 const _PHASE_TOL = { 7: 2, 14: 3 };
 
-// The deposit this income's cycle is phased from. Returns a Date (noon) or null.
-//
-// Weekly and biweekly: the newest deposit on a CHAIN of at least two of this income's deposits whose
-// gaps are each about one cycle (7 ±2 or 14 ±3 days). The longest chain wins, then the one closest to
-// an exact cycle, then the newest. A bonus, a reimbursement or any other off-cycle deposit is on no
-// chain and is ignored. One deposit alone is not a phase: with no chain the cycle is unknown and the
-// forecast counts forward from today, marked "estimated".
-//
-// Monthly and semimonthly: the newest of this income's (bounded) deposits.
-export function findAnchor(inc, incAmt, transactions) {
-  const dates = _incomeDepositDates(inc, incAmt, transactions);
-  const F = _freqDays((inc && inc.freq) || "biweekly");
-  if (!F) return dates[0] || null;
-  const tol = _PHASE_TOL[F];
-  let best = null;
+// The chain of cycle-spaced deposits that ends at each date (newest first), and the one to phase from.
+function _bestChain(dates, F, tol) {
+  const chains = [];
   for (let i = 0; i < dates.length; i++) {
     let len = 1, dev = 0, cur = dates[i];
     for (;;) {
@@ -95,9 +83,41 @@ export function findAnchor(inc, incAmt, transactions) {
       if (!pick) break;
       len++; dev += pickDev; cur = pick;
     }
-    if (len >= 2 && (!best || len > best.len || (len === best.len && dev < best.dev))) best = { len, dev, date: dates[i] };
+    if (len >= 2) chains.push({ len, dev, date: dates[i] });
   }
-  return best ? best.date : null;
+  if (!chains.length) return null;
+  // The CURRENT phase: only chains that end within the drift tolerance of the newest chain compete.
+  // So a pay date that moved to the other week wins over a longer history on the old one, while a
+  // same-amount deposit a day or two off the cycle loses to the payday beside it (longer, then closer
+  // to an exact cycle, then newer).
+  const newest = chains.reduce((m, c) => (c.date > m ? c.date : m), chains[0].date);
+  let best = null;
+  for (const c of chains) {
+    if (_dayGap(c.date, newest) > tol) continue;
+    if (!best || c.len > best.len || (c.len === best.len && (c.dev < best.dev || (c.dev === best.dev && c.date > best.date)))) best = c;
+  }
+  return best;
+}
+
+// The deposit this income's cycle is phased from. Returns a Date (noon) or null.
+//
+// Weekly and biweekly: the newest deposit on a CHAIN of at least two of this income's deposits whose
+// gaps are each about one cycle (7 ±2 or 14 ±3 days); among chains ending within that drift of the
+// newest one, the longest, then the one closest to an exact cycle. A bonus, a reimbursement or any
+// other off-cycle deposit is on no chain and is ignored. Amounts are bounded (±8% of the entered pay,
+// or the variable range); only when that finds no chain at all (a raise not yet in the history, pay
+// that swings with hours) is the band widened to 0.6x-1.5x, never unbounded. One deposit alone is not
+// a phase: with no chain the cycle is unknown and the forecast counts forward from today, "estimated".
+//
+// Monthly and semimonthly: the newest of this income's (bounded) deposits.
+export function findAnchor(inc, incAmt, transactions) {
+  const F = _freqDays((inc && inc.freq) || "biweekly");
+  if (!F) return _incomeDepositDates(inc, incAmt, transactions)[0] || null;
+  const tol = _PHASE_TOL[F];
+  const tight = _bestChain(_incomeDepositDates(inc, incAmt, transactions), F, tol);
+  if (tight) return tight.date;
+  const loose = _bestChain(_incomeDepositDates(inc, incAmt, transactions, true), F, tol);
+  return loose ? loose.date : null;
 }
 
 // Day-of-month this income lands on. Explicit user/Plaid-derived anchorDay wins; otherwise the day

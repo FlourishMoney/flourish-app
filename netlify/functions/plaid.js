@@ -648,7 +648,22 @@ exports.handler = async (event) => {
         return stop("load_items"); // nothing deleted yet
       }
 
-      // 2. Revoke each Plaid item (best-effort)
+      // 2. Round-3: the meeting's stored answers and the billing row, BEFORE anything irreversible at
+      // Plaid. Both reference auth.users with ON DELETE CASCADE, but they are deleted explicitly and
+      // CRITICALLY: if either fails, we stop with the bank links and the sign-in still in place, so a
+      // retry finishes the job. A table that does not exist in this database yet holds nothing for
+      // this user, so "no such table" counts as done rather than trapping everyone in their account.
+      const missingTable = (e) => !!e && (e.code === "42P01" || e.code === "PGRST205" ||
+        /does not exist|could not find the table/i.test(String(e.message || "")));
+      for (const table of ["meeting_records", "subscriptions"]) {
+        const { error: tErr } = await admin.from(table).delete().eq("user_id", user_id);
+        if (tErr && !missingTable(tErr)) {
+          console.error(`[delete_account] ${table} delete:`, tErr.message);
+          return stop(table);
+        }
+      }
+
+      // 3. Revoke each Plaid item (best-effort)
       for (const it of (items || [])) {
         try {
           await plaid("/item/remove", { access_token: it.access_token });
@@ -658,7 +673,7 @@ exports.handler = async (event) => {
         }
       }
 
-      // 3. Delete plaid_items rows (critical)
+      // 3a. Delete plaid_items rows (critical)
       const { error: delErr } = await admin
         .from("plaid_items")
         .delete()
@@ -666,20 +681,6 @@ exports.handler = async (event) => {
       if (delErr) {
         console.error("[delete_account] delete_rows:", delErr.message);
         return stop("delete_rows");
-      }
-
-      // 3a. Round-3: the meeting's stored answers and the billing row. Both reference auth.users with
-      // ON DELETE CASCADE, but they are deleted explicitly and CRITICALLY: if either fails the auth
-      // user stays, so a retry finishes the job rather than depending on the cascade.
-      const { error: mrErr } = await admin.from("meeting_records").delete().eq("user_id", user_id);
-      if (mrErr) {
-        console.error("[delete_account] meeting_records delete:", mrErr.message);
-        return stop("meeting_records");
-      }
-      const { error: subErr } = await admin.from("subscriptions").delete().eq("user_id", user_id);
-      if (subErr) {
-        console.error("[delete_account] subscriptions delete:", subErr.message);
-        return stop("subscriptions");
       }
 
       // 3b. Sprint 3: explicitly wipe other user-scoped rows. user_data has ON DELETE CASCADE

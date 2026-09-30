@@ -3073,9 +3073,13 @@ function computeStats(txns, catOverrides={}) {
 // A tappable <div> reachable and operable from the keyboard and announced as a button (round-3
 // accessibility). Enter and Space act only when the div itself has focus, so a real button inside it
 // (the hero's "How Flourish got this number") does not also fire the card.
-function pressable(onClick){
+// A container that holds its own controls (the Today hero holds "Can I afford this?", its input and
+// buttons) must not be role="button": a button's children are presentational, so a screen reader
+// would read it as one button and skip them. It passes {role:"group", label} instead: still focusable
+// and operable with Enter and Space, with a name that says what Enter does, and its controls intact.
+function pressable(onClick, {role="button", label}={}){
   if(!onClick) return {};
-  return {role:"button",tabIndex:0,onKeyDown:e=>{
+  return {role,tabIndex:0,...(label?{"aria-label":label}:{}),onKeyDown:e=>{
     if(e.target!==e.currentTarget) return;
     if(e.key==="Enter"||e.key===" "||e.key==="Spacebar"){e.preventDefault();onClick(e);}
   }};
@@ -5371,7 +5375,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           WebkitBackdropFilter:"blur(24px)",
           border:`1px solid ${heroColor}28`,
           boxShadow:`0 20px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.025), inset 0 1px 0 ${heroColor}20`,
-        }} onClick={()=>setScreen("plan")} {...pressable(()=>setScreen("plan"))}>
+        }} onClick={()=>setScreen("plan")} {...pressable(()=>setScreen("plan"),{role:"group",label:"Safe to spend. Press Enter to open your plan."})}>
           {/* Ambient orbs */}
           <div style={{position:"absolute",top:-60,right:-60,width:280,height:280,borderRadius:"50%",background:`radial-gradient(circle,${heroColor}16 0%,transparent 65%)`,pointerEvents:"none"}}/>
           <div style={{position:"absolute",bottom:-40,left:-40,width:200,height:200,borderRadius:"50%",background:`radial-gradient(circle,${heroColor}09 0%,transparent 70%)`,pointerEvents:"none"}}/>
@@ -7301,7 +7305,7 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
   };
 
   return (
-    <Card style={{cursor:"pointer"}} onClick={()=>!editBudget&&handleToggle()}>
+    <Card style={{cursor:"pointer"}} onClick={editBudget?undefined:()=>handleToggle()}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <span style={{color:C.cream,fontSize:14,display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:20}}>{catTxns[0]?.icon||"💰"}</span>{cat}

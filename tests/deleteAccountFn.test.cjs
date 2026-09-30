@@ -5,8 +5,9 @@
 // Runs the real delete_account handler in netlify/functions/plaid.js against a recording stand-in
 // for the database and for Plaid:
 //   - if the bank links cannot be loaded, NOTHING is deleted, so the app's "nothing was changed" is true;
-//   - meeting_records and subscriptions are deleted with everything else;
-//   - if either of those deletes fails, the auth user is left in place so a retry can finish;
+//   - meeting_records and subscriptions are deleted with everything else, before the Plaid revoke;
+//   - if either of those deletes fails, the auth user and the bank links are left in place so a retry
+//     can finish; a table the database does not have yet counts as nothing to delete;
 //   - a Plaid /item/remove failure is still best-effort: the account is deleted anyway.
 // -----------------------------------------------------------------------------
 "use strict";
@@ -21,7 +22,7 @@ const USER = "00000000-0000-4000-8000-000000000001";
 function run({ fail = {}, plaidFails = false } = {}) {
   const log = { deletes: [], plaidCalls: 0, authDeleted: false };
   const result = (table, op) => ({ data: op === "select" ? [{ item_id: "item-1", access_token: "access-sandbox-x" }] : null,
-    error: fail[`${op}:${table}`] ? { message: `${op} ${table} failed` } : null });
+    error: fail[`${op}:${table}`] ? (typeof fail[`${op}:${table}`] === "object" ? fail[`${op}:${table}`] : { message: `${op} ${table} failed` }) : null });
   const admin = {
     from: (table) => ({
       select: () => ({ eq: async () => result(table, "select") }),
@@ -78,6 +79,18 @@ const steps = (b) => (b.errors || []).map((e) => e.step);
     const { body, log } = await run({ fail: { [`delete:${table}`]: true } });
     t.eq(log.authDeleted, false, `3 a failed ${table} delete leaves the auth user in place`);
     t.eq(body.deleted, false, `3 …and the response says the account was not deleted (${steps(body).join(",")})`);
+  }
+
+  // ── 3b. …and stops before anything irreversible at Plaid ───────────────────────────────────
+  for (const table of ["meeting_records", "subscriptions"]) {
+    const { log } = await run({ fail: { [`delete:${table}`]: true } });
+    t.eq([log.plaidCalls, log.deletes.includes("plaid_items")], [0, false], `3b a failed ${table} delete leaves the bank links in place too`);
+  }
+
+  // ── 3c. A table this database does not have yet holds nothing to delete ─────────────────────
+  for (const code of ["42P01", "PGRST205"]) {
+    const { body, log } = await run({ fail: { "delete:subscriptions": { code, message: "relation \"public.subscriptions\" does not exist" } } });
+    t.eq([log.authDeleted, body.deleted], [true, true], `3c a missing subscriptions table (${code}) does not block the deletion`);
   }
 
   // ── 4. Plaid is down: still best-effort ──────────────────────────────────────────────────────

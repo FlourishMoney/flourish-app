@@ -34,6 +34,9 @@ const fnBody = (sig) => { const i = APP.indexOf(sig); return i < 0 ? "" : APP.sl
     t.eq([P.COACH_RULES, P.CHAT_INTRO, P.buildCheckinSystem("x")[0].text].filter((x) => DIRECTIVE.test(x)).length, 0,
       "1a the server prompts no longer tell the coach to pick the action, the category or the next step");
     t.ok(/Explain, don't direct/.test(P.COACH_RULES) && /ask the user what they want/i.test(P.COACH_RULES), "1b rule 3: explain, compare the computed trade-offs, ask what the user wants");
+    t.ok(/10\. Purchases[^\n]*Give no verdict[^\n]*"Safe to spend after it"|10\. Purchases[^\n]*"Safe to spend after it"[^\n]*Give no verdict/.test(P.COACH_RULES),
+      "1b2 the no-verdict purchase rule is in the server's rules, where it has instruction weight (the app's context is data)");
+    t.ok(/without adding them up/.test(P.COACH_RULES), "1b3 rule 9 quotes the snapshot's lines rather than totalling them");
     t.ok(/You do not make decisions for them/.test(P.CHAT_INTRO), "1c the intro says the decision is the user's");
     t.ok(!/GST\/HST credit/.test(P.COACH_RULES), "1d rule 4 no longer names the retired GST/HST credit");
     t.ok(/explain one pattern in this week's numbers/.test(P.buildCheckinSystem("x")[0].text), "1e the check-in system explains one pattern");
@@ -56,6 +59,10 @@ const fnBody = (sig) => { const i = APP.indexOf(sig); return i < 0 ? "" : APP.sl
       "1k a purchase question carries the amount and what Flourish computes is left ($1,944 less $600)");
     t.eq(DE.coachPurchaseLine(d, "Can I afford a $2,500 laptop?", TODAY).endsWith("-$556"), true, "1l …negative when it goes past safe to spend");
     t.eq(DE.coachPurchaseLine(d, "How is my spending this month?", TODAY), "", "1m no line for a question that is not a purchase");
+    t.eq(DE.coachPurchaseLine(d, "When do I get my $2,600 paycheque?", TODAY), "", "1m2 …nor for a question about pay");
+    t.eq(DE.coachPurchaseLine(d, "Can I buy 2 tickets at $150 each?", TODAY), "", "1m3 none when the amount would need multiplying");
+    t.eq(DE.coachPurchaseLine(d, "Should I buy a $600 or $900 phone?", TODAY), "", "1m4 none when there are two amounts to choose between");
+    t.ok(DE.coachPurchaseLine(d, "Can I afford a $1.5k couch", TODAY).includes(": $1,500 |"), "1m5 \"$1.5k\" is $1,500, not $2");
     t.eq(DE.coachPurchaseLine({ ...d, incomes: [] }, "Can I buy a $600 phone?", TODAY), "", "1n none when Today shows no figure");
     t.ok(/context: buildContext\(text\)/.test(coach) && /coachPurchaseLine\(data, userText\)/.test(coach), "1o the coach request passes the message to the context");
   }
@@ -129,7 +136,14 @@ const fnBody = (sig) => { const i = APP.indexOf(sig); return i < 0 ? "" : APP.sl
       t.eq(Object.keys(A.pressable(undefined)).length, 0, "6c a card with no action stays a plain div");
     }
     t.ok(/return <div onClick=\{onClick\} \{\.\.\.pressable\(onClick\)\}/.test(APP), "6d Card (Budget category cards and every tappable card) uses it");
-    t.ok(/onClick=\{\(\)=>setScreen\("plan"\)\} \{\.\.\.pressable\(\(\)=>setScreen\("plan"\)\)\}/.test(APP), "6e …and so does the Safe-to-spend hero");
+    t.ok(/onClick=\{\(\)=>setScreen\("plan"\)\} \{\.\.\.pressable\(\(\)=>setScreen\("plan"\),\{role:"group",label:"Safe to spend\. Press Enter to open your plan\."\}\)\}/.test(APP),
+      "6e the Safe-to-spend hero is keyboard-operable as a named group, not role=button, because it holds its own input and buttons");
+    if (A.pressable) {
+      const g = A.pressable(() => {}, { role: "group", label: "L" });
+      t.eq([g.role, g.tabIndex, g["aria-label"]], ["group", 0, "L"], "6e2 (the group form is focusable and named)");
+    }
+    t.ok(/<Card style=\{\{cursor:"pointer"\}\} onClick=\{editBudget\?undefined:\(\)=>handleToggle\(\)\}>/.test(APP),
+      "6e3 a Budget category card is a button only when it holds no budget input (not while editing)");
     t.ok(/onClick=\{\(\)=>setScreen\("home"\)\} aria-label="Back"/.test(APP), "6f the coach's back arrow is labelled");
     t.ok(/aria-label="Clear chat history"/.test(APP), "6g …and its clear-history button");
     t.ok(/aria-label="Flourish home"/.test(APP) && /setShowSettings\(true\);\}\} aria-label="Settings"/.test(APP), "6h the desktop logo and Settings are labelled");
@@ -146,6 +160,13 @@ const fnBody = (sig) => { const i = APP.indexOf(sig); return i < 0 ? "" : APP.sl
     t.eq(await S.isReviewAccount("  Reviewer@Example.INVALID \n", [h]), true, "8b matching trims and lowercases before hashing");
     t.eq(await S.isReviewAccount("someone@example.invalid", [h]), false, "8c another email does not match");
     t.eq(await S.isReviewAccount("", [h]), false, "8d nor does no email");
+    const samples = ["", "abc", synthetic, "a".repeat(55), "b".repeat(64), "é€ mixed 😀", "x".repeat(300)];
+    t.ok(samples.every((x) => S.sha256HexSync(x) === crypto.createHash("sha256").update(x).digest("hex")),
+      "8d2 the plain-JavaScript SHA-256 (for a WebView without Web Crypto) matches Node's");
+    const saved = Object.getOwnPropertyDescriptor(globalThis, "crypto");
+    Object.defineProperty(globalThis, "crypto", { value: {}, configurable: true, writable: true });
+    try { t.eq(await S.isReviewAccount(synthetic.toUpperCase(), [h]), true, "8d3 …and matching still works with no crypto.subtle"); }
+    finally { if (saved) Object.defineProperty(globalThis, "crypto", saved); }
     t.eq(await S.isReviewAccount(S.SCREENSHOT_EMAIL), false, "8e the screenshot account is not the review account…");
     t.eq(S.SCREENSHOT_EMAIL, "snap@flourish.app", "8f …and keeps its own path, unchanged");
     const hydrate = slice("const loadSampleHousehold = () => {", 4000);

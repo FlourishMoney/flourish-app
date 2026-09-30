@@ -8,7 +8,7 @@
 // its old themed `insights` array was dead output and was removed (MATH-LOCK finding #3).
 // -----------------------------------------------------------------------------
 
-import { FinancialCalcEngine, isInvestmentAccount, simulateDebtPayoffForDebt, isCashAccount, num, parseAmountFromQuery } from "./financialCalculations.js";
+import { FinancialCalcEngine, isInvestmentAccount, simulateDebtPayoffForDebt, isCashAccount, num } from "./financialCalculations.js";
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { ForecastEngine } from "./forecastEngine.js";
 import { shelterLabel } from "./locale.js";
@@ -78,9 +78,15 @@ export function coachSafeToSpendLine(data = {}, todayDate = new Date()) {
 // "" when the message is not a purchase question or Today shows no figure.
 export function coachPurchaseLine(data = {}, userText = "", todayDate = new Date()) {
   const text = String(userText || "");
-  if (!/\b(afford|buy|buying|purchase|spend|get)\b/i.test(text)) return "";
-  const amount = parseAmountFromQuery(text);
-  if (!(amount > 0)) return "";
+  // Only an explicit purchase question, and only one unambiguous amount: "2 tickets at $150 each" or
+  // "$600 or $900" would need arithmetic or a choice, so there is no line and the coach offers a What-If.
+  if (!/\b(afford|buy|buying|purchase)\b/i.test(text)) return "";
+  if (/\beach\b|\bper\b|\bx\s*\d|\d\s*x\b/i.test(text)) return "";
+  const amounts = [...text.replace(/(\d),(?=\d{3}\b)/g, "$1").matchAll(/\$\s*(\d+(?:\.\d+)?)\s*(k\b)?|\b(\d+(?:\.\d+)?)\s*k\b|\b(\d{2,}(?:\.\d+)?)\b/gi)];
+  if (amounts.length !== 1) return "";
+  const m = amounts[0];
+  const amount = m[1] != null ? Number(m[1]) * (m[2] ? 1000 : 1) : m[3] != null ? Number(m[3]) * 1000 : Number(m[4]);
+  if (!(amount > 0) || (m[4] != null && (amount < 50 || (/^\d{4}$/.test(m[4]) && amount >= 1900 && amount <= 2099)))) return "";
   const ss = SafeSpendEngine.calculate(data, todayDate);
   if (!(data.accounts || []).some(a => isCashAccount(a)) || ss.noIncome) return "";
   const shown = displayedSafeToSpend(data, todayDate);

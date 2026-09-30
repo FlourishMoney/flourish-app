@@ -72,5 +72,28 @@ const { create } = require("./_runner.cjs");
     t.eq(iso(S.findAnchor(weekly, 500, [dep("2026-09-15", 500, "PAYROLL"), dep("2026-09-22", 500, "PAYROLL")])), "2026-09-22", "4c weekly: two deposits a week apart are a cycle");
   }
 
+  // ── 5. Realistic payroll the phase rule must not lose (round-2 review) ───────────────────────
+  {
+    // A raise: the income now says $2,300; the history is $2,000 cheques and one $2,300.
+    const raise = { id: 1, label: "Job", amount: "2300", freq: "biweekly" };
+    const rTx = [dep("2026-08-29", 2000, "PAYROLL"), dep("2026-09-12", 2000, "PAYROLL"), dep("2026-09-26", 2300, "PAYROLL")];
+    t.eq(iso(next(raise, rTx).date), "2026-10-10", "5a a raise not yet in the history keeps the real phase (Oct 10), from the older cheques");
+    // Hourly pay swinging about 12% either way, not marked as varying.
+    const hourly = { id: 1, label: "Job", amount: "2000", freq: "biweekly" };
+    const hTx = [dep("2026-08-29", 2240, "PAYROLL"), dep("2026-09-12", 1760, "PAYROLL"), dep("2026-09-26", 2200, "PAYROLL")];
+    t.eq(iso(next(hourly, hTx).date), "2026-10-10", "5b pay that swings with hours keeps its phase");
+    // Pay moved to the other week: six cheques on the old phase, then two on the new.
+    const moved = { id: 1, label: "Job", amount: "2000", freq: "biweekly" };
+    const mTx = ["2026-06-05", "2026-06-19", "2026-07-03", "2026-07-17", "2026-07-31", "2026-08-14", "2026-09-04", "2026-09-18"].map(d => dep(d, 2000, "PAYROLL"));
+    t.eq(iso(next(moved, mTx).date), "2026-10-02", "5c pay that moved to the other week follows the new phase (Oct 2), not the longer old history (Oct 9)");
+    // Two incomes, both paid as PAYROLL on alternate weeks: each keeps its own phase.
+    const a = { id: 1, label: "Job A", amount: "2000", freq: "biweekly" }, b2 = { id: 2, label: "Job B", amount: "1500", freq: "biweekly" };
+    const both = [dep("2026-08-29", 2000, "PAYROLL"), dep("2026-09-12", 2000, "PAYROLL"), dep("2026-09-26", 2000, "PAYROLL"),
+                  dep("2026-08-22", 1500, "PAYROLL"), dep("2026-09-05", 1500, "PAYROLL"), dep("2026-09-19", 1500, "PAYROLL")];
+    t.eq([iso(S.findAnchor(a, 2000, both)), iso(S.findAnchor(b2, 1500, both))], ["2026-09-26", "2026-09-19"], "5d two incomes paid on alternate weeks each keep their own phase");
+    // The widened band is still bounded: a $5,000 deposit never phases a $2,000 income.
+    t.eq(S.findAnchor(hourly, 2000, [dep("2026-09-12", 5000, "PAYROLL"), dep("2026-09-26", 5000, "PAYROLL")]), null, "5e the widened band is still bounded (0.6x to 1.5x)");
+  }
+
   t.summary("paydayPhase.test");
 })();
