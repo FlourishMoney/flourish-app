@@ -9121,9 +9121,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         const mo = parseFloat(g.monthly||0);
         return s + (mo>0 ? mo : remaining>0 ? Math.ceil(remaining/24) : 0);
       },0);
-      // discret from generateBudgetSuggestions already accounts for goals globally,
-      // but inside Goals tab we recalc locally for display
-      const spendPool = Math.max(50, discret - localGoalsMo);
+      // discret from generateBudgetSuggestions has goal savings taken off already, so it is what is
+      // left to spend: the figure Do → Budget shows as "Available to spend".
+      const spendPool = discret;
 
       // Current month spending per category
       const catOverrides = (()=>{try{return safeLoadLS("flourish_cat_overrides", {});}catch{return {};}})();
@@ -9142,7 +9142,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       const saveSuggestions = Object.entries(budgets).map(([cat,limit])=>{
         const spent = monthSpend[cat]||0;
         const pct = limit>0?spent/limit:0;
-        if(pct>1.2&&spent>20) return {cat, spent, limit, over:spent-limit, potential:Math.round((spent-(limit*0.85))/5)*5};
+        if(pct>1.2&&spent>20) return {cat, spent, limit, over:spent-limit};
         return null;
       }).filter(Boolean).sort((a,b)=>b.over-a.over).slice(0,3);
 
@@ -9190,13 +9190,10 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
           {saveSuggestions.length>0&&(
             <div style={{background:C.orange+"12",border:`1px solid ${C.orange}33`,borderRadius:12,padding:"12px 14px"}}>
               <div style={{color:C.orange,fontWeight:800,fontSize:13,marginBottom:8}}>💡 Where you could save</div>
-              {saveSuggestions.map(({cat,over,potential})=>(
-                <div key={cat} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                  <div>
-                    <span style={{color:C.cream,fontSize:13}}>{catEmojis[cat]||"📌"} {cat}</span>
-                    <span style={{color:C.redBright,fontSize:13,marginLeft:6}}>${Math.round(over)} over this month</span>
-                  </div>
-                  {potential>0&&<span style={{color:C.green,fontSize:13,fontWeight:700}}>Save ~${potential}/mo</span>}
+              {saveSuggestions.map(({cat,over})=>(
+                <div key={cat} style={{marginBottom:6}}>
+                  <div style={{color:C.cream,fontSize:13}}>{catEmojis[cat]||"📌"} {cat}</div>
+                  <div style={{color:C.redBright,fontSize:13,marginTop:SPACE.xs}}>${Math.round(over)} over budget here this month</div>
                 </div>
               ))}
             </div>
@@ -9211,7 +9208,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                 Object.entries(budgets).forEach(([k,v])=>{seed[k]=String(v);});
                 Object.entries(displayCats).forEach(([k,v])=>{if(!seed[k])seed[k]=String(v);});
                 if(setAppData) setAppData(prev=>({...prev,_budgetEditOpen:true,_budgetEditSeed:seed}));
-              }} style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:8,padding:"5px 10px",color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+              }} style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:8,padding:"5px 10px",minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
                 Edit
               </button>
             </div>

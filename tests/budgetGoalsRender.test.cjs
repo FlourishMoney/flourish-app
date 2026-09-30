@@ -13,6 +13,10 @@
 // generateBudgetSuggestions and deleted the list it was built from. It threw whenever a household
 // with a budget was still saving toward a goal.
 //
+// Once Goals → Budget rendered again, its "Available for spending" was shown to be wrong: it took the
+// goal savings off `discret`, which generateBudgetSuggestions has already taken them off. Do → Budget
+// shows `discret` itself, so the two screens disagreed by exactly the goal savings.
+//
 // This renders the real components from src/App.jsx (bundled with esbuild, rendered with
 // react-dom/server) for a household with budgets, goals and this month's spending, and checks what
 // the screen says.
@@ -30,7 +34,8 @@ const REPO = path.join(__dirname, "..");
 function loadApp() {
   const esbuild = require(path.join(REPO, "node_modules", "esbuild"));
   const contents = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8") + `
-export { Goals as __Goals, BudgetScreen as __BudgetScreen, generateBudgetSuggestions as __generateBudgetSuggestions };
+export { Goals as __Goals, BudgetScreen as __BudgetScreen, generateBudgetSuggestions as __generateBudgetSuggestions,
+  buildDemoState as __buildDemoState };
 export { renderToStaticMarkup as __renderToStaticMarkup } from "react-dom/server";
 export { createElement as __createElement } from "react";
 `;
@@ -117,12 +122,12 @@ const household = {
   try { app = loadApp(); } catch (e) { t.ok(false, `src/App.jsx bundles and loads for rendering: ${describe(e)}`); }
   if (!app) return t.summary("budgetGoalsRender.test");
   const { __Goals: Goals, __BudgetScreen: BudgetScreen, __generateBudgetSuggestions: generateBudgetSuggestions,
-    __renderToStaticMarkup: render, __createElement: h } = app;
+    __buildDemoState: buildDemoState, __renderToStaticMarkup: render, __createElement: h } = app;
   const noop = () => {};
 
   // ── Do → Goals → Budget ─────────────────────────────────────────────────────
   // "Where you could save" lists a budget once this month's spending is more than 20% over it and
-  // above $20, and offers to save what was spent beyond 85% of the budget, to the nearest $5.
+  // above $20, and says how far over it is. It projects nothing: one month is not a monthly saving.
   let goalsBudget = null;
   try {
     goalsBudget = textOf(render(h(Goals, { data: household, initialTab: "budget", setAppData: noop, setScreen: noop })));
@@ -133,11 +138,22 @@ const household = {
     const panel = between(goalsBudget, "Where you could save", "Monthly Category Budgets");
     t.ok(panel != null, "Goals → Budget shows \"Where you could save\" when a budget is more than 20% over this month");
     if (panel != null) {
-      t.ok(panel.includes("Coffee & Dining $50 over this month"), `Coffee & Dining is listed as $50 over this month (panel: ${panel})`);
-      t.ok(panel.includes("Save ~$65/mo"), `its saving is $150 spent less 85% of the $100 budget: ~$65/mo (panel: ${panel})`);
+      t.ok(panel.includes("Coffee & Dining $50 over budget here this month"), `Coffee & Dining, $150 against $100, is listed as "$50 over budget here this month" (panel: ${panel})`);
+      t.eq(panel, "☕ Coffee & Dining $50 over budget here this month", "the panel states the one budget that is over and by how much, and nothing else: no projection in any wording");
       t.ok(!panel.includes("Groceries"), `Groceries, 12.5% over, is under the 20% bar (panel: ${panel})`);
       t.ok(!panel.includes("Subscriptions"), `Subscriptions, 50% over on $15 spent, is under the $20 floor (panel: ${panel})`);
     }
+  }
+
+  // The Edit button beside "Monthly Category Budgets" is a tap target, so it is at least
+  // LAYOUT.minTap (44px) tall, not sized by its 13px label. The layout sweep does not visit this tab.
+  {
+    let html = "";
+    try { html = render(h(Goals, { data: household, initialTab: "budget", setAppData: noop, setScreen: noop })); } catch { /* reported above */ }
+    const button = html.match(/<button[^>]*style="([^"]*)"[^>]*>Edit<\/button>/);
+    const minHeight = button ? Number((button[1].match(/min-height:(\d+(?:\.\d+)?)px/) || [])[1]) : NaN;
+    t.ok(!!button, "Goals → Budget has its Edit button");
+    t.ok(minHeight >= 44, `the Edit button is at least 44px tall (style: ${button ? button[1] : "none"})`);
   }
 
   // ── Do → Budget ─────────────────────────────────────────────────────────────
@@ -162,6 +178,33 @@ const household = {
       t.eq(rows.map((r) => r.name), ["Trip", "Laptop"], "it lists exactly those goals, not the one already reached");
       t.eq(rows.reduce((s, r) => s + r.monthly, 0), goalsMo, "the monthly amounts it lists add up to the Goal savings figure");
     }
+  }
+
+  // ── What is left to spend: Goals → Budget and Do → Budget must say the same ──────────────────
+  // `discret` is take-home less fixed bills, the savings target and goal savings. Do → Budget shows
+  // it as "Available to spend"; Goals → Budget's "Available for spending" has to be the same amount.
+  const dollars = (text, re) => { const m = text && text.match(re); return m ? Number(m[1].replace(/\D/g, "")) : null; };
+  for (const [label, data, expected] of [
+    // $3,750 take-home, no bills, $563 savings target (15%), $150 goal savings.
+    ["the test household", household, 3037],
+    // The demo with one goal saving $150 a month: $4,700 − $2,177 − $705 − $150.
+    ["the demo household with a $150-a-month goal",
+      { ...buildDemoState("CA"), goals: [{ name: "Vacation", target: 2400, saved: 600, monthly: 150 }] }, 1668],
+    // Goals bigger than what is left: nothing is available, and neither screen may invent a figure.
+    ["a household whose goals take everything left",
+      { ...household, incomes: [{ name: "Pay", amount: 1000, freq: "monthly" }], goals: [{ name: "House", target: 50000, saved: 0, monthly: 2000 }] }, 0],
+  ]) {
+    let inGoals = null, inBudget = null;
+    try {
+      inGoals = dollars(textOf(render(h(Goals, { data, initialTab: "budget", setAppData: noop, setScreen: noop }))), /Available for spending \$([\d,.\s]+?) ?\/mo/);
+      inBudget = dollars(textOf(render(h(BudgetScreen, { data, setAppData: noop, setScreen: noop }))), /Available to spend \$([\d,.\s]+?) ?\/mo/);
+    } catch (e) {
+      t.ok(false, `${label}: both budget screens render: ${describe(e)}`);
+      continue;
+    }
+    t.eq(generateBudgetSuggestions(data).discret, expected, `sanity: ${label} has $${expected} a month left to spend`);
+    t.eq(inBudget, expected, `${label}: Do → Budget shows $${expected} available to spend`);
+    t.eq(inGoals, inBudget, `${label}: Goals → Budget shows the same amount available as Do → Budget`);
   }
 
   t.summary("budgetGoalsRender.test");
