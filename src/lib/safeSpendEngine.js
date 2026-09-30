@@ -157,6 +157,14 @@ export const SafeSpendEngine = {
                   }).filter(Boolean),
                   ...expectedOut.map(o => ({ name: o.label, amount: o.amount, _expected: true, id: o.srcKey,
                                              date: String(o.date.getDate()), nextDueDate: isoOf(o.date) }))],
+      // Every bill (and expected money out) occurrence reserved above, one row per due date, so the Due
+      // soon list adds up to upcomingBills exactly (a weekly bill due twice is two rows) and each row
+      // carries its own date. Display only (lib/dueSoon.js); nothing here changes safe to spend.
+      billsDueSoon: [...bills.flatMap(b => occurrencesFor(b).map(o => ({ name: b.name || "Bill", amount: num(o.amount), date: o.date,
+                                                                        key: `${billSrcKey(b)}|${isoOf(o.date)}` }))),
+                     ...expectedOut.map(o => ({ name: o.label, amount: num(o.amount), date: o.date, key: `${o.srcKey}|${isoOf(o.date)}`, _expected: true }))],
+      // The window those lists cover: to the next deposit when there is one, else 10 days.
+      dueSoonToDeposit: _daysToDeposit != null && _daysToDeposit > 0,
       // The debt minimums the forecast pays before the next deposit, for Today's "Due soon" list. Shown
       // only; the reservation above (debtPayments) is unchanged, so safe to spend does not move.
       minimumsDueSoon: debtMinimumDates(data, todayDate, horizonDays)

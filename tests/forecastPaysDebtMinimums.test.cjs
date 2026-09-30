@@ -172,8 +172,8 @@ const { create } = require("./_runner.cjs");
     // The card's total now comes from lib/dueSoon.js, which the desktop / iPad right column shares, so
     // the formula is held here by value: it is bills plus the minimums due in the window.
     const { dueSoonList } = await import("../src/lib/dueSoon.js");
-    t.eq(dueSoonList(ssNow).total, dueSoon, "8e0 the shared Due soon total is bills plus the minimums in the window ($413)");
-    t.ok(/const dueSoonTotal = dueSoonList\(_ss\)\.total;/.test(app) && /label:"Due soon",value:`\$\$\{\(dueSoonTotal\|\|0\)/.test(app),
+    t.eq(Math.round(dueSoonList(ssNow).total * 100), Math.round(dueSoon * 100), "8e0 the shared Due soon total is bills plus the minimums in the window ($413)");
+    t.ok(/const dueSoon = dueSoonList\(_ss\);\s*const dueSoonTotal = dueSoon\.total;/.test(app) && /label:"Due soon",value:formatMoney\(dueSoonTotal\|\|0\)/.test(app),
          "8e the Today card shows bills plus the minimums due in the window");
   }
 
