@@ -25,10 +25,20 @@ const CONSENT_VERSIONS = {
 };
 const LEGACY_CONSENT_VERSION = "pre-2026-10-01";
 
-// Where a signup may come from. The homepage form tags "hero" and "bottom_cta" ("landing" is the form's
-// own default); the benefit calendar and CCB clawback pages will use "calendar" and "clawback".
-// Anything else is refused, so the source column only ever holds a value someone chose.
-const WAITLIST_SOURCES = ["landing", "hero", "bottom_cta", "calendar", "clawback"];
+// WHERE ON THE PAGE the form sat (stored in metadata.placement). The homepage form tags "hero" and
+// "bottom_cta" ("landing" is the form's own default); the benefit calendar and CCB clawback pages will use
+// "calendar" and "clawback". Anything else is refused: it is our own code, so an unknown value is a bug.
+const WAITLIST_PLACEMENTS = ["landing", "hero", "bottom_cta", "calendar", "clawback"];
+
+// WHICH CAMPAIGN brought them (stored in the source column). The campaign links carry ?src=<one of these>.
+// A known src is stored as is; an unknown or missing one is stored as "direct". The column never holds
+// free text and is never empty.
+const WAITLIST_SRCS = ["ig", "fb", "tt", "calendar", "clawback", "email", "press"];
+const WAITLIST_SRC_DEFAULT = "direct";
+function waitlistSourceFor(src) {
+  const v = typeof src === "string" ? src.trim().toLowerCase() : "";
+  return WAITLIST_SRCS.includes(v) ? v : WAITLIST_SRC_DEFAULT;
+}
 
 // Launch is Canada only (Amanda, 2026-09-30): every waitlist row is stored as Canada, whatever a
 // client sends, and the form offers no other country.
@@ -48,4 +58,4 @@ function mayEmailWaitlistRow(row, kind) {
   return !!v && v !== LEGACY_CONSENT_VERSION && Object.prototype.hasOwnProperty.call(CONSENT_VERSIONS, v);
 }
 
-module.exports = { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, CONSENT_VERSIONS, LEGACY_CONSENT_VERSION, WAITLIST_SOURCES, WAITLIST_COUNTRY, mayEmailWaitlistRow };
+module.exports = { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, CONSENT_VERSIONS, LEGACY_CONSENT_VERSION, WAITLIST_PLACEMENTS, WAITLIST_SRCS, WAITLIST_SRC_DEFAULT, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow };

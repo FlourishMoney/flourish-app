@@ -91,7 +91,7 @@ async function getUserCount(supabaseUrl, secretKey) {
 // The template, the send and the welcomed_at write live in _lib/waitlistWelcome.js, because the
 // scheduled sweep (waitlist-sweep.js) sends the SAME message to rows this path could not reach.
 const { sendWelcomeEmail, markWelcomed } = require("./_lib/waitlistWelcome");
-const { CONSENT_VERSION, WAITLIST_SOURCES, WAITLIST_COUNTRY, mayEmailWaitlistRow } = require("./_lib/waitlistConsent");
+const { CONSENT_VERSION, WAITLIST_PLACEMENTS, waitlistSourceFor, WAITLIST_COUNTRY, mayEmailWaitlistRow } = require("./_lib/waitlistConsent");
 
 // The insert is the one call the signup genuinely depends on, so it gets the same 5s as the send. With
 // all three deadlines the worst case for join_waitlist is 5 + 5 + 3 = 13s, well inside Netlify's 60s
@@ -268,7 +268,10 @@ exports.handler = async (event) => {
 
   // Phase E1: waitlist email capture (replaces public signup CTAs).
   if (action === "join_waitlist") {
-    const { email, source, metadata, consentVersion } = body;
+    const { email, src, metadata, consentVersion } = body;
+    // Where on the page the form sat. Current forms send it as `placement`; a page cached from before
+    // this change sends it as `source`, which meant the same thing then.
+    const placement = typeof body.placement === "string" ? body.placement : body.source;
 
     // Normalize BEFORE validating. The regex rejects any whitespace, so a trailing or leading space,
     // which is a typo and not a different address, used to fail the check outright ("you@example.com "
@@ -284,14 +287,16 @@ exports.handler = async (event) => {
       };
     }
 
-    // Where the signup came from: one of the known forms, or refused. The source column only ever holds
-    // a value a form of ours sends (_lib/waitlistConsent.js).
-    if (typeof source !== "string" || !WAITLIST_SOURCES.includes(source)) {
+    // Where on the page the form sat: one of our own placements, or refused (an unknown one is a bug in
+    // our own code). It is stored in metadata.placement. The source column holds the campaign instead:
+    // a known ?src= value, or "direct" (_lib/waitlistConsent.js).
+    if (typeof placement !== "string" || !WAITLIST_PLACEMENTS.includes(placement)) {
       return {
         statusCode: 400, headers: CORS,
-        body: JSON.stringify({ error: "Unknown source" }),
+        body: JSON.stringify({ error: "Unknown placement" }),
       };
     }
+    const source = waitlistSourceFor(src);
     // CASL: the signup must carry the version of the consent wording the form showed, and only the
     // current wording is accepted. That version and the time are stored with the row as the consent
     // record. A form showing out-of-date wording (a stale cached page) is refused rather than recorded
@@ -320,7 +325,8 @@ exports.handler = async (event) => {
           email: emailAddr,
           country: WAITLIST_COUNTRY, // launch is Canada only: stored as Canada whatever the client sent
           source,
-          metadata: metadata || {},
+          // utm_* and referrer exactly as the form captured them, plus where the form sat.
+          metadata: { ...((metadata && typeof metadata === "object" && !Array.isArray(metadata)) ? metadata : {}), placement },
           consent_version: CONSENT_VERSION,
           consented_at: new Date().toISOString(),
         }),

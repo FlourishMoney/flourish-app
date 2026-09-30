@@ -77,8 +77,8 @@ async function join(body, insertAnswer = { status: 201, body: [{ id: "row-1" }] 
     t.eq(C.CONSENT_TEXT, BRIEF_CONSENT, "1a the consent line is the approved text, word for word");
     t.eq(C.IDENTITY_TEXT, BRIEF_IDENTITY, "1b the identity line is the approved text, word for word");
     const web = await import("../src/lib/waitlistConsent.js");
-    t.eq([web.CONSENT_VERSION, web.CONSENT_TEXT, web.IDENTITY_TEXT, web.WAITLIST_SOURCES.join(",")],
-      [C.CONSENT_VERSION, C.CONSENT_TEXT, C.IDENTITY_TEXT, C.WAITLIST_SOURCES.join(",")], "1c the browser's copy is identical to the server's");
+    t.eq([web.CONSENT_VERSION, web.CONSENT_TEXT, web.IDENTITY_TEXT, web.WAITLIST_PLACEMENTS.join(","), web.WAITLIST_SRCS.join(",")],
+      [C.CONSENT_VERSION, C.CONSENT_TEXT, C.IDENTITY_TEXT, C.WAITLIST_PLACEMENTS.join(","), C.WAITLIST_SRCS.join(",")], "1c the browser's copy is identical to the server's");
     t.eq(C.CONSENT_VERSIONS[C.CONSENT_VERSION].consent, C.CONSENT_TEXT, "1d the current version resolves to the wording shown");
     let A = {};
     try { A = loadApp(["WaitlistForm"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
@@ -96,7 +96,7 @@ async function join(body, insertAnswer = { status: 201, body: [{ id: "row-1" }] 
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     t.ok(/<WaitlistForm source="hero"/.test(app) && /<WaitlistForm source="bottom_cta"/.test(app), "1i the homepage uses the component at both spots");
     t.ok(/consentVersion: CONSENT_VERSION/.test(app), "1j the form sends the version of the wording it showed");
-    t.ok(/country: "CA", source: tag/.test(app), "7b …and always sends Canada");
+    t.ok(/country: "CA", placement: tag/.test(app), "7b …and always sends Canada");
     t.ok(!/No spam, just the launch news/.test(app), "1k the success message no longer contradicts the consent line");
   }
 
@@ -114,15 +114,15 @@ async function join(body, insertAnswer = { status: 201, body: [{ id: "row-1" }] 
     }
   }
 
-  // ── 3. Unknown source rejected ───────────────────────────────────────────────────────────────
+  // ── 3. Unknown placement rejected (the campaign source is waitlistSrc.test's) ───────────────
   {
-    for (const src of ["landing", "hero", "bottom_cta", "calendar", "clawback"]) {
-      const r = await join({ source: src, consentVersion: "2026-10-01" });
-      t.eq([r.status, r.insert && r.insert.source], [200, src], `3a source "${src}" is accepted and stored`);
+    for (const pl of ["landing", "hero", "bottom_cta", "calendar", "clawback"]) {
+      const r = await join({ placement: pl, consentVersion: "2026-10-01" });
+      t.eq([r.status, r.insert && r.insert.metadata.placement], [200, pl], `3a placement "${pl}" is accepted and stored in metadata.placement`);
     }
-    for (const [label, src] of [["an unknown source", "partner_site"], ["no source", undefined], ["a non-string source", { x: 1 }], ["a near miss", "Calendar"]]) {
-      const r = await join({ source: src, consentVersion: "2026-10-01" });
-      t.eq([r.status, r.body.error, r.insert], [400, "Unknown source", null], `3b ${label} is refused, and nothing is stored`);
+    for (const [label, pl] of [["an unknown placement", "partner_site"], ["no placement", undefined], ["a non-string placement", { x: 1 }], ["a near miss", "Calendar"]]) {
+      const r = await join({ placement: pl, consentVersion: "2026-10-01" });
+      t.eq([r.status, r.body.error, r.insert], [400, "Unknown placement", null], `3b ${label} is refused, and nothing is stored`);
     }
   }
 

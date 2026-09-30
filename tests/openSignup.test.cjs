@@ -253,8 +253,8 @@ const freshState = (over = {}) => ({ rpc: [], deletes: [], created: [], fetches:
   {
     const beta = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "beta.js"), "utf8");
     const wl = beta.slice(beta.indexOf('if (action === "join_waitlist")'), beta.indexOf('if (action === "signup")'));
-    t.ok(/metadata: metadata \|\| \{\}/.test(wl) && /\bsource,\n/.test(wl) && /WAITLIST_SOURCES\.includes\(source\)/.test(wl),
-         "join_waitlist still stores the source (now only a known one) and the UTM metadata bag");
+    t.ok(/metadata: \{ \.\.\.\(\(metadata && typeof metadata === "object"[^\n]*\), placement \}/.test(wl) && /\bsource,\n/.test(wl) && /WAITLIST_PLACEMENTS\.includes\(placement\)/.test(wl) && /const source = waitlistSourceFor\(src\);/.test(wl),
+         "join_waitlist still stores a source (the campaign, or direct) and the UTM metadata bag, with the placement");
     t.ok(!/OPEN_SIGNUP|openSignupEnabled|decideSignup/.test(wl), "…and the open-signup flag touches none of it");
     const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
     for (const u of ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"]) {
