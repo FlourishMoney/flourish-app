@@ -8,6 +8,11 @@
 // ReferenceError for every household with a budget. `vite build` accepts an undeclared name, the
 // demo has no budgets, and every other suite reads App.jsx as text, so nothing caught it.
 //
+// Do → Budget (BudgetScreen) had the same kind of break. Its goal savings reminder counts and lists
+// `activeGoals`, which only Goals declares: 44a6cc9 moved BudgetScreen's goal sum into
+// generateBudgetSuggestions and deleted the list it was built from. It threw whenever a household
+// with a budget was still saving toward a goal.
+//
 // This renders the real components from src/App.jsx (bundled with esbuild, rendered with
 // react-dom/server) for a household with budgets, goals and this month's spending, and checks what
 // the screen says.
@@ -25,7 +30,7 @@ const REPO = path.join(__dirname, "..");
 function loadApp() {
   const esbuild = require(path.join(REPO, "node_modules", "esbuild"));
   const contents = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8") + `
-export { Goals as __Goals };
+export { Goals as __Goals, BudgetScreen as __BudgetScreen, generateBudgetSuggestions as __generateBudgetSuggestions };
 export { renderToStaticMarkup as __renderToStaticMarkup } from "react-dom/server";
 export { createElement as __createElement } from "react";
 `;
@@ -111,7 +116,8 @@ const household = {
   let app = null;
   try { app = loadApp(); } catch (e) { t.ok(false, `src/App.jsx bundles and loads for rendering: ${describe(e)}`); }
   if (!app) return t.summary("budgetGoalsRender.test");
-  const { __Goals: Goals, __renderToStaticMarkup: render, __createElement: h } = app;
+  const { __Goals: Goals, __BudgetScreen: BudgetScreen, __generateBudgetSuggestions: generateBudgetSuggestions,
+    __renderToStaticMarkup: render, __createElement: h } = app;
   const noop = () => {};
 
   // ── Do → Goals → Budget ─────────────────────────────────────────────────────
@@ -131,6 +137,30 @@ const household = {
       t.ok(panel.includes("Save ~$65/mo"), `its saving is $150 spent less 85% of the $100 budget: ~$65/mo (panel: ${panel})`);
       t.ok(!panel.includes("Groceries"), `Groceries, 12.5% over, is under the 20% bar (panel: ${panel})`);
       t.ok(!panel.includes("Subscriptions"), `Subscriptions, 50% over on $15 spent, is under the $20 floor (panel: ${panel})`);
+    }
+  }
+
+  // ── Do → Budget ─────────────────────────────────────────────────────────────
+  // Once a budget is set, the screen reminds the household of its goal savings. The reminder shows
+  // when goalsMo (the "Goal savings" line of "How that is worked out") is above $0, so it has to
+  // count and list exactly the goals goalsMo adds up.
+  let budget = null;
+  try {
+    budget = textOf(render(h(BudgetScreen, { data: household, setAppData: noop, setScreen: noop })));
+  } catch (e) {
+    t.ok(false, `Do → Budget renders for a household with a budget and a goal: ${describe(e)}`);
+  }
+  if (budget != null) {
+    const { goalsMo } = generateBudgetSuggestions(household);
+    t.eq(goalsMo, 150, "sanity: the household's goal savings are Trip's $100 plus Laptop's $50 a month");
+    const reminder = between(budget, "Saving toward", "Category Breakdown");
+    const m = reminder && reminder.match(/^(\d+) goals? (.*)$/);
+    t.ok(!!m, `Do → Budget shows the goal savings reminder (text: ${reminder})`);
+    if (m) {
+      const rows = [...m[2].matchAll(/(.+?) \$(-?\d+)\/mo · \d+% saved/g)].map((r) => ({ name: r[1].trim(), monthly: Number(r[2]) }));
+      t.eq(Number(m[1]), 2, "the reminder counts the two goals still being saved for");
+      t.eq(rows.map((r) => r.name), ["Trip", "Laptop"], "it lists exactly those goals, not the one already reached");
+      t.eq(rows.reduce((s, r) => s + r.monthly, 0), goalsMo, "the monthly amounts it lists add up to the Goal savings figure");
     }
   }
 

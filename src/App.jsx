@@ -14291,6 +14291,9 @@ function BudgetScreen({data, setAppData, setScreen}) {
     grossMo, goalsMo, canAfford, shortfall, cutSuggestions,
     hSize, numKids, totalSugg
   } = generateBudgetSuggestions(data);
+  // The goals goalsMo adds up, filtered exactly as generateBudgetSuggestions filters them, so the
+  // goal savings reminder counts and lists what that amount is made of.
+  const activeGoals = (data.goals || []).filter(g => parseFloat(g.target || 0) > parseFloat(g.saved || 0));
   const budgets = data.budgets || {};
   const hasBudgets = Object.keys(budgets).length > 0;
   const isCA = (data.profile?.country || "CA") === "CA";
