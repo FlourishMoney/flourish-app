@@ -127,7 +127,7 @@ const household = {
 
   // ── Do → Goals → Budget ─────────────────────────────────────────────────────
   // "Where you could save" lists a budget once this month's spending is more than 20% over it and
-  // above $20, and offers to save what was spent beyond 85% of the budget, to the nearest $5.
+  // above $20, and says how far over it is. It projects nothing: one month is not a monthly saving.
   let goalsBudget = null;
   try {
     goalsBudget = textOf(render(h(Goals, { data: household, initialTab: "budget", setAppData: noop, setScreen: noop })));
@@ -138,8 +138,8 @@ const household = {
     const panel = between(goalsBudget, "Where you could save", "Monthly Category Budgets");
     t.ok(panel != null, "Goals → Budget shows \"Where you could save\" when a budget is more than 20% over this month");
     if (panel != null) {
-      t.ok(panel.includes("Coffee & Dining $50 over this month"), `Coffee & Dining is listed as $50 over this month (panel: ${panel})`);
-      t.ok(panel.includes("Save ~$65/mo"), `its saving is $150 spent less 85% of the $100 budget: ~$65/mo (panel: ${panel})`);
+      t.ok(panel.includes("Coffee & Dining $50 over budget here this month"), `Coffee & Dining, $150 against $100, is listed as "$50 over budget here this month" (panel: ${panel})`);
+      t.ok(!/Save|\/mo/.test(panel), `the panel states the overage and projects no saving per month (panel: ${panel})`);
       t.ok(!panel.includes("Groceries"), `Groceries, 12.5% over, is under the 20% bar (panel: ${panel})`);
       t.ok(!panel.includes("Subscriptions"), `Subscriptions, 50% over on $15 spent, is under the $20 floor (panel: ${panel})`);
     }
