@@ -97,8 +97,13 @@ const D = (iso) => new Date(iso + "T12:00:00");
     t.ok(pa.join() !== pc.join(), "D1: anchorDay=10 produces DIFFERENT paydays from the unanchored default");
     t.ok(pa.includes("2026-03-10"), "D2: …specifically it pays on the 10th");
     t.ok(pb.includes("2026-03-25"), "D3: anchorDay=25 pays on the 25th");
-    t.ok(pb.includes("2026-03-31"),
-         "D4: …and its second date (25 + 15 = 40) CLAMPS to the last day of the month instead of vanishing");
+    // math-reconcile item 3 review: the second date is the day half a month away WITHIN the month
+    // (semimonthlyPair: 25 - 15 = 10), not 25 + 15 clamped onto the 31st, which put both paydays in
+    // the last week and none in the first half. It still never vanishes: two paydays a month.
+    t.ok(pb.includes("2026-03-10"),
+         "D4: …and its second date is the 10th (25 - 15), the other half of the month, so it does not vanish");
+    t.ok(!pb.includes("2026-03-31"),
+         "D4b: …and it is not piled onto the 31st, six days after the first");
     t.ok(pc.includes("2026-03-15") && pc.includes("2026-04-01"),
          "D5: with no anchor the historical 1st-and-15th behaviour is preserved — no silent change " +
          "for users who never set one");

@@ -282,7 +282,9 @@ const history = (weeks = 4) => [[8, 9], [15, 16], [22, 23], [29, 30]].slice(0, w
     // Nothing falling due in the next seven days leaves `upcoming` empty, so a guard that read it
     // would prepend the safe-to-spend line again on every call.
     const bare = { wins: [], changes: [], risks: [], progress: [], decisions: [], questions: [] };
-    const noUpcoming = { ...data, bills: [] };
+    // No bills AND no debts: the forecast now pays each debt's minimum on the 1st (math-reconcile
+    // item 4), so a household with debts has money falling due within seven days of any month end.
+    const noUpcoming = { ...data, bills: [], debts: [] };
     const once = withWeekAhead(bare, noUpcoming);
     const twice = withWeekAhead(once, noUpcoming);
     t.eq((twice.progress || []).filter(x => /^Safe until next payday/.test(x.text)).length, 1,

@@ -19,6 +19,8 @@ import {
   num,
   baseCurrencyOf,
   accountCurrencyOf,
+  unbilledDebtMinimums,
+  debtMinimumDates,
 } from "./financialCalculations.js";
 import { daysToNextDepositFor, billOccurrences, billSrcKey, isoOf } from "./forecastEdits.js";
 
@@ -121,9 +123,10 @@ export const SafeSpendEngine = {
     const upcomingBills = bills.reduce((s,b) => s + occurrencesFor(b).reduce((t,o) => t + num(o.amount), 0), 0)
                         + expectedOut.reduce((s,o) => s + num(o.amount), 0);
 
-    // Minimum debt payments due this month
-    const debtPayments = debts
-      .reduce((s,d) => s + num(d.min), 0);
+    // Minimum debt payments due this month, except a debt a bill already pays (billPaysDebt, by
+    // identity only): that bill is reserved above, and the forecast skips the same minimum.
+    const debtPayments = unbilledDebtMinimums(debts, bills)
+      .reduce((s,x) => s + x.amount, 0);
 
     // Safety buffer: `horizonDays` of average daily spend (Truth-fix item 3: scales to the next deposit,
     // not a fixed 10; Sprint Q item 3: NaN-guarded).
@@ -154,6 +157,10 @@ export const SafeSpendEngine = {
                   }).filter(Boolean),
                   ...expectedOut.map(o => ({ name: o.label, amount: o.amount, _expected: true, id: o.srcKey,
                                              date: String(o.date.getDate()), nextDueDate: isoOf(o.date) }))],
+      // The debt minimums the forecast pays before the next deposit, for Today's "Due soon" list. Shown
+      // only; the reservation above (debtPayments) is unchanged, so safe to spend does not move.
+      minimumsDueSoon: debtMinimumDates(data, todayDate, horizonDays)
+        .map(m => ({ name: `${m.debt.name || "Debt"} minimum payment`, amount: m.amount, date: m.date, _debt: true })),
       // Sprint C Fix 1: base currency + what was left out, so the UI can disclose the exclusion.
       baseCurrency: base,
       mixedCurrencyDetected,
