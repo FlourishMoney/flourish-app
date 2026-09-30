@@ -17,7 +17,7 @@
 // date). No I/O, no React, no storage.
 // -----------------------------------------------------------------------------
 
-import { clampDayToMonth, semimonthlyDays, num } from "./financialCalculations.js";
+import { clampDayToMonth, semimonthlyDays, semimonthlyPair, num } from "./financialCalculations.js";
 
 const _DAY_MS = 86400000;
 function _startOfDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
@@ -96,12 +96,14 @@ export function depositDatesFor(inc, incAmt, transactions, today, days) {
     }
   } else if (freq === "monthly" || freq === "semimonthly") {
     const d1 = anchorDayOf(inc, incAmt, transactions);
-    const d2n = freq === "semimonthly" ? (parseInt(inc.anchorDay, 10) > 0 ? d1 + 15 : 15) : null;
+    // An explicit anchorDay takes the shared pair (semimonthlyPair); without one, the observed day
+    // (or the 1st) and the 15th, as before.
+    const [sA, sB] = freq === "semimonthly" ? (parseInt(inc.anchorDay, 10) > 0 ? semimonthlyPair(d1) : [d1, 15]) : [null, null];
     for (let k = 1; k <= days; k++) {
       const d2 = new Date(today); d2.setDate(today.getDate() + k);
       const y = d2.getFullYear(), m = d2.getMonth(), dom = d2.getDate();
       const hit = freq === "semimonthly"
-        ? semimonthlyDays(d1, d2n, y, m).includes(dom)
+        ? semimonthlyDays(sA, sB, y, m).includes(dom)
         : dom === clampDayToMonth(d1, y, m);
       if (hit) out.push(d2);
     }
@@ -169,9 +171,9 @@ export function isDepositToday(incomes, transactions, today = new Date()) {
       if (gap >= 0 && gap % freqDays === 0) return true;
     } else if (freq === "monthly" || freq === "semimonthly") {
       const d1 = anchorDayOf(inc, amt, transactions);
-      const d2n = freq === "semimonthly" ? (parseInt(inc.anchorDay, 10) > 0 ? d1 + 15 : 15) : null;
+      const [sA, sB] = freq === "semimonthly" ? (parseInt(inc.anchorDay, 10) > 0 ? semimonthlyPair(d1) : [d1, 15]) : [null, null];
       const hit = freq === "semimonthly"
-        ? semimonthlyDays(d1, d2n, tY, tM).includes(tDom)
+        ? semimonthlyDays(sA, sB, tY, tM).includes(tDom)
         : tDom === clampDayToMonth(d1, tY, tM);
       if (hit) return true;
     }

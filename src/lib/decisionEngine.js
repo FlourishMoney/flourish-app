@@ -8,7 +8,7 @@
 // its old themed `insights` array was dead output and was removed (MATH-LOCK finding #3).
 // -----------------------------------------------------------------------------
 
-import { FinancialCalcEngine, isInvestmentAccount } from "./financialCalculations.js";
+import { FinancialCalcEngine, isInvestmentAccount, simulateDebtPayoffForDebt, isCashAccount, num } from "./financialCalculations.js";
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { ForecastEngine } from "./forecastEngine.js";
 import { shelterLabel } from "./locale.js";
@@ -34,20 +34,28 @@ export function selectHighestRateDebt(debts) {
   return [...(debts || [])].sort((a,b) => parseFloat(b.rate||0) - parseFloat(a.rate||0))[0] || null;
 }
 
-// Months shaved off the payoff date by paying `extraPayment` extra/month on the given debt,
-// via month-by-month amortization (240-month ceiling). Default APR 19.99% if the debt has none.
+// Months shaved off the payoff date by paying `extraPayment` extra/month on the given debt: the
+// payoff at the minimum less the payoff with the extra, both from debtPayoffMonths below, so the
+// figure Decisions prints and the before/after Meet prints are one model.
 export function computeDebtPayoffImpact(topDebt, extraPayment) {
   if (!topDebt) return 0;
-  const rate = parseFloat(topDebt.rate || 19.99) / 100 / 12;
-  const balance = parseFloat(topDebt.balance || 0);
-  const minPay = Math.max(25, balance * 0.02);
-  const calcMonths = (bal, pay) => {
-    if (pay <= 0 || bal <= 0) return 0;
-    let m = 0, b = bal;
-    while (b > 0 && m < 240) { b = b * (1 + rate) - pay; m++; }
-    return m;
-  };
-  return Math.max(0, calcMonths(balance, minPay) - calcMonths(balance, minPay + extraPayment));
+  return Math.max(0, debtPayoffMonths(topDebt, 0) - debtPayoffMonths(topDebt, extraPayment));
+}
+
+// The safe-to-spend figure exactly as Today shows it: safeToSpendView's integer headline, behind
+// Today's own setup gate. What-If, Meet and Decisions start from THIS number, not the engine's raw
+// safeAmount, so "spend $800" leaves Today's figure less $800 ($1,944 - $800 = $1,144 in the demo,
+// not $1,144.88). With no cash account Today shows no figure; callers get 0, which is what the
+// engine's clamped amount was in that case. Today also shows no figure when there is no income
+// (it asks for the income instead), so that is 0 too.
+export function displayedSafeToSpend(data = {}, todayDate = new Date()) {
+  const ss = SafeSpendEngine.calculate(data, todayDate);
+  if (ss.noIncome) return 0;
+  const view = safeToSpendView(ss, {
+    hasCashAccount: (data.accounts || []).filter(a => isCashAccount(a)).length > 0,
+    hasIncome: (data.incomes || []).some(i => num(i && i.amount) > 0),
+  });
+  return view.headline == null ? 0 : view.headline;
 }
 
 // Safe amount to move to savings now (25% of safe-to-spend, floored).
@@ -55,19 +63,14 @@ export function computeSavingsOpportunity(safe) {
   return Math.max(0, Math.floor(safe * 0.25));
 }
 
-// Months to pay off `debt` while paying `extraPayment` extra per month — same amortization as
-// computeDebtPayoffImpact's inner loop (min payment = max($25, 2% of balance), 240-month ceiling,
-// default 19.99% APR). Exposed so Meet can show BEFORE (extra 0) and AFTER payoff, from one source.
+// Months to pay off `debt` while paying `extraPayment` extra per month. The model is
+// financialCalculations.simulateDebtPayoffForDebt (the one amortization, at the debt's own minimum,
+// or max($25, 2% of balance) only when it has none), capped at the 240-month ceiling Meet and
+// Decisions display as "20+ yrs": a payment that never clears the debt reads as 240.
 export function debtPayoffMonths(debt, extraPayment = 0) {
   if (!debt) return 0;
-  const rate = parseFloat(debt.rate || 19.99) / 100 / 12;
-  const balance = parseFloat(debt.balance || 0);
-  const minPay = Math.max(25, balance * 0.02);
-  const pay = minPay + Math.max(0, Number(extraPayment) || 0);
-  if (pay <= 0 || balance <= 0) return 0;
-  let m = 0, b = balance;
-  while (b > 0 && m < 240) { b = b * (1 + rate) - pay; m++; }
-  return m; // 240 = did not clear within the 20-year ceiling
+  const m = simulateDebtPayoffForDebt(debt, extraPayment).boosted.monthsToPayoff;
+  return Number.isFinite(m) ? Math.min(m, 240) : 240;
 }
 
 // The savings buffer before and after moving `extra` into it. The buffer is the sum of savings-type

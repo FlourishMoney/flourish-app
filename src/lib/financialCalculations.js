@@ -184,6 +184,31 @@ export function simulateDebtPayoffBoost({ balance, apr, currentPayment, extraPay
   return { baseline, boosted, monthsSaved, interestSaved };
 }
 
+// ── 4b. THE debt payoff model every surface uses ─────────────────────────────
+// Today's Decisions card, the Meet decision and the What-If simulator all say how long a debt takes
+// to clear, and all three ask this. Decisions and Meet used to run their own loop at max($25, 2% of
+// balance) and ignore the minimum the household entered, while What-If used the entered minimum, so
+// the demo car loan ($8,200 at 6.99%, $280 minimum) cleared in 60 months on two screens and 33 on
+// the third.
+//
+// The payment is the debt's own minimum whenever it has one. Only a debt with no minimum at all
+// falls back to the estimate, max($25, 2% of the balance).
+export function debtMinimumPayment(debt) {
+  const min = num(debt && debt.min);
+  return min > 0 ? min : Math.max(25, num(debt && debt.balance) * 0.02);
+}
+
+// Payoff at the minimum (baseline) and at the minimum plus `extraPayment` (boosted), through the one
+// amortization above. A debt with no rate is modelled at 19.99%, as Decisions and Meet always did.
+export function simulateDebtPayoffForDebt(debt, extraPayment = 0) {
+  return simulateDebtPayoffBoost({
+    balance: num(debt && debt.balance),
+    apr: num((debt && debt.rate) || 19.99),
+    currentPayment: debtMinimumPayment(debt),
+    extraPayment: Math.max(0, num(extraPayment)),
+  });
+}
+
 // ── 5. simulateInvestmentGrowth ──────────────────────────────────────────────
 // Compound growth with periodic contributions.
 // FV = P × (1 + r)^n  +  C × [((1 + r)^n − 1) / r]
@@ -463,7 +488,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
           balance: num(d.balance),
           rate: real > 0 ? real : DEFAULT_APR_CREDIT,
           rateEstimated: !(real > 0), // Sprint 4b: flag fabricated APRs so the UI can label them
-          min: num(d.min) || Math.max(25, num(d.balance) * 0.02),
+          min: debtMinimumPayment(d),
           source: "manual",
           debtType: "manual",
         };
@@ -480,7 +505,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
         balance: c.balance || 0,
         rate: real > 0 ? real : DEFAULT_APR_CREDIT, // Plaid sometimes returns null APR
         rateEstimated: !(real > 0),
-        min: c.minPayment || Math.max(25, (c.balance || 0) * 0.02),
+        min: debtMinimumPayment({ min: c.minPayment, balance: c.balance }),
         source: "plaid_liability",
         debtType: "credit_card",
         account_id: c.account_id,
@@ -529,7 +554,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
         balance: num(d.balance),
         rate: real > 0 ? real : DEFAULT_APR_CREDIT,
         rateEstimated: !(real > 0),
-        min: num(d.min) || Math.max(25, num(d.balance) * 0.02),
+        min: debtMinimumPayment(d),
         source: "manual",
         debtType: "manual",
       };
@@ -677,6 +702,19 @@ export function daysUntilDueDay(dueDay, today = new Date()) {
 // still pays TWICE. Returns a sorted array of two day-numbers (or one only in a degenerate case that
 // valid semimonthly inputs cannot reach). Low anchors and the 1st-and-15th default are unchanged: they
 // never collide, so they fall straight through.
+// THE semimonthly pair for a known anchor day, shared by income and bills: the anchor and the day
+// half a month away IN THE SAME MONTH, +15 when that fits in a 31-day month and -15 when it does
+// not. So a 10th-and-25th schedule is (10, 25) whether it was anchored on the 10th or the 25th, and
+// a 15th-and-month-end one is (15, 30) from either end. The old anchor + 15, clamped, piled both
+// dates at month end for any anchor after the 16th (anchor 25: the 25th and the 31st, and no 10th).
+// semimonthlyDays then clamps the pair into each month (Feb 28/29, 30-day months). With no anchor
+// at all: the 1st and the 15th.
+export function semimonthlyPair(anchorDay) {
+  const d = parseInt(anchorDay, 10);
+  if (!(d >= 1 && d <= 31)) return [1, 15];
+  return d + 15 <= 31 ? [d, d + 15] : [d - 15, d];
+}
+
 export function semimonthlyDays(dayA, dayB, y, m) {
   const a = clampDayToMonth(dayA, y, m);
   let b = clampDayToMonth(dayB, y, m);
@@ -691,6 +729,14 @@ export function semimonthlyDays(dayA, dayB, y, m) {
 const _daysInMonth = daysInMonth;
 function _domDate(y, m, day) { return new Date(y, m, clampDayToMonth(day, y, m), 12, 0, 0); }
 
+// A semimonthly bill's two intended days: semimonthlyPair of its anchor day (nextDueDate, or its
+// day of month), the same rule income uses, so a bill and an income on the same schedule land on
+// the same days. The old ((d1 + 14) % 28) + 1 put a bill anchored on the 15th on the 2nd.
+function _billSemimonthlyPair(bill) {
+  const anchor = _isoToDate(bill.nextDueDate);
+  return semimonthlyPair(anchor ? anchor.getDate() : bill.date);
+}
+
 // Next occurrence Date on/after `today`. Returns null for non-datable bills.
 export function billNextDue(bill, today = new Date()) {
   if (!bill) return null;
@@ -704,11 +750,13 @@ export function billNextDue(bill, today = new Date()) {
     return _atNoon(a);
   }
   if (freq === "semimonthly") {
-    const anchor = _isoToDate(bill.nextDueDate);
-    const d1 = anchor ? anchor.getDate() : (parseInt(bill.date) || 1);
-    const d2 = ((d1 + 14) % 28) + 1;
+    const [dA, dB] = _billSemimonthlyPair(bill);
     const cands = [];
-    for (let mo = 0; mo <= 1; mo++) for (const day of [d1, d2]) cands.push(_domDate(t.getFullYear(), t.getMonth() + mo, day));
+    for (let mo = 0; mo <= 1; mo++) {
+      const first = new Date(t.getFullYear(), t.getMonth() + mo, 1, 12);
+      const y = first.getFullYear(), m = first.getMonth();
+      for (const day of semimonthlyDays(dA, dB, y, m)) cands.push(_domDate(y, m, day));
+    }
     return cands.filter(c => c >= t).sort((a, b) => a - b)[0] || null;
   }
   // monthly / quarterly / annual
@@ -745,14 +793,9 @@ export function billOccursOnDate(bill, d, today = new Date()) {
     return Math.round((target - first) / _DAY_MS) % step === 0;
   }
   if (freq === "semimonthly") {
-    const anchor = _isoToDate(bill.nextDueDate);
-    const d1 = anchor ? anchor.getDate() : (parseInt(bill.date) || 1);
-    const d2 = ((d1 + 14) % 28) + 1;
-    // clamp to month length (parity with billNextDue's _domDate) so a day 29–31 anchor still
-    // matches in short months — otherwise the occurrence would be silently dropped.
-    const ty = target.getFullYear(), tm = target.getMonth();
-    const day = target.getDate();
-    return day === clampDayToMonth(d1, ty, tm) || day === clampDayToMonth(d2, ty, tm);
+    // The same two days billNextDue schedules, and the same two an income on this schedule pays.
+    const [dA, dB] = _billSemimonthlyPair(bill);
+    return semimonthlyDays(dA, dB, target.getFullYear(), target.getMonth()).includes(target.getDate());
   }
   // monthly / quarterly / annual — match day-of-month, and (quarterly/annual) the right month
   const aDay = _isoToDate(bill.nextDueDate);
@@ -935,6 +978,103 @@ export function isCCPayment(txn, debts=[]) {
     }
   }
   return false;
+}
+
+// ── Loan payments ───────────────────────────────────────────────────────────
+// A payment on a loan (car, student, line of credit, mortgage) is money moving to a debt, not
+// spending. The forecast pays each debt's minimum by itself, so a loan payment also counted in the
+// average daily spend would be paid twice. Money out only, and by name only, never by amount.
+export const LOAN_PAYMENT_PATTERNS = [
+  "loan payment", "loan pmt", "loan pymt", "auto loan", "car loan", "student loan",
+  "auto finance", "car finance", "vehicle finance", "auto financing",
+  "line of credit", "mortgage payment", "mortgage pmt",
+  // Lenders and servicers whose payments carry only their name.
+  "navient", "nelnet", "mohela", "aidvantage", "nslsc", "student aid",
+  "honda financial", "toyota financial", "ford credit", "ally auto", "gm financial", "santander consumer",
+  "capital one auto", "td auto",
+];
+// Card issuers whose payment lines carry only the issuer's name.
+const CARD_PAYEE_PATTERNS = ["capital one", "discover", "american express", "amex", "chase card", "citi card", "barclaycard"];
+export function isLoanPayment(txn) {
+  if (!txn || !(txn.amount > 0)) return false;
+  const name = (txn.name || "").toLowerCase();
+  return LOAN_PAYMENT_PATTERNS.some(p => name.includes(p));
+}
+
+// Is this outflow the payment of one of `minimums` (the minimums the forecast pays)? It must look
+// like a debt payment (a card payment, a loan payment, a card issuer, or a transfer) AND match a
+// minimum's amount within $2 or 5%. Both, because either alone would take real spending out: a card
+// paid in full, or a $68 dinner on the day the Visa minimum is $68.
+export function paysADebtMinimum(txn, minimums, debts = []) {
+  if (!txn || !(txn.amount > 0) || !(minimums && minimums.length)) return false;
+  const name = (txn.name || "").toLowerCase();
+  const looksLikePayment = !!txn.isTransfer || isCCPayment(txn, debts) || isLoanPayment(txn) ||
+    CARD_PAYEE_PATTERNS.some(p => name.includes(p));
+  if (!looksLikePayment) return false;
+  return minimums.some(m => Math.abs(txn.amount - m) <= Math.max(2, m * 0.05));
+}
+
+// ── Which bill IS a debt's payment ──────────────────────────────────────────
+// Only when the bill says so: its debtId names the debt, by the debt's own id or by its bank
+// account id. Never by amount, date or name. A $68 phone bill due on the 1st is not the Visa
+// minimum, and a bill someone called "Car Loan" is not the car loan until it is linked to it.
+export function billPaysDebt(bill, debt) {
+  const link = bill && bill.debtId;
+  if (link == null || link === "" || !debt) return false;
+  const l = String(link);
+  return (debt.id != null && debt.id !== "" && l === String(debt.id)) ||
+         (debt.account_id != null && debt.account_id !== "" && l === String(debt.account_id));
+}
+
+// A debt's link key: what a bill's debtId holds to say "I pay this debt". The debt's own id, or for a
+// bank-imported debt its bank account id; null while it has neither (withDebtIds gives it an id).
+export function debtLinkKey(debt) {
+  if (!debt) return null;
+  if (debt.id != null && debt.id !== "") return String(debt.id);
+  if (debt.account_id != null && debt.account_id !== "") return String(debt.account_id);
+  return null;
+}
+export function newDebtId() {
+  return `debt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+// Give every debt that has no link key an id, once. Returns the SAME array when nothing needed one,
+// so a caller can tell there is nothing to write.
+export function withDebtIds(debts, makeId = newDebtId) {
+  const list = Array.isArray(debts) ? debts : [];
+  if (!list.some(d => d && !debtLinkKey(d))) return debts;
+  return list.map(d => (d && !debtLinkKey(d)) ? { ...d, id: makeId() } : d);
+}
+
+// The debt minimums still to pay on their own: every debt with a minimum above zero that no bill
+// already pays. Safe to spend reserves these and the forecast subtracts them, so both screens count
+// the same money once. [{ debt, amount }]
+export function unbilledDebtMinimums(debts, bills) {
+  const bs = bills || [];
+  return (debts || [])
+    .map(debt => ({ debt, amount: num(debt && debt.min) }))
+    .filter(x => x.amount > 0 && !bs.some(b => billPaysDebt(b, x.debt)));
+}
+
+// The day of the month a debt's minimum is due: its dueDay when it has one, otherwise the 1st.
+export function debtMinimumDueDay(debt) {
+  const d = parseInt(debt && debt.dueDay, 10);
+  return d >= 1 && d <= 31 ? d : 1;
+}
+
+// Every debt minimum paid in days 1..days after `today` (today, day 0, is never included, as
+// recurring bills are not: today's balance already reflects anything paid today), each on its due
+// day clamped to the month. [{ debt, amount, day, date }]. The forecast and Today's "Due soon" both
+// read this, so they list the same minimums on the same days.
+export function debtMinimumDates(data, today = new Date(), days = 90) {
+  const out = [];
+  for (const { debt, amount } of unbilledDebtMinimums(data && data.debts, data && data.bills)) {
+    const dueDay = debtMinimumDueDay(debt);
+    for (let i = 1; i <= days; i++) {
+      const d = new Date(today); d.setDate(today.getDate() + i);
+      if (d.getDate() === clampDayToMonth(dueDay, d.getFullYear(), d.getMonth())) out.push({ debt, amount, day: i, date: d });
+    }
+  }
+  return out;
 }
 
 export function isCashAdvance(txn) {
@@ -1138,6 +1278,12 @@ export const FinancialCalcEngine = {
   },
 
   avgDailySpendEstimate(data) {
+    // A payment of a debt minimum the forecast already subtracts is not also daily spend, or the
+    // forecast would take it twice. Only that payment: a card, loan or transfer payment whose amount
+    // matches one of those minimums (paysADebtMinimum). Everything else is as it always was, because
+    // for a statement import a card paid in full, a loan with no debt entered, or a bill paid by
+    // online banking IS the household's spending, and nothing else would count it.
+    const minimums = unbilledDebtMinimums(data.debts, data.bills).map(x => x.amount);
     const txns = (data.transactions || []).filter(t =>
       t.amount > 0 &&
       !t.pending &&
@@ -1145,7 +1291,8 @@ export const FinancialCalcEngine = {
       t.cat !== "Income" &&
       t.cat !== "Fees" &&
       !BILL_CATS.has(t.cat) &&
-      !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw))
+      !CC_PAYMENT_KEYWORDS.some(kw => (t.name||"").toLowerCase().includes(kw)) &&
+      !paysADebtMinimum(t, minimums, data.debts || [])
     );
     if(txns.length === 0) return 0;
     const total = txns.reduce((s,t) => s + Math.abs(t.amount), 0);
