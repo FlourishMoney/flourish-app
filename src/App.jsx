@@ -9121,9 +9121,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
         const mo = parseFloat(g.monthly||0);
         return s + (mo>0 ? mo : remaining>0 ? Math.ceil(remaining/24) : 0);
       },0);
-      // discret from generateBudgetSuggestions already accounts for goals globally,
-      // but inside Goals tab we recalc locally for display
-      const spendPool = Math.max(50, discret - localGoalsMo);
+      // discret from generateBudgetSuggestions has goal savings taken off already, so it is what is
+      // left to spend: the figure Do → Budget shows as "Available to spend".
+      const spendPool = discret;
 
       // Current month spending per category
       const catOverrides = (()=>{try{return safeLoadLS("flourish_cat_overrides", {});}catch{return {};}})();
