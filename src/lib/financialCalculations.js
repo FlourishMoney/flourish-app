@@ -1026,6 +1026,25 @@ export function billPaysDebt(bill, debt) {
          (debt.account_id != null && debt.account_id !== "" && l === String(debt.account_id));
 }
 
+// A debt's link key: what a bill's debtId holds to say "I pay this debt". The debt's own id, or for a
+// bank-imported debt its bank account id; null while it has neither (withDebtIds gives it an id).
+export function debtLinkKey(debt) {
+  if (!debt) return null;
+  if (debt.id != null && debt.id !== "") return String(debt.id);
+  if (debt.account_id != null && debt.account_id !== "") return String(debt.account_id);
+  return null;
+}
+export function newDebtId() {
+  return `debt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+// Give every debt that has no link key an id, once. Returns the SAME array when nothing needed one,
+// so a caller can tell there is nothing to write.
+export function withDebtIds(debts, makeId = newDebtId) {
+  const list = Array.isArray(debts) ? debts : [];
+  if (!list.some(d => d && !debtLinkKey(d))) return debts;
+  return list.map(d => (d && !debtLinkKey(d)) ? { ...d, id: makeId() } : d);
+}
+
 // The debt minimums still to pay on their own: every debt with a minimum above zero that no bill
 // already pays. Safe to spend reserves these and the forecast subtracts them, so both screens count
 // the same money once. [{ debt, amount }]

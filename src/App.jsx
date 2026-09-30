@@ -10,7 +10,7 @@ import {
   Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
-import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffForDebt, debtMinimumPayment, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
+import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffForDebt, debtMinimumPayment, debtLinkKey, withDebtIds, newDebtId, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
   BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
@@ -6687,11 +6687,16 @@ function ManualBillForm({data, setAppData, onClose}){
   const [day, setDay]           = useState("1");
   const [recurring, setRecurring] = useState(true);
   const [variable, setVariable]   = useState(false);
+  const [payDebt, setPayDebt] = useState("");   // the debt this bill pays (its link key), "" for none
   const [showNotifOffer, setShowNotifOffer] = useState(false); // contextual permission ask (first manual bill)
+  // A bill that IS a debt's payment says so (billPaysDebt), and then the forecast and safe to spend
+  // count that money once, as the bill, instead of the bill AND the debt's minimum.
+  const linkableDebts = (data.debts||[]).filter(d => debtLinkKey(d));
+  const debtNameFor = (key) => { const d = linkableDebts.find(x => debtLinkKey(x) === key); return d ? (d.name || "Debt") : null; };
 
-  const reset  = () => { setEditId(null); setName(""); setAmount(""); setDay("1"); setRecurring(true); setVariable(false); };
+  const reset  = () => { setEditId(null); setName(""); setAmount(""); setDay("1"); setRecurring(true); setVariable(false); setPayDebt(""); };
   const openAdd  = () => { reset(); setEditId("new"); };
-  const openEdit = (b) => { setEditId(b.id); setName(b.name||""); setAmount(String(b.amount??"")); setDay(String(b.dayOfMonth||b.date||1)); setRecurring(b.recurring!==false); setVariable(!!b.variable); };
+  const openEdit = (b) => { setEditId(b.id); setName(b.name||""); setAmount(String(b.amount??"")); setDay(String(b.dayOfMonth||b.date||1)); setRecurring(b.recurring!==false); setVariable(!!b.variable); setPayDebt(b.debtId||""); };
 
   // ISO date of the next future occurrence of a day-of-month (clamped to month length) — for one-offs.
   const nextOccurrenceISO = (dom) => {
@@ -6716,6 +6721,7 @@ function ManualBillForm({data, setAppData, onClose}){
       date: String(dom),                                          // ForecastEngine day-of-month
       type: variable ? "variable" : (recurring ? "fixed" : "one_off"),
       ...(recurring ? { freq: "monthly" } : { isoDate: nextOccurrenceISO(dom) }),
+      debtId: recurring ? payDebt : "",   // a one-off never stands in for a debt's monthly minimum
     };
     setAppData(prev => {
       const list = prev.bills || [];
@@ -6727,6 +6733,9 @@ function ManualBillForm({data, setAppData, onClose}){
     if (firstManualBill) setShowNotifOffer(true); // the ONE contextual moment to ask about reminders
   };
   const del = (id) => setAppData && setAppData(prev => ({ ...prev, bills: (prev.bills||[]).filter(b => b.id!==id) }));
+  // Link a bill detected from the bank to the debt it pays, in place (detection does not rebuild a
+  // household's bills once it has them, so the link stays).
+  const linkObserved = (i, key) => setAppData && setAppData(prev => ({ ...prev, bills: (prev.bills||[]).map((b, x) => x === i ? { ...b, debtId: key } : b) }));
 
   // Plaid-detected (origin:"observed") bills, with their index in data.bills for the shared remove path.
   // "Observed" = anything NOT explicitly manual. Manual bills are always tagged origin:"manual" (with an
@@ -6782,6 +6791,17 @@ function ManualBillForm({data, setAppData, onClose}){
           </div>
           <div style={{color:C.muted,fontSize:13,marginTop:4,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Amount changes month to month, like hydro. We'll refine it once your bank confirms the real amount.</div>
         </div>
+        {recurring && linkableDebts.length > 0 && (
+          <div>
+            <div style={{color:C.cream,fontSize:13,fontWeight:600,marginBottom:SPACE.xs,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Which debt does this pay?</div>
+            <select value={payDebt} onChange={e=>setPayDebt(e.target.value)} aria-label="Which debt does this pay?"
+              style={{width:"100%",minHeight:LAYOUT.minTap,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+              <option value="">None, it's not a debt payment</option>
+              {linkableDebts.map(d=>{ const k=debtLinkKey(d); return <option key={k} value={k}>{d.name || "Debt"}</option>; })}
+            </select>
+            <div style={{color:C.muted,fontSize:13,marginTop:SPACE.xs,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>If this is a card, car or loan payment, pick the debt so its minimum isn't counted twice.</div>
+          </div>
+        )}
         <div style={{display:"flex",gap:8,marginTop:2}}>
           <button onClick={save} disabled={!canSave} style={{flex:1,background:canSave?`linear-gradient(135deg,${C.teal},${C.tealBright})`:"rgba(255,255,255,0.06)",border:"none",borderRadius:10,padding:"11px",color:canSave?(C.isDark?"#04141A":"#fff"):C.muted,fontSize:13,fontWeight:800,cursor:canSave?"pointer":"default",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{editId&&editId!=="new"?"Save changes":"Add bill"}</button>
           <button onClick={reset} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 16px",color:C.mutedHi,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Cancel</button>
@@ -6807,7 +6827,8 @@ function ManualBillForm({data, setAppData, onClose}){
           <div style={{color:C.muted,fontSize:13,marginBottom:9,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your bank told us these. Correct an amount if it's wrong, or remove one from the forecast.</div>
           <div style={{display:"flex",flexDirection:"column",gap:7}}>
             {observedBills.map(x=>(
-              <div key={"obs"+x.i} style={{display:"flex",alignItems:"center",gap:GAP.textToControl,background:C.blueDim,border:`1px solid ${C.blue}33`,borderRadius:12,padding:"10px 12px"}}>
+              <div key={"obs"+x.i} style={{background:C.blueDim,border:`1px solid ${C.blue}33`,borderRadius:12,padding:"10px 12px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:GAP.textToControl}}>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",...wrapText()}}>{x.b.name}</div>
                   <div style={{color:C.muted,fontSize:13,marginTop:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>day {x.b.date} · {x.b.freq||"monthly"}{x.b.amountOverride?<span style={{color:C.blueBright}}> · edited</span>:""}</div>
@@ -6819,6 +6840,17 @@ function ManualBillForm({data, setAppData, onClose}){
                     style={{width:"100%",minWidth:0,background:"none",border:"none",padding:"8px 6px 8px 18px",minHeight:LAYOUT.minTap,color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",boxSizing:"border-box"}}/>
                 </div>
                 <button aria-label="Remove" onClick={()=>removeBillWithOverride(setAppData, x.i, x.b.name)} style={{background:"none",border:`1px solid ${C.red}44`,borderRadius:8,color:C.red,fontSize:13,cursor:"pointer",fontFamily:"inherit",flexShrink:0,...tap({display:"flex",alignItems:"center",justifyContent:"center"})}}>✕</button>
+              </div>
+              {linkableDebts.length > 0 && (
+                <div style={{display:"flex",alignItems:"center",gap:GAP.textToControl,marginTop:SPACE.sm}}>
+                  <div style={{color:C.muted,fontSize:13,flex:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Pays a debt</div>
+                  <select value={x.b.debtId||""} onChange={e=>linkObserved(x.i, e.target.value)} aria-label={`Which debt does ${x.b.name} pay?`}
+                    style={{minHeight:LAYOUT.minTap,maxWidth:"60%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:9,padding:"6px 8px",color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                    <option value="">No</option>
+                    {linkableDebts.map(d=>{ const k=debtLinkKey(d); return <option key={k} value={k}>{d.name || "Debt"}</option>; })}
+                  </select>
+                </div>
+              )}
               </div>
             ))}
           </div>
@@ -6843,7 +6875,7 @@ function ManualBillForm({data, setAppData, onClose}){
             <div style={{flex:1,minWidth:0}}>
               <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",...wrapText()}}>{b.name}</div>
               <div style={{color:C.muted,fontSize:13,marginTop:1,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                {b.variable&&<span style={{color:C.gold}}>~</span>}${parseFloat(b.amount||0).toFixed(0)} · day {b.dayOfMonth||b.date} · {b.recurring!==false?"monthly":"once"}{b.variable?" · variable":""}
+                {b.variable&&<span style={{color:C.gold}}>~</span>}${parseFloat(b.amount||0).toFixed(0)} · day {b.dayOfMonth||b.date} · {b.recurring!==false?"monthly":"once"}{b.variable?" · variable":""}{b.debtId&&debtNameFor(b.debtId)?` · pays ${debtNameFor(b.debtId)}`:""}
               </div>
             </div>
             <button onClick={()=>openEdit(b)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",minHeight:LAYOUT.minTap,color:C.mutedHi,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Edit</button>
@@ -10627,7 +10659,7 @@ function InlineDebtEditor({data, setAppData, color, navToScreen}){
 
   const saveDebt = () => {
     if(!form.name || !form.balance) return;
-    setAppData(prev=>({...prev, debts:[...(prev.debts||[]), {...form}]}));
+    setAppData(prev=>({...prev, debts:[...(prev.debts||[]), {...form, id: newDebtId()}]}));
     setForm({name:"",balance:"",rate:"",min:""});
     setAdding(false);
   };
@@ -15003,6 +15035,12 @@ export default function FlourishApp(){
     if (!bs.some(needs)) return;
     setAppData(d => ({ ...d, bills: (d.bills || []).map(b => needs(b) ? { ...b, nextDueDate: computeNextDueDate(b) } : b) }));
   }, [appData?.bills]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Every debt needs a stable link key so a bill can say which debt it pays (billPaysDebt). Debts added
+  // before ids existed, onboarding debts and the demo's are given an id here, once.
+  useEffect(() => {
+    if (!(appData?.debts || []).some(d => !debtLinkKey(d))) return;
+    setAppData(prev => prev ? ({ ...prev, debts: withDebtIds(prev.debts) }) : prev);
+  }, [appData?.debts]); // eslint-disable-line react-hooks/exhaustive-deps
   // Read URL path on load so /privacy and /terms work as direct links
   const initialScreen = (() => {
     const path = window.location.pathname.replace(/\/+$/,"").toLowerCase();
