@@ -45,7 +45,7 @@ import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting } from "./lib/meetingSchedule.js";
 import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType } from "./lib/notifications.js";
 import { planNotifications } from "./lib/notificationPlanner.js";
-import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, computeSavingsOpportunity, detectLowCashWarning, cashIsTight } from "./lib/decisionEngine.js";
+import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView } from "./lib/suggestedDaily.js";
@@ -60,7 +60,7 @@ import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnTodayOpen, reviewOnCheckInDone } from "./lib/reviewPrompt.js";
-import { monthSpendByCategory } from "./lib/budgetSpend.js";
+import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
@@ -1122,7 +1122,7 @@ function AutopilotCard({data, setScreen}) {
       // NOT "buffer" -- that word belongs to the "Spending buffer" line inside safe-to-spend.
       // This is the residual after today's plan allocates everything: a different quantity.
       icon:"🔒", label:"Left over", amount:formatMoney(plan.buffer||0),
-      color:C.muted, detail:"after what's due before your next deposit",
+      color:C.muted, detail:"after bills, debt minimums and today's plan",
     },
   ].filter(Boolean);
 
@@ -2721,12 +2721,12 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
   // not transaction rows. The 30% savings badge inherits the corrected total.
   const subs = analyzeSubscriptions(txns);
   if (subs.monthlyTotal > 40) {
-    const savings = Math.round(subs.monthlyTotal * 0.3);
+    // No saving is quoted: an assumed "30% of them are unused" is not a fact about this household.
     opportunities.push({
       id:"subs", icon:"📱", color:C.teal,
       title:`$${subs.monthlyTotal}/mo in subscriptions`,
-      detail:`${subs.activeCount} active subscription${subs.activeCount===1?"":"s"} detected. Cancelling unused ones could free $${savings}/mo.`,
-      action:"Review", screen:"spend", badge:"Save $"+savings+"/mo"
+      detail:`${subs.activeCount} active subscription${subs.activeCount===1?"":"s"} detected. Cancelling any you don't use frees that money every month.`,
+      action:"Review", screen:"spend", badge:"Review"
     });
   }
 
@@ -5878,7 +5878,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           const budgets = data.budgets||{};
           if(!Object.keys(budgets).length) return null;
           const catOverrides = (()=>{ try{return safeLoadLS("flourish_cat_overrides", {})}catch{return{}} })();
-          const monthSpend = monthSpendByCategory(data.transactions, { categoryOf: t => effCat(t, catOverrides) }); // the one budget tally
+          const monthSpend = monthSpendByCategory(data.transactions, { categoryOf: t => effCat(t, catOverrides), debts: data.debts || [] }); // the one budget tally
           const overCats = Object.entries(budgets).filter(([cat,limit])=>(monthSpend[cat]||0)>limit);
           if(!overCats.length) return null;
           const totalOver = overCats.reduce((s,[cat,limit])=>s+((monthSpend[cat]||0)-limit),0);
@@ -7563,7 +7563,7 @@ function BudgetPlanCard({data, setAppData}) {
   // Current-month spending per budget category — excludes bill categories and CC payments
   const catOverrides = (()=>{ try{return safeLoadLS("flourish_cat_overrides", {})}catch{return{}} })();
   const now = new Date();
-  const monthSpend = monthSpendByCategory(data.transactions, { now, categoryOf: t => effCat(t, catOverrides) }); // the one budget tally
+  const monthSpend = monthSpendByCategory(data.transactions, { now, categoryOf: t => effCat(t, catOverrides), debts: data.debts || [] }); // the one budget tally
   const totalBudgeted = Object.values(existingBudgets).reduce((s,v)=>s+v,0);
   const totalSpentThisMonth = Object.entries(existingBudgets).reduce((s,[cat])=>s+(monthSpend[cat]||0),0);
   const budgetUsedPct = totalBudgeted>0 ? Math.min(100,Math.round(totalSpentThisMonth/totalBudgeted*100)) : 0;
@@ -7908,15 +7908,15 @@ function SpendScreen({data, setAppData, setScreen}){
   const acctFiltered = accountFilter==="All" ? displayTxns : displayTxns.filter(t=>t.account_id===accountFilter);
   const filtered=catFilter==="All"
     ? acctFiltered.filter(t=>{
-        if(isCCPayment(t,data.debts||[])) return false; // CC payments are balance sheet events — hide from list
+        if(isCardPaymentCharge(t,data.debts||[])) return false; // CC payments are balance sheet events — hide from list
         const cat=getCat(t);
         if(cat==="Transfer") return t.amount<0; // show incoming (e-transfers in), hide outgoing
         return true;
       })
     : catFilter==="Received"
       ? acctFiltered.filter(t=>getCat(t)==="Transfer"&&t.amount<0)
-      : acctFiltered.filter(t=>getCat(t)===catFilter&&!isCCPayment(t,data.debts||[]));
-  const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCCPayment(t,data.debts||[])).reduce((a,t)=>a+t.amount,0);
+      : acctFiltered.filter(t=>getCat(t)===catFilter&&!isCardPaymentCharge(t,data.debts||[]));
+  const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCardPaymentCharge(t,data.debts||[])).reduce((a,t)=>a+t.amount,0);
   const totalIn=acctFiltered.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
 
   const cuts=[
@@ -8164,7 +8164,7 @@ function SpendScreen({data, setAppData, setScreen}){
                 <div style={{color:C.muted,fontSize:13,marginTop:2,maxWidth:240,...wrapText()}}>{recatTxn.name}</div>
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
-                {setAppData&&recatTxn.amount>0&&!isCCPayment(recatTxn,data.debts||[])&&<button onClick={()=>{
+                {setAppData&&recatTxn.amount>0&&!isCardPaymentCharge(recatTxn,data.debts||[])&&<button onClick={()=>{
                   const day=recatTxn.date?new Date(recatTxn.date+"T12:00:00").getDate():new Date().getDate();
                   setBillForm({name:recatTxn.name,amount:(recatTxn.amount||0).toFixed(2),date:String(day)});
                   setMarkBillTxn(recatTxn);setRecatTxn(null);
@@ -8351,7 +8351,7 @@ function SpendScreen({data, setAppData, setScreen}){
     {tab==="breakdown"&&<>
       {(()=>{
         // Breakdown uses the same period-filtered set as the Transactions tab
-        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&getCat(t)!=="Fees"&&!isCCPayment(t,data.debts||[]));
+        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&getCat(t)!=="Fees"&&!isCardPaymentCharge(t,data.debts||[])); // the budget tally's card-payment rule, so this screen agrees with its Budget Plan card
         const bdIn   = acctFiltered.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
         const bdTotal= bdTxns.reduce((s,t)=>s+t.amount,0);
         const bdByCat= {};
@@ -8381,7 +8381,7 @@ function SpendScreen({data, setAppData, setScreen}){
       {period==="month"&&<BudgetPlanCard data={data} setAppData={setAppData}/>}
       {bdTopCats.map(([cat,amt],i)=>{
         const colors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
-        const catTxns=acctFiltered.filter(t=>getCat(t)===cat&&t.amount>0&&!isCCPayment(t,data.debts||[]));
+        const catTxns=acctFiltered.filter(t=>getCat(t)===cat&&t.amount>0&&!isCardPaymentCharge(t,data.debts||[]));
         const budget = (data.budgets||{})[cat] || null;
         window.__flourishBills = data.bills||[];
         return <ExpandableCatCard key={i} cat={cat} amt={amt} totalSpent={bdTotal} color={colors[i%6]} catTxns={catTxns}
@@ -9116,7 +9116,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
       // Current month spending per category
       const catOverrides = (()=>{try{return safeLoadLS("flourish_cat_overrides", {});}catch{return {};}})();
       const now = new Date();
-      const monthSpend = monthSpendByCategory(data.transactions, { now, categoryOf: t => effCat(t, catOverrides) }); // the one budget tally
+      const monthSpend = monthSpendByCategory(data.transactions, { now, categoryOf: t => effCat(t, catOverrides), debts: data.debts || [] }); // the one budget tally
 
       // Merge budgets + suggestions for display
       const displayCats = {...suggestions};
@@ -14321,7 +14321,7 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
   const monthTxns = (data.transactions || []).filter(t => {
     try { const d = new Date(t.date + "T12:00:00"); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && t.amount > 0; } catch { return false; }
   });
-  const monthSpend = monthSpendByCategory(data.transactions, { now, categoryOf: t => effCat(t, catOverrides) }); // the one budget tally
+  const monthSpend = monthSpendByCategory(data.transactions, { now, categoryOf: t => effCat(t, catOverrides), debts: data.debts || [] }); // the one budget tally
 
   const totalBudgeted = Object.values(budgets).reduce((s, v) => s + v, 0);
   const totalSpentBudgeted = Object.entries(budgets).reduce((s, [cat]) => s + (monthSpend[cat] || 0), 0);

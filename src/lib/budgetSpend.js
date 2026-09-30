@@ -12,24 +12,30 @@
 //   - a charge (money out) dated this calendar month, in the household's local time;
 //   - in its effective category (the caller passes categoryOf, which applies their corrections);
 //   - not a Transfer, Income or Fees category;
-//   - not a credit card payment. A card payment is recognised by more than a fragment of its name:
-//     a card-payment phrase ("visa payment", "credit card payment", ...), or "autopay" TOGETHER with
-//     a card word. A bare "autopay" is how many subscriptions and utilities are paid; it is spending.
+//   - not a credit card payment (isCardPaymentCharge): everything the app-wide isCCPayment
+//     recognises, except a bare "autopay". "Autopay" is a card payment only together with a card
+//     word or a card issuer ("CAPITAL ONE AUTOPAY PYMT", "CHASE CREDIT CRD AUTOPAY", "Citi
+//     Autopay"). On its own it is how many subscriptions and utilities are paid; it is spending.
+//
+// The Activity breakdown uses isCardPaymentCharge too, so its category cards and its Budget Plan card
+// agree.
 // -----------------------------------------------------------------------------
 
-import { CC_PAYMENT_KEYWORDS, NON_SPEND_CATS } from "./financialCalculations.js";
+import { NON_SPEND_CATS, isCCPayment } from "./financialCalculations.js";
 
-const CARD_WORDS = /\b(?:credit card|card|visa|mastercard|master card|amex|american express)\b/;
+const CARD_WORDS = /\b(?:credit card|credit crd|crd|card|visa|mastercard|master card|amex|american express)\b/;
+const CARD_ISSUERS = /\b(?:capital one|chase|citi|citibank|citicards|discover|barclaycard|barclays|synchrony|wells fargo|bank of america|us bank|mbna|td|rbc|bmo|cibc|scotia|scotiabank|tangerine|pc financial|desjardins|canadian tire|triangle)\b/;
 
-export function isCardPaymentCharge(txn) {
+export function isCardPaymentCharge(txn, debts = []) {
   const name = String((txn && txn.name) || "").toLowerCase();
   if (!name) return false;
-  if (CC_PAYMENT_KEYWORDS.some(kw => kw !== "autopay" && name.includes(kw))) return true;
-  return name.includes("autopay") && CARD_WORDS.test(name);
+  // What isCCPayment recognises, with the bare word "autopay" taken out of the name first.
+  if (isCCPayment({ ...txn, name: name.replace(/autopay/g, " ") }, debts)) return true;
+  return name.includes("autopay") && (CARD_WORDS.test(name) || CARD_ISSUERS.test(name));
 }
 
 // { [category]: dollars } for the calendar month containing `now`.
-export function monthSpendByCategory(transactions, { now = new Date(), categoryOf = (t) => t.cat } = {}) {
+export function monthSpendByCategory(transactions, { now = new Date(), categoryOf = (t) => t.cat, debts = [] } = {}) {
   const out = {};
   for (const t of transactions || []) {
     if (!t || !(t.amount > 0)) continue;
@@ -37,7 +43,7 @@ export function monthSpendByCategory(transactions, { now = new Date(), categoryO
     try { d = new Date(t.date + "T12:00:00"); } catch { continue; }
     if (isNaN(d) || d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) continue;
     const cat = categoryOf(t);
-    if (NON_SPEND_CATS.has(cat) || isCardPaymentCharge(t)) continue;
+    if (NON_SPEND_CATS.has(cat) || isCardPaymentCharge(t, debts)) continue;
     out[cat] = (out[cat] || 0) + t.amount;
   }
   return out;

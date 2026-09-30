@@ -65,7 +65,7 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     t.eq(Math.round(planF.buffer * 100) / 100, Math.round((ssF.balance - 65 - 348 - 138 - 240 - 200) * 100) / 100,
          "1i …and Left over is $3,083 − $65 − $348 − $138 − $240 − $200");
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-    t.ok(/label:"Left over"[^}]*detail:"after what's due before your next deposit"/.test(app), "1j the row says what it is net of");
+    t.ok(/label:"Left over"[^}]*detail:"after bills, debt minimums and today's plan"/.test(app), "1j the row says what it is net of");
   }
 
   // ── 2 to 5: Decisions, rendered ───────────────────────────────────────────────────────────────
@@ -95,6 +95,13 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
          "2g fixed date: no warning, and the savings and debt cards are back");
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     t.ok(/const lowCash = cashIsTight\(data, todayD\)\.tight;/.test(app), "2h Decisions asks the same rule the Money Plan asks");
+    // Meet reads the clock itself, so its demo is aged relative to today: 25 days old, like the QA's.
+    const { buildMeetSnapshot } = await import("../src/lib/meetSnapshot.js");
+    const now2 = new Date(); const made = new Date(now2); made.setDate(made.getDate() - 25);
+    const aged = demoMadeOn(made);
+    t.eq(typeof DE.cashIsTight === "function" && DE.cashIsTight(aged).tight, true, "2i (a 25-day-old demo, today: cash is tight)");
+    t.eq((buildMeetSnapshot(aged).decisions || []).length, 0, "2j …and Meet does not offer to move money to debt or savings either");
+    t.eq((buildMeetSnapshot(demoMadeOn(now2)).decisions || []).length, 1, "2k (a fresh demo still gets its Meet decision)");
 
     // 4. The daily card's wording.
     t.ok(/Suggested spend today: \$138/.test(fixed) && /That paces \$1,944 safe to spend over 14 days\. It's a pace, not a limit\./.test(fixed),
@@ -136,6 +143,11 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     t.eq(BS && BS.monthSpendByCategory(hh.transactions, { now }), { Subscriptions: 30 }, "8a the one tally: the autopaid subscription counts, the card payments do not");
     t.eq(BS && [BS.isCardPaymentCharge(hh.transactions[0]), BS.isCardPaymentCharge(hh.transactions[1]), BS.isCardPaymentCharge(hh.transactions[2])], [false, true, true],
          "8b a bare \"autopay\" is spending; autopay with a card word, or a card-payment phrase, is a card payment");
+    const pay = (name) => BS && BS.isCardPaymentCharge({ name, amount: 500 }, []);
+    t.eq(["CAPITAL ONE AUTOPAY PYMT", "CHASE CREDIT CRD AUTOPAY", "Citi Autopay", "MB-VISA 4521", "PAYMENT - MASTERCARD PAYMENT"].map(pay), [true, true, true, true, true],
+         "8b2 card issuers' autopay lines and the bank's card-payment names are card payments");
+    t.eq(["Spotify Autopay", "Rogers Autopay", "Hydro One Autopay", "Netflix"].map(pay), [false, false, false, false],
+         "8b3 a subscription or utility paid by autopay is spending");
     let goals = "", doBudget = "";
     try {
       goals = textOf(A.render(A.h(A.Goals, { data: hh, initialTab: "budget", setAppData: noop, setScreen: noop })));
@@ -147,6 +159,9 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     const src = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     t.eq((src.match(/const monthSpend = monthSpendByCategory\(/g) || []).length, 4, "8f every budget tally (Today, Activity, Goals, Do) is the one helper");
     t.eq((src.match(/monthSpend\[[^\]]+\]\s*=\s*\(monthSpend/g) || []).length, 0, "8g …and nothing adds up its own");
+    const spend = src.slice(src.indexOf("function SpendScreen("), src.indexOf("\nfunction ", src.indexOf("function SpendScreen(") + 10));
+    t.ok(!/isCCPayment\(/.test(spend) && (spend.match(/isCardPaymentCharge\(/g) || []).length >= 5,
+         "8h the Activity screen (breakdown, category cards, list, total) uses the same card-payment rule as its Budget Plan card");
   }
 
   t.summary("qaSurgical.test");

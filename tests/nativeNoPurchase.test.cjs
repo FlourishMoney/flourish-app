@@ -100,6 +100,10 @@ const describe = (e) => `${e && e.name}: ${e && e.message} ${(String(e && e.stac
   const { isNativeApp } = await import("../src/lib/billingVisibility.js");
   t.eq(isNativeApp(globalThis), true, "sanity: the simulated shell is native to isNativeApp()");
 
+  // Settings gets the billing state App would give it: billingUiState for this shell, with billing on.
+  const { billingUiState } = await import("../src/lib/billingVisibility.js");
+  const BILLING_ON = { enabled: true, plans: [{ id: "monthly" }] };
+  const nativeBillingUi = billingUiState({ status: BILLING_ON, native: true, paid: false });
   const DAY = 86400000;
   const TRIALS = {
     "no trial": {},
@@ -116,7 +120,7 @@ const describe = (e) => `${e && e.name}: ${e && e.message} ${(String(e && e.stac
     // Every screen that carries purchase copy on the web.
     const screens = [
       ["Today", () => h(app.__Dashboard, { data, setAppData: noop, setScreen: noop, setShowNotifs: noop, onUpgrade: noop, onCheckIn: noop, onWhatIf: noop, onWrapped: noop, dashLayout: null, setDashLayout: noop, setGoalsTab: noop, setActiveScenario: noop })],
-      ["Settings", () => h(app.__Settings, { data, setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop, onOpenWidget: noop, onDisconnectBank: noop, onAddBank: noop, onDeleteData: noop, onSignOut: noop, bankConnected: false, needsReconnect: false, reconnectLoading: false, onReconnect: noop, aiCoachEnabled: true, setAiCoachEnabled: noop, onRevokeAIConsent: noop, onAcceptAIConsent: noop, onExitDemo: noop, billingUi: null, onOpenUpgrade: noop })],
+      ["Settings", () => h(app.__Settings, { data, setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop, onOpenWidget: noop, onDisconnectBank: noop, onAddBank: noop, onDeleteData: noop, onSignOut: noop, bankConnected: false, needsReconnect: false, reconnectLoading: false, onReconnect: noop, aiCoachEnabled: true, setAiCoachEnabled: noop, onRevokeAIConsent: noop, onAcceptAIConsent: noop, onExitDemo: noop, billingUi: nativeBillingUi, onOpenUpgrade: noop })],
       ["Coach", () => h(app.__AICoach, { data, isOnline: true, isPremium: false, coachMsgCount: 99, onSend: noop, onUpgrade: noop, setScreen: noop, setAppData: noop, onExitDemo: noop })],
       ["What-If", () => h(app.__WhatIf, { data, onClose: noop })],
       ["Watch", () => h(app.__PlanAhead, { data, setAppData: noop, setScreen: noop })],
@@ -187,6 +191,27 @@ const describe = (e) => `${e && e.name}: ${e && e.message} ${(String(e && e.stac
       }
     })(ast.program, []);
     t.eq(unguarded, [], "every piece of purchase copy in src/App.jsx is behind a native guard");
+  }
+
+  // ── Not vacuous: the same screens on the web DO show a way to pay ─────────────────────────────
+  // Rendered again with the native bridge removed, the screens that sell Plus on the web must show
+  // it, or the native renders above prove nothing about them.
+  {
+    const savedCap = globalThis.Capacitor, savedLoc = globalThis.location;
+    globalThis.Capacitor = undefined;
+    globalThis.location = { ...savedLoc, protocol: "https:", origin: "https://flourishmoney.app", href: "https://flourishmoney.app/" };
+    store.clear();
+    const data = buildDemoState("CA");
+    const webBillingUi = billingUiState({ status: BILLING_ON, native: false, paid: false });
+    for (const [name, el] of [
+      ["Today", () => h(app.__Dashboard, { data: { ...data, demo: false, isPremium: false }, setAppData: noop, setScreen: noop, setShowNotifs: noop, onUpgrade: noop, onCheckIn: noop, onWhatIf: noop, onWrapped: noop, dashLayout: null, setDashLayout: noop, setGoalsTab: noop, setActiveScenario: noop })],
+      ["the Credit and AI Coach gates", () => h(app.__PremiumGate, { feature: "AI Coach", desc: "Coaching from your own numbers.", onUpgrade: noop })],
+      ["Settings", () => h(app.__Settings, { data: { ...data, demo: false }, setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop, onOpenWidget: noop, onDisconnectBank: noop, onAddBank: noop, onDeleteData: noop, onSignOut: noop, bankConnected: false, needsReconnect: false, reconnectLoading: false, onReconnect: noop, aiCoachEnabled: true, setAiCoachEnabled: noop, onRevokeAIConsent: noop, onAcceptAIConsent: noop, onExitDemo: noop, billingUi: webBillingUi, onOpenUpgrade: noop })],
+    ]) {
+      try { t.ok(offences(textOf(render(el()))).length > 0, `sanity: on the web, ${name} does show a way to pay (so the native render of it means something)`); }
+      catch (e) { t.ok(false, `${name} renders on the web: ${describe(e)}`); }
+    }
+    globalThis.Capacitor = savedCap; globalThis.location = savedLoc;
   }
 
   // The check can see a violation: the same patterns catch the web copy they exist to keep out.
