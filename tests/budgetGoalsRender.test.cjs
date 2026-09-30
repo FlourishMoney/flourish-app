@@ -149,7 +149,9 @@ const household = {
   // LAYOUT.minTap (44px) tall, not sized by its 13px label. The layout sweep does not visit this tab.
   {
     let html = "";
-    try { html = render(h(Goals, { data: household, initialTab: "budget", setAppData: noop, setScreen: noop })); } catch { /* reported above */ }
+    // App always passes onEditBudget (the button opens Do → Budget's editor); without it there is
+    // nothing to open, so the button is not drawn (KNOWN-DEFECTS #51).
+    try { html = render(h(Goals, { data: household, initialTab: "budget", setAppData: noop, setScreen: noop, onEditBudget: noop })); } catch { /* reported above */ }
     const button = html.match(/<button[^>]*style="([^"]*)"[^>]*>Edit<\/button>/);
     const minHeight = button ? Number((button[1].match(/min-height:(\d+(?:\.\d+)?)px/) || [])[1]) : NaN;
     t.ok(!!button, "Goals → Budget has its Edit button");
@@ -185,11 +187,13 @@ const household = {
   // it as "Available to spend"; Goals → Budget's "Available for spending" has to be the same amount.
   const dollars = (text, re) => { const m = text && text.match(re); return m ? Number(m[1].replace(/\D/g, "")) : null; };
   for (const [label, data, expected] of [
-    // $3,750 take-home, no bills, $563 savings target (15%), $150 goal savings.
-    ["the test household", household, 3037],
-    // The demo with one goal saving $150 a month: $4,700 − $2,177 − $705 − $150.
+    // $5,000 take-home (the engine's monthly income: pay is entered as take-home, so Budget no longer
+    // takes an assumed 25% tax off it), no bills, $1,000 savings target (20%), $150 goal savings.
+    ["the test household", household, 3850],
+    // The demo with one goal saving $150 a month: $6,714 − $2,177 − $1,343 − $150. (It was $4,700 −
+    // $2,177 − $705 − $150 = $1,668 while Budget re-taxed the take-home pay; QA-surgical item 3.)
     ["the demo household with a $150-a-month goal",
-      { ...buildDemoState("CA"), goals: [{ name: "Vacation", target: 2400, saved: 600, monthly: 150 }] }, 1668],
+      { ...buildDemoState("CA"), goals: [{ name: "Vacation", target: 2400, saved: 600, monthly: 150 }] }, 3044],
     // Goals bigger than what is left: nothing is available, and neither screen may invent a figure.
     ["a household whose goals take everything left",
       { ...household, incomes: [{ name: "Pay", amount: 1000, freq: "monthly" }], goals: [{ name: "House", target: 50000, saved: 0, monthly: 2000 }] }, 0],

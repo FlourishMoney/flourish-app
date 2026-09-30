@@ -86,9 +86,21 @@ export function savingsBufferAfter(accounts, extra) {
   return { current: round2(cur), after: round2(cur + add) };
 }
 
-// Cash-tight warning: safe-to-spend below 15% of monthly income.
+// Cash-tight warning: safe-to-spend below 15% of monthly income. THE tight-cash rule: Decisions'
+// "Cash is running tight" card and Today's Money Plan both decide it here, from the same two
+// inputs (cashIsTight), so one screen can never warn while the other says "On Track" and moves
+// money to savings.
 export function detectLowCashWarning(safe, monthlyIncome) {
   return safe < monthlyIncome * 0.15;
+}
+
+// The inputs every surface uses for that rule: the safe-to-spend figure Today shows, and the
+// engine's monthly income. { tight, safe, monthlyIncome }.
+export function cashIsTight(data = {}, todayDate = new Date()) {
+  const safe = displayedSafeToSpend(data, todayDate);
+  const { monthlyIncome } = FinancialCalcEngine.cashFlow(data, {}, todayDate);
+  const income = Number.isFinite(monthlyIncome) ? monthlyIncome : 0;
+  return { tight: detectLowCashWarning(safe, income), safe, monthlyIncome: income };
 }
 
 // ── ENGINE: BEHAVIOR ANALYSIS — spending patterns (payday spikes, sub creep, dining inflation) ──
@@ -169,9 +181,13 @@ export const AutopilotEngine = {
 
     // ── ADAPTIVE: Risk mode gates all downstream allocations ─────────────────
     const forecastDanger = overdraftRisk.length > 0;
+    // The one tight-cash rule (cashIsTight), the same call Decisions makes. When it fires the plan is
+    // not "On Track", and it moves nothing to savings, debt or goals.
+    const cashTight = cashIsTight(data, currentDate).tight;
     const mode = forecastDanger ? "high" :
                  rawRisk === "critical" || rawRisk === "high" ? "high" :
-                 rawRisk === "medium" || nearTermLow ? "medium" : "low";
+                 rawRisk === "medium" || nearTermLow || cashTight ? "medium" : "low";
+    const extrasPaused = mode === "high" || cashTight;
 
     const modeMultipliers = {
       low:    { savings: 0.40, debt: 0.40, goal: 0.50 },
@@ -195,7 +211,7 @@ export const AutopilotEngine = {
     // ── ② Savings transfer (mode-gated, adaptive amount) ─────────────────────
     let savingsTransfer = 0;
     let savingsTarget = "Emergency Fund";
-    if (mode !== "high" && surplus > monthlyIncome * 0.12) {
+    if (!extrasPaused && surplus > monthlyIncome * 0.12) {
       const efMonths = FinancialCalcEngine.emergencyFundMonths(data, catOverrides, currentDate);
       const invAcct  = (data.accounts||[]).find(a => isInvestmentAccount(a));
       savingsTarget  = efMonths < 3 ? "Emergency Fund" : invAcct ? shelterLabel(data.profile?.country) : "Savings";
@@ -208,7 +224,7 @@ export const AutopilotEngine = {
     let debtPayment = 0;
     let debtTarget  = null;
     const remainAfterSavings = surplus - savingsTransfer;
-    if (mode !== "high" && remainAfterSavings > 30 && debts.length > 0 && parseFloat(debts[0].rate||0) > 8) {
+    if (!extrasPaused && remainAfterSavings > 30 && debts.length > 0 && parseFloat(debts[0].rate||0) > 8) {
       debtPayment = Math.round(Math.min(remainAfterSavings * mult.debt, 200));
       debtTarget  = debts[0];
     }
@@ -217,13 +233,17 @@ export const AutopilotEngine = {
     let goalContribution = 0;
     let goalTarget = null;
     const remainAfterDebt = remainAfterSavings - debtPayment;
-    if (mode === "low" && remainAfterDebt > 20 && goals.length > 0) {
+    if (!extrasPaused && mode === "low" && remainAfterDebt > 20 && goals.length > 0) {
       goalContribution = Math.round(remainAfterDebt * mult.goal);
       goalTarget = goals[0];
     }
 
-    // ── ⑤ Buffer ─────────────────────────────────────────────────────────────
-    const buffer = Math.max(0, balance - dailySpendLimit - savingsTransfer - debtPayment - goalContribution);
+    // ── ⑤ Left over ──────────────────────────────────────────────────────────
+    // What stays in the account after everything due before the next deposit (the bills and the
+    // debt minimums safe to spend reserves) and after today's plan. It used to take off only today's
+    // plan, so it read $2,909 in a demo with $1,650 of rent and $348 of minimums leaving first.
+    const dueBeforeDeposit = (ss.upcomingBills || 0) + (ss.debtPayments || 0);
+    const buffer = Math.max(0, balance - dueBeforeDeposit - dailySpendLimit - savingsTransfer - debtPayment - goalContribution);
 
     // ── ⑥ Adaptive alerts (contextual, not generic) ──────────────────────────
     const alerts = [];
@@ -232,6 +252,8 @@ export const AutopilotEngine = {
         ? `Balance projected to go negative in ${overdraftRisk[0]?.day} days. Hold all non-essential spending.`
         : "Cash is critically low. Bills protection mode active. Savings and extras paused.";
       alerts.push({ type:"danger", msg });
+    } else if (cashTight) {
+      alerts.push({ type:"warning", msg:"Safe to spend is below 15% of your monthly income, so savings and extra debt payments are paused." });
     } else if (nearTermLow) {
       alerts.push({ type:"warning", msg:`Balance drops near your safety floor in ${nearTermLow.day} days.` });
     }
@@ -251,12 +273,13 @@ export const AutopilotEngine = {
       nearTermLow && `Low balance in ${nearTermLow.day}d`,
       spendingStability > 0.85 && `Consistent spending`,
       mode === "high" && `Extras paused (protect bills first)`,
+      mode !== "high" && cashTight && `Extras paused (cash is tight)`,
     ].filter(Boolean);
 
     return {
       dailySpendLimit, savingsTransfer, savingsTarget,
       debtPayment, debtTarget, goalContribution, goalTarget,
-      buffer, alerts, mode, modeLabel,
+      buffer, dueBeforeDeposit, cashTight, alerts, mode, modeLabel,
       daysLeft, adherence, surplus, adaptations,
       riskLevel: rawRisk,
     };
