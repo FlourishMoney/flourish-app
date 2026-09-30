@@ -9208,7 +9208,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
                 Object.entries(budgets).forEach(([k,v])=>{seed[k]=String(v);});
                 Object.entries(displayCats).forEach(([k,v])=>{if(!seed[k])seed[k]=String(v);});
                 if(setAppData) setAppData(prev=>({...prev,_budgetEditOpen:true,_budgetEditSeed:seed}));
-              }} style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:8,padding:"5px 10px",color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+              }} style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:8,padding:"5px 10px",minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
                 Edit
               </button>
             </div>

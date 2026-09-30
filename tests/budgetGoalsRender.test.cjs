@@ -145,6 +145,17 @@ const household = {
     }
   }
 
+  // The Edit button beside "Monthly Category Budgets" is a tap target, so it is at least
+  // LAYOUT.minTap (44px) tall, not sized by its 13px label. The layout sweep does not visit this tab.
+  {
+    let html = "";
+    try { html = render(h(Goals, { data: household, initialTab: "budget", setAppData: noop, setScreen: noop })); } catch { /* reported above */ }
+    const button = html.match(/<button[^>]*style="([^"]*)"[^>]*>Edit<\/button>/);
+    const minHeight = button ? Number((button[1].match(/min-height:(\d+(?:\.\d+)?)px/) || [])[1]) : NaN;
+    t.ok(!!button, "Goals → Budget has its Edit button");
+    t.ok(minHeight >= 44, `the Edit button is at least 44px tall (style: ${button ? button[1] : "none"})`);
+  }
+
   // ── Do → Budget ─────────────────────────────────────────────────────────────
   // Once a budget is set, the screen reminds the household of its goal savings. The reminder shows
   // when goalsMo (the "Goal savings" line of "How that is worked out") is above $0, so it has to
