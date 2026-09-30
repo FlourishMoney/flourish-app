@@ -9138,12 +9138,11 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       const displayCats = {...suggestions};
       Object.keys(budgets).forEach(k=>{ if(!displayCats[k]) displayCats[k]=budgets[k]; });
 
-      // Where to save suggestions — categories where actual > budget by >20%
+      // Where to save suggestions — categories where this month's spend is over budget by >20%
       const saveSuggestions = Object.entries(budgets).map(([cat,limit])=>{
         const spent = monthSpend[cat]||0;
         const pct = limit>0?spent/limit:0;
-        const saving = actuals[cat]||0;
-        if(pct>1.2&&saving>20) return {cat, spent, limit, over:spent-limit, potential:Math.round((saving-(limit*0.85))/5)*5};
+        if(pct>1.2&&spent>20) return {cat, spent, limit, over:spent-limit, potential:Math.round((spent-(limit*0.85))/5)*5};
         return null;
       }).filter(Boolean).sort((a,b)=>b.over-a.over).slice(0,3);
 
@@ -14325,6 +14324,9 @@ function BudgetScreen({data, setAppData, setScreen}) {
     grossMo, goalsMo, canAfford, shortfall, cutSuggestions,
     hSize, numKids, totalSugg
   } = generateBudgetSuggestions(data);
+  // The goals goalsMo adds up, filtered exactly as generateBudgetSuggestions filters them, so the
+  // goal savings reminder counts and lists what that amount is made of.
+  const activeGoals = (data.goals || []).filter(g => parseFloat(g.target || 0) > parseFloat(g.saved || 0));
   const budgets = data.budgets || {};
   const hasBudgets = Object.keys(budgets).length > 0;
   const isCA = (data.profile?.country || "CA") === "CA";
