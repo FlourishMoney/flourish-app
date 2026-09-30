@@ -46,6 +46,7 @@ import { computeNextMeeting } from "./lib/meetingSchedule.js";
 import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType } from "./lib/notifications.js";
 import { planNotifications } from "./lib/notificationPlanner.js";
 import { SCREENSHOT_EMAIL, normalizeEmail, isReviewAccount } from "./lib/sampleHouseholdAccount.js";
+import { dueSoonList } from "./lib/dueSoon.js";
 import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
@@ -5115,7 +5116,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const soonTotal   = _ss.upcomingBills;
   // "Due soon" lists what Watch shows leaving before the next deposit: the bills, and the debt
   // minimums the forecast pays in that window. Display only; safe to spend is unchanged.
-  const dueSoonTotal = soonTotal + (_ss.minimumsDueSoon || []).reduce((s, m) => s + m.amount, 0);
+  // The same list and total the desktop / iPad right-column card reads (lib/dueSoon.js).
+  const dueSoonTotal = dueSoonList(_ss).total;
   const today       = new Date().getDate();
   const monthlyIncome = FinancialCalcEngine.cashFlow(data, getCatOv()).monthlyIncome;
   const { netWorth, liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
@@ -9452,7 +9454,8 @@ function MeetAgenda({ data, isCouple, setScreen }){
           <div style={{color:C.muted,fontSize:13,lineHeight:1.5,marginTop:8}}>A scripted preview. Create a free account to run this meeting on your own numbers.</div>
         </div>
       ) : facilitatorGate === "trial" ? (
-        <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5}}>Start your trial to run the meeting with your coach.</div></div>
+        /* Native names no trial or tier (nothing to buy in 1.0.0); the same neutral line as PremiumGate. */
+        <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5}}>{isNativeApp() ? "Running the meeting with your coach isn't included in this version. Your agenda is above." : "Start your trial to run the meeting with your coach."}</div></div>
       ) : facilitatorGate === "ai-off" ? (
         <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5}}>Coach is off in Settings. Your agenda is above.</div></div>
       ) : !started ? (
@@ -11490,8 +11493,10 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
 // ─── DESKTOP SIDEBAR PANEL ────────────────────────────────────────────────────
 function DesktopSidebar({data,setScreen}){
   const txns=data.transactions||[];
-  const today=new Date().getDate();
-  const soonBills=(data.bills||[]).filter(b=>{const d=parseInt(b.date);return d>=today&&d<=today+10;});
+  // Today's "Due soon" list: the engine's own window (to the next deposit), bills and debt minimums.
+  // Its day-of-month filter never wrapped the month end, so it said nothing was due beside a Due soon
+  // tile counting the Phone bill on the 5th.
+  const dueSoon=dueSoonList(SafeSpendEngine.calculate(data));
   const investments=(data.accounts||[]).filter(a=>isInvestmentAccount(a));
   const totalInvested=investments.reduce((a,i)=>a+(i.balance||0),0);
   const totalGain=investments.reduce((a,i)=>a+(i.gain||0),0);
@@ -11520,19 +11525,23 @@ function DesktopSidebar({data,setScreen}){
       ))}
     </div>}
 
-    {/* Upcoming bills */}
+    {/* Due soon: the same list and total as Today's Due soon tile */}
     <div style={{background:C.card,borderRadius:20,padding:"20px",border:`1px solid ${C.border}`}}>
-      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:12}}>Upcoming Bills</div>
-      {soonBills.length===0&&<div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>No bills due in the next 10 days 🎉</div>}
-      {soonBills.map((b,i)=>(
-        <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:i<soonBills.length-1?`1px solid ${C.border}`:"none"}}>
+      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:12}}>Due soon</div>
+      {dueSoon.items.length===0&&<div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Nothing due before your next deposit.</div>}
+      {dueSoon.items.map((b,i)=>(
+        <div key={b.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:i<dueSoon.items.length-1?`1px solid ${C.border}`:"none"}}>
           <div>
             <div style={{color:C.cream,fontSize:13,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{b.name}</div>
-            <div style={{color:C.muted,fontSize:13}}>Due the {b.date}{ordinalSuffix(b.date)}</div>
+            {b.date&&<div style={{color:C.muted,fontSize:13}}>Due {fmtOccDay(b.date)}</div>}
           </div>
-          <div style={{color:C.gold,fontWeight:700,fontSize:14}}>${b.amount}</div>
+          <div style={{color:C.gold,fontWeight:700,fontSize:14}}>{formatMoney(b.amount)}</div>
         </div>
       ))}
+      {dueSoon.items.length>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:10,marginTop:2,borderTop:`1px solid ${C.border}`}}>
+        <div style={{color:C.mutedHi,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Total</div>
+        <div style={{color:C.gold,fontWeight:800,fontSize:14}}>{formatMoney(dueSoon.total)}</div>
+      </div>}
     </div>
 
     {/* Recent transactions */}
@@ -12532,7 +12541,7 @@ function TermsOfService({onBack}){
       <div style={p}>You agree not to: use the App for any unlawful purpose; attempt to reverse-engineer, decompile, or hack the App; use the App to process another person's financial data without their consent; resell or sublicense the App; or interfere with the security or integrity of the App or its infrastructure.</div>
 
       <div style={h2}>7. Subscription & Billing</div>
-      <div style={p}>{isNativeApp() ? "In the iOS and Android apps there is nothing to buy yet. New accounts get a 14-day trial of all features, then the free tier." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
+      <div style={p}>{isNativeApp() ? "In the iOS and Android apps there is nothing to buy." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
 
       <div style={h2}>8. Intellectual Property</div>
       <div style={p}>The App, including its design, logo, code, AI systems, and content, is the exclusive property of GrowSmart Inc. and is protected by copyright, trademark, and other intellectual property laws. You receive a limited, non-exclusive, non-transferable licence to use the App for personal, non-commercial purposes.</div>
@@ -16492,7 +16501,9 @@ input,button,select,textarea { font-family:inherit; }
               <div>
                 <div style={{color:C.cream,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{appData.profile?.name||"User"}</div>
                 {HOUSEHOLD_ENABLED&&household&&<div style={{color:C.green,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🏠 Household connected</div>}
-                {isPremium&&<div style={{color:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ Flourish Plus</div>}
+                {/* No plan or tier label on a store app: 1.0.0 has nothing to buy, so "Plus", "Founder",
+                    "Trial" or "Free" would name a product that isn't there. The web keeps it. */}
+                {isPremium&&!isNativeApp()&&<div style={{color:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>✦ Flourish Plus</div>}
               </div>
             </div>
           </div>}
