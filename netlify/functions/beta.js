@@ -91,6 +91,7 @@ async function getUserCount(supabaseUrl, secretKey) {
 // The template, the send and the welcomed_at write live in _lib/waitlistWelcome.js, because the
 // scheduled sweep (waitlist-sweep.js) sends the SAME message to rows this path could not reach.
 const { sendWelcomeEmail, markWelcomed } = require("./_lib/waitlistWelcome");
+const { CONSENT_VERSION, WAITLIST_SOURCES } = require("./_lib/waitlistConsent");
 
 // The insert is the one call the signup genuinely depends on, so it gets the same 5s as the send. With
 // all three deadlines the worst case for join_waitlist is 5 + 5 + 3 = 13s, well inside Netlify's 60s
@@ -236,7 +237,7 @@ exports.handler = async (event) => {
 
   // Phase E1: waitlist email capture (replaces public signup CTAs).
   if (action === "join_waitlist") {
-    const { email, country, source, metadata } = body;
+    const { email, country, source, metadata, consentVersion } = body;
 
     // Normalize BEFORE validating. The regex rejects any whitespace, so a trailing or leading space,
     // which is a typo and not a different address, used to fail the check outright ("you@example.com "
@@ -249,6 +250,25 @@ exports.handler = async (event) => {
       return {
         statusCode: 400, headers: CORS,
         body: JSON.stringify({ error: "Valid email required" }),
+      };
+    }
+
+    // Where the signup came from: one of the known forms, or refused. The source column only ever holds
+    // a value a form of ours sends (_lib/waitlistConsent.js).
+    if (typeof source !== "string" || !WAITLIST_SOURCES.includes(source)) {
+      return {
+        statusCode: 400, headers: CORS,
+        body: JSON.stringify({ error: "Unknown source" }),
+      };
+    }
+    // CASL: the signup must carry the version of the consent wording the form showed, and only the
+    // current wording is accepted. That version and the time are stored with the row as the consent
+    // record. A form showing out-of-date wording (a stale cached page) is refused rather than recorded
+    // as agreeing to words it did not show.
+    if (consentVersion !== CONSENT_VERSION) {
+      return {
+        statusCode: 400, headers: CORS,
+        body: JSON.stringify({ error: "Consent required", consentVersion: CONSENT_VERSION }),
       };
     }
 
@@ -268,8 +288,10 @@ exports.handler = async (event) => {
         body: JSON.stringify({
           email: emailAddr,
           country: country || null,
-          source: source || null,
+          source,
           metadata: metadata || {},
+          consent_version: CONSENT_VERSION,
+          consented_at: new Date().toISOString(),
         }),
         signal: insertController.signal,
       });

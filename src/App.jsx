@@ -47,6 +47,7 @@ import { getNotificationPermission, requestNotificationPermission, scheduleNotif
 import { planNotifications } from "./lib/notificationPlanner.js";
 import { SCREENSHOT_EMAIL, normalizeEmail, isReviewAccount } from "./lib/sampleHouseholdAccount.js";
 import { dueSoonList } from "./lib/dueSoon.js";
+import { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, WAITLIST_SOURCES } from "./lib/waitlistConsent.js";
 import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
@@ -13565,6 +13566,118 @@ function ResetPasswordScreen({ onDone, onCancel }) {
   );
 }
 
+// ─── WAITLIST FORM (CASL) ────────────────────────────────────────────────────────────────────────
+// The one waitlist signup form, used by the homepage (sources "hero", "bottom_cta") and, later, the
+// benefit calendar and CCB clawback pages ("calendar", "clawback"). It carries its own styles, so a page
+// only has to render it. Directly under the email field it shows the consent line and the sender's
+// identity (CASL), word for word from lib/waitlistConsent.js, and it sends that wording's version with
+// the signup; join_waitlist refuses any other version and any source not in WAITLIST_SOURCES.
+// The only promise it makes is the launch email: no prices, trials, plans or offers.
+const WAITLIST_EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const WAITLIST_FORM_CSS = `
+            .fll-capture{ max-width:440px; margin:0 auto; text-align:center; }
+            .fll-form{ display:flex; flex-direction:column; gap:10px; }
+            .fll-input{ flex:1 1 auto; min-width:0; width:100%; padding:14px 16px; border-radius:13px; border:1.5px solid #e3dac6; background:#fff; font-size:16px; font-family:'Plus Jakarta Sans',sans-serif; color:#1c2b21; outline:none; transition:border-color .15s, box-shadow .15s; }
+            .fll-input::placeholder{ color:#7c8a7b; }
+            .fll-input:focus{ border-color:#2E8B2E; box-shadow:0 0 0 3px rgba(46,139,46,0.16); }
+            .fll-btn{ width:100%; padding:14px 22px; border-radius:13px; border:none; background:linear-gradient(135deg,#2E8B2E,#1f6b22); color:#fff; font-weight:800; font-size:15px; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; box-shadow:0 8px 22px rgba(46,139,46,0.26); transition:transform .12s, box-shadow .12s; white-space:nowrap; }
+            .fll-btn:hover{ transform:translateY(-1px); box-shadow:0 10px 26px rgba(46,139,46,0.32); }
+            .fll-btn:disabled{ opacity:.55; cursor:default; transform:none; box-shadow:none; }
+            .fll-country{ display:inline-flex; gap:4px; margin-top:12px; background:rgba(46,139,46,0.06); border:1px solid rgba(46,139,46,0.14); border-radius:99px; padding:3px; }
+            .fll-seg{ border:none; background:transparent; color:#52624f; font-size:13px; font-weight:700; padding:6px 14px; border-radius:99px; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-seg-on{ background:#fff; color:#226b22; box-shadow:0 1px 3px rgba(0,0,0,0.10); }
+            .fll-err{ color:#c0392b; font-size:13px; margin-top:10px; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-done{ background:#fff; border:1px solid rgba(46,139,46,0.2); border-radius:18px; padding:22px 20px; box-shadow:0 10px 30px rgba(22,58,28,0.07); }
+            .fll-done-t{ font-family:'Playfair Display',serif; font-weight:900; font-size:21px; color:#15321a; margin-bottom:6px; }
+            .fll-done-b{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13.5px; line-height:1.55; color:#52624f; max-width:340px; margin:0 auto; }
+            .fll-consent{ order:1; flex-basis:100%; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; line-height:1.5; color:#52624f; }
+            .fll-consent p{ margin:0 0 4px; }
+            .fll-form .fll-input{ order:0; }
+            .fll-form .fll-btn{ order:2; }
+            @media(min-width:560px){
+              .fll-form{ flex-direction:row; flex-wrap:wrap; }
+              .fll-input{ width:auto; }
+              .fll-btn{ width:auto; }
+              .fll-form .fll-btn{ order:1; }
+              .fll-consent{ order:2; }
+            }
+`;
+function WaitlistForm({ source = "landing", country, onCountryChange, showCountry = true }) {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState(null); // null | "invalid" | "submitting" | "success" | "already" | "error" | "stale"
+  const [ownCountry, setOwnCountry] = useState("CA");
+  const cty = country || ownCountry;
+  const setCty = onCountryChange || setOwnCountry;
+  const tag = WAITLIST_SOURCES.includes(source) ? source : "landing";
+
+  const submit = async () => {
+    const emailVal = email.trim();
+    if (!WAITLIST_EMAIL_RX.test(emailVal)) { setStatus("invalid"); return; }
+    setStatus("submitting");
+    // UTM params go in the request BODY, never the URL: no personal data in query strings.
+    const params = new URLSearchParams(window.location.search);
+    const metadata = {};
+    ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"].forEach(k => {
+      const v = params.get(k);
+      if (v) metadata[k] = v;
+    });
+    if (document.referrer) metadata.referrer = document.referrer;
+    try {
+      const res = await fetch(`${API_BASE}/api/beta`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "join_waitlist", email: emailVal, country: cty, source: tag, metadata, consentVersion: CONSENT_VERSION }),
+      });
+      const data = await res.json();
+      if (data.joined) setStatus(data.alreadyJoined ? "already" : "success");
+      else setStatus(res.status === 400 && data.error === "Consent required" ? "stale" : "error");
+    } catch {
+      setStatus("error");
+    }
+  };
+
+  if (status === "success" || status === "already") {
+    return (
+      <div className="fll-capture fll-done">
+        <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
+        <div style={{ fontSize: 30, marginBottom: 6 }}>{status === "already" ? "👋" : "🎉"}</div>
+        <div className="fll-done-t">{status === "already" ? "You're already on the list!" : "You're on the list"}</div>
+        <div className="fll-done-b">We'll email you when flourish launches in Canada.</div>
+      </div>
+    );
+  }
+  const busy = status === "submitting";
+  return (
+    <div className="fll-capture">
+      <style dangerouslySetInnerHTML={{ __html: WAITLIST_FORM_CSS }}/>
+      <div className="fll-form">
+        <input className="fll-input" type="email" inputMode="email" autoComplete="email" name="email"
+          placeholder="you@example.com" value={email} aria-label="Email address" aria-describedby={`fll-consent-${tag}`}
+          onChange={e => { setEmail(e.target.value); if (status === "invalid" || status === "error" || status === "stale") setStatus(null); }}
+          onKeyDown={e => { if (e.key === "Enter") submit(); }} />
+        <div className="fll-consent" id={`fll-consent-${tag}`}>
+          <p>{CONSENT_TEXT}</p>
+          <p>{IDENTITY_TEXT}</p>
+        </div>
+        <button className="fll-btn" onClick={submit} disabled={busy}>
+          {busy ? "Joining…" : "Join the waitlist"}
+        </button>
+      </div>
+      {showCountry && (
+        <div className="fll-country">
+          {[["CA", "🇨🇦 Canada"], ["US", "🇺🇸 United States"]].map(([c, label]) => (
+            <button key={c} type="button" onClick={() => setCty(c)}
+              className={"fll-seg" + (cty === c ? " fll-seg-on" : "")}>{label}</button>
+          ))}
+        </div>
+      )}
+      {status === "invalid" && <div className="fll-err">Please enter a valid email address.</div>}
+      {status === "error" && <div className="fll-err">Something went wrong. Please try again.</div>}
+      {status === "stale" && <div className="fll-err">This page is out of date. Refresh it and try again.</div>}
+    </div>
+  );
+}
+
 function AuthScreen({ onAuth, onTryDemo }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
@@ -13620,10 +13733,9 @@ function AuthScreen({ onAuth, onTryDemo }) {
     return () => { cancelled = true; };
   }, [showAuth]);
 
-  // Phase E1: waitlist email capture (replaces public signup CTAs).
-  const [waitlistEmail, setWaitlistEmail] = useState("");
+  // Phase E1: waitlist email capture (replaces public signup CTAs). The form itself is WaitlistForm;
+  // the landing keeps the country so the demo link below it matches the form's choice.
   const [waitlistCountry, setWaitlistCountry] = useState("CA");
-  const [waitlistStatus, setWaitlistStatus] = useState(null); // null | "submitting" | "success" | "error" | "already"
 
   const BETA_CAP = 30;
 
@@ -13835,81 +13947,6 @@ function AuthScreen({ onAuth, onTryDemo }) {
   const goSignup = () => { setMode("signup"); setError(""); setSuccess(""); setShowAuth(true); };
   const goLogin  = () => { setMode("login");  setError(""); setSuccess(""); setShowAuth(true); };
 
-  const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const handleWaitlistSubmit = async (sourceArg) => {
-    const emailVal = waitlistEmail.trim();
-    if (!EMAIL_RX.test(emailVal)) { setWaitlistStatus("invalid"); return; } // Phase E2: client-side email check before submit
-    const submitSource = (typeof sourceArg === "string" && sourceArg) || "landing";
-    setWaitlistStatus("submitting");
-
-    // Capture UTM params from the URL into the request BODY (never the URL/query string — no PII in URLs).
-    const params = new URLSearchParams(window.location.search);
-    const metadata = {};
-    ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"].forEach(k => {
-      const v = params.get(k);
-      if (v) metadata[k] = v;
-    });
-    if (document.referrer) metadata.referrer = document.referrer;
-
-    try {
-      const res = await fetch(`${API_BASE}/api/beta`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "join_waitlist",
-          email: emailVal,
-          country: waitlistCountry,
-          source: submitSource,
-          metadata,
-        }),
-      });
-      const data = await res.json();
-      if (data.joined) {
-        setWaitlistStatus(data.alreadyJoined ? "already" : "success");
-      } else {
-        setWaitlistStatus("error");
-      }
-    } catch {
-      setWaitlistStatus("error");
-    }
-  };
-
-  // Phase E2: inline waitlist capture, used at two spots on the landing (hero + bottom). Shared state,
-  // so a success at either point renders the success card. `source` tags the conversion point.
-  const renderCapture = (source) => {
-    if (waitlistStatus === "success" || waitlistStatus === "already") {
-      return (
-        <div className="fll-capture fll-done">
-          <div style={{ fontSize: 30, marginBottom: 6 }}>{waitlistStatus === "already" ? "👋" : "🎉"}</div>
-          <div className="fll-done-t">{waitlistStatus === "already" ? "You're already on the list!" : "You're on the list"}</div>
-          <div className="fll-done-b">We'll email you the moment flourish launches. No spam, just the launch news.</div>
-        </div>
-      );
-    }
-    const busy = waitlistStatus === "submitting";
-    return (
-      <div className="fll-capture">
-        <div className="fll-form">
-          <input className="fll-input" type="email" inputMode="email" autoComplete="email" name="email"
-            placeholder="you@example.com" value={waitlistEmail} aria-label="Email address"
-            onChange={e => { setWaitlistEmail(e.target.value); if (waitlistStatus === "invalid" || waitlistStatus === "error") setWaitlistStatus(null); }}
-            onKeyDown={e => { if (e.key === "Enter") handleWaitlistSubmit(source); }} />
-          <button className="fll-btn" onClick={() => handleWaitlistSubmit(source)} disabled={busy}>
-            {busy ? "Joining…" : "Join the waitlist"}
-          </button>
-        </div>
-        <div className="fll-country">
-          {[["CA", "🇨🇦 Canada"], ["US", "🇺🇸 United States"]].map(([c, label]) => (
-            <button key={c} type="button" onClick={() => setWaitlistCountry(c)}
-              className={"fll-seg" + (waitlistCountry === c ? " fll-seg-on" : "")}>{label}</button>
-          ))}
-        </div>
-        {waitlistStatus === "invalid" && <div className="fll-err">Please enter a valid email address.</div>}
-        {waitlistStatus === "error" && <div className="fll-err">Something went wrong. Please try again.</div>}
-      </div>
-    );
-  };
-
   return (
     <div style={{ minHeight: "100dvh", background: showAuth ? "#050D09" : "#FDF6EC", fontFamily: "'Plus Jakarta Sans',sans-serif", overflowX: "hidden", paddingTop: "env(safe-area-inset-top)" }}>
 
@@ -13934,21 +13971,6 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-h1 em{ font-style:italic; color:#2E8B2E; }
             .fll-sub{ font-family:'Plus Jakarta Sans',sans-serif; font-size:clamp(15px,2.2vw,19px); line-height:1.6; color:#52624f; max-width:560px; margin:0 auto 30px; }
 
-            .fll-capture{ max-width:440px; margin:0 auto; text-align:center; }
-            .fll-form{ display:flex; flex-direction:column; gap:10px; }
-            .fll-input{ flex:1 1 auto; min-width:0; width:100%; padding:14px 16px; border-radius:13px; border:1.5px solid #e3dac6; background:#fff; font-size:16px; font-family:'Plus Jakarta Sans',sans-serif; color:#1c2b21; outline:none; transition:border-color .15s, box-shadow .15s; }
-            .fll-input::placeholder{ color:#7c8a7b; }
-            .fll-input:focus{ border-color:#2E8B2E; box-shadow:0 0 0 3px rgba(46,139,46,0.16); }
-            .fll-btn{ width:100%; padding:14px 22px; border-radius:13px; border:none; background:linear-gradient(135deg,#2E8B2E,#1f6b22); color:#fff; font-weight:800; font-size:15px; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; box-shadow:0 8px 22px rgba(46,139,46,0.26); transition:transform .12s, box-shadow .12s; white-space:nowrap; }
-            .fll-btn:hover{ transform:translateY(-1px); box-shadow:0 10px 26px rgba(46,139,46,0.32); }
-            .fll-btn:disabled{ opacity:.55; cursor:default; transform:none; box-shadow:none; }
-            .fll-country{ display:inline-flex; gap:4px; margin-top:12px; background:rgba(46,139,46,0.06); border:1px solid rgba(46,139,46,0.14); border-radius:99px; padding:3px; }
-            .fll-seg{ border:none; background:transparent; color:#52624f; font-size:13px; font-weight:700; padding:6px 14px; border-radius:99px; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
-            .fll-seg-on{ background:#fff; color:#226b22; box-shadow:0 1px 3px rgba(0,0,0,0.10); }
-            .fll-err{ color:#c0392b; font-size:13px; margin-top:10px; font-family:'Plus Jakarta Sans',sans-serif; }
-            .fll-done{ background:#fff; border:1px solid rgba(46,139,46,0.2); border-radius:18px; padding:22px 20px; box-shadow:0 10px 30px rgba(22,58,28,0.07); }
-            .fll-done-t{ font-family:'Playfair Display',serif; font-weight:900; font-size:21px; color:#15321a; margin-bottom:6px; }
-            .fll-done-b{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13.5px; line-height:1.55; color:#52624f; max-width:340px; margin:0 auto; }
 
             .fll-demo{ display:inline-block; margin-top:16px; background:none; border:none; color:#52624f; font-size:13px; font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:3px; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-demo:hover{ color:#2E8B2E; }
@@ -13980,11 +14002,6 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-foot a:hover{ color:#2E8B2E; }
             .fll-foot span{ color:#52624f; font-size:13px; font-family:'Plus Jakarta Sans',sans-serif; }
 
-            @media(min-width:560px){
-              .fll-form{ flex-direction:row; }
-              .fll-input{ width:auto; }
-              .fll-btn{ width:auto; }
-            }
             @media(min-width:760px){
               .fll-hero{ padding:58px 0 22px; }
               .fll-section{ padding:58px 0; }
@@ -14020,7 +14037,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
             </span>
             <h1 className="fll-h1">Understand your money, <em>coaching, not just tracking.</em></h1>
             <p className="fll-sub">See exactly what's safe to spend before payday, test any money decision, and finally understand your finances, in plain English.</p>
-            {renderCapture("hero")}
+            <WaitlistForm source="hero" country={waitlistCountry} onCountryChange={setWaitlistCountry}/>
             {onTryDemo && <button className="fll-demo" onClick={() => onTryDemo(waitlistCountry)}>or preview the app with {waitlistCountry === "US" ? "🇺🇸 US" : "🇨🇦 Canadian"} sample data →</button>}
             <div><span className="fll-trust">🔒 Read-only. Flourish can't move your money.</span></div>
           </div>
@@ -14070,7 +14087,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
             <div className="fll-cta2">
               <h2 className="fll-h2" style={{ marginBottom: 6 }}>Be first to know.</h2>
               <p className="fll-lede" style={{ marginBottom: 22 }}>Join the waitlist and we'll email you the moment flourish launches, on iOS, Android & Windows.</p>
-              {renderCapture("bottom_cta")}
+              <WaitlistForm source="bottom_cta" country={waitlistCountry} onCountryChange={setWaitlistCountry}/>
             </div>
           </div>
 

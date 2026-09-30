@@ -31,43 +31,57 @@ const WELCOME_FROM     = "Flourish <hello@flourishmoney.app>";
 const WELCOME_REPLY_TO = "hello@flourishmoney.app";
 const WELCOME_SUBJECT  = "You're on the Flourish waitlist";
 
-// The approved copy, exactly as written. Do not add claims, launch dates or links.
-// It is deliberately transactional: it confirms the person's own request and nothing else. The product
-// description was removed on the owner's CASL decision (2026-09-19) so this is not a commercial
-// electronic message. Promotional copy and the full CASL footer belong to the later launch email.
+// The copy. Do not add claims, launch dates, prices, trials, plans or offers: the one promise is the
+// launch-day email. The person consented (CASL, consent version in _lib/waitlistConsent.js) to that email
+// "plus a few updates before then", so this message says so, carries the sender's identity and a working
+// one-click unsubscribe link, and goes out with List-Unsubscribe headers. That replaces the 2026-09-19
+// "transactional only, nothing else in the meantime" wording, which the new consent line contradicts.
+const { IDENTITY_TEXT } = require("./waitlistConsent");
+const { unsubscribeUrl, listUnsubscribeHeaders } = require("./waitlistUnsubscribe");
+
 const WELCOME_PARAGRAPHS = [
   "Thanks for joining the Flourish waitlist.",
-  "We'll email you when it's ready for you. No launch date yet, and we won't send anything else in the meantime.",
+  "We'll email you the day flourish launches in Canada. Before then you may get a few updates, and you can unsubscribe from any of them.",
   "Questions or ideas? Just reply to this email.",
   "Amanda, founder of Flourish",
-  "flourishmoney.app",
-  "You're receiving this because you joined the waitlist at flourishmoney.app. If this wasn't you, reply and we'll remove you.",
 ];
-
-// Both versions are built from the SAME array, so the plain-text and HTML copy can never drift apart.
-const WELCOME_TEXT = WELCOME_PARAGRAPHS.join("\n\n");
+const WHY_LINE = "You're receiving this because you joined the waitlist at flourishmoney.app.";
+// The footer on every waitlist email: why they got it, who sent it (the CASL identity line, word for
+// word as the form shows it), and how to stop.
+const footerLines = (url) => [WHY_LINE, IDENTITY_TEXT, `Unsubscribe with one click: ${url}`];
 
 // Cream background (#F4F1EB) and ink (#1A2035) are the app's own light-theme values. No images.
 const _para = (text, extra) => `<p style="margin:0 0 16px;${extra || ""}">${text}</p>`;
-const WELCOME_HTML = [
-  '<!doctype html>',
-  '<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>' + WELCOME_SUBJECT + '</title></head>',
-  '<body style="margin:0;padding:0;background-color:#F4F1EB;">',
-  '<div style="max-width:560px;margin:0 auto;padding:32px 24px;background-color:#F4F1EB;color:#1A2035;',
-  'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;">',
-  WELCOME_PARAGRAPHS.slice(0, -1).map(t => _para(t)).join(""),
-  _para(WELCOME_PARAGRAPHS[WELCOME_PARAGRAPHS.length - 1], "margin-top:24px;font-size:13px;color:rgba(26,32,53,0.66);"),
-  '</div></body></html>',
-].join("");
+const _small = "font-size:13px;color:rgba(26,32,53,0.66);";
+function welcomeHtml(url) {
+  return [
+    '<!doctype html>',
+    '<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>' + WELCOME_SUBJECT + '</title></head>',
+    '<body style="margin:0;padding:0;background-color:#F4F1EB;">',
+    '<div style="max-width:560px;margin:0 auto;padding:32px 24px;background-color:#F4F1EB;color:#1A2035;',
+    'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;">',
+    WELCOME_PARAGRAPHS.map(t => _para(t)).join(""),
+    _para(WHY_LINE, "margin-top:24px;" + _small),
+    _para(IDENTITY_TEXT, _small),
+    _para(`<a href="${url}" style="color:#1A2035;">Unsubscribe with one click</a>`, _small),
+    '</div></body></html>',
+  ].join("");
+}
 
-function welcomeEmailPayload(to) {
+// The whole message for one waitlist row, or null when no signed unsubscribe link can be made for it
+// (no row id, or no signing secret). A waitlist email without a working unsubscribe is never sent.
+function welcomeEmailPayload(to, rowId) {
+  const url = unsubscribeUrl(rowId);
+  const headers = listUnsubscribeHeaders(rowId);
+  if (!url || !headers) return null;
   return {
     from:     WELCOME_FROM,
     reply_to: WELCOME_REPLY_TO,
     to:       [to],
     subject:  WELCOME_SUBJECT,
-    text:     WELCOME_TEXT,
-    html:     WELCOME_HTML,
+    text:     [...WELCOME_PARAGRAPHS, ...footerLines(url)].join("\n\n"),
+    html:     welcomeHtml(url),
+    headers,
   };
 }
 
@@ -76,6 +90,13 @@ function welcomeEmailPayload(to) {
 async function sendWelcomeEmail(to, rowId) {
   const key = (process.env.RESEND_API_KEY || "").trim();
   if (!key) return false; // no key configured: previews and local runs send nothing, silently
+  // No row id or no signing secret means no unsubscribe link, and no waitlist email goes out without
+  // one. welcomed_at stays null, so the sweep sends it once the row (and its id) can be read.
+  const payload = welcomeEmailPayload(to, rowId);
+  if (!payload) {
+    console.error("[waitlist] welcome email skipped", "no_unsubscribe_link");
+    return false;
+  }
   // Resend de-duplicates on Idempotency-Key, so a replayed request (a retried POST from the client, a
   // function retry) cannot produce a second email for the same waitlist row. Keyed on the row id and
   // nothing else: it must be stable for that row, and it must never carry the address. When the insert
@@ -90,7 +111,7 @@ async function sendWelcomeEmail(to, rowId) {
     res = await fetch(RESEND_ENDPOINT, {
       method: "POST",
       headers,
-      body: JSON.stringify(welcomeEmailPayload(to)),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
   } catch (err) {
@@ -152,8 +173,7 @@ module.exports = {
   PATCH_TIMEOUT_MS,
   WELCOME_SUBJECT,
   WELCOME_PARAGRAPHS,
-  WELCOME_TEXT,
-  WELCOME_HTML,
+  WHY_LINE,
   welcomeEmailPayload,
   sendWelcomeEmail,
   markWelcomed,

@@ -135,7 +135,7 @@ async function run({ count = 0, rows = pendingRows(3), resend = { ok: true }, wi
     t.ok(r.patches.every((p, i) => p.url.includes(`id=eq.${rows[i].id}`)), "3e …on that row, by id");
     const body = JSON.parse(r.sends[0].body);
     const lib = require(path.join(__dirname, "..", "netlify", "functions", "_lib", "waitlistWelcome.js"));
-    t.eq(body.text, lib.WELCOME_TEXT, "3f the body is the shared copy, not a second version of it");
+    t.eq(body.text, lib.welcomeEmailPayload(body.to[0], rows[0].id).text, "3f the body is the shared copy, not a second version of it");
     t.eq(body.subject, lib.WELCOME_SUBJECT, "3g …with the shared subject");
     t.eq(r.result.sent, 3, "3h the run reports what it sent");
   }
