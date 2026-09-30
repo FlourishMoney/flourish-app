@@ -139,7 +139,7 @@ const household = {
     t.ok(panel != null, "Goals → Budget shows \"Where you could save\" when a budget is more than 20% over this month");
     if (panel != null) {
       t.ok(panel.includes("Coffee & Dining $50 over budget here this month"), `Coffee & Dining, $150 against $100, is listed as "$50 over budget here this month" (panel: ${panel})`);
-      t.ok(!/Save|\/mo/.test(panel), `the panel states the overage and projects no saving per month (panel: ${panel})`);
+      t.eq(panel, "☕ Coffee & Dining $50 over budget here this month", "the panel states the one budget that is over and by how much, and nothing else: no projection in any wording");
       t.ok(!panel.includes("Groceries"), `Groceries, 12.5% over, is under the 20% bar (panel: ${panel})`);
       t.ok(!panel.includes("Subscriptions"), `Subscriptions, 50% over on $15 spent, is under the $20 floor (panel: ${panel})`);
     }

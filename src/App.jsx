@@ -9193,7 +9193,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
               {saveSuggestions.map(({cat,over})=>(
                 <div key={cat} style={{marginBottom:6}}>
                   <div style={{color:C.cream,fontSize:13}}>{catEmojis[cat]||"📌"} {cat}</div>
-                  <div style={{color:C.redBright,fontSize:13,marginTop:2}}>${Math.round(over)} over budget here this month</div>
+                  <div style={{color:C.redBright,fontSize:13,marginTop:SPACE.xs}}>${Math.round(over)} over budget here this month</div>
                 </div>
               ))}
             </div>

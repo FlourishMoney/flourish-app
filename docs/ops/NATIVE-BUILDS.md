@@ -22,14 +22,16 @@ material do not.
 |---|---|---|
 | id | `app.flourishmoney` | `com.flourishmoney.app` |
 | version | 1.0.0 | 1.0.0 (`versionName`) |
-| build | 1 (`CURRENT_PROJECT_VERSION`) | 1 (`versionCode`) |
+| build | 526898 (`CURRENT_PROJECT_VERSION`) | 9 (`versionCode`) |
 
 The two ids differ, deliberately and confirmed: the App Store Connect record predates
 the Play draft. Do not "fix" one to match the other — changing a shipped id means a new
 store record.
 
-Build numbers start at 1 because nothing has been uploaded to either store. Both stores
-require the build number to increase with every upload of the same version.
+Both stores require the build number to increase with every upload of the same version. The
+numbers live in tracked files, both `CURRENT_PROJECT_VERSION` lines in
+`ios/App/App.xcodeproj/project.pbxproj` and `versionCode` in `android/app/build.gradle`, and a
+PR bumps them before each store build. The table shows what those files carry on `main`.
 
 ## Building
 

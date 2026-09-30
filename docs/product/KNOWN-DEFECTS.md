@@ -1038,29 +1038,40 @@ convention the walker can key on — instead of a list of files the walker has t
 
 ## 46. The goal savings reminders can list amounts that do not add up to "Goal savings"
 
-**Rating: LOW.** The one review round of PR #36 (the budget-screen crash fixes), 2026-09-29.
+**Rating: MEDIUM.** Found in the review of PR #36 (the budget-screen crash fixes). The review of
+PR #38 found the "0" case, which is the most common. Both reviews were on 2026-09-29.
 
 **Where** `src/App.jsx:7419` (`goalsMo` in `generateBudgetSuggestions`), against the reminder rows in
 Goals → Budget (`:9182`, "Saving for N goals") and Do → Budget (`BudgetScreen`, `:14839`, "Saving
 toward N goals"). The goal filters at `:7415`, `:9118` and `:14326` read only `g.saved`.
 
-**What happens** `goalsMo` counts a goal's monthly amount only when it is above $0, and otherwise
-uses the remaining amount over 24 months. Both reminders print the monthly amount as typed and
-round each row on its own. Rendered with both screens:
+**What happens** `goalsMo` counts a goal's monthly amount when it is above $0, and otherwise uses
+the remaining amount over 24 months. The two reminders work each row out differently:
 
-- A goal whose monthly amount is "-50" is listed as "Trip $-50/mo" under "Goal savings -$100/mo".
-  The My Goals form's "Monthly $ contribution" field (`:8650`) is `type="number"` with no minimum,
-  and the Coach's `update_goal` keeps the sign (`:11834`, `:11841`).
-- Three goals at $33.40 a month are listed as $33 each ($99) under "Goal savings -$100/mo".
-- A goal saved in the older shape (`current` instead of `saved`) that is already reached is still
-  counted and listed ("Fund $21/mo · 0% saved"). My Goals reads `saved||current` (`:8523`, `:8547`,
-  `:9921`) and shows it complete.
+- Goals → Budget uses `parseFloat(g.monthly || fallback).toFixed(0)`, so the fallback only applies
+  when the field is empty.
+- Do → Budget uses `parseFloat(g.monthly || 0) || fallback`, then `Math.round`.
+
+Rendered with both screens:
+
+- **A monthly amount of "0".** Goals → Budget lists "Car $0/mo" and Do → Budget lists "Car $100/mo",
+  under "Goal savings -$100/mo". The Coach's `add_goal` (`:11834`) writes "0" whenever it passes 0
+  or leaves the amount out.
+- **A monthly amount of "-50".** Both list "Trip $-50/mo" under "Goal savings -$100/mo". The My Goals
+  form's "Monthly $ contribution" field (`:8650`) is `type="number"` with no minimum, and both
+  `add_goal` and `update_goal` (`:11841`) keep the sign.
+- **Three goals at $33.40 a month.** Both list $33 each ($99) under "Goal savings -$100/mo".
+- **A reached goal saved in the older shape** (`current` instead of `saved`). It is still counted and
+  listed ("Fund $21/mo · 0% saved"). My Goals reads `saved||current` (`:8523`, `:8547`, `:9921`) and
+  shows it complete.
+- **Formatting.** Both reminders print amounts without grouping ("House $2000/mo") and put the
+  minus sign after the dollar sign ("$-50"), unlike `formatMoney`.
 
 Which goals are listed always matches `goalsMo`, because the filter is the same.
 
 **Fix (suggested, not built)** Have `generateBudgetSuggestions` return each goal it counted with
-the monthly amount it used, and render those rows in both reminders. Read `saved ?? current` in the
-one filter. Refuse a negative monthly amount where it is entered.
+the monthly amount it used, and render those rows with `formatMoney` in both reminders. Read
+`saved ?? current` in the one filter. Refuse a negative monthly amount where it is entered.
 
 ---
 
@@ -1135,10 +1146,164 @@ Declare the three packages as devDependencies.
 - The sweep walks the demo, and the demo has no budgets or goals. So "Do/Budget" (`:220`) measures
   only the "Build Your Budget Plan" prompt, never the tracking view: the overall bar, "Where you
   could cut back", the goal reminder and the category rows.
-- Goals → Budget is not in `VIEWS` at all. That is how its Edit button stayed 28px tall, and how
-  its "Where you could save" rows packed three pieces of text into one line at 375px. Both were
-  fixed on 2026-09-29.
-- Nothing else on either view has been measured.
+- Goals → Budget is not in `VIEWS` at all. That is how its Edit button stayed 28px tall until it
+  was raised to 44px on 2026-09-29. Adding the view today would fail at once on entry 52: the Edit
+  row at 320px and 130% text.
+- Nothing else on either view has been measured by the sweep.
 
-**Fix (suggested, not built)** Add views that seed a budget and a goal into the demo, then open
-Do → Budget and Do → Goals → Budget.
+**Fix (suggested, not built)** Fix entry 52, then add views that seed a budget and a goal into the
+demo and open Do → Budget and Do → Goals → Budget.
+
+---
+
+## 51. Goals → Budget's Edit button does nothing
+
+**Rating: MEDIUM.** The one review round of PR #38, 2026-09-29.
+
+**Where** `src/App.jsx:9206-9213`: the Edit button beside "Monthly Category Budgets" in `Goals`,
+Budget tab.
+
+**What happens**
+
+- Tapping it only writes `_budgetEditOpen: true` and `_budgetEditSeed` into app data (`:9210`).
+  Nothing in `src/` reads either key, so the screen does not change. The review tapped it in
+  Chromium to confirm.
+- For a signed-in household, `buildDbBlob` (`src/lib/persistence.js:110`) spreads all of app data
+  into the synced blob, so each tap also writes the two unused keys to the server.
+- The button has been 44px tall since 2026-09-29: a full-size target that does nothing.
+
+**Fix (suggested, not built)** Open Do → Budget's plan editor from it, or remove it.
+
+---
+
+## 52. Goals → Budget's Edit row puts the button against its title at 320px and 130% text
+
+**Rating: MEDIUM.** Same review.
+
+**Where** `src/App.jsx:9204-9213`: the "Monthly Category Budgets" header row in `Goals`, Budget tab.
+
+**What happens**
+
+- The row is `display:flex; justifyContent:space-between`, with no wrap and no gap. That is the
+  pattern `docs/design/LAYOUT-RULES.md` rule 3 exists to replace.
+- Measured with the layout suite's own `SCAN` on the built app, at 320px and 130% text, the title
+  wraps to two lines and its box ends where the button starts: `text-control 0px "Monthly Category
+  Budgets" vs "Edit"`, under rule 2's 12px.
+- The other seven sweep sizes clear it (29–143px), and the button is 44px tall at all eight.
+
+**Fix (suggested, not built)** Build the row with `row()`, `rowText()` and `rowControl()`.
+`rowControl` already carries the 44px minimum height.
+
+---
+
+## 53. Goals → Budget counts spending that Do → Budget leaves out
+
+**Rating: MEDIUM.** Same review.
+
+**Where** `src/App.jsx:9134-9135` (`monthSpend` in `Goals`, Budget tab), against `BudgetScreen`'s
+`monthSpend` (`:14345`) and the Activity plan card (`:7575`).
+
+**What happens**
+
+- Goals → Budget adds up every positive transaction this month.
+- The other two leave out the Transfer, Income and Fees categories, and any transaction whose name
+  contains one of `CC_PAYMENT_KEYWORDS` (`src/lib/financialCalculations.js:843`). That list includes
+  a bare "autopay".
+- So the two budget screens can disagree about the same budget. Rendered with a $20 Subscriptions
+  budget and a $30 "Spotify Autopay" charge:
+  - Goals → Budget says "Subscriptions $10 over budget here this month", and its row reads "$30 / $20
+    ⚠️ $10 over".
+  - Do → Budget says "Subscriptions $0 / $20 … $20 left".
+- Do → Budget is the one that is wrong here: a subscription paid by autopay is spending, not a card
+  payment.
+
+**Fix (suggested, not built)** Write one helper for "this month's spending by category" and use it
+on all three screens. Recognise a card payment by more than a fragment of its name.
+
+---
+
+## 54. The two budget screens label the same things differently
+
+**Rating: LOW.** Same review.
+
+**Where** `src/App.jsx`, the Goals Budget tab (`:9164`, `:9192`, `:9196`) against `BudgetScreen`
+(`:14437`, `:14816`, `:14821`).
+
+**What happens** Since 2026-09-29 the two screens show the same figures, but they name them
+differently:
+
+| Goals → Budget | Do → Budget |
+|---|---|
+| "Available for spending" | "Available to spend" |
+| "Where you could save" | "Where you could cut back" |
+| "over budget here this month" | "over budget this month" |
+
+The owner chose the third wording on 2026-09-29.
+
+**Fix (suggested, not built)** Choose one set of labels and use it on both screens.
+
+---
+
+## 55. Goals → Budget works out goal savings a second time for its "Goal savings" line
+
+**Rating: LOW.** Same review.
+
+**Where** `src/App.jsx:9119`, `localGoalsMo` in `Goals`, Budget tab.
+
+**What happens** `localGoalsMo` re-implements the `goalsMo` that `generateBudgetSuggestions`
+already returns (`:7414-7419`). The "Goal savings" line and the reminder's condition use the local
+copy. "Available for spending" uses `discret`, which subtracts the engine's copy. The two agree
+today. If either one changes, the line stops being the amount that was subtracted.
+
+**Fix (suggested, not built)** Take `goalsMo` from `generateBudgetSuggestions` and delete
+`localGoalsMo`.
+
+---
+
+## 56. "100% used" beside a category that is over its budget
+
+**Rating: LOW.** Same review.
+
+**Where** `src/App.jsx:9222` (Goals → Budget) and `:14866` (Do → Budget, "Category Breakdown").
+
+**What happens** Both screens cap the percentage label at 100, not just the bar. A category at $150
+of $100 reads "100% used" next to "$50 over".
+
+**Fix (suggested, not built)** Cap the bar's width but show the real percentage ("150% used").
+
+---
+
+## 57. When goals take more than is left, the budget breakdown does not add up
+
+**Rating: LOW.** Same review.
+
+**Where** `src/App.jsx:7423` (`discret = Math.max(0, …)`). It shows in Goals → Budget's "Your Budget
+Breakdown" (`:9157-9164`) and in Do → Budget's collapsed "How that is worked out" (`:14442-14445`).
+
+**What happens** Rendered with $1,000 a month gross pay and a $2,000-a-month goal, Goals → Budget
+reads:
+
+- Take-home $820/mo
+- Savings target -$82/mo
+- Goal savings -$2,000/mo
+- Available for spending $0/mo
+
+Those lines do not add up to $0, and nothing says that the goals come to $1,262 a month more than is
+left. Do → Budget shows "$0/mo" above the same lines.
+
+**Fix (suggested, not built)** When goal savings exceed what is left, say so and show the shortfall.
+
+---
+
+## 58. Do → Budget formats its figures in the browser's language
+
+**Rating: LOW.** Same review.
+
+**Where** `src/App.jsx:14439` ("Available to spend") and `:14442` (the "Take-home" line), in
+`BudgetScreen`.
+
+**What happens** Both figures use a bare `toLocaleString()`, which follows the browser's language.
+In a French-Canadian browser, "Available to spend" reads "$1 668", while Goals → Budget shows "$1,668"
+through `formatMoney`.
+
+**Fix (suggested, not built)** Use `formatMoney`.
