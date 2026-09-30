@@ -45,7 +45,7 @@ import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting } from "./lib/meetingSchedule.js";
 import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType } from "./lib/notifications.js";
 import { planNotifications } from "./lib/notificationPlanner.js";
-import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, computeSavingsOpportunity, detectLowCashWarning } from "./lib/decisionEngine.js";
+import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView } from "./lib/suggestedDaily.js";
@@ -60,6 +60,7 @@ import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
 import { noteReviewTrouble, reviewOnTodayOpen, reviewOnCheckInDone } from "./lib/reviewPrompt.js";
+import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
 import { buildDbBlob, fetchUserData, upsertUserData, writeSideKeys, makeDebouncedSaver, STAMP_KEY, clearAllUserLocal, isBlobEmpty, hasRealLocalData, decideHydrate } from "./lib/persistence.js";
@@ -974,7 +975,6 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
   const todayD = todayDate instanceof Date ? todayDate : new Date();
   // Truth-fix items 2 and 4: the real next deposit (date + per-deposit amount), as the household corrected it.
   const daysToPayday = daysToNextDepositFor(data, todayD);
-  const nextDep = nextDepositFor(data, todayD);
   // Consolidation 1: the suggested daily figure is owned by suggestedDailyView and passed in as dailyPace,
   // so Today and Decisions show the SAME number (this card used to divide safe by a 14-floored divisor here).
   // The same debt list What-If and Meet model (a bank-linked card with its bank's APR and minimum).
@@ -982,7 +982,9 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
   const extraPayment = 150;
   const monthsSaved = computeDebtPayoffImpact(topDebt, extraPayment);
   const safeToMove = computeSavingsOpportunity(safe);
-  const lowCash = detectLowCashWarning(safe, monthlyIncome);
+  // The one tight-cash rule, the call Today's Money Plan makes too. When it fires, the cards below do
+  // not also suggest moving money to savings or paying extra on a debt.
+  const lowCash = cashIsTight(data, todayD).tight;
 
   // Build decision cards
   const decisions = [];
@@ -992,14 +994,10 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       icon: "💡",
       color: C.teal,
       title: `Suggested spend today: ${dailyPace.dailyText}`,
-      detail: nextDep
-        ? ((daysToPayday != null && daysToPayday <= 1)
-            ? `Keeps you safe until tomorrow's deposit of ${formatMoney(nextDep.amount)}.`
-            : `Keeps you safe until your next deposit of ${formatMoney(nextDep.amount)} on ${nextDep.date.toLocaleDateString("en-CA", { month: "short", day: "numeric" })}.`)
-        // "deposit", not "paycheque" — the same fix as the forecast rows, and this branch is the one
-        // that fires when NO deposit could be projected at all, i.e. exactly when the app knows least
-        // about what is coming. Its sibling branch two lines up already says "deposit".
-        : "Keeps you safe until your next deposit.",
+      // The coach's wording, which is the accurate one: the figure is safe to spend spread over a
+      // window of at least 14 days. It is a pace, not a limit, and it does not by itself keep anyone
+      // covered to the next deposit (that window can be shorter or longer than the pace's).
+      detail: `That paces ${formatMoney(safe)} safe to spend over ${dailyPace.daysLeft} days. It's a pace, not a limit.`,
       action: "See forecast", screen: "plan"
     });
   }
@@ -1009,11 +1007,11 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       icon: "⚠️",
       color: C.orange,
       title: "Cash is running tight",
-      detail: `Your balance is below 15% of monthly income. Hold non-essential spending for ${daysToPayday != null ? daysToPayday : "a few"} days.`,
+      detail: `Your safe to spend (${formatMoney(safe)}) is below 15% of your monthly income (${formatMoney(Math.round(monthlyIncome))}). Hold non-essential spending for ${daysToPayday != null ? daysToPayday : "a few"} days.`,
       action: "See Plan", screen: "plan"
     });
   }
-  if (safeToMove > 20) {
+  if (!lowCash && safeToMove > 20) {
     decisions.push({
       type: "savings",
       icon: "💚",
@@ -1023,7 +1021,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       action: "See Goals", screen: "goals"
     });
   }
-  if (topDebt && monthsSaved > 0) {
+  if (!lowCash && topDebt && monthsSaved > 0) {
     decisions.push({
       type: "debt",
       icon: "🎯",
@@ -1124,7 +1122,7 @@ function AutopilotCard({data, setScreen}) {
       // NOT "buffer" -- that word belongs to the "Spending buffer" line inside safe-to-spend.
       // This is the residual after today's plan allocates everything: a different quantity.
       icon:"🔒", label:"Left over", amount:formatMoney(plan.buffer||0),
-      color:C.muted, detail:"stays in your account",
+      color:C.muted, detail:"after bills, debt minimums and today's plan",
     },
   ].filter(Boolean);
 
@@ -2723,25 +2721,25 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
   // not transaction rows. The 30% savings badge inherits the corrected total.
   const subs = analyzeSubscriptions(txns);
   if (subs.monthlyTotal > 40) {
-    const savings = Math.round(subs.monthlyTotal * 0.3);
+    // No saving is quoted: an assumed "30% of them are unused" is not a fact about this household.
     opportunities.push({
       id:"subs", icon:"📱", color:C.teal,
       title:`$${subs.monthlyTotal}/mo in subscriptions`,
-      detail:`${subs.activeCount} active subscription${subs.activeCount===1?"":"s"} detected. Cancelling unused ones could free $${savings}/mo.`,
-      action:"Review", screen:"spend", badge:"Save $"+savings+"/mo"
+      detail:`${subs.activeCount} active subscription${subs.activeCount===1?"":"s"} detected. Cancelling any you don't use frees that money every month.`,
+      action:"Review", screen:"spend", badge:"Review"
     });
   }
 
   // High-rate debt refinancing
   const highRateDebt = debts.find(d => parseFloat(d.rate||0) > 12);
   if (highRateDebt) {
-    const bal = parseFloat(highRateDebt.balance||0);
-    const saving = Math.round(bal * (parseFloat(highRateDebt.rate||0)/100 - 0.065));
-    if (saving > 0) opportunities.push({
+    // No rate is quoted: Flourish does not know what a lender would offer this household, so an
+    // invented one ("a 6.5% personal loan could save ~$461/yr") is a promise nobody made.
+    opportunities.push({
       id:"refi", icon:"💳", color:C.orange,
-      title:`Refinance ${highRateDebt.name}`,
-      detail:`At ${highRateDebt.rate}% you're overpaying. A 6.5% personal loan could save ~$${saving}/yr in interest.`,
-      action:"Debt Plan", screen:"goals", tab:"sim", badge:"Save $"+saving+"/yr"
+      title:`Compare rates on ${highRateDebt.name}`,
+      detail:`At ${highRateDebt.rate}% this is expensive money. A lower-rate loan or a balance transfer could cut the interest. Compare the rate you'd actually be offered before you switch.`,
+      action:"Debt Plan", screen:"goals", tab:"sim", badge:"Compare"
     });
   }
 
@@ -2781,8 +2779,9 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
     if (bal > 500) opportunities.push({
       id:"hisa", icon:"🏦", color:C.gold,
       title:`Earn more on your savings`,
-      detail:`$${(bal||0).toFixed(0)} in savings at typical 0.3% earns $${(bal*0.003).toFixed(0)}/yr. ${savingsAccountTerm(data.profile?.country).replace(/^a /,"A ")} at 4%+ earns $${(bal*0.04).toFixed(0)}/yr.`,
-      action:"Learn More", screen:"goals", tab:"learn", badge:"+$"+(Math.round((bal*0.04)-(bal*0.003)))+"/yr"
+      // No rates quoted (the old "typical 0.3%" and "4%+" were invented): compare the real ones.
+      detail:`${formatMoney(Math.round(bal||0))} in savings. ${savingsAccountTerm(data.profile?.country).replace(/^a /,"A ")} may pay more than your current account. Compare the rate you earn now with what's on offer.`,
+      action:"Learn More", screen:"goals", tab:"learn", badge:"Compare"
     });
   }
 
@@ -5878,12 +5877,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         {(()=>{
           const budgets = data.budgets||{};
           if(!Object.keys(budgets).length) return null;
-          const now = new Date();
-          const monthTxns = (data.transactions||[]).filter(t=>{
-            try{const d=new Date(t.date+"T12:00:00");return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()&&t.amount>0;}catch{return false;}
-          });
-          const monthSpend = {};
-          monthTxns.forEach(t=>{ monthSpend[t.cat]=(monthSpend[t.cat]||0)+t.amount; });
+          const catOverrides = (()=>{ try{return safeLoadLS("flourish_cat_overrides", {})}catch{return{}} })();
+          const monthSpend = monthSpendByCategory(data.transactions, { categoryOf: t => effCat(t, catOverrides), debts: data.debts || [] }); // the one budget tally
           const overCats = Object.entries(budgets).filter(([cat,limit])=>(monthSpend[cat]||0)>limit);
           if(!overCats.length) return null;
           const totalOver = overCats.reduce((s,[cat,limit])=>s+((monthSpend[cat]||0)-limit),0);
@@ -7395,11 +7390,13 @@ function generateBudgetSuggestions(data) {
   const _toMo     = toMonthly; // Bug 1: canonical converter
 
   // ── Income ──────────────────────────────────────────────────────────
-  const grossMo   = (data.incomes||[]).reduce((s,i)=>s+_toMo(i.amount,i.freq),0)||0;
-  const taxRate   = isCA
-    ? (grossMo>10000?0.35:grossMo>6000?0.30:grossMo>3500?0.25:0.18)
-    : (grossMo>8000?0.30:grossMo>5000?0.24:grossMo>3000?0.20:0.15);
-  const netMo     = Math.round(grossMo*(1-taxRate));
+  // The engine's monthly income, the figure safe to spend and the forecast use. Pay is entered as
+  // take-home (the income form says so), so there is no tax to take off. This used to treat the
+  // entered pay as gross and deduct an assumed 18-35% tax: the CA demo's $6,713 a month became
+  // $4,699 ("$4,700 take-home") on Budget while every other screen used $6,714.
+  const { monthlyIncome: engineMonthlyIncome } = FinancialCalcEngine.cashFlow(data);
+  const netMo     = Math.round(Number.isFinite(engineMonthlyIncome) ? engineMonthlyIncome : 0);
+  const grossMo   = netMo;
 
   // ── Fixed commitments (auto-filled from bills + debt minimums) ──────
   const billsMo   = (data.bills||[]).reduce((s,b)=>s+billMonthlyAmount(b),0);
@@ -7566,16 +7563,7 @@ function BudgetPlanCard({data, setAppData}) {
   // Current-month spending per budget category — excludes bill categories and CC payments
   const catOverrides = (()=>{ try{return safeLoadLS("flourish_cat_overrides", {})}catch{return{}} })();
   const now = new Date();
-  const monthTxns = (data.transactions||[]).filter(t=>{
-    try{const d=new Date(t.date+"T12:00:00");return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()&&t.amount>0;}catch{return false;}
-  });
-  const monthSpend = {};
-  monthTxns.forEach(t=>{
-    const cat=effCat(t, catOverrides);
-    if(!NON_SPEND_CATS.has(cat)&&!CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))){
-      monthSpend[cat]=(monthSpend[cat]||0)+t.amount;
-    }
-  });
+  const monthSpend = monthSpendByCategory(data.transactions, { now, categoryOf: t => effCat(t, catOverrides), debts: data.debts || [] }); // the one budget tally
   const totalBudgeted = Object.values(existingBudgets).reduce((s,v)=>s+v,0);
   const totalSpentThisMonth = Object.entries(existingBudgets).reduce((s,[cat])=>s+(monthSpend[cat]||0),0);
   const budgetUsedPct = totalBudgeted>0 ? Math.min(100,Math.round(totalSpentThisMonth/totalBudgeted*100)) : 0;
@@ -7920,15 +7908,15 @@ function SpendScreen({data, setAppData, setScreen}){
   const acctFiltered = accountFilter==="All" ? displayTxns : displayTxns.filter(t=>t.account_id===accountFilter);
   const filtered=catFilter==="All"
     ? acctFiltered.filter(t=>{
-        if(isCCPayment(t,data.debts||[])) return false; // CC payments are balance sheet events — hide from list
+        if(isCardPaymentCharge(t,data.debts||[])) return false; // CC payments are balance sheet events — hide from list
         const cat=getCat(t);
         if(cat==="Transfer") return t.amount<0; // show incoming (e-transfers in), hide outgoing
         return true;
       })
     : catFilter==="Received"
       ? acctFiltered.filter(t=>getCat(t)==="Transfer"&&t.amount<0)
-      : acctFiltered.filter(t=>getCat(t)===catFilter&&!isCCPayment(t,data.debts||[]));
-  const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCCPayment(t,data.debts||[])).reduce((a,t)=>a+t.amount,0);
+      : acctFiltered.filter(t=>getCat(t)===catFilter&&!isCardPaymentCharge(t,data.debts||[]));
+  const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCardPaymentCharge(t,data.debts||[])).reduce((a,t)=>a+t.amount,0);
   const totalIn=acctFiltered.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
 
   const cuts=[
@@ -8176,7 +8164,7 @@ function SpendScreen({data, setAppData, setScreen}){
                 <div style={{color:C.muted,fontSize:13,marginTop:2,maxWidth:240,...wrapText()}}>{recatTxn.name}</div>
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
-                {setAppData&&recatTxn.amount>0&&!isCCPayment(recatTxn,data.debts||[])&&<button onClick={()=>{
+                {setAppData&&recatTxn.amount>0&&!isCardPaymentCharge(recatTxn,data.debts||[])&&<button onClick={()=>{
                   const day=recatTxn.date?new Date(recatTxn.date+"T12:00:00").getDate():new Date().getDate();
                   setBillForm({name:recatTxn.name,amount:(recatTxn.amount||0).toFixed(2),date:String(day)});
                   setMarkBillTxn(recatTxn);setRecatTxn(null);
@@ -8363,7 +8351,7 @@ function SpendScreen({data, setAppData, setScreen}){
     {tab==="breakdown"&&<>
       {(()=>{
         // Breakdown uses the same period-filtered set as the Transactions tab
-        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&getCat(t)!=="Fees"&&!isCCPayment(t,data.debts||[]));
+        const bdTxns = acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&getCat(t)!=="Fees"&&!isCardPaymentCharge(t,data.debts||[])); // the budget tally's card-payment rule, so this screen agrees with its Budget Plan card
         const bdIn   = acctFiltered.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
         const bdTotal= bdTxns.reduce((s,t)=>s+t.amount,0);
         const bdByCat= {};
@@ -8393,7 +8381,7 @@ function SpendScreen({data, setAppData, setScreen}){
       {period==="month"&&<BudgetPlanCard data={data} setAppData={setAppData}/>}
       {bdTopCats.map(([cat,amt],i)=>{
         const colors=[C.orange,C.pink,C.green,C.blue,C.purple,C.gold];
-        const catTxns=acctFiltered.filter(t=>getCat(t)===cat&&t.amount>0&&!isCCPayment(t,data.debts||[]));
+        const catTxns=acctFiltered.filter(t=>getCat(t)===cat&&t.amount>0&&!isCardPaymentCharge(t,data.debts||[]));
         const budget = (data.budgets||{})[cat] || null;
         window.__flourishBills = data.bills||[];
         return <ExpandableCatCard key={i} cat={cat} amt={amt} totalSpent={bdTotal} color={colors[i%6]} catTxns={catTxns}
@@ -8442,7 +8430,7 @@ function SpendScreen({data, setAppData, setScreen}){
 
 
 // ─── GOALS ────────────────────────────────────────────────────────────────────
-function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
+function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudget}){
   const [tab,setTab]=useState(initialTab);
   useEffect(()=>{ setTab(initialTab); },[initialTab]);
   const [selDebt,setSelDebt]=useState(0);
@@ -9128,11 +9116,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
       // Current month spending per category
       const catOverrides = (()=>{try{return safeLoadLS("flourish_cat_overrides", {});}catch{return {};}})();
       const now = new Date();
-      const monthTxns = (data.transactions||[]).filter(t=>{
-        try{const d=new Date(t.date+"T12:00:00");return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()&&t.amount>0;}catch{return false;}
-      });
-      const monthSpend = {};
-      monthTxns.forEach(t=>{ const cat=effCat(t, catOverrides); monthSpend[cat]=(monthSpend[cat]||0)+t.amount; });
+      const monthSpend = monthSpendByCategory(data.transactions, { now, categoryOf: t => effCat(t, catOverrides), debts: data.debts || [] }); // the one budget tally
 
       // Merge budgets + suggestions for display
       const displayCats = {...suggestions};
@@ -9203,14 +9187,13 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData}){
           <div style={{background:C.card,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}`}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
               <div style={{color:C.cream,fontWeight:700,fontSize:13}}>Monthly Category Budgets</div>
-              <button onClick={()=>{
-                const seed={};
-                Object.entries(budgets).forEach(([k,v])=>{seed[k]=String(v);});
-                Object.entries(displayCats).forEach(([k,v])=>{if(!seed[k])seed[k]=String(v);});
-                if(setAppData) setAppData(prev=>({...prev,_budgetEditOpen:true,_budgetEditSeed:seed}));
-              }} style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:8,padding:"5px 10px",minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+              {/* Opens Do → Budget's editor. It used to write two app-data keys nothing read, so the
+                  button did nothing (KNOWN-DEFECTS #51). With no way to open the editor, no button. */}
+              {onEditBudget&&(
+              <button onClick={onEditBudget} style={{background:C.green+"22",border:`1px solid ${C.green}44`,borderRadius:8,padding:"5px 10px",minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
                 Edit
               </button>
+              )}
             </div>
             {!hasBudgets&&(
               <div style={{textAlign:"center",padding:"16px 0",color:C.muted,fontSize:13}}>
@@ -14308,7 +14291,7 @@ function MfaGate({ onPass, onSignOut }) {
   );
 }
 
-function BudgetScreen({data, setAppData, setScreen}) {
+function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditStarted}) {
   const isDesktop = window.innerWidth >= 960;
   const [editMode, setEditMode] = useState(false);
   const [editVals, setEditVals] = useState({});
@@ -14338,14 +14321,7 @@ function BudgetScreen({data, setAppData, setScreen}) {
   const monthTxns = (data.transactions || []).filter(t => {
     try { const d = new Date(t.date + "T12:00:00"); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && t.amount > 0; } catch { return false; }
   });
-  const monthSpend = {};
-  monthTxns.forEach(t => {
-    const cat = effCat(t, catOverrides);
-    // Only track discretionary categories — bills excluded to prevent double-counting
-    if(!NON_SPEND_CATS.has(cat) && !CC_PAYMENT_KEYWORDS.some(kw=>(t.name||"").toLowerCase().includes(kw))) {
-      monthSpend[cat] = (monthSpend[cat] || 0) + t.amount;
-    }
-  });
+  const monthSpend = monthSpendByCategory(data.transactions, { now, categoryOf: t => effCat(t, catOverrides), debts: data.debts || [] }); // the one budget tally
 
   const totalBudgeted = Object.values(budgets).reduce((s, v) => s + v, 0);
   const totalSpentBudgeted = Object.entries(budgets).reduce((s, [cat]) => s + (monthSpend[cat] || 0), 0);
@@ -14398,6 +14374,12 @@ function BudgetScreen({data, setAppData, setScreen}) {
     setSaved(false);
     setShowAddCat(false);
   };
+  // Goals → Budget's Edit button lands here with the editor open (startInEdit), once.
+  useEffect(() => {
+    if (!startInEdit) return;
+    openEdit();
+    if (onEditStarted) onEditStarted();
+  }, [startInEdit]); // eslint-disable-line react-hooks/exhaustive-deps
   const saveEdit = () => {
     const nb = {};
     Object.entries(editVals).forEach(([cat, v]) => {
@@ -15124,6 +15106,7 @@ export default function FlourishApp(){
   },[]);
   const [checkInBonus,setCheckInBonus]=useState(()=>saved?.checkInBonus||0);
   const [showCheckIn,setShowCheckIn]=useState(false);
+  const [budgetEditRequested,setBudgetEditRequested]=useState(false); // Goals → Budget's Edit opens Do → Budget's editor
   // Store review prompt, trigger one: opening Today on a third separate day (reviewRules.js decides;
   // the web and demo mode never ask). A short pause so the ask never lands on a screen still loading,
   // and it is dropped if the person has already moved on.
@@ -16295,13 +16278,14 @@ export default function FlourishApp(){
     }
     // Do = Budget + Goals + Credit (segmented). Old ids route here.
     if(screen==="do"||screen==="budget"||screen==="goals"||screen==="credit"){
+      const editBudget = ()=>{ setBudgetEditRequested(true); setScreen("budget"); };
       const sub = (screen==="goals"||screen==="credit"||screen==="budget") ? screen : "budget";
       return <><SegTabs tabs={[["budget","Budget"],["goals","Goals"],["credit","Credit"]]} value={sub} onChange={setScreen}/>
         {sub==="goals"
-          ? <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen}/>
+          ? <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen} onEditBudget={editBudget}/>
           : sub==="credit"
             ? (isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Factor-by-factor breakdown and a plan with amounts and dates. Calculated by Flourish, explained by your coach." onUpgrade={()=>setShowPaywall(true)}/>)
-            : <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen}/>}</>;
+            : <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} startInEdit={budgetEditRequested} onEditStarted={()=>setBudgetEditRequested(false)}/>}</>;
     }
     if(screen==="coach"){
       // Phase D3: AI gates — opt-out check first, then first-time disclosure

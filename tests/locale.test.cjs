@@ -91,7 +91,10 @@ const { create } = require("./_runner.cjs");
     });
     t.eq(nextClaims.join("\n"), "", "no sentence about the NEXT income event names it as a pay cheque, in ANY preposition");
     const nextDeposit = raw.split("\n").filter(l => /until your next deposit/i.test(l) && !l.includes("/*")).length;
-    t.ok(nextDeposit >= 3, `…and the surfaces that make that claim say "deposit" (found ${nextDeposit})`);
+    // Floor 2, not 3: the Decisions daily card no longer claims to keep anyone safe "until your next
+    // deposit" (QA-surgical item 4: it is a 14-day pace, not a limit), so one fewer surface makes the
+    // claim. The two that still do, the savings card and Today's "hold off" line, say "deposit".
+    t.ok(nextDeposit >= 2, `…and the surfaces that make that claim say "deposit" (found ${nextDeposit})`);
 
     // …and the replacement really is in place on both surfaces, so this guard cannot pass vacuously:
     // every forecast row renders depositLines(), whose only generic word is "deposit".

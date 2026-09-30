@@ -7,7 +7,7 @@
 
 import { ForecastEngine } from "./forecastEngine.js";
 import { SafeSpendEngine } from "./safeSpendEngine.js";
-import { selectHighestRateDebt, debtPayoffMonths, savingsBufferAfter, computeSavingsOpportunity, displayedSafeToSpend } from "./decisionEngine.js";
+import { selectHighestRateDebt, debtPayoffMonths, savingsBufferAfter, computeSavingsOpportunity, displayedSafeToSpend, cashIsTight } from "./decisionEngine.js";
 import { buildMeetingAgenda } from "./meetingAgenda.js";
 import { detectRecurringBills } from "./plaidNormalize.js";
 import { billPrompts, billChangeQuestion } from "./billsReconcile.js";
@@ -97,7 +97,8 @@ export function buildMeetSnapshot(data = {}) {
     // payoff months here, on Decisions and in What-If are one model with one set of inputs.
     const top = selectHighestRateDebt(buildDebtListForSimulator(data.debts, data.liabilities));
     const extra = computeSavingsOpportunity(safe); // engine: suggested spare $ this period
-    if (top && extra > 0) {
+    // Not while cash is tight: the one rule Decisions and the Money Plan use, and both pause these moves.
+    if (top && extra > 0 && !cashIsTight(data).tight) {
       const before = debtPayoffMonths(top, 0);      // engine: payoff at the minimum
       const after  = debtPayoffMonths(top, extra);  // engine: payoff with the extra
       const buf    = savingsBufferAfter(data.accounts, extra); // engine helper: { current, after }
