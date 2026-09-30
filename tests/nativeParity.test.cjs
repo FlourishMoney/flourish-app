@@ -155,7 +155,8 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
     const native = gate.slice(gate.indexOf("{isNativeApp() ? ("), gate.indexOf(") : ("));
     t.ok(!/Flourish Plus|Get Flourish|Start 14 days free|Cancel any time|onClick=\{onUpgrade\}/.test(native),
       "8c the native branch has no Plus pitch, no trial offer and no upgrade button");
-    t.ok(/isn't part of the free tier/.test(native), "8d it states what the tier is instead");
+    t.ok(/\{feature\} isn't included in this version\./.test(native), "8d it says plainly that the feature isn't included in this version");
+    t.ok(!/tier|trial|14 days|free/i.test(native.replace(/\{\/\*[\s\S]*?\*\/\}/g, "")), "8d2 …and names no tier and no trial (round-3)");
     const web = gate.slice(gate.indexOf(") : ("));
     t.ok(/Flourish Plus includes:/.test(web) && /onClick=\{onUpgrade\}/.test(web),
       "8e (control) the web branch keeps the pitch, so native is quiet by platform and not by deletion");

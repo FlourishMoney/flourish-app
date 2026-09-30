@@ -621,26 +621,49 @@ exports.handler = async (event) => {
     }
 
     // 13. delete_account — auth-required: full account wipe
-    // Revokes all Plaid items, deletes plaid_items rows, deletes Supabase auth user.
-    // Best-effort on Plaid revocation: failures are logged but don't block account deletion.
+    // Revokes all Plaid items, deletes this user's rows, deletes the Supabase auth user.
+    // Round-3: every step that can leave the household's data behind is CRITICAL and stops the
+    // deletion before the auth user goes, so the person can try again and nothing is orphaned:
+    //   - loading plaid_items: if it fails, nothing has been touched yet, so we stop at once and the
+    //     client's "nothing was changed" is literally true;
+    //   - deleting plaid_items, meeting_records and subscriptions.
+    // Plaid /item/remove stays best-effort: a Plaid outage must not trap someone in an account they
+    // cannot delete. user_data, coach_usage and profiles cascade with the auth user, so they stay
+    // best-effort as before.
     if (action === "delete_account") {
       const { user_id, error: authError } = await getUserFromRequest(event);
       if (!user_id) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: authError || "unauthorized" }) };
       const admin = getAdminClient();
       const errors = [];
+      // A critical failure: the auth user is NOT deleted, and the response says which step stopped it.
+      const stop = (step) => ok({ deleted: false, partial: true, errors: [...errors, { step }] });
 
       // 1. Load all plaid_items rows for the user (need access_tokens for /item/remove)
       const { data: items, error: loadErr } = await admin
         .from("plaid_items")
         .select("item_id, access_token")
         .eq("user_id", user_id);
-
       if (loadErr) {
         console.error("[delete_account] load_items:", loadErr.message);
-        errors.push({ step: "load_items" });
+        return stop("load_items"); // nothing deleted yet
       }
 
-      // 2. Revoke each Plaid item (best-effort)
+      // 2. Round-3: the meeting's stored answers and the billing row, BEFORE anything irreversible at
+      // Plaid. Both reference auth.users with ON DELETE CASCADE, but they are deleted explicitly and
+      // CRITICALLY: if either fails, we stop with the bank links and the sign-in still in place, so a
+      // retry finishes the job. A table that does not exist in this database yet holds nothing for
+      // this user, so "no such table" counts as done rather than trapping everyone in their account.
+      const missingTable = (e) => !!e && (e.code === "42P01" || e.code === "PGRST205" ||
+        /does not exist|could not find the table/i.test(String(e.message || "")));
+      for (const table of ["meeting_records", "subscriptions"]) {
+        const { error: tErr } = await admin.from(table).delete().eq("user_id", user_id);
+        if (tErr && !missingTable(tErr)) {
+          console.error(`[delete_account] ${table} delete:`, tErr.message);
+          return stop(table);
+        }
+      }
+
+      // 3. Revoke each Plaid item (best-effort)
       for (const it of (items || [])) {
         try {
           await plaid("/item/remove", { access_token: it.access_token });
@@ -650,14 +673,14 @@ exports.handler = async (event) => {
         }
       }
 
-      // 3. Delete plaid_items rows
+      // 3a. Delete plaid_items rows (critical)
       const { error: delErr } = await admin
         .from("plaid_items")
         .delete()
         .eq("user_id", user_id);
       if (delErr) {
         console.error("[delete_account] delete_rows:", delErr.message);
-        errors.push({ step: "delete_rows" });
+        return stop("delete_rows");
       }
 
       // 3b. Sprint 3: explicitly wipe other user-scoped rows. user_data has ON DELETE CASCADE
@@ -701,7 +724,7 @@ exports.handler = async (event) => {
       }
 
       const partial = errors.length > 0;
-      return ok({ deleted: true, partial, errors });
+      return ok({ deleted: !authDelErr, partial, errors });
     }
 
     return e400(`Unknown action: ${action}`);

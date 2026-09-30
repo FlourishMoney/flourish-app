@@ -1307,3 +1307,42 @@ In a French-Canadian browser, "Available to spend" reads "$1 668", while Goals â
 through `formatMoney`.
 
 **Fix (suggested, not built)** Use `formatMoney`.
+
+## 59. Dynamic Type stops at 160%, and the tab bar labels are 11px
+
+**Rating: LOW.** Round-3 review of 37ada0f (ChatGPT and Grok). Logged, not fixed.
+
+**Where** `src/lib/textScale.js` caps the scale it applies from the system text size at 160%; the
+bottom tab bar labels in `src/App.jsx` are `fontSize:11` (marked SMALL_TEXT_OK).
+
+**What happens** A household using the largest accessibility text sizes gets 160% and no more, and
+the tab labels stay at 11px whatever the setting.
+
+**Fix (suggested, not built)** Raise or remove the cap once the layout sweep covers the larger
+sizes, and let the tab labels scale with the rest of the type.
+
+## 60. The Supabase RLS policies are not all in the repository
+
+**Rating: MEDIUM (unverified).** Round-3 review of 37ada0f. Logged, not fixed.
+
+**Where** `supabase/migrations/`. Some tables the functions read and write have policies created
+outside the migrations, so the repository cannot show what the live database enforces.
+
+**What happens** Nothing observed. The risk is that a policy differs from what the code assumes and
+no review can see it.
+
+**Fix (suggested, not built)** Export the live policies (names and definitions, no data), compare
+them with what the code expects, and commit them as a migration.
+
+## 61. Revoking the bank link at Plaid is best-effort when an account is deleted
+
+**Rating: LOW, by design.** Round-3 review of 37ada0f. Logged, not fixed.
+
+**Where** `netlify/functions/plaid.js`, `delete_account`, the `/item/remove` loop.
+
+**What happens** If Plaid is down, the account and all of Flourish's copies are still deleted, but
+the item may stay active at Plaid until it expires. This is deliberate: a Plaid outage must not trap
+someone in an account they cannot delete. The failure is recorded as `plaid_remove`.
+
+**Fix (suggested, not built)** Queue failed revocations and retry them server-side after the
+account is gone.

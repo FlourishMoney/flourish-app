@@ -88,9 +88,10 @@ const { create } = require("./_runner.cjs");
       ],
       bills: [], debts: [],
       transactions: [
-        paid("2026-03-02", 2000, "ACME PAYROLL"),   // -> next Mar 16 = day 6
-        paid("2026-03-05", 1500, "BETA PAYROLL"),   // -> next Mar 19 = day 9
-        paid("2026-03-09", 1000, "GAMMA PAYROLL"),  // -> next Mar 23 = day 13
+        // Two deposits each: one deposit alone is not a pay cycle (round-2 fix).
+        paid("2026-02-16", 2000, "ACME PAYROLL"), paid("2026-03-02", 2000, "ACME PAYROLL"),   // -> next Mar 16 = day 6
+        paid("2026-02-19", 1500, "BETA PAYROLL"), paid("2026-03-05", 1500, "BETA PAYROLL"),   // -> next Mar 19 = day 9
+        paid("2026-02-23", 1000, "GAMMA PAYROLL"), paid("2026-03-09", 1000, "GAMMA PAYROLL"), // -> next Mar 23 = day 13
       ],
     };
     const { forecast } = ForecastEngine.generate(data, 30, null, today);

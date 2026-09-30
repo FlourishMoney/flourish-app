@@ -16,7 +16,7 @@ const { create } = require("./_runner.cjs");
   const paid = (date, amount, name = "ACME PAYROLL") => ({ name, amount: -amount, cat: "Income", date });
   const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-  // ── findAnchor: most-recent matching deposit; amount OR name match ──────────────────────────────
+  // ── findAnchor: the newest deposit on this income's pay cycle; the amount is always bounded ──────
   {
     const inc = { id: 1, label: "Full-time Job", amount: "2000", freq: "biweekly" };
     const txns = [paid("2026-05-18", 2000), paid("2026-06-01", 2000)];
@@ -26,9 +26,13 @@ const { create } = require("./_runner.cjs");
     // amount 8% out of tolerance and no name overlap → no match
     t.eq(findAnchor({ label: "Side Gig", amount: "2500", freq: "biweekly" }, 2500, [paid("2026-06-01", 2000)]), null,
       "findAnchor rejects a deposit >8% off the amount with no name match");
-    // name match path
-    const byName = findAnchor({ label: "Acme Payroll", amount: "9999", freq: "biweekly" }, 9999, [paid("2026-06-01", 2000)]);
-    t.eq(byName && ymd(byName), "2026-06-01", "findAnchor matches by name when the amount is far off");
+    // A name alone is not enough (round-2 fix): the amount is always bounded. It used to be enough, so
+    // an off-cycle bonus under the employer's name could become the anchor.
+    t.eq(findAnchor({ label: "Acme Payroll", amount: "9999", freq: "biweekly" }, 9999, [paid("2026-05-18", 2000), paid("2026-06-01", 2000)]), null,
+      "findAnchor does NOT match by name when the amount is far off");
+    const byName = findAnchor({ label: "Acme Payroll", amount: "2000", freq: "biweekly" }, 2000,
+      [paid("2026-05-18", 2000, "ACME PAYROLL"), paid("2026-06-01", 2000, "ACME PAYROLL")].map(t => ({ ...t, cat: "Transfer" })));
+    t.eq(byName && ymd(byName), "2026-06-01", "findAnchor matches by name when the amount is within bounds");
   }
 
   // ── anchorDayOf: explicit wins → observed → 1 ──────────────────────────────────────────────────
@@ -42,7 +46,7 @@ const { create } = require("./_runner.cjs");
   {
     const today = new Date(2026, 5, 5, 12, 0, 0); // Jun 5 2026
     const inc = { id: 1, label: "Full-time Job", amount: "2000", freq: "biweekly" };
-    const dates = depositDatesFor(inc, 2000, [paid("2026-06-01", 2000)], today, 30).map(ymd);
+    const dates = depositDatesFor(inc, 2000, [paid("2026-05-18", 2000), paid("2026-06-01", 2000)], today, 30).map(ymd);
     t.eq(dates.join(","), "2026-06-15,2026-06-29", "depositDatesFor: biweekly advances 14 days from the anchor within the horizon");
 
     const m = depositDatesFor({ label: "Salary", amount: "3000", freq: "monthly", anchorDay: 25 }, 3000, [], today, 40).map(ymd);
@@ -53,7 +57,7 @@ const { create } = require("./_runner.cjs");
   {
     const today = new Date(2026, 5, 5, 12, 0, 0);
     const incomes = [{ id: 1, label: "Full-time Job", amount: "2840", freq: "biweekly" }];
-    const txns = [paid("2026-06-01", 2840, "PAYROLL DEPOSIT")];
+    const txns = [paid("2026-05-18", 2840, "PAYROLL DEPOSIT"), paid("2026-06-01", 2840, "PAYROLL DEPOSIT")];
     const n = nextFutureDeposit(incomes, txns, today);
     t.eq(n && ymd(n.date), "2026-06-15", "nextFutureDeposit: the next FUTURE deposit date");
     t.eq(n && n.amount, 2840, "nextFutureDeposit: PER-DEPOSIT amount (never the monthly figure)");
@@ -65,7 +69,7 @@ const { create } = require("./_runner.cjs");
   // ── A deposit landing TODAY is excluded from nextFutureDeposit but true for isDepositToday ──────
   {
     const incomes = [{ id: 1, label: "Full-time Job", amount: "2840", freq: "biweekly" }];
-    const txns = [paid("2026-06-01", 2840)];
+    const txns = [paid("2026-05-18", 2840), paid("2026-06-01", 2840)];
     const payday = new Date(2026, 5, 15, 9, 0, 0); // Jun 15 = anchor + 14 → a deposit lands today
     t.eq(isDepositToday(incomes, txns, payday), true, "isDepositToday: true on a real cadence day");
     const n = nextFutureDeposit(incomes, txns, payday);
@@ -80,7 +84,7 @@ const { create } = require("./_runner.cjs");
       { id: 1, label: "Full-time Job", amount: "2840", freq: "biweekly" },       // next Jun 15
       { id: 2, label: "Canada Child Benefit", amount: "560", freq: "monthly", anchorDay: 20 }, // next Jun 20
     ];
-    const txns = [paid("2026-06-01", 2840)];
+    const txns = [paid("2026-05-18", 2840), paid("2026-06-01", 2840)];
     const n = nextFutureDeposit(incomes, txns, today);
     t.eq(n && ymd(n.date), "2026-06-15", "two streams → the sooner deposit (Jun 15) wins");
     t.eq(n && n.amount, 2840, "…and reports that stream's amount");

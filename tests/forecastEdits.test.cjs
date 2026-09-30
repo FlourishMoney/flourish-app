@@ -344,7 +344,8 @@ const { create } = require("./_runner.cjs");
 
     // (b) A "from this date on" shift is applied once, even after the shifted pay arrives and anchors.
     const fri = { accounts: chq(2000), bills: [], debts: [], incomes: [{ id: 1, label: "Job", amount: "2000", freq: "biweekly" }],
-      transactions: [{ id: "p1", date: "2026-09-18", name: "ACME PAYROLL", amount: -2000, cat: "Income" }] };
+      transactions: [{ id: "p0", date: "2026-09-04", name: "ACME PAYROLL", amount: -2000, cat: "Income" },   // two deposits: a cycle (round-2 fix)
+                     { id: "p1", date: "2026-09-18", name: "ACME PAYROLL", amount: -2000, cat: "Income" }] };
     const oct2 = occOf(fri, "income:1", "2026-10-02", 60, sep(9, 20));
     const shifted = withEdits(fri, E.editOccurrence(undefined, oct2, "series", { date: "2026-10-05" }));
     t.eq(E.incomeOccurrences(shifted, sep(9, 20), 40).filter(o => !o.skipped).map(o => iso(o.date)), ["2026-10-05", "2026-10-19"], "Friday pay moved to Monday from Oct 2");

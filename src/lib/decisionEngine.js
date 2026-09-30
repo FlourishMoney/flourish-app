@@ -58,6 +58,43 @@ export function displayedSafeToSpend(data = {}, todayDate = new Date()) {
   return view.headline == null ? 0 : view.headline;
 }
 
+// The safe-to-spend line in the coach's context: the figure Today shows, never the engine's raw
+// amount. The prompt used to carry "$1944.88" while Today said $1,944, and a positive figure when
+// Today showed none at all (no cash account, or no income). Round-2 fix.
+export function coachSafeToSpendLine(data = {}, todayDate = new Date()) {
+  const ss = SafeSpendEngine.calculate(data, todayDate);
+  const hasCash = (data.accounts || []).filter(a => isCashAccount(a)).length > 0;
+  if (!hasCash || ss.noIncome) {
+    return "- Safe-to-spend RIGHT NOW: none shown (Today shows no figure until the household has a cash account and has entered income; do not estimate one)";
+  }
+  const shown = displayedSafeToSpend(data, todayDate);
+  const text = `${shown < 0 ? "-" : ""}$${Math.abs(shown).toLocaleString("en-US")}`;
+  return `- Safe-to-spend RIGHT NOW: ${text} (the figure Today shows; this is the truthful "can-I-afford" number, balance minus upcoming bills, minimum debt payments, safety buffer, savings allocation)`;
+}
+
+// For a purchase question ("can I afford a $600 phone?"), the purchase against the figure Today shows
+// and what would be left of it after, computed here so the coach states it and never does the
+// arithmetic itself (round-3: the coach compares, it gives no affordable / not affordable verdict).
+// "" when the message is not a purchase question or Today shows no figure.
+export function coachPurchaseLine(data = {}, userText = "", todayDate = new Date()) {
+  const text = String(userText || "");
+  // Only an explicit purchase question, and only one unambiguous amount: "2 tickets at $150 each" or
+  // "$600 or $900" would need arithmetic or a choice, so there is no line and the coach offers a What-If.
+  if (!/\b(afford|buy|buying|purchase)\b/i.test(text)) return "";
+  if (/\beach\b|\bper\b|\bx\s*\d|\d\s*x\b/i.test(text)) return "";
+  const amounts = [...text.replace(/(\d),(?=\d{3}\b)/g, "$1").matchAll(/\$\s*(\d+(?:\.\d+)?)\s*(k\b)?|\b(\d+(?:\.\d+)?)\s*k\b|\b(\d{2,}(?:\.\d+)?)\b/gi)];
+  if (amounts.length !== 1) return "";
+  const m = amounts[0];
+  const amount = m[1] != null ? Number(m[1]) * (m[2] ? 1000 : 1) : m[3] != null ? Number(m[3]) * 1000 : Number(m[4]);
+  if (!(amount > 0) || (m[4] != null && (amount < 50 || (/^\d{4}$/.test(m[4]) && amount >= 1900 && amount <= 2099)))) return "";
+  const ss = SafeSpendEngine.calculate(data, todayDate);
+  if (!(data.accounts || []).some(a => isCashAccount(a)) || ss.noIncome) return "";
+  const shown = displayedSafeToSpend(data, todayDate);
+  const after = Math.round(shown - amount);
+  const fmt = (n) => `${n < 0 ? "-" : ""}$${Math.abs(Math.round(n)).toLocaleString("en-US")}`;
+  return `- Purchase in the user's latest message: ${fmt(amount)} | Safe to spend after it (computed by Flourish): ${fmt(after)}`;
+}
+
 // Safe amount to move to savings now (25% of safe-to-spend, floored).
 export function computeSavingsOpportunity(safe) {
   return Math.max(0, Math.floor(safe * 0.25));

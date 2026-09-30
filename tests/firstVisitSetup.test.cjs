@@ -78,15 +78,15 @@ const path = require("path");
   // ── 5. the screen that showed it passes the context ──────────────────────────────────────────
   const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
   const first = app.slice(app.indexOf("function FirstVisitScreen"), app.indexOf("function FirstVisitScreen") + 2000);
-  t.ok(/safeToSpendView\(SafeSpendEngine\.calculate\(data\), \{/.test(first),
+  t.ok(/const ss = SafeSpendEngine\.calculate\(data\);\s*const ssView = safeToSpendView\(ss, \{/.test(first),
     "5a FirstVisitScreen passes what the household has given us");
   t.ok(/hasCashAccount:/.test(first) && /hasIncome:/.test(first), "5b …both signals");
   t.ok(/ssView\.needsSetup/.test(app), "5c and renders the prompt on that state");
   t.ok(/\{breakdownOpen&&!ssView\.needsSetup&&\(/.test(app),
     "5d the breakdown card does not render with no rows and no total — a heading over a labelled blank");
-  t.ok(/const breakdownOpen = \(showBreakdown \|\| ssView\.isShort\) && !ssView\.needsSetup;/.test(app),
+  t.ok(/const breakdownOpen = \(showBreakdown \|\| ssView\.isShort\) && !ssView\.needsSetup && !noIncome;/.test(app),
     "5e …and the tap that would open it cannot");
-  t.ok(/\{!breakdownOpen&&!ssView\.needsSetup\?\(/.test(app),
+  t.ok(/\{!breakdownOpen&&!ssView\.needsSetup&&!noIncome\?\(/.test(app),
     "5f so the primary button goes to the dashboard rather than opening nothing");
   t.ok(/\{!overdraftImmediate&&!ssView\.needsSetup&&<div/.test(app),
     "5g \"Can I afford this?\" is hidden too: Number(null) is a finite 0, so it would answer every " +
