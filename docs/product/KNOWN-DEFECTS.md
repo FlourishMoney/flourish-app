@@ -1034,3 +1034,111 @@ prose, or a reply handed back under a different key, is outside it until someone
 **Fix (suggested, not built)** Mark household copy at the source — a `copy/` module, or a naming
 convention the walker can key on — instead of a list of files the walker has to be told about.
 
+---
+
+## 46. The goal savings reminders can list amounts that do not add up to "Goal savings"
+
+**Rating: LOW.** The one review round of PR #36 (the budget-screen crash fixes), 2026-09-29.
+
+**Where** `src/App.jsx:7419` (`goalsMo` in `generateBudgetSuggestions`), against the reminder rows in
+Goals → Budget (`:9182`, "Saving for N goals") and Do → Budget (`BudgetScreen`, `:14839`, "Saving
+toward N goals"). The goal filters at `:7415`, `:9118` and `:14326` read only `g.saved`.
+
+**What happens** `goalsMo` counts a goal's monthly amount only when it is above $0, and otherwise
+uses the remaining amount over 24 months. Both reminders print the monthly amount as typed and
+round each row on its own. Rendered with both screens:
+
+- A goal whose monthly amount is "-50" is listed as "Trip $-50/mo" under "Goal savings -$100/mo".
+  The My Goals form's "Monthly $ contribution" field (`:8650`) is `type="number"` with no minimum,
+  and the Coach's `update_goal` keeps the sign (`:11834`, `:11841`).
+- Three goals at $33.40 a month are listed as $33 each ($99) under "Goal savings -$100/mo".
+- A goal saved in the older shape (`current` instead of `saved`) that is already reached is still
+  counted and listed ("Fund $21/mo · 0% saved"). My Goals reads `saved||current` (`:8523`, `:8547`,
+  `:9921`) and shows it complete.
+
+Which goals are listed always matches `goalsMo`, because the filter is the same.
+
+**Fix (suggested, not built)** Have `generateBudgetSuggestions` return each goal it counted with
+the monthly amount it used, and render those rows in both reminders. Read `saved ?? current` in the
+one filter. Refuse a negative monthly amount where it is entered.
+
+---
+
+## 47. Do → Budget keeps a "Save ~$X per month" block that can never show
+
+**Rating: LOW.** Same review.
+
+**Where** `src/App.jsx:14824`, `BudgetScreen`, "Where you could cut back".
+
+**What happens** The row renders `potential > 0 && "Save ~$" + potential + " per month"`, but this
+screen's list (`:14361`) returns `{ cat, spent, limit, over }` and never sets `potential`, so the
+block never renders. Nothing wrong is on screen. It is the projection that was taken out of Goals →
+Budget on 2026-09-29, because one month is not a monthly saving. Here it is one careless edit away
+from coming back.
+
+**Fix (suggested, not built)** Delete the block.
+
+---
+
+## 48. The undeclared-name check misses a name that is only assigned
+
+**Rating: LOW.** Same review.
+
+**Where** `tests/undeclaredNames.test.cjs:46`, the `ReferencedIdentifier` visitor.
+
+**What happens** It checks every name that is read. A name that is only written is never visited,
+yet each of these throws `ReferenceError: x is not defined` in an ES module:
+
+- `x = 1`
+- `x += 1`
+- `[a, b] = pair`
+- `({ a } = obj)`
+
+`x++` and `for (x of xs)` are caught. None of these occur in `src/` today.
+
+**Fix (suggested, not built)** Also check Babel's list of the program's unbound names,
+`programPath.scope.globals`, against the same allowlist. That list includes assignment targets.
+
+---
+
+## 49. The render suite defines five `import.meta.env` keys by name and leans on undeclared packages
+
+**Rating: LOW.** Same review.
+
+**Where** `tests/budgetGoalsRender.test.cjs:50-54` (`loadApp()`), and `package.json`
+devDependencies.
+
+**What happens**
+
+- `loadApp()` defines, one by one, the five `import.meta.env.*` keys App.jsx reads today.
+  esbuild's CJS output empties `import.meta`, so the first new `import.meta.env.X` that App.jsx
+  reads while it loads or renders fails the suite with "Cannot read properties of undefined
+  (reading 'X')". That error says nothing about budgets.
+- The suite requires `esbuild`, and `undeclaredNames.test.cjs` requires `@babel/parser` and
+  `@babel/traverse`. None of the three is in `package.json`. They are installed only because
+  `vite` and `@vitejs/plugin-react` depend on them.
+
+**Fix (suggested, not built)** Define `import.meta.env` as one object
+(`define: { "import.meta.env": JSON.stringify({ … }) }`), so an unknown key reads as `undefined`.
+Declare the three packages as devDependencies.
+
+---
+
+## 50. The layout sweep never measures the budget screens of a household that has a budget
+
+**Rating: LOW.** Found while verifying PR #36 in the app, 2026-09-29.
+
+**Where** `tests/layout.browser.test.cjs:214`, `VIEWS`.
+
+**What happens**
+
+- The sweep walks the demo, and the demo has no budgets or goals. So "Do/Budget" (`:220`) measures
+  only the "Build Your Budget Plan" prompt, never the tracking view: the overall bar, "Where you
+  could cut back", the goal reminder and the category rows.
+- Goals → Budget is not in `VIEWS` at all. That is how its Edit button stayed 28px tall, and how
+  its "Where you could save" rows packed three pieces of text into one line at 375px. Both were
+  fixed on 2026-09-29.
+- Nothing else on either view has been measured.
+
+**Fix (suggested, not built)** Add views that seed a budget and a goal into the demo, then open
+Do → Budget and Do → Goals → Budget.
