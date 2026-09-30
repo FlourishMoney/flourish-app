@@ -13572,7 +13572,8 @@ function ResetPasswordScreen({ onDone, onCancel }) {
 // only has to render it. Directly under the email field it shows the consent line and the sender's
 // identity (CASL), word for word from lib/waitlistConsent.js, and it sends that wording's version with
 // the signup; join_waitlist refuses any other version and any source not in WAITLIST_SOURCES.
-// The only promise it makes is the launch email: no prices, trials, plans or offers.
+// The only promise it makes is the launch email: no prices, trials, plans or offers. Launch is Canada
+// only (Amanda, 2026-09-30): there is no country choice, and every signup is Canada.
 const WAITLIST_EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const WAITLIST_FORM_CSS = `
             .fll-capture{ max-width:440px; margin:0 auto; text-align:center; }
@@ -13583,9 +13584,6 @@ const WAITLIST_FORM_CSS = `
             .fll-btn{ width:100%; padding:14px 22px; border-radius:13px; border:none; background:linear-gradient(135deg,#2E8B2E,#1f6b22); color:#fff; font-weight:800; font-size:15px; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; box-shadow:0 8px 22px rgba(46,139,46,0.26); transition:transform .12s, box-shadow .12s; white-space:nowrap; }
             .fll-btn:hover{ transform:translateY(-1px); box-shadow:0 10px 26px rgba(46,139,46,0.32); }
             .fll-btn:disabled{ opacity:.55; cursor:default; transform:none; box-shadow:none; }
-            .fll-country{ display:inline-flex; gap:4px; margin-top:12px; background:rgba(46,139,46,0.06); border:1px solid rgba(46,139,46,0.14); border-radius:99px; padding:3px; }
-            .fll-seg{ border:none; background:transparent; color:#52624f; font-size:13px; font-weight:700; padding:6px 14px; border-radius:99px; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
-            .fll-seg-on{ background:#fff; color:#226b22; box-shadow:0 1px 3px rgba(0,0,0,0.10); }
             .fll-err{ color:#c0392b; font-size:13px; margin-top:10px; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-done{ background:#fff; border:1px solid rgba(46,139,46,0.2); border-radius:18px; padding:22px 20px; box-shadow:0 10px 30px rgba(22,58,28,0.07); }
             .fll-done-t{ font-family:'Playfair Display',serif; font-weight:900; font-size:21px; color:#15321a; margin-bottom:6px; }
@@ -13602,12 +13600,9 @@ const WAITLIST_FORM_CSS = `
               .fll-consent{ order:2; }
             }
 `;
-function WaitlistForm({ source = "landing", country, onCountryChange, showCountry = true }) {
+function WaitlistForm({ source = "landing" }) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState(null); // null | "invalid" | "submitting" | "success" | "already" | "error" | "stale"
-  const [ownCountry, setOwnCountry] = useState("CA");
-  const cty = country || ownCountry;
-  const setCty = onCountryChange || setOwnCountry;
   const tag = WAITLIST_SOURCES.includes(source) ? source : "landing";
 
   const submit = async () => {
@@ -13626,7 +13621,7 @@ function WaitlistForm({ source = "landing", country, onCountryChange, showCountr
       const res = await fetch(`${API_BASE}/api/beta`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "join_waitlist", email: emailVal, country: cty, source: tag, metadata, consentVersion: CONSENT_VERSION }),
+        body: JSON.stringify({ action: "join_waitlist", email: emailVal, country: "CA", source: tag, metadata, consentVersion: CONSENT_VERSION }),
       });
       const data = await res.json();
       if (data.joined) setStatus(data.alreadyJoined ? "already" : "success");
@@ -13663,14 +13658,6 @@ function WaitlistForm({ source = "landing", country, onCountryChange, showCountr
           {busy ? "Joining…" : "Join the waitlist"}
         </button>
       </div>
-      {showCountry && (
-        <div className="fll-country">
-          {[["CA", "🇨🇦 Canada"], ["US", "🇺🇸 United States"]].map(([c, label]) => (
-            <button key={c} type="button" onClick={() => setCty(c)}
-              className={"fll-seg" + (cty === c ? " fll-seg-on" : "")}>{label}</button>
-          ))}
-        </div>
-      )}
       {status === "invalid" && <div className="fll-err">Please enter a valid email address.</div>}
       {status === "error" && <div className="fll-err">Something went wrong. Please try again.</div>}
       {status === "stale" && <div className="fll-err">This page is out of date. Refresh it and try again.</div>}
@@ -13733,9 +13720,9 @@ function AuthScreen({ onAuth, onTryDemo }) {
     return () => { cancelled = true; };
   }, [showAuth]);
 
-  // Phase E1: waitlist email capture (replaces public signup CTAs). The form itself is WaitlistForm;
-  // the landing keeps the country so the demo link below it matches the form's choice.
-  const [waitlistCountry, setWaitlistCountry] = useState("CA");
+  // Phase E1: waitlist email capture (replaces public signup CTAs). The form itself is WaitlistForm.
+  // Launch is Canada only, so the form offers no country choice and the demo link below it is Canadian.
+  const waitlistCountry = "CA";
 
   const BETA_CAP = 30;
 
@@ -14037,7 +14024,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
             </span>
             <h1 className="fll-h1">Understand your money, <em>coaching, not just tracking.</em></h1>
             <p className="fll-sub">See exactly what's safe to spend before payday, test any money decision, and finally understand your finances, in plain English.</p>
-            <WaitlistForm source="hero" country={waitlistCountry} onCountryChange={setWaitlistCountry}/>
+            <WaitlistForm source="hero"/>
             {onTryDemo && <button className="fll-demo" onClick={() => onTryDemo(waitlistCountry)}>or preview the app with {waitlistCountry === "US" ? "🇺🇸 US" : "🇨🇦 Canadian"} sample data →</button>}
             <div><span className="fll-trust">🔒 Read-only. Flourish can't move your money.</span></div>
           </div>
@@ -14087,7 +14074,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
             <div className="fll-cta2">
               <h2 className="fll-h2" style={{ marginBottom: 6 }}>Be first to know.</h2>
               <p className="fll-lede" style={{ marginBottom: 22 }}>Join the waitlist and we'll email you the moment flourish launches, on iOS, Android & Windows.</p>
-              <WaitlistForm source="bottom_cta" country={waitlistCountry} onCountryChange={setWaitlistCountry}/>
+              <WaitlistForm source="bottom_cta"/>
             </div>
           </div>
 

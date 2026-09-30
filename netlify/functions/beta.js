@@ -91,7 +91,7 @@ async function getUserCount(supabaseUrl, secretKey) {
 // The template, the send and the welcomed_at write live in _lib/waitlistWelcome.js, because the
 // scheduled sweep (waitlist-sweep.js) sends the SAME message to rows this path could not reach.
 const { sendWelcomeEmail, markWelcomed } = require("./_lib/waitlistWelcome");
-const { CONSENT_VERSION, WAITLIST_SOURCES } = require("./_lib/waitlistConsent");
+const { CONSENT_VERSION, WAITLIST_SOURCES, WAITLIST_COUNTRY, mayEmailWaitlistRow } = require("./_lib/waitlistConsent");
 
 // The insert is the one call the signup genuinely depends on, so it gets the same 5s as the send. With
 // all three deadlines the worst case for join_waitlist is 5 + 5 + 3 = 13s, well inside Netlify's 60s
@@ -129,6 +129,37 @@ async function waitlistRowExists(supabaseUrl, secretKey, email) {
     const aborted = !!err && (err.name === "AbortError" || err.name === "TimeoutError");
     console.error("[waitlist] insert confirm failed", aborted ? "timeout" : "no_status");
     return false;
+  } finally {
+    clearTimeout(deadline);
+  }
+}
+
+// A repeat signup for an address already on the list. The person just saw the current consent wording and
+// agreed to it, so this is new express consent: unsubscribed_at is cleared (an unsubscribed address that
+// signs up again is back on the list) and consent_version / consented_at record this consent, which also
+// moves a pre-consent row onto the current wording. No email is sent here; nothing else on the row
+// changes. Best effort: a failure is logged (status only, never the address) and the person is still told
+// they are on the list, while the row stays as it was, so no one is emailed without a recorded consent.
+const REPEAT_CONSENT_TIMEOUT_MS = 3000;
+async function recordRepeatConsent(supabaseUrl, secretKey, email) {
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), REPEAT_CONSENT_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/waitlist?email=eq.${encodeURIComponent(email)}`, {
+      method: "PATCH",
+      headers: {
+        "apikey": secretKey,
+        "Authorization": `Bearer ${secretKey}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal",
+      },
+      body: JSON.stringify({ unsubscribed_at: null, consent_version: CONSENT_VERSION, consented_at: new Date().toISOString() }),
+      signal: controller.signal,
+    });
+    if (!res.ok) console.error("[waitlist] repeat consent update failed", res.status);
+  } catch (err) {
+    const aborted = !!err && (err.name === "AbortError" || err.name === "TimeoutError");
+    console.error("[waitlist] repeat consent update failed", aborted ? "timeout" : "no_status");
   } finally {
     clearTimeout(deadline);
   }
@@ -237,7 +268,7 @@ exports.handler = async (event) => {
 
   // Phase E1: waitlist email capture (replaces public signup CTAs).
   if (action === "join_waitlist") {
-    const { email, country, source, metadata, consentVersion } = body;
+    const { email, source, metadata, consentVersion } = body;
 
     // Normalize BEFORE validating. The regex rejects any whitespace, so a trailing or leading space,
     // which is a typo and not a different address, used to fail the check outright ("you@example.com "
@@ -287,7 +318,7 @@ exports.handler = async (event) => {
         },
         body: JSON.stringify({
           email: emailAddr,
-          country: country || null,
+          country: WAITLIST_COUNTRY, // launch is Canada only: stored as Canada whatever the client sent
           source,
           metadata: metadata || {},
           consent_version: CONSENT_VERSION,
@@ -322,7 +353,9 @@ exports.handler = async (event) => {
     }
 
     if (insertRes.status === 409) {
-      // Unique violation — already on waitlist
+      // Unique violation — already on waitlist. Signing up again with the current wording is new consent:
+      // it re-subscribes an unsubscribed address and records this consent (Amanda, 2026-09-30).
+      await recordRepeatConsent(supabaseUrl, secretKey, emailAddr);
       return {
         statusCode: 200, headers: CORS,
         body: JSON.stringify({ joined: true, alreadyJoined: true }),
@@ -333,6 +366,7 @@ exports.handler = async (event) => {
       const errText = await insertRes.text();
       // Check for Postgres unique violation in error body
       if (errText.includes("duplicate key") || errText.includes("23505")) {
+        await recordRepeatConsent(supabaseUrl, secretKey, emailAddr);
         return {
           statusCode: 200, headers: CORS,
           body: JSON.stringify({ joined: true, alreadyJoined: true }),
@@ -357,7 +391,11 @@ exports.handler = async (event) => {
       insertedRow = Array.isArray(rows) ? rows[0] : rows;
     } catch { /* no or unparseable representation: markWelcomed falls back to the email filter */ }
 
-    if (await sendWelcomeEmail(emailAddr, insertedRow && insertedRow.id)) {
+    // The one shared rule (unsubscribed, or pre-consent) is asked here too, so no send path skips it.
+    // The row as inserted: current consent, not unsubscribed. The returned representation, when there is
+    // one, takes precedence.
+    const rowForGuard = { consent_version: CONSENT_VERSION, unsubscribed_at: null, ...(insertedRow || {}) };
+    if (mayEmailWaitlistRow(rowForGuard, "welcome") && await sendWelcomeEmail(emailAddr, insertedRow && insertedRow.id)) {
       await markWelcomed(supabaseUrl, secretKey, insertedRow, emailAddr);
     }
 

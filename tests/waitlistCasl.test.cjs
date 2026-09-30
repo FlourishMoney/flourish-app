@@ -11,6 +11,9 @@
 //   4. The one-click unsubscribe link works, is per row, and cannot be forged.
 //   5. An unsubscribed row is never emailed.
 //   6. No price, trial, plan or founding offer on the form or in the welcome email.
+//   7. Amanda's decisions of 2026-09-30: Canada only (no country choice, stored as Canada); rows whose
+//      consent predates the consent line only ever get the launch-day email; signing up again after
+//      unsubscribing re-subscribes, with the new consent recorded.
 //
 // It runs the REAL handlers (beta.js, unsubscribe.js, waitlist-sweep.js) with global fetch stubbed:
 // no network, no Supabase, no Resend.
@@ -50,13 +53,18 @@ async function withFetch(answer, fn) {
   finally { global.fetch = real; Object.assign(console, { error: quiet.e, log: quiet.l, warn: quiet.w }); }
 }
 
-async function join(body) {
+async function join(body, insertAnswer = { status: 201, body: [{ id: "row-1" }] }) {
   env(); process.env[KEY_NAME] = "re_TESTONLY_notreal";
   const beta = fresh(FN("beta.js"));
-  const { result, calls } = await withFetch((u) => (u.includes("/rest/v1/waitlist") ? { status: 201, body: [{ id: "row-1" }] } : { status: 200, body: {} }),
+  const { result, calls } = await withFetch((u, o) => {
+      if (u.endsWith("/rest/v1/waitlist") && o.method === "POST") return insertAnswer;
+      if (u.includes("/rest/v1/waitlist")) return { status: 204, body: [] };
+      return { status: 200, body: {} };
+    },
     () => beta.handler({ httpMethod: "POST", headers: {}, body: JSON.stringify({ action: "join_waitlist", email: "person@example.com", country: "CA", ...body }) }));
   const insert = calls.find(c => c.method === "POST" && c.url.endsWith("/rest/v1/waitlist"));
-  return { status: result.statusCode, body: JSON.parse(result.body || "{}"), insert: insert ? JSON.parse(insert.body) : null, calls };
+  return { status: result.statusCode, body: JSON.parse(result.body || "{}"), insert: insert ? JSON.parse(insert.body) : null, calls,
+    patches: calls.filter(c => c.method === "PATCH"), sends: calls.filter(c => c.url.includes("api.resend.com")) };
 }
 
 (async () => {
@@ -81,12 +89,14 @@ async function join(body) {
         "1e the form renders the email field, then the consent line, then the identity line (then the button)");
       t.ok(/aria-describedby="fll-consent-calendar"/.test(html) && /id="fll-consent-calendar"/.test(html), "1f the email field is described by the consent text");
       t.ok(/\.fll-form\{/.test(html), "1g the form carries its own styles, so any page can render it");
+      t.ok(!/United States|🇺🇸|fll-country/.test(html), "7a the form offers no country choice: launch is Canada only");
       const txt = textOf(html);
       t.ok(!/\$\s?\d|price|trial|plan\b|plans|founding|founder|free|per month|\/mo\b/i.test(txt), `1h no price, trial, plan or offer on the form ("${txt.slice(0, 80)}…")`);
     }
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     t.ok(/<WaitlistForm source="hero"/.test(app) && /<WaitlistForm source="bottom_cta"/.test(app), "1i the homepage uses the component at both spots");
     t.ok(/consentVersion: CONSENT_VERSION/.test(app), "1j the form sends the version of the wording it showed");
+    t.ok(/country: "CA", source: tag/.test(app), "7b …and always sends Canada");
     t.ok(!/No spam, just the launch news/.test(app), "1k the success message no longer contradicts the consent line");
   }
 
@@ -156,8 +166,8 @@ async function join(body) {
     env(); process.env[KEY_NAME] = "re_TESTONLY_notreal";
     const sweep = fresh(FN("waitlist-sweep.js"));
     const old = new Date(Date.now() - 3600e3).toISOString();
-    const rows = [{ id: "r1", email: "a@example.com", created_at: old, unsubscribed_at: null },
-                  { id: "r2", email: "b@example.com", created_at: old, unsubscribed_at: old }];
+    const rows = [{ id: "r1", email: "a@example.com", created_at: old, unsubscribed_at: null, consent_version: "2026-10-01" },
+                  { id: "r2", email: "b@example.com", created_at: old, unsubscribed_at: old, consent_version: "2026-10-01" }];
     const { result, calls } = await withFetch((u, o) => {
       if (u.includes("welcomed_at=gte.")) return { status: 200, body: [], headers: { "content-range": "0-0/0" } };
       if (u.includes("/rest/v1/waitlist?select=")) return { status: 200, body: rows };
@@ -187,6 +197,59 @@ async function join(body) {
     t.ok(!/\bdrop\b|\bdelete\b|\btruncate\b/i.test(body), "6c nothing is dropped or deleted");
     t.ok(/grant all privileges on table public\.waitlist to service_role;/.test(body) && !/\bto (anon|authenticated)\b/.test(body), "6d grants service_role only, nothing to anon or authenticated");
     t.ok(/^--[ \t]*grants:[ \t]*service_role only[ \t]*$/m.test(sql) && /enable row level security/.test(body), "6e …marked and with row level security on");
+  }
+
+  // ── 7. Amanda's decisions (2026-09-30) ────────────────────────────────────────────────────────
+  {
+    // Canada only, whatever a client sends.
+    for (const c of ["US", "", undefined, "FR"]) {
+      const r = await join({ source: "hero", consentVersion: "2026-10-01", country: c });
+      t.eq(r.insert && r.insert.country, "CA", `7c a signup sending country ${JSON.stringify(c)} is stored as Canada`);
+    }
+
+    // Pre-consent rows only ever get the launch-day email.
+    const may = C.mayEmailWaitlistRow;
+    const legacy = { consent_version: "pre-2026-10-01", unsubscribed_at: null };
+    const current = { consent_version: "2026-10-01", unsubscribed_at: null };
+    t.eq([may(legacy, "launch"), may(legacy, "welcome"), may(legacy, "update")], [true, false, false], "7d a pre-2026-10-01 row may get the launch email and nothing else");
+    t.eq([may({ consent_version: null }, "launch"), may({ consent_version: null }, "welcome"), may({}, "update")], [true, false, false], "7e …and so may a row with no version at all");
+    t.eq([may(current, "launch"), may(current, "welcome"), may(current, "update")], [true, true, true], "7f a row with current consent may get any waitlist email");
+    t.eq([may({ ...current, unsubscribed_at: "2026-10-02T00:00:00Z" }, "launch"), may({ ...legacy, unsubscribed_at: "2026-10-02T00:00:00Z" }, "launch")], [false, false], "7g an unsubscribed row gets nothing, not even the launch email");
+    t.eq(may({ consent_version: "2099-01-01" }, "update"), false, "7h a version this code does not know is treated as no consent");
+
+    env(); process.env[KEY_NAME] = "re_TESTONLY_notreal";
+    const sweep = fresh(FN("waitlist-sweep.js"));
+    const old = new Date(Date.now() - 3600e3).toISOString();
+    const rows = [{ id: "n1", email: "new@example.com", created_at: old, unsubscribed_at: null, consent_version: "2026-10-01" },
+                  { id: "o1", email: "old@example.com", created_at: old, unsubscribed_at: null, consent_version: "pre-2026-10-01" },
+                  { id: "o2", email: "none@example.com", created_at: old, unsubscribed_at: null, consent_version: null }];
+    const { calls } = await withFetch((u) => {
+      if (u.includes("welcomed_at=gte.")) return { status: 200, body: [], headers: { "content-range": "0-0/0" } };
+      if (u.includes("welcomed_at=is.null")) return { status: 200, body: rows };
+      if (u.includes("api.resend.com")) return { status: 200, body: { id: "x" } };
+      return { status: 204 };
+    }, () => sweep.runSweep({ minAgeMs: 0 }));
+    const select = calls.find(c => c.url.includes("welcomed_at=is.null"));
+    t.ok(select && /&consent_version=neq\.pre-2026-10-01/.test(select.url), "7i the welcome sweep does not even ask for pre-consent rows");
+    t.eq(calls.filter(c => c.url.includes("api.resend.com")).map(c => JSON.parse(c.body).to[0]), ["new@example.com"],
+      "7j …and if they came back anyway, the welcome email (not a launch email) skips them: only the current-consent row is sent to");
+
+    // Signing up again after unsubscribing re-subscribes, with the new consent recorded.
+    const before = Date.now();
+    for (const [label, answer] of [["409", { status: 409, body: {}, text: "" }], ["23505", { ok: false, status: 400, body: {}, text: '{"code":"23505","message":"duplicate key value"}' }]]) {
+      const r = await join({ source: "calendar", consentVersion: "2026-10-01" }, answer);
+      t.eq([r.status, r.body.alreadyJoined], [200, true], `7k a repeat signup (${label}) is told it is on the list`);
+      const p = r.patches[0];
+      t.ok(p && /\/rest\/v1\/waitlist\?email=eq\.person%40example\.com$/.test(p.url), `7l …and updates that address's row (${label})`);
+      const b = p ? JSON.parse(p.body) : {};
+      t.eq([b.unsubscribed_at, b.consent_version, Object.keys(b).sort().join(",")], [null, "2026-10-01", "consent_version,consented_at,unsubscribed_at"],
+        `7m …clearing unsubscribed_at and recording the current consent_version, and nothing else (${label})`);
+      const at = Date.parse(b.consented_at);
+      t.ok(at >= before - 1000 && at <= Date.now() + 1000, `7n …with consented_at set to now (${label})`);
+      t.eq(r.sends.length, 0, `7o …and no email is sent for it (${label})`);
+    }
+    const stale = await join({ source: "calendar", consentVersion: "pre-2026-10-01" }, { status: 409, body: {}, text: "" });
+    t.eq([stale.status, stale.patches.length], [400, 0], "7p a repeat signup WITHOUT the current wording changes nothing: no re-subscribe without the new consent");
   }
 
   t.summary("waitlistCasl.test");

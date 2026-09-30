@@ -30,4 +30,22 @@ const LEGACY_CONSENT_VERSION = "pre-2026-10-01";
 // Anything else is refused, so the source column only ever holds a value someone chose.
 const WAITLIST_SOURCES = ["landing", "hero", "bottom_cta", "calendar", "clawback"];
 
-module.exports = { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, CONSENT_VERSIONS, LEGACY_CONSENT_VERSION, WAITLIST_SOURCES };
+// Launch is Canada only (Amanda, 2026-09-30): every waitlist row is stored as Canada, whatever a
+// client sends, and the form offers no other country.
+const WAITLIST_COUNTRY = "CA";
+
+// THE ONE RULE FOR WHO MAY BE EMAILED. Every waitlist send asks this first.
+//   - An unsubscribed row gets nothing, of any kind.
+//   - A row whose consent predates the consent line (LEGACY_CONSENT_VERSION, or no version at all) only
+//     ever gets the launch-day email: those people asked to hear when flourish launches, and agreed to
+//     nothing else. Any other kind ("welcome", "update", ...) skips them.
+//   - A row with current consent may get any waitlist email.
+// kind is "launch" for the launch-day email and anything else for every other waitlist email.
+function mayEmailWaitlistRow(row, kind) {
+  if (!row || row.unsubscribed_at) return false;
+  if (kind === "launch") return true;
+  const v = row.consent_version;
+  return !!v && v !== LEGACY_CONSENT_VERSION && Object.prototype.hasOwnProperty.call(CONSENT_VERSIONS, v);
+}
+
+module.exports = { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, CONSENT_VERSIONS, LEGACY_CONSENT_VERSION, WAITLIST_SOURCES, WAITLIST_COUNTRY, mayEmailWaitlistRow };

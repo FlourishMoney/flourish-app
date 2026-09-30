@@ -177,7 +177,9 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     const dup409 = await run({ insert: { ok: false, status: 409, body: {}, text: "" } });
     t.eq(dup409.resendCalls.length, 0, "3a a 409 duplicate sends no email");
     t.eq(JSON.stringify(dup409.body), JSON.stringify({ joined: true, alreadyJoined: true }), "3b …and still reports alreadyJoined");
-    t.eq(dup409.patches.length, 0, "3c …and writes no welcomed_at");
+    t.ok(dup409.patches.every(p => !("welcomed_at" in JSON.parse(p.body))), "3c …and writes no welcomed_at");
+    // A repeat signup is new consent (2026-09-30): the only write is the re-consent on that address.
+    t.eq(dup409.patches.length, 1, "3c2 …its only write is the repeat-consent update (waitlistCasl.test covers it)");
 
     const dupBody = await run({ insert: { ok: false, status: 400, body: {}, text: '{"code":"23505","message":"duplicate key value violates unique constraint"}' } });
     t.eq(dupBody.resendCalls.length, 0, "3d the OTHER duplicate path (23505 in the body) also sends no email");

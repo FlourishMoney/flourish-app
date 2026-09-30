@@ -30,6 +30,10 @@ const pendingRows = (n, startId = 1) => Array.from({ length: n }, (_, i) => ({
   id: startId + i,
   email: `person${startId + i}@example.com`,
   created_at: new Date(Date.now() - HOUR - i * 1000).toISOString(),
+  // Rows created after migration 0012 carry the consent they gave; without it the welcome email
+  // skips them (pre-consent rows only ever get the launch email; waitlistCasl.test).
+  consent_version: "2026-10-01",
+  unsubscribed_at: null,
 }));
 
 // Run the real sweep against a stubbed Supabase and Resend.

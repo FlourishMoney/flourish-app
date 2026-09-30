@@ -25,6 +25,7 @@
 "use strict";
 
 const { sendWelcomeEmail, markWelcomed, hasResendKey } = require("./_lib/waitlistWelcome");
+const { mayEmailWaitlistRow, LEGACY_CONSENT_VERSION } = require("./_lib/waitlistConsent");
 
 // A row must be this old before the sweep touches it, so it never races the request path: a signup made
 // seconds ago may have its email in flight right now.
@@ -95,11 +96,13 @@ async function countWelcomedSince(supabaseUrl, secretKey, sinceIso) {
 // first so nobody is left behind while newer signups jump the queue.
 async function selectPending(supabaseUrl, secretKey, cutoffIso, limit) {
   const url = `${supabaseUrl}/rest/v1/waitlist`
-    + `?select=id,email,created_at,unsubscribed_at`
+    + `?select=id,email,created_at,unsubscribed_at,consent_version`
     + `&welcomed_at=is.null`
-    // CASL: an unsubscribed row never receives email (migration 0012). Filtered here, and checked
-    // again per row below, so a row that unsubscribed can never be sent to by this path.
+    // CASL: an unsubscribed row never receives email (migration 0012), and a row whose consent predates
+    // the consent line only ever gets the launch-day email, which this is not. neq also excludes a null
+    // version. Filtered here, and checked again per row below with the one shared rule.
     + `&unsubscribed_at=is.null`
+    + `&consent_version=neq.${encodeURIComponent(LEGACY_CONSENT_VERSION)}`
     + `&created_at=lt.${encodeURIComponent(cutoffIso)}`
     + `&order=created_at.asc`
     + `&limit=${limit}`;
@@ -162,7 +165,7 @@ async function runSweep(opts = {}) {
   for (const row of batch) {
     if (Date.now() - startedAt >= budgetMs) { stoppedEarly = true; break; }
     if (!row || !row.email) { failed++; continue; }
-    if (row.unsubscribed_at) continue; // never email an unsubscribed row, whatever the query returned
+    if (!mayEmailWaitlistRow(row, "welcome")) continue; // unsubscribed or pre-consent: never a welcome email, whatever the query returned
     if (await sendWelcomeEmail(row.email, row.id)) {
       await markWelcomed(supabaseUrl, secretKey, row, row.email);
       sent++;
