@@ -48,6 +48,13 @@
   to     = "/.netlify/functions/beta"
   status = 200
 
+# Redirect: the signed one-click unsubscribe link in every waitlist email → Netlify function.
+# GET shows a one-button page; POST (the button, or a mailbox's RFC 8058 one-click) unsubscribes.
+[[redirects]]
+  from   = "/api/unsubscribe"
+  to     = "/.netlify/functions/unsubscribe"
+  status = 200
+
 # Redirect: app calls /api/billing → Netlify function.
 # The function itself answers 404 to everything while BILLING_ENABLED is unset, so this route
 # existing does not make billing reachable — see netlify/functions/billing.js.

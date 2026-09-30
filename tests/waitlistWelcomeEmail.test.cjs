@@ -29,15 +29,17 @@ const KEY_NAME = ["RESEND", "API", "KEY"].join("_"); // assembled so this file i
 const KEY_SENTINEL = "re_TESTONLY_thisisnotarealkey";
 const ADDRESS = "person@example.com";
 
-// The approved copy. If a word changes in beta.js, these assertions must be updated deliberately.
+// The approved copy (CASL update, consent version 2026-10-01). If a word changes in the template,
+// these assertions must be updated deliberately. The footer follows: why they got it, the sender's
+// identity word for word, and a signed one-click unsubscribe link.
 const EXPECTED_PARAGRAPHS = [
   "Thanks for joining the Flourish waitlist.",
-  "We'll email you when it's ready for you. No launch date yet, and we won't send anything else in the meantime.",
+  "We'll email you the day flourish launches in Canada. Before then you may get a few updates, and you can unsubscribe from any of them.",
   "Questions or ideas? Just reply to this email.",
   "Amanda, founder of Flourish",
-  "flourishmoney.app",
-  "You're receiving this because you joined the waitlist at flourishmoney.app. If this wasn't you, reply and we'll remove you.",
 ];
+const WHY = "You're receiving this because you joined the waitlist at flourishmoney.app.";
+const IDENTITY = "flourish is made by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. You can unsubscribe at any time.";
 
 // Run the real handler against a stubbed fetch. `insert` decides what Supabase's insert answers and
 // `resend` what Resend answers; both default to success. Returns everything the function did.
@@ -110,7 +112,7 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     res = await handler({
       httpMethod: "POST",
       headers: { origin: "https://flourishmoney.app" },
-      body: JSON.stringify({ action, email, country: "CA", source: "landing" }),
+      body: JSON.stringify({ action, email, country: "CA", source: "landing", consentVersion: "2026-10-01" }),
     });
   } finally {
     global.fetch = realFetch;
@@ -152,17 +154,22 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     t.eq(p.reply_to, "hello@flourishmoney.app", "2b Reply-To");
     t.eq(JSON.stringify(p.to), JSON.stringify([ADDRESS]), "2c addressed to the person who joined, and to nobody else");
     t.eq(p.subject, "You're on the Flourish waitlist", "2d Subject");
-    t.eq(p.text, EXPECTED_PARAGRAPHS.join("\n\n"), "2e the plain-text body is the approved copy, word for word");
+    const unsubUrl = (/Unsubscribe with one click: (https:\/\/flourishmoney\.app\/api\/unsubscribe\?id=42&t=[A-Za-z0-9_-]+)$/.exec(p.text) || [])[1];
+    t.ok(!!unsubUrl, "2e0 the plain text ends with a signed one-click unsubscribe link for this row");
+    t.eq(p.text, [...EXPECTED_PARAGRAPHS, WHY, IDENTITY, `Unsubscribe with one click: ${unsubUrl}`].join("\n\n"),
+      "2e the plain-text body is the approved copy, word for word, then the footer: why, who, how to stop");
+    t.ok(p.html.includes(WHY) && p.html.includes(IDENTITY) && p.html.includes(`href="${unsubUrl}"`), "2e2 the HTML carries the same footer, with the same link");
+    t.eq(p.headers && p.headers["List-Unsubscribe"], `<${unsubUrl}>, <mailto:hello@flourishmoney.app?subject=unsubscribe>`, "2e3 List-Unsubscribe header: the same link, and a mailto");
+    t.eq(p.headers && p.headers["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click", "2e4 …and RFC 8058 one-click");
     for (const para of EXPECTED_PARAGRAPHS) t.ok(p.html.includes(para), `2f the HTML carries the same paragraph: "${para.slice(0, 40)}..."`);
     t.ok(/background-color:#F4F1EB/.test(p.html), "2g the HTML is on the app's cream background");
     t.ok(!/<img|background-image|url\(/i.test(p.html), "2h no images");
     t.ok(!/—|–/.test(p.text + p.html), "2i no em dashes anywhere in the email");
-    t.ok(!/unsubscribe|launch (date|day) is|guarantee|free|beta/i.test(p.text), "2j no claim the copy does not make");
-    // Removed on the owner's CASL decision (2026-09-19): the email stays a transactional confirmation of
-    // the person's own request, so it carries no description of the product and nothing promotional.
+    t.ok(!/launch (date|day) is|guarantee|free|beta|trial|price|\$\d|plan\b|founding|founder offer|\/mo\b/i.test(p.text), "2j no claim or offer the copy does not make: no price, trial, plan or founding offer");
+    t.ok(!/won't send anything else/.test(p.text), "2j2 the old \"nothing else in the meantime\" promise is gone: the consent line allows a few updates");
     const REMOVED = "calm money coach";
     t.ok(!p.text.includes(REMOVED) && !p.html.includes(REMOVED), "2k the product-description sentence is gone from both bodies");
-    t.eq(EXPECTED_PARAGRAPHS.length, 6, "2l six paragraphs: thanks, what happens next, reply, sign-off, domain, why-you-got-this");
+    t.eq(EXPECTED_PARAGRAPHS.length, 4, "2l four paragraphs before the footer: thanks, the launch email, reply, sign-off");
   }
 
   // ── 3. Someone already on the list is not emailed again ────────────────────────────────────
@@ -170,7 +177,9 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     const dup409 = await run({ insert: { ok: false, status: 409, body: {}, text: "" } });
     t.eq(dup409.resendCalls.length, 0, "3a a 409 duplicate sends no email");
     t.eq(JSON.stringify(dup409.body), JSON.stringify({ joined: true, alreadyJoined: true }), "3b …and still reports alreadyJoined");
-    t.eq(dup409.patches.length, 0, "3c …and writes no welcomed_at");
+    t.ok(dup409.patches.every(p => !("welcomed_at" in JSON.parse(p.body))), "3c …and writes no welcomed_at");
+    // A repeat signup is new consent (2026-09-30): the only write is the re-consent on that address.
+    t.eq(dup409.patches.length, 1, "3c2 …its only write is the repeat-consent update (waitlistCasl.test covers it)");
 
     const dupBody = await run({ insert: { ok: false, status: 400, body: {}, text: '{"code":"23505","message":"duplicate key value violates unique constraint"}' } });
     t.eq(dupBody.resendCalls.length, 0, "3d the OTHER duplicate path (23505 in the body) also sends no email");
@@ -334,12 +343,12 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     t.eq(other.calls.find(c => c.url.includes("api.resend.com")).headers["Idempotency-Key"], "waitlist-welcome/8f2c-uuid-43ab",
       "12c a different row gives a different key (a uuid id works too)");
 
-    // No id came back: there is nothing stable to key on, so the header is omitted rather than invented.
+    // No id came back: there is no row to sign an unsubscribe link for, and no waitlist email goes out
+    // without one (CASL). welcomed_at stays null, so the sweep sends it once the row can be read.
     const noId = await run({ insert: { ok: true, status: 201, body: [] } });
-    t.eq(noId.calls.find(c => c.url.includes("api.resend.com")).headers["Idempotency-Key"], undefined,
-      "12d with no row id the header is omitted, not guessed");
-    t.eq(noId.resendCalls.length, 1, "12e …and the email is still sent");
-    t.ok(/email=eq\./.test(noId.patches[0].url), "12f …with welcomed_at falling back to the email filter");
+    t.eq(noId.resendCalls.length, 0, "12d with no row id nothing is sent: there is no signed unsubscribe link to include");
+    t.eq(noId.patches.length, 0, "12e …and welcomed_at is not stamped, so the sweep sends it later");
+    t.eq(JSON.stringify(noId.body), JSON.stringify({ joined: true, alreadyJoined: false }), "12f …while the signup itself still succeeds");
   }
 
   // ── 13. A welcomed_at write that never answers cannot take the signup with it ──────────────

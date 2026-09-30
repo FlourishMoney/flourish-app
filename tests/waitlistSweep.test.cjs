@@ -30,6 +30,10 @@ const pendingRows = (n, startId = 1) => Array.from({ length: n }, (_, i) => ({
   id: startId + i,
   email: `person${startId + i}@example.com`,
   created_at: new Date(Date.now() - HOUR - i * 1000).toISOString(),
+  // Rows created after migration 0012 carry the consent they gave; without it the welcome email
+  // skips them (pre-consent rows only ever get the launch email; waitlistCasl.test).
+  consent_version: "2026-10-01",
+  unsubscribed_at: null,
 }));
 
 // Run the real sweep against a stubbed Supabase and Resend.
@@ -135,7 +139,7 @@ async function run({ count = 0, rows = pendingRows(3), resend = { ok: true }, wi
     t.ok(r.patches.every((p, i) => p.url.includes(`id=eq.${rows[i].id}`)), "3e …on that row, by id");
     const body = JSON.parse(r.sends[0].body);
     const lib = require(path.join(__dirname, "..", "netlify", "functions", "_lib", "waitlistWelcome.js"));
-    t.eq(body.text, lib.WELCOME_TEXT, "3f the body is the shared copy, not a second version of it");
+    t.eq(body.text, lib.welcomeEmailPayload(body.to[0], rows[0].id).text, "3f the body is the shared copy, not a second version of it");
     t.eq(body.subject, lib.WELCOME_SUBJECT, "3g …with the shared subject");
     t.eq(r.result.sent, 3, "3h the run reports what it sent");
   }
