@@ -58,6 +58,20 @@ export function displayedSafeToSpend(data = {}, todayDate = new Date()) {
   return view.headline == null ? 0 : view.headline;
 }
 
+// The safe-to-spend line in the coach's context: the figure Today shows, never the engine's raw
+// amount. The prompt used to carry "$1944.88" while Today said $1,944, and a positive figure when
+// Today showed none at all (no cash account, or no income). Round-2 fix.
+export function coachSafeToSpendLine(data = {}, todayDate = new Date()) {
+  const ss = SafeSpendEngine.calculate(data, todayDate);
+  const hasCash = (data.accounts || []).filter(a => isCashAccount(a)).length > 0;
+  if (!hasCash || ss.noIncome) {
+    return "- Safe-to-spend RIGHT NOW: none shown (Today shows no figure until the household has a cash account and has entered income; do not estimate one)";
+  }
+  const shown = displayedSafeToSpend(data, todayDate);
+  const text = `${shown < 0 ? "-" : ""}$${Math.abs(shown).toLocaleString("en-US")}`;
+  return `- Safe-to-spend RIGHT NOW: ${text} (the figure Today shows; this is the truthful "can-I-afford" number, balance minus upcoming bills, minimum debt payments, safety buffer, savings allocation)`;
+}
+
 // Safe amount to move to savings now (25% of safe-to-spend, floored).
 export function computeSavingsOpportunity(safe) {
   return Math.max(0, Math.floor(safe * 0.25));

@@ -12,7 +12,7 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffForDebt, debtMinimumPayment, debtLinkKey, withDebtIds, newDebtId, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
-  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num } from "./lib/financialCalculations.js";
+  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
 import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multibank.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
@@ -45,7 +45,7 @@ import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting } from "./lib/meetingSchedule.js";
 import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType } from "./lib/notifications.js";
 import { planNotifications } from "./lib/notificationPlanner.js";
-import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
+import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView } from "./lib/suggestedDaily.js";
@@ -1917,6 +1917,17 @@ function FinancialTimeline({data, setAppData}) {
 }
 
 // ── WHAT IF SIMULATOR ──────────────────────────────────────────────────────────
+// The invest What-If's one-line verdict. 7% is the assumption the scenario runs on, so the copy says
+// so every time: "an assumed 7% a year, not a prediction" (round-2 fix; it used to read "at 7%" as if
+// the return were known).
+function investVerdictReason({ isLumpSum, parsedAmount, initialPrincipal, monthlyContribution, result }) {
+  return isLumpSum && parsedAmount > 0
+    ? `Depositing $${Math.round(parsedAmount).toLocaleString()} today and letting it compound at an assumed 7% a year, not a prediction, for 30 years grows to $${Math.round(result.finalValue).toLocaleString()}.`
+    : initialPrincipal > 0
+      ? `Adding $${monthlyContribution}/month at an assumed 7% a year, not a prediction, for 30 years takes your portfolio from $${Math.round(initialPrincipal).toLocaleString()} today to $${Math.round(result.finalValue).toLocaleString()}, with $${Math.round(result.totalGrowth).toLocaleString()} of that being growth.`
+      : `Investing $${monthlyContribution}/month at an assumed 7% a year, not a prediction, for 30 years grows to $${Math.round(result.finalValue).toLocaleString()}, with $${Math.round(result.totalGrowth).toLocaleString()} of that being pure growth.`;
+}
+
 function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onScenarioChange, onUpgrade}) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -2086,11 +2097,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
         thirtyYr:      { value: result.finalValue, growth: result.totalGrowth },
         yearByYear:    result.yearByYear,
         verdict: "Long-term winner",
-        verdictReason: isLumpSum && parsedAmount > 0
-          ? `Depositing $${Math.round(parsedAmount).toLocaleString()} today and letting it compound at 7% for 30 years grows to $${Math.round(result.finalValue).toLocaleString()}.`
-          : initialPrincipal > 0
-            ? `Adding $${monthlyContribution}/month at 7% for 30 years takes your portfolio from $${Math.round(initialPrincipal).toLocaleString()} today to $${Math.round(result.finalValue).toLocaleString()}, with $${Math.round(result.totalGrowth).toLocaleString()} of that being growth.`
-            : `Investing $${monthlyContribution}/month at 7% for 30 years grows to $${Math.round(result.finalValue).toLocaleString()}, with $${Math.round(result.totalGrowth).toLocaleString()} of that being pure growth.`,
+        verdictReason: investVerdictReason({ isLumpSum, parsedAmount, initialPrincipal, monthlyContribution, result }),
       });
       setLoading(false);
       return;
@@ -7400,7 +7407,9 @@ function generateBudgetSuggestions(data) {
 
   // ── Fixed commitments (auto-filled from bills + debt minimums) ──────
   const billsMo   = (data.bills||[]).reduce((s,b)=>s+billMonthlyAmount(b),0);
-  const debtsMo   = (data.debts||[]).reduce((s,d)=>s+parseFloat(d.min||0),0);
+  // A debt minimum a bill already pays is in billsMo; counting it again here put it in twice. The
+  // same rule safe to spend and the forecast use (round-2 fix).
+  const debtsMo   = unbilledDebtMinimums(data.debts, data.bills).reduce((s,x)=>s+x.amount,0);
   const fixedMo   = Math.round(billsMo+debtsMo);
 
   // ── Savings ─────────────────────────────────────────────────────────
@@ -11712,7 +11721,6 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     const _cashFlow   = FinancialCalcEngine.cashFlow(data, getCatOv());
     const _avgDaily   = FinancialCalcEngine.avgDailySpend(data) || 0;
     const _efMonths   = FinancialCalcEngine.emergencyFundMonths(data, getCatOv()) || 0;
-    const _safeToSpend     = _safeSpend.safeAmount || 0;
     const _upcomingBills   = _safeSpend.upcomingBills || 0;
     const _monthlySurplus  = _cashFlow.cashFlow || 0;
     const _monthlyExpenses = _cashFlow.totalExpenses || 0;
@@ -11755,7 +11763,7 @@ User profile:
 
 Financial snapshot:
 - Balance: $${(balance||0).toFixed(2)} | Income (monthly): $${income>0?income.toFixed(2):"0.00, not provided; ask before income-dependent advice"}
-- Safe-to-spend RIGHT NOW: $${_safeToSpend.toFixed(2)} (this is the truthful "can-I-afford" number, balance minus upcoming bills, minimum debt payments, safety buffer, savings allocation)
+${coachSafeToSpendLine(data)}
 - Upcoming bills (next ~14 days): $${_upcomingBills.toFixed(2)}
 - Next deposit (as the household corrected it): ${(()=>{ const nd = nextDepositFor(data, new Date()); return nd ? `$${nd.amount.toFixed(2)} from ${sanitizeField(nd.sourceLabel,80)} on ${nd.date.toLocaleDateString("en-CA",{month:"long",day:"numeric"})}${nd.variable&&nd.high>nd.low?` (pay varies: $${nd.low} to $${nd.high}; planning on the low end)`:""}` : "none projected"; })()}
 - Monthly surplus (income − expenses): $${_monthlySurplus.toFixed(2)} | Monthly expenses: $${_monthlyExpenses.toFixed(2)}
@@ -12775,13 +12783,17 @@ function FirstVisitScreen({data, onDismiss}) {
   // — three rows that summed to something else entirely, and a dead bufferAmt. All gone.
   // Pass what the household has actually given us. With no bank and no pay entered the view
   // returns no headline at all, so this screen cannot print a number made of nothing.
-  const ssView = safeToSpendView(SafeSpendEngine.calculate(data), {
+  const ss = SafeSpendEngine.calculate(data);
+  const ssView = safeToSpendView(ss, {
     hasCashAccount: (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0,
     hasIncome: (data.incomes||[]).some(i => num(i && i.amount) > 0),   // num(), not Number(): "$2,600" is a valid amount
   });
+  // Round-2 fix: Today's gate, the engine's own noIncome. With a bank but no income, Today says "Add your
+  // income to see what's safe to spend" and prints no figure; First Visit printed one. Now it says the same.
+  const noIncome = !!ss.noIncome;
   // When the headline is negative the copy says "here's exactly what's already committed" and points
   // at the breakdown, so the breakdown is open from the start rather than behind a tap.
-  const breakdownOpen = (showBreakdown || ssView.isShort) && !ssView.needsSetup;
+  const breakdownOpen = (showBreakdown || ssView.isShort) && !ssView.needsSetup && !noIncome;
   const incomeAmt = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMonthly(i.amount,i.freq),0); // kept only to gate the explanatory line
   const name = data.profile?.name || "there";
   // Bug fix: the breathing-room number is balance-driven (SafeSpendEngine reads account balances),
@@ -12804,7 +12816,12 @@ function FirstVisitScreen({data, onDismiss}) {
         {/* The Number — shown only once real balance data has loaded (a cash account exists).
             Before that: a loader (bank still syncing) or the ready state — never a $0/placeholder calc. */}
         <div style={{marginBottom:8}}>
-          {hasCashAccount ? (<>
+          {hasCashAccount && noIncome ? (
+            <div style={{marginTop:8}}>
+              <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:C.greenBright,marginBottom:8,lineHeight:1.2}}>Add your income to see what's safe to spend</div>
+              <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",maxWidth:300,margin:"0 auto"}}>Safe-to-spend plans around your bills using your income.</div>
+            </div>
+          ) : hasCashAccount ? (<>
             <div style={{color:ssView.isShort?C.cream:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,fontWeight:700,letterSpacing:0.3,maxWidth:300,marginLeft:"auto",marginRight:"auto",lineHeight:1.5}}>
               {ssView.isShort
                 ? "You're short before your next payday. Here's exactly what's already committed."
@@ -12839,7 +12856,7 @@ function FirstVisitScreen({data, onDismiss}) {
 
         {/* One-line explanation */}
         <div style={{color:C.mutedHi,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,marginBottom:32,maxWidth:280,margin:"0 auto 32px"}}>
-          {ssView.isShort || ssView.needsSetup
+          {ssView.isShort || ssView.needsSetup || noIncome
             ? null
             : incomeAmt > 0
               ? "Bills paid. Buffer set. Everything above this number is yours. No guilt, no stress."
@@ -12870,7 +12887,7 @@ function FirstVisitScreen({data, onDismiss}) {
 
         {/* Primary CTA. With nothing to explain there is no working to show, so the button that
             opens it would do nothing — go straight to the dashboard instead. */}
-        {!breakdownOpen&&!ssView.needsSetup?(
+        {!breakdownOpen&&!ssView.needsSetup&&!noIncome?(
           <button onClick={()=>setShowBreakdown(true)}
             style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
             How is this calculated? →

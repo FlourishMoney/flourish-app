@@ -26,24 +26,78 @@ function _dayGap(from, to) { return Math.round((_startOfDay(to) - _startOfDay(fr
 // Cadence length in days for the pure-interval frequencies; null for calendar-day cadences.
 function _freqDays(freq) { return freq === "weekly" ? 7 : freq === "biweekly" ? 14 : null; }
 
-// Most recent real deposit belonging to THIS income (8% amount tolerance OR name match), so a
-// cadence is phased off an actual paycheque rather than off "today". Matched per-income — each
-// earner in a household has their own pay phase. Returns a Date (noon) or null.
-export function findAnchor(inc, incAmt, transactions) {
-  const incLabel = (inc.label || "").toLowerCase();
+// ── Which deposits are THIS income's, and where its pay cycle sits ────────────────────────────
+// A deposit is this income's only when its AMOUNT is within this income's bounds, always: ±8% of the
+// entered pay, or for "My pay varies" 0.6x to 1.5x of what the household entered (amount, expected,
+// typical). A name alone never makes a deposit this income's. The old rule accepted any amount when
+// the name matched, so an off-cycle bonus under the employer's name became the anchor.
+//
+// Money in that is within bounds counts as income when it looks like pay (the Income category,
+// "payroll", "direct deposit", "deposit") or carries the income's label as a whole word, so a
+// two-letter label ("UW") works; the old rule ignored any label of three characters or fewer.
+function _amountBounds(inc, incAmt) {
+  if (!(incAmt > 0)) return null;
+  if (inc && inc.isVariable) {
+    const refs = [incAmt, num(inc.expectedAmount), num(inc.typicalAmount)].filter(a => a > 0);
+    return [Math.min(...refs) * 0.6, Math.max(...refs) * 1.5];
+  }
+  return [incAmt * 0.92, incAmt * 1.08];
+}
+const _escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function _incomeDepositDates(inc, incAmt, transactions) {
+  const bounds = _amountBounds(inc, incAmt);
+  if (!bounds) return [];
+  const label = String((inc && inc.label) || "").toLowerCase().trim();
+  const labelRx = label.length >= 2 ? new RegExp(`(^|[^a-z0-9])${_escape(label)}([^a-z0-9]|$)`) : null;
+  const seen = new Set();
   return (transactions || [])
     .filter(t => {
-      if (t.amount >= 0) return false; // income is negative (money in)
-      const name = (t.name || "").toLowerCase();
-      const amtOk = incAmt > 0 && Math.abs(Math.abs(t.amount) - incAmt) / incAmt < 0.08;
-      const nameOk = incLabel.length > 3 && name.includes(incLabel.substring(0, 6));
-      const isInc = t.cat === "Income" || name.includes("payroll") ||
-        name.includes("direct deposit") || name.includes("deposit");
-      return (amtOk || nameOk) && isInc;
+      if (!(t && t.amount < 0)) return false; // income is negative (money in)
+      const a = Math.abs(t.amount);
+      if (a < bounds[0] || a > bounds[1]) return false; // bounded, always
+      const name = String(t.name || "").toLowerCase();
+      const labelOk = (labelRx && labelRx.test(name)) || (label.length > 3 && name.includes(label.substring(0, 6)));
+      const isInc = t.cat === "Income" || name.includes("payroll") || name.includes("direct deposit") || name.includes("deposit");
+      return labelOk || isInc;
     })
     .map(t => new Date(t.date + "T12:00:00"))
-    .filter(d => !isNaN(d.getTime()))
-    .sort((a, b) => b - a)[0] || null;
+    .filter(d => !isNaN(d.getTime()) && !seen.has(d.getTime()) && seen.add(d.getTime()))
+    .sort((a, b) => b - a);
+}
+
+// How far a weekly or biweekly pay date may drift and still be the same cycle (weekends, holidays).
+const _PHASE_TOL = { 7: 2, 14: 3 };
+
+// The deposit this income's cycle is phased from. Returns a Date (noon) or null.
+//
+// Weekly and biweekly: the newest deposit on a CHAIN of at least two of this income's deposits whose
+// gaps are each about one cycle (7 ±2 or 14 ±3 days). The longest chain wins, then the one closest to
+// an exact cycle, then the newest. A bonus, a reimbursement or any other off-cycle deposit is on no
+// chain and is ignored. One deposit alone is not a phase: with no chain the cycle is unknown and the
+// forecast counts forward from today, marked "estimated".
+//
+// Monthly and semimonthly: the newest of this income's (bounded) deposits.
+export function findAnchor(inc, incAmt, transactions) {
+  const dates = _incomeDepositDates(inc, incAmt, transactions);
+  const F = _freqDays((inc && inc.freq) || "biweekly");
+  if (!F) return dates[0] || null;
+  const tol = _PHASE_TOL[F];
+  let best = null;
+  for (let i = 0; i < dates.length; i++) {
+    let len = 1, dev = 0, cur = dates[i];
+    for (;;) {
+      let pick = null, pickDev = Infinity;
+      for (const d of dates) {
+        if (d >= cur) continue;
+        const dv = Math.abs(_dayGap(d, cur) - F);
+        if (dv <= tol && dv < pickDev) { pick = d; pickDev = dv; }
+      }
+      if (!pick) break;
+      len++; dev += pickDev; cur = pick;
+    }
+    if (len >= 2 && (!best || len > best.len || (len === best.len && dev < best.dev))) best = { len, dev, date: dates[i] };
+  }
+  return best ? best.date : null;
 }
 
 // Day-of-month this income lands on. Explicit user/Plaid-derived anchorDay wins; otherwise the day
