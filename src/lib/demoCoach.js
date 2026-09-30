@@ -83,10 +83,10 @@ export function demoCoachExchanges(data, today = new Date()) {
 
   // 3 — the highest-rate debt, using the same decision the Meet agenda already shows.
   if (f.debt) {
-    let a = `Your ${f.debt.name} is at ${formatMoney(f.debt.balance)} and ${f.debt.rate}%, the most expensive money you owe, so it's the one worth attacking.`;
+    let a = `Your ${f.debt.name} is at ${formatMoney(f.debt.balance)} and ${f.debt.rate}%, the most expensive money you owe.`;
     if (f.decision && (f.decision.options || []).length >= 2) {
       const [d1, d2] = f.decision.options;
-      a += ` ${f.decision.text} ${d1.label}: ${d1.outcome}. ${d2.label}: ${d2.outcome}.`;
+      a += ` ${f.decision.text} ${d1.label}: ${d1.outcome}. ${d2.label}: ${d2.outcome}. Which of those you choose is up to you.`;
     }
     out.push({ q: `Should I put money on the ${f.debt.name}?`, a });
   }

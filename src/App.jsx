@@ -45,7 +45,8 @@ import { reconcileBills } from "./lib/billReconcile.js";
 import { computeNextMeeting } from "./lib/meetingSchedule.js";
 import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType } from "./lib/notifications.js";
 import { planNotifications } from "./lib/notificationPlanner.js";
-import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
+import { SCREENSHOT_EMAIL, normalizeEmail, isReviewAccount } from "./lib/sampleHouseholdAccount.js";
+import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView } from "./lib/suggestedDaily.js";
@@ -635,8 +636,15 @@ async function callPlaid(action, params={}, options={}) {
 // Phase D6 note: this is the LAST consumer of localStorage["flourish_plaid_token*"]
 // keys. Once we're confident every beta user has set flourish_d1e_migrated=1,
 // this function and its call site can be retired and the legacy keys deleted.
+// Round-3: once the tokens are safely server-side, the device copies go. A Plaid access token left in
+// localStorage after migration is a live bank credential sitting where any script on the page can read it.
+function clearLegacyPlaidTokens() {
+  try { localStorage.removeItem("flourish_plaid_token"); localStorage.removeItem("flourish_plaid_tokens"); } catch {}
+}
 async function migrateLocalStorageTokensToSupabase() {
-  if (localStorage.getItem("flourish_d1e_migrated") === "1") return;
+  // Already migrated in an earlier session: the tokens are server-side, so any device copy left
+  // behind by the old code is cleared too.
+  if (localStorage.getItem("flourish_d1e_migrated") === "1") { clearLegacyPlaidTokens(); return; }
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) return; // user not authenticated yet — try next session
@@ -668,6 +676,7 @@ async function migrateLocalStorageTokensToSupabase() {
     // Mark done regardless — failures are recorded server-side as status:active rows that
     // failed /item/get, OR they're tokens that revoked at the bank. User will re-link if needed.
     localStorage.setItem("flourish_d1e_migrated", "1");
+    clearLegacyPlaidTokens();
   } catch (err) {
     // Transient failure — don't set flag, retry next session
     console.warn("[d1e] migration failed (will retry next session)", err.message);
@@ -867,10 +876,10 @@ function usePlaidLinkSDK(linkToken, onSuccess) {
 // lib/demoFixture.js, keyed by country. MOCK_ACCOUNTS_US used to sit here unreferenced, with the
 // Canadian balances copied verbatim onto American account names — the "relabelled copy" the US
 // fixture deliberately is not.
-// App Store screenshot / review account. On login this email loads a populated demo state directly
-// (see the hydrate effect) instead of reading the DB — so it always lands on a full dashboard,
-// bypassing the hydrate-vs-onboarding race that kept clobbering a DB-seeded account.
-const SCREENSHOT_EMAIL = "snap@flourish.app";
+// App Store screenshot account and App Review account. On login either loads a populated demo state
+// directly (see the hydrate effect) instead of reading the DB — so it always lands on a full
+// dashboard, bypassing the hydrate-vs-onboarding race that kept clobbering a DB-seeded account.
+// SCREENSHOT_EMAIL and the review account's hash live in lib/sampleHouseholdAccount.js.
 
 // Defaults for profile.notifications (nested like profile.meetingSchedule). All types default on, but
 // nothing fires until permission is granted — these toggles govern WHAT gets scheduled once it is.
@@ -3061,9 +3070,19 @@ function computeStats(txns, catOverrides={}) {
 }
 
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
+// A tappable <div> reachable and operable from the keyboard and announced as a button (round-3
+// accessibility). Enter and Space act only when the div itself has focus, so a real button inside it
+// (the hero's "How Flourish got this number") does not also fire the card.
+function pressable(onClick){
+  if(!onClick) return {};
+  return {role:"button",tabIndex:0,onKeyDown:e=>{
+    if(e.target!==e.currentTarget) return;
+    if(e.key==="Enter"||e.key===" "||e.key==="Spacebar"){e.preventDefault();onClick(e);}
+  }};
+}
 function Card({children,style={},glow,onClick}){
   const [h,setH]=useState(false);
-  return <div onClick={onClick} onMouseEnter={()=>onClick&&setH(true)} onMouseLeave={()=>onClick&&setH(false)}
+  return <div onClick={onClick} {...pressable(onClick)} onMouseEnter={()=>onClick&&setH(true)} onMouseLeave={()=>onClick&&setH(false)}
     style={{background:C.card,borderRadius:24,padding:"18px 20px",
     border:`1px solid ${h&&onClick?C.borderHi:C.border}`,
     boxShadow:glow?`0 0 0 1px ${glow}18, 0 8px 40px ${glow}20, 0 2px 12px rgba(0,0,0,0.5)`:h&&onClick?"0 10px 48px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.06)":"0 4px 24px rgba(0,0,0,0.40), 0 0 0 1px rgba(255,255,255,0.02)",
@@ -3224,6 +3243,13 @@ function HealthScoreRing({score, size=110, strokeW=9, bonus=0}) {
   );
 }
 
+// The not-advice line on every surface where the coach or the meeting speaks (round-3). Short on
+// purpose; the Coach chat keeps its longer 5.1.2 disclosure.
+const NOT_ADVICE = "Flourish explains your numbers. It is not financial advice.";
+function NotAdviceLine({style = {}}) {
+  return <div style={{color:C.muted,fontSize:13,fontStyle:"italic",lineHeight:1.5,textAlign:"center",fontFamily:"'Plus Jakarta Sans',sans-serif",...style}}>{NOT_ADVICE}</div>;
+}
+
 function WeeklyCheckInModal({data, onClose, onComplete}) {
   const [step, setStep] = useState(0);
   const [mood, setMood] = useState(null);
@@ -3252,7 +3278,9 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
     // INSIDE the system prompt) and a fixed instruction as the user-role `prompt` — so untrusted
     // transaction text never rides in the user turn.
     const context = `Financial Health Score: ${score}/100. Money mood this week: ${moods.find(m=>m.val===mood)?.label||"Neutral"}. Biggest spending surprise: ${sanitizeField(surprise||"none",60)}. Financial win: ${sanitizeField(win||"none",60)}. Recent transactions: ${txns}`;
-    const prompt = "The user just completed their weekly money check-in. Using only the data provided, give ONE specific, encouraging action they can take this week to improve their Financial Health Score by 2-5 points. Keep it to 2 sentences max. Be warm and concrete.";
+    // Round-3: the coach explains, it does not direct. One pattern from this week's numbers and what it
+    // means; no action to take and no promised score change.
+    const prompt = "The user just completed their weekly money check-in. Using only the data provided, explain ONE pattern in this week's numbers and what it means. Do not tell the user what to do and do not promise any change to their score. Keep it to 2 sentences max. Calm and concrete.";
     setInsightError(null);
     try {
       // Phase D3: AI opt-out — skip the AI tip; the catch below says so rather than inventing one
@@ -3337,7 +3365,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
       </div>
       <div style={{display:"flex",gap:10}}>
         <button onClick={()=>setStep(1)} style={{flex:1,padding:"13px",borderRadius:99,border:`1px solid ${C.border}`,background:"none",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer"}}>← Back</button>
-        <button onClick={fetchInsight} style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"13px",borderRadius:99,border:"none",cursor:"pointer"}}>{loading?"Getting your coaching...":"Get My Insight →"}</button>
+        <button onClick={fetchInsight} style={{flex:2,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"13px",borderRadius:99,border:"none",cursor:"pointer"}}>{loading?"Reading your week...":"Get My Insight →"}</button>
       </div>
     </div>,
 
@@ -3359,9 +3387,9 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
       <div style={{background:`linear-gradient(135deg,${C.green}18,${C.greenDim})`,border:`1px solid ${C.green}33`,borderRadius:18,padding:"16px"}}>
         <div style={{fontSize:28,marginBottom:4}}>🎯</div>
         <div style={{color:C.green,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:16}}>Financial Health Score</div>
-        <div style={{color:C.greenBright,fontWeight:900,fontFamily:"'Playfair Display',serif",fontSize:32,marginTop:4}}>+3 points this week ✦</div>
-        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Check in every week to keep growing</div>
+        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Tap Done to record this week's check-in.</div>
       </div>
+      <NotAdviceLine/>
       <button onClick={()=>onComplete(3)} style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"16px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 20px ${C.green}40`}}>Done. See My Score ✦</button>
     </div>,
   ];
@@ -5343,7 +5371,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           WebkitBackdropFilter:"blur(24px)",
           border:`1px solid ${heroColor}28`,
           boxShadow:`0 20px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.025), inset 0 1px 0 ${heroColor}20`,
-        }} onClick={()=>setScreen("plan")}>
+        }} onClick={()=>setScreen("plan")} {...pressable(()=>setScreen("plan"))}>
           {/* Ambient orbs */}
           <div style={{position:"absolute",top:-60,right:-60,width:280,height:280,borderRadius:"50%",background:`radial-gradient(circle,${heroColor}16 0%,transparent 65%)`,pointerEvents:"none"}}/>
           <div style={{position:"absolute",bottom:-40,left:-40,width:200,height:200,borderRadius:"50%",background:`radial-gradient(circle,${heroColor}09 0%,transparent 70%)`,pointerEvents:"none"}}/>
@@ -9384,6 +9412,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
   return (
     <div>
       <FirstRunTip id="meet">Tap any number to see how Flourish got it.</FirstRunTip>
+      <NotAdviceLine style={{textAlign:"left",marginBottom:SPACE.sm}}/>
       <div style={{color:C.muted,fontSize:13,marginBottom:14,lineHeight:1.5}}>Flourish writes this agenda from your week, using the numbers it already worked out.{facilitatorGate === "ready" ? " The coach keeps it calm and about the numbers." : ""}</div>
 
       <div style={card}>
@@ -11655,7 +11684,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
       const saved = safeLoadLS("flourish_coach_history", null);
       if (Array.isArray(saved) && saved.length > 0) return saved.slice(-40);
     } catch {}
-    return [{role:"assistant", content:"I'm your Flourish coach. I work from the numbers Flourish has calculated: your safe-to-spend, forecast, spending patterns, debts and goals. I'll tell you what they mean, what needs attention first, and what your options are. I don't move money and I'm not a licensed adviser. Where do you want to start?"}];
+    return [{role:"assistant", content:"I'm your Flourish coach. I work from the numbers Flourish has calculated: your safe-to-spend, forecast, spending patterns, debts and goals. I explain what they mean and lay out your options with their trade-offs; the decisions are yours. I don't move money and I'm not a licensed adviser. Where do you want to start?"}];
   });
   const [sessionDate] = useState(()=>new Date().toLocaleDateString("en-CA",{month:"short",day:"numeric"}));
   const [input, setInput] = useState("");
@@ -11671,7 +11700,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
   // A refused coach message (a limit, a consent refusal, a failure) rules out a review ask for a while.
   useEffect(()=>{ if(limitNote||error) noteReviewTrouble(); },[limitNote,error]);
   const STORAGE_KEY = "flourish_coach_history";
-  const WELCOME = {role:"assistant", content:"I'm your Flourish coach. I work from the numbers Flourish has calculated: your safe-to-spend, forecast, spending patterns, debts and goals. I'll tell you what they mean, what needs attention first, and what your options are. I don't move money and I'm not a licensed adviser. Where do you want to start?"};
+  const WELCOME = {role:"assistant", content:"I'm your Flourish coach. I work from the numbers Flourish has calculated: your safe-to-spend, forecast, spending patterns, debts and goals. I explain what they mean and lay out your options with their trade-offs; the decisions are yours. I don't move money and I'm not a licensed adviser. Where do you want to start?"};
   const freeMsgsLeft=isPremium?Infinity:Math.max(0,FREE_LIMIT-coachMsgCount);
 
   // Persist messages to localStorage whenever they change
@@ -11701,7 +11730,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
   },[messages]);
 
   // Build a concise financial snapshot to inject into the system prompt
-  const buildContext = ()=>{
+  const buildContext = (userText = "")=>{
     const txns = (data.transactions||[]).slice(0,40);
     const accounts = data.accounts||[];
     const profile = data.profile||{};
@@ -11763,7 +11792,7 @@ User profile:
 
 Financial snapshot:
 - Balance: $${(balance||0).toFixed(2)} | Income (monthly): $${income>0?income.toFixed(2):"0.00, not provided; ask before income-dependent advice"}
-${coachSafeToSpendLine(data)}
+${coachSafeToSpendLine(data)}${(()=>{ const l = coachPurchaseLine(data, userText); return l ? `\n${l}` : ""; })()}
 - Upcoming bills (next ~14 days): $${_upcomingBills.toFixed(2)}
 - Next deposit (as the household corrected it): ${(()=>{ const nd = nextDepositFor(data, new Date()); return nd ? `$${nd.amount.toFixed(2)} from ${sanitizeField(nd.sourceLabel,80)} on ${nd.date.toLocaleDateString("en-CA",{month:"long",day:"numeric"})}${nd.variable&&nd.high>nd.low?` (pay varies: $${nd.low} to $${nd.high}; planning on the low end)`:""}` : "none projected"; })()}
 - Monthly surplus (income − expenses): $${_monthlySurplus.toFixed(2)} | Monthly expenses: $${_monthlyExpenses.toFixed(2)}
@@ -11780,33 +11809,33 @@ ${coachSafeToSpendLine(data)}
 </UNTRUSTED_USER_DATA>
 
 Reference rules (name and explain these; do not compute new figures from them):
-${country==="CA"?`- Employment: ${isSelfEmp?"SELF-EMPLOYED: mention HST/GST ($30k threshold), quarterly installments, home office, business deductions, CRA My Account":"T4 EMPLOYEE: standard employment deductions, RRSP, union dues, home office if remote"}
-${partnerEmpLabel ? `- Partner employment: ${partnerIsSelfEmp ? "SELF-EMPLOYED PARTNER: consider income splitting, spousal RRSP contributions, household business deductions" : "EMPLOYED PARTNER: dual income household, spousal RRSP, household cash flow planning"}`: ""}
-- ${age&&age>=65?"SENIOR 65+: Age Amount credit, pension income splitting (Form T1032), OAS ($727/mo), GIS if low income, medical expense credit, RRIF withdrawals":""}
-- ${age&&age<71?"RRSP contribution room matters: deadline to convert is age 71":"age 71+: RRIF required, minimum withdrawals apply"}
-- RRSP deadline: ${new Date().getMonth() < 2 || (new Date().getMonth() === 2 && new Date().getDate() === 1) ? "RRSP deadline is March 1, act now" : new Date().getMonth() <= 11 ? "RRSP deadline has passed for this tax year. Focus on TFSA and current year planning" : ""}
-- ${!profile.isHomeowner&&(!age||age<40)?`FIRST-TIME BUYER ELIGIBLE: FHSA ($${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/yr deductible, tax-free growth, $${TAX_DATA.CA.FHSA_LIFETIME.value.toLocaleString()} lifetime), HBP (borrow up to $${TAX_DATA.CA.HBP_WITHDRAWAL_LIMIT.value.toLocaleString()} from RRSP), Home Buyers' Tax Credit (claim the $${TAX_DATA.CA.HOME_BUYERS_AMOUNT.value.toLocaleString()} amount, worth ~$${creditWorth(TAX_DATA.CA.HOME_BUYERS_AMOUNT.value).toLocaleString()} in federal tax at the ${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% ${TAX_DATA.CA.FEDERAL_LOWEST_RATE.year} rate)`:""}
-- ${profile.hasKids?`PARENT: CCB (${TAX_DATA.CA.CCB.yearLabel}: $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/yr under-6, $${TAX_DATA.CA.CCB.max6to17.toLocaleString()}/yr ages 6 to 17. Tax-free, income-tested, full amount at an adjusted family net income of $${TAX_DATA.CA.CCB.phaseOutStart.toLocaleString()} or less, then it reduces gradually and more slowly again over $${TAX_DATA.CA.CCB.phaseOutSecond.toLocaleString()}), RESP+CESG (the government adds a grant on top of RESP contributions. Quote the rate only from Canada.ca, never from memory), childcare deduction (lower-income spouse claims), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?"college-age child: consider RESP withdrawal strategy":""}`:""}
-- Province ${prov||"ON"}: apply correct provincial tax rates and credits`:
-`- Employment: ${isSelfEmp?"SELF-EMPLOYED: quarterly estimated taxes, Schedule C, SE tax deduction (50% of SE tax), home office Form 8829, retirement via SEP-IRA or Solo 401k":"W-2 EMPLOYEE: check withholding accuracy, max employer 401k match first"}
-${partnerEmpLabel ? `- Partner employment: ${partnerIsSelfEmp ? "SELF-EMPLOYED PARTNER: consider income splitting, spousal RRSP contributions, household business deductions" : "EMPLOYED PARTNER: dual income household, spousal RRSP, household cash flow planning"}`: ""}
-- ${age&&age>=65?"SENIOR 65+: Social Security taxation (up to 85% taxable), RMDs start at 73, higher standard deduction ($1,950 extra single), OBBBA NEW $6,000 senior bonus deduction (2025 to 2028, phases out at $75k MAGI), QCD from IRA up to $108,000 (2025 indexed limit)":""}
-- ${age&&age>=73?"RMDs ARE REQUIRED: penalty is 25% of missed amount. Calculate and plan withdrawals carefully":""}
-- ${!profile.isHomeowner&&(!age||age<40)?"FIRST-TIME BUYER: mortgage interest deduction, property tax deduction, $10k IRA penalty-free withdrawal, check state programs":""}
+${country==="CA"?`- Employment: ${isSelfEmp?"SELF-EMPLOYED: HST/GST registration ($30k threshold), quarterly instalments, home office and business deductions may be relevant; check canada.ca or CRA My Account":"T4 EMPLOYEE: standard employment deductions, RRSP, union dues and home office (if remote) may be relevant; check canada.ca"}
+${partnerEmpLabel ? `- Partner employment: ${partnerIsSelfEmp ? "SELF-EMPLOYED PARTNER: income splitting, spousal RRSP contributions and household business deductions may be relevant" : "EMPLOYED PARTNER: dual income household; spousal RRSP may be relevant"}`: ""}
+- ${age&&age>=65?"SENIOR 65+: Age Amount credit, pension income splitting (Form T1032), OAS ($727/mo), GIS if low income, medical expense credit and RRIF withdrawals may be relevant; check eligibility at canada.ca":""}
+- ${age&&age<71?"RRSP: an RRSP converts by the end of the year the holder turns 71; check canada.ca":"age 71+: RRIF rules and minimum withdrawals may be relevant; check canada.ca"}
+- RRSP deadline: ${new Date().getMonth() < 2 || (new Date().getMonth() === 2 && new Date().getDate() === 1) ? "the RRSP contribution deadline for last tax year is March 1; check canada.ca" : new Date().getMonth() <= 11 ? "the RRSP contribution deadline for last tax year has passed; contributions now count toward this tax year" : ""}
+- ${!profile.isHomeowner&&(!age||age<40)?`FIRST-TIME BUYER programs may be relevant; check eligibility at canada.ca: FHSA ($${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/yr deductible, tax-free growth, $${TAX_DATA.CA.FHSA_LIFETIME.value.toLocaleString()} lifetime), HBP (borrow up to $${TAX_DATA.CA.HBP_WITHDRAWAL_LIMIT.value.toLocaleString()} from RRSP), Home Buyers' Tax Credit (claim the $${TAX_DATA.CA.HOME_BUYERS_AMOUNT.value.toLocaleString()} amount, worth ~$${creditWorth(TAX_DATA.CA.HOME_BUYERS_AMOUNT.value).toLocaleString()} in federal tax at the ${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% ${TAX_DATA.CA.FEDERAL_LOWEST_RATE.year} rate)`:""}
+- ${profile.hasKids?`PARENT: CCB (${TAX_DATA.CA.CCB.yearLabel}: $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/yr under-6, $${TAX_DATA.CA.CCB.max6to17.toLocaleString()}/yr ages 6 to 17. Tax-free, income-tested, full amount at an adjusted family net income of $${TAX_DATA.CA.CCB.phaseOutStart.toLocaleString()} or less, then it reduces gradually and more slowly again over $${TAX_DATA.CA.CCB.phaseOutSecond.toLocaleString()}), RESP+CESG (the government adds a grant on top of RESP contributions. Quote the rate only from Canada.ca, never from memory), childcare deduction (lower-income spouse claims), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?"college-age child: RESP withdrawal rules may be relevant":""}`:""}
+- Province ${prov||"ON"}: provincial tax rates and credits apply; check canada.ca or the province for eligibility`:
+`- Employment: ${isSelfEmp?"SELF-EMPLOYED: quarterly estimated taxes, Schedule C, SE tax deduction (50% of SE tax), home office Form 8829, SEP-IRA or Solo 401k may be relevant; check irs.gov":"W-2 EMPLOYEE: withholding and any employer 401k match may be relevant; check irs.gov"}
+${partnerEmpLabel ? `- Partner employment: ${partnerIsSelfEmp ? "SELF-EMPLOYED PARTNER: income splitting, spousal RRSP contributions and household business deductions may be relevant" : "EMPLOYED PARTNER: dual income household; spousal RRSP may be relevant"}`: ""}
+- ${age&&age>=65?"SENIOR 65+ (may be relevant; check eligibility at irs.gov): Social Security taxation (up to 85% taxable), RMDs start at 73, higher standard deduction ($1,950 extra single), OBBBA NEW $6,000 senior bonus deduction (2025 to 2028, phases out at $75k MAGI), QCD from IRA up to $108,000 (2025 indexed limit)":""}
+- ${age&&age>=73?"RMDs may be relevant (age 73+); the penalty on a missed amount is 25%; check irs.gov":""}
+- ${!profile.isHomeowner&&(!age||age<40)?"FIRST-TIME BUYER programs may be relevant; check eligibility at irs.gov: mortgage interest deduction, property tax deduction, $10k IRA penalty-free withdrawal, state programs":""}
 - ${profile.hasKids?`PARENT: Child Tax Credit ($2,200/child under 17, OBBBA 2025), Dependent Care FSA ($5,000 pre-tax for 2025; rises to $7,500 for 2026 per OBBBA), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?"AOTC for college ($2,500/yr, 40% refundable)":""}`:""}
-- State ${prov||"unknown"}: ${NO_STATE_WAGE_TAX.has(profile.province)?"NO state income tax on wages. Higher effective savings rate possible":"state income tax applies. Factor into net income calculations"}`}
+- State ${prov||"unknown"}: ${NO_STATE_WAGE_TAX.has(profile.province)?"NO state income tax on wages":"state income tax applies"}`}
 
 When user agrees to a specific goal or plan: FLOURISH_UPDATE:{"action":"update_goal","name":"<n>","target":<n>,"saved":<n>,"monthly":<n>}
 To add new goal: FLOURISH_UPDATE:{"action":"add_goal","name":"<n>","target":<n>,"saved":<n>,"monthly":<n>}
 
-Be decisive, not educational. Lead with the action: what to do, how much, when. Give one clear next step, not three options. Use $ amounts. Skip the preamble. Never be preachy.
+Explain, don't direct. Say what the user's numbers mean, compare the options with the trade-offs Flourish already computed, then ask the user what they want to do. Never tell the user what to do and never decide for them. Use $ amounts from the snapshot. Skip the preamble. Never be preachy.
 CRITICAL: Balances are live. NEVER tell user to check their bank app. Flourish IS their financial view. Never mention Plaid. Max 4 sentences unless the user asks for detail.
 
 AFFORDABILITY RULE (Phase 1C):
 - "Can I afford X?" / "Buy a $X Y" / "Should I buy X?" questions are AFFORDABILITY questions, not savings-goal questions.
-- Compare the purchase amount to "Safe-to-spend RIGHT NOW" above. If purchase ≤ safe-to-spend, say it's affordable and state the new safe-to-spend after. If purchase > safe-to-spend, say it isn't affordable right now and explain by exactly how much the user is short.
+- State the purchase amount against "Safe-to-spend RIGHT NOW" above, and what would be left after it, quoting "Safe to spend after it" from the snapshot. If that line is not in the snapshot, do not work it out; offer a What-If.
+- Give no verdict: do not call the purchase affordable or unaffordable, and do not recommend buying or not buying. Ask what the user wants to do.
 - Do NOT default to "let's set this up as a savings goal" unless the user explicitly asks to save toward something.
-- Do NOT recommend buying something that exceeds safe-to-spend.
 
 STRICT NUMBER POLICY (non-negotiable trust rule):
 - Only cite dollar amounts, percentages, interest rates, dates, or timelines that appear in the "Financial snapshot" or "Reference rules" blocks above, or that the user typed in their message.
@@ -11866,7 +11895,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
           body: JSON.stringify({
             type: "chat",
             payload: {
-              context: buildContext(),
+              context: buildContext(text),
               messages: newMessages.map(m=>({role:m.role, content:m.content})),
             },
           }),
@@ -11966,7 +11995,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
       {/* Header */}
       <div style={{padding:"16px 20px 12px",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
         <div style={{display:"flex",alignItems:"center",gap:GAP.textToControl}}>
-          {setScreen&&<button onClick={()=>setScreen("home")} style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,borderRadius:12,...tap(),display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,color:C.cream,fontSize:18}}>←</button>}
+          {setScreen&&<button onClick={()=>setScreen("home")} aria-label="Back" style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${C.border}`,borderRadius:12,...tap(),display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,color:C.cream,fontSize:18}}>←</button>}
           <div style={{width:38,height:38,borderRadius:12,background:`linear-gradient(135deg,${C.purple}33,${C.purple}11)`,border:`1px solid ${C.purple}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
             <Icon id="sparkles" size={19} color={C.purpleBright} strokeWidth={1.5}/>
           </div>
@@ -11988,7 +12017,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
               try{localStorage.removeItem(STORAGE_KEY);}catch{}
               setMessages([WELCOME]);
             }
-          }} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"6px 10px",color:C.muted,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",...tap({display:"flex",alignItems:"center",justifyContent:"center"}),flexShrink:0}} title="Clear history">
+          }} aria-label="Clear chat history" style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${C.border}`,borderRadius:10,padding:"6px 10px",color:C.muted,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",...tap({display:"flex",alignItems:"center",justifyContent:"center"}),flexShrink:0}} title="Clear history">
             🗑️
           </button>
           {!isPremium&&<div onClick={isNativeApp()?undefined:onUpgrade} style={{background:freeMsgsLeft>0?C.purple+"22":C.red+"22",border:`1px solid ${freeMsgsLeft>0?C.purple+"44":C.red+"44"}`,borderRadius:10,padding:"5px 10px",cursor:"pointer",textAlign:"center"}}>
@@ -12018,6 +12047,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
             </div>
           ))}
           <CalcByFlourish style={{marginTop:2}}/>
+          <NotAdviceLine/>
           <div style={{borderTop:`1px solid ${C.border}`,marginTop:6,paddingTop:14,textAlign:"center"}}>
             <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:GAP.textToControl,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>That's the coach working on sample data. Create a free account to ask it about your own.</div>
             {onExitDemo&&<button onClick={onExitDemo} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:99,padding:"13px 24px",color:C.isDark?"#160B2E":"#FFFFFF",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Create free account →</button>}
@@ -12535,11 +12565,11 @@ function PremiumGate({feature,desc,onUpgrade}){
       </div>
       {/* On a store app there is nothing to buy, so the pitch below would be an upgrade offer with
           no purchase behind it — and its button opens a paywall native never renders. Apple and
-          Google both forbid it. State what the tier includes and stop. */}
+          Google both forbid it. Round-3: one neutral line, with no tier and no trial named either. */}
       {isNativeApp() ? (
         <div style={{background:"rgba(255,255,255,0.05)",borderRadius:16,padding:"14px 20px",border:`1px solid ${C.border}`,maxWidth:280}}>
           <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7}}>
-            {feature} isn't part of the free tier. New accounts get 14 days of every feature, then the free tier.
+            {feature} isn't included in this version.
           </div>
         </div>
       ) : (
@@ -14006,7 +14036,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
               {[
                 [<DollarSign size={20} color="#2E8B2E" strokeWidth={2}/>, "Safe to Spend", "Know exactly what's safe to spend before your next payday. Your bills, buffer, and balances in one honest number."],
                 [<Target size={20} color="#2E8B2E" strokeWidth={2}/>, "What-If Simulator", "Test any money decision, like a big purchase or an extra debt payment, and see the real impact before you commit."],
-                [<Sparkles size={20} color="#2E8B2E" strokeWidth={2}/>, "AI Coach", "Flourish does the math. The coach explains what your numbers mean, what needs attention first, and your options. It never invents a number and it isn't a licensed adviser."],
+                [<Sparkles size={20} color="#2E8B2E" strokeWidth={2}/>, "AI Coach", "Flourish does the math. The coach explains what your numbers mean and your options, and leaves the decisions to you. It never invents a number and it isn't a licensed adviser."],
                 [<Shield size={20} color="#2E8B2E" strokeWidth={2}/>, "Built for Canada & the US", "RRSP & TFSA or 401(k) & HSA: flourish understands your country's accounts. Privacy-first: your data stays yours."],
               ].map(([icon, title, body]) => (
                 <div className="fll-card" key={title}>
@@ -15372,7 +15402,7 @@ export default function FlourishApp(){
     // clobbered by the hydrate-vs-onboarding race. demo:false so it isn't bannered/gated as sample
     // data; we deliberately never set hydratedUidRef, so the save gate stays closed and this state
     // is never written to the DB.
-    if ((user.email || "").toLowerCase() === SCREENSHOT_EMAIL) {
+    const loadSampleHousehold = () => {
       const dd = buildDemoState();
       // Auto-build a budget so the Budget screen shows a populated plan, not the empty "Build Your
       // Budget Plan" state. generateBudgetSuggestions returns the exact data.budgets shape
@@ -15384,8 +15414,8 @@ export default function FlourishApp(){
       setAiDisclosureSeen(true);
       setFirstVisitDone(true);
       setHydrated(true);
-      return;
-    }
+    };
+    if (normalizeEmail(user.email) === SCREENSHOT_EMAIL) { loadSampleHousehold(); return; }
     let cancelled = false;
     // (4) Shared-device safety: if local data belongs to a DIFFERENT user, wipe it BEFORE
     // hydrating so user B never sees user A's finances. Anonymous local data (userId null) is
@@ -15404,6 +15434,10 @@ export default function FlourishApp(){
     const preSavedAt = preSnap.savedAt || null;
     const preHasReal = hasRealLocalData(preSnap.appData);
     (async ()=>{
+      // Round-3: the App Review account gets the same populated household, matched by the hash of
+      // its email (the address is not in the code). Decided before any DB read; the save gate stays
+      // closed throughout, exactly as for the screenshot account.
+      if (await isReviewAccount(user.email)) { if (!cancelled) loadSampleHousehold(); return; }
       try {
         const remote = await fetchUserData(supabase, user.id); // throws on read error; null on clean no-row
         console.log("[persist] hydrate fetched", { hasRow: !!remote, cancelled });
@@ -16245,9 +16279,14 @@ export default function FlourishApp(){
     // they can't delete), so it is non-blocking — logged, not fatal.
     const errs = Array.isArray(resp?.errors) ? resp.errors : [];
     const criticalErrors = errs.filter(e => e && e.step !== "plaid_remove");
-    if (criticalErrors.length) {
+    if (criticalErrors.length || resp?.deleted === false) {
       console.error("[deleteAllData] account NOT fully deleted:", criticalErrors);
-      alertModal({message:"Your account could not be fully deleted, so nothing was changed. Please try again, or contact privacy@flourishmoney.app."});
+      // Round-3: "nothing was changed" only when the server stopped before touching anything (it
+      // could not load the bank links). A later stop has already removed some data, so say that.
+      const untouched = criticalErrors.length > 0 && criticalErrors.every(e => e.step === "load_items");
+      alertModal({message: untouched
+        ? "Your account could not be deleted, so nothing was changed. Please try again, or contact privacy@flourishmoney.app."
+        : "Your account deletion did not finish. Some of your data may already be removed, and your account still exists so you can try again to finish it, or contact privacy@flourishmoney.app."});
       return; // FAIL CLOSED
     }
     if (errs.length) {
@@ -16407,7 +16446,7 @@ input,button,select,textarea { font-family:inherit; }
       <div style={{width:240,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:"var(--banner-h, 0px)",height:`calc(100dvh - var(--banner-h, 0px))`,overflowY:"auto",overflowX:"hidden",overscrollBehavior:"contain",flexShrink:0}}>
         {/* Logo */}
         <div style={{padding:"28px 24px 20px"}}>
-          <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} style={{background:"none",border:"none",cursor:"pointer",padding:0,display:"flex",alignItems:"center",gap:10}}>
+          <button onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen("home");}} aria-label="Flourish home" style={{background:"none",border:"none",cursor:"pointer",padding:0,display:"flex",alignItems:"center",gap:10}}>
             <div style={{width:38,height:38,borderRadius:12,background:"rgba(0,214,143,0.10)",border:"1px solid rgba(0,214,143,0.25)",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.12)"}}><FlourishMark size={24}/></div>
             <span style={{fontSize:22,fontWeight:800,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:-0.3}}>flourish</span>
           </button>
@@ -16419,7 +16458,7 @@ input,button,select,textarea { font-family:inherit; }
           {ALL_NAV.map(n=>{
             const active=(tabForScreen(screen)===n.id)&&!showNotifs&&!showSettings;
             return(
-              <button key={n.id} className="nav-item" onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen(n.id);}}
+              <button key={n.id} className="nav-item" aria-current={active?"page":undefined} onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen(n.id);}}
                 style={{background:active?C.green+"18":"transparent",border:`1px solid ${active?C.green+"33":"transparent"}`,borderRadius:12,padding:"11px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,color:active?C.greenBright:C.muted,fontWeight:active?700:400,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .18s",textAlign:"left",width:"100%"}}>
                 <Icon id={n.icon} size={17} color={active?C.greenBright:C.muted} strokeWidth={active?1.9:1.4}/>
                 {n.label}
@@ -16453,7 +16492,7 @@ input,button,select,textarea { font-family:inherit; }
               </div>
             </div>
           </div>}
-          <button onClick={()=>{setShowNotifs(false);setShowSettings(true);}}
+          <button onClick={()=>{setShowNotifs(false);setShowSettings(true);}} aria-label="Settings"
             style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 14px",cursor:"pointer",color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:8,transition:"all .18s"}}
             onMouseEnter={e=>{e.currentTarget.style.borderColor=C.borderHi;e.currentTarget.style.color=C.cream;}}
             onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.muted;}}>
@@ -16474,7 +16513,7 @@ input,button,select,textarea { font-family:inherit; }
           </div>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
             {HOUSEHOLD_ENABLED&&household&&<div style={{background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>🏠 Household #{household.code}</div>}
-            <button onClick={()=>{setShowSettings(false);setShowNotifs(true);}} style={{position:"relative",background:C.card,border:`1px solid ${unread>0?C.red+"55":C.border}`,borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:18,transition:"all .18s"}} onMouseEnter={e=>e.currentTarget.style.borderColor=C.borderHi} onMouseLeave={e=>e.currentTarget.style.borderColor=unread>0?C.red+"55":C.border}>
+            <button onClick={()=>{setShowSettings(false);setShowNotifs(true);}} aria-label="Notifications" style={{position:"relative",background:C.card,border:`1px solid ${unread>0?C.red+"55":C.border}`,borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:18,transition:"all .18s"}} onMouseEnter={e=>e.currentTarget.style.borderColor=C.borderHi} onMouseLeave={e=>e.currentTarget.style.borderColor=unread>0?C.red+"55":C.border}>
               <Icon id="bell" size={18} color={C.mutedHi} strokeWidth={1.5}/>
               {unread>0&&<div style={{position:"absolute",top:-4,right:-4,width:18,height:18,borderRadius:99,background:C.red,color:"#fff",fontSize:13,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{unread}</div>}
             </button>
@@ -16556,7 +16595,7 @@ input,button,select,textarea { font-family:inherit; }
             {ALL_NAV.map(n=>{
               const active=(tabForScreen(screen)===n.id)&&!showNotifs&&!showSettings;
               return(
-                <button key={n.id} onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen(n.id);}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"5px 2px",borderRadius:22,flex:"1 1 0",minWidth:0,transition:"all .28s cubic-bezier(.16,1,.3,1)"}}>
+                <button key={n.id} aria-current={active?"page":undefined} onClick={()=>{setShowNotifs(false);setShowSettings(false);setScreen(n.id);}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"5px 2px",borderRadius:22,flex:"1 1 0",minWidth:0,transition:"all .28s cubic-bezier(.16,1,.3,1)"}}>
                   <div style={{width:36,height:30,borderRadius:16,flexShrink:0,
                     background:active?`linear-gradient(135deg,rgba(0,204,133,0.22) 0%,rgba(0,232,154,0.12) 100%)`:"transparent",
                     display:"flex",alignItems:"center",justifyContent:"center",

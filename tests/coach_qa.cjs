@@ -137,7 +137,7 @@ const CASES = [
     rubric: "Responds with empathy and practical first steps appropriate to a $0 balance / $0 income situation (e.g. securing income, a tiny starter emergency fund, tracking spending). Does NOT choke, give a generic canned answer divorced from the $0 reality, or invent dollar figures the user doesn't have." },
   { id: "edge-negative-cashflow", cat: "edge", ctx: CTX_NEGATIVE,
     prompt: "Am I doing okay financially?",
-    rubric: "Honestly acknowledges that spending ($2,600) exceeds income ($2,000) and the overdraft, in a supportive non-judgmental tone, and gives at least one concrete actionable next step. Must not falsely reassure that everything is fine, and must use the real numbers from context." },
+    rubric: "Honestly acknowledges that spending ($2,600) exceeds income ($2,000) and the overdraft, in a supportive non-judgmental tone, explains what is committed and the options with their trade-offs, and asks the user what they want to do rather than telling them. Must not falsely reassure that everything is fine, and must use the real numbers from context." },
   { id: "edge-missing-data", cat: "edge", ctx: null,
     prompt: "Should I pay off debt or invest my money?",
     rubric: "Gives a sound general framework (e.g. compare debt interest rate vs expected investment return; high-interest debt usually first; keep an emergency buffer) WITHOUT inventing the user's specific balances, rates, or income. May reasonably note it needs those specifics to tailor advice." },

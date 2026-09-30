@@ -8,7 +8,7 @@
 // its old themed `insights` array was dead output and was removed (MATH-LOCK finding #3).
 // -----------------------------------------------------------------------------
 
-import { FinancialCalcEngine, isInvestmentAccount, simulateDebtPayoffForDebt, isCashAccount, num } from "./financialCalculations.js";
+import { FinancialCalcEngine, isInvestmentAccount, simulateDebtPayoffForDebt, isCashAccount, num, parseAmountFromQuery } from "./financialCalculations.js";
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { ForecastEngine } from "./forecastEngine.js";
 import { shelterLabel } from "./locale.js";
@@ -70,6 +70,23 @@ export function coachSafeToSpendLine(data = {}, todayDate = new Date()) {
   const shown = displayedSafeToSpend(data, todayDate);
   const text = `${shown < 0 ? "-" : ""}$${Math.abs(shown).toLocaleString("en-US")}`;
   return `- Safe-to-spend RIGHT NOW: ${text} (the figure Today shows; this is the truthful "can-I-afford" number, balance minus upcoming bills, minimum debt payments, safety buffer, savings allocation)`;
+}
+
+// For a purchase question ("can I afford a $600 phone?"), the purchase against the figure Today shows
+// and what would be left of it after, computed here so the coach states it and never does the
+// arithmetic itself (round-3: the coach compares, it gives no affordable / not affordable verdict).
+// "" when the message is not a purchase question or Today shows no figure.
+export function coachPurchaseLine(data = {}, userText = "", todayDate = new Date()) {
+  const text = String(userText || "");
+  if (!/\b(afford|buy|buying|purchase|spend|get)\b/i.test(text)) return "";
+  const amount = parseAmountFromQuery(text);
+  if (!(amount > 0)) return "";
+  const ss = SafeSpendEngine.calculate(data, todayDate);
+  if (!(data.accounts || []).some(a => isCashAccount(a)) || ss.noIncome) return "";
+  const shown = displayedSafeToSpend(data, todayDate);
+  const after = Math.round(shown - amount);
+  const fmt = (n) => `${n < 0 ? "-" : ""}$${Math.abs(Math.round(n)).toLocaleString("en-US")}`;
+  return `- Purchase in the user's latest message: ${fmt(amount)} | Safe to spend after it (computed by Flourish): ${fmt(after)}`;
 }
 
 // Safe amount to move to savings now (25% of safe-to-spend, floored).
