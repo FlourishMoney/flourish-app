@@ -357,6 +357,17 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     t.ok(!/weight:"\d+%"/.test(APP) && !/FICO scale|count for FICO|myfico/i.test(APP), "9d no weight field, \"FICO scale\" or myfico anywhere in the app");
   }
 
+  // ── 10. Prompt 3d: the CGEB student tip states facts, no crowd claim ──────────────────────────
+  {
+    const tips = A.getPersonalizedTaxCredits({ country: "CA", province: "ON", lifeStages: ["student"] });
+    const cgeb = tips.find(x => /Groceries and Essentials Benefit/.test(x.title));
+    t.eq(cgeb && cgeb.title, "Groceries and Essentials Benefit for Students", "10a the title no longer says students \"almost always qualify\"");
+    t.eq(cgeb && cgeb.body, "The CRA pays the Canada Groceries and Essentials Benefit every quarter to people with a low income who file a tax return (CRA, 2026). It is worked out from the return, so filing is normally all it takes, though new residents of Canada may need to apply for their first year.",
+      "10b the body states how it is paid, from TAX_DATA (its name, the new-resident note, the CRA source and year)");
+    t.eq(cgeb && cgeb.savings, "Up to $679/yr if you are single with no children", "10c the amount is TAX_DATA's $679 (445 + 234)");
+    t.ok(!/Almost Always Qualify|most students qualify/i.test(APP), "10d the crowd claim is gone from the source");
+  }
+
   t.summary("sourcedFigures.test");
   setImmediate(() => process.exit(process.exitCode || 0));
 })();
