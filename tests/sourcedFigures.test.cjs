@@ -28,6 +28,12 @@
 //          entered 718 (≥ 670 → 6 points) → 86; entered 780 (≥ 760 → 10) → 90
 //        RRSP deadline: 60th day of 2026 = March 1, 2026, a Sunday → March 2, 2026 (the CRA's date);
 //          2024 → March 3, 2025; 2023 → February 29, 2024; 2026 → March 1, 2027
+//   11. Prompt 3d: no user-facing string tells the household what to do with its money. Every string a
+//       household can read in src (tests/_copyStrings.cjs) is split into sentences; none may start with
+//       a money instruction verb from MONEY_VERBS, and none may hold a verdict (VERDICT), unless it is
+//       on ALLOW: app navigation and controls, the household's own What-If questions, sign-in and
+//       subscription screens, legal text, and parked kids chores. ALLOW is exact strings, so any new
+//       line has to be read and either rewritten or added on purpose.
 //   6. Prompt 3c: What-If states results, never a verdict. Hand-worked payoff, $1,000 at 12% APR:
 //        $100 a month: 11 months, total paid $1,058.98, interest $58.98 (the engine's own pinned example)
 //        $200 a month: 10.00 + 8.10 + 6.18 + 4.24 + 2.29 + 0.31 = $31.12 interest, 6 months
@@ -366,6 +372,75 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       "10b the body states how it is paid, from TAX_DATA (its name, the new-resident note, the CRA source and year)");
     t.eq(cgeb && cgeb.savings, "Up to $679/yr if you are single with no children", "10c the amount is TAX_DATA's $679 (445 + 234)");
     t.ok(!/Almost Always Qualify|most students qualify/i.test(APP), "10d the crowd claim is gone from the source");
+  }
+
+  // ── 11. Prompt 3d: no money instructions or verdicts in user-facing copy ─────────────────────
+  {
+    const { copyStrings, sentences } = require("./_copyStrings.cjs");
+    const MONEY_VERBS = ["Pay", "Invest", "Increase", "Open", "Avoid", "Hold", "Save", "Spend", "Cut", "Move", "Transfer", "Put", "Build", "Contribute", "Max", "Maximize",
+      "Reduce", "Cancel", "Consolidate", "Refinance", "Negotiate", "Compare", "Prioritize", "Consider", "Delay", "Wait", "Limit", "Lower", "Raise", "Pause", "Redirect",
+      "Allocate", "Automate", "Withdraw", "Fund", "Stop", "Keep", "Claim", "File", "Apply", "Track", "Trim", "Boost", "Earn", "Borrow", "Buy", "Sell", "Register", "Gather",
+      "Calculate", "Contact", "Get", "Start", "Use", "Don't", "Never", "Always", "Shop", "Switch", "Lock", "Set aside", "Plan", "Protect", "Grow", "Clear", "Tackle", "Skip",
+      "Celebrate", "Commit"];
+    const STARTS = new RegExp(`^(?:${MONEY_VERBS.join("|")})\\b`);
+    const VERDICT = /\b(should|shouldn't|worth (?:it|doing|claiming|getting|reviewing|checking)|best value|the best|recommend(?:ed|s)?|make sure|you must|must file|can afford|can't afford|go for it|think twice|not right now|free money|on the table|pro tip|high priority|unclaimed)\b/i;
+    const ALLOW = new Set([
+      // App navigation and controls: they act on the app, not on the household's money.
+      "Plan adherence", "Move date", "Clear ✕", "Get My Insight →", "Use ↑↓ to reorder · 🔒 to pin. Show or hide cards in Settings → Dashboard.", "Move up", "Move down",
+      "Save Layout", "Get Started →", "Keep mine", "Save changes", "✨ Build Your Budget Plan", "Build Plan", "✓ Save Budget Plan", "Save Changes ✓", "Start the meeting",
+      "Start solo check-in", "Start Meeting ▶", "Start Check-In ▶", "Start New", "Save Debt ✓", "Save Goal ✓", "Always visible", "Open Family Dashboard →", "Open Support",
+      "Start coaching session →", "Clear chat history", "Clear history", "Apply this change?", "Open Settings", "Save Goal", "Save Plan", "✓ Save My Budget Plan",
+      "Build Your Budget Plan", "✨ Build My Budget Plan", "Skip Tour", "Skip for now", "Open Plan Ahead. Any surprises?", "Track your net worth over time",
+      "Get coaching from your own numbers, based on your real transactions and",
+      "Flourish needs your AI consent again before the coach can join. Open Settings → Privacy & AI, turn the coach on, then come back.",
+      "From this date on changes every later … deposit too. Use it for a raise, parental leave, EI, a job ending or a benefit change.",
+      "From this date on changes every later … bill too. Use it for a new price, a new due date or a bill that ended.",
+      "Always count these as income?", "Always treat these as …?", "Always for deposits from", "Always for deposits from …",
+      // Recording what the household already did (the arrears tools record a payment in the app).
+      "Apply payment to arrears", "Apply $", "Apply to all?", "Apply \"", "Pay arrears →",
+      // Labels that are nouns ("Pay frequency", the debt type "Buy Now Pay Later", the 529 Plan).
+      "Pay frequency", "Pay varies: … to …", "Buy Now Pay Later", "529 Plan", "529 Plan Tax-Free Withdrawals",
+      // The household's own What-If questions (chips and placeholders), and a question the household asks the coach.
+      "Buy a $800 laptop", "Get a $600 phone", "Pay off my credit card", "Invest $300/month", "Buy a used car for $8,000", "e.g. Buy a $450 TV…", "e.g. Buy a $800 laptop",
+      "💸 Buy something", "Buy a $", "💳 Pay off debt", "📈 Invest monthly", "Should I put money on the …?",
+      // Getting a credit score to enter, installing the web app, sign-in and account security.
+      "Credit scores update monthly. Get yours free at Borrowell (Canada) or Credit Karma (US/Canada), then update it here.",
+      "Open flourishmoney.app in Safari", "Open flourishmoney.app in Chrome", "Open Flourish and sign in.", "Wrong email? Start over",
+      "Open your authenticator app and enter the current 6-digit code for Flourish Money.",
+      "Your password is updated. Open the Flourish app and log in with your new password.", "Never shared with lenders or third parties",
+      "with a question, a problem or feedback. Write from the address your account uses so we can find it. Never send a password or a bank login.",
+      "Don't use AI", "10. Contact Us", "Contact us", "13. Contact",
+      // Subscription screens (web only; a store build renders none of them, nativeNoPrice.test).
+      "Get Flourish Plus", "Get Flourish Plus →", "Start 14 days free →", "Cancel any time.", "14 days free. Cancel any time.", "Save …%", "Keep the free plan",
+      ". Cancel any time from Settings.", "Start your trial to run the meeting with your coach.",
+      // Kids chores (parked: nothing renders them, launchTab 3a4).
+      "💰 Payday! Pay out $",
+    ]);
+    // Legal text: Terms and Privacy state obligations and disclaimers, not money advice.
+    const LEGAL = /^(You must be at least 18 years old|Flourish Money requires a registered account|Flourish Money is an educational financial tool|Almost nothing\. Tax and accounting rules)/;
+    const offenders = [];
+    const seen = new Set();
+    const strings = copyStrings();
+    for (const c of strings) {
+      if (ALLOW.has(c.text) || LEGAL.test(c.text) || seen.has(c.text)) continue;
+      const why = sentences(c.text).filter(x => STARTS.test(x)).map(x => `starts "${x.split(" ").slice(0, 3).join(" ")}"`);
+      const v = c.text.match(VERDICT); if (v) why.push(`verdict "${v[0]}"`);
+      if (why.length) { seen.add(c.text); offenders.push(`${c.file}:${c.line} ${why.join(", ")}: ${c.text.slice(0, 90)}`); }
+    }
+    t.ok(strings.length > 2500, `11a every user-facing string in src was read (${strings.length})`);
+    t.eq(offenders, [], "11b no user-facing string starts with a money instruction verb or holds a verdict, outside the navigation allowlist");
+    const used = new Set(strings.map(c => c.text));
+    t.eq([...ALLOW].filter(a => !used.has(a)), [], "11c every allowlisted line still exists (a stale entry is removed, not kept)");
+    // The scan is not blind: it finds the lines the sweep removed.
+    const probe = ["401(k): Get the Full Match First", "⚠ Balance near safety floor. Hold non-essential spending until after this date.", "Increase 401k Contributions",
+      "Worth checking for your situation: x.", "Yes, you can afford this", "Open a Roth IRA"];
+    t.eq(probe.filter(p => !(sentences(p).some(x => STARTS.test(x)) || VERDICT.test(p))), [], "11d (the scan flags the old lines: Get the Full Match, Hold non-essential spending, and the rest)");
+    for (const gone of ["Get the Full Match First", "4% match on $50k", "Hold non-essential spending", "Hold all non-essential", "Hold off on non-essentials", "Increase 401k Contributions",
+      "Open a Roth IRA", "Open an HSA", "One thing you could do", "What to do today", "Yes, you can afford this", "Not right now", "Payday: save before you spend",
+      "Consider trimming", "Where you could save", "Where you could cut back", "here's what to trim", "Emergency Fund Target", "High Priority", "Unclaimed", "Also Worth Reviewing",
+      "Pro tip", "Best Value", "Worth getting ahead of it", "Make sure your", "frees that money", "expensive money"]) {
+      t.ok(!strings.some(c => c.text.includes(gone)), `11e gone: "${gone}"`);
+    }
   }
 
   t.summary("sourcedFigures.test");
