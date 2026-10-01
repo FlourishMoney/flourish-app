@@ -120,9 +120,9 @@ export function getCoachMessagesUsedThisWeek() {
 // Whether the coach's weekly limit is lifted. On the web, a trial, a paid plan or a founder flag lifts
 // it. On a store app (iOS, Android) there is nothing to buy in 1.0.0 and no feature may close when a
 // trial ends, so the coach's weekly limit does not depend on a trial there: it applies to every native
-// user from the first day, trial or not, and only a paid or founder flag lifts it. (What-If's daily
-// limit still lifts during a trial on every platform: it narrows after the trial, it does not close.) Pass { native: true }
-// from a store build; the default is the web rule, unchanged.
+// user from the first day, trial or not, and only a paid or founder flag lifts it. What-If's daily
+// limit follows the same rule (simulationsAreUnlimited). Pass { native: true } from a store build; the
+// default is the web rule, unchanged.
 export function coachIsUnlimited({ native = false } = {}) {
   return native ? isPremiumOrFounder() : isUnlimited();
 }
@@ -146,17 +146,24 @@ export function getSimulationsUsedToday() {
   return _readCounter(SIM_USAGE_KEY, _todayStr());
 }
 
-export function getSimulationsRemaining() {
-  if (isUnlimited()) return Infinity;
+// Whether What-If's daily limit is lifted. The same rule as the coach: on the web a trial, a paid plan
+// or a founder flag lifts it; on a store app the limit is the same from the first day for every native
+// user, trial included, so nothing narrows after signup, and only a paid or founder flag lifts it.
+export function simulationsAreUnlimited({ native = false } = {}) {
+  return native ? isPremiumOrFounder() : isUnlimited();
+}
+
+export function getSimulationsRemaining(opts) {
+  if (simulationsAreUnlimited(opts)) return Infinity;
   return Math.max(0, FREE_TIER_LIMITS.simulationsPerDay - getSimulationsUsedToday());
 }
 
-export function canRunSimulation() {
-  return getSimulationsRemaining() > 0;
+export function canRunSimulation(opts) {
+  return getSimulationsRemaining(opts) > 0;
 }
 
-export function recordSimulationUse() {
-  if (isUnlimited()) return;
+export function recordSimulationUse(opts) {
+  if (simulationsAreUnlimited(opts)) return;
   _writeCounter(SIM_USAGE_KEY, _todayStr(), getSimulationsUsedToday() + 1);
 }
 

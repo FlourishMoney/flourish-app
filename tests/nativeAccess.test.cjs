@@ -8,7 +8,9 @@
 //   - Meet offers the coach-run meeting (no "isn't included" line);
 //   - the coach keeps its weekly message limit, worded as a limit, and that limit applies to EVERY native
 //     user, a trial user included (only a paid or founder flag lifts it, and that is left as it was);
-//   - no lock, trial or upgrade copy shows on any of these surfaces.
+//   - no lock, trial or upgrade copy shows on any of these surfaces;
+//   - What-If's daily limit is the same on day 1 (in the trial) and on day 30 (after it): 1 a day, worked
+//     by hand from FREE_TIER_LIMITS.simulationsPerDay = 1. Only a paid or founder flag lifts it (prompt 3b).
 // The web keeps its rules: the free plan does not open Credit or the meeting, and a trial lifts the
 // coach limit. Rendered through the real App.jsx bundle, with the platform switched at render time.
 // -----------------------------------------------------------------------------
@@ -33,7 +35,8 @@ function weekKey(d = new Date()) {
   let A = {};
   try {
     A = loadApp(["MeetAgenda", "CreditScreen", "AICoach", "PremiumGate", "creditAvailable", "facilitatorAvailable", "coachUnlimited",
-      "canUseCoach", "isTrialActive", "getPlan", "FREE_TIER_LIMITS"]);
+      "canUseCoach", "isTrialActive", "getPlan", "FREE_TIER_LIMITS", "getSimulationsRemaining", "canRunSimulation", "recordSimulationUse",
+      "TermsOfService"]);
   } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
   const real = globalThis.Capacitor;
   const setPlatform = (p) => Object.defineProperty(globalThis, "Capacitor", { value: { ...real, getPlatform: () => p, isNativePlatform: () => p !== "web" }, configurable: true, writable: true });
@@ -92,6 +95,38 @@ function weekKey(d = new Date()) {
   t.eq([A.canUseCoach(), A.coachUnlimited({ native: false, isPremium: true })], [true, true], "3h (on the web a trial still lifts it, as before)");
   setUser({ plan: "beta_founder", coachUsed: 2 });
   t.eq(as("ios", () => A.coachUnlimited({ native: true, isPremium: true })), true, "3i a founder flag still lifts it on a store app (plan flags left as they were)");
+
+  // ── 4. What-If: the same daily limit from day one ────────────────────────────────────────────
+  {
+    const SIM = "flourish_sim_usage";
+    const whatIfFor = (who) => {
+      if (who === "day1") setUser({ plan: "trial", trialEndsInDays: 13 }); else setUser({ plan: "free" });
+      if (who === "day1") A.store.set("flourish_trial_started_at", new Date(now).toISOString());
+      A.store.set(SIM, "");
+      const before = as("ios", () => A.getSimulationsRemaining({ native: true }));
+      as("ios", () => A.recordSimulationUse({ native: true }));
+      const after = as("ios", () => A.getSimulationsRemaining({ native: true }));
+      const can = as("ios", () => A.canRunSimulation({ native: true }));
+      return [A.isTrialActive(), before, after, can];
+    };
+    t.eq(A.FREE_TIER_LIMITS.simulationsPerDay, 1, "4a (the daily What-If limit is 1)");
+    t.eq(whatIfFor("day1"), [true, 1, 0, false], "4b a native user on day 1, inside the trial: 1 What-If a day, then the limit applies");
+    t.eq(whatIfFor("day30"), [false, 1, 0, false], "4c a native user on day 30, trial over: the same 1 a day, then the limit applies");
+    setUser({ plan: "trial", trialEndsInDays: 13 }); A.store.set(SIM, "");
+    t.eq([A.getSimulationsRemaining(), A.getSimulationsRemaining({ native: false })], [Infinity, Infinity], "4d (on the web a trial still lifts it, as before)");
+    setUser({ plan: "free" });
+    t.eq(A.getSimulationsRemaining(), 1, "4e (the web free plan: 1 a day, as before)");
+    for (const plan of ["premium", "beta_founder"]) {
+      setUser({ plan });
+      t.eq(as("ios", () => A.getSimulationsRemaining({ native: true })), Infinity, `4f on a store app a ${plan} flag still lifts it`);
+    }
+    t.ok(/if \(!canRunSimulation\(\{ native: isNativeApp\(\) \}\)\) \{/.test(app) && /recordSimulationUse\(\{ native: isNativeApp\(\) \}\);/.test(app),
+      "4g What-If checks and counts with the store-app rule");
+    t.eq((app.match(/canRunSimulation\(|recordSimulationUse\(|getSimulationsRemaining\(/g) || []).length, 2, "4h …at its only two call sites");
+    const terms = as("ios", () => textOf(A.render(A.h(A.TermsOfService, { onBack: noop }))));
+    t.ok(/There are usage limits, the same from the first day: the coach has a weekly message limit and What-If has a daily limit\./.test(terms),
+      "4i Terms section 7 on a store app says both limits apply from the first day");
+  }
 
   t.summary("nativeAccess.test");
   setImmediate(() => process.exit(process.exitCode || 0));

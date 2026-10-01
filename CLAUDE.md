@@ -119,7 +119,7 @@ App.jsx imports these. Do not re-implement an engine inside App.jsx.
 
 ### Paywall (Phase 2)
 - Plan tiers: `"free"` | `"trial"` | `"premium"` | `"beta_founder"`
-- Free-tier limits live in `FREE_TIER_LIMITS` (`src/lib/usageLimits.js`): 2 Coach messages per **week** (resets Monday 00:00 UTC) and 1 simulation per day. New signups get a 14-day trial (`TRIAL_DURATION_DAYS`).
+- Free-tier limits live in `FREE_TIER_LIMITS` (`src/lib/usageLimits.js`): 2 Coach messages per **week** (resets Monday 00:00 UTC) and 1 simulation per day. New signups get a 14-day trial (`TRIAL_DURATION_DAYS`). On a store app (iOS, Android) both limits apply from the first day to every native user, trial included; only a paid or founder flag lifts them (`coachIsUnlimited`, `simulationsAreUnlimited` with `{ native: true }`). The web trial still lifts them.
 - **localStorage grandfathering is DISABLED.** `applyGrandfatherIfEligible()` is a deliberate no-op: the old rule upgraded anyone holding `flourish_coach_history` to permanent `beta_founder`, and since the Coach writes that key on first use it was a 100% paywall bypass. `applyBetaCodeFounderUpgrade()` was deleted for the same reason. Entitlement is whatever the server profile says.
 - localStorage keys: `flourish_plan`, `flourish_coach_usage`, `flourish_sim_usage`, `flourish_account_existed_pre_paywall` — all caches, never authority.
 - STRIPE_INTEGRATION_POINT comments mark seams for server-side enforcement later
