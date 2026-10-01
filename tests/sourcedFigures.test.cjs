@@ -44,7 +44,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
 (async () => {
   const t = create();
   let A = {};
-  try { A = loadApp(["patternCards", "computeStats", "CC", "TAX_DATA", "getPersonalizedTaxCredits", "CreditScreen", "debtResultSentence", "KIDS_LESSONS", "Dashboard"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
+  try { A = loadApp(["patternCards", "computeStats", "CC", "TAX_DATA", "getPersonalizedTaxCredits", "CreditScreen", "debtResultSentence", "KIDS_LESSONS", "Dashboard", "Family", "WidgetScreen"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
 
   // ── 1. Patterns ──────────────────────────────────────────────────────────────────────────────
   {
@@ -320,6 +320,28 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     t.ok(today({ ...D.demoProfileFor("CA"), creditKnown: false }).includes(LABEL), "8e Today's health score tile shows the label when no credit score is entered");
     t.ok(!today(D.demoProfileFor("CA")).includes(LABEL), "8f …and not when one is (the demo's 718)");
     t.ok(/\{healthBasis&&<div style=\{\{color:"#ffffff88"/.test(APP), "8g Money Wrapped shows it under its score too");
+    // Prompt 3d: Meet, the widgets and the coach say so too.
+    const partialData = { ...data, profile: { ...D.demoProfileFor("CA"), creditKnown: false } };
+    const fullData = { ...data, profile: D.demoProfileFor("CA") };
+    const meet = (d) => textOf(A.render(A.h(A.Family, { data: d, setAppData: noop, household: null, setHousehold: noop, setScreen: noop })));
+    // Meet renders MeetAgenda (the older metrics panel is behind {false&&...}); wherever it prints a
+    // health score with no credit score entered, the score carries "5 of 6 parts".
+    const meetText = meet(partialData);
+    const unlabelled = (meetText.match(/Health(?: score| Score)?:? \d+[^.]{0,60}/g) || []).filter(x => !/5 of 6 parts/.test(x));
+    t.eq(unlabelled, [], "8h Meet prints no health score without the 5-of-6 label");
+    const widget = (d) => textOf(A.render(A.h(A.WidgetScreen, { data: d, onBack: noop })));
+    t.ok(widget(partialData).includes(`Health: ${LABEL}`) && !widget(fullData).includes(LABEL), "8i the widget preview shows it too");
+    t.ok(/healthTileLabel=healthPartial\?`Health \(\$\{HEALTH_SCORE_PARTIAL_SHORT\}\)`/.test(APP) && DE.HEALTH_SCORE_PARTIAL_SHORT === "5 of 6 parts", "8j …and each widget tile is labelled \"Health (5 of 6 parts)\"");
+    t.ok(/Financial Health Score: \$\{score\}\/100\$\{healthPartial\?` \(\$\{HEALTH_SCORE_PARTIAL_COACH\}; say so whenever you mention the score\)`:""\}/.test(APP) &&
+      DE.HEALTH_SCORE_PARTIAL_COACH === "based on 5 of 6 parts, because no credit score is entered", "8k the check-in context tells the coach the score is on 5 of 6 parts, and to say so");
+    t.ok(/Health score: \$\{healthScore\}\/100\$\{healthNote\}/.test(APP), "8l Meet's metric lines carry the note");
+    const { buildMeetingAgenda } = await import("../src/lib/meetingAgenda.js");
+    const R = await import("../src/lib/meetingRecord.js");
+    t.ok(buildMeetingAgenda({ healthScore: { current: 89, previous: 86, partial: true } }).progress.some(l => l.text === "Health score 89 (+3 this week), based on 5 of 6 parts."),
+      "8m the meeting agenda's health line says it is on 5 of 6 parts");
+    const last = R.buildMeetingRecord({ metOn: "2026-09-16", answers: [] });
+    t.ok(R.meetingOpening({ lastRecord: last, snapshot: { healthScore: { current: 89, previous: 86, partial: true } } }).lines.some(l => /to 89, based on 5 of 6 parts\./.test(l.text)),
+      "8n …and so does the meeting opening");
   }
 
   // ── 9. Prompt 3c: credit factors without weights, the range from official agencies ──────────

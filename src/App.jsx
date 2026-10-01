@@ -53,7 +53,7 @@ import { nextRrspDeadline, formatRrspDeadline } from "./lib/rrspDeadline.js";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
 import { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
-import { AutopilotEngine, calcHealthScore, creditScoreEntered, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
+import { AutopilotEngine, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView } from "./lib/suggestedDaily.js";
@@ -3350,11 +3350,12 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
   const fetchInsight = async () => {
     setLoading(true);
     const txns = (data.transactions || []).slice(0, 15).map(t=>`${sanitizeField(t.name||t.merchant||"Purchase",80)} $${Math.abs(parseFloat(t.amount)||0)}`).join(", ");
-    const {score} = calcHealthScore(data, getCatOv());
+    const {score,partial:healthPartial} = calcHealthScore(data, getCatOv());
     // Sprint 3: send the user's data as `context` (the server wraps it in UNTRUSTED_USER_DATA
     // INSIDE the system prompt) and a fixed instruction as the user-role `prompt` — so untrusted
     // transaction text never rides in the user turn.
-    const context = `Financial Health Score: ${score}/100. Money mood this week: ${moods.find(m=>m.val===mood)?.label||"Neutral"}. Biggest spending surprise: ${sanitizeField(surprise||"none",60)}. Financial win: ${sanitizeField(win||"none",60)}. Recent transactions: ${txns}`;
+    // Prompt 3d: a score on 5 of 6 parts says so, so the coach says so too.
+    const context = `Financial Health Score: ${score}/100${healthPartial?` (${HEALTH_SCORE_PARTIAL_COACH}; say so whenever you mention the score)`:""}. Money mood this week: ${moods.find(m=>m.val===mood)?.label||"Neutral"}. Biggest spending surprise: ${sanitizeField(surprise||"none",60)}. Financial win: ${sanitizeField(win||"none",60)}. Recent transactions: ${txns}`;
     // Round-3: the coach explains, it does not direct. One pattern from this week's numbers and what it
     // means; no action to take and no promised score change.
     const prompt = "The user just completed their weekly money check-in. Using only the data provided, explain ONE pattern in this week's numbers and what it means. Do not tell the user what to do and do not promise any change to their score. Keep it to 2 sentences max. Calm and concrete.";
@@ -9746,7 +9747,8 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
       return acc;
     },{});
   const topCat=Object.entries(topSpend).sort((a,b)=>b[1]-a[1])[0];
-  const {score:healthScore}=calcHealthScore(data, getCatOv());
+  const {score:healthScore,partial:healthPartial}=calcHealthScore(data, getCatOv());
+  const healthNote=healthPartial?` (${HEALTH_SCORE_PARTIAL_SHORT})`:""; // prompt 3d: say when a score is on 5 of 6 parts
   const soonBills=_ss.soonBills||[];
   const householdCode_gen="FLRSH"+Math.random().toString(36).substring(2,5).toUpperCase();
 
@@ -9764,7 +9766,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
      metricColor:totalDebt>0?C.orangeBright:C.greenBright,
      prompt:"Did you make any extra payments? What felt hard this week?"},
     {id:"goal",icon:"🎯",title:"Check in on your shared goal",desc:"Emergency fund? Vacation? House?",
-     metric:`Cash flow: ${cashFlow>=0?"$"+(cashFlow||0).toFixed(0)+" surplus":"$"+Math.abs(cashFlow).toFixed(0)+" deficit"} · Health score: ${healthScore}/100`,
+     metric:`Cash flow: ${cashFlow>=0?"$"+(cashFlow||0).toFixed(0)+" surplus":"$"+Math.abs(cashFlow).toFixed(0)+" deficit"} · Health score: ${healthScore}/100${healthNote}`,
      metricColor:cashFlow>=0?C.greenBright:C.redBright,
      prompt:"Does the goal still feel right? Are you on track?"},
     {id:"wins",icon:"⭐",title:"Name one win each",desc:"A win can be small.",
@@ -9799,7 +9801,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
      metricColor:cashFlow>=0?C.greenBright:C.goldBright,
      prompt:"Say it out loud. Write it down. Wins compound."},
     {id:"goal",icon:"🎯",title:"Check in on your goal",desc:"Even 1% closer is worth acknowledging.",
-     metric:`Health score: ${healthScore}/100 · Debt: $${totalDebt>0?totalDebt.toLocaleString():"0"}`,
+     metric:`Health score: ${healthScore}/100${healthNote} · Debt: $${totalDebt>0?totalDebt.toLocaleString():"0"}`,
      metricColor:C.tealBright,
      prompt:"How much closer are you? What's the next milestone?"},
     {id:"next",icon:"📌",title:"One intention for next week",desc:"Small wins build into lasting change.",
@@ -9846,6 +9848,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
             </div>
           ))}
         </div>
+        {healthPartial&&<div style={{color:C.muted,fontSize:13,lineHeight:1.45,marginTop:-4}}>Health: {HEALTH_SCORE_PARTIAL_LABEL}</div>}
         <Card style={{background:C.purpleDim,border:`1px solid ${C.purple}44`}}>
           <div style={{color:C.purpleBright,fontWeight:800,fontSize:16,marginBottom:8}}>{isCouple?"💑 Money Meeting":"🧘 Check-In"}</div>
           <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65}}>{isCouple?`A short, structured money talk. No fights, no blame.${data.profile.partnerName?` Ready to go with ${data.profile.partnerName}?`:""}`:
@@ -10100,7 +10103,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
             {[
               {label:"Balance",value:`$${(_ss.balance||0).toFixed(0)}`},
               {label:"Monthly Cash Flow",value:`${cashFlow>=0?"+":""}$${(cashFlow||0).toFixed(0)}`},
-              {label:"Health Score",value:`${healthScore}/100`},
+              {label:`Health Score${healthNote}`,value:`${healthScore}/100`},
               {label:"Total Debt",value:totalDebt>0?`$${totalDebt.toLocaleString()}`:"None 🎉"},
             ].map(m=>(
               <div key={m.label} style={{background:C.cardAlt,borderRadius:10,padding:"10px 12px",border:`1px solid ${C.border}`}}>
@@ -10500,7 +10503,8 @@ function WidgetScreen({data,onBack}){
   const overdraft=_ss.overdraft;     // …and item 2: balance comes from ssView.balanceText, not a local re-format
   const soonBills=_ss.soonBills||[];
   const nextBill=soonBills[0];
-  const {score:healthScore}=calcHealthScore(data, getCatOv());
+  const {score:healthScore,partial:healthPartial}=calcHealthScore(data, getCatOv());
+  const healthTileLabel=healthPartial?`Health (${HEALTH_SCORE_PARTIAL_SHORT})`:"Health"; // prompt 3d
   const heroColor=overdraft?C.red:C.green;
   const heroColorBright=overdraft?C.redBright:C.greenBright;
   const today=new Date().toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"});
@@ -10553,7 +10557,7 @@ function WidgetScreen({data,onBack}){
   // Build list of active medium tiles (up to 3 slots, Safe always first)
   const medTiles=[
     wContent.balance&&{label:"Balance",value:ssView.balanceText,color:"rgba(237,233,226,0.85)"},
-    wContent.health&&{label:"Health",value:`${healthScore}/100`,color:"rgba(0,232,154,0.9)"},
+    wContent.health&&{label:healthTileLabel,value:`${healthScore}/100`,color:"rgba(0,232,154,0.9)"},
     wContent.nextBill&&nextBill&&{label:"Next Bill",value:`${nextBill.name} $${parseFloat(nextBill.amount).toFixed(0)}`,color:"rgba(245,204,106,0.95)"},
     wContent.cashFlow&&{label:"Cash Flow",value:`${wCashFlow>=0?"+":""}$${Math.round(wCashFlow)}/mo`,color:wCashFlow>=0?"rgba(0,232,154,0.9)":"rgba(255,79,106,0.9)"},
     wContent.streak&&{label:"Streak",value:`${wStreak} days 🔥`,color:"rgba(237,233,226,0.85)"},
@@ -10562,7 +10566,7 @@ function WidgetScreen({data,onBack}){
   // Build list of active large grid tiles
   const largeTiles=[
     wContent.balance&&{label:"Balance",value:ssView.balanceText,bg:"rgba(255,255,255,0.05)",color:"rgba(237,233,226,0.9)"},
-    wContent.health&&{label:"Health Score",value:`${healthScore}`,bg:"rgba(0,204,133,0.08)",color:"rgba(0,232,154,0.95)"},
+    wContent.health&&{label:healthPartial?`Health Score (${HEALTH_SCORE_PARTIAL_SHORT})`:"Health Score",value:`${healthScore}`,bg:"rgba(0,204,133,0.08)",color:"rgba(0,232,154,0.95)"},
     wContent.nextBill&&{label:"Due Soon",value:`$${Math.round(_ss.upcomingBills)}`,bg:"rgba(232,184,75,0.08)",color:"rgba(245,204,106,0.95)"},
     wContent.cashFlow&&{label:"Cash Flow",value:`${wCashFlow>=0?"+":""}$${Math.round(wCashFlow)}`,bg:wCashFlow>=0?"rgba(0,204,133,0.08)":"rgba(255,79,106,0.08)",color:wCashFlow>=0?"rgba(0,232,154,0.95)":"rgba(255,79,106,0.95)"},
     wContent.streak&&{label:"Streak",value:`${wStreak}d 🔥`,bg:"rgba(161,140,255,0.08)",color:"rgba(179,161,255,0.95)"},
@@ -10692,6 +10696,7 @@ function WidgetScreen({data,onBack}){
         {wSize==="small"&&<PhoneFrame wW={158} wH={158}><SmallWidget/></PhoneFrame>}
         {wSize==="medium"&&<PhoneFrame wW={338} wH={158}><MediumWidget/></PhoneFrame>}
         {wSize==="large"&&<PhoneFrame wW={338} wH={338}><LargeWidget/></PhoneFrame>}
+        {healthPartial&&wContent.health&&<div style={{color:C.muted,fontSize:13,lineHeight:1.45,textAlign:"center",marginTop:10}}>Health: {HEALTH_SCORE_PARTIAL_LABEL}</div>}
       </div>
     </div>
 

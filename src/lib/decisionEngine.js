@@ -336,6 +336,9 @@ export function creditScoreEntered(profile) {
 
 // Shown beside a health score worked out without the credit part (prompt 3c).
 export const HEALTH_SCORE_PARTIAL_LABEL = "Based on 5 of 6 parts. Add your credit score in Settings for the full score.";
+// The short form, for small places (a widget tile, a chip, a metric line), and the line the coach is given.
+export const HEALTH_SCORE_PARTIAL_SHORT = "5 of 6 parts";
+export const HEALTH_SCORE_PARTIAL_COACH = "based on 5 of 6 parts, because no credit score is entered";
 
 export function calcHealthScore(data, catOverrides = {}, currentDate = new Date()) {
   // Pull from engines for consistency

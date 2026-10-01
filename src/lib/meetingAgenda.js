@@ -68,7 +68,8 @@ export function buildMeetingAgenda(snapshot = {}) {
   const cur = _n(hs.current), prevHs = _n(hs.previous);
   if (cur != null) {
     const d = prevHs != null ? cur - prevHs : null;
-    progress.push({ text: `Health score ${cur}${d != null && d !== 0 ? ` (${d > 0 ? "+" : ""}${d} this week)` : ""}.`, value: cur, source: "healthScore" });
+    // Prompt 3d: a score on 5 of 6 parts (no credit score entered) says so.
+    progress.push({ text: `Health score ${cur}${d != null && d !== 0 ? ` (${d > 0 ? "+" : ""}${d} this week)` : ""}${hs.partial ? ", based on 5 of 6 parts" : ""}.`, value: cur, source: "healthScore" });
   }
 
   // ── Decisions (1–2, each with BOTH engine-computed outcomes) ──────────────────────────────────
