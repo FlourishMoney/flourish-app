@@ -23,6 +23,10 @@ import { formatMoney, formatNumber, roundBalanceDown } from "./format.js";
 // "The balance rounds DOWN" is not defined here — it is the single shared rule roundBalanceDown in
 // format.js (also behind formatBalance), so Today, Watch and the timelines cannot drift apart.
 const _ceil = (n) => Math.ceil(Number(n) || 0);
+// A deduction is money committed, so it is never below zero. A negative component (which the engine no
+// longer produces, see safeSpendEngine.js) used to be hidden from the rows yet still counted in the total,
+// so the rows no longer added up to the headline. Clamped here as well as at the source.
+const _deduct = (n) => Math.max(0, _ceil(n));
 
 /**
  * `setup` describes whether the household has given us anything to compute FROM:
@@ -55,7 +59,7 @@ export function safeToSpendView(ss, setup = null) {
     { key: "debtPayments", label: "Min. debt payments", raw: ss && ss.debtPayments },
     { key: "safetyBuf", label: "Spending buffer", raw: ss && ss.safetyBuf },
     { key: "savingsAlloc", label: "Savings", raw: ss && ss.savingsAlloc },
-  ].map(d => ({ key: d.key, label: d.label, display: _ceil(d.raw), value: formatMoney(_ceil(d.raw)) }));
+  ].map(d => ({ key: d.key, label: d.label, display: _deduct(d.raw), value: formatMoney(_deduct(d.raw)) }));
 
   const totalDeductions = deductions.reduce((s, d) => s + d.display, 0);
   // NOT clamped to zero. It used to be, and the rows were not — so when commitments exceeded the

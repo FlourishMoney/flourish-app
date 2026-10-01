@@ -1273,8 +1273,10 @@ export const FinancialCalcEngine = {
   // The daily spend every projection uses: the household's own figure when they set one on Watch,
   // otherwise Flourish's estimate below.
   avgDailySpend(data) {
+    // Never below zero: correctionsOf already drops a negative override, and this holds the line for any
+    // other path (prelaunch-copy round 2, item 4).
     const override = correctionsOf(data).dailySpend;
-    return override != null ? override : FinancialCalcEngine.avgDailySpendEstimate(data);
+    return Math.max(0, override != null ? override : FinancialCalcEngine.avgDailySpendEstimate(data));
   },
 
   avgDailySpendEstimate(data) {
