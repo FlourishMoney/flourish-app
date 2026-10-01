@@ -3892,7 +3892,10 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       // Bug fix: surface needs_reconnect errors distinctly
       const msg = err.message?.includes("needs_reconnect") || err.needs_reconnect
         ? "Your bank session expired. Please reconnect your bank."
-        : "Connection failed: "+err.message;
+        : (isNativeApp() && /plan_limit/.test(String(err.message||"")))
+          // A store app has nothing to buy, so never show the server's plan code or an upgrade path.
+          ? "Only one bank can be connected in this version. You can import a statement for another account."
+          : "Connection failed: "+err.message;
       setBankError(msg);
       setBankStage("select");
     }
@@ -12546,8 +12549,8 @@ function TermsOfService({onBack}){
       <div style={h2}>6. Acceptable Use</div>
       <div style={p}>You agree not to: use the App for any unlawful purpose; attempt to reverse-engineer, decompile, or hack the App; use the App to process another person's financial data without their consent; resell or sublicense the App; or interfere with the security or integrity of the App or its infrastructure.</div>
 
-      <div style={h2}>7. Subscription & Billing</div>
-      <div style={p}>{isNativeApp() ? "In the iOS and Android apps there is nothing to buy. Some features have usage limits, shown where they apply." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
+      <div style={h2}>{isNativeApp() ? "7. Cost and usage limits" : "7. Subscription & Billing"}</div>
+      <div style={p}>{isNativeApp() ? "The iOS and Android apps are free, and there is nothing to buy in them. Some features have daily or weekly usage limits, and some are not available in this version; the app says so where that applies." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
 
       <div style={h2}>8. Intellectual Property</div>
       <div style={p}>The App, including its design, logo, code, AI systems, and content, is the exclusive property of GrowSmart Inc. and is protected by copyright, trademark, and other intellectual property laws. You receive a limited, non-exclusive, non-transferable licence to use the App for personal, non-commercial purposes.</div>
@@ -12574,7 +12577,7 @@ function TermsOfService({onBack}){
 }
 
 // ─── PREMIUM GATE ─────────────────────────────────────────────────────────────
-function PremiumGate({feature,desc,onUpgrade}){
+function PremiumGate({feature,desc,onUpgrade,nativeNote}){
   return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"60px 20px",gap:20,minHeight:400}}>
       <div style={{width:72,height:72,borderRadius:24,background:`linear-gradient(135deg,${C.purple}30,${C.purple}08)`,border:`1px solid ${C.purple}44`,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon id="sparkles" size={32} color={C.purpleBright} strokeWidth={1.35}/></div>
@@ -12588,7 +12591,7 @@ function PremiumGate({feature,desc,onUpgrade}){
       {isNativeApp() ? (
         <div style={{background:"rgba(255,255,255,0.05)",borderRadius:16,padding:"14px 20px",border:`1px solid ${C.border}`,maxWidth:280}}>
           <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7}}>
-            {feature} isn't included in this version.
+            {nativeNote || <>{feature} isn't included in this version.</>}
           </div>
         </div>
       ) : (
@@ -16378,7 +16381,9 @@ export default function FlourishApp(){
       const showCoach = isPremium || freeCoachAllowed;
       if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium || isTrialActive()} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={openUpgrade} setScreen={setScreen} setAppData={setAppData} onExitDemo={exitDemo} postCoachConsent={postCoachConsent} onNeedConsent={requireAIDisclosure}/>;
       // Phase D10: removed stale 5-message gate (D7 dropped FREE_TIER_LIMITS.coachMessagesPerDay to 1; line below handles all gated cases).
-      return <PremiumGate feature="AI Coach" desc="Coaching from your own numbers: what they mean and what to do next." onUpgrade={()=>setShowPaywall(true)}/>;
+      // On a store app this gate only appears once the week's free coach messages are used: the coach is
+      // included, so say what actually happened and when it lifts, not that the feature is missing.
+      return <PremiumGate feature="AI Coach" desc="Coaching from your own numbers: what they mean and your options." nativeNote={`You've used this week's ${FREE_TIER_LIMITS.coachMessagesPerWeek} coach messages. They reset Monday.`} onUpgrade={()=>setShowPaywall(true)}/>;
     }
     if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
     // goals + credit are re-homed under the "Do" tab (segmented control) above.
