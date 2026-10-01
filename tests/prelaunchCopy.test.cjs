@@ -6,6 +6,7 @@
 //      not "to spend freely today"; "everything above this number is yours" said the opposite of the
 //      truth. Can I afford this? speaks of payday, not today.
 //   3. Meet: the card heading "Flourish noticed" read as the app learning; it is "This week".
+//   5. Watch: the heading states the selected range, not "The next 90 days." on every range.
 //   1. Store-app copy states what the build does, with no price, plan, trial length or upgrade path:
 //      Terms section 7, the coach gate once the week's messages are used, and the one-bank limit.
 // Words this copy must never use about the engine: "sets aside", "holds back", "learns", "remembers".
@@ -26,7 +27,7 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b/i;
   const demo = { accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(now, "CA"),
     bills: D.buildDemoBills(now, "CA"), transactions: D.buildDemoTxns(now, "CA"), profile: D.demoProfileFor("CA") };
   let A = {};
-  try { A = loadApp(["FirstVisitScreen", "MeetAgenda", "TermsOfService", "PremiumGate"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
+  try { A = loadApp(["FirstVisitScreen", "MeetAgenda", "TermsOfService", "PremiumGate", "PlanAhead"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
 
   // ── 2. First screen ──────────────────────────────────────────────────────────────────────────
   {
@@ -71,6 +72,15 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b/i;
     t.ok(!/what to do next/.test(APP.slice(APP.indexOf('feature="AI Coach"'), APP.indexOf('feature="AI Coach"') + 200)), "1f the coach is described as explaining your options, not telling you what to do");
     t.ok(/isNativeApp\(\) && \/plan_limit\/\.test\(String\(err\.message\|\|""\)\)\)/.test(APP) && /"Only one bank can be connected in this version\. You can import a statement for another account\."/.test(APP),
       "1g a store app never shows the server's plan_limit code: it says what this version does");
+  }
+
+  // ── 5. Watch heading ─────────────────────────────────────────────────────────────────────────
+  {
+    let txt = "";
+    try { txt = textOf(A.render(A.h(A.PlanAhead, { data: demo, setAppData: () => {}, setScreen: () => {} }))); } catch (e) { t.ok(false, `5 Watch renders: ${describe(e)}`); }
+    t.ok(/The next 30 days\./.test(txt) && !/The next 90 days\./.test(txt), "5a Watch opens on 30 days and its heading says so");
+    t.ok(/RANGES\.map\(r=><button key=\{r\} onClick=\{\(\)=>setRange\(r\)\}/.test(APP) && /subtitle=\{`The next \$\{range\} days\.`\}/.test(APP),
+      "5b the heading reads the same range the 7 / 30 / 90 toggle sets");
   }
 
   t.summary("prelaunchCopy.test");

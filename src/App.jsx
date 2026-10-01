@@ -7012,7 +7012,7 @@ function PlanAhead({data, setAppData, setScreen}){
       {dataIssues.length>5&&<div style={{color:C.muted,fontSize:13,marginTop:5}}>…and {dataIssues.length-5} more.</div>}
     </div>}
     <FirstRunTip id="watch">Tap any number to see how Flourish got it.</FirstRunTip>
-    <ScreenHeader title="Watch" subtitle="The next 90 days."
+    <ScreenHeader title="Watch" subtitle={`The next ${range} days.`}
       onBack={setScreen?()=>setScreen("home"):null}
       controls={
           <div style={{display:"flex",gap:GAP.controlToControl,background:C.surface,borderRadius:12,padding:SPACE.xs,width:"100%",boxSizing:"border-box"}}>{RANGES.map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",transition:"all .22s"}}>{r}d</button>)}</div>
