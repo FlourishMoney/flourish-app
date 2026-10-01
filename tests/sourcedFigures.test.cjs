@@ -28,6 +28,9 @@
 //          entered 718 (≥ 670 → 6 points) → 86; entered 780 (≥ 760 → 10) → 90
 //        RRSP deadline: 60th day of 2026 = March 1, 2026, a Sunday → March 2, 2026 (the CRA's date);
 //          2024 → March 3, 2025; 2023 → February 29, 2024; 2026 → March 1, 2027
+//   6. Prompt 3c: What-If states results, never a verdict. Hand-worked payoff, $1,000 at 12% APR:
+//        $100 a month: 11 months, total paid $1,058.98, interest $58.98 (the engine's own pinned example)
+//        $200 a month: 10.00 + 8.10 + 6.18 + 4.24 + 2.29 + 0.31 = $31.12 interest, 6 months
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -41,7 +44,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
 (async () => {
   const t = create();
   let A = {};
-  try { A = loadApp(["patternCards", "computeStats", "CC", "TAX_DATA", "getPersonalizedTaxCredits", "CreditScreen"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
+  try { A = loadApp(["patternCards", "computeStats", "CC", "TAX_DATA", "getPersonalizedTaxCredits", "CreditScreen", "debtResultSentence"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
 
   // ── 1. Patterns ──────────────────────────────────────────────────────────────────────────────
   {
@@ -244,6 +247,30 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     const n1 = R.nextRrspDeadline(new Date("2026-03-02T12:00:00")), n2 = R.nextRrspDeadline(new Date("2026-10-01T12:00:00"));
     t.eq([n1.taxYear, iso(n1.date), n2.taxYear, iso(n2.date)], [2025, "2026-03-02", 2026, "2027-03-01"], "5k on March 2, 2026 it is still 2025's; on October 1 it is 2026's, March 1, 2027");
     t.ok(!/deadline for last tax year is March 1/.test(APP) && /nextRrspDeadline\(\)/.test(APP), "5l the coach and the RRSP tip compute it; no hard-coded March 1");
+  }
+
+  // ── 6. Prompt 3c: What-If states the result, with no verdict ────────────────────────────────
+  {
+    const FC = await import("../src/lib/financialCalculations.js");
+    const base = FC.simulateDebtPayoff({ balance: 1000, apr: 12, monthlyPayment: 100 });
+    const more = FC.simulateDebtPayoff({ balance: 1000, apr: 12, monthlyPayment: 200 });
+    t.eq([base.monthsToPayoff, base.totalInterest, more.monthsToPayoff, more.totalInterest], [11, 58.98, 6, 31.12], "6a (the engine: 11 months / $58.98 at $100, 6 months / $31.12 at $200)");
+    const r = (bm, bi, bd, am, ai, ad) => ({ baseline: { monthsToPayoff: bm, totalInterest: bi, payoffDate: bd }, boosted: { monthsToPayoff: am, totalInterest: ai, payoffDate: ad } });
+    t.eq(A.debtResultSentence(r(11, 58.98, "2027-09-01", 6, 31.12, "2027-04-01"), 100, 100),
+      "Paying $100 more a month moves the payoff date from September 2027 to April 2027 and changes total interest from $58.98 to $31.12.",
+      "6b the debt result is the engine's dates and totals, stated, with no verdict");
+    t.eq(A.debtResultSentence(r(11, 58.98, "2027-09-01", 11, 58.98, "2027-09-01"), 0, 100),
+      "Paying $0 more a month changes nothing: the payoff date stays September 2027 and total interest stays $58.98.", "6c when the extra changes nothing, it says exactly that");
+    t.eq(A.debtResultSentence(r(Infinity, Infinity, null, 30, 412.5, "2029-04-01"), 50, 20),
+      "At the current $20 a month the balance is not paid off. Paying $50 more a month pays it off by April 2029, with total interest of $412.50.", "6d a payment that never clears the debt, stated as a fact");
+    t.ok(/does not cover the interest, so the balance is not paid off\.$/.test(A.debtResultSentence(r(Infinity, Infinity, null, Infinity, Infinity, null), 5, 20)), "6e …and when neither payment clears it");
+    for (const gone of ["Worth doing", "already optimal", "Long-term winner", "\"Go for it\"", "\"Not recommended\"", "\"Think twice\"", "\"Proceed carefully\"", "Better option:", "justifying the verdict",
+      "an alternative if risky/tight", "calculateScenarioVerdict(", "\" pts\":impactIcon"]) {
+      t.ok(!APP.includes(gone), `6f gone from What-If: ${gone}`);
+    }
+    t.ok(/summary: debtResultSentence\(result, extraPayment, currentPayment\)/.test(APP), "6g the debt card's line is debtResultSentence");
+    t.ok(/do not recommend, judge, or call the purchase safe, risky, affordable or unaffordable, and do not suggest an alternative/.test(APP) && /JSON\.stringify\(factsForProse/.test(APP),
+      "6h the purchase explanation is told facts only, and is sent no verdict, rating or health change");
   }
 
   t.summary("sourcedFigures.test");

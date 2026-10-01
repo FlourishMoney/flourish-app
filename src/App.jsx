@@ -10,7 +10,7 @@ import {
   Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
-import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffForDebt, debtMinimumPayment, debtLinkKey, withDebtIds, newDebtId, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, applyDebtRate, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
+import { parseAmountFromQuery, simulatePurchaseImpact, simulateDebtPayoffForDebt, debtMinimumPayment, debtLinkKey, withDebtIds, newDebtId, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, applyDebtRate, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
   BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
@@ -1956,6 +1956,22 @@ function investVerdictReason({ isLumpSum, parsedAmount, initialPrincipal, monthl
       : `Investing $${monthlyContribution}/month at an assumed 7% a year, not a prediction, for 30 years grows to $${Math.round(result.finalValue).toLocaleString()}, with $${Math.round(result.totalGrowth).toLocaleString()} of that being pure growth.`;
 }
 
+// The debt What-If's one sentence, from the payoff engine's own dates and totals (prompt 3c). It says
+// what changes, or that nothing does, and never whether that is good.
+const _payoffMonth = (iso) => { const [y, m] = String(iso || "").split("-").map(Number); return y && m ? new Date(y, m - 1, 1).toLocaleDateString("en-CA", { month: "long", year: "numeric" }) : ""; };
+function debtResultSentence(r, extraPayment, currentPayment) {
+  const x = formatMoney(extraPayment), b = r.baseline, a = r.boosted;
+  const fin = (v) => Number.isFinite(v);
+  if (!fin(b.monthsToPayoff) && !fin(a.monthsToPayoff))
+    return `At ${formatMoney(currentPayment)} a month, or ${x} more, the payment does not cover the interest, so the balance is not paid off.`;
+  if (!fin(b.monthsToPayoff))
+    return `At the current ${formatMoney(currentPayment)} a month the balance is not paid off. Paying ${x} more a month pays it off by ${_payoffMonth(a.payoffDate)}, with total interest of ${formatMoney(a.totalInterest, { cents: true })}.`;
+  if (b.monthsToPayoff === a.monthsToPayoff && b.totalInterest === a.totalInterest)
+    return `Paying ${x} more a month changes nothing: the payoff date stays ${_payoffMonth(b.payoffDate)} and total interest stays ${formatMoney(b.totalInterest, { cents: true })}.`;
+  const dates = b.monthsToPayoff === a.monthsToPayoff ? `keeps the payoff date at ${_payoffMonth(b.payoffDate)}` : `moves the payoff date from ${_payoffMonth(b.payoffDate)} to ${_payoffMonth(a.payoffDate)}`;
+  return `Paying ${x} more a month ${dates} and changes total interest from ${formatMoney(b.totalInterest, { cents: true })} to ${formatMoney(a.totalInterest, { cents: true })}.`;
+}
+
 // What-If's debt scenario for one debt (the one payoff model Decisions and Meet use too). Kept as a
 // function so a rate the household enters in place of an assumed one recomputes the same result
 // without running (and counting) another simulation (prompt 3b).
@@ -1969,12 +1985,12 @@ function debtScenarioResult(targetDebt, extraPayment, debts) {
     : targetDebt.debtType === "credit_card" ? "credit card"
     : "debt";
   const result = simulateDebtPayoffForDebt(targetDebt, extraPayment); // the one payoff model (Decisions and Meet use it too)
-  // Sprint 4b: when the current payment never fully amortizes (payment <= monthly interest),
-  // baseline months/interest are Infinity. Detect it so the verdict stays meaningful instead
-  // of implying "already optimal" (and so the UI never renders raw Infinity).
-  const baselineNever = !Number.isFinite(result.baseline.monthsToPayoff);
-  const boostedPays   = Number.isFinite(result.boosted.monthsToPayoff);
+  // Sprint 4b: when the current payment never fully amortizes (payment <= monthly interest), baseline
+  // months/interest are Infinity; debtResultSentence says so in words, and the UI never renders raw Infinity.
   return {
+    // Prompt 3c: no verdict or evaluation line. The card states what the payoff
+    // engine computed, and nothing else (debtResultSentence).
+    title: "The result",
     scenarioType: "debt",
     debtName: targetDebt.name || debtTypeLabel.replace(/\b\w/g, c => c.toUpperCase()),
     debtType: targetDebt.debtType,
@@ -1989,12 +2005,7 @@ function debtScenarioResult(targetDebt, extraPayment, debts) {
     boostedInterest: result.boosted.totalInterest,
     monthsSaved: result.monthsSaved,
     interestSaved: result.interestSaved,
-    verdict: (result.monthsSaved > 0 || (baselineNever && boostedPays)) ? "Worth doing" : "No change",
-    verdictReason: baselineNever && boostedPays
-      ? `Your current payment never fully clears this debt, adding $${extraPayment}/mo pays it off in ${result.boosted.monthsToPayoff} months.`
-      : result.monthsSaved > 0
-        ? `Adding $${extraPayment}/mo clears your ${targetDebt.name || debtTypeLabel} ${result.monthsSaved} months sooner and saves $${result.interestSaved} in interest.`
-        : "Your current payment is already optimal for this debt.",
+    summary: debtResultSentence(result, extraPayment, currentPayment),
     availableDebts: debts.map(d => ({ name: d.name, balance: d.balance, rate: d.rate, debtType: d.debtType })),
     debtRef: targetDebt,
   };
@@ -2041,7 +2052,10 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
         healthScoreDelta: 0,
         healthDetail: "",
         verdict: isNativeApp() ? "Daily limit reached" : "Upgrade to continue",
-        verdictReason: isNativeApp() ? "" : "Daily simulation limit reached on the free plan.",
+        // The card shows this line; on a store app it is the limit and when it resets (it was empty).
+        verdictReason: isNativeApp()
+          ? `You've used today's ${FREE_TIER_LIMITS.simulationsPerDay} simulation${FREE_TIER_LIMITS.simulationsPerDay === 1 ? "" : "s"}. ${FREE_TIER_LIMITS.simulationsPerDay === 1 ? "It resets" : "They reset"} tomorrow.`
+          : "Daily simulation limit reached on the free plan.",
         tip: "",
       });
       return;
@@ -2134,8 +2148,8 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
         twentyYr:      { value: twentyYr.finalValue, growth: twentyYr.totalGrowth },
         thirtyYr:      { value: result.finalValue, growth: result.totalGrowth },
         yearByYear:    result.yearByYear,
-        verdict: "Long-term winner",
-        verdictReason: investVerdictReason({ isLumpSum, parsedAmount, initialPrincipal, monthlyContribution, result }),
+        title: "The result",
+        summary: investVerdictReason({ isLumpSum, parsedAmount, initialPrincipal, monthlyContribution, result }),
       });
       setLoading(false);
       return;
@@ -2170,12 +2184,11 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
       monthlyIncome:      cashFlowObj.monthlyIncome,
       monthlySurplus,
     });
-    const verdictObj = calculateScenarioVerdict({
-      cashImpact:       impact.cashImpact,
-      healthScoreDelta: impact.healthScoreDelta,
-      recoveryMonths:   impact.recoveryMonths,
-    });
-    const frozenSummary = summarizeScenarioForCoach(impact, verdictObj);
+    // Prompt 3c: the explanation gets the facts only. No verdict (calculateScenarioVerdict is no longer
+    // shown or sent), no cash rating ("safe", "tight", "risky"), and no health score change: that
+    // figure is a fixed -4 / -8 the health score engine never computed, so it is not shown either.
+    const factsForProse = { amount: impact.amount, newBalance: impact.newBalance, newSafeToSpend: impact.newSafeToSpend,
+      savingsDelayWeeks: impact.savingsDelayWeeks, savingsDelayDays: impact.savingsDelayDays };
 
     // Step 4: Format JS-computed values to match the UI contract.
     // Granularity: "none" only for true zero-day delay. "X days" for 1-6 days.
@@ -2201,12 +2214,12 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
     const prompt = `Write plain-language explanation text for a financial scenario the Flourish app already calculated. The user said: ${safeQText}.
 
 The app's calculated results (DO NOT CHANGE THESE NUMBERS, only explain them):
-${JSON.stringify(frozenSummary, null, 2)}
+${JSON.stringify(factsForProse, null, 2)}
 
 Write a short, warm response. Return ONLY valid JSON (no markdown) with EXACTLY these fields:
-{"cashDetail":"1 sentence describing the cash impact","debtDetail":"1 sentence (use 'No direct debt change.' for cash purchases)","healthDetail":"1 sentence describing the score impact","verdictReason":"1 sentence justifying the verdict","tip":"1 sentence with an alternative if risky/tight, else empty string"}
+{"cashDetail":"1 sentence describing the cash impact","debtDetail":"1 sentence (use 'No direct debt change.' for cash purchases)"}
 
-Rules: do not invent or quote any number not in the calculated results above. Do not include cashImpact, savingsDelay, healthScoreDelta, or verdict. Those are already determined.`;
+Rules: do not invent or quote any number not in the calculated results above. State facts only: do not recommend, judge, or call the purchase safe, risky, affordable or unaffordable, and do not suggest an alternative.`;
 
     let prose = {};
     try {
@@ -2232,9 +2245,6 @@ Rules: do not invent or quote any number not in the calculated results above. Do
       prose = {
         cashDetail:    "This purchase will reduce your safe-to-spend balance.",
         debtDetail:    "No direct debt change.",
-        healthDetail:  "Your financial health score will be affected as shown.",
-        verdictReason: "Based on your current cash flow and buffer.",
-        tip:           "",
       };
     }
 
@@ -2245,14 +2255,12 @@ Rules: do not invent or quote any number not in the calculated results above. Do
       cashImpact:       impact.cashImpact,
       debtImpact:       "none",
       savingsDelay:     savingsDelayStr,
-      healthScoreDelta: impact.healthScoreDelta,
-      verdict:          verdictObj.verdict,
+      newSafeToSpend:   impact.newSafeToSpend,
+      title:            "The result",
+      summary:          `Spending ${formatMoney(impact.amount)} takes safe to spend until payday from ${formatMoney(safeToSpend)} to ${formatMoney(impact.newSafeToSpend)}.`,
       // Claude-written explanations:
       cashDetail:    prose.cashDetail    || "This purchase will reduce your safe-to-spend balance.",
       debtDetail:    prose.debtDetail    || "No direct debt change.",
-      healthDetail:  prose.healthDetail  || "Your financial health score will be affected as shown.",
-      verdictReason: prose.verdictReason || "Based on your current cash flow and buffer.",
-      tip:           prose.tip           || "",
     });
     setLoading(false);
   };
@@ -2269,31 +2277,19 @@ Rules: do not invent or quote any number not in the calculated results above. Do
   // Phase 1D: scenario-aware verdict styling. Maps each verdict (across all 3 scenario types) to a color/bg/emoji.
   const _verdictMeta = (v) => {
     switch (v) {
-      // Purchase verdicts
-      case "Go for it":           return { color: C.greenBright,  bg: C.greenDim,  emoji: "🟢" };
-      case "Proceed carefully":   return { color: C.goldBright,   bg: C.goldDim,   emoji: "🟡" };
-      case "Think twice":         return { color: C.orangeBright, bg: C.orangeDim, emoji: "🟠" };
-      case "Not recommended":     return { color: C.redBright,    bg: C.redDim,    emoji: "🔴" };
-      // Debt verdicts
-      case "Worth doing":         return { color: C.greenBright,  bg: C.greenDim,  emoji: "✨" };
-      case "No change":           return { color: C.muted,        bg: C.surface,   emoji: "➖" };
+      // Prompt 3c: no scenario verdicts. A result card is neutral and states facts; only these status
+      // cards keep a heading of their own.
       case "No debts tracked":    return { color: C.muted,        bg: C.surface,   emoji: "📋" };
-      // Invest verdict
-      case "Long-term winner":    return { color: C.greenBright,  bg: C.greenDim,  emoji: "📈" };
+      case "Daily limit reached": return { color: C.muted,        bg: C.surface,   emoji: "" };
       // Paywall
       case "Upgrade to continue": return { color: C.purple,       bg: C.purpleDim || C.surface, emoji: "🔒" };
-      default:                    return { color: C.redBright,    bg: C.redDim,    emoji: "🔴" };
+      default:                    return { color: C.cream,        bg: C.card,      emoji: "" };
     }
   };
   const verdictColor = result ? _verdictMeta(result.verdict).color : C.muted;
   const verdictBg    = result ? _verdictMeta(result.verdict).bg    : C.surface;
-  // "days" delays are minor (yellow ~), "weeks" are notable (yellow ~), "months" are major (red ✗).
-  // "none"/"safe"/"decreases" stay green ✓. "tight"/"increases" stay yellow ~. "risky" stays red ✗.
-  const _isDayDelay   = (v) => typeof v === "string" && /\bdays?\b/.test(v);
-  const _isWeekDelay  = (v) => typeof v === "string" && /\bweeks?\b/.test(v);
-  const _isMonthDelay = (v) => typeof v === "string" && /\bmonths?\b/.test(v);
-  const impactIcon  = (v) => v==="safe"||v==="none"||v==="decreases" ? "✓" : v==="tight"||v==="increases"||_isDayDelay(v)||_isWeekDelay(v) ? "~" : "✗";
-  const impactColor = (v) => v==="safe"||v==="none"||v==="decreases" ? C.greenBright : v==="tight"||v==="increases"||_isDayDelay(v)||_isWeekDelay(v) ? C.goldBright : C.redBright;
+  const cardTitle    = result ? (result.verdict || result.title) : "";
+  const cardText     = result ? (result.verdictReason || result.summary) : "";
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)",zIndex:999,display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -2346,9 +2342,9 @@ Rules: do not invent or quote any number not in the calculated results above. Do
             </div>
             {/* Verdict */}
             <div style={{background:verdictBg,border:`2px solid ${verdictColor}33`,borderRadius:20,padding:"18px 20px",textAlign:"center"}}>
-              <div style={{fontSize:36,marginBottom:6}}>{_verdictMeta(result.verdict).emoji}</div>
-              <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:verdictColor,marginBottom:6}}>{result.verdict}</div>
-              <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>{result.verdictReason}</div>
+              {_verdictMeta(result.verdict).emoji&&<div style={{fontSize:36,marginBottom:6}}>{_verdictMeta(result.verdict).emoji}</div>}
+              <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:verdictColor,marginBottom:6}}>{cardTitle}</div>
+              <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>{cardText}</div>
               {result.verdict === "Upgrade to continue" && onUpgrade && (
                 <button onClick={onUpgrade} style={{
                   marginTop:14,
@@ -2370,17 +2366,18 @@ Rules: do not invent or quote any number not in the calculated results above. Do
             {result.scenarioType === "purchase" && (
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 {[
-                  {label:"Cash Impact",    val:result.cashImpact,    detail:result.cashDetail,    icon:"💵"},
+                  // Prompt 3c: facts, not ratings. The cash tile shows safe to spend after the purchase
+                  // (it used to say "safe", "tight" or "risky"), and the health score tile is gone.
+                  {label:"Safe to spend after", val:formatMoney(result.newSafeToSpend), detail:result.cashDetail, icon:"💵"},
                   {label:"Debt Impact",    val:result.debtImpact,    detail:result.debtDetail,    icon:"💳"},
                   {label:"Savings Delay",  val:result.savingsDelay,  detail:"Impact on savings goals", icon:"🐷"},
-                  {label:"Health Score",   val:result.healthScoreDelta>=0?`+${result.healthScoreDelta}`:String(result.healthScoreDelta), detail:result.healthDetail, icon:"💚"},
                 ].map((item,i)=>(
                   <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px 14px 12px"}}>
                     <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
                       <span style={{fontSize:16}}>{item.icon}</span>
                       <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{item.label}</span>
                     </div>
-                    <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,color:i===3?(result.healthScoreDelta>=0?C.greenBright:C.redBright):impactColor(item.val),marginBottom:4}}>{i===3?(result.healthScoreDelta>=0?`+${result.healthScoreDelta}`:`${result.healthScoreDelta}`)+" pts":impactIcon(item.val)+" "+item.val}</div>
+                    <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,color:C.cream,marginBottom:4}}>{item.val}</div>
                     <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{item.detail}</div>
                   </div>
                 ))}
@@ -2485,14 +2482,6 @@ Rules: do not invent or quote any number not in the calculated results above. Do
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-
-            {/* Tip */}
-            {result.tip && (
-              <div style={{background:C.tealDim,border:`1px solid ${C.teal}33`,borderRadius:14,padding:"12px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
-                <span style={{fontSize:18,flexShrink:0}}>💡</span>
-                <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}><strong style={{color:C.teal}}>Better option:</strong> {result.tip}</div>
               </div>
             )}
 
