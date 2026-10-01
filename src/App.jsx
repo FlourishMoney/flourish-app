@@ -4224,6 +4224,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
           gig:{label:"Gig / Freelance",emoji:"🚗"},
           other:{label:"Other",emoji:"➕"},
           benefit:{label:"Other benefit",emoji:"📋"},
+          pension:{label:"Pension",emoji:"🏛️"},
           // US
           salary:{label:"Salary",emoji:"💼"},
           hourly:{label:"Hourly",emoji:"⏱️"},

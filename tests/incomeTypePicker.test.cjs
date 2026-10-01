@@ -32,8 +32,9 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
   t.eq(labels("CA", T.newSettingsIncome(1)),
     ["Job=employment", "Self-employed=selfemployed", "Canada Child Benefit=ccb", "Other benefit=benefit", "Pension=cpp", "Other=other"],
     "1a the six choices, mapped to the app's income types");
-  t.eq(labels("US", T.newSettingsIncome(1)), ["Job=employment", "Self-employed=selfemployed", "Other benefit=benefit", "Pension=cpp", "Other=other"],
-    "1b in the US the Canada Child Benefit is not offered");
+  // Prompt 3c: a US pension has its own type, "pension", never Canada Pension Plan.
+  t.eq(labels("US", T.newSettingsIncome(1)), ["Job=employment", "Self-employed=selfemployed", "Other benefit=benefit", "Pension=pension", "Other=other"],
+    "1b in the US the Canada Child Benefit is not offered, and Pension saves as \"pension\"");
   t.eq([T.newSettingsIncome(1).type, T.pickerValue(T.newSettingsIncome(1))], ["employment", "employment"], "1c a new income defaults to Job");
   t.eq(T.pickerValue({ id: 1, type: "ccb" }), "ccb", "1d an existing income keeps its saved type");
   t.eq([T.pickerValue({ id: 1 }), T.pickerValue({ id: 1, type: "" })], ["employment", "employment"], "1e an income saved with no type shows Job, as it was always counted");
@@ -81,6 +82,23 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
   t.ok(/incomes: \[\.\.\.\(prev\.incomes \|\| \[\]\), newSettingsIncome\(\)\]/.test(app), "4d Add income source adds a Job by default");
   t.ok(/onChange=\{e=>updateIncomeType\(inc\.id,e\.target\.value\)\}/.test(app) && /incomes: setIncomeType\(prev\.incomes, id, type\)/.test(app), "4e the picker saves the chosen type");
   t.ok(!/incomes: \[\.\.\.\(prev\.incomes \|\| \[\]\), \{ id: Date\.now\(\), label: "", amount: "", freq: "biweekly", type: "employment"/.test(app), "4f the old hard-coded employment income is gone from Settings");
+
+  // ── 5. A US pension never saves as Canada Pension Plan (prompt 3c) ───────────────────────────
+  {
+    const pensionValue = (country) => (T.incomeTypeOptions(country, T.newSettingsIncome(1)).find(o => o.label === "Pension") || {}).value;
+    t.eq([pensionValue("US"), pensionValue("CA")], ["pension", "cpp"], "5a Pension is \"pension\" in the US and \"cpp\" in Canada (as onboarding saves it)");
+    t.ok(!T.incomeTypeOptions("US", T.newSettingsIncome(1)).some(o => o.value === "cpp"), "5b a US household is never offered cpp");
+    const chosen = T.setIncomeType([T.newSettingsIncome(1)], 1, pensionValue("US"));
+    t.eq([chosen[0].type, chosen[0].sourceTypes], ["pension", ["pension"]], "5c choosing Pension in the US saves \"pension\"");
+    const legacy = { id: 2, label: "Pension", amount: "1800", freq: "monthly", type: "cpp" };
+    t.eq([T.pickerValue(legacy), labels("US", legacy).slice(-1)[0]], ["cpp", "CPP / Pension=cpp"], "5d a US income already saved as cpp stays readable, under its own name, until changed");
+    t.eq(labels("US", legacy).filter(x => x.startsWith("Pension=")), ["Pension=pension"], "5e …and the US Pension choice is still the one \"pension\" option");
+    const hh2 = (incomes) => ({ incomes, transactions: [], bills: [], accounts: [], profile: { country: "US" } });
+    const job = fill(T.newSettingsIncome(3), "Job", 2000, "biweekly");
+    t.eq(watchIncomeFigures(hh2([job, fill(chosen[0], "Pension", 1800, "monthly")]), TODAY).paycheques.map(p => p.amount), [2000], "5f a US pension is not a paycheque");
+    const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
+    t.ok(/pension:\{label:"Pension",emoji:"🏛️"\}/.test(app), "5g onboarding's income card can name a \"pension\" income");
+  }
 
   t.summary("incomeTypePicker.test");
   setImmediate(() => process.exit(process.exitCode || 0));
