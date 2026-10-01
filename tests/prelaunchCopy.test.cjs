@@ -40,7 +40,7 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b/i;
     t.ok(!/to spend freely today|Bills paid|Buffer set|Everything above this number|No guilt/.test(txt), "2c the old claims are gone from the screen");
     t.ok(!/to spend freely today|Bills paid\. Buffer set|Everything above this number|left in your safe limit today/.test(APP), "2d …and from the source");
     t.ok(/sub: `\$\{r\.remainingText\} left to spend until payday`,/.test(APP), "2e Can I afford this? says what is left until payday, not today");
-    t.ok(/const leftMsg = r\.remaining < 1 \? "Nothing left to spend until payday after this\." : `Only \$\{r\.remainingText\} left to spend until payday\.`;/.test(APP)
+    t.ok(/const leftMsg = r\.remaining < 1 \? "After this, nothing is left to spend until payday\." : `Only \$\{r\.remainingText\} left to spend until payday\.`;/.test(APP)
       && /sub: leftMsg,/.test(APP) && !/Hold everything else/.test(APP), "2g the tight result states what is left until payday, and gives no instruction");
     t.ok(!BANNED.test(txt) && !BANNED.test(ACCOUNTED), "2f none of the banned verbs");
   }
@@ -62,7 +62,7 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b/i;
     const native = (fn) => { setPlatform("ios"); try { return fn(); } finally { setPlatform("web"); } };
     const terms = native(() => textOf(A.render(A.h(A.TermsOfService, { onBack: () => {} }))));
     const s7 = terms.slice(terms.indexOf("7. "), terms.indexOf("8. ")).trim();
-    t.eq(s7, "7. Cost and usage limits The iOS and Android apps are free, and there is nothing to buy in them. No feature closes after you sign up. There are usage limits: the coach has a weekly message limit that applies to everyone, and any other limit, such as on What-If, is shown where it applies.",
+    t.eq(s7, "7. Cost and usage limits The iOS and Android apps are free, and there is nothing to buy in them. No feature closes after you sign up. There are usage limits: the coach has a weekly message limit, and any other limit, such as on What-If, is shown where it applies.",
       "1a native Terms section 7 says what the store app does, word for word");
     const webTerms = textOf(A.render(A.h(A.TermsOfService, { onBack: () => {} })));
     t.ok(/7\. Subscription & Billing/.test(webTerms), "1b (the web keeps its section 7)");

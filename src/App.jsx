@@ -5521,7 +5521,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                   } else if (r.state === "tight") {
                     // R6: $0 remaining says "Nothing left" not "Only $0 left". The fact, until payday, and no
                     // instruction (it used to end by telling the household to hold off on everything else today).
-                    const leftMsg = r.remaining < 1 ? "Nothing left to spend until payday after this." : `Only ${r.remainingText} left to spend until payday.`;
+                    const leftMsg = r.remaining < 1 ? "After this, nothing is left to spend until payday." : `Only ${r.remainingText} left to spend until payday.`;
                     setAffordResult({
                       state: "tight",
                       msg: "You can, but it's tight",
@@ -6643,8 +6643,8 @@ function SupportingFigures({ label = "How this is worked out", rows = [], defaul
       </button>
       {open&&(
         <div style={{display:"flex",flexDirection:"column",gap:SPACE.sm,paddingBottom:SPACE.sm}}>
-          {visible.map(r=>(
-            <div key={r.label} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:SPACE.md,minHeight:r.onEdit?LAYOUT.minTap:0}}>
+          {visible.map((r,i)=>(
+            <div key={`${r.label}-${i}`} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:SPACE.md,minHeight:r.onEdit?LAYOUT.minTap:0}}>
               <span style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.label}</span>
               {r.onEdit
                 ? <button onClick={r.onEdit} aria-label={`Edit ${r.label}`}
@@ -6995,8 +6995,8 @@ function PlanAhead({data, setAppData, setScreen}){
   // The overdraft card's figure comes from the SAME forecast its flag (willGoNeg) was computed over,
   // Math.max(range, 30) days, not only the days on screen (lib/forecastView.js forecastLow).
   const forecastDays = Math.max(range, 30); // the window the forecast above was generated for (today plus these days)
-  const low = forecastLow(_forecast);
-  const minBalance = low ? low.balance : Math.min(...days.map(d => d.balance));
+  const lowPoint = forecastLow(_forecast);
+  const minBalance = lowPoint ? lowPoint.balance : Math.min(...days.map(d => d.balance));
   // The bar's scale has to cover what the RANGE shows. It was "balance + one paycheque", which is
   // always enough for a fortnight and is not enough for a month: Bar paints RED when the value
   // exceeds its max, so on this demo every balance after the second paycheque — $6,591 and up —
@@ -7057,8 +7057,8 @@ function PlanAhead({data, setAppData, setScreen}){
     })()}
     {willGoNeg&&<div style={{background:C.redDim,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.red}55`}}>
       <div style={{color:C.redBright,...TYPE.headline,fontWeight:800,marginBottom:SPACE.xs}}>Projected overdraft</div>
-      <div style={{color:C.cream,...TYPE.callout,lineHeight:1.5}}>Heads up: your balance could dip to <strong style={{color:C.red}}>{formatBalance(minBalance)}</strong>{low&&low.date?` on ${fmtOccDay(low.date)}`:""}, within the next {forecastDays} days.</div>
-      <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.sm}}>{low && low.day > range ? "That day is past the range shown. Pick a longer range above to see it." : "The day-by-day list below shows which day, and what lands on it."}</div>
+      <div style={{color:C.cream,...TYPE.callout,lineHeight:1.5}}>Heads up: your balance could dip to <strong style={{color:C.red}}>{formatBalance(minBalance)}</strong>{lowPoint&&lowPoint.date?(lowPoint.day===0?" today":` on ${fmtOccDay(lowPoint.date)}`):""}, within the next {forecastDays} days.</div>
+      <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.sm}}>{lowPoint && lowPoint.day >= range ? "That day is past the range shown. Pick a longer range above to see it." : "The day-by-day list below shows that day, and what lands on it."}</div>
     </div>}
     {/* Bills summary — BillManager is the single bill entry point */}
     <Card style={row({justifyContent:"space-between",border:`1px solid ${C.teal}33`,background:`linear-gradient(135deg,rgba(0,200,224,0.05) 0%,${C.card} 100%)`})}>
@@ -7079,7 +7079,9 @@ function PlanAhead({data, setAppData, setScreen}){
     <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
     {(()=>{
       const avgDailySpend = FinancialCalcEngine.avgDailySpend(data);
-      return days.filter((d,i)=>i===0||d.income>0||d.bills.length>0||(d.occurrences||[]).length>0).map((day,i)=>{
+      // The overdraft card's low day is listed too, even with nothing landing on it (usually the eve of a
+      // payday), so "the list below shows that day" is true. Only while the card is showing.
+      return days.filter((d,i)=>i===0||d.income>0||d.bills.length>0||(d.occurrences||[]).length>0||(willGoNeg&&lowPoint&&d.idx===lowPoint.day)).map((day,i)=>{
         const isToday=day.idx===0,neg=day.balance<0,low=day.balance<150&&day.balance>=0;
         const isDrilled=expandedPlanDay===day.idx;
         const prevBalance=day.idx>0?(_forecast[day.idx-1]?.balance||0):day.balance;
@@ -12563,7 +12565,7 @@ function TermsOfService({onBack}){
       <div style={p}>You agree not to: use the App for any unlawful purpose; attempt to reverse-engineer, decompile, or hack the App; use the App to process another person's financial data without their consent; resell or sublicense the App; or interfere with the security or integrity of the App or its infrastructure.</div>
 
       <div style={h2}>{isNativeApp() ? "7. Cost and usage limits" : "7. Subscription & Billing"}</div>
-      <div style={p}>{isNativeApp() ? "The iOS and Android apps are free, and there is nothing to buy in them. No feature closes after you sign up. There are usage limits: the coach has a weekly message limit that applies to everyone, and any other limit, such as on What-If, is shown where it applies." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
+      <div style={p}>{isNativeApp() ? "The iOS and Android apps are free, and there is nothing to buy in them. No feature closes after you sign up. There are usage limits: the coach has a weekly message limit, and any other limit, such as on What-If, is shown where it applies." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
 
       <div style={h2}>8. Intellectual Property</div>
       <div style={p}>The App, including its design, logo, code, AI systems, and content, is the exclusive property of GrowSmart Inc. and is protected by copyright, trademark, and other intellectual property laws. You receive a limited, non-exclusive, non-transferable licence to use the App for personal, non-commercial purposes.</div>

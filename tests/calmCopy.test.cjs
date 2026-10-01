@@ -44,7 +44,9 @@ const RENDERED = (PROSE.match(/>[^<>{}]{12,180}</g) || []).map(s => s.slice(1, -
   // ── 2. the warnings that remain say what happened, and where to look ─────────────────────────
   t.ok(/Heads up: your balance could dip to/.test(APP),
     "2a the projected overdraft states the fact, in the household's own terms");
-  t.ok(/The day-by-day list below shows which day, and what lands on it\./.test(APP),
+  // prelaunch-copy round 2: the card now names the day, so it points at "that day"; when the day is
+  // past the range on screen it says to pick a longer range. Still a pointer, never a remedy.
+  t.ok(/The day-by-day list below shows that day, and what lands on it\./.test(APP) && /Pick a longer range above to see it\./.test(APP),
     "2b …and points at where to see it, rather than prescribing a remedy");
   // Split across a <strong>, so matched as it is actually written.
   t.ok(/>Heads up<\/strong>: your bills come to more than your balance before your next deposit\./.test(APP),

@@ -4,7 +4,7 @@
 //
 // "Pay frequency", "Est. paycheque" and the balance-bar scale used to read the first income in the list.
 // Hand-worked figures, MATH-LOCK style: each expected value is written out, not computed by the code
-// under test.
+// under test. "Pay frequency" always describes the first Est. paycheque printed under it.
 //
 //   A. One job, but a $560 monthly benefit was added first:
 //        before (incomes[0]): Monthly, $560, bar scale 560
@@ -58,6 +58,26 @@ const path = require("path");
       "B2 two paycheques, the primary job first: $2,400 every 2 weeks, then $600 every week");
     t.ok(!w.paycheques.some(p => p.label === "Canada Child Benefit"), "B3 the benefit is not a paycheque");
     t.eq(w.scalePerDeposit, 2400, "B4 the bar scale uses the primary paycheque, $2,400");
+  }
+
+  // ── B2. The review's cases: frequency and paycheque come from the same income ──────────────
+  {
+    const w1 = watchIncomeFigures(hh([
+      { id: 1, label: "Store job", amount: "1200", freq: "biweekly", type: "employment" },
+      { id: 2, label: "Canada Child Benefit", amount: "1333", freq: "monthly", type: "ccb" },
+    ]), TODAY);
+    t.eq([frequencyLabel(w1.freq), w1.paycheques.map(p => p.amount), w1.scalePerDeposit], ["Every 2 weeks", [1200], 1333],
+      "B5 a $1,200 biweekly job beside a larger $1,333 monthly benefit: Every 2 weeks over $1,200 (the bar scale still covers the $1,333)");
+    const w2 = watchIncomeFigures(hh([
+      { id: 1, label: "Part-time", amount: "500", freq: "biweekly", type: "employment" },
+      { id: 2, label: "Consulting", amount: "4000", freq: "monthly", type: "selfemployed" },
+    ]), TODAY);
+    t.eq([frequencyLabel(w2.freq), w2.paycheques.map(p => [p.label, p.amount, cadenceLabel(p.freq)])],
+      ["Monthly", [["Consulting", 4000, "every month"], ["Part-time", 500, "every 2 weeks"]]],
+      "B6 self-employed pay counts: $4,000 every month first, then $500 every 2 weeks, under Monthly");
+    const long = watchIncomeFigures(hh([{ id: 1, label: "Weekend warehouse shifts at the depot", amount: "600", freq: "weekly", type: "employment" },
+      { id: 2, label: "Day job", amount: "2400", freq: "biweekly", type: "employment" }]), TODAY);
+    t.eq(long.paycheques[1].label, "Weekend warehouse shifts…", "B7 a long income name is cut at a word, with an ellipsis");
   }
 
   // ── C. No job ────────────────────────────────────────────────────────────────────────────────

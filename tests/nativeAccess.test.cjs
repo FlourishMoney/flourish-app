@@ -88,7 +88,7 @@ function weekKey(d = new Date()) {
   setUser({ plan: "trial", coachUsed: 2, trialEndsInDays: 10 });
   t.eq(A.isTrialActive(), true, "3f (a household still in its trial)");
   t.eq([as("ios", () => A.canUseCoach({ native: true })), as("ios", () => A.coachUnlimited({ native: true, isPremium: true }))], [false, false],
-    "3g on a store app the weekly limit applies to them too: it is the same for everyone");
+    "3g on a store app the weekly limit applies to a trial user too: the trial lifts nothing there");
   t.eq([A.canUseCoach(), A.coachUnlimited({ native: false, isPremium: true })], [true, true], "3h (on the web a trial still lifts it, as before)");
   setUser({ plan: "beta_founder", coachUsed: 2 });
   t.eq(as("ios", () => A.coachUnlimited({ native: true, isPremium: true })), true, "3i a founder flag still lifts it on a store app (plan flags left as they were)");

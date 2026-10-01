@@ -41,10 +41,32 @@ const path = require("path");
 
   const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
   t.ok(/const \{ forecast: _forecast, willGoNegative: willGoNeg[^}]*\} = ForecastEngine\.generate\(data, Math\.max\(range, 30\)\);/.test(app)
-    && /const low = forecastLow\(_forecast\);/.test(app), "2a Watch takes the low point from _forecast, the array willGoNeg came from");
+    && /const lowPoint = forecastLow\(_forecast\);/.test(app), "2a Watch takes the low point from _forecast, the array willGoNeg came from");
   t.ok(/const forecastDays = Math\.max\(range, 30\);/.test(app) && /within the next \{forecastDays\} days\./.test(app) && !/dip to <strong[^>]*>\{formatBalance\(minBalance\)\}<\/strong> before your next deposit/.test(app),
     "2b the card names the window it looked at, and no longer claims \"before your next deposit\"");
-  t.ok(/low\.day > range \? "That day is past the range shown\. Pick a longer range above to see it\."/.test(app), "2c …and says when that day is past the range on screen");
+  t.ok(/lowPoint && lowPoint\.day >= range \? "That day is past the range shown\. Pick a longer range above to see it\."/.test(app), "2c …and says when that day is past the range on screen (the list shows days 0 to range - 1)");
+
+  // ── 3. Rendered: the card names a day, and the list below shows that day ────────────────────
+  // The low point is usually the eve of a payday, when nothing lands, so the list (paydays and bill
+  // days only) used to skip it while the card pointed at it. The CA demo with $0 in cash, as of today.
+  {
+    const { loadApp, textOf, describe } = require("./_renderApp.cjs");
+    const D = await import("../src/lib/demoFixture.js");
+    const now = new Date();
+    const broke = { accounts: D.demoAccountsFor("CA").map(a => (a.type === "checking" || a.type === "savings") ? { ...a, balance: 0 } : a),
+      debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(now, "CA"), bills: D.buildDemoBills(now, "CA"),
+      transactions: D.buildDemoTxns(now, "CA"), profile: D.demoProfileFor("CA") };
+    const gg = ForecastEngine.generate(broke, 30, null, now);
+    const lp = forecastLow(gg.forecast);
+    t.eq(gg.willGoNegative && lp.balance < 0, true, "3a (the $0-cash demo projects an overdraft)");
+    let A = {}, txt = "";
+    try { A = loadApp(["PlanAhead"]); txt = textOf(A.render(A.h(A.PlanAhead, { data: broke, setAppData: () => {}, setScreen: () => {} }))); }
+    catch (e) { t.ok(false, `3 Watch renders: ${describe(e)}`); }
+    const label = lp.date.toLocaleDateString("en-CA", { weekday: "short", month: "short", day: "numeric" });
+    t.ok(txt.includes(`on ${label}, within the next 30 days.`), `3b the card names the low day (${label})`);
+    t.ok(txt.split(label).length - 1 >= 2, "3c …and the day-by-day list shows that day too, under the card");
+    t.ok(txt.includes("The day-by-day list below shows that day, and what lands on it."), "3d …which is what the card says");
+  }
 
   t.summary("overdraftLow.test");
 })();
