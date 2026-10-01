@@ -124,7 +124,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     t.ok(/const allLessons=KIDS_LESSONS;/.test(APP) && /const lessons=KIDS_LESSONS;/.test(APP), "3h2 …and both kids screens read that one deck");
     const tfsa = A.CC.CA.taxTips.find(x => /^TFSA/.test(x.title));
     t.ok(tfsa && !/\$/.test(tfsa.body) && /CRA My Account/.test(tfsa.body), "3i the TFSA tip names no unsourced room figure and points to CRA My Account");
-    const rrsp = A.CC.CA.taxTips.find(x => x.action === "Check My RRSP Room");
+    const rrsp = A.CC.CA.taxTips.find(x => x.action === "RRSP room: CRA My Account");
     t.eq(rrsp && rrsp.savings, "Your marginal rate", "3j the RRSP chip no longer promises \"Up to 33%\"");
     for (const gone of ["$45 to $48", "saves ~$180/mo", "frees $50-100/mo", "can save $150+/mo", "Worth more than any subscription cancel", "typically 19.99% to 29.99%",
       "Most people leave thousands on the table", "#1 habit of couples", "what most couples never do", "#1 cause of US bankruptcy", "becomes $386", "$245,000", "$68,000",

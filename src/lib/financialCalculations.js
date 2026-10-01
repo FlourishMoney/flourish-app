@@ -280,37 +280,21 @@ export function simulateSavingsTimeline({ targetAmount, currentSaved, monthlyCon
   };
 }
 
-// ── 7. calculateScenarioVerdict ──────────────────────────────────────────────
-// Rule-based verdict engine — no AI involved.
-export function calculateScenarioVerdict({ cashImpact, healthScoreDelta, recoveryMonths }) {
-  if (cashImpact === "risky") {
-    return { verdict: "Not recommended", priority: 4 };
-  }
-  if (cashImpact === "tight") {
-    if (recoveryMonths == null || recoveryMonths > 3) {
-      return { verdict: "Think twice", priority: 3 };
-    }
-    return { verdict: "Proceed carefully", priority: 2 };
-  }
-  if (_num(healthScoreDelta) <= -2) {
-    return { verdict: "Proceed carefully", priority: 2 };
-  }
-  return { verdict: "Go for it", priority: 1 };
-}
+// ── 7. (calculateScenarioVerdict removed, prompt 3d) ────────────────────────
+// It graded a purchase "Go for it", "Proceed carefully", "Think twice" or "Not recommended". What-If
+// stopped showing or sending verdicts in prompt 3c; the function is gone so none can come back.
 
 // ── 8. summarizeScenarioForCoach ─────────────────────────────────────────────
-// Frozen, read-only block of pre-computed numbers that the Coach may cite.
-export function summarizeScenarioForCoach(impact, verdict) {
+// Frozen, read-only block of pre-computed facts the What-If explanation may cite: the amounts only.
+// No verdict, no cash rating ("safe" / "tight" / "risky") and no health score change (a fixed -4 / -8
+// the health score engine never computed), so the model is never handed a judgment to repeat.
+export function summarizeScenarioForCoach(impact) {
   return {
     amount:            impact.amount,
     newBalance:        impact.newBalance,
     newSafeToSpend:    impact.newSafeToSpend,
-    cashImpact:        impact.cashImpact,
     savingsDelayWeeks: impact.savingsDelayWeeks,
     savingsDelayDays:  impact.savingsDelayDays,
-    healthScoreDelta:  impact.healthScoreDelta,
-    recoveryMonths:    impact.recoveryMonths,
-    verdict:           verdict.verdict,
   };
 }
 

@@ -135,8 +135,10 @@ const household = {
     t.ok(false, `Do → Goals → Budget renders for a household with a budget: ${describe(e)}`);
   }
   if (goalsBudget != null) {
-    const panel = between(goalsBudget, "Where you could save", "Monthly Category Budgets");
-    t.ok(panel != null, "Goals → Budget shows \"Where you could save\" when a budget is more than 20% over this month");
+    // Prompt 3d: the panel's heading states the fact ("Over budget this month"), not "Where you could save".
+    const panel = between(goalsBudget, "Over budget this month", "Monthly Category Budgets");
+    t.ok(panel != null, "Goals → Budget shows \"Over budget this month\" when a budget is more than 20% over this month");
+    t.ok(!goalsBudget.includes("Where you could save"), "…and no longer says \"Where you could save\"");
     if (panel != null) {
       t.ok(panel.includes("Coffee & Dining $50 over budget here this month"), `Coffee & Dining, $150 against $100, is listed as "$50 over budget here this month" (panel: ${panel})`);
       t.eq(panel, "☕ Coffee & Dining $50 over budget here this month", "the panel states the one budget that is over and by how much, and nothing else: no projection in any wording");

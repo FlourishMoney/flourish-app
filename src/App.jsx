@@ -10,7 +10,7 @@ import {
   Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
-import { parseAmountFromQuery, simulatePurchaseImpact, simulateDebtPayoffForDebt, debtMinimumPayment, debtLinkKey, withDebtIds, newDebtId, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, applyDebtRate, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
+import { parseAmountFromQuery, simulatePurchaseImpact, summarizeScenarioForCoach, simulateDebtPayoffForDebt, debtMinimumPayment, debtLinkKey, withDebtIds, newDebtId, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, applyDebtRate, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
   BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
@@ -142,19 +142,19 @@ const CC = {
     ],
     debtTypes:["Credit Card","Line of Credit","HELOC","Car Loan","OSAP / Student Loan","Personal Loan","Mortgage","Buy Now Pay Later","Other"],
     taxTips:[
-      {title:"RRSP Contribution",body:`Every RRSP dollar reduces your taxable income. At a 30% marginal rate, an example rate: $5,000 × 30% = $1,500 back at tax time. The deadline is the 60th day of the following year, moved to the next business day when it falls on a weekend (CRA). The next one, for the ${nextRrspDeadline().taxYear} tax year: ${formatRrspDeadline(nextRrspDeadline().date)}.`,savings:"Your marginal rate",flag:"🇨🇦",priority:"high",action:"Check My RRSP Room"},
-      {title:"TFSA: Room Builds Up Every Year",body:"A TFSA can hold investments as well as savings, and growth inside it is tax-free. Contribution room builds up every year from age 18, whether or not you have opened an account; CRA My Account shows yours.",savings:"Tax-free growth",flag:"🇨🇦",priority:"high",action:"Calculate My Room"},
-      {title:"FHSA (First Home Savings Account)",body:`If you've never owned a home, you can contribute up to $${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/year and get a tax deduction, like an RRSP. Unused room carries forward. Withdraw tax-free to buy your first home.`,savings:`Up to $${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/yr`,flag:"🇨🇦",priority:"high",action:"Open an FHSA"},
-      {title:"Canada Groceries and Essentials Benefit",body:`The CRA adds up parts rather than paying one flat amount: up to $${TAX_DATA.CA.CGEB.eligibleIndividual} for you, $${TAX_DATA.CA.CGEB.eligibleSpouse} for a spouse or common-law partner, $${TAX_DATA.CA.CGEB.perChildUnder19} for each child under 19, but $${TAX_DATA.CA.CGEB.firstChildSingleParent} for the first child if you are a single parent, plus $${TAX_DATA.CA.CGEB.additionalSingle} more if you are single. So a single person with no children gets up to $${TAX_DATA.CA.CGEB.maxSingleNoChildren}, a couple up to $${TAX_DATA.CA.CGEB.maxCoupleNoChildren}, and a single parent with one child up to $${(TAX_DATA.CA.CGEB.eligibleIndividual+TAX_DATA.CA.CGEB.firstChildSingleParent+TAX_DATA.CA.CGEB.additionalSingle).toLocaleString()}. Payments taper above a family net income of $${TAX_DATA.CA.CGEB.phaseOutThreshold.toLocaleString()}. Most people never apply, filing is enough, but ${TAX_DATA.CA.CGEB.applyNote}. The CRA calculator gives your own number.`,savings:`Up to $${TAX_DATA.CA.CGEB.eligibleIndividual} each, plus $${TAX_DATA.CA.CGEB.perChildUnder19} per child`,flag:"🇨🇦",priority:"medium",action:"File Your Taxes"},
-      {title:"Canada Child Benefit (CCB)",body:`Tax-free monthly payments for children under 18. Maximum ${TAX_DATA.CA.CCB.yearLabel}: $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/yr per child under 6 ($${ccbMonthly(TAX_DATA.CA.CCB.maxUnder6)}/mo) and $${TAX_DATA.CA.CCB.max6to17.toLocaleString()}/yr per child aged 6 to 17 ($${ccbMonthly(TAX_DATA.CA.CCB.max6to17)}/mo). A family with two kids under 6 and an adjusted family net income of $${TAX_DATA.CA.CCB.phaseOutStart.toLocaleString()} or less receives the full $${(TAX_DATA.CA.CCB.maxUnder6*2).toLocaleString()} a year, tax-free. Apply on CRA My Account or at birth registration.`,savings:`Up to $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/child under 6`,flag:"🇨🇦",priority:"high",action:"Apply on CRA"},
-      {title:"Home Office Deduction",body:"Work from home? Employees must use the detailed method with a signed T2200 from their employer (the $2/day flat rate ended after 2022). Claim your workspace percentage of rent, utilities, and internet. Self-employed? Claim actual rent, internet, hydro proportionally.",savings:"Varies: % of home expenses",flag:"🇨🇦",priority:"medium",action:"Track Home Office Days"},
+      {title:"RRSP Contribution",body:`Every RRSP dollar reduces your taxable income. At a 30% marginal rate, an example rate: $5,000 × 30% = $1,500 back at tax time. The deadline is the 60th day of the following year, moved to the next business day when it falls on a weekend (CRA). The next one, for the ${nextRrspDeadline().taxYear} tax year: ${formatRrspDeadline(nextRrspDeadline().date)}.`,savings:"Your marginal rate",flag:"🇨🇦",priority:"high",action:"RRSP room: CRA My Account"},
+      {title:"TFSA: Room Builds Up Every Year",body:"A TFSA can hold investments as well as savings, and growth inside it is tax-free. Contribution room builds up every year from age 18, whether or not you have opened an account; CRA My Account shows yours.",savings:"Tax-free growth",flag:"🇨🇦",priority:"high",action:"TFSA room: CRA My Account"},
+      {title:"FHSA (First Home Savings Account)",body:`If you've never owned a home, you can contribute up to $${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/year and get a tax deduction, like an RRSP. Unused room carries forward. Withdrawals to buy a first home are tax-free.`,savings:`Up to $${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/yr`,flag:"🇨🇦",priority:"high",action:"Details: canada.ca"},
+      {title:"Canada Groceries and Essentials Benefit",body:`The CRA adds up parts rather than paying one flat amount: up to $${TAX_DATA.CA.CGEB.eligibleIndividual} for you, $${TAX_DATA.CA.CGEB.eligibleSpouse} for a spouse or common-law partner, $${TAX_DATA.CA.CGEB.perChildUnder19} for each child under 19, but $${TAX_DATA.CA.CGEB.firstChildSingleParent} for the first child if you are a single parent, plus $${TAX_DATA.CA.CGEB.additionalSingle} more if you are single. So a single person with no children gets up to $${TAX_DATA.CA.CGEB.maxSingleNoChildren}, a couple up to $${TAX_DATA.CA.CGEB.maxCoupleNoChildren}, and a single parent with one child up to $${(TAX_DATA.CA.CGEB.eligibleIndividual+TAX_DATA.CA.CGEB.firstChildSingleParent+TAX_DATA.CA.CGEB.additionalSingle).toLocaleString()}. Payments taper above a family net income of $${TAX_DATA.CA.CGEB.phaseOutThreshold.toLocaleString()}. Most people never apply, filing is enough, but ${TAX_DATA.CA.CGEB.applyNote}. The CRA calculator gives your own number.`,savings:`Up to $${TAX_DATA.CA.CGEB.eligibleIndividual} each, plus $${TAX_DATA.CA.CGEB.perChildUnder19} per child`,flag:"🇨🇦",priority:"medium",action:"Paid after a return is filed"},
+      {title:"Canada Child Benefit (CCB)",body:`Tax-free monthly payments for children under 18. Maximum ${TAX_DATA.CA.CCB.yearLabel}: $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/yr per child under 6 ($${ccbMonthly(TAX_DATA.CA.CCB.maxUnder6)}/mo) and $${TAX_DATA.CA.CCB.max6to17.toLocaleString()}/yr per child aged 6 to 17 ($${ccbMonthly(TAX_DATA.CA.CCB.max6to17)}/mo). A family with two kids under 6 and an adjusted family net income of $${TAX_DATA.CA.CCB.phaseOutStart.toLocaleString()} or less receives the full $${(TAX_DATA.CA.CCB.maxUnder6*2).toLocaleString()} a year, tax-free. Apply on CRA My Account or at birth registration.`,savings:`Up to $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/child under 6`,flag:"🇨🇦",priority:"high",action:"Applied for through the CRA"},
+      {title:"Home Office Deduction",body:"Work from home? Employees use the detailed method, with a T2200 signed by their employer (the $2/day flat rate ended after 2022). The claim is the workspace share of rent, utilities and internet. For the self-employed it is the business share of rent, internet and hydro.",savings:"Varies: % of home expenses",flag:"🇨🇦",priority:"medium",action:"Details: canada.ca"},
       // The Ontario Trillium Benefit is NOT a base Canadian tip — it is Ontario-only, and sitting here
       // meant a household in British Columbia was told to apply for it. It is added by the
       // province === "ON" block further down, which was always the intended path.
-      {title:"Disability Tax Credit (DTC)",body:`If you or a dependent has a severe disability, the DTC reduces the federal tax you owe by up to ~$${creditWorth(TAX_DATA.CA.INDEXED_2026.disabilityAmount).toLocaleString()}/year (${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% × the $${TAX_DATA.CA.INDEXED_2026.disabilityAmount.toLocaleString()} disability amount for ${TAX_DATA.CA.INDEXED_2026.taxYear}), plus retroactive claims. Often missed. A doctor fills out T2201.`,savings:`~$${creditWorth(TAX_DATA.CA.INDEXED_2026.disabilityAmount).toLocaleString()} federal tax reduction`,flag:"🇨🇦",priority:"medium",action:"Get T2201 Form"},
-      {title:"Child Care Expense Deduction",body:"Daycare, after-school programs, summer camp. Most childcare costs are deductible, and the deduction is normally claimed by the lower-income spouse. The annual limit per child depends on the child's age and is set by the CRA. Check the current limits on line 21400 before you file.",savings:"Deduction, limit set per child",flag:"🇨🇦",priority:"high",action:"Gather Receipts"},
-      {title:"RESP: Free Government Money",body:"Open an RESP for your child and the government tops up your contributions with the Canada Education Savings Grant, and adds the Canada Learning Bond for lower-income families without you contributing at all. Check the current grant rates on Canada.ca before you set your monthly amount.",savings:"Government grant on top of what you save",flag:"🇨🇦",priority:"high",action:"Open an RESP"},
-      {title:"Canada Workers Benefit (CWB)",body:`A refundable credit for people who work and earn a low income. You need working income, not just a low income, so earnings are what qualify you. Outside ${TAX_DATA.CA.CWB.variesIn.join(", ")}, the ${TAX_DATA.CA.CWB.taxYear} maximum is $${TAX_DATA.CA.CWB.maxSingle.toLocaleString()} single or $${TAX_DATA.CA.CWB.maxFamily.toLocaleString()} for a family, paid in full under $${TAX_DATA.CA.CWB.reduceOverSingle.toLocaleString()} single / $${TAX_DATA.CA.CWB.reduceOverFamily.toLocaleString()} family and nothing above $${TAX_DATA.CA.CWB.nilOverSingle.toLocaleString()} / $${TAX_DATA.CA.CWB.nilOverFamily.toLocaleString()}. ${TAX_DATA.CA.CWB.variesIn.join(", ")} set their own amounts and cut-offs. Check the CRA page for yours. Many low-income workers miss this entirely.`,savings:`Up to $${TAX_DATA.CA.CWB.maxSingle.toLocaleString()} single / $${TAX_DATA.CA.CWB.maxFamily.toLocaleString()} family outside ${TAX_DATA.CA.CWB.variesIn.join(", ")}`,flag:"🇨🇦",priority:"medium",action:"Check Eligibility"},
+      {title:"Disability Tax Credit (DTC)",body:`If you or a dependent has a severe disability, the DTC reduces the federal tax you owe by up to ~$${creditWorth(TAX_DATA.CA.INDEXED_2026.disabilityAmount).toLocaleString()}/year (${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% × the $${TAX_DATA.CA.INDEXED_2026.disabilityAmount.toLocaleString()} disability amount for ${TAX_DATA.CA.INDEXED_2026.taxYear}), plus retroactive claims. Often missed. A doctor fills out T2201.`,savings:`~$${creditWorth(TAX_DATA.CA.INDEXED_2026.disabilityAmount).toLocaleString()} federal tax reduction`,flag:"🇨🇦",priority:"medium",action:"Form T2201"},
+      {title:"Child Care Expense Deduction",body:"Daycare, after-school programs, summer camp. Most childcare costs are deductible, and the deduction is normally claimed by the lower-income spouse. The annual limit per child depends on the child's age and is set by the CRA. Check the current limits on line 21400 before you file.",savings:"Deduction, limit set per child",flag:"🇨🇦",priority:"high",action:"Line 21400"},
+      {title:"RESP: Government Grants on Top",body:"In an RESP the government adds the Canada Education Savings Grant on top of contributions, and the Canada Learning Bond for lower-income families even with no contributions. Check the current grant rates on Canada.ca.",savings:"Government grant on top of what you save",flag:"🇨🇦",priority:"high",action:"Details: canada.ca"},
+      {title:"Canada Workers Benefit (CWB)",body:`A refundable credit for people who work and earn a low income. You need working income, not just a low income, so earnings are what qualify you. Outside ${TAX_DATA.CA.CWB.variesIn.join(", ")}, the ${TAX_DATA.CA.CWB.taxYear} maximum is $${TAX_DATA.CA.CWB.maxSingle.toLocaleString()} single or $${TAX_DATA.CA.CWB.maxFamily.toLocaleString()} for a family, paid in full under $${TAX_DATA.CA.CWB.reduceOverSingle.toLocaleString()} single / $${TAX_DATA.CA.CWB.reduceOverFamily.toLocaleString()} family and nothing above $${TAX_DATA.CA.CWB.nilOverSingle.toLocaleString()} / $${TAX_DATA.CA.CWB.nilOverFamily.toLocaleString()}. ${TAX_DATA.CA.CWB.variesIn.join(", ")} set their own amounts and cut-offs. Check the CRA page for yours. Many low-income workers miss this entirely.`,savings:`Up to $${TAX_DATA.CA.CWB.maxSingle.toLocaleString()} single / $${TAX_DATA.CA.CWB.maxFamily.toLocaleString()} family outside ${TAX_DATA.CA.CWB.variesIn.join(", ")}`,flag:"🇨🇦",priority:"medium",action:"Details: canada.ca"},
     ],
     learnCards:[
       // Concepts only (prelaunch-copy, prompt 3): what each thing is and how it works, never an
@@ -175,7 +175,7 @@ const CC = {
     ],
     benefitsChecker:[
       {name:"Canada Child Benefit",icon:"👶",eligible:"Has children under 18",amount:`Up to $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/child under 6`,apply:"CRA My Account",url:"https://canada.ca/ccb"},
-      {name:"Canada Groceries and Essentials Benefit",icon:"🛒",eligible:"Low-to-modest family net income, return filed",amount:`Up to $${TAX_DATA.CA.CGEB.eligibleIndividual} each + $${TAX_DATA.CA.CGEB.perChildUnder19}/child`,apply:"Check the CRA calculator",url:TAX_DATA.CA.CGEB.calculator},
+      {name:"Canada Groceries and Essentials Benefit",icon:"🛒",eligible:"Low-to-modest family net income, return filed",amount:`Up to $${TAX_DATA.CA.CGEB.eligibleIndividual} each + $${TAX_DATA.CA.CGEB.perChildUnder19}/child`,apply:"CRA benefits calculator",url:TAX_DATA.CA.CGEB.calculator},
       // `province` gates a benefit that is not federal. This row was shown to every Canadian — a claim
       // about money owed, made to someone who is not owed it. The same defect the tip list had, in a
       // second array. Entries with no `province` are federal and shown to everyone.
@@ -223,19 +223,19 @@ const CC = {
     ],
     debtTypes:["Credit Card","Student Loan (Federal)","Student Loan (Private)","Medical Debt","Car Loan","Personal Loan","Mortgage","HELOC","Payday Loan","Buy Now Pay Later","Other"],
     taxTips:[
-      {title:"Earned Income Tax Credit (EITC)",body:`With 3 or more qualifying children, the credit phases out completely at ${usd(TAX_DATA.US.EITC_PHASEOUT_3PLUS.single)} of income (single) or ${usd(TAX_DATA.US.EITC_PHASEOUT_3PLUS.joint)} (married filing jointly) (${taxCite(TAX_DATA.US.EITC_PHASEOUT_3PLUS)}). Below that you could get up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} back (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3 or more children), even if you owe nothing. Must file to claim.`,savings:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,flag:"🇺🇸",priority:"high",action:"Check EITC Eligibility"},
-      {title:"Child Tax Credit",body:`Up to ${usd(TAX_DATA.US.CHILD_TAX_CREDIT.value)} per qualifying child under 17, of which up to ${usd(TAX_DATA.US.CHILD_TAX_CREDIT.refundable)} is refundable, so it can be paid even when no tax is owed (${taxCite(TAX_DATA.US.CHILD_TAX_CREDIT)}).`,savings:`${usd(TAX_DATA.US.CHILD_TAX_CREDIT.value)}/child (${taxCite(TAX_DATA.US.CHILD_TAX_CREDIT)})`,flag:"🇺🇸",priority:"high",action:"Claim on Schedule 8812"},
-      {title:"401(k): Get the Full Match First",body:"If your employer matches 401(k) contributions, not contributing enough to get the full match is leaving free money on the table. A 4% match on $50k = $2,000/year you're giving up.",savings:`Up to $${TAX_DATA.US.K401_DEFERRAL.value.toLocaleString("en-US")}/yr (2026)`,flag:"🇺🇸",priority:"high",action:"Increase 401k Contributions"},
-      {title:"HSA: The Triple Tax Advantage",body:"If you have a high-deductible health plan, an HSA lets you contribute pre-tax, grow tax-free, and withdraw tax-free for medical expenses.",savings:`Up to $${TAX_DATA.US.HSA_SELF_ONLY.value.toLocaleString("en-US")}/yr (2026)`,flag:"🇺🇸",priority:"high",action:"Open an HSA"},
-      {title:"Roth IRA: Tax-Free Retirement",body:`You can contribute up to ${usd(TAX_DATA.US.ROTH_IRA.limit)} a year (${usd(TAX_DATA.US.ROTH_IRA.limit + TAX_DATA.US.ROTH_IRA.catchUp50)} at 50 or older). The amount phases out between ${usd(TAX_DATA.US.ROTH_IRA.phaseStartSingle)} and ${usd(TAX_DATA.US.ROTH_IRA.phaseEndSingle)} of income (single) or ${usd(TAX_DATA.US.ROTH_IRA.phaseStartJoint)} and ${usd(TAX_DATA.US.ROTH_IRA.phaseEndJoint)} (married filing jointly) (${taxCite(TAX_DATA.US.ROTH_IRA)}). You pay tax now, and qualified withdrawals in retirement, growth included, are tax-free.`,savings:`Up to ${usd(TAX_DATA.US.ROTH_IRA.limit)}/yr (${taxCite(TAX_DATA.US.ROTH_IRA)})`,flag:"🇺🇸",priority:"high",action:"Open a Roth IRA"},
-      {title:"Student Loan Interest Deduction",body:`Paying student loans? You may be able to deduct up to ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.max)} of interest a year, even without itemizing. It phases out above ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.phaseStartSingle)} of income (single) or ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.phaseStartJoint)} (joint) (${taxCite(TAX_DATA.US.STUDENT_LOAN_INTEREST)}).`,savings:`Up to ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.max)} (${taxCite(TAX_DATA.US.STUDENT_LOAN_INTEREST)})`,flag:"🇺🇸",priority:"medium",action:"Find 1098-E Form"},
-      {title:"Child & Dependent Care Credit",body:`Paying for daycare, after-school, or a caregiver while you work? The credit is a percentage of up to ${usd(TAX_DATA.US.CHILD_CARE_CREDIT.expensesOne)} of care expenses (1 person) or ${usd(TAX_DATA.US.CHILD_CARE_CREDIT.expensesTwoPlus)} (2 or more). The top rate is ${TAX_DATA.US.CHILD_CARE_CREDIT.maxRatePct}% and it falls as income rises (${taxCite(TAX_DATA.US.CHILD_CARE_CREDIT)}). Check the current rates on IRS.gov.`,savings:`Top rate ${TAX_DATA.US.CHILD_CARE_CREDIT.maxRatePct}% (${taxCite(TAX_DATA.US.CHILD_CARE_CREDIT)})`,flag:"🇺🇸",priority:"medium",action:"Track Care Receipts"},
-      {title:"Saver's Credit",body:`Contributing to a 401k or IRA on a low-to-mid income? The Saver's Credit is up to ${usd(TAX_DATA.US.SAVERS_CREDIT.maxCredit)} (${usd(TAX_DATA.US.SAVERS_CREDIT.maxCreditJoint)} joint). The income limits are ${usd(TAX_DATA.US.SAVERS_CREDIT.agiSingle)} single, ${usd(TAX_DATA.US.SAVERS_CREDIT.agiHoH)} head of household and ${usd(TAX_DATA.US.SAVERS_CREDIT.agiJoint)} joint (${taxCite(TAX_DATA.US.SAVERS_CREDIT)}).`,savings:`Up to ${usd(TAX_DATA.US.SAVERS_CREDIT.maxCredit)} (${taxCite(TAX_DATA.US.SAVERS_CREDIT)})`,flag:"🇺🇸",priority:"medium",action:"Check Form 8880"},
-      {title:"American Opportunity Tax Credit",body:`Paying for the first ${TAX_DATA.US.AOTC.years} years of college? The credit is up to ${usd(TAX_DATA.US.AOTC.max)} a year per student, and ${TAX_DATA.US.AOTC.refundablePct}% of it (up to ${usd(TAX_DATA.US.AOTC.refundableMax)}) is refundable even if you owe nothing (${taxCite(TAX_DATA.US.AOTC)}).`,savings:`Up to ${usd(TAX_DATA.US.AOTC.max)}/yr (${taxCite(TAX_DATA.US.AOTC)})`,flag:"🇺🇸",priority:"medium",action:"Claim on Form 8863"},
-      {title:"Medical Expense Deduction",body:`Medical expenses above ${TAX_DATA.US.MEDICAL_AGI_FLOOR.pct}% of your adjusted gross income are deductible if you itemize (${taxCite(TAX_DATA.US.MEDICAL_AGI_FLOOR)}).`,savings:"Varies",flag:"🇺🇸",priority:"low",action:"Track Medical Receipts"},
-      {title:"Home Office Deduction",body:`Self-employed and work from home? The simplified method allows ${usd(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.perSqFt)} per square foot, up to ${TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.maxSqFt} sq ft: ${TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.maxSqFt} × ${usd(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.perSqFt)} = ${usd(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.max)} (${taxCite(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED)}).`,savings:`Up to ${usd(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.max)} (${taxCite(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED)})`,flag:"🇺🇸",priority:"medium",action:"Measure Your Office"},
-      {title:`No Tax on Tips (${TAX_DATA.US.TIPS_DEDUCTION.firstYear} to ${TAX_DATA.US.TIPS_DEDUCTION.lastYear})`,body:`Work in a tipped occupation: restaurant, salon, hotel, rideshare, personal trainer? Deduct up to ${usd(TAX_DATA.US.TIPS_DEDUCTION.max)} of qualified tips from your federal income. No itemizing required. It phases out above ${usd(TAX_DATA.US.TIPS_DEDUCTION.phaseStartSingle)} of modified adjusted gross income (${usd(TAX_DATA.US.TIPS_DEDUCTION.phaseStartJoint)} joint), and applies ${TAX_DATA.US.TIPS_DEDUCTION.firstYear} through ${TAX_DATA.US.TIPS_DEDUCTION.lastYear} (${taxCite(TAX_DATA.US.TIPS_DEDUCTION)}).`,savings:`Up to ${usd(TAX_DATA.US.TIPS_DEDUCTION.max)} deduction`,flag:"🇺🇸",priority:"high",action:"Track Tips: Form 4137"},
-      {title:`No Tax on Overtime (${TAX_DATA.US.OVERTIME_DEDUCTION.firstYear} to ${TAX_DATA.US.OVERTIME_DEDUCTION.lastYear})`,body:`Earn FLSA-required overtime (time-and-a-half)? You can deduct the premium 'half' portion, up to ${usd(TAX_DATA.US.OVERTIME_DEDUCTION.max)} (${usd(TAX_DATA.US.OVERTIME_DEDUCTION.maxJoint)} if married filing jointly). It phases out above ${usd(TAX_DATA.US.OVERTIME_DEDUCTION.phaseStartSingle)} of modified adjusted gross income (${usd(TAX_DATA.US.OVERTIME_DEDUCTION.phaseStartJoint)} joint), and applies ${TAX_DATA.US.OVERTIME_DEDUCTION.firstYear} through ${TAX_DATA.US.OVERTIME_DEDUCTION.lastYear} (${taxCite(TAX_DATA.US.OVERTIME_DEDUCTION)}). Salary-exempt workers generally don't qualify.`,savings:`Up to ${usd(TAX_DATA.US.OVERTIME_DEDUCTION.max)} deduction`,flag:"🇺🇸",priority:"medium",action:"Check Your W-2 Overtime"},
+      {title:"Earned Income Tax Credit (EITC)",body:`With 3 or more qualifying children, the credit phases out completely at ${usd(TAX_DATA.US.EITC_PHASEOUT_3PLUS.single)} of income (single) or ${usd(TAX_DATA.US.EITC_PHASEOUT_3PLUS.joint)} (married filing jointly) (${taxCite(TAX_DATA.US.EITC_PHASEOUT_3PLUS)}). Below that you could get up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} back (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3 or more children), even if you owe nothing. It is paid only when a return is filed.`,savings:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,flag:"🇺🇸",priority:"high",action:"Details: irs.gov/eitc"},
+      {title:"Child Tax Credit",body:`Up to ${usd(TAX_DATA.US.CHILD_TAX_CREDIT.value)} per qualifying child under 17, of which up to ${usd(TAX_DATA.US.CHILD_TAX_CREDIT.refundable)} is refundable, so it can be paid even when no tax is owed (${taxCite(TAX_DATA.US.CHILD_TAX_CREDIT)}).`,savings:`${usd(TAX_DATA.US.CHILD_TAX_CREDIT.value)}/child (${taxCite(TAX_DATA.US.CHILD_TAX_CREDIT)})`,flag:"🇺🇸",priority:"high",action:"Schedule 8812"},
+      {title:"401(k): How an Employer Match Works",body:"Some employers add a match to what an employee puts into a 401(k), up to a limit the plan sets. The match rate and its limit are in the plan's documents.",savings:`Up to $${TAX_DATA.US.K401_DEFERRAL.value.toLocaleString("en-US")}/yr (2026)`,flag:"🇺🇸",priority:"high",action:"Your plan's documents"},
+      {title:"HSA: The Triple Tax Advantage",body:"If you have a high-deductible health plan, an HSA lets you contribute pre-tax, grow tax-free, and withdraw tax-free for medical expenses.",savings:`Up to $${TAX_DATA.US.HSA_SELF_ONLY.value.toLocaleString("en-US")}/yr (2026)`,flag:"🇺🇸",priority:"high",action:"Details: irs.gov"},
+      {title:"Roth IRA: Tax-Free Retirement",body:`You can contribute up to ${usd(TAX_DATA.US.ROTH_IRA.limit)} a year (${usd(TAX_DATA.US.ROTH_IRA.limit + TAX_DATA.US.ROTH_IRA.catchUp50)} at 50 or older). The amount phases out between ${usd(TAX_DATA.US.ROTH_IRA.phaseStartSingle)} and ${usd(TAX_DATA.US.ROTH_IRA.phaseEndSingle)} of income (single) or ${usd(TAX_DATA.US.ROTH_IRA.phaseStartJoint)} and ${usd(TAX_DATA.US.ROTH_IRA.phaseEndJoint)} (married filing jointly) (${taxCite(TAX_DATA.US.ROTH_IRA)}). You pay tax now, and qualified withdrawals in retirement, growth included, are tax-free.`,savings:`Up to ${usd(TAX_DATA.US.ROTH_IRA.limit)}/yr (${taxCite(TAX_DATA.US.ROTH_IRA)})`,flag:"🇺🇸",priority:"high",action:"Details: irs.gov"},
+      {title:"Student Loan Interest Deduction",body:`Paying student loans? You may be able to deduct up to ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.max)} of interest a year, even without itemizing. It phases out above ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.phaseStartSingle)} of income (single) or ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.phaseStartJoint)} (joint) (${taxCite(TAX_DATA.US.STUDENT_LOAN_INTEREST)}).`,savings:`Up to ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.max)} (${taxCite(TAX_DATA.US.STUDENT_LOAN_INTEREST)})`,flag:"🇺🇸",priority:"medium",action:"Form 1098-E"},
+      {title:"Child & Dependent Care Credit",body:`Paying for daycare, after-school, or a caregiver while you work? The credit is a percentage of up to ${usd(TAX_DATA.US.CHILD_CARE_CREDIT.expensesOne)} of care expenses (1 person) or ${usd(TAX_DATA.US.CHILD_CARE_CREDIT.expensesTwoPlus)} (2 or more). The top rate is ${TAX_DATA.US.CHILD_CARE_CREDIT.maxRatePct}% and it falls as income rises (${taxCite(TAX_DATA.US.CHILD_CARE_CREDIT)}). Check the current rates on IRS.gov.`,savings:`Top rate ${TAX_DATA.US.CHILD_CARE_CREDIT.maxRatePct}% (${taxCite(TAX_DATA.US.CHILD_CARE_CREDIT)})`,flag:"🇺🇸",priority:"medium",action:"Form 2441"},
+      {title:"Saver's Credit",body:`Contributing to a 401k or IRA on a low-to-mid income? The Saver's Credit is up to ${usd(TAX_DATA.US.SAVERS_CREDIT.maxCredit)} (${usd(TAX_DATA.US.SAVERS_CREDIT.maxCreditJoint)} joint). The income limits are ${usd(TAX_DATA.US.SAVERS_CREDIT.agiSingle)} single, ${usd(TAX_DATA.US.SAVERS_CREDIT.agiHoH)} head of household and ${usd(TAX_DATA.US.SAVERS_CREDIT.agiJoint)} joint (${taxCite(TAX_DATA.US.SAVERS_CREDIT)}).`,savings:`Up to ${usd(TAX_DATA.US.SAVERS_CREDIT.maxCredit)} (${taxCite(TAX_DATA.US.SAVERS_CREDIT)})`,flag:"🇺🇸",priority:"medium",action:"Form 8880"},
+      {title:"American Opportunity Tax Credit",body:`Paying for the first ${TAX_DATA.US.AOTC.years} years of college? The credit is up to ${usd(TAX_DATA.US.AOTC.max)} a year per student, and ${TAX_DATA.US.AOTC.refundablePct}% of it (up to ${usd(TAX_DATA.US.AOTC.refundableMax)}) is refundable even if you owe nothing (${taxCite(TAX_DATA.US.AOTC)}).`,savings:`Up to ${usd(TAX_DATA.US.AOTC.max)}/yr (${taxCite(TAX_DATA.US.AOTC)})`,flag:"🇺🇸",priority:"medium",action:"Form 8863"},
+      {title:"Medical Expense Deduction",body:`Medical expenses above ${TAX_DATA.US.MEDICAL_AGI_FLOOR.pct}% of your adjusted gross income are deductible if you itemize (${taxCite(TAX_DATA.US.MEDICAL_AGI_FLOOR)}).`,savings:"Varies",flag:"🇺🇸",priority:"low",action:"Schedule A"},
+      {title:"Home Office Deduction",body:`Self-employed and work from home? The simplified method allows ${usd(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.perSqFt)} per square foot, up to ${TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.maxSqFt} sq ft: ${TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.maxSqFt} × ${usd(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.perSqFt)} = ${usd(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.max)} (${taxCite(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED)}).`,savings:`Up to ${usd(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.max)} (${taxCite(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED)})`,flag:"🇺🇸",priority:"medium",action:"Form 8829 or Schedule C"},
+      {title:`No Tax on Tips (${TAX_DATA.US.TIPS_DEDUCTION.firstYear} to ${TAX_DATA.US.TIPS_DEDUCTION.lastYear})`,body:`Work in a tipped occupation: restaurant, salon, hotel, rideshare, personal trainer? Deduct up to ${usd(TAX_DATA.US.TIPS_DEDUCTION.max)} of qualified tips from your federal income. No itemizing required. It phases out above ${usd(TAX_DATA.US.TIPS_DEDUCTION.phaseStartSingle)} of modified adjusted gross income (${usd(TAX_DATA.US.TIPS_DEDUCTION.phaseStartJoint)} joint), and applies ${TAX_DATA.US.TIPS_DEDUCTION.firstYear} through ${TAX_DATA.US.TIPS_DEDUCTION.lastYear} (${taxCite(TAX_DATA.US.TIPS_DEDUCTION)}).`,savings:`Up to ${usd(TAX_DATA.US.TIPS_DEDUCTION.max)} deduction`,flag:"🇺🇸",priority:"high",action:"Form 4137"},
+      {title:`No Tax on Overtime (${TAX_DATA.US.OVERTIME_DEDUCTION.firstYear} to ${TAX_DATA.US.OVERTIME_DEDUCTION.lastYear})`,body:`Earn FLSA-required overtime (time-and-a-half)? You can deduct the premium 'half' portion, up to ${usd(TAX_DATA.US.OVERTIME_DEDUCTION.max)} (${usd(TAX_DATA.US.OVERTIME_DEDUCTION.maxJoint)} if married filing jointly). It phases out above ${usd(TAX_DATA.US.OVERTIME_DEDUCTION.phaseStartSingle)} of modified adjusted gross income (${usd(TAX_DATA.US.OVERTIME_DEDUCTION.phaseStartJoint)} joint), and applies ${TAX_DATA.US.OVERTIME_DEDUCTION.firstYear} through ${TAX_DATA.US.OVERTIME_DEDUCTION.lastYear} (${taxCite(TAX_DATA.US.OVERTIME_DEDUCTION)}). Salary-exempt workers generally don't qualify.`,savings:`Up to ${usd(TAX_DATA.US.OVERTIME_DEDUCTION.max)} deduction`,flag:"🇺🇸",priority:"medium",action:"Your W-2"},
     ],
     learnCards:[
       // Concepts only, as in Canada's list: no instructions, no figure without TAX_DATA or shown arithmetic.
@@ -253,10 +253,10 @@ const CC = {
       {id:"529",name:"529 Plan",fullName:"Education Savings Account",icon:"🎓",color:"#8A5FC8",annualLimit:`No annual limit. $${TAX_DATA.US.GIFT_EXCLUSION_529.value.toLocaleString("en-US")}/yr gift tax exclusion (${taxCite(TAX_DATA.US.GIFT_EXCLUSION_529)}).`,taxNote:"State deduction varies. Federal tax-free growth and withdrawals for education.",tip:"Some states give a deduction for contributions; the rules vary by state."},
     ],
     benefitsChecker:[
-      {name:"Earned Income Tax Credit",icon:"💰",eligible:`Working; with 3+ children, under ${usd(TAX_DATA.US.EITC_PHASEOUT_3PLUS.single)} (single) / ${usd(TAX_DATA.US.EITC_PHASEOUT_3PLUS.joint)} (joint) (${taxCite(TAX_DATA.US.EITC_PHASEOUT_3PLUS)})`,amount:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,apply:"File taxes (IRS Free File)",url:"https://irs.gov/eitc"},
+      {name:"Earned Income Tax Credit",icon:"💰",eligible:`Working; with 3+ children, under ${usd(TAX_DATA.US.EITC_PHASEOUT_3PLUS.single)} (single) / ${usd(TAX_DATA.US.EITC_PHASEOUT_3PLUS.joint)} (joint) (${taxCite(TAX_DATA.US.EITC_PHASEOUT_3PLUS)})`,amount:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,apply:"Through a tax return (IRS Free File)",url:"https://irs.gov/eitc"},
       {name:"SNAP (Food Stamps)",icon:"🛒",eligible:"Low income households",amount:`Up to ${usd(TAX_DATA.US.SNAP_MAX_1.value)}/mo for a household of 1 in the 48 states and DC (${taxCite(TAX_DATA.US.SNAP_MAX_1)})`,apply:"Benefits.gov",url:"https://benefits.gov"},
       {name:"Medicaid / CHIP",icon:"🏥",eligible:"Low-income adults and children",amount:"Free/low-cost healthcare",apply:"Healthcare.gov",url:"https://healthcare.gov"},
-      {name:"Child Tax Credit",icon:"👶",eligible:"Children under 17",amount:`Up to ${usd(TAX_DATA.US.CHILD_TAX_CREDIT.value)}/child (${taxCite(TAX_DATA.US.CHILD_TAX_CREDIT)})`,apply:"File taxes",url:"https://irs.gov/ctc"},
+      {name:"Child Tax Credit",icon:"👶",eligible:"Children under 17",amount:`Up to ${usd(TAX_DATA.US.CHILD_TAX_CREDIT.value)}/child (${taxCite(TAX_DATA.US.CHILD_TAX_CREDIT)})`,apply:"Through a tax return",url:"https://irs.gov/ctc"},
       {name:"LIHEAP Energy Assistance",icon:"⚡",eligible:"Low income, utility hardship",amount:"Varies by state",apply:"Benefits.gov",url:"https://benefits.gov"},
       {name:"WIC Program",icon:"🍼",eligible:"Pregnant/postpartum, children under 5",amount:"Food + support",apply:"Local health dept",url:"https://wic.fns.usda.gov"},
     ],
@@ -346,39 +346,39 @@ function getPersonalizedTaxCredits(profile) {
   if (hasStage("student")) {
     if (country === "CA") {
       tips.unshift(
-        {title:"Tuition Tax Credit",body:`Your T2202 slip from your school lets you claim every dollar of tuition as a federal tax credit (${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% federal rate for ${TAX_DATA.CA.FEDERAL_LOWEST_RATE.year}). Unused amounts carry forward indefinitely. You can use them in future high-income years, or transfer part of the unused amount to a parent or spouse.`,savings:`${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% of tuition paid`,flag:"🇨🇦",priority:"high",action:"Get Your T2202"},
-        {title:"Canada Training Credit",body:`If you were ${TAX_DATA.CA.CANADA_TRAINING_CREDIT.minAge} to ${TAX_DATA.CA.CANADA_TRAINING_CREDIT.maxAge} at the end of the year, resident in Canada all year, and your income met the CRA's limits, your training credit room grows by $${TAX_DATA.CA.CANADA_TRAINING_CREDIT.annualAccrual}, up to $${TAX_DATA.CA.CANADA_TRAINING_CREDIT.lifetimeMax.toLocaleString()} in a lifetime. When you take an eligible course you claim the LESSER of the room you have saved up and ${TAX_DATA.CA.CANADA_TRAINING_CREDIT.claimSharePct}% of your eligible fees, so a claim can be worth far more than one year's room. It is refundable. You get it even if you owe no tax. Line 45350, with Schedule 11.`,savings:`${TAX_DATA.CA.CANADA_TRAINING_CREDIT.claimSharePct}% of eligible fees, up to the room you have saved`,flag:"🇨🇦",priority:"high",action:"Check CTC Room on CRA"},
-        {title:"Groceries and Essentials Benefit: Students Almost Always Qualify",body:`If your income is low (most students qualify), file your taxes and the CRA pays you the Canada Groceries and Essentials Benefit quarterly. Filing is normally all it takes, though ${TAX_DATA.CA.CGEB.applyNote}.`,savings:`Up to $${TAX_DATA.CA.CGEB.maxSingleNoChildren}/yr if you are single with no children`,flag:"🇨🇦",priority:"high",action:"File Your Taxes"},
-        {title:"Student Loan Interest Credit",body:"Paying interest on government student loans (OSAP, NSLSC)? That interest is 100% claimable as a non-refundable federal tax credit. Private loans don't qualify, only government loans. Keep your annual interest statement.",savings:`${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% of interest paid (federal, ${TAX_DATA.CA.FEDERAL_LOWEST_RATE.year})`,flag:"🇨🇦",priority:"medium",action:"Get NSLSC Statement"},
-        {title:"Moving Expenses Deduction",body:`If your new home is at least ${TAX_DATA.CA.STUDENT_MOVE_KM.value} km closer to your school (${taxCite(TAX_DATA.CA.STUDENT_MOVE_KM)}) and you moved to attend full-time, you can deduct eligible moving expenses from your scholarship or research income. Keep your receipts. This is often missed.`,savings:"Varies",flag:"🇨🇦",priority:"medium",action:"Track Moving Receipts"}
+        {title:"Tuition Tax Credit",body:`Your T2202 slip from your school lets you claim every dollar of tuition as a federal tax credit (${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% federal rate for ${TAX_DATA.CA.FEDERAL_LOWEST_RATE.year}). Unused amounts carry forward indefinitely. You can use them in future high-income years, or transfer part of the unused amount to a parent or spouse.`,savings:`${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% of tuition paid`,flag:"🇨🇦",priority:"high",action:"Form T2202"},
+        {title:"Canada Training Credit",body:`If you were ${TAX_DATA.CA.CANADA_TRAINING_CREDIT.minAge} to ${TAX_DATA.CA.CANADA_TRAINING_CREDIT.maxAge} at the end of the year, resident in Canada all year, and your income met the CRA's limits, your training credit room grows by $${TAX_DATA.CA.CANADA_TRAINING_CREDIT.annualAccrual}, up to $${TAX_DATA.CA.CANADA_TRAINING_CREDIT.lifetimeMax.toLocaleString()} in a lifetime. When you take an eligible course you claim the LESSER of the room you have saved up and ${TAX_DATA.CA.CANADA_TRAINING_CREDIT.claimSharePct}% of your eligible fees, so a claim can be worth far more than one year's room. It is refundable. You get it even if you owe no tax. Line 45350, with Schedule 11.`,savings:`${TAX_DATA.CA.CANADA_TRAINING_CREDIT.claimSharePct}% of eligible fees, up to the room you have saved`,flag:"🇨🇦",priority:"high",action:"CTC room: CRA My Account"},
+        {title:"Groceries and Essentials Benefit: Students Almost Always Qualify",body:`If your income is low (most students qualify), file your taxes and the CRA pays you the Canada Groceries and Essentials Benefit quarterly. Filing is normally all it takes, though ${TAX_DATA.CA.CGEB.applyNote}.`,savings:`Up to $${TAX_DATA.CA.CGEB.maxSingleNoChildren}/yr if you are single with no children`,flag:"🇨🇦",priority:"high",action:"Paid after a return is filed"},
+        {title:"Student Loan Interest Credit",body:"Paying interest on government student loans (OSAP, NSLSC)? That interest is claimable in full as a non-refundable federal tax credit. Interest on private loans does not qualify, only on government loans. The annual interest statement shows the amount.",savings:`${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% of interest paid (federal, ${TAX_DATA.CA.FEDERAL_LOWEST_RATE.year})`,flag:"🇨🇦",priority:"medium",action:"Your NSLSC statement"},
+        {title:"Moving Expenses Deduction",body:`If your new home is at least ${TAX_DATA.CA.STUDENT_MOVE_KM.value} km closer to your school (${taxCite(TAX_DATA.CA.STUDENT_MOVE_KM)}) and you moved to attend full-time, you can deduct eligible moving expenses from your scholarship or research income. Receipts support the claim.`,savings:"Varies",flag:"🇨🇦",priority:"medium",action:"Line 21900"}
       );
       // Province-specific student credits
       // Manitoba's Tuition Fee Income Tax Rebate was removed here: Manitoba eliminated it for the 2018 tax
       // year (gov.mb.ca 2017 budget bulletin, checked 2026-10-01).
       if (province === "SK") {
-        tips.push({title:"Saskatchewan Graduate Retention Program",body:"Graduate and work in Saskatchewan to receive provincial tax credits over several years. Check the current amounts on Saskatchewan.ca before you count on a figure.",savings:"Provincial tax credit for graduates",flag:"🏙️ SK",priority:"high",action:"Apply After Graduation"});
+        tips.push({title:"Saskatchewan Graduate Retention Program",body:"Graduates who work in Saskatchewan can receive provincial tax credits over several years. Check the current amounts on Saskatchewan.ca.",savings:"Provincial tax credit for graduates",flag:"🏙️ SK",priority:"high",action:"Details: saskatchewan.ca"});
       }
       if (province === "NB" || province === "NS" || province === "PE" || province === "PEI" || province === "NL") {
-        tips.push({title:"Atlantic Graduate Tax Credit",body:"Atlantic provinces offer graduate tax credits to encourage graduates to stay and work in the region. Specific amounts vary by province. Check your provincial tax return.",savings:"Varies by province",flag:"🏙️ Atlantic",priority:"medium",action:"Check Provincial Return"});
+        tips.push({title:"Atlantic Graduate Tax Credit",body:"Atlantic provinces offer graduate tax credits to encourage graduates to stay and work in the region. Specific amounts vary by province, and each province's tax return sets them out.",savings:"Varies by province",flag:"🏙️ Atlantic",priority:"medium",action:"Your provincial return"});
       }
     }
     if (country === "US") {
       tips.unshift(
-        {title:"American Opportunity Tax Credit (AOTC)",body:`In your first ${TAX_DATA.US.AOTC.years} years of college? The credit is up to ${usd(TAX_DATA.US.AOTC.max)} a year per eligible student, and ${TAX_DATA.US.AOTC.refundablePct}% of it is refundable: up to ${usd(TAX_DATA.US.AOTC.refundableMax)} back even if you owe nothing (${taxCite(TAX_DATA.US.AOTC)}).`,savings:`Up to ${usd(TAX_DATA.US.AOTC.max)}/yr (${taxCite(TAX_DATA.US.AOTC)})`,flag:"🇺🇸",priority:"high",action:"Claim on Form 8863"},
-        {title:"Lifetime Learning Credit",body:`Beyond the first ${TAX_DATA.US.AOTC.years} years, or taking part-time courses? The Lifetime Learning Credit is ${TAX_DATA.US.LLC.ratePct}% of up to ${usd(TAX_DATA.US.LLC.expensesMax)} in tuition: ${TAX_DATA.US.LLC.ratePct}% × ${usd(TAX_DATA.US.LLC.expensesMax)} = ${usd(TAX_DATA.US.LLC.max)} a year per return (${taxCite(TAX_DATA.US.LLC)}). There is no limit on the number of years you can claim it.`,savings:`Up to ${usd(TAX_DATA.US.LLC.max)}/yr (${taxCite(TAX_DATA.US.LLC)})`,flag:"🇺🇸",priority:"high",action:"Claim on Form 8863"},
-        {title:"Student Loan Interest Deduction",body:`Paying interest on student loans? Deduct up to ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.max)} of interest a year, even without itemizing. It phases out above ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.phaseStartSingle)} of income (single) or ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.phaseStartJoint)} (joint) (${taxCite(TAX_DATA.US.STUDENT_LOAN_INTEREST)}). Your loan servicer sends the 1098-E form.`,savings:`Up to ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.max)} (${taxCite(TAX_DATA.US.STUDENT_LOAN_INTEREST)})`,flag:"🇺🇸",priority:"high",action:"Find Your 1098-E"},
-        {title:"Scholarship & Fellowship Exclusion",body:"Scholarships used for tuition, fees, and required course materials are tax-free. Amounts used for room, board, or stipends are taxable. Keep records of how scholarship funds are spent.",savings:"Depends on how the funds are used",flag:"🇺🇸",priority:"medium",action:"Track Scholarship Use"},
-        {title:"529 Plan Tax-Free Withdrawals",body:"If a parent or grandparent has a 529 plan for you, qualified withdrawals for tuition, fees, books, and room & board are 100% tax-free. Some states also let you deduct contributions.",savings:"Tax-free growth",flag:"🇺🇸",priority:"medium",action:"Confirm Qualified Expenses"}
+        {title:"American Opportunity Tax Credit (AOTC)",body:`In your first ${TAX_DATA.US.AOTC.years} years of college? The credit is up to ${usd(TAX_DATA.US.AOTC.max)} a year per eligible student, and ${TAX_DATA.US.AOTC.refundablePct}% of it is refundable: up to ${usd(TAX_DATA.US.AOTC.refundableMax)} back even if you owe nothing (${taxCite(TAX_DATA.US.AOTC)}).`,savings:`Up to ${usd(TAX_DATA.US.AOTC.max)}/yr (${taxCite(TAX_DATA.US.AOTC)})`,flag:"🇺🇸",priority:"high",action:"Form 8863"},
+        {title:"Lifetime Learning Credit",body:`Beyond the first ${TAX_DATA.US.AOTC.years} years, or taking part-time courses? The Lifetime Learning Credit is ${TAX_DATA.US.LLC.ratePct}% of up to ${usd(TAX_DATA.US.LLC.expensesMax)} in tuition: ${TAX_DATA.US.LLC.ratePct}% × ${usd(TAX_DATA.US.LLC.expensesMax)} = ${usd(TAX_DATA.US.LLC.max)} a year per return (${taxCite(TAX_DATA.US.LLC)}). There is no limit on the number of years you can claim it.`,savings:`Up to ${usd(TAX_DATA.US.LLC.max)}/yr (${taxCite(TAX_DATA.US.LLC)})`,flag:"🇺🇸",priority:"high",action:"Form 8863"},
+        {title:"Student Loan Interest Deduction",body:`Paying interest on student loans? Deduct up to ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.max)} of interest a year, even without itemizing. It phases out above ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.phaseStartSingle)} of income (single) or ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.phaseStartJoint)} (joint) (${taxCite(TAX_DATA.US.STUDENT_LOAN_INTEREST)}). Your loan servicer sends the 1098-E form.`,savings:`Up to ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.max)} (${taxCite(TAX_DATA.US.STUDENT_LOAN_INTEREST)})`,flag:"🇺🇸",priority:"high",action:"Form 1098-E"},
+        {title:"Scholarship & Fellowship Exclusion",body:"Scholarships used for tuition, fees, and required course materials are tax-free. Amounts used for room, board, or stipends are taxable, so records of how the funds were spent show which part is tax-free.",savings:"Depends on how the funds are used",flag:"🇺🇸",priority:"medium",action:"Details: irs.gov"},
+        {title:"529 Plan Tax-Free Withdrawals",body:"If a parent or grandparent has a 529 plan for you, qualified withdrawals for tuition, fees, books, and room & board are 100% tax-free. Some states also let you deduct contributions.",savings:"Tax-free growth",flag:"🇺🇸",priority:"medium",action:"Details: irs.gov"}
       );
       // State-specific student credits
       if (province === "NY") {
-        tips.push({title:"New York College Tuition Tax Credit",body:`New York residents can claim a college tuition credit of up to ${usd(TAX_DATA.US.NY_TUITION.creditMax)} per eligible student, or an itemized deduction of up to ${usd(TAX_DATA.US.NY_TUITION.deductionMax)} per student, but not both (${taxCite(TAX_DATA.US.NY_TUITION)}). Form IT-272 works out which is larger.`,savings:`Up to ${usd(TAX_DATA.US.NY_TUITION.creditMax)} credit (${taxCite(TAX_DATA.US.NY_TUITION)})`,flag:"🗽 NY",priority:"medium",action:"Check IT-272 Form"});
+        tips.push({title:"New York College Tuition Tax Credit",body:`New York residents can claim a college tuition credit of up to ${usd(TAX_DATA.US.NY_TUITION.creditMax)} per eligible student, or an itemized deduction of up to ${usd(TAX_DATA.US.NY_TUITION.deductionMax)} per student, but not both (${taxCite(TAX_DATA.US.NY_TUITION)}). Form IT-272 works out which is larger.`,savings:`Up to ${usd(TAX_DATA.US.NY_TUITION.creditMax)} credit (${taxCite(TAX_DATA.US.NY_TUITION)})`,flag:"🗽 NY",priority:"medium",action:"Form IT-272"});
       }
       if (province === "IL") {
-        tips.push({title:"Illinois Education Expense Credit",body:`Illinois residents can claim ${TAX_DATA.US.IL_EDUCATION.ratePct}% of qualified K-12 education expenses after the first ${usd(TAX_DATA.US.IL_EDUCATION.afterFirst)}, up to ${usd(TAX_DATA.US.IL_EDUCATION.max)} per return (${taxCite(TAX_DATA.US.IL_EDUCATION)}).`,savings:`Up to ${usd(TAX_DATA.US.IL_EDUCATION.max)} (${taxCite(TAX_DATA.US.IL_EDUCATION)})`,flag:"🏙️ IL",priority:"medium",action:"Check Schedule ICR"});
+        tips.push({title:"Illinois Education Expense Credit",body:`Illinois residents can claim ${TAX_DATA.US.IL_EDUCATION.ratePct}% of qualified K-12 education expenses after the first ${usd(TAX_DATA.US.IL_EDUCATION.afterFirst)}, up to ${usd(TAX_DATA.US.IL_EDUCATION.max)} per return (${taxCite(TAX_DATA.US.IL_EDUCATION)}).`,savings:`Up to ${usd(TAX_DATA.US.IL_EDUCATION.max)} (${taxCite(TAX_DATA.US.IL_EDUCATION)})`,flag:"🏙️ IL",priority:"medium",action:"Schedule ICR"});
       }
       if (province === "MN") {
-        tips.push({title:"Minnesota K-12 Education Credit",body:"Minnesota offers education credits and deductions that can apply to post-secondary expenses for dependents. Check Form M1ED for your specific eligibility.",savings:"Varies",flag:"🏙️ MN",priority:"medium",action:"Check Form M1ED"});
+        tips.push({title:"Minnesota K-12 Education Credit",body:"Minnesota offers education credits and deductions that can apply to post-secondary expenses for dependents. Form M1ED sets out who qualifies.",savings:"Varies",flag:"🏙️ MN",priority:"medium",action:"Form M1ED"});
       }
     }
   }
@@ -387,22 +387,22 @@ function getPersonalizedTaxCredits(profile) {
   if (hasStage("senior", "retired")) {
     if (country === "CA") {
       tips.unshift(
-        {title:"Age Amount Credit",body:`If you're 65 or older, you can claim the Age Amount, a federal non-refundable tax credit on up to $${TAX_DATA.CA.INDEXED_2026.ageAmount.toLocaleString()} for ${TAX_DATA.CA.INDEXED_2026.taxYear}. It reduces once your net income passes $${TAX_DATA.CA.INDEXED_2026.ageAmountThreshold.toLocaleString()}. Even a partial claim is worth claiming.`,savings:`Up to $${creditWorth(TAX_DATA.CA.INDEXED_2026.ageAmount).toLocaleString()} in tax saved`,flag:"🇨🇦",priority:"high",action:"Claim on Line 30100"},
-        {title:"Pension Income Splitting",body:`If you receive eligible pension income (RPP, RRIF, annuity), you can split up to ${TAX_DATA.CA.PENSION_SPLIT_MAX.pct}% with your spouse (${taxCite(TAX_DATA.CA.PENSION_SPLIT_MAX)}). If your spouse is in a lower tax bracket, this can lower your household's total tax.`,savings:"Depends on the tax bracket gap",flag:"🇨🇦",priority:"high",action:"File Form T1032"},
-        {title:"Pension Income Tax Credit",body:"Eligible pension income qualifies for a federal non-refundable credit, up to a set maximum. Even if you're splitting pension income, your spouse can also claim this credit on the transferred amount. Check the current maximum on line 31400 before you file.",savings:"Federal credit on pension income",flag:"🇨🇦",priority:"high",action:"Claim on Line 31400"},
-        {title:"OAS & GIS: Are You Getting Everything?",body:`Old Age Security pays up to ~$${TAX_DATA.CA.OAS.maxMonthly65to74.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo at 65 to 74 (approximate: it re-adjusts every quarter, checked ${TAX_DATA.CA.OAS.lastVerified}). Service Canada enrols most people automatically and sends an enrolment letter around your 64th birthday. It tries to enrol you for the Guaranteed Income Supplement (GIS) the same way. Some people are not enrolled automatically and get a letter inviting them to apply instead. If no letter arrives within a month of your 64th birthday, contact Service Canada. GIS is for low-income seniors: single and under $${TAX_DATA.CA.GIS.incomeUnderSingle.toLocaleString()} a year is the single-person test.`,savings:`Up to $${TAX_DATA.CA.GIS.maxMonthlySingle.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo (GIS), if you qualify`,flag:"🇨🇦",priority:"high",action:"Apply at Service Canada"},
-      {title:"CPP Maximum: Know What You're Entitled To",body:`The maximum CPP retirement pension is $${TAX_DATA.CA.CPP_MAX_MONTHLY.value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo at age 65 (January ${TAX_DATA.CA.RRSP_LIMIT.year}). Your actual amount depends on contributions history. You can check your CPP Statement of Contributions at My Service Canada Account.`,savings:`Up to $${TAX_DATA.CA.CPP_MAX_MONTHLY.value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo`,flag:"🇨🇦",priority:"medium",action:"Check My Service Canada"},
-        {title:"Medical Expense Tax Credit",body:`Seniors often have significant medical costs: prescriptions, dental, vision, hearing aids, home care. Expenses over ${TAX_DATA.CA.MEDICAL_NET_INCOME_PCT.pct}% of your net income (or $${TAX_DATA.CA.INDEXED_2026.medicalExpenseCeiling.toLocaleString()} for ${TAX_DATA.CA.INDEXED_2026.taxYear}, whichever is less) are claimable. Keep every receipt.`,savings:`${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% of qualifying expenses`,flag:"🇨🇦",priority:"high",action:"Gather Medical Receipts"},
-        {title:"Home Accessibility Tax Credit",body:`Making your home safer and more accessible? Renovations like grab bars, wheelchair ramps, or walk-in tubs qualify for a ${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% federal credit on up to $${TAX_DATA.CA.HOME_ACCESSIBILITY_MAX.value.toLocaleString()} of expenses per year.`,savings:`Up to $${creditWorth(TAX_DATA.CA.HOME_ACCESSIBILITY_MAX.value).toLocaleString()}`,flag:"🇨🇦",priority:"medium",action:"Keep Renovation Receipts"}
+        {title:"Age Amount Credit",body:`If you're 65 or older, you can claim the Age Amount, a federal non-refundable tax credit on up to $${TAX_DATA.CA.INDEXED_2026.ageAmount.toLocaleString()} for ${TAX_DATA.CA.INDEXED_2026.taxYear}. It reduces once your net income passes $${TAX_DATA.CA.INDEXED_2026.ageAmountThreshold.toLocaleString()}, and a reduced amount can still be claimed.`,savings:`Up to $${creditWorth(TAX_DATA.CA.INDEXED_2026.ageAmount).toLocaleString()} in tax saved`,flag:"🇨🇦",priority:"high",action:"Line 30100"},
+        {title:"Pension Income Splitting",body:`If you receive eligible pension income (RPP, RRIF, annuity), you can split up to ${TAX_DATA.CA.PENSION_SPLIT_MAX.pct}% with your spouse (${taxCite(TAX_DATA.CA.PENSION_SPLIT_MAX)}). If your spouse is in a lower tax bracket, this can lower your household's total tax.`,savings:"Depends on the tax bracket gap",flag:"🇨🇦",priority:"high",action:"Form T1032"},
+        {title:"Pension Income Tax Credit",body:"Eligible pension income qualifies for a federal non-refundable credit, up to a set maximum. Even if you're splitting pension income, your spouse can also claim this credit on the transferred amount. Check the current maximum on line 31400 before you file.",savings:"Federal credit on pension income",flag:"🇨🇦",priority:"high",action:"Line 31400"},
+        {title:"OAS & GIS: Are You Getting Everything?",body:`Old Age Security pays up to ~$${TAX_DATA.CA.OAS.maxMonthly65to74.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo at 65 to 74 (approximate: it re-adjusts every quarter, checked ${TAX_DATA.CA.OAS.lastVerified}). Service Canada enrols most people automatically and sends an enrolment letter around your 64th birthday. It tries to enrol you for the Guaranteed Income Supplement (GIS) the same way. Some people are not enrolled automatically and get a letter inviting them to apply instead. If no letter arrives within a month of your 64th birthday, contact Service Canada. GIS is for low-income seniors: single and under $${TAX_DATA.CA.GIS.incomeUnderSingle.toLocaleString()} a year is the single-person test.`,savings:`Up to $${TAX_DATA.CA.GIS.maxMonthlySingle.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo (GIS), if you qualify`,flag:"🇨🇦",priority:"high",action:"Service Canada"},
+      {title:"CPP Maximum: Know What You're Entitled To",body:`The maximum CPP retirement pension is $${TAX_DATA.CA.CPP_MAX_MONTHLY.value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo at age 65 (January ${TAX_DATA.CA.RRSP_LIMIT.year}). Your actual amount depends on contributions history. You can check your CPP Statement of Contributions at My Service Canada Account.`,savings:`Up to $${TAX_DATA.CA.CPP_MAX_MONTHLY.value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo`,flag:"🇨🇦",priority:"medium",action:"My Service Canada Account"},
+        {title:"Medical Expense Tax Credit",body:`Seniors often have significant medical costs: prescriptions, dental, vision, hearing aids, home care. Expenses over ${TAX_DATA.CA.MEDICAL_NET_INCOME_PCT.pct}% of your net income (or $${TAX_DATA.CA.INDEXED_2026.medicalExpenseCeiling.toLocaleString()} for ${TAX_DATA.CA.INDEXED_2026.taxYear}, whichever is less) are claimable. Receipts support the claim.`,savings:`${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% of qualifying expenses`,flag:"🇨🇦",priority:"high",action:"Lines 33099 and 33199"},
+        {title:"Home Accessibility Tax Credit",body:`Making your home safer and more accessible? Renovations like grab bars, wheelchair ramps, or walk-in tubs qualify for a ${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% federal credit on up to $${TAX_DATA.CA.HOME_ACCESSIBILITY_MAX.value.toLocaleString()} of expenses per year.`,savings:`Up to $${creditWorth(TAX_DATA.CA.HOME_ACCESSIBILITY_MAX.value).toLocaleString()}`,flag:"🇨🇦",priority:"medium",action:"Line 31285"}
       );
     }
     if (country === "US") {
       tips.unshift(
-        {title:"Social Security Taxation: Know Your Threshold",body:`Up to ${TAX_DATA.US.SS_TAXABLE_MAX.pct}% of Social Security benefits may be taxable depending on your 'combined income' (${taxCite(TAX_DATA.US.SS_TAXABLE_MAX)}). If you're near the threshold, Roth conversions or the timing of other income can change how much gets taxed.`,savings:"Depends on combined income",flag:"🇺🇸",priority:"high",action:"Calculate Combined Income"},
-        {title:"Higher Standard Deduction at 65+",body:`Americans 65 and older get an additional standard deduction on top of the regular one: ${usd(TAX_DATA.US.ADDITIONAL_STD_65.unmarried)} if unmarried, ${usd(TAX_DATA.US.ADDITIONAL_STD_65.married)} for each qualifying spouse if married (${taxCite(TAX_DATA.US.ADDITIONAL_STD_65)}). From ${TAX_DATA.US.SENIOR_DEDUCTION.firstYear} through ${TAX_DATA.US.SENIOR_DEDUCTION.lastYear} there is also a senior deduction of ${usd(TAX_DATA.US.SENIOR_DEDUCTION.perPerson)} per person 65 or older, phasing out above ${usd(TAX_DATA.US.SENIOR_DEDUCTION.phaseStartSingle)} of modified adjusted gross income (${usd(TAX_DATA.US.SENIOR_DEDUCTION.phaseStartJoint)} joint) (${taxCite(TAX_DATA.US.SENIOR_DEDUCTION)}). The additional standard deduction applies when you file.`,savings:`${usd(TAX_DATA.US.ADDITIONAL_STD_65.married)} to ${usd(TAX_DATA.US.ADDITIONAL_STD_65.unmarried)} extra per person (${taxCite(TAX_DATA.US.ADDITIONAL_STD_65)})`,flag:"🇺🇸",priority:"high",action:"File Taxes: Applied Automatically"},
-        {title:"Credit for the Elderly or Disabled",body:`Seniors on a low income may qualify for this credit. A single filer with adjusted gross income of ${usd(TAX_DATA.US.SCHEDULE_R.agiLimitSingle)} or more cannot take it. The credit is figured from an initial amount of ${usd(TAX_DATA.US.SCHEDULE_R.initialMFS)}, ${usd(TAX_DATA.US.SCHEDULE_R.initialSingle)} or ${usd(TAX_DATA.US.SCHEDULE_R.initialJointBoth)} depending on filing status (${taxCite(TAX_DATA.US.SCHEDULE_R)} instructions). Check the current amounts on IRS.gov.`,savings:"Credit against tax owed",flag:"🇺🇸",priority:"high",action:"Check Schedule R"},
-        {title:"Required Minimum Distributions (RMDs)",body:`From age ${TAX_DATA.US.RMD.startAge}, traditional IRAs and 401(k)s require minimum distributions each year. A missed RMD can bring an excise tax of ${TAX_DATA.US.RMD.exciseTaxPct}% of the amount, ${TAX_DATA.US.RMD.correctedPct}% if corrected in time (${taxCite(TAX_DATA.US.RMD)}). Roth IRAs have no RMD requirement for the owner.`,savings:`${TAX_DATA.US.RMD.exciseTaxPct}% excise tax on a missed RMD`,flag:"🇺🇸",priority:"high",action:"Calculate Your RMD"},
-        {title:"Qualified Charitable Distribution (QCD)",body:`If you're ${TAX_DATA.US.QCD_LIMIT.minAge} or older, you can transfer up to ${usd(TAX_DATA.US.QCD_LIMIT.value)} a year directly from your IRA to charity (${taxCite(TAX_DATA.US.QCD_LIMIT)}). It counts toward your RMD and is excluded from taxable income.`,savings:`Up to ${usd(TAX_DATA.US.QCD_LIMIT.value)} excluded (${taxCite(TAX_DATA.US.QCD_LIMIT)})`,flag:"🇺🇸",priority:"medium",action:"Contact Your IRA Custodian"}
+        {title:"Social Security Taxation: Know Your Threshold",body:`Up to ${TAX_DATA.US.SS_TAXABLE_MAX.pct}% of Social Security benefits may be taxable depending on your 'combined income' (${taxCite(TAX_DATA.US.SS_TAXABLE_MAX)}). If you're near the threshold, Roth conversions or the timing of other income can change how much gets taxed.`,savings:"Depends on combined income",flag:"🇺🇸",priority:"high",action:"Details: irs.gov"},
+        {title:"Higher Standard Deduction at 65+",body:`Americans 65 and older get an additional standard deduction on top of the regular one: ${usd(TAX_DATA.US.ADDITIONAL_STD_65.unmarried)} if unmarried, ${usd(TAX_DATA.US.ADDITIONAL_STD_65.married)} for each qualifying spouse if married (${taxCite(TAX_DATA.US.ADDITIONAL_STD_65)}). From ${TAX_DATA.US.SENIOR_DEDUCTION.firstYear} through ${TAX_DATA.US.SENIOR_DEDUCTION.lastYear} there is also a senior deduction of ${usd(TAX_DATA.US.SENIOR_DEDUCTION.perPerson)} per person 65 or older, phasing out above ${usd(TAX_DATA.US.SENIOR_DEDUCTION.phaseStartSingle)} of modified adjusted gross income (${usd(TAX_DATA.US.SENIOR_DEDUCTION.phaseStartJoint)} joint) (${taxCite(TAX_DATA.US.SENIOR_DEDUCTION)}). The additional standard deduction applies when you file.`,savings:`${usd(TAX_DATA.US.ADDITIONAL_STD_65.married)} to ${usd(TAX_DATA.US.ADDITIONAL_STD_65.unmarried)} extra per person (${taxCite(TAX_DATA.US.ADDITIONAL_STD_65)})`,flag:"🇺🇸",priority:"high",action:"Applied when you file"},
+        {title:"Credit for the Elderly or Disabled",body:`Seniors on a low income may qualify for this credit. A single filer with adjusted gross income of ${usd(TAX_DATA.US.SCHEDULE_R.agiLimitSingle)} or more cannot take it. The credit is figured from an initial amount of ${usd(TAX_DATA.US.SCHEDULE_R.initialMFS)}, ${usd(TAX_DATA.US.SCHEDULE_R.initialSingle)} or ${usd(TAX_DATA.US.SCHEDULE_R.initialJointBoth)} depending on filing status (${taxCite(TAX_DATA.US.SCHEDULE_R)} instructions). Check the current amounts on IRS.gov.`,savings:"Credit against tax owed",flag:"🇺🇸",priority:"high",action:"Schedule R"},
+        {title:"Required Minimum Distributions (RMDs)",body:`From age ${TAX_DATA.US.RMD.startAge}, traditional IRAs and 401(k)s require minimum distributions each year. A missed RMD can bring an excise tax of ${TAX_DATA.US.RMD.exciseTaxPct}% of the amount, ${TAX_DATA.US.RMD.correctedPct}% if corrected in time (${taxCite(TAX_DATA.US.RMD)}). Roth IRAs have no RMD requirement for the owner.`,savings:`${TAX_DATA.US.RMD.exciseTaxPct}% excise tax on a missed RMD`,flag:"🇺🇸",priority:"high",action:"Details: irs.gov"},
+        {title:"Qualified Charitable Distribution (QCD)",body:`If you're ${TAX_DATA.US.QCD_LIMIT.minAge} or older, you can transfer up to ${usd(TAX_DATA.US.QCD_LIMIT.value)} a year directly from your IRA to charity (${taxCite(TAX_DATA.US.QCD_LIMIT)}). It counts toward your RMD and is excluded from taxable income.`,savings:`Up to ${usd(TAX_DATA.US.QCD_LIMIT.value)} excluded (${taxCite(TAX_DATA.US.QCD_LIMIT)})`,flag:"🇺🇸",priority:"medium",action:"Your IRA custodian"}
       );
     }
   }
@@ -411,16 +411,16 @@ function getPersonalizedTaxCredits(profile) {
   if (hasStage("selfemployed", "contractor")) {
     if (country === "CA") {
       tips.push(
-        {title:"Business Expenses: What You Can Actually Claim",body:`Vehicle (business km %), phone (business %), internet, software, accounting fees, professional dues, advertising, and meals (${TAX_DATA.CA.MEALS_DEDUCTIBLE.pct}%, ${taxCite(TAX_DATA.CA.MEALS_DEDUCTIBLE)}). Every legitimate expense reduces your taxable income dollar for dollar.`,savings:"Varies",flag:"🇨🇦",priority:"high",action:"Track All Receipts"},
-        {title:"HST Registration Threshold",body:`Once your revenue exceeds $${TAX_DATA.CA.GSTHST_SMALL_SUPPLIER.value.toLocaleString()} in a calendar quarter or over 4 quarters, you must register for HST. Register voluntarily earlier to claim Input Tax Credits on business purchases.`,savings:"Claim back HST paid",flag:"🇨🇦",priority:"high",action:"Register on CRA Business"},
-        {title:"CPP Contributions: Both Sides",body:`As self-employed, you pay both the employee (${TAX_DATA.CA.CPP_RATES.employeePct}%) and employer (${TAX_DATA.CA.CPP_RATES.employerPct}%) portions of CPP on net self-employment income, ${TAX_DATA.CA.CPP_RATES.selfEmployedPct}% in all (${taxCite(TAX_DATA.CA.CPP_RATES)}). The employer portion is deductible. CPP2 contributions also apply above the second ceiling.`,savings:"Employer portion is deductible",flag:"🇨🇦",priority:"high",action:"See Schedule 8"}
+        {title:"Business Expenses: What You Can Actually Claim",body:`Vehicle (business km %), phone (business %), internet, software, accounting fees, professional dues, advertising, and meals (${TAX_DATA.CA.MEALS_DEDUCTIBLE.pct}%, ${taxCite(TAX_DATA.CA.MEALS_DEDUCTIBLE)}). Every legitimate expense reduces your taxable income dollar for dollar.`,savings:"Varies",flag:"🇨🇦",priority:"high",action:"Form T2125"},
+        {title:"HST Registration Threshold",body:`Once your revenue exceeds $${TAX_DATA.CA.GSTHST_SMALL_SUPPLIER.value.toLocaleString()} in a calendar quarter or over 4 quarters, HST registration is required. A business that registers voluntarily before then can claim Input Tax Credits on its purchases.`,savings:"Claim back HST paid",flag:"🇨🇦",priority:"high",action:"CRA Business Registration"},
+        {title:"CPP Contributions: Both Sides",body:`As self-employed, you pay both the employee (${TAX_DATA.CA.CPP_RATES.employeePct}%) and employer (${TAX_DATA.CA.CPP_RATES.employerPct}%) portions of CPP on net self-employment income, ${TAX_DATA.CA.CPP_RATES.selfEmployedPct}% in all (${taxCite(TAX_DATA.CA.CPP_RATES)}). The employer portion is deductible. CPP2 contributions also apply above the second ceiling.`,savings:"Employer portion is deductible",flag:"🇨🇦",priority:"high",action:"Schedule 8"}
       );
     }
     if (country === "US") {
       tips.push(
-        {title:"Self-Employment Tax Deduction",body:`You pay ${TAX_DATA.US.SE_TAX.ratePct}% self-employment tax on net earnings, and you can deduct half of it from your gross income (${taxCite(TAX_DATA.US.SE_TAX)}). This reduces your taxable income before the standard deduction.`,savings:"Half of SE tax deducted",flag:"🇺🇸",priority:"high",action:"See Schedule SE"},
-        {title:"Qualified Business Income (QBI) Deduction",body:`If you're a sole proprietor, partnership, or S-corp, you may deduct up to ${TAX_DATA.US.QBI.pct}% of qualified business income from your taxable income (${taxCite(TAX_DATA.US.QBI)}).`,savings:`Up to ${TAX_DATA.US.QBI.pct}% of qualified business income`,flag:"🇺🇸",priority:"high",action:"Check Form 8995"},
-        {title:"SEP-IRA or Solo 401(k)",body:`Self-employed? A SEP-IRA contribution is limited to the lesser of ${TAX_DATA.US.SEP_LIMIT.pctOfComp}% of compensation or ${usd(TAX_DATA.US.SEP_LIMIT.value)} (${taxCite(TAX_DATA.US.SEP_LIMIT)}), and it is deductible. A Solo 401(k) has its own limits and a Roth option.`,savings:`Up to ${usd(TAX_DATA.US.SEP_LIMIT.value)}/yr (${taxCite(TAX_DATA.US.SEP_LIMIT)})`,flag:"🇺🇸",priority:"high",action:"Open SEP-IRA or Solo 401k"}
+        {title:"Self-Employment Tax Deduction",body:`You pay ${TAX_DATA.US.SE_TAX.ratePct}% self-employment tax on net earnings, and you can deduct half of it from your gross income (${taxCite(TAX_DATA.US.SE_TAX)}). This reduces your taxable income before the standard deduction.`,savings:"Half of SE tax deducted",flag:"🇺🇸",priority:"high",action:"Schedule SE"},
+        {title:"Qualified Business Income (QBI) Deduction",body:`If you're a sole proprietor, partnership, or S-corp, you may deduct up to ${TAX_DATA.US.QBI.pct}% of qualified business income from your taxable income (${taxCite(TAX_DATA.US.QBI)}).`,savings:`Up to ${TAX_DATA.US.QBI.pct}% of qualified business income`,flag:"🇺🇸",priority:"high",action:"Form 8995"},
+        {title:"SEP-IRA or Solo 401(k)",body:`Self-employed? A SEP-IRA contribution is limited to the lesser of ${TAX_DATA.US.SEP_LIMIT.pctOfComp}% of compensation or ${usd(TAX_DATA.US.SEP_LIMIT.value)} (${taxCite(TAX_DATA.US.SEP_LIMIT)}), and it is deductible. A Solo 401(k) has its own limits and a Roth option.`,savings:`Up to ${usd(TAX_DATA.US.SEP_LIMIT.value)}/yr (${taxCite(TAX_DATA.US.SEP_LIMIT)})`,flag:"🇺🇸",priority:"high",action:"Details: irs.gov"}
       );
     }
   }
@@ -435,27 +435,27 @@ function getPersonalizedTaxCredits(profile) {
   if (isCouple && partnerIsSelfEmp && country === "CA") {
     tips.push({
       title: "Spousal Income Splitting: Self-Employed",
-      body: "If your partner earns income through a business, paying them a reasonable salary or dividends can split income between tax brackets, which can lower total tax. Requires legitimate work and documentation.",
+      body: "When a partner earns through a business, a reasonable salary or dividends paid to the other partner splits income between tax brackets, which can lower total tax. It requires real work and documentation.",
       savings: "Varies by bracket gap",
       flag: "🇨🇦",
       priority: "medium",
-      action: "Talk to an accountant"
+      action: "An accountant can set this up"
     });
   }
 
   // ── ADD: Province-specific credits for all users ───────────────────────────
   if (country === "CA") {
     if (province === "ON" && !tips.find(t => t.title.includes("Trillium"))) {
-      tips.push({title:"Ontario Trillium Benefit",body:`Ontario pays three credits as one monthly payment, and what you get depends on your age, your income and what you paid in rent, property tax or energy costs. Energy and property tax credit: up to $${TAX_DATA.CA.OTB.oeptc18to64.toLocaleString()} if you are 18 to 64, up to $${TAX_DATA.CA.OTB.oeptc65plus.toLocaleString()} if you are 65 or older. Sales tax credit: up to $${TAX_DATA.CA.OTB.ostcPerPerson} for you, and the same again for a spouse and for each child under 19. Northern Ontario energy credit, if you live in the north: up to $${TAX_DATA.CA.OTB.noecSingle} single or $${TAX_DATA.CA.OTB.noecFamily} for a family. There is no single maximum. Use the calculator for your own figure.`,savings:"Depends on age, income and rent or property tax paid",flag:"🏙️ ON",priority:"medium",action:"Apply with your return"});
+      tips.push({title:"Ontario Trillium Benefit",body:`Ontario pays three credits as one monthly payment, and what you get depends on your age, your income and what you paid in rent, property tax or energy costs. Energy and property tax credit: up to $${TAX_DATA.CA.OTB.oeptc18to64.toLocaleString()} if you are 18 to 64, up to $${TAX_DATA.CA.OTB.oeptc65plus.toLocaleString()} if you are 65 or older. Sales tax credit: up to $${TAX_DATA.CA.OTB.ostcPerPerson} for you, and the same again for a spouse and for each child under 19. Northern Ontario energy credit, if you live in the north: up to $${TAX_DATA.CA.OTB.noecSingle} single or $${TAX_DATA.CA.OTB.noecFamily} for a family. There is no single maximum. Use the calculator for your own figure.`,savings:"Depends on age, income and rent or property tax paid",flag:"🏙️ ON",priority:"medium",action:"With your tax return"});
     }
     if (province === "QC") {
       tips.push(
-        {title:"Quebec Solidarity Tax Credit",body:"Quebec's refundable solidarity tax credit combines housing, QST, and northern village components. Apply on your Quebec TP-1 return. Check the current amounts on Revenu Québec before you count on a figure.",savings:"Refundable Quebec credit",flag:"🏙️ QC",priority:"high",action:"Claim on TP-1 Return"},
-        {title:"Quebec Child Assistance Payment",body:"Quebec provides a refundable tax credit for families with children, separate from the federal CCB. Amounts depend on income and number of children, paid quarterly.",savings:"Varies by family",flag:"🏙️ QC",priority:"high",action:"Apply via Revenu Québec"}
+        {title:"Quebec Solidarity Tax Credit",body:"Quebec's refundable solidarity tax credit combines housing, QST, and northern village components. It is claimed on the Quebec TP-1 return. Check the current amounts on Revenu Québec.",savings:"Refundable Quebec credit",flag:"🏙️ QC",priority:"high",action:"TP-1 return"},
+        {title:"Quebec Child Assistance Payment",body:"Quebec provides a refundable tax credit for families with children, separate from the federal CCB. Amounts depend on income and number of children, paid quarterly.",savings:"Varies by family",flag:"🏙️ QC",priority:"high",action:"Revenu Québec"}
       );
     }
     if (province === "AB") {
-      tips.push({title:"Alberta Child and Family Benefit",body:`Alberta's income tax starts at ${TAX_DATA.CA.AB_TAX.lowRatePct}% on your first ${usd(TAX_DATA.CA.AB_TAX.lowBracketTop)} and reaches ${TAX_DATA.CA.AB_TAX.topRatePct}% over ${usd(TAX_DATA.CA.AB_TAX.topBracketOver)}, with a basic personal amount of ${usd(TAX_DATA.CA.AB_TAX.basicPersonalAmount)} (${taxCite(TAX_DATA.CA.AB_TAX)}). Families with children under 18 can also get the Alberta Child and Family Benefit, paid tax-free every quarter. For one child the base part is up to ${usd(TAX_DATA.CA.AB_ACFB.baseOneChild)} and the working part up to ${usd(TAX_DATA.CA.AB_ACFB.workingOneChild)}; they reduce once family net income passes ${usd(TAX_DATA.CA.AB_ACFB.baseReducesOver)} and ${usd(TAX_DATA.CA.AB_ACFB.workingReducesOver)} (${taxCite(TAX_DATA.CA.AB_ACFB)}).`,savings:`One child: up to ${usd(TAX_DATA.CA.AB_ACFB.baseOneChild)} + ${usd(TAX_DATA.CA.AB_ACFB.workingOneChild)} = ${usd(TAX_DATA.CA.AB_ACFB.baseOneChild + TAX_DATA.CA.AB_ACFB.workingOneChild)}/yr`,flag:"🏙️ AB",priority:"medium",action:"Claim the ACFB"});
+      tips.push({title:"Alberta Child and Family Benefit",body:`Alberta's income tax starts at ${TAX_DATA.CA.AB_TAX.lowRatePct}% on your first ${usd(TAX_DATA.CA.AB_TAX.lowBracketTop)} and reaches ${TAX_DATA.CA.AB_TAX.topRatePct}% over ${usd(TAX_DATA.CA.AB_TAX.topBracketOver)}, with a basic personal amount of ${usd(TAX_DATA.CA.AB_TAX.basicPersonalAmount)} (${taxCite(TAX_DATA.CA.AB_TAX)}). Families with children under 18 can also get the Alberta Child and Family Benefit, paid tax-free every quarter. For one child the base part is up to ${usd(TAX_DATA.CA.AB_ACFB.baseOneChild)} and the working part up to ${usd(TAX_DATA.CA.AB_ACFB.workingOneChild)}; they reduce once family net income passes ${usd(TAX_DATA.CA.AB_ACFB.baseReducesOver)} and ${usd(TAX_DATA.CA.AB_ACFB.workingReducesOver)} (${taxCite(TAX_DATA.CA.AB_ACFB)}).`,savings:`One child: up to ${usd(TAX_DATA.CA.AB_ACFB.baseOneChild)} + ${usd(TAX_DATA.CA.AB_ACFB.workingOneChild)} = ${usd(TAX_DATA.CA.AB_ACFB.baseOneChild + TAX_DATA.CA.AB_ACFB.workingOneChild)}/yr`,flag:"🏙️ AB",priority:"medium",action:"Details: alberta.ca"});
     }
     // The BC Climate Action Tax Credit was removed here: BC ended it, and April 2025 was the final payment
     // (gov.bc.ca, checked 2026-10-01).
@@ -1035,7 +1035,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       icon: "⚠️",
       color: C.orange,
       title: "Cash is running tight",
-      detail: `Your safe to spend (${formatMoney(safe)}) is below 15% of your monthly income (${formatMoney(Math.round(monthlyIncome))}). Hold non-essential spending for ${daysToPayday != null ? daysToPayday : "a few"} days.`,
+      detail: `Your safe to spend (${formatMoney(safe)}) is below 15% of your monthly income (${formatMoney(Math.round(monthlyIncome))}). ${daysToPayday != null ? `Your next deposit is ${daysToPayday === 1 ? "tomorrow" : `in ${daysToPayday} days`}.` : "The date of your next deposit isn't known yet."}`,
       action: "See Plan", screen: "plan"
     });
   }
@@ -1044,8 +1044,8 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       type: "savings",
       icon: "💚",
       color: C.green,
-      title: `Move $${safeToMove} to savings`,
-      detail: "You can do this now and still stay safe until your next deposit.",
+      title: `$${safeToMove} spare until your next deposit`,
+      detail: "Worked out from your safe to spend: with that much moved to savings, your bills until then are still covered.",
       action: "See Goals", screen: "goals"
     });
   }
@@ -1054,8 +1054,8 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       type: "debt",
       icon: "🎯",
       color: C.purple,
-      title: `Pay $${extraPayment} extra on ${topDebt.name}`,
-      detail: `Cuts ${monthsSaved} month${monthsSaved!==1?"s":""} off your payoff date.`,
+      title: `${topDebt.name}: $${extraPayment} more a month`,
+      detail: `would move the payoff date ${monthsSaved} month${monthsSaved!==1?"s":""} sooner.`,
       action: "Debt Plan", screen: "goals"
     });
   }
@@ -1067,7 +1067,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       <div style={row({justifyContent:"space-between",marginBottom:GAP.textToControl})}>
         <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7,minWidth:0}}>
           <Icon id="zap" size={15} color={C.goldBright} strokeWidth={2}/>
-          What to do today
+          Your numbers today
         </div>
         <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Worked out by Flourish</span>
       </div>
@@ -1135,16 +1135,16 @@ function AutopilotCard({data, setScreen}) {
       color:C.green, detail:`for the next ${plan.daysLeft} day${plan.daysLeft!==1?"s":""}`,
     },
     plan.savingsTransfer > 0 && {
-      icon:"🐷", label:`Move to ${plan.savingsTarget}`, amount:formatMoney(plan.savingsTransfer),
-      color:C.teal, detail:"builds your safety net",
+      icon:"🐷", label:`For ${plan.savingsTarget}`, amount:formatMoney(plan.savingsTransfer),
+      color:C.teal, detail:"part of what is spare until your next deposit",
     },
     plan.debtPayment > 0 && plan.debtTarget && {
-      icon:"🎯", label:`Extra toward ${plan.debtTarget.name}`, amount:formatMoney(plan.debtPayment),
-      color:C.purple, detail:`saves on ${plan.debtTarget.rate}% interest`,
+      icon:"🎯", label:`Extra for ${plan.debtTarget.name}`, amount:formatMoney(plan.debtPayment),
+      color:C.purple, detail:`a ${plan.debtTarget.rate}% balance`,
     },
     plan.goalContribution > 0 && plan.goalTarget && {
       icon:"🌱", label:plan.goalTarget.name||"Goal contribution", amount:formatMoney(plan.goalContribution),
-      color:C.gold, detail:"progress toward your goal",
+      color:C.gold, detail:"toward this goal",
     },
     plan.buffer > 100 && {
       // NOT "buffer" -- that word belongs to the "Spending buffer" line inside safe-to-spend.
@@ -1680,6 +1680,20 @@ function DailySpendSheet({ data, setAppData, onClose }) {
   );
 }
 
+// The Time Machine's low-balance line (prompt 3d): the facts, from the forecast it draws. It used to
+// say "Hold non-essential spending until after this date". Now it names the lowest balance between this
+// day and the next deposit, and when that deposit lands.
+function lowStretchLine(forecast, ev) {
+  const fmtD = (d) => new Date(d).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
+  const list = forecast || [];
+  const pay = list.find(f => f.day > ev.day && f.isPayday);
+  const stretch = list.filter(f => f.day >= ev.day && (!pay || f.day < pay.day));
+  const low = stretch.reduce((m, f) => (f.balance < m.balance ? f : m), ev);
+  return pay
+    ? `Before your next deposit, your balance is lowest on ${fmtD(low.date)}, at ${formatMoney(low.balance)}. The deposit lands on ${fmtD(pay.date)}.`
+    : `Your balance is lowest on ${fmtD(low.date)}, at ${formatMoney(low.balance)}. No deposit is expected in the 30 days shown.`;
+}
+
 function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData}) {
   const [expanded, setExpanded] = useState(false);
   const [expandedDay, setExpandedDay] = useState(null); // day index that is drilled into
@@ -1825,7 +1839,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData
                       <div style={{marginTop:8,background:baseBalance<0?C.red+"18":C.gold+"11",borderRadius:8,padding:"7px 10px",color:baseBalance<0?C.redBright:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
                         {baseBalance<0
                           ? "⚠ Projected overdraft: a payment your balance can't cover can bring a bank fee."
-                          : "⚠ Balance near safety floor. Hold non-essential spending until after this date."}
+                          : lowStretchLine(forecast, ev)}
                       </div>
                     )}
                   </div>
@@ -2184,11 +2198,10 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
       monthlyIncome:      cashFlowObj.monthlyIncome,
       monthlySurplus,
     });
-    // Prompt 3c: the explanation gets the facts only. No verdict (calculateScenarioVerdict is no longer
-    // shown or sent), no cash rating ("safe", "tight", "risky"), and no health score change: that
-    // figure is a fixed -4 / -8 the health score engine never computed, so it is not shown either.
-    const factsForProse = { amount: impact.amount, newBalance: impact.newBalance, newSafeToSpend: impact.newSafeToSpend,
-      savingsDelayWeeks: impact.savingsDelayWeeks, savingsDelayDays: impact.savingsDelayDays };
+    // Prompt 3c: the explanation gets the facts only (summarizeScenarioForCoach): no verdict, no cash
+    // rating ("safe", "tight", "risky"), and no health score change, a fixed -4 / -8 the health score
+    // engine never computed, so it is not shown either.
+    const factsForProse = summarizeScenarioForCoach(impact);
 
     // Step 4: Format JS-computed values to match the UI contract.
     // Granularity: "none" only for true zero-day delay. "X days" for 1-6 days.
@@ -2563,7 +2576,7 @@ const personas = {
   builder: {
     name:"The Wealth Builder", emoji:"🏗️", color:C.green,
     traits:["Saving for retirement","Goal-oriented mindset","Building long-term wealth"],
-    insight:`You're building real wealth. Make sure your ${retirementAccountsLabel(data?.profile?.country)} are maximized each year.`,
+    insight:`Retirement saving shows up in your spending: contributions to your ${retirementAccountsLabel(data?.profile?.country)}.`,
     shareText:"I'm a Wealth Builder 🏗️ on @flourishmoney"
   }
 };
@@ -2785,8 +2798,8 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
     opportunities.push({
       id:"subs", icon:"📱", color:C.teal,
       title:`$${subs.monthlyTotal}/mo in subscriptions`,
-      detail:`${subs.activeCount} active subscription${subs.activeCount===1?"":"s"} detected. Cancelling any you don't use frees that money every month.`,
-      action:"Review", screen:"spend", badge:"Review"
+      detail:`${subs.activeCount} active subscription${subs.activeCount===1?"":"s"} detected. Each one renews on its own.`,
+      action:"See them", screen:"spend", badge:"Spending"
     });
   }
 
@@ -2797,9 +2810,9 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
     // invented one ("a 6.5% personal loan could save ~$461/yr") is a promise nobody made.
     opportunities.push({
       id:"refi", icon:"💳", color:C.orange,
-      title:`Compare rates on ${highRateDebt.name}`,
-      detail:`At ${highRateDebt.rate}% this is expensive money. A lower-rate loan or a balance transfer could cut the interest. Compare the rate you'd actually be offered before you switch.`,
-      action:"Debt Plan", screen:"goals", tab:"sim", badge:"Compare"
+      title:`${highRateDebt.name}: ${highRateDebt.rate}% interest`,
+      detail:`Interest on this balance is charged at ${highRateDebt.rate}% a year. A balance transfer or a lower-rate loan moves a balance to a different rate, set by the lender.`,
+      action:"Debt Plan", screen:"goals", tab:"sim", badge:"Debt"
     });
   }
 
@@ -2826,8 +2839,8 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
       opportunities.push({
         id:"tax", icon:isCA?"🍁":"🦅", color:isCA?C.red:C.blue,
         title:isCA?"Tax benefits you may qualify for":"US tax credits available",
-        detail:`Worth checking for your situation: ${topCredits.join(", ")}.`,
-        action:"Tax Tips", screen:"goals", tab:"tax", badge:"Review"
+        detail:`In your tax tips: ${topCredits.join(", ")}.`,
+        action:"Tax Tips", screen:"goals", tab:"tax", badge:"Tax"
       });
     }
   }
@@ -2838,10 +2851,10 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
     const bal = parseFloat(savingsAcct.balance||0);
     if (bal > 500) opportunities.push({
       id:"hisa", icon:"🏦", color:C.gold,
-      title:`Earn more on your savings`,
-      // No rates quoted (the old "typical 0.3%" and "4%+" were invented): compare the real ones.
-      detail:`${formatMoney(Math.round(bal||0))} in savings. ${savingsAccountTerm(data.profile?.country).replace(/^a /,"A ")} may pay more than your current account. Compare the rate you earn now with what's on offer.`,
-      action:"Learn More", screen:"goals", tab:"learn", badge:"Compare"
+      title:`Your savings: ${formatMoney(Math.round(bal||0))}`,
+      // No rates quoted (the old "typical 0.3%" and "4%+" were invented), and no instruction to switch.
+      detail:`The interest it earns depends on the account's rate. Rates differ from bank to bank, and ${savingsAccountTerm(data.profile?.country)} is one kind of account.`,
+      action:"Learn More", screen:"goals", tab:"learn", badge:"Savings"
     });
   }
 
@@ -2991,7 +3004,7 @@ function MoneyWrapped({data, onClose}) {
         <div style={{textAlign:"center"}}>
           <div style={{fontSize:52,marginBottom:12}}>🌱</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:"#fff",lineHeight:1.2,marginBottom:8}}>Here's to an even better {year+1}</div>
-          <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7,marginBottom:24}}>Keep checking in, keep improving your score, and let Flourish guide every money decision.</div>
+          <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7,marginBottom:24}}>Flourish works out the numbers and explains them. The decisions are yours.</div>
           <div style={{background:"rgba(255,255,255,0.12)",borderRadius:16,padding:"16px",marginBottom:20}}>
             <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>Your {year} number</div>
             <div style={{fontFamily:"'Playfair Display',serif",fontSize:52,fontWeight:900,color:"#6EF0A0",letterSpacing:-2}}>{score}</div>
@@ -3497,7 +3510,7 @@ const DASH_TILES = [
   { id: 'networth',    label: 'Net Worth Trend',      lucide:'trending-up'  },
   { id: 'investments', label: 'Investment Portfolio', lucide:'trending-up'  },
   { id: 'forecast',    label: 'Cash Flow Forecast',   lucide:'calendar'     },
-  { id: 'decision',    label: 'What to do today',     lucide:'cpu'          },
+  { id: 'decision',    label: 'Your numbers today',     lucide:'cpu'          },
   { id: 'autopilot',   label: 'Autopilot',            lucide:'navigation'   },
   { id: 'opportunity', label: 'Opportunities',        lucide:'star'         },
   { id: 'health',      label: 'Health Score',         lucide:'shield'       },
@@ -4149,7 +4162,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         {/* Statement upload — primary path for non-Plaid accounts */}
         <div style={{background:C.cardAlt,borderRadius:14,padding:'12px 14px',border:`1px solid ${C.border}`}}>
           <div style={{color:C.mutedHi,fontWeight:700,fontSize:13,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📄 Upload a statement instead</div>
-          <div style={{color:C.muted,fontSize:13,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Best for accounts Plaid can't connect: employer RRSPs, some credit unions, older institutions.</div>
+          <div style={{color:C.muted,fontSize:13,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>For accounts Plaid can't connect: employer RRSPs, some credit unions, older institutions.</div>
           <label style={{display:'block',cursor:'pointer'}}>
             <input type="file" accept=".pdf,.csv" style={{display:'none'}} onChange={handleStatementUpload} disabled={stmtStatus==='parsing'}/>
             <div style={{background:stmtStatus==='parsing'?C.card:`linear-gradient(135deg,${C.gold}22,${C.gold}0A)`,border:`1px dashed ${stmtStatus==='error'?C.red:stmtStatus==='done'?C.green:C.gold}`,borderRadius:10,padding:'10px 14px',textAlign:'center',color:stmtStatus==='error'?C.redBright:stmtStatus==='done'?C.greenBright:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,transition:'all .2s'}}>
@@ -4447,7 +4460,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
     // 6: Credit Score
     <div>
       <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Your credit score (optional)</div>
-      <div style={{color:C.muted,fontSize:14,marginBottom:16}}>Optional. Add it and the coach can show you how to improve it.</div>
+      <div style={{color:C.muted,fontSize:14,marginBottom:16}}>Optional. Add it and the coach can explain what affects it.</div>
       <div style={{background:C.tealDim,border:`1px solid ${C.teal}44`,borderRadius:16,padding:"14px 16px",marginBottom:20}}>
         <div style={{color:C.tealBright,fontWeight:700,marginBottom:6}}>🔒 How Flourish uses this</div>
         {[["✅","Soft pull only, never affects your score"],["✅","Personalized tips tied to your real balances"],["✅","Tracks improvement over time"],["❌","Never shared with lenders or third parties"]].map(([ico,t],i)=><div key={i} style={{display:"flex",gap:8,padding:"3px 0",color:ico==="✅"?C.cream:C.muted,fontSize:13}}><span>{ico}</span><span>{t}</span></div>)}
@@ -4540,7 +4553,7 @@ function buildLiveNotifs(data) {
       notifs.push({
         id:`debt_${i}`,icon:"target",
         title:`${d.name} is ${pct}% paid off! 🎉`,
-        body:`$${parseFloat(d.balance).toLocaleString()} remaining. Keep going!`,
+        body:`$${parseFloat(d.balance).toLocaleString()} remaining.`,
         read:true,time:"Today",type:"win",color:NOTIF_COLORS.win,
       });
     }
@@ -5406,18 +5419,18 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           const know = todayKnowItem({ overdraftImmediate, sevenDayOverdraft, nextBill: (soonBills||[])[0] });
           // Consolidation 1: the daily number is the ONE suggested pace (same as Decisions), never a
           // second division of safe. The weekly framing is that daily figure, not safe/7.
+          // Prompt 3d: the engine's pace as a fact, not an instruction. "deposit", not "paycheque":
+          // this surface has not established WHICH income arrives next.
           const doIt = safe>0
-            ? `Keeping today under ${dailyPace.dailyText} leaves room across the week.`
-            // Same class as the DecisionEngine fallback above: a claim about WHICH income arrives
-            // next, made by a surface that has not established it. "deposit" is true either way.
-            : "Hold off on non-essentials until your next deposit lands.";
+            ? `Today's pace is ${dailyPace.dailyText}: ${formatMoney(safe)} safe to spend spread over ${dailyPace.daysLeft} days.`
+            : "Nothing is left to spend until your next deposit lands.";
           return (
             <div style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"14px 16px",marginBottom:12}}>
               {know && <>
               <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>One thing to know</div>
               <div style={{color:C.cream,fontSize:13.5,lineHeight:1.55,margin:"3px 0 10px"}}>{know}</div>
               </>}
-              <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>One thing you could do</div>
+              <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Today's pace</div>
               <div style={{color:C.cream,fontSize:13.5,lineHeight:1.55,margin:"3px 0 4px"}}>{doIt}</div>
               {/* The row this rule was written for. It said space-between with flex:1 on the button:
                   the button grew until there was no space left to put between anything, and the
@@ -5573,7 +5586,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                   if (r.state === "yes") {
                     setAffordResult({
                       state: "yes",
-                      msg: "Yes, you can afford this",
+                      msg: "It fits in your safe to spend",
                       sub: `${r.remainingText} left to spend until payday`,
                       color: C.green,
                     });
@@ -5583,15 +5596,15 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                     const leftMsg = r.remaining < 1 ? "After this, nothing is left to spend until payday." : `Only ${r.remainingText} left to spend until payday.`;
                     setAffordResult({
                       state: "tight",
-                      msg: "You can, but it's tight",
+                      msg: "It fits, with little left",
                       sub: leftMsg,
                       color: C.gold,
                     });
                   } else {
                     setAffordResult({
                       state: "no",
-                      msg: "Not right now",
-                      sub: `This puts you ${r.overByText} over your limit. Wait ${waitMsg}.`,
+                      msg: "It's more than your safe to spend",
+                      sub: `It is ${r.overByText} over your safe to spend until payday. Your next deposit lands ${waitMsg}.`,
                       color: C.red,
                     });
                   }
@@ -5795,7 +5808,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               ))}
             </div>
             <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-              {streak>=7?"🎉 Weekly goal crushed!":streak>=4?`${streakMax-streak} more to goal`:streak>0?`${streak}-day streak · keep going`:"Start your streak today"}
+              {streak>=7?"🎉 Weekly goal crushed!":streak>=4?`${streakMax-streak} more to goal`:streak>0?`${streak}-day streak`:"No streak yet"}
             </div>
           </div>
         </div>
@@ -5873,8 +5886,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               <div style={{...anim(170),background:"rgba(0,204,133,0.07)",border:`1px solid ${C.green}33`,borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("goals")}>
                 <div style={{width:44,height:44,borderRadius:14,background:C.green+"18",border:`1px solid ${C.green}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>💸</div>
                 <div style={{flex:1}}>
-                  <div style={{color:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Payday: save before you spend</div>
-                  <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>Transfer ${((safe||0)*0.2).toFixed(0)} now and you'll barely notice it · See your goals</div>
+                  <div style={{color:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>A deposit lands today</div>
+                  <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{formatMoney(safe||0)} safe to spend until the next one · See your goals</div>
                 </div>
                 <span style={{color:C.greenBright,fontSize:18}}>→</span>
               </div>
@@ -7861,7 +7874,7 @@ function BudgetPlanCard({data, setAppData}) {
         </div>
         {overDiscret&&(
           <div style={{color:C.redBright,fontSize:13,marginTop:3}}>
-            ⚠️ ${Math.round(totalEdited-discret).toLocaleString()} over your discretionary budget. Consider trimming some categories
+            ⚠️ ${Math.round(totalEdited-discret).toLocaleString()} over your discretionary budget
           </div>
         )}
         {!overDiscret&&totalEdited>0&&(
@@ -8794,7 +8807,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
               <span style={{fontSize:18}}>🤖</span>
               <div style={{flex:1}}>
                 <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Ask Coach about your goals</div>
-                <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>Your goals are shared with the AI Coach. Ask it to suggest contributions or adjust timelines.</div>
+                <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>Your goals are shared with the AI Coach. It can explain what different monthly amounts would mean for each timeline.</div>
               </div>
               <span style={{color:C.purpleBright,fontSize:16}}>→</span>
             </div>
@@ -8951,20 +8964,16 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
         {/* Hero banner */}
         <div style={{background:`linear-gradient(135deg,${C.gold}18 0%,${C.gold}08 100%)`,border:`1px solid ${C.gold}40`,borderRadius:20,padding:"18px 20px",position:"relative",overflow:"hidden"}}>
           <div style={{position:"absolute",top:-18,right:-18,fontSize:64,opacity:0.08}}>💰</div>
-          <div style={{color:C.goldBright,fontWeight:800,fontSize:13,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{cfg.flag} {cfg.name}-Specific Tax Opportunities</div>
+          <div style={{color:C.goldBright,fontWeight:800,fontSize:13,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{cfg.flag} {cfg.name} Tax Credits and Benefits</div>
           <div style={{color:C.muted,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>These are the credits and benefits that may apply to you.</div>
           <div style={{display:"flex",gap:10}}>
             <div style={{background:C.gold+"22",borderRadius:12,padding:"8px 14px",textAlign:"center"}}>
               <div style={{color:C.goldBright,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{highPriority.length}</div>
-              <div style={{color:C.muted,fontSize:13,fontWeight:600}}>High Priority</div>
+              <div style={{color:C.muted,fontSize:13,fontWeight:600}}>Main credits</div>
             </div>
             <div style={{background:C.teal+"18",borderRadius:12,padding:"8px 14px",textAlign:"center"}}>
               <div style={{color:C.tealBright,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{_eligibleBenefits.length}</div>
               <div style={{color:C.muted,fontSize:13,fontWeight:600}}>Benefits</div>
-            </div>
-            <div style={{background:C.green+"18",borderRadius:12,padding:"8px 14px",textAlign:"center",flex:1}}>
-              <div style={{color:C.greenBright,fontWeight:900,fontSize:14,fontFamily:"'Playfair Display',serif"}}>$$$</div>
-              <div style={{color:C.muted,fontSize:13,fontWeight:600}}>Unclaimed</div>
             </div>
           </div>
         </div>
@@ -8973,7 +8982,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
         {highPriority.length>0&&<>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <div style={{height:1,flex:1,background:C.gold+"33"}}/>
-            <span style={{color:C.goldBright,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🔥 High Priority</span>
+            <span style={{color:C.goldBright,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Main credits for your situation</span>
             <div style={{height:1,flex:1,background:C.gold+"33"}}/>
           </div>
           {highPriority.map((tip,i)=>(
@@ -8986,12 +8995,12 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
                 </div>
                 <div style={{background:C.gold+"18",borderRadius:12,padding:"8px 10px",textAlign:"center",flexShrink:0,minWidth:56}}>
                   <div style={{fontSize:18}}>{tip.flag}</div>
-                  <div style={{color:C.goldBright,fontSize:13,fontWeight:800,marginTop:3}}>Priority</div>
+                  <div style={{color:C.goldBright,fontSize:13,fontWeight:800,marginTop:3}}>Main</div>
                 </div>
               </div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:12,borderTop:`1px solid ${C.gold}22`}}>
                 <div>
-                  <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>Potential savings</div>
+                  <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>Amount</div>
                   <div style={{color:C.goldBright,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{tip.savings}</div>
                 </div>
                 <span style={{display:"inline-block",background:`linear-gradient(135deg,${C.gold}33,${C.gold}18)`,border:`1px solid ${C.gold}55`,borderRadius:99,padding:"8px 16px",color:C.goldBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
@@ -9006,7 +9015,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
         {medPriority.length>0&&<>
           <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
             <div style={{height:1,flex:1,background:C.border}}/>
-            <span style={{color:C.muted,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Also Worth Reviewing</span>
+            <span style={{color:C.muted,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>More credits and benefits</span>
             <div style={{height:1,flex:1,background:C.border}}/>
           </div>
           {medPriority.map((tip,i)=>(
@@ -9054,7 +9063,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
         <div style={{background:C.green+"10",border:`1px solid ${C.green}28`,borderRadius:16,padding:"14px 18px",textAlign:"center",marginTop:4}}>
           <div style={{fontSize:20,marginBottom:6}}>🌱</div>
           <div style={{color:C.greenBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>Not sure what applies to you?</div>
-          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Ask your AI Coach: tell it your situation and it will identify exactly which credits you qualify for.</div>
+          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>The coach can explain how each of these relates to your situation. Eligibility is decided by the CRA or IRS.</div>
         </div>
 
       </div>;
@@ -9191,7 +9200,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
               </div>
             </div>
             <div style={{background:a.color+"12",border:`1px solid ${a.color}33`,borderRadius:12,padding:"10px 14px"}}>
-              <span style={{color:a.color,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💡 Pro tip: </span>
+              <span style={{color:a.color,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How it works: </span>
               <span style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{a.tip}</span>
             </div>
           </div>
@@ -9200,9 +9209,8 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
         <div style={{background:C.card,borderRadius:18,padding:"18px",border:`1px solid ${C.orange}33`}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
             <span style={{fontSize:24}}>🆘</span>
-            <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>Emergency Fund Target</div>
+            <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>Emergency fund</div>
           </div>
-          <div style={{color:C.orangeBright,fontSize:28,fontWeight:900,fontFamily:"'Playfair Display',serif",marginBottom:6}}>{cfg.emergencyMonths} months</div>
           <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{cfg.healthcareNote}</div>
         </div>
       </div>;
@@ -9285,7 +9293,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
           {/* Where to save suggestions */}
           {saveSuggestions.length>0&&(
             <div style={{background:C.orange+"12",border:`1px solid ${C.orange}33`,borderRadius:12,padding:"12px 14px"}}>
-              <div style={{color:C.orange,fontWeight:800,fontSize:13,marginBottom:8}}>💡 Where you could save</div>
+              <div style={{color:C.orange,fontWeight:800,fontSize:13,marginBottom:8}}>Over budget this month</div>
               {saveSuggestions.map(({cat,over})=>(
                 <div key={cat} style={{marginBottom:6}}>
                   <div style={{color:C.cream,fontSize:13}}>{catEmojis[cat]||"📌"} {cat}</div>
@@ -9751,7 +9759,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
      metric:topCat?`Top category: ${topCat[0]} · $${(topCat[1]||0).toFixed(0)} this month`:"No transaction data yet",
      metricColor:C.tealBright,
      prompt:"Was any category a surprise? What would you do differently?"},
-    {id:"debt",icon:"📉",title:"Celebrate debt progress",desc:"Even $1 less is a win.",
+    {id:"debt",icon:"📉",title:"Celebrate debt progress",desc:"Any change in a balance counts.",
      metric:totalDebt>0?`Total debt: $${totalDebt.toLocaleString()} · Min payments: $${(data.debts||[]).reduce((a,d)=>a+parseFloat(d.min||0),0).toFixed(0)}/mo`:"No debt tracked. Nice work.",
      metricColor:totalDebt>0?C.orangeBright:C.greenBright,
      prompt:"Did you make any extra payments? What felt hard this week?"},
@@ -9759,7 +9767,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
      metric:`Cash flow: ${cashFlow>=0?"$"+(cashFlow||0).toFixed(0)+" surplus":"$"+Math.abs(cashFlow).toFixed(0)+" deficit"} · Health score: ${healthScore}/100`,
      metricColor:cashFlow>=0?C.greenBright:C.redBright,
      prompt:"Does the goal still feel right? Are you on track?"},
-    {id:"wins",icon:"⭐",title:"Name one win each",desc:"Rewires how you both feel about money.",
+    {id:"wins",icon:"⭐",title:"Name one win each",desc:"A win can be small.",
      metric:"Both share one money win from this week, no skipping.",
      metricColor:C.purpleBright,
      prompt:"What did you each name? Write it down to revisit next time."},
@@ -9782,11 +9790,11 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
      metric:topCat?`Biggest spend: ${topCat[0]} · $${(topCat[1]||0).toFixed(0)}`:`Income: $${(monthlyIncome||0).toFixed(0)} · Bills: $${monthlyBills.toFixed(0)}`,
      metricColor:C.tealBright,
      prompt:"Did anything feel out of control? What triggered it?"},
-    {id:"mood",icon:"💭",title:"How do you feel about money right now?",desc:"Your emotional state affects every decision.",
+    {id:"mood",icon:"💭",title:"How do you feel about money right now?",desc:"Feelings about money are part of the picture.",
      metric:"Anxious? Calm? Overwhelmed? Be honest with yourself.",
      metricColor:C.purpleBright,
      prompt:"What's driving that feeling? Has anything changed?"},
-    {id:"win",icon:"⭐",title:"Name one win",desc:"Cooked at home? Resisted a sale? Put $20 away?",
+    {id:"win",icon:"⭐",title:"Name one win",desc:"A meal at home, a purchase skipped, money saved?",
      metric:cashFlow>=0?`You have a $${(cashFlow||0).toFixed(0)}/mo surplus. That's real progress.`:"Tight this month, but showing up to check in IS the win.",
      metricColor:cashFlow>=0?C.greenBright:C.goldBright,
      prompt:"Say it out loud. Write it down. Wins compound."},
@@ -12738,7 +12746,7 @@ function Paywall({onClose,onPromoValid,country}){
   // Step 3: all prices come from src/lib/pricing.js — no hard-coded price or "save %" here.
   const _pr = getPricing(country);
   const plans={
-    annual:{label:"Annual",price:`${formatPrice(_pr.annual)}/yr`,monthly:`${formatPrice(monthlyEquivalentOfAnnual(country))}/mo`,save:`Save ${annualSavingsPercent(country)}%`,badge:"Best Value"},
+    annual:{label:"Annual",price:`${formatPrice(_pr.annual)}/yr`,monthly:`${formatPrice(monthlyEquivalentOfAnnual(country))}/mo`,save:`Save ${annualSavingsPercent(country)}%`,badge:"Billed yearly"},
     monthly:{label:"Monthly",price:`${formatPrice(_pr.monthly)}/mo`,monthly:null,save:null,badge:null},
   };
   const features=[
@@ -12971,7 +12979,7 @@ function FirstVisitScreen({data, onDismiss}) {
         )}
 
         <div style={{marginTop:4,color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,maxWidth:260,margin:"0 auto"}}>
-          Open Flourish before you spend, not after. That's the whole idea.
+          Flourish shows what's safe to spend before you spend it.
         </div>
         <button onClick={onDismiss} style={{background:"none",border:"none",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"12px 8px 4px"}}>
           Skip for now
@@ -13421,7 +13429,7 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
         {streak>0&&(
           <div style={{background:"rgba(255,140,66,0.15)",border:"1px solid rgba(255,140,66,0.3)",borderRadius:10,padding:"8px 14px",display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
             <span style={{fontSize:18}}>🔥</span>
-            <span style={{color:"#FF8C42",fontWeight:700,fontSize:13}}>{streak} week streak! Keep it going!</span>
+            <span style={{color:"#FF8C42",fontWeight:700,fontSize:13}}>{streak} week streak!</span>
           </div>
         )}
         {/* Theme picker — visual swatch grid */}
@@ -14657,10 +14665,10 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
                 <span style={{color:totalEdited>discret?C.redBright:C.greenBright,fontWeight:800,fontSize:14}}>${Math.round(totalEdited).toLocaleString()}/mo</span>
               </div>
               {totalEdited>discret&&<div style={{color:C.muted,fontSize:13,marginTop:3}}>
-                ${Math.round(totalEdited-discret).toLocaleString()} over, see suggested cuts below
+                ${Math.round(totalEdited-discret).toLocaleString()} over what's available to spend
               </div>}
               {totalEdited<=discret&&totalEdited>0&&<div style={{color:C.muted,fontSize:13,marginTop:3}}>
-                ${Math.round(discret-totalEdited).toLocaleString()} unallocated. Consider adding to savings
+                ${Math.round(discret-totalEdited).toLocaleString()} not given to a category
               </div>}
             </div>
           </div>
@@ -14685,7 +14693,7 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
                   <div style={{width:24,height:24,borderRadius:"50%",background:C.red,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:"#fff",flexShrink:0}}>3</div>
                   <div>
                     <div style={{color:C.redBright,fontWeight:800,fontSize:14}}>This doesn't quite fit</div>
-                    <div style={{color:C.muted,fontSize:13,marginTop:1}}>You're ${Math.round(totalEdited-discret).toLocaleString()} over, here's what to trim</div>
+                    <div style={{color:C.muted,fontSize:13,marginTop:1}}>It is ${Math.round(totalEdited-discret).toLocaleString()} over. One way to fit it, worked out by Flourish:</div>
                   </div>
                 </div>
                 {liveCuts.length>0?(
@@ -14706,12 +14714,12 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
                       </div>
                     ))}
                     {remaining>0&&<div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"4px"}}>
-                      ${remaining} still to cut. Consider reducing more categories or removing one
+                      ${remaining} is still over after these amounts
                     </div>}
                   </div>
                 ):(
                   <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"8px 0"}}>
-                    Consider removing a category or reducing your savings rate temporarily.
+                    Flourish found no category it lowers here. The plan is ${Math.round(totalEdited-discret).toLocaleString()} over what's available.
                   </div>
                 )}
               </div>
@@ -14725,7 +14733,7 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
               fontWeight:800,fontSize:14,cursor:totalEdited<=discret?"pointer":"not-allowed",fontFamily:"inherit",transition:"all .2s"}}>
             {saved?"✅ Budget Plan Saved!":"✓ Save My Budget Plan"}
           </button>
-          {totalEdited>discret&&<div style={{color:C.muted,fontSize:13,textAlign:"center",marginTop:-8}}>Apply the suggested cuts above to start saving</div>}
+          {totalEdited>discret&&<div style={{color:C.muted,fontSize:13,textAlign:"center",marginTop:-8}}>The plan can be saved once it fits what's available.</div>}
 
         </div>
       )}
@@ -14899,17 +14907,13 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
               {/* Where to save — only when over budget */}
               {saveSuggestions.length > 0 && (
                 <div style={{ background: C.orange + "12", border: `1px solid ${C.orange}33`, borderRadius: 16, padding: "14px 16px" }}>
-                  <div style={{ color: C.orange, fontWeight: 800, fontSize: 13, marginBottom: 10 }}>💡 Where you could cut back</div>
-                  {saveSuggestions.map(({ cat, over, potential }) => (
+                  <div style={{ color: C.orange, fontWeight: 800, fontSize: 13, marginBottom: 10 }}>Over budget this month</div>
+                  {saveSuggestions.map(({ cat, over }) => (
                     <div key={cat} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, paddingBottom: 8, borderBottom: `1px solid ${C.border}` }}>
                       <div>
                         <div style={{ color: C.cream, fontSize:13, fontWeight: 600 }}>{catEmoji[cat] || "📌"} {cat}</div>
                         <div style={{ color: C.redBright, fontSize:13, marginTop: 2 }}>${Math.round(over)} over budget this month</div>
                       </div>
-                      {potential > 0 && <div style={{ textAlign: "right" }}>
-                        <div style={{ color: C.green, fontSize:13, fontWeight: 700 }}>Save ~${potential}</div>
-                        <div style={{ color: C.muted, fontSize:13 }}>per month</div>
-                      </div>}
                     </div>
                   ))}
                 </div>

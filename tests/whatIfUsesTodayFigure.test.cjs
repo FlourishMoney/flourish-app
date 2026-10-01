@@ -56,7 +56,7 @@ const path = require("path");
 
   // ── 2. Meet's extra and Decisions' move-to-savings are 25% of the same figure ─────────────────
   const dec = (buildMeetSnapshot(demo).decisions || [])[0];
-  t.eq(dec && dec.options[1].label, "Add $486 to savings", "2a Meet: $486, 25% of $1,944");
+  t.eq(dec && dec.options[1].label, "$486 into savings", "2a Meet: $486, 25% of $1,944");
   t.eq(DE.computeSavingsOpportunity(DE.displayedSafeToSpend(demo, now)), 486, "2b Decisions: the same $486");
   // Across a year of dates, Meet's extra is always 25% of what Today shows, never of the raw amount.
   let agree = 0, checked = 0;

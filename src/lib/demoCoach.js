@@ -76,7 +76,7 @@ export function demoCoachExchanges(data, today = new Date()) {
     out.push({
       q: "So how much can I spend today?",
       a: `${f.pace.dailyText}. That paces ${f.view.headlineText} over ${f.pace.daysLeft} days. ` +
-         `It's a pace, not a limit. Safe to Spend is what you can afford, this is how to make it last. ` +
+         `It's a pace, not a limit. Safe to Spend is the total until your next deposit; this spreads it across the days. ` +
          `I never divide by fewer than 14 days, so a deposit landing soon doesn't tempt you into spending it all at once.`,
     });
   }

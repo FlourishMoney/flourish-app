@@ -286,7 +286,7 @@ export const AutopilotEngine = {
     const alerts = [];
     if (mode === "high") {
       const msg = forecastDanger
-        ? `Balance projected to go negative in ${overdraftRisk[0]?.day} days. Hold all non-essential spending.`
+        ? `Balance projected to go negative in ${overdraftRisk[0]?.day} days.`
         : "Cash is critically low. Bills protection mode active. Savings and extras paused.";
       alerts.push({ type:"danger", msg });
     } else if (cashTight) {
@@ -302,7 +302,8 @@ export const AutopilotEngine = {
     const adherence = Math.min(100, Math.round(spendingStability * 100));
 
     // ── ⑧ Mode label for UI ──────────────────────────────────────────────────
-    const modeLabel = mode === "low" ? "On Track" : mode === "medium" ? "Monitor" : "At Risk";
+    // Prompt 3d: what the engine found, not a grade. ("On Track" / "Monitor" / "At Risk" read as verdicts.)
+    const modeLabel = mode === "low" ? "Bills covered" : mode === "medium" ? "Cash is tight" : "Overdraft risk";
     // Signals, not adjustments: the daily pace is the same number on every surface, so a chip may
     // report what was detected but must never claim the limit was moved by it.
     const adaptations = [
