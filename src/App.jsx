@@ -47,6 +47,7 @@ import { getNotificationPermission, requestNotificationPermission, scheduleNotif
 import { planNotifications } from "./lib/notificationPlanner.js";
 import { SCREENSHOT_EMAIL, normalizeEmail, isReviewAccount } from "./lib/sampleHouseholdAccount.js";
 import { dueSoonList } from "./lib/dueSoon.js";
+import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
 import { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
 import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
@@ -9336,7 +9337,9 @@ function MeetAgenda({ data, isCouple, setScreen }){
       return quietWeekAgendaFor({});
     }
   }, [data]);
-  const canFacilitate = isUnlimited();     // premium, beta_founder, or active trial
+  // Web: premium, beta_founder, or an active trial. A store app: every user (nothing to buy in 1.0.0,
+  // and nothing closes when a trial ends), lib/featureAccess.js.
+  const canFacilitate = facilitatorAvailable({ native: isNativeApp() });
   const aiOn = aiEnabled();
   // Item 3: only a signed-in eligible tier with AI on sees the input; demo/free → trial line, AI off → off line.
   const facilitatorGate = facilitatorGateState({ demo: !!data.demo, canFacilitate, aiOn });
@@ -12550,7 +12553,7 @@ function TermsOfService({onBack}){
       <div style={p}>You agree not to: use the App for any unlawful purpose; attempt to reverse-engineer, decompile, or hack the App; use the App to process another person's financial data without their consent; resell or sublicense the App; or interfere with the security or integrity of the App or its infrastructure.</div>
 
       <div style={h2}>{isNativeApp() ? "7. Cost and usage limits" : "7. Subscription & Billing"}</div>
-      <div style={p}>{isNativeApp() ? "The iOS and Android apps are free, and there is nothing to buy in them. Some features have daily or weekly usage limits, and some are available for a limited time after you sign up; the app says so where that applies." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
+      <div style={p}>{isNativeApp() ? "The iOS and Android apps are free, and there is nothing to buy in them. No feature closes after you sign up. There are usage limits: the coach has a weekly message limit that applies to everyone, and any other limit, such as on What-If, is shown where it applies." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
 
       <div style={h2}>8. Intellectual Property</div>
       <div style={p}>The App, including its design, logo, code, AI systems, and content, is the exclusive property of GrowSmart Inc. and is protected by copyright, trademark, and other intellectual property laws. You receive a limited, non-exclusive, non-transferable licence to use the App for personal, non-commercial purposes.</div>
@@ -15152,10 +15155,12 @@ export default function FlourishApp(){
   // The new library uses a daily-resetting counter and respects plan tiers
   // (free / premium / beta_founder). On first boot after Phase 2 ships, we
   // also run the grandfather check so existing users get beta_founder status.
-  const [coachMsgCount,setCoachMsgCount]=useState(()=>getCoachMessagesRemaining()===Infinity?0:(FREE_TIER_LIMITS.coachMessagesPerWeek-getCoachMessagesRemaining()));
+  // A store app counts every user's coach messages against the weekly limit, trial or not (only a paid
+  // or founder flag lifts it there); the web keeps trial, premium and founder unlimited.
+  const [coachMsgCount,setCoachMsgCount]=useState(()=>{ const left=getCoachMessagesRemaining({ native: isNativeApp() }); return left===Infinity?0:(FREE_TIER_LIMITS.coachMessagesPerWeek-left); });
   const bumpCoachMsg=()=>{
-    if (isUnlimited()) return; // Phase D10: don't count messages for trial/premium/founder users
-    recordCoachUse();
+    if (coachUnlimited({ native: isNativeApp(), isPremium: isUnlimited() })) return; // Phase D10: unlimited users are not counted
+    recordCoachUse({ native: isNativeApp() });
     setCoachMsgCount(c=>c+1);
   };
 
@@ -16369,7 +16374,7 @@ export default function FlourishApp(){
         {sub==="goals"
           ? <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen} onEditBudget={editBudget}/>
           : sub==="credit"
-            ? (isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Factor-by-factor breakdown and a plan with amounts and dates. Calculated by Flourish, explained by your coach." onUpgrade={()=>setShowPaywall(true)}/>)
+            ? (creditAvailable({ native: nativeApp, isPremium })?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Factor-by-factor breakdown and a plan with amounts and dates. Calculated by Flourish, explained by your coach." onUpgrade={()=>setShowPaywall(true)}/>)
             : <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} startInEdit={budgetEditRequested} onEditStarted={()=>setBudgetEditRequested(false)}/>}</>;
     }
     if(screen==="coach"){
@@ -16377,9 +16382,12 @@ export default function FlourishApp(){
       if(!aiCoachEnabled) return <AIDisabledNotice onOpenSettings={()=>setShowSettings(true)} onClose={()=>setScreen("home")}/>;
       if(!aiDisclosureSeen) return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={()=>{declineAIDisclosure();setScreen("home");}} onViewLegal={s=>setScreen(s)}/>;
       // Phase D7: gate via library (handles trial unlimited + post-trial daily caps + tiers)
-      const freeCoachAllowed = canUseCoach();
-      const showCoach = isPremium || freeCoachAllowed;
-      if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium || isTrialActive()} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={openUpgrade} setScreen={setScreen} setAppData={setAppData} onExitDemo={exitDemo} postCoachConsent={postCoachConsent} onNeedConsent={requireAIDisclosure}/>;
+      // A store app: the weekly limit applies to every user, so only a paid or founder flag lifts it;
+      // the trial does not (lib/featureAccess.js). The web is unchanged.
+      const freeCoachAllowed = canUseCoach({ native: nativeApp });
+      const coachIsOpenEnded = coachUnlimited({ native: nativeApp, isPremium: isPremium || isTrialActive() });
+      const showCoach = (nativeApp ? coachIsOpenEnded : isPremium) || freeCoachAllowed;
+      if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={coachIsOpenEnded} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={openUpgrade} setScreen={setScreen} setAppData={setAppData} onExitDemo={exitDemo} postCoachConsent={postCoachConsent} onNeedConsent={requireAIDisclosure}/>;
       // Phase D10: removed stale 5-message gate (D7 dropped FREE_TIER_LIMITS.coachMessagesPerDay to 1; line below handles all gated cases).
       // On a store app this gate only appears once the week's free coach messages are used: the coach is
       // included, so say what actually happened and when it lifts, not that the feature is missing.

@@ -59,7 +59,7 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b/i;
     const native = (fn) => { setPlatform("ios"); try { return fn(); } finally { setPlatform("web"); } };
     const terms = native(() => textOf(A.render(A.h(A.TermsOfService, { onBack: () => {} }))));
     const s7 = terms.slice(terms.indexOf("7. "), terms.indexOf("8. ")).trim();
-    t.eq(s7, "7. Cost and usage limits The iOS and Android apps are free, and there is nothing to buy in them. Some features have daily or weekly usage limits, and some are available for a limited time after you sign up; the app says so where that applies.",
+    t.eq(s7, "7. Cost and usage limits The iOS and Android apps are free, and there is nothing to buy in them. No feature closes after you sign up. There are usage limits: the coach has a weekly message limit that applies to everyone, and any other limit, such as on What-If, is shown where it applies.",
       "1a native Terms section 7 says what the store app does, word for word");
     const webTerms = textOf(A.render(A.h(A.TermsOfService, { onBack: () => {} })));
     t.ok(/7\. Subscription & Billing/.test(webTerms), "1b (the web keeps its section 7)");

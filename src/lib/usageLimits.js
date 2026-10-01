@@ -117,17 +117,26 @@ export function getCoachMessagesUsedThisWeek() {
   return _readCounter(COACH_USAGE_KEY, _weekKey());
 }
 
-export function getCoachMessagesRemaining() {
-  if (isUnlimited()) return Infinity;
+// Whether the coach's weekly limit is lifted. On the web, a trial, a paid plan or a founder flag lifts
+// it. On a store app (iOS, Android) there is nothing to buy in 1.0.0 and no feature may change when a
+// trial ends, so the weekly limit applies to every native user from the first day, trial or not; only
+// a paid or founder flag (a web purchase or the founder grant) lifts it there. Pass { native: true }
+// from a store build; the default is the web rule, unchanged.
+export function coachIsUnlimited({ native = false } = {}) {
+  return native ? isPremiumOrFounder() : isUnlimited();
+}
+
+export function getCoachMessagesRemaining(opts) {
+  if (coachIsUnlimited(opts)) return Infinity;
   return Math.max(0, FREE_TIER_LIMITS.coachMessagesPerWeek - getCoachMessagesUsedThisWeek());
 }
 
-export function canUseCoach() {
-  return getCoachMessagesRemaining() > 0;
+export function canUseCoach(opts) {
+  return getCoachMessagesRemaining(opts) > 0;
 }
 
-export function recordCoachUse() {
-  if (isUnlimited()) return; // don't bother counting for unlimited tiers
+export function recordCoachUse(opts) {
+  if (coachIsUnlimited(opts)) return; // don't bother counting for unlimited tiers
   _writeCounter(COACH_USAGE_KEY, _weekKey(), getCoachMessagesUsedThisWeek() + 1);
 }
 
