@@ -34,6 +34,12 @@
 //       on ALLOW: app navigation and controls, the household's own What-If questions, sign-in and
 //       subscription screens, legal text, and parked kids chores. ALLOW is exact strings, so any new
 //       line has to be read and either rewritten or added on purpose.
+//   12. Prompt 3e: the spare amount is a fact, never split. One figure, spareUntilDeposit: 25% of the
+//       safe to spend Today shows, rounded down, and nothing when cash is tight or an overdraft is
+//       forecast. Hand-worked on the published test date (2026-09-29): CA 25% × $1,944 = $486;
+//       US 25% × $2,415 = $603.75, rounded down to $603. These are the Decisions card's figures from
+//       before (computeSavingsOpportunity of the displayed figure), unchanged. No screen and no AI
+//       context assigns any of it to savings, a debt or a goal.
 //   6. Prompt 3c: What-If states results, never a verdict. Hand-worked payoff, $1,000 at 12% APR:
 //        $100 a month: 11 months, total paid $1,058.98, interest $58.98 (the engine's own pinned example)
 //        $200 a month: 10.00 + 8.10 + 6.18 + 4.24 + 2.29 + 0.31 = $31.12 interest, 6 months
@@ -50,7 +56,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
 (async () => {
   const t = create();
   let A = {};
-  try { A = loadApp(["patternCards", "computeStats", "CC", "TAX_DATA", "getPersonalizedTaxCredits", "CreditScreen", "debtResultSentence", "KIDS_LESSONS", "Dashboard", "Family", "WidgetScreen"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
+  try { A = loadApp(["patternCards", "computeStats", "CC", "TAX_DATA", "getPersonalizedTaxCredits", "CreditScreen", "debtResultSentence", "KIDS_LESSONS", "Dashboard", "Family", "WidgetScreen", "spareWorking", "DecisionEngine"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
 
   // ── 1. Patterns ──────────────────────────────────────────────────────────────────────────────
   {
@@ -441,6 +447,73 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       "Pro tip", "Best Value", "Worth getting ahead of it", "Make sure your", "frees that money", "expensive money"]) {
       t.ok(!strings.some(c => c.text.includes(gone)), `11e gone: "${gone}"`);
     }
+  }
+
+  // ── 12. Prompt 3e: the spare amount is a fact, never split ───────────────────────────────────
+  {
+    const DE = await import("../src/lib/decisionEngine.js");
+    const D = await import("../src/lib/demoFixture.js");
+    const M = await import("../src/lib/meetSnapshot.js");
+    const DC = await import("../src/lib/demoCoach.js");
+    const { formatMoney } = await import("../src/lib/format.js");
+    const VIEW = new Date(2026, 8, 29, 12);
+    const demoOn = (c, made, extra = {}) => ({ profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), incomes: D.buildDemoIncomes(made, c),
+      bills: D.buildDemoBills(made, c), transactions: D.buildDemoTxns(made, c), demo: true, ...extra });
+    // a. The figure is unchanged on both demos, and every surface reads the one figure
+    for (const [c, safe, spare] of [["CA", 1944, 486], ["US", 2415, 603]]) {
+      const d = demoOn(c, VIEW);
+      const before = DE.cashIsTight(d, VIEW).tight ? 0 : DE.computeSavingsOpportunity(DE.displayedSafeToSpend(d, VIEW));
+      const now = DE.spareUntilDeposit(d, VIEW);
+      t.eq([now.safe, now.spare, before], [safe, spare, spare], `12a ${c}: $${spare} spare = 25% of $${safe.toLocaleString("en-US")}, rounded down, the same figure Decisions showed before`);
+      const plan = DE.AutopilotEngine.generate(d, {}, VIEW);
+      t.eq([plan.spare, plan.spareFrom], [spare, safe], `12b ${c}: the Money Plan shows that figure, not a surplus of its own`);
+      t.eq(["savingsTransfer", "debtPayment", "goalContribution", "savingsTarget", "debtTarget", "goalTarget", "buffer", "surplus"].filter(k => k in plan), [],
+        `12c ${c}: the plan carries no allocation (no savings, debt or goal amount, no residual)`);
+    }
+    t.eq(A.spareWorking(486, 1944), "A quarter of your $1,944 safe to spend: 25% × $1,944 = $486. Flourish does not assign it to anything.", "12d CA: how it was worked out, in full");
+    t.eq(A.spareWorking(603, 2415), "A quarter of your $2,415 safe to spend: 25% × $2,415 = $603.75, rounded down to $603. Flourish does not assign it to anything.", "12e US: …with the rounding shown");
+    // b. Today: the fact, and goals and debts by name with their own balances, no suggested amount
+    const noop = () => {};
+    for (const c of ["CA", "US"]) {
+      const made = new Date();
+      const goals = [{ id: 1, name: "Trip fund", saved: "400", target: "2000", monthly: "100" }];
+      const data = demoOn(c, made, { goals, bankConnected: true });
+      const sp = DE.spareUntilDeposit(data).spare;
+      const today = textOf(A.render(A.h(A.Dashboard, { data, setAppData: noop, setScreen: noop, setShowNotifs: noop, onUpgrade: noop, onWhatIf: noop })));
+      t.ok(today.includes("Spare until your next deposit") && (sp === 0 || today.includes(`= $${sp.toLocaleString("en-US")}`) || today.includes(`rounded down to $${sp.toLocaleString("en-US")}`)),
+        `12f ${c}: Today's Money Plan shows the spare amount ($${sp}) as a fact, with how it was worked out`);
+      const plan = DE.AutopilotEngine.generate(data, {});
+      const debtsShown = plan.debtsOwed.every(dd => today.includes(dd.name) && today.includes(formatMoney(dd.balance)));
+      t.ok(debtsShown && today.includes("Trip fund") && today.includes("$400") && today.includes("saved of $2,000"), `12g ${c}: goals and debts are listed by name with their own balances`);
+      t.ok(!/For Emergency Fund|For Savings|Extra for |toward this goal|Left over|more a month|part of what is spare|Move to |Extra toward/.test(today), `12h ${c}: no amount is assigned to savings, a debt or a goal anywhere on Today`);
+    }
+    // The Decisions tab's card says the same, with the same working, and offers no debt amount.
+    {
+      const { suggestedDailyView } = await import("../src/lib/suggestedDaily.js");
+      const { FinancialCalcEngine } = await import("../src/lib/financialCalculations.js");
+      const d = demoOn("CA", VIEW);
+      const safe = DE.displayedSafeToSpend(d, VIEW);
+      const dec = textOf(A.render(A.h(A.DecisionEngine, { data: d, safe, bal: 3083, monthlyIncome: FinancialCalcEngine.cashFlow(d, {}, VIEW).monthlyIncome, soonBills: [], todayDate: VIEW,
+        dailyPace: suggestedDailyView(safe, d.incomes, d.transactions, VIEW, d), setScreen: noop })));
+      t.ok(dec.includes("$486 spare until your next deposit") && dec.includes("25% × $1,944 = $486") && !/more a month|Extra|toward/.test(dec), "12f2 Decisions: $486 spare, worked out, and no debt amount");
+    }
+    t.ok(!/plan\.(savingsTransfer|debtPayment|goalContribution|buffer|surplus)\b/.test(APP) && !/modeMultipliers|mult\.(savings|debt|goal)/.test(fs.readFileSync(path.join(REPO, "src", "lib", "decisionEngine.js"), "utf8")),
+      "12i the 40% / 40% / 50% rules are gone from the engine and nothing reads an allocation");
+    // c. Meet and the AI contexts: the spare amount and balances only
+    const meetData = demoOn("CA", new Date());
+    const agenda = M.meetAgendaFor(meetData);
+    const facil = M.agendaToText(agenda);
+    const dec = (agenda.decisions || [])[0];
+    t.ok(!!dec && /^\$[\d,]+ is spare /.test(dec.text) && dec.options.every(o => /^\$[\d,.]+ (owed at [\d.]+%|saved now)$/.test(o.outcome)), "12j Meet: the spare amount, then the debt and savings with their own balances");
+    t.ok(!/Extra \$|into savings|toward |grows to|paid off in/.test(facil), "12k the coach's meeting context (agendaToText) assigns none of the spare amount");
+    const demoCoach = JSON.stringify(DC.demoCoachExchanges(meetData)) + (DC.demoFacilitatorLine(meetData) || "");
+    t.ok(!/Extra \$|into savings|grows to|paid off in/.test(demoCoach), "12l the demo coach's answers and facilitator line assign none of it either");
+    const coachCtx = APP.slice(APP.indexOf("const buildContext = (userText"), APP.indexOf("const buildContext = (userText") + 20000);
+    t.ok(!/AutopilotEngine|spareUntilDeposit|savingsTransfer|computeSavingsOpportunity/.test(coachCtx), "12m the coach chat's context reads no allocation (and no split exists to read)");
+    const notif = ["notificationPlanner.js", "notifications.js"].map(f => fs.readFileSync(path.join(REPO, "src", "lib", f), "utf8")).join("\n");
+    t.ok(!/AutopilotEngine|spareUntilDeposit|computeSavingsOpportunity|savingsTransfer/.test(notif), "12n notifications read no allocation");
+    const widget = textOf(A.render(A.h(A.WidgetScreen, { data: { ...meetData, bankConnected: true }, onBack: noop })));
+    t.ok(!/spare|toward|into savings|Extra for/i.test(widget), "12o widgets show no allocation");
   }
 
   t.summary("sourcedFigures.test");
