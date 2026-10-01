@@ -101,7 +101,7 @@ Autopilot card, Decision Engine card, opportunity card and Wrapped stay; they be
 
 | Location | Current | New |
 |---|---|---|
-| Header | Plan Ahead / Your financial crystal ball | **Watch** / **The next 90 days. What's coming in, what's going out, and what happens if.** |
+| Header | Plan Ahead / Your financial crystal ball | **Watch** / **The next 7, 30 or 90 days (the selected range). What's coming in, what's going out, and what happens if.** |
 | Time Machine title | ⏳ Financial Time Machine | **Time Machine** / sub: **Drag a what-if onto your forecast. Flourish recalculates the line.** |
 | What-if prompt | What if I… | **What if I…** (keep) |
 | Transactions CTA | Ask Coach | **Explain this** |
@@ -195,7 +195,7 @@ Screen copy:
 |---|---|
 | Header | **Meet** / **Your 15-minute money meeting** |
 | Sub | **Flourish wrote this agenda from your week. The coach keeps it calm and about the numbers.** |
-| Section: Flourish noticed | bullet list from the generator, e.g. **You stayed within safe-to-spend 5 of 7 days.** / **Groceries ran $62 above your usual pattern.** / **Visa fell $210 to $2,340.** / **Hydro One $184 is due Thursday.** / **Emergency fund is projected to hit $2,000 in February.** |
+| Section: This week (was "Flourish noticed") | bullet list from the generator, e.g. **You stayed within safe-to-spend 5 of 7 days.** / **Groceries ran $62 above your usual pattern.** / **Visa fell $210 to $2,340.** / **Hydro One $184 is due Thursday.** / **Emergency fund is projected to hit $2,000 in February.** |
 | Section: One decision this week | **Keep the extra $75 going to Visa (payoff May 2027), or move it to the emergency fund (target reached December)?** with two buttons, each showing the engine result |
 | Start button | **Start the meeting** (couple) / **Start solo check-in** (single) |
 | Facilitator intro (AI) | **I'll keep us to the agenda and the numbers. Nothing here is advice and nothing moves money. First item: the win.** |
