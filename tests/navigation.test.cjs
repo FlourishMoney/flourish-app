@@ -30,7 +30,9 @@ const t = create();
   t.eq(tabForScreen("do"),     "do",     "3j tab id resolves to itself");
 
   // standalone full-screen routes: reachable, but no bottom-nav highlight
-  ["widget", "kids", "privacy", "terms"].forEach(s => {
+  // Prompt 3d: "kids" is no longer a route (Kids is parked; /kids redirects to /).
+  t.ok(!isReachableScreen("kids"), "4c \"kids\" is not reachable");
+  ["widget", "privacy", "terms"].forEach(s => {
     t.ok(isReachableScreen(s), `4a "${s}" reachable`);
     t.eq(tabForScreen(s), null, `4b "${s}" has no active tab`);
   });

@@ -18,7 +18,8 @@ export const TAB_SCREENS = {
 };
 
 // Full-screen routes that are reachable but are not bottom-nav tabs (no active-tab highlight).
-export const STANDALONE_SCREENS = ["widget", "kids", "privacy", "terms"];
+// "kids" was removed in prompt 3d: Kids is parked and /kids redirects to /.
+export const STANDALONE_SCREENS = ["widget", "privacy", "terms"];
 
 // Every screen reachable before Step 6 — the reachability contract. If any of these stops resolving
 // to a tab (or a standalone route), the five-tab redesign has dropped a feature.

@@ -9814,8 +9814,8 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <ScreenHeader title="Meet" subtitle="Your 15-minute money meeting" onBack={setScreen?()=>setScreen("home"):null}/>
     {(()=>{
-      // Step 10: Kids entry point removed from primary UI. The /kids route and its code (KidsMiniSite,
-      // the tab==="kids" block below) are intentionally kept for the future family add-on.
+      // Step 10: Kids entry point removed from primary UI. Since prompt 3d /kids redirects to / as well;
+      // the code (KidsMiniSite, the tab==="kids" block below) is kept, unrendered, for the future family add-on.
       const meetTabs=[["meeting",isCouple?"Money Meeting":"Check-In"],...(HOUSEHOLD_ENABLED?[["household","Household"]]:[])];
       // Truth-fix item 1: a single selected tab reads as a dead control. Hide the row unless it holds ≥2 tabs.
       if(meetTabs.length<2) return null;
@@ -15138,7 +15138,9 @@ export default function FlourishApp(){
     if (path === "/delete-account") return "delete-account";
     if (path === "/support") return "support";
     if (path === "/confirmed") return "confirmed";
-    if (path === "/kids")    return "kids";
+    // Prompt 3d: Kids is parked. /kids serves nothing and redirects to /, so the mini site
+    // (KidsMiniSite, kept for the future family add-on) is not reachable in any build.
+    if (path === "/kids") { try { window.history.replaceState(null, "", "/"); } catch { /* no history */ } return "home"; }
     return "home";
   })();
   const [screen,setScreen]=useState(initialScreen);
@@ -16172,7 +16174,6 @@ export default function FlourishApp(){
   if(screen==="delete-account")return <div style={legalShell}><DeleteAccount onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="support")return <div style={legalShell}><SupportPage onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="confirmed")return <ConfirmedPage/>;
-  if(screen==="kids")return <KidsMiniSite country={appData?.profile?.country}/>;
 
   // ── Auth gate ───────────────────────────────────────────────────
   if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
