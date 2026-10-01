@@ -44,7 +44,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
 (async () => {
   const t = create();
   let A = {};
-  try { A = loadApp(["patternCards", "computeStats", "CC", "TAX_DATA", "getPersonalizedTaxCredits", "CreditScreen", "debtResultSentence"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
+  try { A = loadApp(["patternCards", "computeStats", "CC", "TAX_DATA", "getPersonalizedTaxCredits", "CreditScreen", "debtResultSentence", "KIDS_LESSONS"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
 
   // ── 1. Patterns ──────────────────────────────────────────────────────────────────────────────
   {
@@ -119,7 +119,9 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     t.ok(APP.includes("OAS (up to $${TAX_DATA.CA.OAS.maxMonthly65to74}/mo at 65 to 74)") && !APP.includes("OAS ($727/mo)"), "3e the coach's OAS figure reads TAX_DATA ($751.97), not $727");
     t.ok(APP.includes('HST/GST registration ($${TAX_DATA.CA.GSTHST_SMALL_SUPPLIER.value.toLocaleString("en-US")} threshold)') && !APP.includes("($30k threshold)"), "3f the coach's registration threshold reads TAX_DATA");
     t.ok(APP.includes('Child Tax Credit (${usd(TAX_DATA.US.CHILD_TAX_CREDIT.value)}/child under 17, ${TAX_DATA.US.CHILD_TAX_CREDIT.year})'), "3g the coach's Child Tax Credit reads TAX_DATA");
-    t.eq((APP.match(/\$100 × 1\.07 to the power of 20 = \$387\. The 7% is an example rate\./g) || []).length, 2, "3h both kids decks show 1.07^20 × $100 = $387 in full (was $386)");
+    // Prompt 3c merged the two kids decks into one (KIDS_LESSONS), used by both kids screens, so the line appears once.
+    t.eq((APP.match(/\$100 × 1\.07 to the power of 20 = \$387\. The 7% is an example rate\./g) || []).length, 1, "3h the kids deck (one, shared by both kids screens) shows 1.07^20 × $100 = $387 in full (was $386)");
+    t.ok(/const allLessons=KIDS_LESSONS;/.test(APP) && /const lessons=KIDS_LESSONS;/.test(APP), "3h2 …and both kids screens read that one deck");
     const tfsa = A.CC.CA.taxTips.find(x => /^TFSA/.test(x.title));
     t.ok(tfsa && !/\$/.test(tfsa.body) && /CRA My Account/.test(tfsa.body), "3i the TFSA tip names no unsourced room figure and points to CRA My Account");
     const rrsp = A.CC.CA.taxTips.find(x => x.action === "Check My RRSP Room");
@@ -271,6 +273,24 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     t.ok(/summary: debtResultSentence\(result, extraPayment, currentPayment\)/.test(APP), "6g the debt card's line is debtResultSentence");
     t.ok(/do not recommend, judge, or call the purchase safe, risky, affordable or unaffordable, and do not suggest an alternative/.test(APP) && /JSON\.stringify\(factsForProse/.test(APP),
       "6h the purchase explanation is told facts only, and is sent no verdict, rating or health change");
+  }
+
+  // ── 7. Prompt 3c: the kids lessons are concepts ──────────────────────────────────────────────
+  {
+    const all = Object.values(A.KIDS_LESSONS).flat();
+    t.eq(all.length, 8, "7a (the one deck: 8 lessons)");
+    const text = all.map(l => [l.title, l.body, l.activity, l.key].filter(Boolean).join(" ")).join("\n");
+    for (const gone of ["Pay your credit card in full every month", "Use debt only for things that gain value", "Invest with your very first", "Start saving young",
+      "Use it wisely or not at all", "Start investing at your first job", "Ask a parent to open", "Play store at home", "Put $1 in a piggy bank", "Use an online compound interest calculator",
+      "That's how people get into trouble", "Try this activity", "Split every dollar"]) {
+      t.ok(!APP.includes(gone), `7b gone from the kids screens: "${gone}"`);
+    }
+    // No sentence in a lesson starts with an instruction verb, and none says should / always / never / don't.
+    const sentences = text.split(/(?<=[.!?])\s+|\n/).map(x => x.trim()).filter(Boolean);
+    const IMPERATIVE = /^(Pay|Use|Invest|Start|Ask|Put|Play|Save|Spend|Split|Try|Open|Watch|Avoid|Keep|Never|Always|Don't|Do|Make|Get|Buy|Borrow|Budget|Check)\b/;
+    t.eq(sentences.filter(x => IMPERATIVE.test(x)), [], "7c no lesson sentence is an instruction");
+    t.ok(!/\b(should|always|never|don't|must)\b/i.test(text), "7d no should / always / never / don't / must");
+    t.ok(/\$10 - \$3 = \$7/.test(text) && /\$1 × 3 = \$3/.test(text), "7e the lesson figures are arithmetic shown in full ($10 - $3 = $7; $1 × 3 = $3)");
   }
 
   t.summary("sourcedFigures.test");

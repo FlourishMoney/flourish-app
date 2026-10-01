@@ -10428,27 +10428,12 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
       {(()=>{
         const kidName=activeKid?.name||"your child";
         const lessonAge=activeKid?.age||globalKidAge;
-        const allLessons={
-          "4-7":[
-            {emoji:"🪙",title:"Money is for trading",body:"When you want something at the store, you give money and get the thing. Money is like a trade ticket!",activity:"Play store at home. Use toy coins to 'buy' snacks from a parent.",key:"Money is how we trade for things we want."},
-            {emoji:"🐷",title:"Saving means waiting",body:"If a toy costs $10 and you have $3, you need to save $7 more. Saving means keeping money safe until you have enough.",activity:"Put $1 in a piggy bank each day and count it every 3 days.",key:"Waiting for something makes it even better."},
-          ],
-          "8-12":[
-            {emoji:"🏦",title:"What banks do",body:"A bank keeps your money safe and pays you a little extra (interest) to use it while it's there. Like a super-safe piggy bank that rewards patience.",activity:"Ask a parent to open a youth savings account. Watch the interest appear.",key:"Banks keep money safe AND pay you to use them."},
-            {emoji:"💳",title:"Credit cards are loans",body:"A credit card lets you buy now, pay later. If you don't pay it ALL back quickly, they charge you extra. That's how people get into trouble.",activity:"If you borrowed $10 and had to pay back $11, the extra $1 is interest. A credit card charges interest on any balance not paid in full.",key:"Pay your credit card in full every month, always."},
-            {emoji:"📈",title:"Money can grow",body:"$100 growing 7% a year for 20 years: $100 × 1.07 to the power of 20 = $387. The 7% is an example rate. This is compound interest: money making more money.",activity:"Use an online compound interest calculator with a parent. Put in small numbers and watch.",key:"Start saving young. Time is the secret ingredient."},
-          ],
-          "13+":[
-            {emoji:"💰",title:"Budget like a boss",body:"One common rule of thumb splits income into 50% needs, 30% wants and 20% savings. Without a budget, money just disappears. A budget isn't restriction. It's a plan for the life you actually want.",key:"A budget gives your money direction."},
-            {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet, and paying extra for the privilege. Use debt only for things that gain value.",key:"Debt is expensive. Use it wisely or not at all."},
-            {emoji:"📊",title:"Start investing at your first job",body:"Money invested at a first job has more years to grow than the same money invested later, and each year of growth builds on the growth before it.",key:`Invest with your very first ${payWord(data.profile?.country)}.`},
-          ],
-        };
+        const allLessons=KIDS_LESSONS;
         return(<>
           {/* 3 Jar Method */}
           <Card style={{background:`linear-gradient(135deg,${C.goldDim} 0%,${C.card} 100%)`,border:`1px solid ${C.gold}33`}}>
             <div style={{color:C.gold,fontWeight:800,marginBottom:8}}>🫙 The 3 Jar Method</div>
-            <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>Split every dollar {kidName} earns into 3 jars.</div>
+            <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>Every dollar {kidName} earns is split across 3 jars.</div>
             <div style={{display:"flex",gap:8}}>
               {[{name:"Spend",emoji:"🎮",color:C.orange,desc:"Fun now"},{name:"Save",emoji:"🏦",color:C.blue,desc:"Big goals"},{name:"Give",emoji:"❤️",color:C.pink,desc:"Others"}].map((j,i)=>(
                 <div key={i} style={{flex:1,background:j.color+"18",border:`1px solid ${j.color}33`,borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
@@ -10479,7 +10464,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
               <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',Georgia,serif",marginBottom:8}}>{l.title}</div>
               <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65,marginBottom:l.activity?10:0}}>{l.body}</div>
               {l.activity&&<div style={{background:C.teal+"18",border:`1px solid ${C.teal}44`,borderRadius:12,padding:"10px 14px",marginBottom:10}}>
-                <div style={{color:C.tealBright,fontSize:13,fontWeight:700,marginBottom:4}}>Try this activity</div>
+                <div style={{color:C.tealBright,fontSize:13,fontWeight:700,marginBottom:4}}>An activity</div>
                 <div style={{color:C.cream,fontSize:13}}>{l.activity}</div>
               </div>}
               <Chip label={l.key} color={C.pink} size={12}/>
@@ -13252,6 +13237,30 @@ function KidsGoal({goal, jars, code, theme, primary, playSound}){
   );
 }
 
+// ── KIDS MONEY LESSONS (prompt 3c) ──────────────────────────────────────────────
+// One deck for both kids screens (Meet's kids tab and the /kids mini site), so they can no longer
+// drift. Concepts only, the same way the Learn cards were done: what a thing is and how it works,
+// never an instruction (the lines on paying cards in full, using debt only for things that gain
+// value and investing from the first paycheque are gone). Figures are plain
+// arithmetic shown in full. The activities describe what an exercise shows, rather than telling
+// anyone to do it.
+const KIDS_LESSONS={
+  "4-7":[
+    {emoji:"🪙",title:"Money is for trading",body:"When you want something at the store, you give money and get the thing. Money is like a trade ticket!",activity:"Playing store at home with toy coins shows how a trade works: coins go one way and a snack comes back.",key:"Money is how we trade for things we want."},
+    {emoji:"🐷",title:"Saving means waiting",body:"If a toy costs $10 and you have $3, you need $10 - $3 = $7 more. Saving means keeping money safe until you have enough.",activity:"A piggy bank that gets $1 a day holds $1 × 3 = $3 more every 3 days, so the savings can be seen adding up.",key:"Saving is waiting until there is enough."},
+  ],
+  "8-12":[
+    {emoji:"🏦",title:"What banks do",body:"A bank keeps your money safe and pays you a little extra, called interest, while it is there. Like a super-safe piggy bank that adds a bit on its own.",activity:"A youth savings account shows interest being added to the balance over time.",key:"A bank keeps money safe and pays interest on it."},
+    {emoji:"💳",title:"Credit cards are loans",body:"A credit card lets you buy now and pay later. Whatever is not paid back by the due date is charged interest, an extra cost on top of the price.",activity:"If you borrowed $10 and had to pay back $11, the extra $1 is interest. A credit card charges interest on any balance not paid in full.",key:"Interest is charged on any part of a card balance not paid back in time."},
+    {emoji:"📈",title:"Money can grow",body:"$100 growing 7% a year for 20 years: $100 × 1.07 to the power of 20 = $387. The 7% is an example rate. This is compound interest: money making more money.",activity:"A compound interest calculator shows how a small amount grows when the growth itself earns growth.",key:"The longer money grows, the more the growth builds on itself."},
+  ],
+  "13+":[
+    {emoji:"💰",title:"What a budget is",body:"One common rule of thumb splits income into 50% needs, 30% wants and 20% savings. A budget is a plan for where money goes before it is spent.",key:"A budget gives your money direction."},
+    {emoji:"🚫",title:"Debt borrows from your future self",body:"Debt is spending money you have not earned yet, and interest makes it cost more than the price. Some debts pay for things that keep or grow in value, such as an education or a home; others pay for things that get used up.",key:"Debt costs more than the price of what it buys."},
+    {emoji:"📊",title:"Investing from a first job",body:"Money invested at a first job has more years to grow than the same money invested later, and each year of growth builds on the growth before it.",key:"Money invested early has the most years to grow."},
+  ],
+};
+
 function KidsMiniSite({country}){ // `country` threaded from the render site (profile.country) so a US family reads "paycheck"
   const params=new URLSearchParams(window.location.search);
   const code=params.get("code")||"";
@@ -13378,22 +13387,7 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
   const kidName=kidData?.name||"Your";
   const kidEmoji=kidData?.emoji||"🌱";
 
-  const lessons={
-    "4-7":[
-      {emoji:"🪙",title:"Money is for trading",body:"When you want something at the store, you give money and get the thing. Money is like a trade ticket!",activity:"Play store at home. Use toy coins to 'buy' snacks from a parent.",key:"Money is how we trade for things we want."},
-      {emoji:"🐷",title:"Saving means waiting",body:"If a toy costs $10 and you have $3, you need to save $7 more. Saving means keeping money safe until you have enough.",activity:"Put $1 in a piggy bank each day and count it every 3 days.",key:"Waiting for something makes it even better."},
-    ],
-    "8-12":[
-      {emoji:"🏦",title:"What banks do",body:"A bank keeps your money safe and pays you a little extra called interest. Like a super-safe piggy bank that rewards you for saving.",key:"Banks keep money safe AND pay you to use them."},
-      {emoji:"💳",title:"Credit cards are loans",body:"A credit card lets you buy now and pay later. But if you don't pay it all back quickly, they charge you extra. That's how people get into trouble.",key:"Pay your credit card in full every month."},
-      {emoji:"📈",title:"Money can grow",body:"$100 growing 7% a year for 20 years: $100 × 1.07 to the power of 20 = $387. The 7% is an example rate. This is compound interest: money making more money.",key:"Start saving young. Time is the secret ingredient."},
-    ],
-    "13+":[
-      {emoji:"💰",title:"Budget like a boss",body:"One common rule of thumb splits income into 50% needs, 30% wants and 20% savings. Without a budget, money just disappears. A budget is a plan for the life you actually want.",key:"A budget gives your money direction."},
-      {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet, and paying extra for the privilege.",key:"Debt is expensive. Use it wisely or not at all."},
-      {emoji:"📊",title:"Start investing at your first job",body:"Money invested at a first job has more years to grow than the same money invested later, and each year of growth builds on the growth before it.",key:`Invest with your very first ${payWord(country)}.`},
-    ],
-  };
+  const lessons=KIDS_LESSONS;
 
   return(
     <div style={{minHeight:"100dvh",background:theme.bg,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"0 0 80px",transition:"background .4s"}}>
@@ -13509,7 +13503,7 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
               <div style={{color:theme.text,fontWeight:800,fontSize:14,marginBottom:8}}>{l.title}</div>
               <div style={{color:theme.textMuted,fontSize:13,lineHeight:1.65,marginBottom:l.activity?10:0}}>{l.body}</div>
               {l.activity&&<div style={{background:theme.primaryDim,border:`1px solid ${theme.primaryBorder}`,borderRadius:10,padding:"8px 12px",marginBottom:8}}>
-                <div style={{color:primary,fontSize:13,fontWeight:700,marginBottom:4}}>Try this</div>
+                <div style={{color:primary,fontSize:13,fontWeight:700,marginBottom:4}}>An activity</div>
                 <div style={{color:theme.text,fontSize:13}}>{l.activity}</div>
               </div>}
               <div style={{background:theme.primaryDim,border:`1px solid ${theme.primaryBorder}`,borderRadius:8,padding:"6px 10px",color:primary,fontSize:13,fontWeight:600}}>💡 {l.key}</div>
