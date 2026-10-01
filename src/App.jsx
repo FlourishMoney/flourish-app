@@ -48,6 +48,7 @@ import { planNotifications } from "./lib/notificationPlanner.js";
 import { SCREENSHOT_EMAIL, normalizeEmail, isReviewAccount } from "./lib/sampleHouseholdAccount.js";
 import { dueSoonList } from "./lib/dueSoon.js";
 import { watchIncomeFigures } from "./lib/watchIncome.js";
+import { incomeTypeOptions, pickerValue, newSettingsIncome, setIncomeType } from "./lib/incomeTypes.js";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
 import { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
@@ -4196,6 +4197,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
           rental:{label:"Rental Income",emoji:"🏠"},
           gig:{label:"Gig / Freelance",emoji:"🚗"},
           other:{label:"Other",emoji:"➕"},
+          benefit:{label:"Other benefit",emoji:"📋"},
           // US
           salary:{label:"Salary",emoji:"💼"},
           hourly:{label:"Hourly",emoji:"⏱️"},
@@ -10944,8 +10946,10 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
     }));
     const addIncomeSource = () => setAppData && setAppData(prev => ({
       ...prev,
-      incomes: [...(prev.incomes || []), { id: Date.now(), label: "", amount: "", freq: "biweekly", type: "employment", isVariable: false, owner: "self" }],
+      incomes: [...(prev.incomes || []), newSettingsIncome()],
     }));
+    // Prompt 3b: each income's type, so a benefit is not counted as a paycheque (lib/incomeTypes.js).
+    const updateIncomeType = (id, type) => setAppData && setAppData(prev => ({ ...prev, incomes: setIncomeType(prev.incomes, id, type) }));
     return (
     <div style={s}>
       <div style={row}><span style={lbl}>Name</span>
@@ -10986,6 +10990,13 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
               <button onClick={()=>removeIncome(inc.id)} aria-label="Remove income" title="Remove this income"
                 style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"4px 6px",minWidth:32,minHeight:34,flexShrink:0}}>✕</button>
             </div>
+            <label style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+              <span style={{color:C.muted,fontSize:13,flexShrink:0}}>Type</span>
+              <select value={pickerValue(inc)} required aria-label="Income type" onChange={e=>updateIncomeType(inc.id,e.target.value)}
+                style={{flex:1,minWidth:0,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",cursor:"pointer"}}>
+                {incomeTypeOptions(data.profile?.country,inc).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </label>
             <div style={{display:"flex",gap:8}}>
               <div style={{flex:1.2,display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
                 <span style={{color:C.muted,padding:"0 8px",fontSize:13,flexShrink:0}}>$</span>
