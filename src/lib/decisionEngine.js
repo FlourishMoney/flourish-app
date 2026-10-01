@@ -324,6 +324,15 @@ export const AutopilotEngine = {
 };
 
 // ── ProsperityEngine: 100-point financial health score (6 weighted pillars) ──
+// The credit score the household entered themselves, or null. Flourish never assumes or estimates one
+// (prompt 3b): the onboarding form keeps a slider default of 680 in profile.creditScore even when the
+// household chose "Not sure / skip", so creditKnown must be true for the number to count.
+export function creditScoreEntered(profile) {
+  if (!profile || profile.creditKnown !== true) return null;
+  const n = Math.round(parseFloat(profile.creditScore));
+  return Number.isFinite(n) && n >= 300 && n <= 900 ? n : null;
+}
+
 export function calcHealthScore(data, catOverrides = {}, currentDate = new Date()) {
   // Pull from engines for consistency
   const { monthlyIncome, totalExpenses, monthlySpend } = FinancialCalcEngine.cashFlow(data, catOverrides, currentDate);
@@ -353,11 +362,15 @@ export function calcHealthScore(data, catOverrides = {}, currentDate = new Date(
   const denom = monthlyIncome > 0 ? monthlyIncome * 3 : 1;
   const ivScore = hasInv ? Math.min(10, 5 + Math.round(Math.min(5, invBal / denom))) : 0;
 
-  // ⑥ Credit Health — 10 pts
-  const rawCredit = data.profile?.creditScore ? parseFloat(data.profile.creditScore) : 680;
-  const crScore = rawCredit >= 760 ? 10 : rawCredit >= 720 ? 8 : rawCredit >= 670 ? 6 : rawCredit >= 620 ? 4 : 2;
+  // ⑥ Credit Health: 10 pts, from the score the household entered. With none entered there is no
+  // score to rate (the engine used to assume 680), so this pillar is left out and the other five,
+  // worth 90 points, are scaled to 100: not entering a score neither costs nor earns points.
+  const rawCredit = creditScoreEntered(data.profile);
+  const hasCredit = rawCredit != null;
+  const crScore = !hasCredit ? 0 : rawCredit >= 760 ? 10 : rawCredit >= 720 ? 8 : rawCredit >= 670 ? 6 : rawCredit >= 620 ? 4 : 2;
+  const others = srScore + drScore + efScore + ssScore + ivScore;
 
-  const score = Math.min(100, Math.max(8, srScore + drScore + efScore + ssScore + ivScore + crScore));
+  const score = Math.min(100, Math.max(8, hasCredit ? others + crScore : Math.round(others * 100 / 90)));
 
   const pillars = [
     {label:"Savings Rate",    pts:srScore, max:25, detail:`${Math.round(savingsRate*100)}% savings rate`},
@@ -365,7 +378,7 @@ export function calcHealthScore(data, catOverrides = {}, currentDate = new Date(
     {label:"Emergency Fund",  pts:efScore, max:20, detail:`${(efMonths||0).toFixed(1)} months covered`},
     {label:"Stability",       pts:ssScore, max:15, detail:`Spending consistency`},
     {label:"Investments",     pts:ivScore, max:10, detail:hasInv?`$${(invBal||0).toFixed(0)} invested`:`Not started`},
-    {label:"Credit",          pts:crScore, max:10, detail:`Score ~${rawCredit}`},
+    {label:"Credit",          pts:crScore, max:hasCredit ? 10 : 0, detail:hasCredit ? `Score you entered: ${rawCredit}` : "Not entered"},
   ];
   return { score, pillars, breakdown:{ srScore, drScore, efScore, ssScore, ivScore, crScore } };
 }

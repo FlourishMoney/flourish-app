@@ -464,8 +464,9 @@ export function isInvestmentAccount(a) {
 //      fall back to using manual debts as-is.
 
 // Sprint 4b: fallback rates used ONLY when the real APR is missing (user left it blank, or
-// Plaid returned null). Every fabricated rate is tagged rateEstimated:true so the UI can show
-// "(est.)" — the payoff math then never silently presents an assumed rate as the user's real one.
+// Plaid returned null). Every fabricated rate is tagged rateEstimated:true so the UI labels it
+// "Assumed rate, tap to enter yours" (prompt 3b), so the payoff math then never silently presents an
+// assumed rate as the user's real one, and the household can replace it with theirs (applyDebtRate).
 const DEFAULT_APR_CREDIT    = 20; // typical Canadian credit-card APR
 const DEFAULT_RATE_MORTGAGE = 5;  // mortgages typically 3–6%
 const DEFAULT_RATE_STUDENT  = 6;  // student loans typically 5–7%
@@ -480,8 +481,9 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
   // No Plaid liabilities → use manual debts unchanged (back-compat for users without bank-connected liabilities)
   if (!hasAnyPlaid) {
     return manual
-      .filter(d => num(d.balance) > 0)
-      .map(d => {
+      .map((d, manualIndex) => [d, manualIndex])
+      .filter(([d]) => num(d.balance) > 0)
+      .map(([d, manualIndex]) => {
         const real = num(d.rate);
         return {
           name: d.name || "Debt",
@@ -491,15 +493,22 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
           min: debtMinimumPayment(d),
           source: "manual",
           debtType: "manual",
+          manualIndex, // where applyDebtRate writes a rate the household enters
         };
       });
   }
 
-  // Plaid liabilities present → build authoritative list across all 3 categories
+  // Plaid liabilities present → build authoritative list across all 3 categories.
+  // When the bank sends no rate, a rate the household entered for that account (kept on its debt
+  // entry, matched by account_id) is used before any assumed default.
+  const entered = (accountId) => {
+    const d = accountId ? manual.find(m => m && m.account_id === accountId && num(m.rate) > 0) : null;
+    return d ? num(d.rate) : 0;
+  };
   const creditEntries = plaidCredit
     .filter(c => (c.balance || 0) > 0)
     .map(c => {
-      const real = num(c.apr);
+      const real = num(c.apr) || entered(c.account_id);
       return {
         name: c.name || "Credit Card",
         balance: c.balance || 0,
@@ -515,7 +524,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
   const mortgageEntries = plaidMortgage
     .filter(m => (m.balance || 0) > 0)
     .map(m => {
-      const real = num(m.interestRate);
+      const real = num(m.interestRate) || entered(m.account_id);
       return {
         name: m.name || "Mortgage",
         balance: m.balance || 0,
@@ -531,7 +540,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
   const studentEntries = plaidStudent
     .filter(s => (s.balance || 0) > 0)
     .map(s => {
-      const real = num(s.interestRate);
+      const real = num(s.interestRate) || entered(s.account_id);
       return {
         name: s.name || "Student Loan",
         balance: s.balance || 0,
@@ -546,8 +555,9 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
 
   // Add manual debts that are NOT fromBank (user-entered standalones — IOUs, unconnected cards, etc.)
   const manualStandalones = manual
-    .filter(d => !d.fromBank && num(d.balance) > 0)
-    .map(d => {
+    .map((d, manualIndex) => [d, manualIndex])
+    .filter(([d]) => !d.fromBank && num(d.balance) > 0)
+    .map(([d, manualIndex]) => {
       const real = num(d.rate);
       return {
         name: d.name || "Debt",
@@ -557,6 +567,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
         min: debtMinimumPayment(d),
         source: "manual",
         debtType: "manual",
+        manualIndex,
       };
     });
 
@@ -1306,3 +1317,24 @@ export const FinancialCalcEngine = {
     return total / normalisedDays;
   },
 };
+
+// ── applyDebtRate (prompt 3b) ────────────────────────────────────────────────────────────────────
+// Writes the rate a household enters for a debt whose rate was assumed (an entry from
+// buildDebtListForSimulator with rateEstimated:true). A manual debt gets it on its own entry; a
+// bank-linked one gets it on the debt entry for that account (matched by account_id), which is
+// created if there is none, so the next build uses it instead of the assumed default.
+export function applyDebtRate(debts, entry, rate) {
+  const list = Array.isArray(debts) ? debts.slice() : [];
+  const r = String(rate);
+  if (!entry || !(num(rate) > 0)) return list;
+  if (entry.source === "manual" && Number.isInteger(entry.manualIndex) && list[entry.manualIndex]) {
+    list[entry.manualIndex] = { ...list[entry.manualIndex], rate: r };
+    return list;
+  }
+  if (entry.account_id) {
+    const i = list.findIndex(d => d && d.account_id === entry.account_id);
+    if (i >= 0) list[i] = { ...list[i], rate: r };
+    else list.push({ id: newDebtId(), name: entry.name, balance: String(entry.balance), rate: r, account_id: entry.account_id, fromBank: true });
+  }
+  return list;
+}

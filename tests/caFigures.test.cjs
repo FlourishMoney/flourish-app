@@ -38,8 +38,9 @@ function walk(dir, out = []) {
   {
     const entries = Object.entries(CA).filter(([, v]) => v && typeof v === "object");
     t.ok(entries.length >= 15, `1a the table holds every Canadian program (${entries.length} entries)`);
-    const noSource = entries.filter(([, v]) => !/canada\.ca|ontario\.ca/.test(v.source || ""));
-    t.eq(noSource.map(([k]) => k).join(",") || "(none)", "(none)", "1b every entry cites an official Canada.ca or Ontario.ca page");
+    // alberta.ca added with the Alberta entries (prompt 3b): an official provincial page, like ontario.ca.
+    const noSource = entries.filter(([, v]) => !/canada\.ca|ontario\.ca|alberta\.ca/.test(v.source || ""));
+    t.eq(noSource.map(([k]) => k).join(",") || "(none)", "(none)", "1b every entry cites an official Canada.ca, Ontario.ca or Alberta.ca page");
     const noDate = entries.filter(([, v]) => !/^\d{4}-\d{2}-\d{2}$/.test(v.lastVerified || ""));
     t.eq(noDate.map(([k]) => k).join(",") || "(none)", "(none)", "1c …and the date it was last read off that page");
     const noPeriod = entries.filter(([k, v]) => !v.year && !v.period && !v.benefitYear && !v.taxYear &&
