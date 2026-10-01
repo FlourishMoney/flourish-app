@@ -5,6 +5,7 @@
 //   2. First screen: bills are ACCOUNTED FOR, not paid, and the number is safe to spend until payday,
 //      not "to spend freely today"; "everything above this number is yours" said the opposite of the
 //      truth. Can I afford this? speaks of payday, not today.
+//   3. Meet: the card heading "Flourish noticed" read as the app learning; it is "This week".
 // Words this copy must never use about the engine: "sets aside", "holds back", "learns", "remembers".
 // -----------------------------------------------------------------------------
 "use strict";
@@ -23,7 +24,7 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b/i;
   const demo = { accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(now, "CA"),
     bills: D.buildDemoBills(now, "CA"), transactions: D.buildDemoTxns(now, "CA"), profile: D.demoProfileFor("CA") };
   let A = {};
-  try { A = loadApp(["FirstVisitScreen"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
+  try { A = loadApp(["FirstVisitScreen", "MeetAgenda"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
 
   // ── 2. First screen ──────────────────────────────────────────────────────────────────────────
   {
@@ -36,6 +37,14 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b/i;
     t.ok(!/to spend freely today|Bills paid\. Buffer set|Everything above this number|left in your safe limit today/.test(APP), "2d …and from the source");
     t.ok(/sub: `\$\{r\.remainingText\} left to spend until payday`,/.test(APP), "2e Can I afford this? says what is left until payday, not today");
     t.ok(!BANNED.test(txt) && !BANNED.test(ACCOUNTED), "2f none of the banned verbs");
+  }
+
+  // ── 3. Meet ──────────────────────────────────────────────────────────────────────────────────
+  {
+    let txt = "";
+    try { txt = textOf(A.render(A.h(A.MeetAgenda, { data: { ...demo, demo: true }, isCouple: false, setScreen: () => {} }))); } catch (e) { t.ok(false, `3 Meet renders: ${describe(e)}`); }
+    t.ok(/\bThis week\b/.test(txt), "3a the Meet card heading is \"This week\"");
+    t.ok(!/Flourish noticed/.test(txt) && !/Flourish noticed/.test(APP), "3b \"Flourish noticed\" is gone from the screen and the source");
   }
 
   t.summary("prelaunchCopy.test");

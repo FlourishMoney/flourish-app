@@ -9425,7 +9425,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
       <div style={{color:C.muted,fontSize:13,marginBottom:14,lineHeight:1.5}}>Flourish writes this agenda from your week, using the numbers it already worked out.{facilitatorGate === "ready" ? " The coach keeps it calm and about the numbers." : ""}</div>
 
       <div style={card}>
-        <div style={sTitle}>Flourish noticed</div>
+        <div style={sTitle}>This week</div>
         {items.length>0
           ? items.map((it,i)=><div key={i} style={{color:C.cream,fontSize:13,lineHeight:1.6,marginBottom:5}}>• {it.text}</div>)
           : <div style={{color:C.muted,fontSize:13}}>Nothing stood out this week. Your numbers held steady.</div>}
