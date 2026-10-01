@@ -110,6 +110,14 @@ const supabase = createClient(
 
 
 // ─── COUNTRY CONFIG ────────────────────────────────────────────────────────────
+// "(CRA, 2026)": the authority and the year behind a TAX_DATA figure, for copy that shows one. The
+// authority is the first word of the entry's source; the year is its tax year, its benefit-year label, the
+// year in its label, or the year it was last checked against the source.
+const taxCite = (e) => {
+  const who = String((e && e.source) || "").split(" ")[0] || "official source";
+  const yr = e && (e.year || e.yearLabel || (String(e.label || "").match(/\((\d{4})\)/) || [])[1] || String(e.lastVerified || "").slice(0, 4));
+  return `${who}, ${yr}`;
+};
 const CC = {
   CA:{
     currency:"CAD", symbol:"$", flag:"🇨🇦", name:"Canada",
@@ -145,18 +153,21 @@ const CC = {
       {title:"Canada Workers Benefit (CWB)",body:`A refundable credit for people who work and earn a low income. You need working income, not just a low income, so earnings are what qualify you. Outside ${TAX_DATA.CA.CWB.variesIn.join(", ")}, the ${TAX_DATA.CA.CWB.taxYear} maximum is $${TAX_DATA.CA.CWB.maxSingle.toLocaleString()} single or $${TAX_DATA.CA.CWB.maxFamily.toLocaleString()} for a family, paid in full under $${TAX_DATA.CA.CWB.reduceOverSingle.toLocaleString()} single / $${TAX_DATA.CA.CWB.reduceOverFamily.toLocaleString()} family and nothing above $${TAX_DATA.CA.CWB.nilOverSingle.toLocaleString()} / $${TAX_DATA.CA.CWB.nilOverFamily.toLocaleString()}. ${TAX_DATA.CA.CWB.variesIn.join(", ")} set their own amounts and cut-offs. Check the CRA page for yours. Many low-income workers miss this entirely.`,savings:`Up to $${TAX_DATA.CA.CWB.maxSingle.toLocaleString()} single / $${TAX_DATA.CA.CWB.maxFamily.toLocaleString()} family outside ${TAX_DATA.CA.CWB.variesIn.join(", ")}`,flag:"🇨🇦",priority:"medium",action:"Check Eligibility"},
     ],
     learnCards:[
-      {emoji:"🏦",title:"TFSA vs RRSP: The Real Difference",body:"RRSP lowers your taxes now but you pay tax when you withdraw. TFSA has no upfront deduction but all growth and withdrawals are 100% tax-free. If you're in a low tax bracket now, use TFSA first. If you're in a high bracket, RRSP first.",key:"Low income now → TFSA. High income now → RRSP."},
-      {emoji:"🏠",title:"The FHSA: Best Account Most Canadians Don't Have",body:`The First Home Savings Account opened in 2023. You get an RRSP-style deduction going in AND tax-free withdrawals for a first home. Up to $${TAX_DATA.CA.FHSA_LIFETIME.value.toLocaleString()} lifetime room. If you're not a homeowner, this should be your first account.`,key:"Open an FHSA before your RRSP if you want to buy a home."},
-      {emoji:"👶",title:"Canada Child Benefit vs US Child Tax Credit",body:`The CCB is more generous than most Canadians realize. A single parent with two kids under 6 and an adjusted family net income of $${TAX_DATA.CA.CCB.phaseOutStart.toLocaleString()} or less receives the full $${(TAX_DATA.CA.CCB.maxUnder6*2).toLocaleString()} a year. Above that the amount gradually reduces, and it keeps reducing more slowly over $${TAX_DATA.CA.CCB.phaseOutSecond.toLocaleString()}. Unlike US credits, CCB is completely tax-free and paid monthly.`,key:"Apply at birth: retroactive claims are possible but painful."},
-      {emoji:"📋",title:"What EI Actually Covers",body:"Employment Insurance isn't just for job loss. It also covers maternity (15 weeks), parental (up to 35 weeks standard or 61 weeks extended), sickness (26 weeks), and compassionate care. Many employees don't claim what they're entitled to.",key:"Know your EI benefits before you need them."},
-      {emoji:"💳",title:"Why minimum payments are a trap",body:"If you owe $3,000 at 20% and pay only the minimum, it takes 8+ years and costs nearly $3,000 extra. You buy everything twice.",key:"Never just pay the minimum."},
-      {emoji:"🆘",title:"The emergency fund rule",body:"One car repair without savings = credit card debt at 20%. A $1,000 cushion breaks that cycle. In Canada, keep it in a TFSA high-interest savings account.",key:"Build $1,000 in a TFSA HISA first."},
+      // Concepts only (prelaunch-copy, prompt 3): what each thing is and how it works, never an
+      // instruction. A figure appears only from TAX_DATA with its source and year (taxCite), or as plain
+      // arithmetic shown in full.
+      {emoji:"🏦",title:"TFSA vs RRSP: how they differ",body:"An RRSP contribution is deducted from your taxable income now, and what you withdraw later is taxed as income. A TFSA contribution gets no deduction, and its growth and withdrawals are not taxed. Which one helps more depends on your tax rate now compared with your tax rate when you withdraw.",key:"RRSP: tax relief now, tax later. TFSA: no relief now, no tax later."},
+      {emoji:"🏠",title:"The FHSA: a home account with two tax breaks",body:`The First Home Savings Account combines an RRSP-style deduction when you put money in with tax-free withdrawals for a first home. Contributions are limited to $${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()} a year and $${TAX_DATA.CA.FHSA_LIFETIME.value.toLocaleString()} in total (${taxCite(TAX_DATA.CA.FHSA_LIFETIME)}).`,key:"Deductible going in, tax-free coming out for a first home."},
+      {emoji:"👶",title:"How the Canada Child Benefit works",body:`The Canada Child Benefit is a tax-free monthly payment for families with children under 18. For ${TAX_DATA.CA.CCB.yearLabel}, a family with an adjusted family net income of $${TAX_DATA.CA.CCB.phaseOutStart.toLocaleString()} or less receives up to $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()} a year for each child under 6 (${taxCite(TAX_DATA.CA.CCB)}). Above that the amount gradually reduces, and it keeps reducing more slowly over $${TAX_DATA.CA.CCB.phaseOutSecond.toLocaleString()}.`,key:"Tax-free, paid monthly, and based on family net income."},
+      {emoji:"📋",title:"What EI covers",body:"Employment Insurance covers more than job loss. It also has maternity, parental, sickness and compassionate care benefits, each with its own rules and length, set by Service Canada.",key:"EI includes maternity, parental, sickness and caregiving benefits."},
+      {emoji:"💳",title:"How minimum payments work",body:"Early on, most of a credit card's minimum payment goes to interest, so the balance falls slowly while interest keeps being added. A larger payment shortens the time to pay off and lowers the total interest. The debt simulator in Goals works this out on your own debts.",key:"Most of an early minimum payment goes to interest."},
+      {emoji:"🆘",title:"What an emergency fund does",body:"An emergency fund is cash kept for unplanned costs, such as a car repair. Without one, those costs often go on a credit card and start collecting interest. In Canada it can be held in a savings account or inside a TFSA.",key:"It keeps a surprise cost off a credit card."},
     ],
     retirementAccounts:[
-      {id:"rrsp",name:"RRSP",fullName:"Registered Retirement Savings Plan",icon:"🏦",color:"#2E8B2E",annualLimit:`18% of income (max $${TAX_DATA.CA.RRSP_LIMIT.value.toLocaleString()} for ${TAX_DATA.CA.RRSP_LIMIT.year})`,taxNote:"Contributions deductible. Withdrawals taxed as income.",tip:"Contribute in high-income years. Use spousal RRSP for income splitting."},
-      {id:"tfsa",name:"TFSA",fullName:"Tax-Free Savings Account",icon:"🛡️",color:"#2FADA6",annualLimit:`$${TAX_DATA.CA.TFSA_LIMIT.value.toLocaleString()} (${TAX_DATA.CA.TFSA_LIMIT.year}). Unused room accumulates.`,taxNote:"No deduction on contribution. All growth and withdrawals tax-free.",tip:"Invest in ETFs inside your TFSA. Don't just park cash."},
-      {id:"fhsa",name:"FHSA",fullName:"First Home Savings Account",icon:"🏠",color:"#CFA03E",annualLimit:`$${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/yr (max $${TAX_DATA.CA.FHSA_LIFETIME.value.toLocaleString()} lifetime)`,taxNote:"Deductible going in. Tax-free withdrawal for first home purchase.",tip:"Best account for first-time buyers. Open even if you're not buying immediately, room accumulates."},
-      {id:"resp",name:"RESP",fullName:"Registered Education Savings Plan",icon:"👶",color:"#8A5FC8",annualLimit:"Contribute to maximize the CESG grant",taxNote:"No deduction. The government adds the CESG on top of your contributions.",tip:"Check the current CESG rate on Canada.ca. Start at birth."},
+      {id:"rrsp",name:"RRSP",fullName:"Registered Retirement Savings Plan",icon:"🏦",color:"#2E8B2E",annualLimit:`Up to $${TAX_DATA.CA.RRSP_LIMIT.value.toLocaleString()} for ${TAX_DATA.CA.RRSP_LIMIT.year}, depending on your earned income (${taxCite(TAX_DATA.CA.RRSP_LIMIT)})`,taxNote:"Contributions deductible. Withdrawals taxed as income.",tip:"The deduction is worth more in a year with a higher tax rate. A spousal RRSP lets one partner contribute for the other."},
+      {id:"tfsa",name:"TFSA",fullName:"Tax-Free Savings Account",icon:"🛡️",color:"#2FADA6",annualLimit:`$${TAX_DATA.CA.TFSA_LIMIT.value.toLocaleString()} for ${TAX_DATA.CA.TFSA_LIMIT.year} (${taxCite(TAX_DATA.CA.TFSA_LIMIT)}). Unused room carries forward.`,taxNote:"No deduction on contribution. All growth and withdrawals tax-free.",tip:"A TFSA can hold cash, GICs, ETFs and other investments. What it holds decides how it grows."},
+      {id:"fhsa",name:"FHSA",fullName:"First Home Savings Account",icon:"🏠",color:"#CFA03E",annualLimit:`$${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/yr, $${TAX_DATA.CA.FHSA_LIFETIME.value.toLocaleString()} lifetime (${taxCite(TAX_DATA.CA.FHSA_LIFETIME)})`,taxNote:"Deductible going in. Tax-free withdrawal for first home purchase.",tip:"Contribution room starts once the account is open, even before you buy."},
+      {id:"resp",name:"RESP",fullName:"Registered Education Savings Plan",icon:"👶",color:"#8A5FC8",annualLimit:"The CESG is added on top of contributions, up to yearly and lifetime limits (Canada.ca)",taxNote:"No deduction. The government adds the CESG on top of your contributions.",tip:"The CESG rate and its limits are on Canada.ca."},
     ],
     benefitsChecker:[
       {name:"Canada Child Benefit",icon:"👶",eligible:"Has children under 18",amount:`Up to $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/child under 6`,apply:"CRA My Account",url:"https://canada.ca/ccb"},
@@ -223,18 +234,19 @@ const CC = {
       {title:"No Tax on Overtime (2025 to 2028)",body:"Earn FLSA-required overtime (time-and-a-half)? You can deduct the premium 'half' portion, up to $12,500 ($25,000 if married filing jointly). Phases out above $150k MAGI. Expires after 2028. Salary-exempt workers generally don't qualify.",savings:"Up to $12,500 deduction",flag:"🇺🇸",priority:"medium",action:"Check Your W-2 Overtime"},
     ],
     learnCards:[
-      {emoji:"🏦",title:"401(k) vs Roth IRA: Which First?",body:"Your 401(k) lowers taxes now. Great if you're in a high bracket. A Roth IRA gives tax-free income in retirement. Great if you're younger or lower income. Rule of thumb: get the full 401k employer match first, then max your Roth IRA, then go back to the 401k.",key:"Always get the full employer match first. It's a 50 to 100% instant return."},
-      {emoji:"🏥",title:"The Emergency Fund is Different in the US",body:"Unlike Canada, a medical emergency in the US can mean a $10,000 to $50,000 bill. Your emergency fund isn't just for job loss. It's healthcare insurance. Most financial planners recommend 6 months of expenses, not 3.",key:"Aim for 6 months of expenses, not 3."},
-      {emoji:"📋",title:"Medical Debt: Know Your Rights",body:"Medical debt under $500 was removed from credit reports in 2023. Negotiate bills before paying. Hospitals routinely accept 40 to 60 cents on the dollar. Never pay full price without asking for a discount.",key:"Always negotiate medical bills before paying."},
-      {emoji:"🎓",title:"Federal vs Private Student Loans",body:"Federal loans have income-driven repayment, deferment, and forgiveness programs. Private loans have none of these protections. If you have both, pay private first. Federal loans have a safety net.",key:"Never refinance federal loans to private. You lose your safety net."},
-      {emoji:"💳",title:"Why minimum payments are a trap",body:"If you owe $3,000 at 20% and pay only the minimum, it takes 8+ years and costs nearly $3,000 extra. You buy everything twice.",key:"Never just pay the minimum."},
-      {emoji:"🆘",title:"The emergency fund rule",body:"Medical emergencies are the #1 cause of bankruptcy in America. A $1,000 cushion in a high-yield savings account (4 to 5% APY) breaks the cycle of borrowing.",key:"Keep your emergency fund in a high-yield savings account."},
+      // Concepts only, as in Canada's list: no instructions, no figure without TAX_DATA or shown arithmetic.
+      {emoji:"🏦",title:"401(k) vs Roth IRA: how they differ",body:"A traditional 401(k) contribution lowers your taxable income now, and withdrawals are taxed later. A Roth IRA is funded with after-tax money, and qualified withdrawals in retirement, growth included, are not taxed. Many employers add a match to 401(k) contributions, up to a limit the plan sets.",key:"401(k): tax relief now. Roth IRA: tax-free later."},
+      {emoji:"🏥",title:"Emergency funds and medical costs",body:"In the US an emergency fund often has to cover medical bills as well as job loss, because insurance can leave deductibles and out-of-pocket costs. How big a fund needs to be depends on your expenses and your coverage.",key:"Medical costs are part of what an emergency fund covers."},
+      {emoji:"📋",title:"Medical bills: what can be asked",body:"A hospital bill can be itemized and checked for errors, and many providers offer payment plans or discounts on request. The credit bureaus and the CFPB set the rules on when medical debt appears on a credit report.",key:"A medical bill can be questioned before it is paid."},
+      {emoji:"🎓",title:"Federal vs private student loans",body:"Federal student loans come with income-driven repayment, deferment and forgiveness programs. Private loans do not have those protections, and refinancing a federal loan into a private one gives them up.",key:"Federal loans carry protections that private loans do not."},
+      {emoji:"💳",title:"How minimum payments work",body:"Early on, most of a credit card's minimum payment goes to interest, so the balance falls slowly while interest keeps being added. A larger payment shortens the time to pay off and lowers the total interest. The debt simulator in Goals works this out on your own debts.",key:"Most of an early minimum payment goes to interest."},
+      {emoji:"🆘",title:"What an emergency fund does",body:"An emergency fund is cash kept for unplanned costs. A high-yield savings account pays interest while the money waits; the rate changes over time.",key:"It keeps a surprise cost off a credit card."},
     ],
     retirementAccounts:[
-      {id:"401k",name:"401(k)",fullName:"Employer Retirement Plan",icon:"🏦",color:"#2E8B2E",annualLimit:`$${TAX_DATA.US.K401_DEFERRAL.value.toLocaleString("en-US")}/yr (2026; $${TAX_DATA.US.K401_CATCHUP_50PLUS.value.toLocaleString("en-US")} if 50+)`,taxNote:"Traditional: contributions pre-tax, withdrawals taxed. Roth 401k: after-tax contributions, tax-free withdrawals.",tip:"Always contribute enough to get the full employer match: it's free money."},
-      {id:"roth",name:"Roth IRA",fullName:"Individual Retirement Account",icon:"🛡️",color:"#2FADA6",annualLimit:"$7,000/yr ($8,000 if 50+). Phaseout at $150k single/$236k MFJ (2025)",taxNote:"After-tax contributions. All growth and qualified withdrawals 100% tax-free.",tip:"Open early: the tax-free compounding over decades is massive. Use Fidelity or Vanguard."},
-      {id:"hsa",name:"HSA",fullName:"Health Savings Account",icon:"🏥",color:"#CFA03E",annualLimit:`$${TAX_DATA.US.HSA_SELF_ONLY.value.toLocaleString("en-US")} single / $${TAX_DATA.US.HSA_FAMILY.value.toLocaleString("en-US")} family (2026)`,taxNote:"Triple tax advantage: pre-tax in, tax-free growth, tax-free for medical expenses.",tip:"After 65, HSA funds can be used for anything (taxed like a 401k). Best account in the US tax code."},
-      {id:"529",name:"529 Plan",fullName:"Education Savings Account",icon:"🎓",color:"#8A5FC8",annualLimit:`No annual limit. $${TAX_DATA.US.GIFT_EXCLUSION_529.value.toLocaleString("en-US")}/yr gift tax exclusion (2026).`,taxNote:"State deduction varies. Federal tax-free growth and withdrawals for education.",tip:"Start when kids are young. Some states give immediate tax deductions."},
+      {id:"401k",name:"401(k)",fullName:"Employer Retirement Plan",icon:"🏦",color:"#2E8B2E",annualLimit:`$${TAX_DATA.US.K401_DEFERRAL.value.toLocaleString("en-US")}/yr ($${TAX_DATA.US.K401_CATCHUP_50PLUS.value.toLocaleString("en-US")} if 50+) (${taxCite(TAX_DATA.US.K401_DEFERRAL)})`,taxNote:"Traditional: contributions pre-tax, withdrawals taxed. Roth 401k: after-tax contributions, tax-free withdrawals.",tip:"Many employers match part of what you put in, up to a limit the plan sets."},
+      {id:"roth",name:"Roth IRA",fullName:"Individual Retirement Account",icon:"🛡️",color:"#2FADA6",annualLimit:"Set each year by the IRS, with income limits (irs.gov)",taxNote:"After-tax contributions. All growth and qualified withdrawals 100% tax-free.",tip:"Qualified withdrawals, growth included, are not taxed."},
+      {id:"hsa",name:"HSA",fullName:"Health Savings Account",icon:"🏥",color:"#CFA03E",annualLimit:`$${TAX_DATA.US.HSA_SELF_ONLY.value.toLocaleString("en-US")} single / $${TAX_DATA.US.HSA_FAMILY.value.toLocaleString("en-US")} family (${taxCite(TAX_DATA.US.HSA_SELF_ONLY)})`,taxNote:"Triple tax advantage: pre-tax in, tax-free growth, tax-free for medical expenses.",tip:"After 65, HSA money can be used for anything; withdrawals not for medical costs are taxed like a 401(k)."},
+      {id:"529",name:"529 Plan",fullName:"Education Savings Account",icon:"🎓",color:"#8A5FC8",annualLimit:`No annual limit. $${TAX_DATA.US.GIFT_EXCLUSION_529.value.toLocaleString("en-US")}/yr gift tax exclusion (${taxCite(TAX_DATA.US.GIFT_EXCLUSION_529)}).`,taxNote:"State deduction varies. Federal tax-free growth and withdrawals for education.",tip:"Some states give a deduction for contributions; the rules vary by state."},
     ],
     benefitsChecker:[
       {name:"Earned Income Tax Credit",icon:"💰",eligible:"Working, under $61,555 (single) / $68,675 (MFJ)",amount:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,apply:"File taxes (IRS Free File)",url:"https://irs.gov/eitc"},
@@ -3051,6 +3063,19 @@ function useWindowSize(){
   return size;
 }
 
+// Patterns: only figures from the household's own transactions this month (computeStats), each stated
+// as observed with a neutral question. No promised saving, no "studies show", no estimate Flourish did
+// not calculate; a card with no computed figure is not shown (prelaunch-copy, prompt 3).
+function patternCards(stats){
+  const fmc=(n)=>formatMoney(n,{cents:true});
+  return [
+    stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee this month",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month, ${fmc(stats.coffee)}. At the same pace for a year: 12 × ${fmc(stats.coffee)} = ${fmc(stats.coffee*12)}. Is that about what you expected?`,color:C.orange},
+    stats.delivery>0&&{id:2,icon:"package",title:"Food delivery this month",body:`${stats.deliveryCount} delivery order${stats.deliveryCount===1?"":"s"} this month, ${fmc(stats.delivery)}. Is that about what you expected?`,color:C.orange},
+    stats.subs>0&&{id:4,icon:"zap",title:"Subscriptions this month",body:`${fmc(stats.subs)} on subscriptions this month. Which of them did you use?`,color:C.purple},
+    stats.busiestTotal>0&&{id:5,icon:"chartUp",title:`${stats.busiest} is your biggest spending day`,body:`${fmc(stats.busiestTotal)} spent on ${stats.busiest}s this month, more than on any other day of the week. Does that match how your week goes?`,color:C.blue},
+  ].filter(Boolean);
+}
+
 function computeStats(txns, catOverrides={}) {
   // Skip non-expense categories AND bill categories (bills are tracked separately)
   const SKIP = new Set([...NON_SPEND_CATS, ...BILL_CATS]);
@@ -3058,20 +3083,22 @@ function computeStats(txns, catOverrides={}) {
   const getC = (t) => effCat(t, catOverrides);
   const sp = txns.filter(t=>t.amount>0 && !SKIP.has(getC(t)));
   const byCat={}, byDow={0:0,1:0,2:0,3:0,4:0,5:0,6:0};
-  let coffee=0,coffeeCount=0,delivery=0,subs=0;
+  let coffee=0,coffeeCount=0,delivery=0,deliveryCount=0,subs=0;
   sp.forEach(t=>{
     const cat = getC(t);
     byCat[cat]=(byCat[cat]||0)+t.amount;
     byDow[t.dow]=(byDow[t.dow]||0)+t.amount;
     if(t.icon==="☕"){coffee+=t.amount;coffeeCount++;}
-    if(t.name.toLowerCase().includes("uber eats")||t.name.toLowerCase().includes("doordash"))delivery+=t.amount;
+    if(t.name.toLowerCase().includes("uber eats")||t.name.toLowerCase().includes("doordash")){delivery+=t.amount;deliveryCount++;}
     if(cat==="Subscriptions")subs+=t.amount;
   });
   const totalSpent=sp.reduce((a,t)=>a+t.amount,0); // excludes non-spend + bill categories
   const topCats=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,6);
   const days=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-  const busiest=days[Object.entries(byDow).sort((a,b)=>b[1]-a[1])[0][0]];
-  return{totalSpent,topCats,busiest,coffee,coffeeCount,delivery,subs,byCat};
+  const busiestEntry=Object.entries(byDow).sort((a,b)=>b[1]-a[1])[0];
+  const busiest=days[busiestEntry[0]];
+  const busiestTotal=busiestEntry[1]||0;
+  return{totalSpent,topCats,busiest,busiestTotal,coffee,coffeeCount,delivery,deliveryCount,subs,byCat};
 }
 
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
@@ -7981,13 +8008,7 @@ function SpendScreen({data, setAppData, setScreen}){
   const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCardPaymentCharge(t,data.debts||[])).reduce((a,t)=>a+t.amount,0);
   const totalIn=acctFiltered.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
 
-  const cuts=[
-    stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee is adding up",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month totalling $${stats.coffee.toFixed(2)}. That's $${(stats.coffee*12).toFixed(0)}/year. Making coffee at home 4 days a week cuts this by 60%.`,saving:`$${Math.round(stats.coffee*0.6)}/mo`,effort:"Low",color:C.orange},
-    stats.delivery>0&&{id:2,icon:"package",title:"Food delivery every week",body:`$${(stats.delivery||0).toFixed(2)} on delivery this month. One fewer order per week saves $40 to $60/month reliably. Your wallet will notice in 30 days.`,saving:"$50/mo",effort:"Low",color:C.orange},
-    {id:3,icon:"bag",title:"Amazon impulse purchases",body:"Try the 48-hour rule: add to cart, wait 2 days. Most impulse buys get removed without regret. Studies show this cuts impulse spend by 30 to 40%.",saving:"$40 to $70/mo",effort:"Low",color:C.pink},
-    stats.subs>0&&{id:4,icon:"zap",title:"Subscriptions creeping up",body:`$${(stats.subs||0).toFixed(2)}/mo in subscriptions. Go through each one. Did you use it last month? Most households find 1 to 2 to cancel painlessly.`,saving:"$15 to $35/mo",effort:"Low",color:C.purple},
-    {id:5,icon:"chartUp",title:`${stats.busiest} is your expensive day`,body:`You spend significantly more on ${stats.busiest}s than any other day. Knowing this is half the battle. Awareness alone cuts it 20 to 30%.`,saving:"$30 to $60/mo",effort:"Very Low",color:C.blue},
-  ].filter(Boolean).filter(s=>!dismissed.includes(s.id));
+  const cuts=patternCards(stats).filter(s=>!dismissed.includes(s.id));
 
   const ALL_CATS = ["Food & Drink","Groceries","Transport","Shopping","Entertainment","Bills & Utilities","Health","Income","Subscriptions","Travel","Other"];
 
@@ -8311,7 +8332,7 @@ function SpendScreen({data, setAppData, setScreen}){
     {!isDemo&&<IncomeDetectionBanner transactions={incomeEvidence({ transactions: txns, depositDecisions: data.depositDecisions, depositRules: data.depositRules })} incomes={data.incomes} setAppData={setAppData} country={data.profile?.country}/>}
     <div style={{display:"flex",gap:GAP.controlToControl,background:C.surface,borderRadius:16,padding:SPACE.xs}}>
       {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeBright:C.muted,borderRadius:12,padding:"0",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
-        {t==="txn"?"Transactions":t==="breakdown"?"Breakdown":"Smart Cuts"}
+        {t==="txn"?"Transactions":t==="breakdown"?"Breakdown":"Patterns"}
       </button>)}
     </div>
     {tab==="txn"&&<>
@@ -8465,26 +8486,14 @@ function SpendScreen({data, setAppData, setScreen}){
       })()}
     </>}
     {tab==="cuts"&&<>
-      <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
-        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Potential Monthly Savings</div>
-        <div style={{fontSize:32,fontWeight:900,color:C.goldBright,fontFamily:"Georgia,serif"}}>${(()=>{
-              const total = cuts.reduce((s,c)=>{
-                // saving field is like "$50/mo" or "$40–70/mo" — extract first number
-                const match = (c.saving||"").match(/\d+/);
-                return s + (match ? parseInt(match[0]) : 0);
-              },0);
-              return total > 0 ? total.toLocaleString() : "0";
-            })()}</div>
-        <div style={{color:C.muted,fontSize:13}}>from {cuts.length} suggestions based on your real transactions</div>
-      </Card>
-      {cuts.length===0?<Card style={{textAlign:"center",padding:"30px 20px"}}><div style={{fontSize:40}}>🎉</div><div style={{color:C.greenBright,fontWeight:700,marginTop:10}}>All suggestions reviewed!</div></Card>
+      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>From your own transactions this month. Calculated by Flourish.</div>
+      {cuts.length===0?<Card style={{textAlign:"center",padding:"30px 20px"}}><div style={{color:C.mutedHi,fontWeight:700}}>Nothing to show this month.</div></Card>
         :cuts.map(s=><Card key={s.id} glow={s.color}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
             <div style={{display:"flex",gap:10,alignItems:"center"}}><Icon id={s.icon||"card"} size={20} color={C.mutedHi} strokeWidth={1.5}/><span style={{color:s.color,fontWeight:800,fontSize:14}}>{s.title}</span></div>
             <button aria-label="Dismiss" onClick={()=>setDismissed(d=>[...d,s.id])} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>✕</button>
           </div>
-          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:10}}>{s.body}</div>
-          <div style={{display:"flex",gap:8}}><Chip label={`Save ${s.saving}`} color={C.green}/><Chip label={`Effort: ${s.effort}`} color={s.effort.includes("Very")?C.teal:C.green}/></div>
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>{s.body}</div>
         </Card>)}
     </>}
   </div>;
@@ -9022,7 +9031,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
       return <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={{background:C.blueDim,border:`1px solid ${C.blue}33`,borderRadius:16,padding:"14px 16px"}}>
           <div style={{color:C.blueBright,fontWeight:700,fontSize:13,marginBottom:4}}>{cfg.flag} Registered & Tax-Advantaged Accounts</div>
-          <div style={{color:C.muted,fontSize:13,lineHeight:1.6}}>These accounts are legal ways to keep more of your money. Most people don't maximize them.</div>
+          <div style={{color:C.muted,fontSize:13,lineHeight:1.6}}>Accounts with tax rules of their own. Limits are from the CRA or IRS, with the year.</div>
         </div>
 
         {/* ── My Balances & Contributions ─────────────────────── */}
@@ -9310,7 +9319,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
           <div style={{color:C.greenBright,fontWeight:700,fontSize:13}}>{cfg.flag} {cfg.name} Financial Essentials</div>
           <div style={{color:C.muted,fontSize:13,marginTop:2}}>Country-specific concepts that directly affect your money.</div>
         </div>
-        {cfg.learnCards.concat([{emoji:"📈",title:"Compound interest: your best friend",body:"$100 at 7% for 30 years becomes $761. The same math works in reverse with debt. Start investing early. Pay debt fast.",key:"Time is the most powerful financial tool."}]).map((l,i)=>(
+        {cfg.learnCards.concat([{emoji:"📈",title:"How compound interest works",body:"Growth earns growth. $100 growing 7% a year for 30 years: $100 × 1.07 to the power of 30 = $761. The 7% is an example rate, not a prediction. Debt compounds the same way when interest is added to the balance.",key:"Interest on interest is what makes time matter."}]).map((l,i)=>(
           <Card key={i}>
             <div style={{fontSize:28,marginBottom:8}}>{l.emoji}</div>
             <div style={{color:C.cream,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',Georgia,serif",marginBottom:8,lineHeight:1.3}}>{l.title}</div>
