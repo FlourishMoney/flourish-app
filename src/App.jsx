@@ -5510,7 +5510,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                     setAffordResult({
                       state: "yes",
                       msg: "Yes, you can afford this",
-                      sub: `${r.remainingText} left in your safe limit today`,
+                      sub: `${r.remainingText} left to spend until payday`,
                       color: C.green,
                     });
                   } else if (r.state === "tight") {
@@ -12882,7 +12882,7 @@ function FirstVisitScreen({data, onDismiss}) {
                 {formatNumber(Math.abs(ssView.headline))}
               </span>
             </div>
-            {!ssView.isShort&&<div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>to spend freely today</div>}
+            {!ssView.isShort&&<div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>safe to spend until payday</div>}
           </>) : data.bankConnected ? (
             /* Bank linked but balances still syncing — a loader, not a placeholder number */
             <div style={{marginTop:8}}>
@@ -12908,7 +12908,7 @@ function FirstVisitScreen({data, onDismiss}) {
           {ssView.isShort || ssView.needsSetup || noIncome
             ? null
             : incomeAmt > 0
-              ? "Bills paid. Buffer set. Everything above this number is yours. No guilt, no stress."
+              ? "Bills due before payday, minimum debt payments, a spending buffer and a savings amount are accounted for."
               : "Add your income in Settings to see your personalised safe-to-spend number."}
         </div>
 
