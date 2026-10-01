@@ -86,7 +86,8 @@ export function demoCoachExchanges(data, today = new Date()) {
     let a = `Your ${f.debt.name} is at ${formatMoney(f.debt.balance)} and ${f.debt.rate}%, the highest rate on anything you owe.`;
     if (f.decision && (f.decision.options || []).length >= 2) {
       const [d1, d2] = f.decision.options;
-      a += ` ${f.decision.text} ${d1.label}: ${d1.outcome}. ${d2.label}: ${d2.outcome}. Which of those you choose is up to you.`;
+      // Prompt 3e: the spare amount and the two balances, with no amount suggested for either.
+      a += ` ${f.decision.text} ${d1.label}: ${d1.outcome}. ${d2.label}: ${d2.outcome}. What you do with it is up to you.`;
     }
     out.push({ q: `Should I put money on the ${f.debt.name}?`, a });
   }
@@ -112,6 +113,6 @@ export function demoFacilitatorLine(data, today = new Date()) {
   const { decision } = facts(data, today);
   if (!decision || (decision.options || []).length < 2) return null;
   const [d1, d2] = decision.options;
-  return `Let's start with the one decision your week actually raised. ${decision.text} ` +
-         `${d1.label} and it's ${d1.outcome}; ${d2.label} and your ${d2.outcome}. Which of those sounds more like the month you want?`;
+  return `Let's start with the one question your week raised. ${decision.text} ` +
+         `${d1.label}: ${d1.outcome}. ${d2.label}: ${d2.outcome}.`;
 }

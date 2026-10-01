@@ -386,7 +386,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     const VERDICT = /\b(should|shouldn't|worth (?:it|doing|claiming|getting|reviewing|checking)|best value|the best|recommend(?:ed|s)?|make sure|you must|must file|can afford|can't afford|go for it|think twice|not right now|free money|on the table|pro tip|high priority|unclaimed)\b/i;
     const ALLOW = new Set([
       // App navigation and controls: they act on the app, not on the household's money.
-      "Plan adherence", "Move date", "Clear ✕", "Get My Insight →", "Use ↑↓ to reorder · 🔒 to pin. Show or hide cards in Settings → Dashboard.", "Move up", "Move down",
+      "Move date", "Clear ✕", "Get My Insight →", "Use ↑↓ to reorder · 🔒 to pin. Show or hide cards in Settings → Dashboard.", "Move up", "Move down",
       "Save Layout", "Get Started →", "Keep mine", "Save changes", "✨ Build Your Budget Plan", "Build Plan", "✓ Save Budget Plan", "Save Changes ✓", "Start the meeting",
       "Start solo check-in", "Start Meeting ▶", "Start Check-In ▶", "Start New", "Save Debt ✓", "Save Goal ✓", "Always visible", "Open Family Dashboard →", "Open Support",
       "Start coaching session →", "Clear chat history", "Clear history", "Apply this change?", "Open Settings", "Save Goal", "Save Plan", "✓ Save My Budget Plan",

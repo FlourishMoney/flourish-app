@@ -7,7 +7,7 @@
 
 import { ForecastEngine } from "./forecastEngine.js";
 import { SafeSpendEngine } from "./safeSpendEngine.js";
-import { selectHighestRateDebt, debtPayoffMonths, savingsBufferAfter, computeSavingsOpportunity, displayedSafeToSpend, cashIsTight } from "./decisionEngine.js";
+import { selectHighestRateDebt, savingsBufferAfter, spareUntilDeposit } from "./decisionEngine.js";
 import { buildMeetingAgenda } from "./meetingAgenda.js";
 import { detectRecurringBills } from "./plaidNormalize.js";
 import { billPrompts, billChangeQuestion } from "./billsReconcile.js";
@@ -22,12 +22,6 @@ const _num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0
 function _fmtDate(d) {
   try { return new Date(d).toLocaleDateString("en-CA", { weekday: "short", day: "numeric" }); }
   catch { return String(d); }
-}
-// Presentation-only formatting of an engine-computed month count (240 = the amortization ceiling).
-function _fmtMonths(m) {
-  if (m >= 240) return "20+ yrs";
-  if (m >= 24) return `${Math.round(m / 12)} yrs`;
-  return `${m} mo`;
 }
 
 // Assemble the snapshot from engine outputs. Sections with no data are omitted; buildMeetingAgenda
@@ -88,20 +82,17 @@ export function buildMeetSnapshot(data = {}) {
     }));
   }
 
-  // One decision — top-rate debt vs savings — with BOTH outcomes engine-computed and PARALLEL:
-  // the debt option shows before/after payoff (debtPayoffMonths, extra 0 vs extra), the savings option
-  // shows what the buffer becomes (savingsBufferAfter). "this period" → the actual pay-period end date.
+  // One question about the spare amount (prompt 3e). It used to offer "Extra $X to <debt>" against
+  // "$X into savings", each with an outcome built on moving that amount: a suggested amount for a debt.
+  // Now it states the spare amount (spareUntilDeposit, the figure Today shows) and how it was worked
+  // out, and lists the top-rate debt and savings by name with their own balances. No amount is
+  // suggested for either, and the two options never add up to more than the spare amount.
   try {
-    const safe = displayedSafeToSpend(data); // the figure Today shows, so the extra is 25% of what the household can see
-    // The same debt list What-If models (a bank-linked card with its bank's APR and minimum), so the
-    // payoff months here, on Decisions and in What-If are one model with one set of inputs.
+    // The same debt list What-If models (a bank-linked card with its bank's APR and minimum).
     const top = selectHighestRateDebt(buildDebtListForSimulator(data.debts, data.liabilities));
-    const extra = computeSavingsOpportunity(safe); // engine: suggested spare $ this period
-    // Not while cash is tight: the one rule Decisions and the Money Plan use, and both pause these moves.
-    if (top && extra > 0 && !cashIsTight(data).tight) {
-      const before = debtPayoffMonths(top, 0);      // engine: payoff at the minimum
-      const after  = debtPayoffMonths(top, extra);  // engine: payoff with the extra
-      const buf    = savingsBufferAfter(data.accounts, extra); // engine helper: { current, after }
+    const { spare: extra, safe } = spareUntilDeposit(data);
+    if (top && extra > 0) {
+      const buf    = savingsBufferAfter(data.accounts, 0); // engine helper: the savings balance now
       let periodEnd = "";
       try {
         const fc2 = ForecastEngine.generate(data, 31) || {};
@@ -109,10 +100,10 @@ export function buildMeetSnapshot(data = {}) {
         if (pay && pay.date) periodEnd = new Date(pay.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
       } catch { /* no payday found → generic period label */ }
       snap.decisions = [{
-        question: `An extra ${formatMoney(extra)} toward ${top.name || "your top debt"}, or into savings${periodEnd ? `, before ${periodEnd}` : " this period"}?`,
+        question: `${formatMoney(extra)} is spare ${periodEnd ? `before ${periodEnd}` : "until your next deposit"}: a quarter of your ${formatMoney(safe)} safe to spend. Is there anything you want to do with it?`,
         options: [
-          { label: `Extra ${formatMoney(extra)} to ${top.name || "the debt"}`, outcome: after < before ? `paid off in ${_fmtMonths(after)} instead of ${_fmtMonths(before)}` : `paid off in ${_fmtMonths(after)}` },
-          { label: `${formatMoney(extra)} into savings`, outcome: `savings grows to ${formatMoney(buf.after)}` },   // "savings", not "buffer": buf.after IS the savings balance (savingsBufferAfter), and "Spending buffer" on Today is a different quantity
+          { label: top.name || "Your top debt", outcome: `${formatMoney(top.balance)} owed at ${top.rate}%` },
+          { label: "Savings", outcome: `${formatMoney(buf.current)} saved now` },
         ],
       }];
     }

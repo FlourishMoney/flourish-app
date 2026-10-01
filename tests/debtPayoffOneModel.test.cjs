@@ -52,8 +52,10 @@ const path = require("path");
   };
   const dec = (buildMeetSnapshot(demo).decisions || [])[0];
   t.ok(!!dec, "3a the demo Meet agenda carries its one decision");
-  t.eq(dec && dec.options[0].label, "Extra $486 to Visa card", "3b …on the Visa card, with $486 extra");
-  t.eq(dec && dec.options[0].outcome, "paid off in 7 mo instead of 9 yrs", "3c …and the outcome reads exactly as before: 7 mo instead of 9 yrs");
+  // Prompt 3e: Meet names the debt with its own balance and suggests no amount for it, so it no
+  // longer projects a payoff from moving the spare amount (what 3b/3c used to pin).
+  t.eq(dec && dec.options[0].label, "Visa card", "3b …naming the Visa card");
+  t.eq(dec && dec.options[0].outcome, "$3,420 owed at 19.99%", "3c …with its own balance and rate, and no extra amount or payoff projection");
   // What-If always used the entered $68, so its Visa figures are identical.
   const list = FC.buildDebtListForSimulator(demo.debts, null);
   const visaW = [...list].sort((a, b) => b.rate - a.rate)[0];
@@ -81,8 +83,10 @@ const path = require("path");
   const app = read("src/App.jsx"), de = read("src/lib/decisionEngine.js"), meet = read("src/lib/meetSnapshot.js"), fc = read("src/lib/financialCalculations.js");
   t.ok(/simulateDebtPayoffForDebt\(targetDebt, extraPayment\)/.test(app), "5a What-If calls simulateDebtPayoffForDebt");
   t.ok(/const currentPayment = debtMinimumPayment\(targetDebt\);/.test(app), "5b …and shows the payment it modelled");
-  t.ok(/const monthsSaved = computeDebtPayoffImpact\(topDebt, extraPayment\);/.test(app), "5c Decisions calls computeDebtPayoffImpact");
-  t.ok(/debtPayoffMonths\(top, 0\)/.test(meet) && /debtPayoffMonths\(top, extra\)/.test(meet), "5d Meet calls debtPayoffMonths");
+  // Prompt 3e: Decisions and Meet suggest no extra payment, so neither models one any more; What-If is
+  // the one surface that projects a payoff, through the one model (5a).
+  t.ok(!/computeDebtPayoffImpact\(topDebt/.test(app) && !/extraPayment = 150/.test(app), "5c Decisions no longer projects a $150 extra payment");
+  t.ok(!/debtPayoffMonths\(/.test(meet), "5d Meet no longer projects a payoff from the spare amount");
   t.ok(/simulateDebtPayoffForDebt\(debt, extraPayment\)/.test(de), "5e debtPayoffMonths is built on simulateDebtPayoffForDebt");
   t.ok(!/while \(b > 0/.test(de) && !/Math\.max\(25, balance \* 0\.02\)/.test(de), "5f decisionEngine has no amortization loop and no 2% rule of its own");
   t.eq((fc.match(/while \(remaining > 0/g) || []).length, 1, "5g financialCalculations has exactly one amortization loop");
@@ -108,11 +112,10 @@ const path = require("path");
     const meetDec = (buildMeetSnapshot(linked).decisions || [])[0];
     const extra = DE.computeSavingsOpportunity(DE.displayedSafeToSpend(linked));
     const fmt = (m) => (m >= 240 ? "20+ yrs" : m >= 24 ? `${Math.round(m / 12)} yrs` : `${m} mo`);
-    t.eq(meetDec && meetDec.options[0].outcome,
-         `paid off in ${fmt(DE.debtPayoffMonths(listTop, extra))} instead of ${fmt(DE.debtPayoffMonths(listTop, 0))}`,
-         "6c Meet's outcome is built from the bank's APR and minimum");
+    t.ok(extra > 0 && fmt(240) === "20+ yrs", "6c0 (the linked household has a spare amount)");
+    t.eq(meetDec && meetDec.options[0].outcome, "$3,000 owed at 22.99%", "6c Meet names the card with the bank's balance and APR (prompt 3e: no payoff projection)");
     t.ok(/const top = selectHighestRateDebt\(buildDebtListForSimulator\(data\.debts, data\.liabilities\)\);/.test(meet), "6d Meet picks from the What-If list");
-    t.ok(/const topDebt = selectHighestRateDebt\(buildDebtListForSimulator\(debts, data\.liabilities\)\);/.test(app), "6e Decisions picks from the What-If list");
+    t.ok(/buildDebtListForSimulator\(data\.debts, data\.liabilities\)/.test(read("src/lib/decisionEngine.js")), "6e the Money Plan lists debts from the What-If list too");
   }
 
   t.summary("debtPayoffOneModel.test");

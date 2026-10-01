@@ -53,7 +53,7 @@ import { nextRrspDeadline, formatRrspDeadline } from "./lib/rrspDeadline.js";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
 import { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
-import { AutopilotEngine, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
+import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView } from "./lib/suggestedDaily.js";
@@ -993,6 +993,13 @@ function Icon({ id, size=20, color="currentColor", strokeWidth=1.5, style={} }){
 // ──────────────────────────────────────────────────────────────────────────────
 
 
+// How the spare amount was worked out, in words (prompt 3e). The arithmetic is shown in full; the
+// rounding is down to the dollar, so "25% of $973" reads $243, not $243.25.
+function spareWorking(spare, safe) {
+  const exact = Math.round(safe * 25) / 100;
+  return `A quarter of your ${formatMoney(safe)} safe to spend: 25% × ${formatMoney(safe)} = ${formatMoney(exact, { cents: exact !== Math.floor(exact) })}${exact !== spare ? `, rounded down to ${formatMoney(spare)}` : ""}. Flourish does not assign it to anything.`;
+}
+
 // ── DECISION ENGINE ─────────────────────────────────────────────────────────────
 function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, dailyPace, setScreen}) {
   const bills = data.bills || [];
@@ -1005,11 +1012,11 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
   const daysToPayday = daysToNextDepositFor(data, todayD);
   // Consolidation 1: the suggested daily figure is owned by suggestedDailyView and passed in as dailyPace,
   // so Today and Decisions show the SAME number (this card used to divide safe by a 14-floored divisor here).
-  // The same debt list What-If and Meet model (a bank-linked card with its bank's APR and minimum).
-  const topDebt = selectHighestRateDebt(buildDebtListForSimulator(debts, data.liabilities));
-  const extraPayment = 150;
-  const monthsSaved = computeDebtPayoffImpact(topDebt, extraPayment);
-  const safeToMove = computeSavingsOpportunity(safe);
+  // Prompt 3e: THE spare amount (spareUntilDeposit), the one figure the Money Plan and Meet show too.
+  // It is shown with how it was worked out and is never assigned to savings, a debt or a goal; the
+  // "$150 more a month on <debt>" card is gone with the rest of the suggested amounts.
+  const spareInfo = spareUntilDeposit(data, todayD);
+  const safeToMove = spareInfo.spare;
   // The one tight-cash rule, the call Today's Money Plan makes too. When it fires, the cards below do
   // not also suggest moving money to savings or paying extra on a debt.
   const lowCash = cashIsTight(data, todayD).tight;
@@ -1045,18 +1052,8 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       icon: "💚",
       color: C.green,
       title: `$${safeToMove} spare until your next deposit`,
-      detail: "Worked out from your safe to spend: with that much moved to savings, your bills until then are still covered.",
+      detail: spareWorking(safeToMove, spareInfo.safe),
       action: "See Goals", screen: "goals"
-    });
-  }
-  if (!lowCash && topDebt && monthsSaved > 0) {
-    decisions.push({
-      type: "debt",
-      icon: "🎯",
-      color: C.purple,
-      title: `${topDebt.name}: $${extraPayment} more a month`,
-      detail: `would move the payoff date ${monthsSaved} month${monthsSaved!==1?"s":""} sooner.`,
-      action: "Debt Plan", screen: "goals"
     });
   }
 
@@ -1101,7 +1098,6 @@ function AutopilotCard({data, setScreen}) {
   const [showDrillDown, setShowDrillDown] = useState(false);
   const plan = AutopilotEngine.generate(data, getCatOv());
   const today = new Date().toLocaleDateString("en-CA", {weekday:"long", month:"long", day:"numeric"});
-  const hasActions = plan.savingsTransfer > 0 || plan.debtPayment > 0 || plan.goalContribution > 0;
 
   // Build overdraft drill-down: which specific bills cause the shortfall
   const { forecast, overdraftRisk } = ForecastEngine.generate(data, 14);
@@ -1134,25 +1130,23 @@ function AutopilotCard({data, setScreen}) {
       icon:"💡", label:"Safe to spend per day", amount:formatMoney(plan.dailySpendLimit),
       color:C.green, detail:`for the next ${plan.daysLeft} day${plan.daysLeft!==1?"s":""}`,
     },
-    plan.savingsTransfer > 0 && {
-      icon:"🐷", label:`For ${plan.savingsTarget}`, amount:formatMoney(plan.savingsTransfer),
-      color:C.teal, detail:"part of what is spare until your next deposit",
-    },
-    plan.debtPayment > 0 && plan.debtTarget && {
-      icon:"🎯", label:`Extra for ${plan.debtTarget.name}`, amount:formatMoney(plan.debtPayment),
-      color:C.purple, detail:`a ${plan.debtTarget.rate}% balance`,
-    },
-    plan.goalContribution > 0 && plan.goalTarget && {
-      icon:"🌱", label:plan.goalTarget.name||"Goal contribution", amount:formatMoney(plan.goalContribution),
-      color:C.gold, detail:"toward this goal",
-    },
-    plan.buffer > 100 && {
-      // NOT "buffer" -- that word belongs to the "Spending buffer" line inside safe-to-spend.
-      // This is the residual after today's plan allocates everything: a different quantity.
-      icon:"🔒", label:"Left over", amount:formatMoney(plan.buffer||0),
-      color:C.muted, detail:"after bills, debt minimums and today's plan",
+    // Prompt 3e: the spare amount as a fact (spareUntilDeposit, the figure Decisions and Meet show),
+    // with how it was worked out. It is not split: the old 40% savings / 40% debt / 50% goal amounts
+    // are gone, and so is "Left over" (it was net of those amounts, and read as more money free).
+    {
+      icon:"🐷", label:"Spare until your next deposit", amount:formatMoney(plan.spare),
+      color:C.teal, detail: plan.spare > 0 ? spareWorking(plan.spare, plan.spareFrom)
+        : plan.spareReason === "tight" ? "Nothing: safe to spend is below 15% of your monthly income."
+        : plan.spareReason === "overdraft" ? "Nothing: the forecast shows an overdraft in the next 30 days."
+        : `Nothing: a quarter of your ${formatMoney(plan.spareFrom)} safe to spend is $0.`,
     },
   ].filter(Boolean);
+  // The household's own goals and debts, by name, with their own balances. No amount is suggested
+  // for any of them.
+  const ownItems = [
+    ...(plan.debtsOwed||[]).map(d => ({ icon:"💳", label:d.name, amount:formatMoney(d.balance), detail:`owed${d.rate ? `, ${d.rate}%${d.rateEstimated ? " (assumed rate)" : ""}` : ""}` })),
+    ...(plan.goalsSaved||[]).map(g => ({ icon:"🌱", label:g.name, amount:formatMoney(g.saved), detail: g.target > 0 ? `saved of ${formatMoney(g.target)}` : "saved" })),
+  ];
 
   const autoBg = C.isDark
     ? `linear-gradient(155deg,#061510 0%,#0B1E14 50%,#080D10 100%)`
@@ -1247,11 +1241,28 @@ function AutopilotCard({data, setScreen}) {
           </div>
         ))}
       </div>
+      {ownItems.length>0&&(
+        <div style={{margin:"0 20px",padding:"12px 0 4px",borderTop:`1px solid ${autoDivider}`}}>
+          <div style={{color:autoMuted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:SPACE.sm}}>Your goals and debts</div>
+          {ownItems.map((item,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:SPACE.md,paddingBottom:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:SPACE.sm,minWidth:0}}>
+                <span style={{fontSize:16,flexShrink:0}}>{item.icon}</span>
+                <div style={{minWidth:0}}>
+                  <div style={{color:autoText,fontWeight:600,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.label}</div>
+                  <div style={{color:autoSubtle,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.detail}</div>
+                </div>
+              </div>
+              <div style={{color:autoText,fontWeight:700,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0}}>{item.amount}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
-      {/* Weekly adherence bar */}
+      {/* Spending consistency bar (spendingStability; it measured no plan) */}
       <div style={{margin:"0 20px",padding:"12px 0 16px",borderTop:`1px solid ${autoDivider}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-          <span style={{color:autoMuted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Plan adherence</span>
+          <span style={{color:autoMuted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Spending consistency</span>
           <span style={{color:plan.adherence>=75?C.greenBright:plan.adherence>=50?C.goldBright:C.redBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800}}>{plan.adherence}%</span>
         </div>
         <div style={{height:4,borderRadius:99,background:autoTrack,overflow:"hidden"}}>
