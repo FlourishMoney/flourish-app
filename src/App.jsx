@@ -18,7 +18,7 @@ import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multib
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
-import { paydayLineAmount, depositLines, billLines, skippedLines } from "./lib/forecastView.js";
+import { paydayLineAmount, depositLines, billLines, skippedLines, forecastLow } from "./lib/forecastView.js";
 import { depositsToAsk, depositStatus, depositContext, incomeEvidence, decideDeposit, clearDepositDecision, setDepositRule, clearDepositRule,
          depositRuleFor, countDepositsFrom, DEPOSIT_REASONS, NOT_NOW, reasonLabel, reasonPhrase, isUsableDepositKey, depositSheetInitial, depositTxnKey } from "./lib/depositClassify.js";
 import { editOccurrence, resetOccurrence, upsertExpected, removeExpected, setDailySpend, correctionsOf, validExpectedItem, REPEATS,
@@ -6991,7 +6991,11 @@ function PlanAhead({data, setAppData, setScreen}){
   // Through primaryIncome() (lib/watchIncome.js), never whichever income was added first.
   const watchIncome = watchIncomeFigures(data);
   const income = watchIncome.scalePerDeposit;
-  const minBalance = Math.min(...days.map(d => d.balance));
+  // The overdraft card's figure comes from the SAME forecast its flag (willGoNeg) was computed over,
+  // Math.max(range, 30) days, not only the days on screen (lib/forecastView.js forecastLow).
+  const forecastDays = Math.max(range, 30); // the window the forecast above was generated for (today plus these days)
+  const low = forecastLow(_forecast);
+  const minBalance = low ? low.balance : Math.min(...days.map(d => d.balance));
   // The bar's scale has to cover what the RANGE shows. It was "balance + one paycheque", which is
   // always enough for a fortnight and is not enough for a month: Bar paints RED when the value
   // exceeds its max, so on this demo every balance after the second paycheque — $6,591 and up —
@@ -7052,8 +7056,8 @@ function PlanAhead({data, setAppData, setScreen}){
     })()}
     {willGoNeg&&<div style={{background:C.redDim,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.red}55`}}>
       <div style={{color:C.redBright,...TYPE.headline,fontWeight:800,marginBottom:SPACE.xs}}>Projected overdraft</div>
-      <div style={{color:C.cream,...TYPE.callout,lineHeight:1.5}}>Heads up: your balance could dip to <strong style={{color:C.red}}>{formatBalance(minBalance)}</strong> before your next deposit.</div>
-      <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.sm}}>The day-by-day list below shows which day, and what lands on it.</div>
+      <div style={{color:C.cream,...TYPE.callout,lineHeight:1.5}}>Heads up: your balance could dip to <strong style={{color:C.red}}>{formatBalance(minBalance)}</strong>{low&&low.date?` on ${fmtOccDay(low.date)}`:""}, within the next {forecastDays} days.</div>
+      <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.sm}}>{low && low.day > range ? "That day is past the range shown. Pick a longer range above to see it." : "The day-by-day list below shows which day, and what lands on it."}</div>
     </div>}
     {/* Bills summary — BillManager is the single bill entry point */}
     <Card style={row({justifyContent:"space-between",border:`1px solid ${C.teal}33`,background:`linear-gradient(135deg,rgba(0,200,224,0.05) 0%,${C.card} 100%)`})}>

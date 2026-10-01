@@ -61,3 +61,17 @@ export function skippedLines(ev) {
     .map(o => ({ label: o.label || (o.kind === "bill" ? "Bill" : "deposit"), amount: o.amount, occurrence: o,
                  moneyIn: o.kind === "income" || (o.kind === "expected" && o.direction === "in") }));
 }
+
+// The lowest point of a forecast, over the WHOLE forecast it is given: { balance, day, date } or null.
+// Watch's "Projected overdraft" card used to take the minimum over only the days on screen (7, 30 or
+// 90) while the overdraft itself was detected over the forecast it had generated (at least 30 days), so
+// on the 7-day view it could quote a healthy $1,183 under a red warning for a dip on day 22. The card
+// passes the same forecast array its overdraft flag came from, so the two can never disagree.
+export function forecastLow(forecast) {
+  let low = null;
+  for (const f of forecast || []) {
+    if (!f || !Number.isFinite(f.balance)) continue;
+    if (!low || f.balance < low.balance) low = { balance: f.balance, day: f.day, date: f.date };
+  }
+  return low;
+}
