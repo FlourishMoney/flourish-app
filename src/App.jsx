@@ -5519,12 +5519,13 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                       color: C.green,
                     });
                   } else if (r.state === "tight") {
-                    // R6: $0 remaining says "Nothing left" not "Only $0 left"
-                    const leftMsg = r.remaining < 1 ? "Nothing left after this" : `Only ${r.remainingText} left`;
+                    // R6: $0 remaining says "Nothing left" not "Only $0 left". The fact, until payday, and no
+                    // instruction (it used to end by telling the household to hold off on everything else today).
+                    const leftMsg = r.remaining < 1 ? "Nothing left to spend until payday after this." : `Only ${r.remainingText} left to spend until payday.`;
                     setAffordResult({
                       state: "tight",
                       msg: "You can, but it's tight",
-                      sub: `${leftMsg}. Hold everything else today.`,
+                      sub: leftMsg,
                       color: C.gold,
                     });
                   } else {

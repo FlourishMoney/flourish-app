@@ -129,7 +129,10 @@ const { create } = require("./_runner.cjs");
     t.eq(calls[0], "affordabilityCheck(ssView.headline,", "5b …and it passes the DISPLAYED headline, never _ss.safeAmount or `safe`");
     t.eq((app.match(/affordabilityCheck\(\s*safe\s*,/g) || []).length, 0, "5c the raw engine value is not passed anywhere");
     // …and the old inline arithmetic is gone, not merely bypassed.
-    t.eq((app.match(/left to spend until payday/g) || []).length, 1, "5d one place renders the remainder (until payday, not today)");
+    // The remainder is rendered in exactly two results, both until payday (prelaunch-copy): "yes" and "tight".
+    t.eq((app.match(/\$\{r\.remainingText\} left to spend until payday/g) || []).length, 2, "5d the remainder is rendered in the yes and tight results only, until payday, not today");
+    t.ok(app.includes("sub: `${r.remainingText} left to spend until payday`,") && app.includes("`Only ${r.remainingText} left to spend until payday.`"),
+      "5d2 …in exactly these words");
     t.eq((app.match(/remaining\.toFixed\(0\)/g) || []).length, 0, "5e and no surface re-formats a remainder by hand");
   }
 
