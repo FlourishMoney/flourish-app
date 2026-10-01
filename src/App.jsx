@@ -5434,7 +5434,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           // Prompt 3d: the engine's pace as a fact, not an instruction. "deposit", not "paycheque":
           // this surface has not established WHICH income arrives next.
           const doIt = safe>0
-            ? `Today's pace is ${dailyPace.dailyText}: ${formatMoney(safe)} safe to spend spread over ${dailyPace.daysLeft} days.`
+            // The displayed headline (ssView), so this reads the same figure as the hero above (prompt 3e fix).
+            ? `Today's pace is ${dailyPace.dailyText}: ${formatMoney(ssView.headline)} safe to spend spread over ${dailyPace.daysLeft} days.`
             : "Nothing is left to spend until your next deposit lands.";
           return (
             <div style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"14px 16px",marginBottom:12}}>
