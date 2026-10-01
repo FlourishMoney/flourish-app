@@ -47,6 +47,7 @@ import { getNotificationPermission, requestNotificationPermission, scheduleNotif
 import { planNotifications } from "./lib/notificationPlanner.js";
 import { SCREENSHOT_EMAIL, normalizeEmail, isReviewAccount } from "./lib/sampleHouseholdAccount.js";
 import { dueSoonList } from "./lib/dueSoon.js";
+import { watchIncomeFigures } from "./lib/watchIncome.js";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
 import { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
@@ -6987,7 +6988,9 @@ function PlanAhead({data, setAppData, setScreen}){
   // Item 4 in a second surface: the balance-bar scale is "balance + one real paycheque". Read the primary
   // income's REAL per-deposit amount from incomeSchedule (never the blended monthly divided by a cadence);
   // 0 when it can't be determined (this is only a chart scale, not a displayed figure).
-  const income = perDepositAmount((data.incomes||[])[0]) || 0;
+  // Through primaryIncome() (lib/watchIncome.js), never whichever income was added first.
+  const watchIncome = watchIncomeFigures(data);
+  const income = watchIncome.scalePerDeposit;
   const minBalance = Math.min(...days.map(d => d.balance));
   // The bar's scale has to cover what the RANGE shows. It was "balance + one paycheque", which is
   // always enough for a fortnight and is not enough for a month: Bar paints RED when the value
@@ -7025,12 +7028,12 @@ function PlanAhead({data, setAppData, setScreen}){
       const _fbalText = safeToSpendView(SafeSpendEngine.calculate(data)).balanceText;
       const _favg = FinancialCalcEngine.avgDailySpend(data);
       const _fSpendEdited = correctionsOf(data).dailySpend != null;
-      const _ffreq = (data.incomes||[])[0]?.freq||"biweekly";
+      const _ffreq = watchIncome.freq||"biweekly";
       // Est. paycheque: the primary income's REAL per-deposit amount, read from incomeSchedule — never the
       // blended monthlyIncome divided by incomes[0]'s cadence (item 4's bug). null => show an explicit unknown.
       // As the household corrected it: a change from a date on, or the low end when the pay varies.
-      const _inc0 = (data.incomes||[])[0];
-      const _fPay = perDepositAmount(_inc0) != null || (_inc0 && _inc0.isVariable) ? monthlyIncomeBasis(_inc0, data, new Date()) : null;
+      // One paycheque per job, the primary job first (lib/watchIncome.js). One job: the single row as before.
+      const _fPays = watchIncome.paycheques;
       return (
         <div style={{background:C.isDark?"rgba(255,255,255,0.03)":C.surface,borderRadius:16,padding:LAYOUT.cardPadding,border:`1px solid ${C.border}`}}>
           <div style={{color:C.muted,...TYPE.subhead,fontWeight:400,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Starting balance</div>
@@ -7040,7 +7043,9 @@ function PlanAhead({data, setAppData, setScreen}){
           <SupportingFigures label="What the forecast is built from" rows={[
             {label:"Est. daily spend", value:`$${(_favg||0).toFixed(0)}/day`, onEdit:setAppData?()=>setShowDailySpend(true):null, tag:_fSpendEdited?<EditedTag/>:null},
             {label:"Pay frequency", value:frequencyLabel(_ffreq)},
-            {label:`Est. ${payWord(data.profile?.country)}`, value:_fPay!=null ? formatMoney(_fPay) : "Not set"},
+            ...(_fPays.length <= 1
+              ? [{label:`Est. ${payWord(data.profile?.country)}`, value:_fPays[0] ? formatMoney(_fPays[0].amount) : "Not set"}]
+              : _fPays.map((p,i)=>({label:`Est. ${payWord(data.profile?.country)}, ${p.label||`job ${i+1}`}`, value:`${formatMoney(p.amount)} ${cadenceLabel(p.freq)}`}))),
           ]}/>
         </div>
       );
@@ -7150,7 +7155,7 @@ function PlanAhead({data, setAppData, setScreen}){
         meaning="Where the forecast starts from: what is in your everyday accounts right now. Every day after this one adds your expected pay and takes off the bills and average spending."
         inputs={[
           {label:"Est. daily spend", value:`$${(FinancialCalcEngine.avgDailySpend(data)||0).toFixed(0)}/day`},
-          {label:"Pay frequency", value:frequencyLabel((data.incomes||[])[0]?.freq||"biweekly")},
+          {label:"Pay frequency", value:frequencyLabel(watchIncome.freq||"biweekly")},
           {label:"Bills tracked", value:`${(data.bills||[]).length}`},
         ]}
         changeLabel={setAppData?"Change your daily spend":null}
