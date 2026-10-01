@@ -138,8 +138,8 @@ const CC = {
     ],
     debtTypes:["Credit Card","Line of Credit","HELOC","Car Loan","OSAP / Student Loan","Personal Loan","Mortgage","Buy Now Pay Later","Other"],
     taxTips:[
-      {title:"RRSP Contribution",body:"Every RRSP dollar reduces your taxable income. At a 30% marginal rate, putting in $5,000 gets you ~$1,500 back at tax time. Deadline is the first 60 days of the following year (typically early March, check CRA for the exact date).",savings:"Up to 33%",flag:"🇨🇦",priority:"high",action:"Check My RRSP Room"},
-      {title:"TFSA: You're Probably Under-Using It",body:"Your TFSA isn't just for savings. It's for investing. Any growth inside is 100% tax-free forever. If you opened one at 18, you may have $75,000+ of contribution room sitting unused.",savings:"Tax-free growth",flag:"🇨🇦",priority:"high",action:"Calculate My Room"},
+      {title:"RRSP Contribution",body:"Every RRSP dollar reduces your taxable income. At a 30% marginal rate, putting in $5,000 gets you ~$1,500 back at tax time. Deadline is the first 60 days of the following year (typically early March, check CRA for the exact date).",savings:"Your marginal rate",flag:"🇨🇦",priority:"high",action:"Check My RRSP Room"},
+      {title:"TFSA: Room Builds Up Every Year",body:"A TFSA can hold investments as well as savings, and growth inside it is tax-free. Contribution room builds up every year from age 18, whether or not you have opened an account; CRA My Account shows yours.",savings:"Tax-free growth",flag:"🇨🇦",priority:"high",action:"Calculate My Room"},
       {title:"FHSA (First Home Savings Account)",body:`If you've never owned a home, you can contribute up to $${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/year and get a tax deduction, like an RRSP. Unused room carries forward. Withdraw tax-free to buy your first home.`,savings:`Up to $${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/yr`,flag:"🇨🇦",priority:"high",action:"Open an FHSA"},
       {title:"Canada Groceries and Essentials Benefit",body:`The CRA adds up parts rather than paying one flat amount: up to $${TAX_DATA.CA.CGEB.eligibleIndividual} for you, $${TAX_DATA.CA.CGEB.eligibleSpouse} for a spouse or common-law partner, $${TAX_DATA.CA.CGEB.perChildUnder19} for each child under 19, but $${TAX_DATA.CA.CGEB.firstChildSingleParent} for the first child if you are a single parent, plus $${TAX_DATA.CA.CGEB.additionalSingle} more if you are single. So a single person with no children gets up to $${TAX_DATA.CA.CGEB.maxSingleNoChildren}, a couple up to $${TAX_DATA.CA.CGEB.maxCoupleNoChildren}, and a single parent with one child up to $${(TAX_DATA.CA.CGEB.eligibleIndividual+TAX_DATA.CA.CGEB.firstChildSingleParent+TAX_DATA.CA.CGEB.additionalSingle).toLocaleString()}. Payments taper above a family net income of $${TAX_DATA.CA.CGEB.phaseOutThreshold.toLocaleString()}. Most people never apply, filing is enough, but ${TAX_DATA.CA.CGEB.applyNote}. The CRA calculator gives your own number.`,savings:`Up to $${TAX_DATA.CA.CGEB.eligibleIndividual} each, plus $${TAX_DATA.CA.CGEB.perChildUnder19} per child`,flag:"🇨🇦",priority:"medium",action:"File Your Taxes"},
       {title:"Canada Child Benefit (CCB)",body:`Tax-free monthly payments for children under 18. Maximum ${TAX_DATA.CA.CCB.yearLabel}: $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/yr per child under 6 ($${ccbMonthly(TAX_DATA.CA.CCB.maxUnder6)}/mo) and $${TAX_DATA.CA.CCB.max6to17.toLocaleString()}/yr per child aged 6 to 17 ($${ccbMonthly(TAX_DATA.CA.CCB.max6to17)}/mo). A family with two kids under 6 and an adjusted family net income of $${TAX_DATA.CA.CCB.phaseOutStart.toLocaleString()} or less receives the full $${(TAX_DATA.CA.CCB.maxUnder6*2).toLocaleString()} a year, tax-free. Apply on CRA My Account or at birth registration.`,savings:`Up to $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/child under 6`,flag:"🇨🇦",priority:"high",action:"Apply on CRA"},
@@ -219,16 +219,16 @@ const CC = {
     ],
     debtTypes:["Credit Card","Student Loan (Federal)","Student Loan (Private)","Medical Debt","Car Loan","Personal Loan","Mortgage","HELOC","Payday Loan","Buy Now Pay Later","Other"],
     taxTips:[
-      {title:"Earned Income Tax Credit (EITC)",body:`One of the most under-claimed credits in America. Under $61,555 (single) or $68,675 (married) with qualifying children? You could get up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} back (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3 or more children), even if you owe nothing. Must file to claim.`,savings:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,flag:"🇺🇸",priority:"high",action:"Check EITC Eligibility"},
-      {title:"Child Tax Credit",body:"Up to $2,200 per qualifying child under 17 (increased by OBBBA, July 2025). Partially refundable up to $1,700, meaning you can get money back even if you owe nothing. File even if your income is low.",savings:"$2,200/child (2025)",flag:"🇺🇸",priority:"high",action:"Claim on Schedule 8812"},
+      {title:"Earned Income Tax Credit (EITC)",body:`Under $61,555 (single) or $68,675 (married) with qualifying children? You could get up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} back (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3 or more children), even if you owe nothing. Must file to claim.`,savings:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,flag:"🇺🇸",priority:"high",action:"Check EITC Eligibility"},
+      {title:"Child Tax Credit",body:`Up to $${TAX_DATA.US.CHILD_TAX_CREDIT.value.toLocaleString("en-US")} per qualifying child under 17 (OBBBA). Part of it is refundable, so it can be paid even when no tax is owed.`,savings:`$${TAX_DATA.US.CHILD_TAX_CREDIT.value.toLocaleString("en-US")}/child (OBBBA)`,flag:"🇺🇸",priority:"high",action:"Claim on Schedule 8812"},
       {title:"401(k): Get the Full Match First",body:"If your employer matches 401(k) contributions, not contributing enough to get the full match is leaving free money on the table. A 4% match on $50k = $2,000/year you're giving up.",savings:`Up to $${TAX_DATA.US.K401_DEFERRAL.value.toLocaleString("en-US")}/yr (2026)`,flag:"🇺🇸",priority:"high",action:"Increase 401k Contributions"},
-      {title:"HSA: The Triple Tax Advantage",body:"If you have a high-deductible health plan, an HSA lets you contribute pre-tax, grow tax-free, and withdraw tax-free for medical expenses. It's legally the most tax-advantaged account available.",savings:`Up to $${TAX_DATA.US.HSA_SELF_ONLY.value.toLocaleString("en-US")}/yr (2026)`,flag:"🇺🇸",priority:"high",action:"Open an HSA"},
+      {title:"HSA: The Triple Tax Advantage",body:"If you have a high-deductible health plan, an HSA lets you contribute pre-tax, grow tax-free, and withdraw tax-free for medical expenses.",savings:`Up to $${TAX_DATA.US.HSA_SELF_ONLY.value.toLocaleString("en-US")}/yr (2026)`,flag:"🇺🇸",priority:"high",action:"Open an HSA"},
       {title:"Roth IRA: Tax-Free Retirement",body:"Under $150k single / $236k married? You can contribute $7,000/year to a Roth IRA (2025 income limits). You pay tax now, but all growth and withdrawals are 100% tax-free in retirement.",savings:"$7,000/yr tax-free",flag:"🇺🇸",priority:"high",action:"Open a Roth IRA"},
       {title:"Student Loan Interest Deduction",body:"Paying student loans? You may be able to deduct up to $2,500 of interest per year, reducing taxable income directly, even without itemizing.",savings:"Up to $2,500",flag:"🇺🇸",priority:"medium",action:"Find 1098-E Form"},
       {title:"Child & Dependent Care Credit",body:"Paying for daycare, after-school, or a caregiver while you work? You can claim 20 to 35% of up to $3,000 (1 child) or $6,000 (2+ children) in care expenses as a tax credit.",savings:"$600 to $2,100 (1 to 2 children)",flag:"🇺🇸",priority:"medium",action:"Track Care Receipts"},
       {title:"Saver's Credit",body:"Low-to-mid income and contributing to a 401k or IRA? The Saver's Credit gives you up to 50% of your contribution back as a tax credit. Under $39,500 single? You likely qualify.",savings:"Up to $1,000",flag:"🇺🇸",priority:"medium",action:"Check Form 8880"},
       {title:"American Opportunity Tax Credit",body:"Paying for the first 4 years of college? You can claim up to $2,500/year per student, and 40% is refundable even if you owe nothing.",savings:"Up to $2,500/yr",flag:"🇺🇸",priority:"medium",action:"Claim on Form 8863"},
-      {title:"Medical Expense Deduction",body:"Medical expenses exceeding 7.5% of your AGI are deductible if you itemize. For Americans with significant medical debt, this can mean thousands back.",savings:"Varies",flag:"🇺🇸",priority:"low",action:"Track Medical Receipts"},
+      {title:"Medical Expense Deduction",body:"Medical expenses exceeding 7.5% of your AGI are deductible if you itemize.",savings:"Varies",flag:"🇺🇸",priority:"low",action:"Track Medical Receipts"},
       {title:"Home Office Deduction",body:"Self-employed and work from home? The simplified method allows $5 per square foot (up to 300 sq ft = $1,500). No complex calculations needed.",savings:"Up to $1,500",flag:"🇺🇸",priority:"medium",action:"Measure Your Office"},
       {title:"No Tax on Tips (2025 to 2028)",body:"Work in a tipped occupation: restaurant, salon, hotel, rideshare, personal trainer? Deduct up to $25,000 of qualified tips from your federal income. No itemizing required. Phases out above $150k MAGI. Expires after 2028 unless extended.",savings:"Up to $25,000 deduction",flag:"🇺🇸",priority:"high",action:"Track Tips: Form 4137"},
       {title:"No Tax on Overtime (2025 to 2028)",body:"Earn FLSA-required overtime (time-and-a-half)? You can deduct the premium 'half' portion, up to $12,500 ($25,000 if married filing jointly). Phases out above $150k MAGI. Expires after 2028. Salary-exempt workers generally don't qualify.",savings:"Up to $12,500 deduction",flag:"🇺🇸",priority:"medium",action:"Check Your W-2 Overtime"},
@@ -252,13 +252,13 @@ const CC = {
       {name:"Earned Income Tax Credit",icon:"💰",eligible:"Working, under $61,555 (single) / $68,675 (MFJ)",amount:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,apply:"File taxes (IRS Free File)",url:"https://irs.gov/eitc"},
       {name:"SNAP (Food Stamps)",icon:"🛒",eligible:"Low income households",amount:"~$191/mo per person (USDA FY2025)",apply:"Benefits.gov",url:"https://benefits.gov"},
       {name:"Medicaid / CHIP",icon:"🏥",eligible:"Low-income adults and children",amount:"Free/low-cost healthcare",apply:"Healthcare.gov",url:"https://healthcare.gov"},
-      {name:"Child Tax Credit",icon:"👶",eligible:"Children under 17",amount:"Up to $2,200/child (2025)",apply:"File taxes",url:"https://irs.gov/ctc"},
+      {name:"Child Tax Credit",icon:"👶",eligible:"Children under 17",amount:`Up to $${TAX_DATA.US.CHILD_TAX_CREDIT.value.toLocaleString("en-US")}/child (OBBBA)`,apply:"File taxes",url:"https://irs.gov/ctc"},
       {name:"LIHEAP Energy Assistance",icon:"⚡",eligible:"Low income, utility hardship",amount:"Varies by state",apply:"Benefits.gov",url:"https://benefits.gov"},
       {name:"WIC Program",icon:"🍼",eligible:"Pregnant/postpartum, children under 5",amount:"Food + support",apply:"Local health dept",url:"https://wic.fns.usda.gov"},
     ],
     creditBureaus:["Equifax","Experian","TransUnion: all three count for FICO"],
     emergencyMonths:6,
-    healthcareNote:"Medical emergencies are the #1 cause of US bankruptcy. 6 months of expenses is the minimum.",
+    healthcareNote:"In the US an emergency fund often has to cover medical costs as well as job loss.",
     // Phase D12: 50 states + DC. Code is the canonical USPS 2-letter abbreviation.
     regions: [
       { code: "AL", name: "Alabama" }, { code: "AK", name: "Alaska" },
@@ -344,8 +344,8 @@ function getPersonalizedTaxCredits(profile) {
       tips.unshift(
         {title:"Tuition Tax Credit",body:`Your T2202 slip from your school lets you claim every dollar of tuition as a federal tax credit (${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% federal rate for ${TAX_DATA.CA.FEDERAL_LOWEST_RATE.year}). Unused amounts carry forward indefinitely. You can use them in future high-income years, or transfer part of the unused amount to a parent or spouse.`,savings:`${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% of tuition paid`,flag:"🇨🇦",priority:"high",action:"Get Your T2202"},
         {title:"Canada Training Credit",body:`If you were ${TAX_DATA.CA.CANADA_TRAINING_CREDIT.minAge} to ${TAX_DATA.CA.CANADA_TRAINING_CREDIT.maxAge} at the end of the year, resident in Canada all year, and your income met the CRA's limits, your training credit room grows by $${TAX_DATA.CA.CANADA_TRAINING_CREDIT.annualAccrual}, up to $${TAX_DATA.CA.CANADA_TRAINING_CREDIT.lifetimeMax.toLocaleString()} in a lifetime. When you take an eligible course you claim the LESSER of the room you have saved up and ${TAX_DATA.CA.CANADA_TRAINING_CREDIT.claimSharePct}% of your eligible fees, so a claim can be worth far more than one year's room. It is refundable. You get it even if you owe no tax. Line 45350, with Schedule 11.`,savings:`${TAX_DATA.CA.CANADA_TRAINING_CREDIT.claimSharePct}% of eligible fees, up to the room you have saved`,flag:"🇨🇦",priority:"high",action:"Check CTC Room on CRA"},
-        {title:"Groceries and Essentials Benefit: Students Almost Always Qualify",body:`If your income is low (most students qualify), file your taxes and the CRA pays you the Canada Groceries and Essentials Benefit quarterly. Filing is normally all it takes, though ${TAX_DATA.CA.CGEB.applyNote}. Many students skip filing because they 'don't earn much' and miss hundreds.`,savings:`Up to $${TAX_DATA.CA.CGEB.maxSingleNoChildren}/yr if you are single with no children`,flag:"🇨🇦",priority:"high",action:"File Your Taxes"},
-        {title:"Student Loan Interest Credit",body:"Paying interest on government student loans (OSAP, NSLSC)? That interest is 100% claimable as a non-refundable federal tax credit. Private loans don't qualify, only government loans. Keep your annual interest statement.",savings:"15% of interest paid",flag:"🇨🇦",priority:"medium",action:"Get NSLSC Statement"},
+        {title:"Groceries and Essentials Benefit: Students Almost Always Qualify",body:`If your income is low (most students qualify), file your taxes and the CRA pays you the Canada Groceries and Essentials Benefit quarterly. Filing is normally all it takes, though ${TAX_DATA.CA.CGEB.applyNote}.`,savings:`Up to $${TAX_DATA.CA.CGEB.maxSingleNoChildren}/yr if you are single with no children`,flag:"🇨🇦",priority:"high",action:"File Your Taxes"},
+        {title:"Student Loan Interest Credit",body:"Paying interest on government student loans (OSAP, NSLSC)? That interest is 100% claimable as a non-refundable federal tax credit. Private loans don't qualify, only government loans. Keep your annual interest statement.",savings:`${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% of interest paid (federal, ${TAX_DATA.CA.FEDERAL_LOWEST_RATE.year})`,flag:"🇨🇦",priority:"medium",action:"Get NSLSC Statement"},
         {title:"Moving Expenses Deduction",body:"If you moved more than 40km to attend school full-time, you can deduct eligible moving expenses from your scholarship or research income. Keep your receipts. This is often missed.",savings:"Varies",flag:"🇨🇦",priority:"medium",action:"Track Moving Receipts"}
       );
       // Province-specific student credits
@@ -353,7 +353,7 @@ function getPersonalizedTaxCredits(profile) {
         tips.push({title:"Manitoba Tuition Fee Income Tax Rebate",body:"Stay and work in Manitoba after graduating and you can recover up to 60% of your Manitoba tuition paid over your working years. Claim up to $2,500/year as a Manitoba resident.",savings:"Up to 60% of MB tuition",flag:"🏙️ MB",priority:"high",action:"Apply After Graduation"});
       }
       if (province === "SK") {
-        tips.push({title:"Saskatchewan Graduate Retention Program",body:"Graduate and work in Saskatchewan to receive provincial tax credits over several years, one of the most generous graduate incentives in Canada. Check the current amounts on Saskatchewan.ca before you count on a figure.",savings:"Provincial tax credit for graduates",flag:"🏙️ SK",priority:"high",action:"Apply After Graduation"});
+        tips.push({title:"Saskatchewan Graduate Retention Program",body:"Graduate and work in Saskatchewan to receive provincial tax credits over several years. Check the current amounts on Saskatchewan.ca before you count on a figure.",savings:"Provincial tax credit for graduates",flag:"🏙️ SK",priority:"high",action:"Apply After Graduation"});
       }
       if (province === "NB" || province === "NS" || province === "PE" || province === "PEI" || province === "NL") {
         tips.push({title:"Atlantic Graduate Tax Credit",body:"Atlantic provinces offer graduate tax credits to encourage graduates to stay and work in the region. Specific amounts vary by province. Check your provincial tax return.",savings:"Varies by province",flag:"🏙️ Atlantic",priority:"medium",action:"Check Provincial Return"});
@@ -361,10 +361,10 @@ function getPersonalizedTaxCredits(profile) {
     }
     if (country === "US") {
       tips.unshift(
-        {title:"American Opportunity Tax Credit (AOTC)",body:"In your first 4 years of college? Claim up to $2,500/year per eligible student. 40% is fully refundable, meaning you get up to $1,000 back even if you owe nothing. This is the most valuable education credit available.",savings:"Up to $2,500/yr",flag:"🇺🇸",priority:"high",action:"Claim on Form 8863"},
+        {title:"American Opportunity Tax Credit (AOTC)",body:"In your first 4 years of college? Claim up to $2,500/year per eligible student. 40% is fully refundable, meaning you get up to $1,000 back even if you owe nothing.",savings:"Up to $2,500/yr",flag:"🇺🇸",priority:"high",action:"Claim on Form 8863"},
         {title:"Lifetime Learning Credit",body:"Beyond the first 4 years, or taking part-time courses? The Lifetime Learning Credit gives you 20% of up to $10,000 in tuition = $2,000/year. No limit on the number of years you can claim it.",savings:"Up to $2,000/yr",flag:"🇺🇸",priority:"high",action:"Claim on Form 8863"},
         {title:"Student Loan Interest Deduction",body:"Paying interest on student loans? Deduct up to $2,500 of interest per year, even without itemizing. Income phase-out starts at $75k single / $155k married. Check your 1098-E form from your loan servicer.",savings:"Up to $2,500",flag:"🇺🇸",priority:"high",action:"Find Your 1098-E"},
-        {title:"Scholarship & Fellowship Exclusion",body:"Scholarships used for tuition, fees, and required course materials are tax-free. Amounts used for room, board, or stipends are taxable. Keep records of how scholarship funds are spent.",savings:"Potentially thousands",flag:"🇺🇸",priority:"medium",action:"Track Scholarship Use"},
+        {title:"Scholarship & Fellowship Exclusion",body:"Scholarships used for tuition, fees, and required course materials are tax-free. Amounts used for room, board, or stipends are taxable. Keep records of how scholarship funds are spent.",savings:"Depends on how the funds are used",flag:"🇺🇸",priority:"medium",action:"Track Scholarship Use"},
         {title:"529 Plan Tax-Free Withdrawals",body:"If a parent or grandparent has a 529 plan for you, qualified withdrawals for tuition, fees, books, and room & board are 100% tax-free. Some states also let you deduct contributions.",savings:"Tax-free growth",flag:"🇺🇸",priority:"medium",action:"Confirm Qualified Expenses"}
       );
       // State-specific student credits
@@ -385,7 +385,7 @@ function getPersonalizedTaxCredits(profile) {
     if (country === "CA") {
       tips.unshift(
         {title:"Age Amount Credit",body:`If you're 65 or older, you can claim the Age Amount, a federal non-refundable tax credit on up to $${TAX_DATA.CA.INDEXED_2026.ageAmount.toLocaleString()} for ${TAX_DATA.CA.INDEXED_2026.taxYear}. It reduces once your net income passes $${TAX_DATA.CA.INDEXED_2026.ageAmountThreshold.toLocaleString()}. Even a partial claim is worth claiming.`,savings:`Up to $${creditWorth(TAX_DATA.CA.INDEXED_2026.ageAmount).toLocaleString()} in tax saved`,flag:"🇨🇦",priority:"high",action:"Claim on Line 30100"},
-        {title:"Pension Income Splitting",body:"If you receive eligible pension income (RPP, RRIF, annuity), you can split up to 50% with your spouse. If your spouse is in a lower tax bracket, this can save your household thousands every year.",savings:"Potentially thousands",flag:"🇨🇦",priority:"high",action:"File Form T1032"},
+        {title:"Pension Income Splitting",body:"If you receive eligible pension income (RPP, RRIF, annuity), you can split up to 50% with your spouse. If your spouse is in a lower tax bracket, this can lower your household's total tax.",savings:"Depends on the tax bracket gap",flag:"🇨🇦",priority:"high",action:"File Form T1032"},
         {title:"Pension Income Tax Credit",body:"Eligible pension income qualifies for a federal non-refundable credit, up to a set maximum. Even if you're splitting pension income, your spouse can also claim this credit on the transferred amount. Check the current maximum on line 31400 before you file.",savings:"Federal credit on pension income",flag:"🇨🇦",priority:"high",action:"Claim on Line 31400"},
         {title:"OAS & GIS: Are You Getting Everything?",body:`Old Age Security pays up to ~$${TAX_DATA.CA.OAS.maxMonthly65to74.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo at 65 to 74 (approximate: it re-adjusts every quarter, checked ${TAX_DATA.CA.OAS.lastVerified}). Service Canada enrols most people automatically and sends an enrolment letter around your 64th birthday. It tries to enrol you for the Guaranteed Income Supplement (GIS) the same way. Some people are not enrolled automatically and get a letter inviting them to apply instead. If no letter arrives within a month of your 64th birthday, contact Service Canada. GIS is for low-income seniors: single and under $${TAX_DATA.CA.GIS.incomeUnderSingle.toLocaleString()} a year is the single-person test.`,savings:`Up to $${TAX_DATA.CA.GIS.maxMonthlySingle.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo (GIS), if you qualify`,flag:"🇨🇦",priority:"high",action:"Apply at Service Canada"},
       {title:"CPP Maximum: Know What You're Entitled To",body:`The maximum CPP retirement pension is $${TAX_DATA.CA.CPP_MAX_MONTHLY.value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo at age 65 (January ${TAX_DATA.CA.RRSP_LIMIT.year}). Your actual amount depends on contributions history. You can check your CPP Statement of Contributions at My Service Canada Account.`,savings:`Up to $${TAX_DATA.CA.CPP_MAX_MONTHLY.value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo`,flag:"🇨🇦",priority:"medium",action:"Check My Service Canada"},
@@ -395,11 +395,11 @@ function getPersonalizedTaxCredits(profile) {
     }
     if (country === "US") {
       tips.unshift(
-        {title:"Social Security Taxation: Know Your Threshold",body:"Up to 85% of Social Security benefits may be taxable depending on your 'combined income'. If you're near the threshold, strategic Roth conversions or timing of other income can reduce how much gets taxed.",savings:"Potentially thousands",flag:"🇺🇸",priority:"high",action:"Calculate Combined Income"},
+        {title:"Social Security Taxation: Know Your Threshold",body:"Up to 85% of Social Security benefits may be taxable depending on your 'combined income'. If you're near the threshold, strategic Roth conversions or timing of other income can reduce how much gets taxed.",savings:"Depends on combined income",flag:"🇺🇸",priority:"high",action:"Calculate Combined Income"},
         {title:"Higher Standard Deduction at 65+",body:"Americans 65 and older get an additional standard deduction ($1,950 single / $1,550 married per qualifying spouse in 2024) on top of the regular deduction. No action needed. It applies automatically when you file.",savings:"$1,550 to $3,900 extra deduction",flag:"🇺🇸",priority:"high",action:"File Taxes: Applied Automatically"},
         {title:"Credit for the Elderly or Disabled",body:"Low-income seniors (under $17,500 single) may qualify for a tax credit of $3,750 to $7,500. Often overlooked because Social Security recipients don't expect to owe tax, but this is a direct credit against taxes owed.",savings:"Up to $7,500",flag:"🇺🇸",priority:"high",action:"Check Schedule R"},
         {title:"Required Minimum Distributions (RMDs)",body:"At age 73, you must begin taking RMDs from traditional IRAs and 401(k)s. Missing an RMD triggers a 25% penalty on the missed amount. Plan withdrawals carefully. Roth IRAs have no RMD requirement.",savings:"Avoid 25% penalty",flag:"🇺🇸",priority:"high",action:"Calculate Your RMD"},
-        {title:"Qualified Charitable Distribution (QCD)",body:"If you're 70½ or older, you can transfer up to $105,000/year directly from your IRA to charity. This counts toward your RMD and is excluded from taxable income. Better than donating cash.",savings:"Up to $105,000 excluded",flag:"🇺🇸",priority:"medium",action:"Contact Your IRA Custodian"}
+        {title:"Qualified Charitable Distribution (QCD)",body:"If you're 70½ or older, you can transfer up to $105,000/year directly from your IRA to charity. This counts toward your RMD and is excluded from taxable income.",savings:"Up to $105,000 excluded",flag:"🇺🇸",priority:"medium",action:"Contact Your IRA Custodian"}
       );
     }
   }
@@ -408,15 +408,15 @@ function getPersonalizedTaxCredits(profile) {
   if (hasStage("selfemployed", "contractor")) {
     if (country === "CA") {
       tips.push(
-        {title:"Business Expenses: What You Can Actually Claim",body:"Vehicle (business km %), phone (business %), internet, software, accounting fees, professional dues, advertising, and meals (50%). Every legitimate expense reduces your taxable income dollar for dollar.",savings:"Varies: often $3,000 to $15,000",flag:"🇨🇦",priority:"high",action:"Track All Receipts"},
+        {title:"Business Expenses: What You Can Actually Claim",body:"Vehicle (business km %), phone (business %), internet, software, accounting fees, professional dues, advertising, and meals (50%). Every legitimate expense reduces your taxable income dollar for dollar.",savings:"Varies",flag:"🇨🇦",priority:"high",action:"Track All Receipts"},
         {title:"HST Registration Threshold",body:`Once your revenue exceeds $${TAX_DATA.CA.GSTHST_SMALL_SUPPLIER.value.toLocaleString()} in a calendar quarter or over 4 quarters, you must register for HST. Register voluntarily earlier to claim Input Tax Credits on business purchases.`,savings:"Claim back HST paid",flag:"🇨🇦",priority:"high",action:"Register on CRA Business"},
         {title:"CPP Contributions: Both Sides",body:"As self-employed, you pay both the employee (5.95%) and employer (5.95%) portions of CPP on net self-employment income. The employer portion is deductible. CPP2 contributions also apply above the second ceiling.",savings:"Employer portion is deductible",flag:"🇨🇦",priority:"high",action:"See Schedule 8"}
       );
     }
     if (country === "US") {
       tips.push(
-        {title:"Self-Employment Tax Deduction",body:"You pay 15.3% self-employment tax on net earnings, but you can deduct half of it from your gross income. This reduces your taxable income before the standard deduction, often worth $1,000 to $4,000.",savings:"Half of SE tax deducted",flag:"🇺🇸",priority:"high",action:"See Schedule SE"},
-        {title:"Qualified Business Income (QBI) Deduction",body:"If you're a sole proprietor, partnership, or S-corp, you may deduct up to 20% of qualified business income from your taxable income. One of the largest deductions available to self-employed people.",savings:"Up to 20% of net income",flag:"🇺🇸",priority:"high",action:"Check Form 8995"},
+        {title:"Self-Employment Tax Deduction",body:"You pay 15.3% self-employment tax on net earnings, but you can deduct half of it from your gross income. This reduces your taxable income before the standard deduction.",savings:"Half of SE tax deducted",flag:"🇺🇸",priority:"high",action:"See Schedule SE"},
+        {title:"Qualified Business Income (QBI) Deduction",body:"If you're a sole proprietor, partnership, or S-corp, you may deduct up to 20% of qualified business income from your taxable income.",savings:"Up to 20% of net income",flag:"🇺🇸",priority:"high",action:"Check Form 8995"},
         {title:"SEP-IRA or Solo 401(k)",body:"Self-employed? You can contribute up to 25% of net self-employment income to a SEP-IRA (max $69,000 in 2024), fully deductible. Solo 401(k) allows even higher contributions plus a Roth option.",savings:"Up to $69,000/yr",flag:"🇺🇸",priority:"high",action:"Open SEP-IRA or Solo 401k"}
       );
     }
@@ -432,7 +432,7 @@ function getPersonalizedTaxCredits(profile) {
   if (isCouple && partnerIsSelfEmp && country === "CA") {
     tips.push({
       title: "Spousal Income Splitting: Self-Employed",
-      body: "If your partner earns income through a business, paying them a reasonable salary or dividends can split income between tax brackets, potentially saving thousands. Requires legitimate work and documentation.",
+      body: "If your partner earns income through a business, paying them a reasonable salary or dividends can split income between tax brackets, which can lower total tax. Requires legitimate work and documentation.",
       savings: "Varies by bracket gap",
       flag: "🇨🇦",
       priority: "medium",
@@ -447,7 +447,7 @@ function getPersonalizedTaxCredits(profile) {
     }
     if (province === "QC") {
       tips.push(
-        {title:"Quebec Solidarity Tax Credit",body:"Quebec's refundable solidarity tax credit combines housing, QST, and northern village components. Apply on your Quebec TP-1 return. Many Quebecers are eligible and never claim it. Check the current amounts on Revenu Québec before you count on a figure.",savings:"Refundable Quebec credit",flag:"🏙️ QC",priority:"high",action:"Claim on TP-1 Return"},
+        {title:"Quebec Solidarity Tax Credit",body:"Quebec's refundable solidarity tax credit combines housing, QST, and northern village components. Apply on your Quebec TP-1 return. Check the current amounts on Revenu Québec before you count on a figure.",savings:"Refundable Quebec credit",flag:"🏙️ QC",priority:"high",action:"Claim on TP-1 Return"},
         {title:"Quebec Child Assistance Payment",body:"Quebec provides a refundable tax credit for families with children, separate from the federal CCB. Amounts depend on income and number of children, paid quarterly.",savings:"Varies by family",flag:"🏙️ QC",priority:"high",action:"Apply via Revenu Québec"}
       );
     }
@@ -1053,7 +1053,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       icon: "🎯",
       color: C.purple,
       title: `Pay $${extraPayment} extra on ${topDebt.name}`,
-      detail: `Cuts ${monthsSaved} month${monthsSaved!==1?"s":""} off your payoff date. Worth more than any subscription cancel.`,
+      detail: `Cuts ${monthsSaved} month${monthsSaved!==1?"s":""} off your payoff date.`,
       action: "Debt Plan", screen: "goals"
     });
   }
@@ -1225,7 +1225,7 @@ function AutopilotCard({data, setScreen}) {
             ))}
           </div>
           <div style={{marginTop:10,padding:"8px 10px",background:"rgba(255,79,106,0.08)",borderRadius:10,color:C.redBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,textAlign:"center"}}>
-            💡 Move money before these hit to avoid NSF fees ($45 to $48 each)
+            💡 A payment your balance can't cover can bring a bank fee.
           </div>
         </div>
       )}
@@ -1822,7 +1822,7 @@ function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData
                     {isLow&&(
                       <div style={{marginTop:8,background:baseBalance<0?C.red+"18":C.gold+"11",borderRadius:8,padding:"7px 10px",color:baseBalance<0?C.redBright:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
                         {baseBalance<0
-                          ? "⚠ Projected overdraft: NSF fees $45 to $48 each. Transfer funds before this date."
+                          ? "⚠ Projected overdraft: a payment your balance can't cover can bring a bank fee."
                           : "⚠ Balance near safety floor. Hold non-essential spending until after this date."}
                       </div>
                     )}
@@ -2417,7 +2417,7 @@ Rules: do not invent or quote any number not in the calculated results above. Do
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {/* Hero number — moderate 30y */}
                 <div style={{background:C.greenDim,border:`1px solid ${C.greenBright}`,borderRadius:16,padding:"18px 16px",textAlign:"center"}}>
-                  <div style={{color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:6}}>${result.monthlyContribution}/mo · 30y · 7%</div>
+                  <div style={{color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:6}}>${result.monthlyContribution}/mo · 30y · assumed 7%</div>
                   <div style={{fontFamily:"'Playfair Display',serif",fontSize:32,fontWeight:900,color:C.greenBright,lineHeight:1}}>${Math.round(result.thirtyYr.value).toLocaleString()}</div>
                   <div style={{color:C.muted,fontSize:13,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${Math.round(result.thirtyYr.growth).toLocaleString()} of growth on top of contributions</div>
                 </div>
@@ -2437,9 +2437,9 @@ Rules: do not invent or quote any number not in the calculated results above. Do
                 {/* Risk-tolerance comparison */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
                   {[
-                    {label:"5% conservative",  val: Math.round(result.conservative30.value), color: C.muted},
-                    {label:"7% moderate",      val: Math.round(result.moderate30.value),     color: C.cream},
-                    {label:"9% aggressive",    val: Math.round(result.aggressive30.value),   color: C.greenBright},
+                    {label:"Assumed 5%",  val: Math.round(result.conservative30.value), color: C.muted},
+                    {label:"Assumed 7%",      val: Math.round(result.moderate30.value),     color: C.cream},
+                    {label:"Assumed 9%",    val: Math.round(result.aggressive30.value),   color: C.greenBright},
                   ].map((r,i)=>(
                     <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"10px 8px",textAlign:"center"}}>
                       <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>{r.label}</div>
@@ -2512,25 +2512,25 @@ const personas = {
   convenience: {
     name:"The Convenience Spender", emoji:"🛍️", color:C.orange,
     traits:["High food & delivery spend","Values time over money","Subscription-heavy"],
-    insight:"Replacing 3 food deliveries/week with home cooking saves ~$180/mo.",
+    insight:"Food and delivery are a large share of your spending.",
     shareText:"I'm a Convenience Spender 🛍️ on @flourishmoney"
   },
   lifestyle: {
     name:"The Experience Collector", emoji:"✈️", color:C.purple,
     traits:["Prioritizes experiences","Shopping for quality","Social spending peaks"],
-    insight:"You spend richly on life. Automating $200/mo to savings before spending keeps goals on track.",
+    insight:"Experiences are where much of your money goes.",
     shareText:"I'm an Experience Collector ✈️ on @flourishmoney"
   },
   digital: {
     name:"The Digital Native", emoji:"💻", color:C.teal,
     traits:["Heavy subscription stack","Tech-first spending","Optimizes with apps"],
-    insight:"Audit your subscriptions: cancelling unused ones often frees $50-100/mo instantly.",
+    insight:"Subscriptions are a big part of your spending, and each one renews on its own.",
     shareText:"I'm a Digital Native 💻 on @flourishmoney"
   },
   mobile: {
     name:"The Commuter", emoji:"🚗", color:C.gold,
     traits:["High transport spend","Life on the go","Gas & parking costs add up"],
-    insight:"Transport is your biggest variable cost. Carpooling or transit 2x/week can save $150+/mo.",
+    insight:"Transport is your biggest variable cost.",
     shareText:"I'm a Commuter 🚗 on @flourishmoney"
   },
   builder: {
@@ -2689,7 +2689,7 @@ function WealthForecast({data}) {
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
             <span style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:99,padding:"2px 8px",color:C.purpleBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.5}}>PROJECTED</span>
             <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-              ${startingBal.toLocaleString()} balance · ${Math.round(monthlyContrib).toLocaleString()}/mo · 7% avg return
+              ${startingBal.toLocaleString()} balance · ${Math.round(monthlyContrib).toLocaleString()}/mo · assumed 7% a year
             </span>
           </div>
           {/* Bars */}
@@ -7138,7 +7138,7 @@ function PlanAhead({data, setAppData, setScreen}){
                 </div>
               </div>
               <Bar v={Math.max(0,day.balance)} max={barMax} color={neg?C.red:low?C.gold:C.green} h={4}/>
-              {neg&&<div style={{marginTop:8,color:C.redBright,fontSize:13,fontWeight:600}}>Heads up: an overdraft here usually costs $45 to $48 in NSF fees. Tap the day to see what lands on it.</div>}
+              {neg&&<div style={{marginTop:8,color:C.redBright,fontSize:13,fontWeight:600}}>Heads up: an overdraft here can bring a bank fee. Tap the day to see what lands on it.</div>}
               {low&&!neg&&<div style={{marginTop:6,color:C.goldBright,fontSize:13}}>Heads up: this day runs close to empty.</div>}
             </div>
             {isDrilled&&(
@@ -8769,7 +8769,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
           <span style={{fontSize:16,flexShrink:0}}>⚡</span>
           <div>
             <div style={{color:C.goldBright,fontWeight:700,fontSize:13,marginBottom:2}}>Add interest rates to run the simulator</div>
-            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>Your credit card rate is on your statement or card agreement, typically 19.99% to 29.99%. Add it in Settings → Debts to see your exact debt-free date and total interest saved.</div>
+            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>Your credit card rate is on your statement or card agreement. Add it in Settings → Debts to see your exact debt-free date and total interest saved.</div>
           </div>
         </div>
       )}
@@ -8911,7 +8911,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
         <div style={{background:`linear-gradient(135deg,${C.gold}18 0%,${C.gold}08 100%)`,border:`1px solid ${C.gold}40`,borderRadius:20,padding:"18px 20px",position:"relative",overflow:"hidden"}}>
           <div style={{position:"absolute",top:-18,right:-18,fontSize:64,opacity:0.08}}>💰</div>
           <div style={{color:C.goldBright,fontWeight:800,fontSize:13,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{cfg.flag} {cfg.name}-Specific Tax Opportunities</div>
-          <div style={{color:C.muted,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>Most people leave thousands on the table. These are the credits and benefits you may be missing right now.</div>
+          <div style={{color:C.muted,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>These are the credits and benefits that may apply to you.</div>
           <div style={{display:"flex",gap:10}}>
             <div style={{background:C.gold+"22",borderRadius:12,padding:"8px 14px",textAlign:"center"}}>
               <div style={{color:C.goldBright,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{highPriority.length}</div>
@@ -9799,7 +9799,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
         </div>
         <Card style={{background:C.purpleDim,border:`1px solid ${C.purple}44`}}>
           <div style={{color:C.purpleBright,fontWeight:800,fontSize:16,marginBottom:8}}>{isCouple?"💑 Money Meeting":"🧘 Check-In"}</div>
-          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65}}>{isCouple?`The #1 habit of couples who build wealth: a short, structured money talk. No fights, no blame.${data.profile.partnerName?` Ready to go with ${data.profile.partnerName}?`:""}`:
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65}}>{isCouple?`A short, structured money talk. No fights, no blame.${data.profile.partnerName?` Ready to go with ${data.profile.partnerName}?`:""}`:
             "A few honest minutes on where your money went and where you're heading."}</div>
           {/* ── Schedule — profile.meetingSchedule; next date is derived (computeNextMeeting), never stored ── */}
           {setAppData&&<div style={{marginTop:14,borderTop:`1px solid ${C.purple}33`,paddingTop:12}}>
@@ -10042,7 +10042,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
         <div style={{textAlign:"center",marginBottom:16}}>
           <div style={{display:"flex",justifyContent:"center",marginBottom:6}}><Icon id="sparkles" size={48} color={C.green} strokeWidth={1.3}/></div>
           <div style={{fontSize:22,fontWeight:800,color:C.purpleBright,fontFamily:"Georgia,serif",marginTop:12,marginBottom:8}}>{isCouple?"Meeting complete!":"Check-in done!"}</div>
-          <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.7,marginBottom:16}}>{isCouple?"You just did what most couples never do: talked openly about money. That's the habit that builds wealth.":"10 minutes every week. This is the habit."}</div>
+          <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.7,marginBottom:16}}>{isCouple?"You talked openly about money together.":"10 minutes every week. This is the habit."}</div>
         </div>
         {/* Meeting summary */}
         <Card style={{background:`linear-gradient(135deg,${C.purpleDim},${C.card})`,border:`1px solid ${C.purple}33`,marginBottom:12}}>
@@ -10398,13 +10398,13 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
           ],
           "8-12":[
             {emoji:"🏦",title:"What banks do",body:"A bank keeps your money safe and pays you a little extra (interest) to use it while it's there. Like a super-safe piggy bank that rewards patience.",activity:"Ask a parent to open a youth savings account. Watch the interest appear.",key:"Banks keep money safe AND pay you to use them."},
-            {emoji:"💳",title:"Credit cards are loans",body:"A credit card lets you buy now, pay later. If you don't pay it ALL back quickly, they charge you extra. That's how people get into trouble.",activity:"If you borrowed $10 and had to pay back $11, would you? That's what a credit card charges.",key:"Pay your credit card in full every month, always."},
-            {emoji:"📈",title:"Money can grow",body:"$100 saved today at 7% becomes $386 in 20 years without doing anything extra. This is compound interest: money making more money.",activity:"Use an online compound interest calculator with a parent. Put in small numbers and watch.",key:"Start saving young. Time is the secret ingredient."},
+            {emoji:"💳",title:"Credit cards are loans",body:"A credit card lets you buy now, pay later. If you don't pay it ALL back quickly, they charge you extra. That's how people get into trouble.",activity:"If you borrowed $10 and had to pay back $11, the extra $1 is interest. A credit card charges interest on any balance not paid in full.",key:"Pay your credit card in full every month, always."},
+            {emoji:"📈",title:"Money can grow",body:"$100 growing 7% a year for 20 years: $100 × 1.07 to the power of 20 = $387. The 7% is an example rate. This is compound interest: money making more money.",activity:"Use an online compound interest calculator with a parent. Put in small numbers and watch.",key:"Start saving young. Time is the secret ingredient."},
           ],
           "13+":[
-            {emoji:"💰",title:"Budget like a boss",body:"50% needs, 30% wants, 20% savings. Without a budget, money just disappears. A budget isn't restriction. It's a plan for the life you actually want.",key:"A budget gives your money direction."},
+            {emoji:"💰",title:"Budget like a boss",body:"One common rule of thumb splits income into 50% needs, 30% wants and 20% savings. Without a budget, money just disappears. A budget isn't restriction. It's a plan for the life you actually want.",key:"A budget gives your money direction."},
             {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet, and paying extra for the privilege. Use debt only for things that gain value.",key:"Debt is expensive. Use it wisely or not at all."},
-            {emoji:"📊",title:"Start investing at your first job",body:"$50/month invested at 7% starting at age 16 = $245,000 at retirement. The same $50 starting at 30 = $68,000. Starting early nearly triples your outcome.",key:`Invest with your very first ${payWord(data.profile?.country)}.`},
+            {emoji:"📊",title:"Start investing at your first job",body:"Money invested at a first job has more years to grow than the same money invested later, and each year of growth builds on the growth before it.",key:`Invest with your very first ${payWord(data.profile?.country)}.`},
           ],
         };
         return(<>
@@ -11855,9 +11855,9 @@ ${coachSafeToSpendLine(data)}${(()=>{ const l = coachPurchaseLine(data, userText
 </UNTRUSTED_USER_DATA>
 
 Reference rules (name and explain these; do not compute new figures from them):
-${country==="CA"?`- Employment: ${isSelfEmp?"SELF-EMPLOYED: HST/GST registration ($30k threshold), quarterly instalments, home office and business deductions may be relevant; check canada.ca or CRA My Account":"T4 EMPLOYEE: standard employment deductions, RRSP, union dues and home office (if remote) may be relevant; check canada.ca"}
+${country==="CA"?`- Employment: ${isSelfEmp?`SELF-EMPLOYED: HST/GST registration ($${TAX_DATA.CA.GSTHST_SMALL_SUPPLIER.value.toLocaleString("en-US")} threshold), quarterly instalments, home office and business deductions may be relevant; check canada.ca or CRA My Account`:"T4 EMPLOYEE: standard employment deductions, RRSP, union dues and home office (if remote) may be relevant; check canada.ca"}
 ${partnerEmpLabel ? `- Partner employment: ${partnerIsSelfEmp ? "SELF-EMPLOYED PARTNER: income splitting, spousal RRSP contributions and household business deductions may be relevant" : "EMPLOYED PARTNER: dual income household; spousal RRSP may be relevant"}`: ""}
-- ${age&&age>=65?"SENIOR 65+: Age Amount credit, pension income splitting (Form T1032), OAS ($727/mo), GIS if low income, medical expense credit and RRIF withdrawals may be relevant; check eligibility at canada.ca":""}
+- ${age&&age>=65?`SENIOR 65+: Age Amount credit, pension income splitting (Form T1032), OAS (up to $${TAX_DATA.CA.OAS.maxMonthly65to74}/mo at 65 to 74), GIS if low income, medical expense credit and RRIF withdrawals may be relevant; check eligibility at canada.ca`:""}
 - ${age&&age<71?"RRSP: an RRSP converts by the end of the year the holder turns 71; check canada.ca":"age 71+: RRIF rules and minimum withdrawals may be relevant; check canada.ca"}
 - RRSP deadline: ${new Date().getMonth() < 2 || (new Date().getMonth() === 2 && new Date().getDate() === 1) ? "the RRSP contribution deadline for last tax year is March 1; check canada.ca" : new Date().getMonth() <= 11 ? "the RRSP contribution deadline for last tax year has passed; contributions now count toward this tax year" : ""}
 - ${!profile.isHomeowner&&(!age||age<40)?`FIRST-TIME BUYER programs may be relevant; check eligibility at canada.ca: FHSA ($${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/yr deductible, tax-free growth, $${TAX_DATA.CA.FHSA_LIFETIME.value.toLocaleString()} lifetime), HBP (borrow up to $${TAX_DATA.CA.HBP_WITHDRAWAL_LIMIT.value.toLocaleString()} from RRSP), Home Buyers' Tax Credit (claim the $${TAX_DATA.CA.HOME_BUYERS_AMOUNT.value.toLocaleString()} amount, worth ~$${creditWorth(TAX_DATA.CA.HOME_BUYERS_AMOUNT.value).toLocaleString()} in federal tax at the ${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% ${TAX_DATA.CA.FEDERAL_LOWEST_RATE.year} rate)`:""}
@@ -11868,7 +11868,7 @@ ${partnerEmpLabel ? `- Partner employment: ${partnerIsSelfEmp ? "SELF-EMPLOYED P
 - ${age&&age>=65?"SENIOR 65+ (may be relevant; check eligibility at irs.gov): Social Security taxation (up to 85% taxable), RMDs start at 73, higher standard deduction ($1,950 extra single), OBBBA NEW $6,000 senior bonus deduction (2025 to 2028, phases out at $75k MAGI), QCD from IRA up to $108,000 (2025 indexed limit)":""}
 - ${age&&age>=73?"RMDs may be relevant (age 73+); the penalty on a missed amount is 25%; check irs.gov":""}
 - ${!profile.isHomeowner&&(!age||age<40)?"FIRST-TIME BUYER programs may be relevant; check eligibility at irs.gov: mortgage interest deduction, property tax deduction, $10k IRA penalty-free withdrawal, state programs":""}
-- ${profile.hasKids?`PARENT: Child Tax Credit ($2,200/child under 17, OBBBA 2025), Dependent Care FSA ($5,000 pre-tax for 2025; rises to $7,500 for 2026 per OBBBA), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?"AOTC for college ($2,500/yr, 40% refundable)":""}`:""}
+- ${profile.hasKids?`PARENT: Child Tax Credit ($${TAX_DATA.US.CHILD_TAX_CREDIT.value.toLocaleString("en-US")}/child under 17, OBBBA), Dependent Care FSA ($5,000 pre-tax for 2025; rises to $7,500 for 2026 per OBBBA), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?"AOTC for college ($2,500/yr, 40% refundable)":""}`:""}
 - State ${prov||"unknown"}: ${NO_STATE_WAGE_TAX.has(profile.province)?"NO state income tax on wages":"state income tax applies"}`}
 
 When user agrees to a specific goal or plan: FLOURISH_UPDATE:{"action":"update_goal","name":"<n>","target":<n>,"saved":<n>,"monthly":<n>}
@@ -12249,11 +12249,11 @@ function CreditScreen({data,setScreen}){
   const tips = isCA ? [
     {icon:"🏦", title:"Check your Equifax & TransUnion reports", desc:"Get free annual reports at equifax.ca and transunion.ca. Dispute any errors immediately."},
     {icon:"🤝", title:"Become an authorized user", desc:"Ask a family member with excellent credit to add you to their card. Their history helps yours."},
-    {icon:"📅", title:"Pay twice a month", desc:"Paying every 2 weeks instead of monthly lowers your reported utilization significantly."},
+    {icon:"📅", title:"Pay twice a month", desc:"Paying every 2 weeks instead of monthly can lower the balance reported to the credit bureaus, which is part of utilization."},
   ] : [
     {icon:"🏦", title:"Get your free credit report", desc:"Check AnnualCreditReport.com. You're entitled to free reports from all 3 bureaus."},
     {icon:"💳", title:"Request a credit limit increase", desc:"A higher limit with the same spending = lower utilization. Do this every 12 months."},
-    {icon:"📅", title:"Pay twice a month", desc:"Paying every 2 weeks lowers your reported utilization and can boost your score in 60 days."},
+    {icon:"📅", title:"Pay twice a month", desc:"Paying every 2 weeks can lower the balance reported to the credit bureaus, which is part of utilization."},
   ];
 
   const arc = (score)=>{
@@ -13387,12 +13387,12 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
     "8-12":[
       {emoji:"🏦",title:"What banks do",body:"A bank keeps your money safe and pays you a little extra called interest. Like a super-safe piggy bank that rewards you for saving.",key:"Banks keep money safe AND pay you to use them."},
       {emoji:"💳",title:"Credit cards are loans",body:"A credit card lets you buy now and pay later. But if you don't pay it all back quickly, they charge you extra. That's how people get into trouble.",key:"Pay your credit card in full every month."},
-      {emoji:"📈",title:"Money can grow",body:"$100 at 7% interest becomes $386 in 20 years without doing anything extra! This is compound interest: money making more money.",key:"Start saving young. Time is the secret ingredient."},
+      {emoji:"📈",title:"Money can grow",body:"$100 growing 7% a year for 20 years: $100 × 1.07 to the power of 20 = $387. The 7% is an example rate. This is compound interest: money making more money.",key:"Start saving young. Time is the secret ingredient."},
     ],
     "13+":[
-      {emoji:"💰",title:"Budget like a boss",body:"50% needs, 30% wants, 20% savings. Without a budget, money just disappears. A budget is a plan for the life you actually want.",key:"A budget gives your money direction."},
+      {emoji:"💰",title:"Budget like a boss",body:"One common rule of thumb splits income into 50% needs, 30% wants and 20% savings. Without a budget, money just disappears. A budget is a plan for the life you actually want.",key:"A budget gives your money direction."},
       {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet, and paying extra for the privilege.",key:"Debt is expensive. Use it wisely or not at all."},
-      {emoji:"📊",title:"Start investing at your first job",body:"$50/month at 7% starting at 16 = $245,000 at retirement. Starting at 30 = only $68,000. Starting early nearly triples your outcome.",key:`Invest with your very first ${payWord(country)}.`},
+      {emoji:"📊",title:"Start investing at your first job",body:"Money invested at a first job has more years to grow than the same money invested later, and each year of growth builds on the growth before it.",key:`Invest with your very first ${payWord(country)}.`},
     ],
   };
 

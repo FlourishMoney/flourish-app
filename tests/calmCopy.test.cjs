@@ -52,8 +52,9 @@ const RENDERED = (PROSE.match(/>[^<>{}]{12,180}</g) || []).map(s => s.slice(1, -
   t.ok(/>Heads up<\/strong>: your bills come to more than your balance before your next deposit\./.test(APP),
     "2c Today's strip does the same");
   t.ok(/See what's coming →/.test(APP), "2d …with a link to the forecast");
-  t.ok(/Heads up: an overdraft here usually costs \$45 to \$48 in NSF fees\./.test(APP),
-    "2e the per-day line states the cost as a fact");
+  // Prompt 3: the "$45 to $48" fee range was a figure Flourish did not source, so the line names the fee without one.
+  t.ok(/Heads up: an overdraft here can bring a bank fee\./.test(APP) && !/\$45 to \$48/.test(APP),
+    "2e the per-day line states the cost as a fact, with no fee figure Flourish did not source");
   t.ok(/Tap the day to see what lands on it\./.test(APP), "2f …and offers a look, not an instruction");
   t.ok(/Heads up: this day runs close to empty\./.test(APP), "2g the low-balance line is a fact too");
 
