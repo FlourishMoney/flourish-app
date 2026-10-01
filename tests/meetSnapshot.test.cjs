@@ -61,11 +61,11 @@ const t = create();
 
   // Item 2 — parallel decision outcomes + real date range.
   const dec = sa.decisions[0];
-  t.ok(/paid off in .+ instead of /.test(dec.options[0].outcome), "6a debt outcome shows before/after payoff");
-  // CHANGED with the rename, not weakened: the intent — the savings option states the RESULTING
-  // BALANCE — is identical; only the noun moves. "buffer" was this codebase's word for three different
-  // quantities, and buf.after is literally the savings balance (savingsBufferAfter).
-  t.ok(/savings grows to \$/.test(dec.options[1].outcome), "6b savings outcome shows what the savings balance becomes");
+  // Prompt 3e: the decision states the spare amount and names the debt and savings with their own
+  // balances; it suggests no amount for either, so there is no "after" figure to show.
+  t.ok(/^\$[\d,]+ owed at [\d.]+%$/.test(dec.options[0].outcome), "6a the debt option is its own balance and rate");
+  t.ok(/^\$[\d,.]+ saved now$/.test(dec.options[1].outcome), "6b the savings option is the savings balance now");
+  t.ok(/^\$[\d,]+ is spare /.test(dec.text) && !/extra|toward|into savings|grows to/i.test(JSON.stringify(dec)), "6b2 …and nothing is moved: no extra, toward, into savings or grows to");
   t.ok(!/this period/.test(dec.text), "6c decision question uses an actual date range, not 'this period'");
 
   // Item 3 — facilitator gate: three states, and only 'ready' shows the input.

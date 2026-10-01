@@ -120,24 +120,25 @@ export const SafeSpendEngine = {
     const occurrencesInWindow = (b) => occurrencesFor(b).length;
     // Money the household told us is going out (Watch "Add expected money in or out") is reserved too.
     const expectedOut = occ.filter(o => o.kind === "expected");
-    const upcomingBills = bills.reduce((s,b) => s + occurrencesFor(b).reduce((t,o) => t + num(o.amount), 0), 0)
-                        + expectedOut.reduce((s,o) => s + num(o.amount), 0);
+    const upcomingBills = Math.max(0, bills.reduce((s,b) => s + occurrencesFor(b).reduce((t,o) => t + num(o.amount), 0), 0)
+                        + expectedOut.reduce((s,o) => s + num(o.amount), 0));
 
     // Minimum debt payments due this month, except a debt a bill already pays (billPaysDebt, by
     // identity only): that bill is reserved above, and the forecast skips the same minimum.
-    const debtPayments = unbilledDebtMinimums(debts, bills)
-      .reduce((s,x) => s + x.amount, 0);
+    const debtPayments = Math.max(0, unbilledDebtMinimums(debts, bills)
+      .reduce((s,x) => s + x.amount, 0));
 
     // Safety buffer: `horizonDays` of average daily spend (Truth-fix item 3: scales to the next deposit,
     // not a fixed 10; Sprint Q item 3: NaN-guarded).
     const avgDaily   = FinancialCalcEngine.avgDailySpend(data);
-    const safetyBuf  = Math.round((Number.isFinite(avgDaily) ? avgDaily : 0) * horizonDays);
+    // Never negative: a deduction is money committed (prelaunch-copy round 2, item 4).
+    const safetyBuf  = Math.max(0, Math.round((Number.isFinite(avgDaily) ? avgDaily : 0) * horizonDays));
 
     // Savings allocation: 10% of monthly income. cashFlow's catOverrides omitted: only monthlyIncome
     // is read here and it's override-independent (verified Group B). todayDate threaded for consistency.
     const { monthlyIncome } = FinancialCalcEngine.cashFlow(data, {}, todayDate);
     const mIncome    = Number.isFinite(monthlyIncome) ? monthlyIncome : 0;
-    const savingsAlloc = Math.round(mIncome * 0.10 / 30 * horizonDays); // Truth-fix item 3: horizonDays' worth, not 10
+    const savingsAlloc = Math.max(0, Math.round(mIncome * 0.10 / 30 * horizonDays)); // Truth-fix item 3: horizonDays' worth, not 10
     const noIncome   = !(mIncome > 0); // Sprint Q item 3: signal "set up income" instead of a misleading number
 
     const safeAmount = Math.max(0, balance - upcomingBills - debtPayments - safetyBuf - savingsAlloc);

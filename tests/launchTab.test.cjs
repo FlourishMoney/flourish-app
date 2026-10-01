@@ -61,8 +61,18 @@ const WEB = (p = "/") => win(`https://flourishmoney.app${p}`);
     "sessionStorage survives one, so the tab would come back when it should not");
 
   // ── 3. a deep link still wins ────────────────────────────────────────────────────────────────
-  for (const [p, want] of [["/privacy", "privacy"], ["/terms", "terms"], ["/delete-account", "delete-account"], ["/kids", "kids"]]) {
+  for (const [p, want] of [["/privacy", "privacy"], ["/terms", "terms"], ["/delete-account", "delete-account"]]) {
     t.eq(launchScreen(WEB(p)), want, `3a ${p} opens its own page, not Today`);
+  }
+  // Prompt 3d: Kids is parked. /kids serves nothing: it opens Today and the address becomes "/".
+  {
+    const w = WEB("/kids"); const moved = [];
+    w.history = { replaceState: (_s, _t, url) => moved.push(url) };
+    t.eq([launchScreen(w), moved], ["home", ["/"]], "3a2 /kids redirects to / and opens Today, not the kids site");
+    t.eq(launchScreen(WEB("/kids/")), "home", "3a3 …with a trailing slash too (and with no history API it still opens Today)");
+    t.ok(!/screen==="kids"\)return/.test(APP), "3a4 nothing renders a kids screen any more");
+    const MAIN = fs.readFileSync(path.join(__dirname, "..", "src", "main.jsx"), "utf8");
+    t.ok(!/Flourish Kids|flourish-kids-favicon/.test(MAIN), "3a5 …and /kids no longer swaps in the Flourish Kids title and icon");
   }
   t.eq(launchScreen(WEB("/delete-account/")), "delete-account", "3b a trailing slash still resolves");
   t.eq(launchScreen(WEB("/Delete-Account")), "delete-account", "3c so does the wrong case");

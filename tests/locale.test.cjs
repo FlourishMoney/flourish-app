@@ -146,9 +146,11 @@ const { create } = require("./_runner.cjs");
     const view = read("lib/safeToSpendView.js"), meet = read("lib/meetSnapshot.js"), app = read("App.jsx");
     t.ok(/label: "Spending buffer"/.test(view), "8a the safe-to-spend line item keeps the word");
     t.ok(!/buffer grows to/.test(meet), "8b the Meet card no longer calls the savings balance a buffer");
-    t.ok(/savings grows to/.test(meet), "8c …it says savings, which is what savingsBufferAfter returns");
+    // Prompt 3e: Meet now states the savings balance as it is ("saved now"), with no amount moved into it.
+    t.ok(/saved now/.test(meet) && !/buffer/i.test(meet.match(/outcome: `[^`]*`/g).join(" ")), "8c …it says savings, which is what savingsBufferAfter returns");
     t.ok(!/"Untouched buffer"/.test(app), "8d Autopilot no longer calls its residual a buffer");
-    t.ok(/label:"Left over"/.test(app), "8e …it says what it is");
+    // Prompt 3e: the residual is gone with the split it was net of; nothing on the card calls anything a buffer.
+    t.ok(!/label:"Left over"/.test(app) && !/plan\.buffer/.test(app), "8e …and since prompt 3e the card shows no residual at all");
   }
 
   t.summary("locale.test");

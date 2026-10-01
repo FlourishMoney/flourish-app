@@ -8,10 +8,9 @@
 // its old themed `insights` array was dead output and was removed (MATH-LOCK finding #3).
 // -----------------------------------------------------------------------------
 
-import { FinancialCalcEngine, isInvestmentAccount, simulateDebtPayoffForDebt, isCashAccount, num } from "./financialCalculations.js";
+import { FinancialCalcEngine, isInvestmentAccount, simulateDebtPayoffForDebt, isCashAccount, num, buildDebtListForSimulator } from "./financialCalculations.js";
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { ForecastEngine } from "./forecastEngine.js";
-import { shelterLabel } from "./locale.js";
 import { safeToSpendView } from "./safeToSpendView.js";
 import { computeDailySpendLimit, suggestedDailyView } from "./suggestedDaily.js";
 
@@ -95,7 +94,8 @@ export function coachPurchaseLine(data = {}, userText = "", todayDate = new Date
   return `- Purchase in the user's latest message: ${fmt(amount)} | Safe to spend after it (computed by Flourish): ${fmt(after)}`;
 }
 
-// Safe amount to move to savings now (25% of safe-to-spend, floored).
+// The spare amount until the next deposit: 25% of safe to spend, rounded down to the dollar. It is
+// never assigned to savings, a debt or a goal (prompt 3e); spareUntilDeposit decides when it is shown.
 export function computeSavingsOpportunity(safe) {
   return Math.max(0, Math.floor(safe * 0.25));
 }
@@ -183,23 +183,26 @@ export const BehaviorEngine = {
 };
 
 // ── ENGINE: ADAPTIVE AUTOPILOT — daily money plan gated by behavior + forecast risk + risk mode ──
+// ── THE spare amount (prompt 3e) ─────────────────────────────────────────────────────────────────
+// The one figure Today (the Decisions card and the Money Plan) and Meet show as spare until the next
+// deposit: a quarter of the safe-to-spend figure Today shows (computeSavingsOpportunity), worked out
+// from that figure and nothing else. It is nothing when cash is tight (cashIsTight) or the 30-day
+// forecast shows an overdraft. It is never split: the Money Plan used to assign 40% of its own
+// surplus to savings, 40% to a debt and 50% of the rest to a goal; no surface assigns any of it now.
+export function spareUntilDeposit(data = {}, todayDate = new Date()) {
+  const { tight, safe } = cashIsTight(data, todayDate);
+  const overdraft = ((ForecastEngine.generate(data, 30, null, todayDate) || {}).overdraftRisk || []).length > 0;
+  const spare = tight || overdraft ? 0 : computeSavingsOpportunity(safe);
+  return { spare, safe, tight, overdraft };
+}
+
 export const AutopilotEngine = {
   generate(data, catOverrides = {}, currentDate = new Date()) {
     const ss = SafeSpendEngine.calculate(data, currentDate);
-    const { balance, soonBills, riskLevel: rawRisk } = ss;
-    const { monthlyIncome, cashFlow, totalExpenses } = FinancialCalcEngine.cashFlow(data, catOverrides, currentDate);
-    const { forecast, overdraftRisk, lowBalanceWarnings } = ForecastEngine.generate(data, 30, null, currentDate);
+    const { riskLevel: rawRisk } = ss;
+    const { overdraftRisk, lowBalanceWarnings } = ForecastEngine.generate(data, 30, null, currentDate);
     const { spendingStability, spikeRatio } = BehaviorEngine.analyze(data);
-    const debts = [...(data.debts || [])].sort((a,b) => parseFloat(b.rate||0) - parseFloat(a.rate||0)); // copy before sort — never mutate data.debts
     const goals  = data.goals || [];
-    const today  = currentDate;
-    const todayNum = today.getDate();
-
-    // ── Derive payday from ForecastEngine (anchor-based, not modulo) ─────────
-    const nextPayday = forecast.find(f => f.day > 0 && f.isPayday);
-    // The REAL days to payday. Used below to forecast the rest of this period's spending — and NOT
-    // to divide the safe amount, which is the whole of week-2 defect a.
-    const daysToPayday = Math.max(1, nextPayday ? nextPayday.day : 14);
 
     // ── THE DAILY PACE — read, not derived ───────────────────────────────────
     // This card used to compute its own: floor(safeAmount / daysToPayday), then adjust the result by
@@ -216,81 +219,37 @@ export const AutopilotEngine = {
 
     const nearTermLow = lowBalanceWarnings.find(w => w.day <= 7);
 
-    // ── ADAPTIVE: Risk mode gates all downstream allocations ─────────────────
+    // ── Risk mode: what the engine found (the card's label) ───────────────────
     const forecastDanger = overdraftRisk.length > 0;
-    // The one tight-cash rule (cashIsTight), the same call Decisions makes. When it fires the plan is
-    // not "On Track", and it moves nothing to savings, debt or goals.
+    // The one tight-cash rule (cashIsTight), the same call Decisions makes. When it fires the card
+    // says "Cash is tight" and nothing is spare.
     const cashTight = cashIsTight(data, currentDate).tight;
     const mode = forecastDanger ? "high" :
                  rawRisk === "critical" || rawRisk === "high" ? "high" :
                  rawRisk === "medium" || nearTermLow || cashTight ? "medium" : "low";
-    const extrasPaused = mode === "high" || cashTight;
 
-    const modeMultipliers = {
-      low:    { savings: 0.40, debt: 0.40, goal: 0.50 },
-      medium: { savings: 0.20, debt: 0.30, goal: 0.25 },
-      high:   { savings: 0,    debt: 0,    goal: 0    },
-    };
-    const mult = modeMultipliers[mode];
-
-    // ── Safe floor & surplus ──────────────────────────────────────────────────
-    const safeFloor = monthlyIncome * 0.15;
-    const surplus = Math.max(0,
-      balance
-      - soonBills.reduce((s,b) => s + parseFloat(b.amount||0), 0)
-      - (totalExpenses / 30 * daysToPayday)   // forecast remaining spend this period (the REAL window)
-      - safeFloor
-    );
-
-    // ── ① Daily spend limit (adaptive) ───────────────────────────────────────
+    // ── The spare amount (prompt 3e): the one figure, never split ───────────────────────────────
+    // The plan used to compute its own surplus and assign fixed shares of it (savings 40%, debt 40%,
+    // goal 50% of the rest, scaled down by "mode"), so the card showed amounts nobody had sourced and
+    // a "spare" that differed from the Decisions card's. It now reads spareUntilDeposit, the figure
+    // Decisions and Meet read, and lists the household's goals and debts with their own balances only.
+    const spareInfo = spareUntilDeposit(data, currentDate);
+    const spare = spareInfo.spare;
+    const spareFrom = spareInfo.safe;
     const dailySpendLimit = Math.max(0, safeDaily);
-
-    // ── ② Savings transfer (mode-gated, adaptive amount) ─────────────────────
-    let savingsTransfer = 0;
-    let savingsTarget = "Emergency Fund";
-    if (!extrasPaused && surplus > monthlyIncome * 0.12) {
-      const efMonths = FinancialCalcEngine.emergencyFundMonths(data, catOverrides, currentDate);
-      const invAcct  = (data.accounts||[]).find(a => isInvestmentAccount(a));
-      savingsTarget  = efMonths < 3 ? "Emergency Fund" : invAcct ? shelterLabel(data.profile?.country) : "Savings";
-      // Adaptive: reduce savings amount if spending is volatile
-      const volatilityFactor = spendingStability > 0.7 ? 1.0 : 0.7;
-      savingsTransfer = Math.round(surplus * mult.savings * volatilityFactor);
-    }
-
-    // ── ③ Debt acceleration (mode-gated) ─────────────────────────────────────
-    let debtPayment = 0;
-    let debtTarget  = null;
-    const remainAfterSavings = surplus - savingsTransfer;
-    if (!extrasPaused && remainAfterSavings > 30 && debts.length > 0 && parseFloat(debts[0].rate||0) > 8) {
-      debtPayment = Math.round(Math.min(remainAfterSavings * mult.debt, 200));
-      debtTarget  = debts[0];
-    }
-
-    // ── ④ Goal contribution (mode-gated) ─────────────────────────────────────
-    let goalContribution = 0;
-    let goalTarget = null;
-    const remainAfterDebt = remainAfterSavings - debtPayment;
-    if (!extrasPaused && mode === "low" && remainAfterDebt > 20 && goals.length > 0) {
-      goalContribution = Math.round(remainAfterDebt * mult.goal);
-      goalTarget = goals[0];
-    }
-
-    // ── ⑤ Left over ──────────────────────────────────────────────────────────
-    // What stays in the account after everything due before the next deposit (the bills and the
-    // debt minimums safe to spend reserves) and after today's plan. It used to take off only today's
-    // plan, so it read $2,909 in a demo with $1,650 of rent and $348 of minimums leaving first.
-    const dueBeforeDeposit = (ss.upcomingBills || 0) + (ss.debtPayments || 0);
-    const buffer = Math.max(0, balance - dueBeforeDeposit - dailySpendLimit - savingsTransfer - debtPayment - goalContribution);
+    const debtsOwed = buildDebtListForSimulator(data.debts, data.liabilities)
+      .map(d => ({ name: d.name, balance: d.balance, rate: d.rate, rateEstimated: !!d.rateEstimated }));
+    const goalsSaved = goals.map(g => ({ name: g.name || "Goal", saved: num(g.saved), target: num(g.target) }));
 
     // ── ⑥ Adaptive alerts (contextual, not generic) ──────────────────────────
     const alerts = [];
     if (mode === "high") {
       const msg = forecastDanger
-        ? `Balance projected to go negative in ${overdraftRisk[0]?.day} days. Hold all non-essential spending.`
-        : "Cash is critically low. Bills protection mode active. Savings and extras paused.";
+        ? `Balance projected to go negative in ${overdraftRisk[0]?.day} days.`
+        : "Cash is critically low.";
       alerts.push({ type:"danger", msg });
     } else if (cashTight) {
-      alerts.push({ type:"warning", msg:"Safe to spend is below 15% of your monthly income, so savings and extra debt payments are paused." });
+      alerts.push({ type:"warning", msg:"Safe to spend is below 15% of your monthly income, so nothing is spare until your next deposit." });
     } else if (nearTermLow) {
       alerts.push({ type:"warning", msg:`Balance drops near your safety floor in ${nearTermLow.day} days.` });
     }
@@ -302,28 +261,44 @@ export const AutopilotEngine = {
     const adherence = Math.min(100, Math.round(spendingStability * 100));
 
     // ── ⑧ Mode label for UI ──────────────────────────────────────────────────
-    const modeLabel = mode === "low" ? "On Track" : mode === "medium" ? "Monitor" : "At Risk";
+    // Prompt 3d: what the engine found, not a grade. ("On Track" / "Monitor" / "At Risk" read as verdicts.)
+    const modeLabel = mode === "low" ? "Bills covered" : mode === "medium" ? "Cash is tight" : "Overdraft risk";
     // Signals, not adjustments: the daily pace is the same number on every surface, so a chip may
     // report what was detected but must never claim the limit was moved by it.
     const adaptations = [
       spikeRatio > 1.4 && `Payday spike habit`,
       nearTermLow && `Low balance in ${nearTermLow.day}d`,
       spendingStability > 0.85 && `Consistent spending`,
-      mode === "high" && `Extras paused (protect bills first)`,
-      mode !== "high" && cashTight && `Extras paused (cash is tight)`,
+      mode === "high" && `Nothing spare (bills first)`,
+      mode !== "high" && cashTight && `Nothing spare (cash is tight)`,
     ].filter(Boolean);
 
     return {
-      dailySpendLimit, savingsTransfer, savingsTarget,
-      debtPayment, debtTarget, goalContribution, goalTarget,
-      buffer, dueBeforeDeposit, cashTight, alerts, mode, modeLabel,
-      daysLeft, adherence, surplus, adaptations,
+      dailySpendLimit, spare, spareFrom, debtsOwed, goalsSaved,
+      spareReason: spareInfo.tight ? "tight" : spareInfo.overdraft ? "overdraft" : spare > 0 ? null : "none",
+      cashTight, alerts, mode, modeLabel,
+      daysLeft, adherence, adaptations,
       riskLevel: rawRisk,
     };
   }
 };
 
 // ── ProsperityEngine: 100-point financial health score (6 weighted pillars) ──
+// The credit score the household entered themselves, or null. Flourish never assumes or estimates one
+// (prompt 3b): the onboarding form keeps a slider default of 680 in profile.creditScore even when the
+// household chose "Not sure / skip", so creditKnown must be true for the number to count.
+export function creditScoreEntered(profile) {
+  if (!profile || profile.creditKnown !== true) return null;
+  const n = Math.round(parseFloat(profile.creditScore));
+  return Number.isFinite(n) && n >= 300 && n <= 900 ? n : null;
+}
+
+// Shown beside a health score worked out without the credit part (prompt 3c).
+export const HEALTH_SCORE_PARTIAL_LABEL = "Based on 5 of 6 parts. Add your credit score in Settings for the full score.";
+// The short form, for small places (a widget tile, a chip, a metric line), and the line the coach is given.
+export const HEALTH_SCORE_PARTIAL_SHORT = "5 of 6 parts";
+export const HEALTH_SCORE_PARTIAL_COACH = "based on 5 of 6 parts, because no credit score is entered";
+
 export function calcHealthScore(data, catOverrides = {}, currentDate = new Date()) {
   // Pull from engines for consistency
   const { monthlyIncome, totalExpenses, monthlySpend } = FinancialCalcEngine.cashFlow(data, catOverrides, currentDate);
@@ -353,11 +328,18 @@ export function calcHealthScore(data, catOverrides = {}, currentDate = new Date(
   const denom = monthlyIncome > 0 ? monthlyIncome * 3 : 1;
   const ivScore = hasInv ? Math.min(10, 5 + Math.round(Math.min(5, invBal / denom))) : 0;
 
-  // ⑥ Credit Health — 10 pts
-  const rawCredit = data.profile?.creditScore ? parseFloat(data.profile.creditScore) : 680;
-  const crScore = rawCredit >= 760 ? 10 : rawCredit >= 720 ? 8 : rawCredit >= 670 ? 6 : rawCredit >= 620 ? 4 : 2;
+  // ⑥ Credit Health: 10 pts, from the score the household entered. With none entered there is no
+  // score to rate (the engine used to assume 680), so this pillar is left out and the other five,
+  // worth 90 points, are scaled up to 100 (× 100 / 90). That is a score on 5 of 6 parts, and it can
+  // differ from the score the same household gets once a credit score is entered, in either direction:
+  // pillars worth 80 give 89 with no score, 86 with a score of 718 (6 points) and 90 with 780 (10).
+  // So the result carries basisLabel, and the screens show it beside the score.
+  const rawCredit = creditScoreEntered(data.profile);
+  const hasCredit = rawCredit != null;
+  const crScore = !hasCredit ? 0 : rawCredit >= 760 ? 10 : rawCredit >= 720 ? 8 : rawCredit >= 670 ? 6 : rawCredit >= 620 ? 4 : 2;
+  const others = srScore + drScore + efScore + ssScore + ivScore;
 
-  const score = Math.min(100, Math.max(8, srScore + drScore + efScore + ssScore + ivScore + crScore));
+  const score = Math.min(100, Math.max(8, hasCredit ? others + crScore : Math.round(others * 100 / 90)));
 
   const pillars = [
     {label:"Savings Rate",    pts:srScore, max:25, detail:`${Math.round(savingsRate*100)}% savings rate`},
@@ -365,7 +347,8 @@ export function calcHealthScore(data, catOverrides = {}, currentDate = new Date(
     {label:"Emergency Fund",  pts:efScore, max:20, detail:`${(efMonths||0).toFixed(1)} months covered`},
     {label:"Stability",       pts:ssScore, max:15, detail:`Spending consistency`},
     {label:"Investments",     pts:ivScore, max:10, detail:hasInv?`$${(invBal||0).toFixed(0)} invested`:`Not started`},
-    {label:"Credit",          pts:crScore, max:10, detail:`Score ~${rawCredit}`},
+    {label:"Credit",          pts:crScore, max:hasCredit ? 10 : 0, detail:hasCredit ? `Score you entered: ${rawCredit}` : "Not entered"},
   ];
-  return { score, pillars, breakdown:{ srScore, drScore, efScore, ssScore, ivScore, crScore } };
+  return { score, pillars, breakdown:{ srScore, drScore, efScore, ssScore, ivScore, crScore },
+    partial: !hasCredit, basisLabel: hasCredit ? null : HEALTH_SCORE_PARTIAL_LABEL };
 }

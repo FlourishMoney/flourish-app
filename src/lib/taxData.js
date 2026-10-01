@@ -115,16 +115,15 @@ export const TAX_DATA = {
       lastVerified: "2026-09-21",
     },
 
-    // ── The GST/HST credit became the Canada Groceries and Essentials Benefit in July 2026. ────
-    // The CRA's GST/HST credit page now reads "No longer available - Replaced by the CGEB", so the
-    // app must not describe this as something that is still going to happen.
+    // ── The Canada Groceries and Essentials Benefit, paid since July 2026. ─────────────────────
+    // The CRA's page for the benefit it replaced now reads "No longer available - Replaced by the
+    // CGEB". The app names only the CGEB, and never the retired benefit (tests/caFigures.test.cjs).
     // https://www.canada.ca/en/revenue-agency/services/child-family-benefits/canada-groceries-essentials-benefit/how-much.html
     CGEB: {
       name: "Canada Groceries and Essentials Benefit",
       benefitYear: "2026-07/2027-06",
       basedOnTaxYear: 2025,
       replacedOn: "2026-07",
-      replaced: "the GST/HST credit",
       // The CRA builds the payment from these parts, which is why a single figure cannot be shown
       // as "the" amount: a single parent with one child gets the adult amount PLUS the first-child
       // amount PLUS the single supplement ($445 + $445 + $234 = $1,124), not $679 + $234.
@@ -226,6 +225,34 @@ export const TAX_DATA = {
     // https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/rrsps-related-plans/what-home-buyers-plan.html
     HBP_WITHDRAWAL_LIMIT: { value: 60000, source: "CRA https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/rrsps-related-plans/what-home-buyers-plan.html", lastVerified: "2026-09-22" },
 
+    // ── Added 2026-10-01 (prelaunch-copy, prompt 3b): figures the tax tips showed with no source ──
+    // CPP contribution rates, 2026. https://www.canada.ca/en/services/benefits/publicpensions/cpp/contributions.html
+    // "The contribution rate on these pensionable earnings is 11.9% (9.9% for the base ... and 2% for the CPP enhancement"
+    CPP_RATES: { employeePct: 5.95, employerPct: 5.95, selfEmployedPct: 11.9, cpp2EmployeePct: 4, cpp2SelfEmployedPct: 8, year: 2026,
+      source: "CRA https://www.canada.ca/en/services/benefits/publicpensions/cpp/contributions.html", lastVerified: "2026-10-01" },
+    // Alberta, 2026: the lowest and highest brackets and the basic personal amount.
+    // https://www.alberta.ca/personal-income-tax ("For 2026, the Alberta non-refundable basic personal tax credit is $22,769.")
+    AB_TAX: { lowRatePct: 8, lowBracketTop: 61200, topRatePct: 15, topBracketOver: 370220, basicPersonalAmount: 22769, year: 2026,
+      source: "alberta.ca https://www.alberta.ca/personal-income-tax", lastVerified: "2026-10-01" },
+    // Alberta Child and Family Benefit, July 2026 to June 2027, one child.
+    // https://www.alberta.ca/alberta-child-and-family-benefit ("reduced once family net income exceeds $28,116 or $47,115")
+    AB_ACFB: { benefitYear: "2026-07/2027-06", yearLabel: "2026 to 2027", baseOneChild: 1529, workingOneChild: 782, baseReducesOver: 28116, workingReducesOver: 47115,
+      source: "alberta.ca https://www.alberta.ca/alberta-child-and-family-benefit", lastVerified: "2026-10-01" },
+    // Statutory shares the tips state, each read on canada.ca 2026-10-01.
+    // "You can allocate up to 50% of your eligible pension income to your spouse or common-law partner."
+    PENSION_SPLIT_MAX: { pct: 50, year: 2026, source: "CRA https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/pension-income-splitting.html", lastVerified: "2026-10-01" },
+    // T4002 chapter 3: the 50% limitation on food, beverages and entertainment.
+    MEALS_DEDUCTIBLE: { pct: 50, year: 2026, source: "CRA https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/t4002/t4002-5.html", lastVerified: "2026-10-01" },
+    // "Your new home must be at least 40 kilometres closer (by the shortest public route) to your new school."
+    STUDENT_MOVE_KM: { value: 40, year: 2026, source: "CRA https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-21900-moving-expenses.html", lastVerified: "2026-10-01" },
+    // The medical expense floor: "the lesser of ... 3% of your net income ... or" the indexed ceiling (INDEXED_2026).
+    MEDICAL_NET_INCOME_PCT: { pct: 3, year: 2026, source: "CRA https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/lines-33099-33199-eligible-medical-expenses-you-claim-on-your-tax-return.html", lastVerified: "2026-10-01" },
+    // REMOVED, program ended (checked 2026-10-01):
+    //   • Manitoba Tuition Fee Income Tax Rebate: "fully eliminated for the 2018 tax year"
+    //     (https://www.gov.mb.ca/finance/taxation/pubs/bulletins/2017budget.pdf)
+    //   • BC Climate Action Tax Credit: "The B.C. climate action tax credit program has ended. ... April 2025
+    //     was the final payment." (https://www2.gov.bc.ca/gov/content/taxes/income-taxes/personal/credits/climate-action)
+
     // ── NOT HELD HERE, ON PURPOSE ─────────────────────────────────────────────────────────────
     // These figures were in the UI before this audit and could not be confirmed on an official
     // page during it, so the dollar amounts were REMOVED from the UI rather than carried forward
@@ -238,7 +265,9 @@ export const TAX_DATA = {
   },
   US: {
     EITC_MAX_3PLUS:    { value: 8231,  year: 2026, source: "IRS Rev. Proc. 2025-32", lastVerified: "2026-06-09" },
-    CHILD_TAX_CREDIT:  { value: 2200,             source: "OBBBA",                  lastVerified: "2026-06-09" },
+    // Re-sourced 2026-10-01 to the IRS page (Rev. Proc. 2025-32 §3.03, §4.05): "For taxable years beginning in
+    // 2026, the maximum amount of the credit allowed under § 24(a) is $2,200." Refundable part $1,700.
+    CHILD_TAX_CREDIT:  { value: 2200, refundable: 1700, year: 2026, source: "IRS https://www.irs.gov/irb/2025-45_IRB", lastVerified: "2026-10-01" },
     SALT_CAP:          { value: 40400, year: 2026, source: "OBBBA (indexed; reverts $10k in 2030)", lastVerified: "2026-06-09" },
 
     // Sprint 5: migrated from inline App.jsx (still 2025 values — flagged for a 2026 IRS sweep).
@@ -247,5 +276,58 @@ export const TAX_DATA = {
     HSA_SELF_ONLY:       { value: 4400,  label: "HSA self-only contribution limit (2026)", source: "IRS Rev. Proc. 2025-19", lastVerified: "2026-06-16" },
     HSA_FAMILY:          { value: 8750,  label: "HSA family contribution limit (2026)", source: "IRS Rev. Proc. 2025-19", lastVerified: "2026-06-16" },
     GIFT_EXCLUSION_529:  { value: 19000, label: "Annual gift-tax exclusion / 529 (2026)", source: "IRS Rev. Proc. 2025-32", lastVerified: "2026-06-16" },
+
+    // ── Added 2026-10-01 (prelaunch-copy, prompt 3b) ───────────────────────────────────────────
+    // Every figure below was read on the irs.gov (or usda.gov) page named on it. Amounts set in law
+    // and not indexed (AOTC, LLC, the 7.5% medical floor, the home office rate, the 85%, SE tax, QBI,
+    // RMD age and excise, the IRA first-home limit) carry the tax year the page applies to.
+    // Rev. Proc. 2025-32 §4.06: "Completed Phaseout Amount ... $70,244 ... (All other filing statuses) ... $62,974"
+    EITC_PHASEOUT_3PLUS: { single: 62974, joint: 70244, year: 2026, source: "IRS https://www.irs.gov/irb/2025-45_IRB", lastVerified: "2026-10-01" },
+    // "The limit on annual contributions to an IRA is increased to $7,500 from $7,000." Roth phase-outs, 2026.
+    ROTH_IRA: { limit: 7500, catchUp50: 1100, phaseStartSingle: 153000, phaseEndSingle: 168000, phaseStartJoint: 242000, phaseEndJoint: 252000, year: 2026,
+      source: "IRS https://www.irs.gov/newsroom/401k-limit-increases-to-24500-for-2026-ira-limit-increases-to-7500", lastVerified: "2026-10-01" },
+    // Rev. Proc. 2025-32 §4.29: "the $2,500 maximum deduction ... begins to phase out ... in excess of $85,000 ($175,000 for joint returns)"
+    STUDENT_LOAN_INTEREST: { max: 2500, phaseStartSingle: 85000, phaseStartJoint: 175000, year: 2026, source: "IRS https://www.irs.gov/irb/2025-45_IRB", lastVerified: "2026-10-01" },
+    // Pub 505 (2026): "The credit amount remains $3,000 ($6,000 for two or more qualifying children) but the maximum
+    // credit rate has increased from 35% to 50%". The lowest rate and its income bands are not yet published for 2026.
+    CHILD_CARE_CREDIT: { expensesOne: 3000, expensesTwoPlus: 6000, maxRatePct: 50, year: 2026, source: "IRS https://www.irs.gov/publications/p505", lastVerified: "2026-10-01" },
+    // Saver's Credit 2026 AGI limits; the maximum credit is $1,000 ($2,000 joint).
+    SAVERS_CREDIT: { maxCredit: 1000, maxCreditJoint: 2000, agiSingle: 40250, agiHoH: 60375, agiJoint: 80500, year: 2026,
+      source: "IRS https://www.irs.gov/newsroom/401k-limit-increases-to-24500-for-2026-ira-limit-increases-to-7500", lastVerified: "2026-10-01" },
+    // "It's a tax credit of up to $2,500 ... 40 percent ... (up to $1,000) can be refunded"; 4 years per student.
+    AOTC: { max: 2500, refundablePct: 40, refundableMax: 1000, years: 4, year: 2026, source: "IRS https://www.irs.gov/credits-deductions/individuals/education-credits-questions-and-answers", lastVerified: "2026-10-01" },
+    // "LLC is 20% of the first $10,000 of qualified expenses"; up to $2,000 per return.
+    LLC: { ratePct: 20, expensesMax: 10000, max: 2000, year: 2026, source: "IRS https://www.irs.gov/credits-deductions/individuals/education-credits-aotc-and-llc", lastVerified: "2026-10-01" },
+    MEDICAL_AGI_FLOOR: { pct: 7.5, year: 2026, source: "IRS https://www.irs.gov/taxtopics/tc502", lastVerified: "2026-10-01" },
+    HOME_OFFICE_SIMPLIFIED: { perSqFt: 5, maxSqFt: 300, max: 1500, year: 2026, source: "IRS https://www.irs.gov/businesses/small-businesses-self-employed/simplified-option-for-home-office-deduction", lastVerified: "2026-10-01" },
+    SS_TAXABLE_MAX: { pct: 85, year: 2025, source: "IRS https://www.irs.gov/publications/p915", lastVerified: "2026-10-01" },
+    // The "Working Families Tax Cuts" page (formerly the OBBBA deductions page), 2025 through 2028.
+    TIPS_DEDUCTION: { max: 25000, phaseStartSingle: 150000, phaseStartJoint: 300000, firstYear: 2025, lastYear: 2028, year: 2026,
+      source: "IRS https://www.irs.gov/newsroom/working-families-tax-cuts-tax-deductions-for-working-americans-and-seniors", lastVerified: "2026-10-01" },
+    OVERTIME_DEDUCTION: { max: 12500, maxJoint: 25000, phaseStartSingle: 150000, phaseStartJoint: 300000, firstYear: 2025, lastYear: 2028, year: 2026,
+      source: "IRS https://www.irs.gov/newsroom/working-families-tax-cuts-tax-deductions-for-working-americans-and-seniors", lastVerified: "2026-10-01" },
+    SENIOR_DEDUCTION: { perPerson: 6000, phaseStartSingle: 75000, phaseStartJoint: 150000, firstYear: 2025, lastYear: 2028, year: 2026,
+      source: "IRS https://www.irs.gov/newsroom/working-families-tax-cuts-tax-deductions-for-working-americans-and-seniors", lastVerified: "2026-10-01" },
+    // Rev. Proc. 2025-32 §3.14(3): "$1,650 ... $2,050 if the individual is also unmarried". (2024 was $1,950 / $1,550.)
+    ADDITIONAL_STD_65: { unmarried: 2050, married: 1650, year: 2026, source: "IRS https://www.irs.gov/pub/irs-drop/rp-25-32.pdf", lastVerified: "2026-10-01" },
+    // Schedule R: only the 2025 instructions are published. Initial amounts and the single-filer AGI limit.
+    SCHEDULE_R: { initialSingle: 5000, initialJointBoth: 7500, initialMFS: 3750, agiLimitSingle: 17500, year: 2025, source: "IRS https://www.irs.gov/pub/irs-pdf/i1040sr.pdf", lastVerified: "2026-10-01" },
+    // "...when you reach age 73." / "excise tax of 25%, 10% if the RMD is timely corrected within two years."
+    RMD: { startAge: 73, exciseTaxPct: 25, correctedPct: 10, year: 2026, source: "IRS https://www.irs.gov/retirement-plans/retirement-plan-and-ira-required-minimum-distributions-faqs", lastVerified: "2026-10-01" },
+    // Notice 2025-67: "increased from $108,000 to $111,000". The tips said $105,000 (2024), the coach $108,000 (2025).
+    QCD_LIMIT: { value: 111000, minAge: "70½", year: 2026, source: "IRS https://www.irs.gov/pub/irs-drop/n-25-67.pdf", lastVerified: "2026-10-01" },
+    SE_TAX: { ratePct: 15.3, year: 2026, source: "IRS https://www.irs.gov/businesses/small-businesses-self-employed/self-employment-tax-social-security-and-medicare-taxes", lastVerified: "2026-10-01" },
+    QBI: { pct: 20, year: 2026, source: "IRS https://www.irs.gov/newsroom/qualified-business-income-deduction", lastVerified: "2026-10-01" },
+    // "...the lesser of: 25% of the employee's compensation, or $72,000 for 2026". (The tip said $69,000, 2024.)
+    SEP_LIMIT: { value: 72000, pctOfComp: 25, year: 2026, source: "IRS https://www.irs.gov/retirement-plans/plan-participant-employee/sep-contribution-limits-including-grandfathered-sarseps", lastVerified: "2026-10-01" },
+    // Pub 15-B (2026): "the annual dependent care FSA limit was raised from $5,000 to $7,500".
+    DEPENDENT_CARE_FSA: { value: 7500, year: 2026, source: "IRS https://www.irs.gov/publications/p15b", lastVerified: "2026-10-01" },
+    IRA_FIRST_HOME: { value: 10000, year: 2025, source: "IRS https://www.irs.gov/publications/p590b", lastVerified: "2026-10-01" },
+    // SNAP maximum allotment, household of 1, 48 states and DC, FY2027 (from October 1, 2026).
+    SNAP_MAX_1: { value: 306, year: "FY2027", source: "USDA https://www.fns.usda.gov/snap/allotment/cola", lastVerified: "2026-10-01" },
+    // States. NY: "limited to $400 per eligible student"; the deduction "is $10,000 for each eligible student";
+    // "either the credit or the deduction, but not both." IL: 25% "after the first $250", "may not exceed $750".
+    NY_TUITION: { creditMax: 400, deductionMax: 10000, year: 2025, source: "tax.ny.gov https://www.tax.ny.gov/pit/credits/college_tuition_credit.htm", lastVerified: "2026-10-01" },
+    IL_EDUCATION: { ratePct: 25, afterFirst: 250, max: 750, year: 2026, source: "tax.illinois.gov https://tax.illinois.gov/research/publications/pubs/education-expense-credit-general-rules.html", lastVerified: "2026-10-01" },
   },
 };

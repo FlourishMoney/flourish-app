@@ -44,14 +44,17 @@ const RENDERED = (PROSE.match(/>[^<>{}]{12,180}</g) || []).map(s => s.slice(1, -
   // ── 2. the warnings that remain say what happened, and where to look ─────────────────────────
   t.ok(/Heads up: your balance could dip to/.test(APP),
     "2a the projected overdraft states the fact, in the household's own terms");
-  t.ok(/The day-by-day list below shows which day, and what lands on it\./.test(APP),
+  // prelaunch-copy round 2: the card now names the day, so it points at "that day"; when the day is
+  // past the range on screen it says to pick a longer range. Still a pointer, never a remedy.
+  t.ok(/The day-by-day list below shows that day, and what lands on it\./.test(APP) && /Pick a longer range above to see it\./.test(APP),
     "2b …and points at where to see it, rather than prescribing a remedy");
   // Split across a <strong>, so matched as it is actually written.
   t.ok(/>Heads up<\/strong>: your bills come to more than your balance before your next deposit\./.test(APP),
     "2c Today's strip does the same");
   t.ok(/See what's coming →/.test(APP), "2d …with a link to the forecast");
-  t.ok(/Heads up: an overdraft here usually costs \$45 to \$48 in NSF fees\./.test(APP),
-    "2e the per-day line states the cost as a fact");
+  // Prompt 3: the "$45 to $48" fee range was a figure Flourish did not source, so the line names the fee without one.
+  t.ok(/Heads up: an overdraft here can bring a bank fee\./.test(APP) && !/\$45 to \$48/.test(APP),
+    "2e the per-day line states the cost as a fact, with no fee figure Flourish did not source");
   t.ok(/Tap the day to see what lands on it\./.test(APP), "2f …and offers a look, not an instruction");
   t.ok(/Heads up: this day runs close to empty\./.test(APP), "2g the low-balance line is a fact too");
 

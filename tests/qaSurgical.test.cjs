@@ -51,21 +51,25 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     const plan = DE.AutopilotEngine.generate(QA, {}, VIEW);
     const due = ss.upcomingBills + ss.debtPayments;
     t.eq(due, 1650 + 348, "1a (QA: the $1,650 rent and $348 of minimums are due before the next deposit)");
-    t.ok(plan.buffer <= ss.balance - due, `1b QA: "Left over" is after what's due first ($${Math.round(plan.buffer)}, not the $2,909 the QA saw)`);
-    t.eq(Math.round(plan.buffer * 100) / 100, Math.round((ss.balance - due - plan.dailySpendLimit - plan.savingsTransfer - plan.debtPayment - plan.goalContribution) * 100) / 100,
-         "1c …exactly: balance − due before the deposit − today's pace − the plan's moves");
-    t.ok(plan.modeLabel !== "On Track", `1d QA: with cash tight the plan does not say "On Track" (says "${plan.modeLabel}")`);
-    t.eq([plan.savingsTransfer, plan.debtPayment, plan.goalContribution], [0, 0, 0], "1e …and moves nothing to savings, debt or goals");
+    // Prompt 3e: the plan no longer splits a surplus or shows a residual ("Left over" was net of the
+    // split). What 1b/1c protected, a figure that ignored what is due first, cannot come back: there is
+    // no residual and no split field at all.
+    t.ok(!("buffer" in plan) && !("surplus" in plan), "1b QA: the plan has no \"Left over\" residual and no surplus of its own");
+    t.ok(!("savingsTransfer" in plan) && !("debtPayment" in plan) && !("goalContribution" in plan), "1c …and no split of any amount into savings, a debt or a goal");
+    // Prompt 3d: the labels state what the engine found ("Bills covered" / "Cash is tight" / "Overdraft risk"), not a grade.
+    t.eq(plan.modeLabel, "Cash is tight", "1d QA: with cash tight the plan says so, not \"Bills covered\"");
+    t.eq([plan.spare, plan.spareReason], [0, "tight"], "1e …and nothing is spare, because cash is tight");
     t.ok(plan.alerts.some(a => /Safe to spend is below 15% of your monthly income/.test(a.msg)), "1f …and says why");
 
     const ssF = SafeSpendEngine.calculate(FIXED, VIEW);
     const planF = DE.AutopilotEngine.generate(FIXED, {}, VIEW);
-    t.eq(planF.modeLabel, "On Track", "1g fixed date: not tight, so still On Track");
-    t.eq([planF.savingsTransfer, planF.debtPayment], [240, 200], "1h …with its $240 to savings and $200 to the Visa");
-    t.eq(Math.round(planF.buffer * 100) / 100, Math.round((ssF.balance - 65 - 348 - 138 - 240 - 200) * 100) / 100,
-         "1i …and Left over is $3,083 − $65 − $348 − $138 − $240 − $200");
+    t.eq(planF.modeLabel, "Bills covered", "1g fixed date: not tight, so \"Bills covered\"");
+    // Prompt 3e: the fixed-date plan used to send $240 to savings and $200 to the Visa (its own 40% / 40%
+    // rules). It now shows the one spare amount, $486 = 25% × $1,944, the same figure as Decisions.
+    t.eq([planF.spare, planF.spareFrom, planF.spareReason], [486, 1944, null], "1h …with $486 spare: 25% × $1,944, the Decisions figure");
+    t.ok(!("savingsTransfer" in planF) && !("buffer" in planF) && ssF.balance > 0, "1i …and no $240 / $200 split and no Left over");
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
-    t.ok(/label:"Left over"[^}]*detail:"after bills, debt minimums and today's plan"/.test(app), "1j the row says what it is net of");
+    t.ok(!/label:"Left over"/.test(app) && /label:"Spare until your next deposit"/.test(app), "1j the card shows the spare amount, and no residual");
   }
 
   // ── 2 to 5: Decisions, rendered ───────────────────────────────────────────────────────────────
@@ -90,9 +94,11 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     t.ok(/Cash is running tight/.test(qa), "2c QA: Decisions warns");
     t.ok(/Your safe to spend \(\$973\) is below 15% of your monthly income \(\$6,714\)/.test(qa), "2d …in terms of safe to spend, with both figures");
     t.ok(!/Your balance is below/.test(qa), "2e …not the $3,083 balance");
-    t.ok(!/Move \$\d+ to savings/.test(qa) && !/Pay \$\d+ extra on/.test(qa), "2f …and suggests neither moving money to savings nor paying extra on debt");
-    t.ok(!/Cash is running tight/.test(fixed) && /Move \$486 to savings/.test(fixed) && /Pay \$150 extra on Visa card/.test(fixed),
-         "2g fixed date: no warning, and the savings and debt cards are back");
+    // Prompt 3d: the savings and debt cards state facts ("$486 spare until your next deposit", "Visa card: $150 more a month").
+    t.ok(!/\$\d+ spare until your next deposit/.test(qa) && !/: \$\d+ more a month/.test(qa), "2f …and shows neither the spare-for-savings card nor the extra-on-debt card");
+    // Prompt 3e: the "$150 more a month on the Visa" card is gone (a suggested amount for a debt).
+    t.ok(!/Cash is running tight/.test(fixed) && /\$486 spare until your next deposit/.test(fixed) && !/more a month/.test(fixed),
+         "2g fixed date: no warning, and the spare-amount card is back (with no debt amount card)");
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     t.ok(/const lowCash = cashIsTight\(data, todayD\)\.tight;/.test(app), "2h Decisions asks the same rule the Money Plan asks");
     // Meet reads the clock itself, so its demo is aged relative to today: 25 days old, like the QA's.
@@ -113,7 +119,7 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     let opp = "";
     try { opp = textOf(A.render(A.h(A.OpportunityDetector, { data: FIXED, setScreen: noop, setGoalsTab: noop }))); }
     catch (e) { t.ok(false, `Room Flourish found renders: ${describe(e)}`); }
-    t.ok(/Compare rates on Visa card/.test(opp) && /Earn more on your savings/.test(opp), "5a sanity: both cards still render");
+    t.ok(/Visa card: 19\.99% interest/.test(opp) && /Your savings: \$/.test(opp), "5a sanity: both cards still render (as facts since prompt 3d)");
     t.ok(!/\b6\.5%|\b4%\+|\b0\.3%/.test(opp), "5b no invented rate: no 6.5% loan, no 4%+ savings, no typical 0.3%");
     t.ok(!/Save \$\d+\/yr|\+\$\d+\/yr/.test(opp), "5c …and no saving worked out from one");
 

@@ -76,17 +76,18 @@ export function demoCoachExchanges(data, today = new Date()) {
     out.push({
       q: "So how much can I spend today?",
       a: `${f.pace.dailyText}. That paces ${f.view.headlineText} over ${f.pace.daysLeft} days. ` +
-         `It's a pace, not a limit. Safe to Spend is what you can afford, this is how to make it last. ` +
+         `It's a pace, not a limit. Safe to Spend is the total until your next deposit; this spreads it across the days. ` +
          `I never divide by fewer than 14 days, so a deposit landing soon doesn't tempt you into spending it all at once.`,
     });
   }
 
   // 3 — the highest-rate debt, using the same decision the Meet agenda already shows.
   if (f.debt) {
-    let a = `Your ${f.debt.name} is at ${formatMoney(f.debt.balance)} and ${f.debt.rate}%, the most expensive money you owe.`;
+    let a = `Your ${f.debt.name} is at ${formatMoney(f.debt.balance)} and ${f.debt.rate}%, the highest rate on anything you owe.`;
     if (f.decision && (f.decision.options || []).length >= 2) {
       const [d1, d2] = f.decision.options;
-      a += ` ${f.decision.text} ${d1.label}: ${d1.outcome}. ${d2.label}: ${d2.outcome}. Which of those you choose is up to you.`;
+      // Prompt 3e: the spare amount and the two balances, with no amount suggested for either.
+      a += ` ${f.decision.text} ${d1.label}: ${d1.outcome}. ${d2.label}: ${d2.outcome}. What you do with it is up to you.`;
     }
     out.push({ q: `Should I put money on the ${f.debt.name}?`, a });
   }
@@ -112,6 +113,6 @@ export function demoFacilitatorLine(data, today = new Date()) {
   const { decision } = facts(data, today);
   if (!decision || (decision.options || []).length < 2) return null;
   const [d1, d2] = decision.options;
-  return `Let's start with the one decision your week actually raised. ${decision.text} ` +
-         `${d1.label} and it's ${d1.outcome}; ${d2.label} and your ${d2.outcome}. Which of those sounds more like the month you want?`;
+  return `Let's start with the one question your week raised. ${decision.text} ` +
+         `${d1.label}: ${d1.outcome}. ${d2.label}: ${d2.outcome}.`;
 }

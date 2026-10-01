@@ -4,7 +4,7 @@
 // above it read safeToSpendView's displayed headline — two owners for one fact, on one card:
 //
 //     SAFE TO SPEND UNTIL NEXT PAYDAY   $1,944
-//     enter 800 -> "$1145 left in your safe limit today"     (1944.88 - 800 = 1144.88 -> "1145")
+//     enter 800 -> "$1145 left to spend until payday"     (1944.88 - 800 = 1144.88 -> "1145")
 //
 // A reader subtracts 1944 - 800 = 1144. Not an occasional rounding wobble: the raw safe amount
 // carries a fraction (.88 in the CA demo, .55 in the US one) and toFixed rounds to NEAREST, so it was
@@ -129,7 +129,10 @@ const { create } = require("./_runner.cjs");
     t.eq(calls[0], "affordabilityCheck(ssView.headline,", "5b …and it passes the DISPLAYED headline, never _ss.safeAmount or `safe`");
     t.eq((app.match(/affordabilityCheck\(\s*safe\s*,/g) || []).length, 0, "5c the raw engine value is not passed anywhere");
     // …and the old inline arithmetic is gone, not merely bypassed.
-    t.eq((app.match(/left in your safe limit today/g) || []).length, 1, "5d one place renders the remainder");
+    // The remainder is rendered in exactly two results, both until payday (prelaunch-copy): "yes" and "tight".
+    t.eq((app.match(/\$\{r\.remainingText\} left to spend until payday/g) || []).length, 2, "5d the remainder is rendered in the yes and tight results only, until payday, not today");
+    t.ok(app.includes("sub: `${r.remainingText} left to spend until payday`,") && app.includes("`Only ${r.remainingText} left to spend until payday.`"),
+      "5d2 …in exactly these words");
     t.eq((app.match(/remaining\.toFixed\(0\)/g) || []).length, 0, "5e and no surface re-formats a remainder by hand");
   }
 

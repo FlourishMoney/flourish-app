@@ -98,10 +98,15 @@ global.Date = PinnedDate;
     const TIER = /Flourish Plus|\bPlus\b|Founder|\btrial\b|\bTrial\b|free tier|free plan|\bFree\b/;
     const household = { ...demo(new Date()), demo: false };
     const nTerms = textOf(N.render(N.h(N.TermsOfService, { onBack: () => {} })));
-    const sec7 = nTerms.slice(nTerms.indexOf("7. Subscription"), nTerms.indexOf("8. Intellectual"));
+    // On a store app section 7 is headed "Cost and usage limits" (prelaunch-copy item 1); the web keeps
+    // "Subscription & Billing". The section must exist under the native heading, or the slice is empty.
+    const sec7 = nTerms.slice(nTerms.indexOf("7. Cost and usage limits"), nTerms.indexOf("8. Intellectual"));
     t.ok(sec7.length > 20 && !TIER.test(sec7) && /usage limits/.test(sec7), `2a native Terms, section 7 names no plan or tier ("${sec7.slice(0, 90)}")`);
     const nMeet = textOf(N.render(N.h(N.MeetAgenda, { data: household, isCouple: false, setScreen: () => {} })));
-    t.ok(/isn't included in this version/.test(nMeet) && !/Start your trial/.test(nMeet), "2b native Meet, without the coach meeting, says it isn't included, naming no trial");
+    // prelaunch-copy (2026-10-01): on a store app the Meet facilitator is open to every user, so a free
+    // household now gets the meeting itself, with no lock line and no trial named.
+    t.ok(/Start the meeting|Start solo check-in/.test(nMeet) && !/isn't included in this version/.test(nMeet) && !/Start your trial/.test(nMeet),
+      "2b native Meet offers the coach meeting to a free household, with no lock line and no trial named");
     const nativeProfile = APP.slice(APP.indexOf("appData.profile?.name||\"User\""), APP.indexOf("appData.profile?.name||\"User\"") + 700);
     t.ok(/\{isPremium&&!isNativeApp\(\)&&<div[^>]*>✦ Flourish Plus<\/div>\}/.test(nativeProfile), "2c the sidebar profile card shows no \"Flourish Plus\" on native");
     // Controls: the web is unchanged.

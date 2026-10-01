@@ -80,7 +80,7 @@ export function planNotifications(data, now = new Date()) {
           id: notifId("lowBalance", ""),                  // single stable id → one at a time
           title: "Heads up on your balance",
           body: low.balance < 0
-            ? `You're projected to overdraft around ${fmt(d)}. Worth getting ahead of it`
+            ? `You're projected to overdraft around ${fmt(d)}.`
             : `You're projected to be tight around ${fmt(d)}, with about ${money(low.balance)} left`,
           at,
         });

@@ -25,13 +25,8 @@ if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
   }
 }
 
-// Sprint Z #16: kids favicon/title swap, moved out of an inline <head> script so the CSP can drop
-// 'unsafe-inline'. Runs at module load — a brief default-icon flash on /kids is acceptable.
-if (typeof window !== "undefined" && window.location.pathname.startsWith('/kids')) {
-  const fav = document.getElementById('favicon'); if (fav) fav.href = '/flourish-kids-favicon-32.png'
-  const ati = document.getElementById('apple-touch-icon'); if (ati) ati.href = '/flourish-kids-app-icon-180.png'
-  document.title = 'Flourish Kids'
-}
+// Prompt 3d: the kids favicon/title swap for /kids is gone. Kids is parked and /kids redirects to /
+// (App.jsx initialScreen), so the page keeps the app's own title and icon.
 
 // Tier 3: catch render-time crashes so a thrown component shows a recoverable
 // fallback instead of a permanent white screen (unrecoverable on a native app).

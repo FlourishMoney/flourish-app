@@ -56,7 +56,8 @@ const path = require("path");
 
   // ── 2. Meet's extra and Decisions' move-to-savings are 25% of the same figure ─────────────────
   const dec = (buildMeetSnapshot(demo).decisions || [])[0];
-  t.eq(dec && dec.options[1].label, "Add $486 to savings", "2a Meet: $486, 25% of $1,944");
+  // Prompt 3e: Meet states the spare amount and moves none of it; the $486 is in the question.
+  t.ok(dec && /^\$486 is spare /.test(dec.question) && /a quarter of your \$1,944 safe to spend/.test(dec.question) && dec.options[1].label === "Savings", "2a Meet: $486, 25% of $1,944");
   t.eq(DE.computeSavingsOpportunity(DE.displayedSafeToSpend(demo, now)), 486, "2b Decisions: the same $486");
   // Across a year of dates, Meet's extra is always 25% of what Today shows, never of the raw amount.
   let agree = 0, checked = 0;
@@ -92,7 +93,8 @@ const path = require("path");
   t.ok(/monthlyIncome:\s*cashFlowObj\.monthlyIncome,/.test(whatIf), "4d …and its monthly income is cashFlow's");
   t.ok(!/\.filter\(a => isCashAccount\(a\)\)\s*\.reduce\(\(s,a\) => s \+ parseFloat\(a\.balance\|\|0\), 0\)/.test(whatIf), "4e the parseFloat rebuild of cash is gone");
   t.ok(!/_toMoSim\(i\.amount,i\.freq\)/.test(whatIf), "4f …and so is the parseFloat rebuild of income");
-  t.ok(/const safe = displayedSafeToSpend\(data\);/.test(meet), "4g Meet's extra is based on the displayed figure");
+  t.ok(/spareUntilDeposit\(data\)/.test(meet) && /const \{ tight, safe \} = cashIsTight\(data, todayDate\);/.test(fs.readFileSync(path.join(__dirname, "..", "src", "lib", "decisionEngine.js"), "utf8")),
+    "4g Meet's spare amount is based on the displayed figure (spareUntilDeposit reads cashIsTight's safe, displayedSafeToSpend)");
   t.ok(/<DecisionEngine data=\{data\} safe=\{displayedSafe\}/.test(app), "4h Decisions gets the displayed figure too");
 
   t.summary("whatIfUsesTodayFigure.test");

@@ -165,7 +165,7 @@ export function meetingOpening({ lastRecord = null, snapshot = {} } = {}) {
   const prev = typeof hs.previous === "number" && Number.isFinite(hs.previous) ? hs.previous : null;
   if (cur != null && prev != null && cur !== prev) {
     const d = cur - prev;
-    lines.push({ text: `Your health score has moved ${d > 0 ? "up" : "down"} ${Math.abs(d)} since then, to ${cur}.`, source: "healthScore" });
+    lines.push({ text: `Your health score has moved ${d > 0 ? "up" : "down"} ${Math.abs(d)} since then, to ${cur}${hs.partial ? ", based on 5 of 6 parts" : ""}.`, source: "healthScore" });
   }
 
   return { hasHistory: true, metOn: last.metOn, lines };

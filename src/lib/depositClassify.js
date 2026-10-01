@@ -141,7 +141,7 @@ function ruleFor(key, rules) {
 }
 
 // ── Pay-like repetition ──────────────────────────────────────────────────────────────────────────
-// Weekly, every two weeks or twice a month, monthly, quarterly (the GST/HST credit). The gaps between
+// Weekly, every two weeks or twice a month, monthly, quarterly (the CGEB). The gaps between
 // the deposits must sit on one of these, consistently.
 const BANDS = [
   { min: 5,  max: 9,  tol: 2 },

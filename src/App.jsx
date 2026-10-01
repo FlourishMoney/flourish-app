@@ -10,7 +10,7 @@ import {
   Navigation, Cpu, Grid, Heart, LayoutGrid
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
-import { parseAmountFromQuery, simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach, simulateDebtPayoffForDebt, debtMinimumPayment, debtLinkKey, withDebtIds, newDebtId, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
+import { parseAmountFromQuery, simulatePurchaseImpact, summarizeScenarioForCoach, simulateDebtPayoffForDebt, debtMinimumPayment, debtLinkKey, withDebtIds, newDebtId, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, applyDebtRate, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
   BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
@@ -18,7 +18,7 @@ import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multib
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
-import { paydayLineAmount, depositLines, billLines, skippedLines } from "./lib/forecastView.js";
+import { paydayLineAmount, depositLines, billLines, skippedLines, forecastLow } from "./lib/forecastView.js";
 import { depositsToAsk, depositStatus, depositContext, incomeEvidence, decideDeposit, clearDepositDecision, setDepositRule, clearDepositRule,
          depositRuleFor, countDepositsFrom, DEPOSIT_REASONS, NOT_NOW, reasonLabel, reasonPhrase, isUsableDepositKey, depositSheetInitial, depositTxnKey } from "./lib/depositClassify.js";
 import { editOccurrence, resetOccurrence, upsertExpected, removeExpected, setDailySpend, correctionsOf, validExpectedItem, REPEATS,
@@ -47,9 +47,13 @@ import { getNotificationPermission, requestNotificationPermission, scheduleNotif
 import { planNotifications } from "./lib/notificationPlanner.js";
 import { SCREENSHOT_EMAIL, normalizeEmail, isReviewAccount } from "./lib/sampleHouseholdAccount.js";
 import { dueSoonList } from "./lib/dueSoon.js";
+import { watchIncomeFigures } from "./lib/watchIncome.js";
+import { incomeTypeOptions, pickerValue, newSettingsIncome, setIncomeType } from "./lib/incomeTypes.js";
+import { nextRrspDeadline, formatRrspDeadline } from "./lib/rrspDeadline.js";
+import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
 import { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
-import { AutopilotEngine, calcHealthScore, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
+import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView } from "./lib/suggestedDaily.js";
@@ -108,6 +112,16 @@ const supabase = createClient(
 
 
 // ─── COUNTRY CONFIG ────────────────────────────────────────────────────────────
+// "(CRA, 2026)": the authority and the year behind a TAX_DATA figure, for copy that shows one. The
+// authority is the first word of the entry's source; the year is its tax year, its benefit-year label, the
+// year in its label, or the year it was last checked against the source.
+// A dollar figure from TAX_DATA, written the US way ($62,974).
+const usd = (n) => `$${Number(n).toLocaleString("en-US")}`;
+const taxCite = (e) => {
+  const who = String((e && e.source) || "").split(" ")[0] || "official source";
+  const yr = e && (e.year || e.yearLabel || (String(e.label || "").match(/\((\d{4})\)/) || [])[1] || String(e.lastVerified || "").slice(0, 4));
+  return `${who}, ${yr}`;
+};
 const CC = {
   CA:{
     currency:"CAD", symbol:"$", flag:"🇨🇦", name:"Canada",
@@ -128,37 +142,40 @@ const CC = {
     ],
     debtTypes:["Credit Card","Line of Credit","HELOC","Car Loan","OSAP / Student Loan","Personal Loan","Mortgage","Buy Now Pay Later","Other"],
     taxTips:[
-      {title:"RRSP Contribution",body:"Every RRSP dollar reduces your taxable income. At a 30% marginal rate, putting in $5,000 gets you ~$1,500 back at tax time. Deadline is the first 60 days of the following year (typically early March, check CRA for the exact date).",savings:"Up to 33%",flag:"🇨🇦",priority:"high",action:"Check My RRSP Room"},
-      {title:"TFSA: You're Probably Under-Using It",body:"Your TFSA isn't just for savings. It's for investing. Any growth inside is 100% tax-free forever. If you opened one at 18, you may have $75,000+ of contribution room sitting unused.",savings:"Tax-free growth",flag:"🇨🇦",priority:"high",action:"Calculate My Room"},
-      {title:"FHSA (First Home Savings Account)",body:`If you've never owned a home, you can contribute up to $${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/year and get a tax deduction, like an RRSP. Unused room carries forward. Withdraw tax-free to buy your first home.`,savings:`Up to $${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/yr`,flag:"🇨🇦",priority:"high",action:"Open an FHSA"},
-      {title:"Canada Groceries and Essentials Benefit",body:`The CGEB replaced the GST/HST credit in July 2026. The CRA adds up parts rather than paying one flat amount: up to $${TAX_DATA.CA.CGEB.eligibleIndividual} for you, $${TAX_DATA.CA.CGEB.eligibleSpouse} for a spouse or common-law partner, $${TAX_DATA.CA.CGEB.perChildUnder19} for each child under 19, but $${TAX_DATA.CA.CGEB.firstChildSingleParent} for the first child if you are a single parent, plus $${TAX_DATA.CA.CGEB.additionalSingle} more if you are single. So a single person with no children gets up to $${TAX_DATA.CA.CGEB.maxSingleNoChildren}, a couple up to $${TAX_DATA.CA.CGEB.maxCoupleNoChildren}, and a single parent with one child up to $${(TAX_DATA.CA.CGEB.eligibleIndividual+TAX_DATA.CA.CGEB.firstChildSingleParent+TAX_DATA.CA.CGEB.additionalSingle).toLocaleString()}. Payments taper above a family net income of $${TAX_DATA.CA.CGEB.phaseOutThreshold.toLocaleString()}. Most people never apply, filing is enough, but ${TAX_DATA.CA.CGEB.applyNote}. The CRA calculator gives your own number.`,savings:`Up to $${TAX_DATA.CA.CGEB.eligibleIndividual} each, plus $${TAX_DATA.CA.CGEB.perChildUnder19} per child`,flag:"🇨🇦",priority:"medium",action:"File Your Taxes"},
-      {title:"Canada Child Benefit (CCB)",body:`Tax-free monthly payments for children under 18. Maximum ${TAX_DATA.CA.CCB.yearLabel}: $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/yr per child under 6 ($${ccbMonthly(TAX_DATA.CA.CCB.maxUnder6)}/mo) and $${TAX_DATA.CA.CCB.max6to17.toLocaleString()}/yr per child aged 6 to 17 ($${ccbMonthly(TAX_DATA.CA.CCB.max6to17)}/mo). A family with two kids under 6 and an adjusted family net income of $${TAX_DATA.CA.CCB.phaseOutStart.toLocaleString()} or less receives the full $${(TAX_DATA.CA.CCB.maxUnder6*2).toLocaleString()} a year, tax-free. Apply on CRA My Account or at birth registration.`,savings:`Up to $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/child under 6`,flag:"🇨🇦",priority:"high",action:"Apply on CRA"},
-      {title:"Home Office Deduction",body:"Work from home? Employees must use the detailed method with a signed T2200 from their employer (the $2/day flat rate ended after 2022). Claim your workspace percentage of rent, utilities, and internet. Self-employed? Claim actual rent, internet, hydro proportionally.",savings:"Varies: % of home expenses",flag:"🇨🇦",priority:"medium",action:"Track Home Office Days"},
+      {title:"RRSP Contribution",body:`Every RRSP dollar reduces your taxable income. At a 30% marginal rate, an example rate: $5,000 × 30% = $1,500 back at tax time. The deadline is the 60th day of the following year, moved to the next business day when it falls on a weekend (CRA). The next one, for the ${nextRrspDeadline().taxYear} tax year: ${formatRrspDeadline(nextRrspDeadline().date)}.`,savings:"Your marginal rate",flag:"🇨🇦",priority:"high",action:"RRSP room: CRA My Account"},
+      {title:"TFSA: Room Builds Up Every Year",body:"A TFSA can hold investments as well as savings, and growth inside it is tax-free. Contribution room builds up every year from age 18, whether or not you have opened an account; CRA My Account shows yours.",savings:"Tax-free growth",flag:"🇨🇦",priority:"high",action:"TFSA room: CRA My Account"},
+      {title:"FHSA (First Home Savings Account)",body:`If you've never owned a home, you can contribute up to $${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/year and get a tax deduction, like an RRSP. Unused room carries forward. Withdrawals to buy a first home are tax-free.`,savings:`Up to $${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/yr`,flag:"🇨🇦",priority:"high",action:"Details: canada.ca"},
+      {title:"Canada Groceries and Essentials Benefit",body:`The CRA adds up parts rather than paying one flat amount: up to $${TAX_DATA.CA.CGEB.eligibleIndividual} for you, $${TAX_DATA.CA.CGEB.eligibleSpouse} for a spouse or common-law partner, $${TAX_DATA.CA.CGEB.perChildUnder19} for each child under 19, but $${TAX_DATA.CA.CGEB.firstChildSingleParent} for the first child if you are a single parent, plus $${TAX_DATA.CA.CGEB.additionalSingle} more if you are single. So a single person with no children gets up to $${TAX_DATA.CA.CGEB.maxSingleNoChildren}, a couple up to $${TAX_DATA.CA.CGEB.maxCoupleNoChildren}, and a single parent with one child up to $${(TAX_DATA.CA.CGEB.eligibleIndividual+TAX_DATA.CA.CGEB.firstChildSingleParent+TAX_DATA.CA.CGEB.additionalSingle).toLocaleString()}. Payments taper above a family net income of $${TAX_DATA.CA.CGEB.phaseOutThreshold.toLocaleString()}. Most people never apply, filing is enough, but ${TAX_DATA.CA.CGEB.applyNote}. The CRA calculator gives your own number.`,savings:`Up to $${TAX_DATA.CA.CGEB.eligibleIndividual} each, plus $${TAX_DATA.CA.CGEB.perChildUnder19} per child`,flag:"🇨🇦",priority:"medium",action:"Paid after a return is filed"},
+      {title:"Canada Child Benefit (CCB)",body:`Tax-free monthly payments for children under 18. Maximum ${TAX_DATA.CA.CCB.yearLabel}: $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/yr per child under 6 ($${ccbMonthly(TAX_DATA.CA.CCB.maxUnder6)}/mo) and $${TAX_DATA.CA.CCB.max6to17.toLocaleString()}/yr per child aged 6 to 17 ($${ccbMonthly(TAX_DATA.CA.CCB.max6to17)}/mo). A family with two kids under 6 and an adjusted family net income of $${TAX_DATA.CA.CCB.phaseOutStart.toLocaleString()} or less receives the full $${(TAX_DATA.CA.CCB.maxUnder6*2).toLocaleString()} a year, tax-free. It is applied for on CRA My Account or at birth registration.`,savings:`Up to $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/child under 6`,flag:"🇨🇦",priority:"high",action:"Applied for through the CRA"},
+      {title:"Home Office Deduction",body:"Work from home? Employees use the detailed method, with a T2200 signed by their employer (the $2/day flat rate ended after 2022). The claim is the workspace share of rent, utilities and internet. For the self-employed it is the business share of rent, internet and hydro.",savings:"Varies: % of home expenses",flag:"🇨🇦",priority:"medium",action:"Details: canada.ca"},
       // The Ontario Trillium Benefit is NOT a base Canadian tip — it is Ontario-only, and sitting here
       // meant a household in British Columbia was told to apply for it. It is added by the
       // province === "ON" block further down, which was always the intended path.
-      {title:"Disability Tax Credit (DTC)",body:`If you or a dependent has a severe disability, the DTC reduces the federal tax you owe by up to ~$${creditWorth(TAX_DATA.CA.INDEXED_2026.disabilityAmount).toLocaleString()}/year (${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% × the $${TAX_DATA.CA.INDEXED_2026.disabilityAmount.toLocaleString()} disability amount for ${TAX_DATA.CA.INDEXED_2026.taxYear}), plus retroactive claims. Often missed. A doctor fills out T2201.`,savings:`~$${creditWorth(TAX_DATA.CA.INDEXED_2026.disabilityAmount).toLocaleString()} federal tax reduction`,flag:"🇨🇦",priority:"medium",action:"Get T2201 Form"},
-      {title:"Child Care Expense Deduction",body:"Daycare, after-school programs, summer camp. Most childcare costs are deductible, and the deduction is normally claimed by the lower-income spouse. The annual limit per child depends on the child's age and is set by the CRA. Check the current limits on line 21400 before you file.",savings:"Deduction, limit set per child",flag:"🇨🇦",priority:"high",action:"Gather Receipts"},
-      {title:"RESP: Free Government Money",body:"Open an RESP for your child and the government tops up your contributions with the Canada Education Savings Grant, and adds the Canada Learning Bond for lower-income families without you contributing at all. Check the current grant rates on Canada.ca before you set your monthly amount.",savings:"Government grant on top of what you save",flag:"🇨🇦",priority:"high",action:"Open an RESP"},
-      {title:"Canada Workers Benefit (CWB)",body:`A refundable credit for people who work and earn a low income. You need working income, not just a low income, so earnings are what qualify you. Outside ${TAX_DATA.CA.CWB.variesIn.join(", ")}, the ${TAX_DATA.CA.CWB.taxYear} maximum is $${TAX_DATA.CA.CWB.maxSingle.toLocaleString()} single or $${TAX_DATA.CA.CWB.maxFamily.toLocaleString()} for a family, paid in full under $${TAX_DATA.CA.CWB.reduceOverSingle.toLocaleString()} single / $${TAX_DATA.CA.CWB.reduceOverFamily.toLocaleString()} family and nothing above $${TAX_DATA.CA.CWB.nilOverSingle.toLocaleString()} / $${TAX_DATA.CA.CWB.nilOverFamily.toLocaleString()}. ${TAX_DATA.CA.CWB.variesIn.join(", ")} set their own amounts and cut-offs. Check the CRA page for yours. Many low-income workers miss this entirely.`,savings:`Up to $${TAX_DATA.CA.CWB.maxSingle.toLocaleString()} single / $${TAX_DATA.CA.CWB.maxFamily.toLocaleString()} family outside ${TAX_DATA.CA.CWB.variesIn.join(", ")}`,flag:"🇨🇦",priority:"medium",action:"Check Eligibility"},
+      {title:"Disability Tax Credit (DTC)",body:`If you or a dependent has a severe disability, the DTC reduces the federal tax you owe by up to ~$${creditWorth(TAX_DATA.CA.INDEXED_2026.disabilityAmount).toLocaleString()}/year (${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% × the $${TAX_DATA.CA.INDEXED_2026.disabilityAmount.toLocaleString()} disability amount for ${TAX_DATA.CA.INDEXED_2026.taxYear}), plus retroactive claims. Often missed. A doctor fills out T2201.`,savings:`~$${creditWorth(TAX_DATA.CA.INDEXED_2026.disabilityAmount).toLocaleString()} federal tax reduction`,flag:"🇨🇦",priority:"medium",action:"Form T2201"},
+      {title:"Child Care Expense Deduction",body:"Daycare, after-school programs, summer camp. Most childcare costs are deductible, and the deduction is normally claimed by the lower-income spouse. The annual limit per child depends on the child's age and is set by the CRA. Check the current limits on line 21400 before you file.",savings:"Deduction, limit set per child",flag:"🇨🇦",priority:"high",action:"Line 21400"},
+      {title:"RESP: Government Grants on Top",body:"In an RESP the government adds the Canada Education Savings Grant on top of contributions, and the Canada Learning Bond for lower-income families even with no contributions. Check the current grant rates on Canada.ca.",savings:"Government grant on top of what you save",flag:"🇨🇦",priority:"high",action:"Details: canada.ca"},
+      {title:"Canada Workers Benefit (CWB)",body:`A refundable credit for people who work and earn a low income. You need working income, not just a low income, so earnings are what qualify you. Outside ${TAX_DATA.CA.CWB.variesIn.join(", ")}, the ${TAX_DATA.CA.CWB.taxYear} maximum is $${TAX_DATA.CA.CWB.maxSingle.toLocaleString()} single or $${TAX_DATA.CA.CWB.maxFamily.toLocaleString()} for a family, paid in full under $${TAX_DATA.CA.CWB.reduceOverSingle.toLocaleString()} single / $${TAX_DATA.CA.CWB.reduceOverFamily.toLocaleString()} family and nothing above $${TAX_DATA.CA.CWB.nilOverSingle.toLocaleString()} / $${TAX_DATA.CA.CWB.nilOverFamily.toLocaleString()}. ${TAX_DATA.CA.CWB.variesIn.join(", ")} set their own amounts and cut-offs. Check the CRA page for yours. Many low-income workers miss this entirely.`,savings:`Up to $${TAX_DATA.CA.CWB.maxSingle.toLocaleString()} single / $${TAX_DATA.CA.CWB.maxFamily.toLocaleString()} family outside ${TAX_DATA.CA.CWB.variesIn.join(", ")}`,flag:"🇨🇦",priority:"medium",action:"Details: canada.ca"},
     ],
     learnCards:[
-      {emoji:"🏦",title:"TFSA vs RRSP: The Real Difference",body:"RRSP lowers your taxes now but you pay tax when you withdraw. TFSA has no upfront deduction but all growth and withdrawals are 100% tax-free. If you're in a low tax bracket now, use TFSA first. If you're in a high bracket, RRSP first.",key:"Low income now → TFSA. High income now → RRSP."},
-      {emoji:"🏠",title:"The FHSA: Best Account Most Canadians Don't Have",body:`The First Home Savings Account opened in 2023. You get an RRSP-style deduction going in AND tax-free withdrawals for a first home. Up to $${TAX_DATA.CA.FHSA_LIFETIME.value.toLocaleString()} lifetime room. If you're not a homeowner, this should be your first account.`,key:"Open an FHSA before your RRSP if you want to buy a home."},
-      {emoji:"👶",title:"Canada Child Benefit vs US Child Tax Credit",body:`The CCB is more generous than most Canadians realize. A single parent with two kids under 6 and an adjusted family net income of $${TAX_DATA.CA.CCB.phaseOutStart.toLocaleString()} or less receives the full $${(TAX_DATA.CA.CCB.maxUnder6*2).toLocaleString()} a year. Above that the amount gradually reduces, and it keeps reducing more slowly over $${TAX_DATA.CA.CCB.phaseOutSecond.toLocaleString()}. Unlike US credits, CCB is completely tax-free and paid monthly.`,key:"Apply at birth: retroactive claims are possible but painful."},
-      {emoji:"📋",title:"What EI Actually Covers",body:"Employment Insurance isn't just for job loss. It also covers maternity (15 weeks), parental (up to 35 weeks standard or 61 weeks extended), sickness (26 weeks), and compassionate care. Many employees don't claim what they're entitled to.",key:"Know your EI benefits before you need them."},
-      {emoji:"💳",title:"Why minimum payments are a trap",body:"If you owe $3,000 at 20% and pay only the minimum, it takes 8+ years and costs nearly $3,000 extra. You buy everything twice.",key:"Never just pay the minimum."},
-      {emoji:"🆘",title:"The emergency fund rule",body:"One car repair without savings = credit card debt at 20%. A $1,000 cushion breaks that cycle. In Canada, keep it in a TFSA high-interest savings account.",key:"Build $1,000 in a TFSA HISA first."},
+      // Concepts only (prelaunch-copy, prompt 3): what each thing is and how it works, never an
+      // instruction. A figure appears only from TAX_DATA with its source and year (taxCite), or as plain
+      // arithmetic shown in full.
+      {emoji:"🏦",title:"TFSA vs RRSP: how they differ",body:"An RRSP contribution is deducted from your taxable income now, and what you withdraw later is taxed as income. A TFSA contribution gets no deduction, and its growth and withdrawals are not taxed. Which one helps more depends on your tax rate now compared with your tax rate when you withdraw.",key:"RRSP: tax relief now, tax later. TFSA: no relief now, no tax later."},
+      {emoji:"🏠",title:"The FHSA: a home account with two tax breaks",body:`The First Home Savings Account combines an RRSP-style deduction when you put money in with tax-free withdrawals for a first home. Contributions are limited to $${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()} a year and $${TAX_DATA.CA.FHSA_LIFETIME.value.toLocaleString()} in total (${taxCite(TAX_DATA.CA.FHSA_LIFETIME)}).`,key:"Deductible going in, tax-free coming out for a first home."},
+      {emoji:"👶",title:"How the Canada Child Benefit works",body:`The Canada Child Benefit is a tax-free monthly payment for families with children under 18. For ${TAX_DATA.CA.CCB.yearLabel}, a family with an adjusted family net income of $${TAX_DATA.CA.CCB.phaseOutStart.toLocaleString()} or less receives up to $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()} a year for each child under 6 (${taxCite(TAX_DATA.CA.CCB)}). Above that the amount gradually reduces, and it keeps reducing more slowly over $${TAX_DATA.CA.CCB.phaseOutSecond.toLocaleString()}.`,key:"Tax-free, paid monthly, and based on family net income."},
+      {emoji:"📋",title:"What EI covers",body:"Employment Insurance covers more than job loss. It also has maternity, parental, sickness and compassionate care benefits, each with its own rules and length, set by Service Canada.",key:"EI includes maternity, parental, sickness and caregiving benefits."},
+      {emoji:"💳",title:"How minimum payments work",body:"Early on, most of a credit card's minimum payment goes to interest, so the balance falls slowly while interest keeps being added. A larger payment shortens the time to pay off and lowers the total interest. The debt simulator in Goals works this out on your own debts.",key:"Most of an early minimum payment goes to interest."},
+      {emoji:"🆘",title:"What an emergency fund does",body:"An emergency fund is cash kept for unplanned costs, such as a car repair. Without one, those costs often go on a credit card and start collecting interest. In Canada it can be held in a savings account or inside a TFSA.",key:"It keeps a surprise cost off a credit card."},
     ],
     retirementAccounts:[
-      {id:"rrsp",name:"RRSP",fullName:"Registered Retirement Savings Plan",icon:"🏦",color:"#2E8B2E",annualLimit:`18% of income (max $${TAX_DATA.CA.RRSP_LIMIT.value.toLocaleString()} for ${TAX_DATA.CA.RRSP_LIMIT.year})`,taxNote:"Contributions deductible. Withdrawals taxed as income.",tip:"Contribute in high-income years. Use spousal RRSP for income splitting."},
-      {id:"tfsa",name:"TFSA",fullName:"Tax-Free Savings Account",icon:"🛡️",color:"#2FADA6",annualLimit:`$${TAX_DATA.CA.TFSA_LIMIT.value.toLocaleString()} (${TAX_DATA.CA.TFSA_LIMIT.year}). Unused room accumulates.`,taxNote:"No deduction on contribution. All growth and withdrawals tax-free.",tip:"Invest in ETFs inside your TFSA. Don't just park cash."},
-      {id:"fhsa",name:"FHSA",fullName:"First Home Savings Account",icon:"🏠",color:"#CFA03E",annualLimit:`$${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/yr (max $${TAX_DATA.CA.FHSA_LIFETIME.value.toLocaleString()} lifetime)`,taxNote:"Deductible going in. Tax-free withdrawal for first home purchase.",tip:"Best account for first-time buyers. Open even if you're not buying immediately, room accumulates."},
-      {id:"resp",name:"RESP",fullName:"Registered Education Savings Plan",icon:"👶",color:"#8A5FC8",annualLimit:"Contribute to maximize the CESG grant",taxNote:"No deduction. The government adds the CESG on top of your contributions.",tip:"Check the current CESG rate on Canada.ca. Start at birth."},
+      {id:"rrsp",name:"RRSP",fullName:"Registered Retirement Savings Plan",icon:"🏦",color:"#2E8B2E",annualLimit:`Up to $${TAX_DATA.CA.RRSP_LIMIT.value.toLocaleString()} for ${TAX_DATA.CA.RRSP_LIMIT.year}, depending on your earned income (${taxCite(TAX_DATA.CA.RRSP_LIMIT)})`,taxNote:"Contributions deductible. Withdrawals taxed as income.",tip:"The deduction is worth more in a year with a higher tax rate. A spousal RRSP lets one partner contribute for the other."},
+      {id:"tfsa",name:"TFSA",fullName:"Tax-Free Savings Account",icon:"🛡️",color:"#2FADA6",annualLimit:`$${TAX_DATA.CA.TFSA_LIMIT.value.toLocaleString()} for ${TAX_DATA.CA.TFSA_LIMIT.year} (${taxCite(TAX_DATA.CA.TFSA_LIMIT)}). Unused room carries forward.`,taxNote:"No deduction on contribution. All growth and withdrawals tax-free.",tip:"A TFSA can hold cash, GICs, ETFs and other investments. What it holds decides how it grows."},
+      {id:"fhsa",name:"FHSA",fullName:"First Home Savings Account",icon:"🏠",color:"#CFA03E",annualLimit:`$${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/yr, $${TAX_DATA.CA.FHSA_LIFETIME.value.toLocaleString()} lifetime (${taxCite(TAX_DATA.CA.FHSA_LIFETIME)})`,taxNote:"Deductible going in. Tax-free withdrawal for first home purchase.",tip:"Contribution room starts once the account is open, even before you buy."},
+      {id:"resp",name:"RESP",fullName:"Registered Education Savings Plan",icon:"👶",color:"#8A5FC8",annualLimit:"The CESG is added on top of contributions, up to yearly and lifetime limits (Canada.ca)",taxNote:"No deduction. The government adds the CESG on top of your contributions.",tip:"The CESG rate and its limits are on Canada.ca."},
     ],
     benefitsChecker:[
       {name:"Canada Child Benefit",icon:"👶",eligible:"Has children under 18",amount:`Up to $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/child under 6`,apply:"CRA My Account",url:"https://canada.ca/ccb"},
-      {name:"Canada Groceries and Essentials Benefit",icon:"🛒",eligible:"Low-to-modest family net income, return filed",amount:`Up to $${TAX_DATA.CA.CGEB.eligibleIndividual} each + $${TAX_DATA.CA.CGEB.perChildUnder19}/child`,apply:"Check the CRA calculator",url:TAX_DATA.CA.CGEB.calculator},
+      {name:"Canada Groceries and Essentials Benefit",icon:"🛒",eligible:"Low-to-modest family net income, return filed",amount:`Up to $${TAX_DATA.CA.CGEB.eligibleIndividual} each + $${TAX_DATA.CA.CGEB.perChildUnder19}/child`,apply:"CRA benefits calculator",url:TAX_DATA.CA.CGEB.calculator},
       // `province` gates a benefit that is not federal. This row was shown to every Canadian — a claim
       // about money owed, made to someone who is not owed it. The same defect the tip list had, in a
       // second array. Entries with no `province` are federal and shown to everyone.
@@ -206,45 +223,46 @@ const CC = {
     ],
     debtTypes:["Credit Card","Student Loan (Federal)","Student Loan (Private)","Medical Debt","Car Loan","Personal Loan","Mortgage","HELOC","Payday Loan","Buy Now Pay Later","Other"],
     taxTips:[
-      {title:"Earned Income Tax Credit (EITC)",body:`One of the most under-claimed credits in America. Under $61,555 (single) or $68,675 (married) with qualifying children? You could get up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} back (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3 or more children), even if you owe nothing. Must file to claim.`,savings:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,flag:"🇺🇸",priority:"high",action:"Check EITC Eligibility"},
-      {title:"Child Tax Credit",body:"Up to $2,200 per qualifying child under 17 (increased by OBBBA, July 2025). Partially refundable up to $1,700, meaning you can get money back even if you owe nothing. File even if your income is low.",savings:"$2,200/child (2025)",flag:"🇺🇸",priority:"high",action:"Claim on Schedule 8812"},
-      {title:"401(k): Get the Full Match First",body:"If your employer matches 401(k) contributions, not contributing enough to get the full match is leaving free money on the table. A 4% match on $50k = $2,000/year you're giving up.",savings:`Up to $${TAX_DATA.US.K401_DEFERRAL.value.toLocaleString("en-US")}/yr (2026)`,flag:"🇺🇸",priority:"high",action:"Increase 401k Contributions"},
-      {title:"HSA: The Triple Tax Advantage",body:"If you have a high-deductible health plan, an HSA lets you contribute pre-tax, grow tax-free, and withdraw tax-free for medical expenses. It's legally the most tax-advantaged account available.",savings:`Up to $${TAX_DATA.US.HSA_SELF_ONLY.value.toLocaleString("en-US")}/yr (2026)`,flag:"🇺🇸",priority:"high",action:"Open an HSA"},
-      {title:"Roth IRA: Tax-Free Retirement",body:"Under $150k single / $236k married? You can contribute $7,000/year to a Roth IRA (2025 income limits). You pay tax now, but all growth and withdrawals are 100% tax-free in retirement.",savings:"$7,000/yr tax-free",flag:"🇺🇸",priority:"high",action:"Open a Roth IRA"},
-      {title:"Student Loan Interest Deduction",body:"Paying student loans? You may be able to deduct up to $2,500 of interest per year, reducing taxable income directly, even without itemizing.",savings:"Up to $2,500",flag:"🇺🇸",priority:"medium",action:"Find 1098-E Form"},
-      {title:"Child & Dependent Care Credit",body:"Paying for daycare, after-school, or a caregiver while you work? You can claim 20 to 35% of up to $3,000 (1 child) or $6,000 (2+ children) in care expenses as a tax credit.",savings:"$600 to $2,100 (1 to 2 children)",flag:"🇺🇸",priority:"medium",action:"Track Care Receipts"},
-      {title:"Saver's Credit",body:"Low-to-mid income and contributing to a 401k or IRA? The Saver's Credit gives you up to 50% of your contribution back as a tax credit. Under $39,500 single? You likely qualify.",savings:"Up to $1,000",flag:"🇺🇸",priority:"medium",action:"Check Form 8880"},
-      {title:"American Opportunity Tax Credit",body:"Paying for the first 4 years of college? You can claim up to $2,500/year per student, and 40% is refundable even if you owe nothing.",savings:"Up to $2,500/yr",flag:"🇺🇸",priority:"medium",action:"Claim on Form 8863"},
-      {title:"Medical Expense Deduction",body:"Medical expenses exceeding 7.5% of your AGI are deductible if you itemize. For Americans with significant medical debt, this can mean thousands back.",savings:"Varies",flag:"🇺🇸",priority:"low",action:"Track Medical Receipts"},
-      {title:"Home Office Deduction",body:"Self-employed and work from home? The simplified method allows $5 per square foot (up to 300 sq ft = $1,500). No complex calculations needed.",savings:"Up to $1,500",flag:"🇺🇸",priority:"medium",action:"Measure Your Office"},
-      {title:"No Tax on Tips (2025 to 2028)",body:"Work in a tipped occupation: restaurant, salon, hotel, rideshare, personal trainer? Deduct up to $25,000 of qualified tips from your federal income. No itemizing required. Phases out above $150k MAGI. Expires after 2028 unless extended.",savings:"Up to $25,000 deduction",flag:"🇺🇸",priority:"high",action:"Track Tips: Form 4137"},
-      {title:"No Tax on Overtime (2025 to 2028)",body:"Earn FLSA-required overtime (time-and-a-half)? You can deduct the premium 'half' portion, up to $12,500 ($25,000 if married filing jointly). Phases out above $150k MAGI. Expires after 2028. Salary-exempt workers generally don't qualify.",savings:"Up to $12,500 deduction",flag:"🇺🇸",priority:"medium",action:"Check Your W-2 Overtime"},
+      {title:"Earned Income Tax Credit (EITC)",body:`With 3 or more qualifying children, the credit phases out completely at ${usd(TAX_DATA.US.EITC_PHASEOUT_3PLUS.single)} of income (single) or ${usd(TAX_DATA.US.EITC_PHASEOUT_3PLUS.joint)} (married filing jointly) (${taxCite(TAX_DATA.US.EITC_PHASEOUT_3PLUS)}). Below that you could get up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} back (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3 or more children), even if you owe nothing. It is paid only when a return is filed.`,savings:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,flag:"🇺🇸",priority:"high",action:"Details: irs.gov/eitc"},
+      {title:"Child Tax Credit",body:`Up to ${usd(TAX_DATA.US.CHILD_TAX_CREDIT.value)} per qualifying child under 17, of which up to ${usd(TAX_DATA.US.CHILD_TAX_CREDIT.refundable)} is refundable, so it can be paid even when no tax is owed (${taxCite(TAX_DATA.US.CHILD_TAX_CREDIT)}).`,savings:`${usd(TAX_DATA.US.CHILD_TAX_CREDIT.value)}/child (${taxCite(TAX_DATA.US.CHILD_TAX_CREDIT)})`,flag:"🇺🇸",priority:"high",action:"Schedule 8812"},
+      {title:"401(k): How an Employer Match Works",body:"Some employers add a match to what an employee puts into a 401(k), up to a limit the plan sets. The match rate and its limit are in the plan's documents.",savings:`Up to $${TAX_DATA.US.K401_DEFERRAL.value.toLocaleString("en-US")}/yr (2026)`,flag:"🇺🇸",priority:"high",action:"Your plan's documents"},
+      {title:"HSA: The Triple Tax Advantage",body:"If you have a high-deductible health plan, an HSA lets you contribute pre-tax, grow tax-free, and withdraw tax-free for medical expenses.",savings:`Up to $${TAX_DATA.US.HSA_SELF_ONLY.value.toLocaleString("en-US")}/yr (2026)`,flag:"🇺🇸",priority:"high",action:"Details: irs.gov"},
+      {title:"Roth IRA: Tax-Free Retirement",body:`You can contribute up to ${usd(TAX_DATA.US.ROTH_IRA.limit)} a year (${usd(TAX_DATA.US.ROTH_IRA.limit + TAX_DATA.US.ROTH_IRA.catchUp50)} at 50 or older). The amount phases out between ${usd(TAX_DATA.US.ROTH_IRA.phaseStartSingle)} and ${usd(TAX_DATA.US.ROTH_IRA.phaseEndSingle)} of income (single) or ${usd(TAX_DATA.US.ROTH_IRA.phaseStartJoint)} and ${usd(TAX_DATA.US.ROTH_IRA.phaseEndJoint)} (married filing jointly) (${taxCite(TAX_DATA.US.ROTH_IRA)}). You pay tax now, and qualified withdrawals in retirement, growth included, are tax-free.`,savings:`Up to ${usd(TAX_DATA.US.ROTH_IRA.limit)}/yr (${taxCite(TAX_DATA.US.ROTH_IRA)})`,flag:"🇺🇸",priority:"high",action:"Details: irs.gov"},
+      {title:"Student Loan Interest Deduction",body:`Paying student loans? You may be able to deduct up to ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.max)} of interest a year, even without itemizing. It phases out above ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.phaseStartSingle)} of income (single) or ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.phaseStartJoint)} (joint) (${taxCite(TAX_DATA.US.STUDENT_LOAN_INTEREST)}).`,savings:`Up to ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.max)} (${taxCite(TAX_DATA.US.STUDENT_LOAN_INTEREST)})`,flag:"🇺🇸",priority:"medium",action:"Form 1098-E"},
+      {title:"Child & Dependent Care Credit",body:`Paying for daycare, after-school, or a caregiver while you work? The credit is a percentage of up to ${usd(TAX_DATA.US.CHILD_CARE_CREDIT.expensesOne)} of care expenses (1 person) or ${usd(TAX_DATA.US.CHILD_CARE_CREDIT.expensesTwoPlus)} (2 or more). The top rate is ${TAX_DATA.US.CHILD_CARE_CREDIT.maxRatePct}% and it falls as income rises (${taxCite(TAX_DATA.US.CHILD_CARE_CREDIT)}). Check the current rates on IRS.gov.`,savings:`Top rate ${TAX_DATA.US.CHILD_CARE_CREDIT.maxRatePct}% (${taxCite(TAX_DATA.US.CHILD_CARE_CREDIT)})`,flag:"🇺🇸",priority:"medium",action:"Form 2441"},
+      {title:"Saver's Credit",body:`Contributing to a 401k or IRA on a low-to-mid income? The Saver's Credit is up to ${usd(TAX_DATA.US.SAVERS_CREDIT.maxCredit)} (${usd(TAX_DATA.US.SAVERS_CREDIT.maxCreditJoint)} joint). The income limits are ${usd(TAX_DATA.US.SAVERS_CREDIT.agiSingle)} single, ${usd(TAX_DATA.US.SAVERS_CREDIT.agiHoH)} head of household and ${usd(TAX_DATA.US.SAVERS_CREDIT.agiJoint)} joint (${taxCite(TAX_DATA.US.SAVERS_CREDIT)}).`,savings:`Up to ${usd(TAX_DATA.US.SAVERS_CREDIT.maxCredit)} (${taxCite(TAX_DATA.US.SAVERS_CREDIT)})`,flag:"🇺🇸",priority:"medium",action:"Form 8880"},
+      {title:"American Opportunity Tax Credit",body:`Paying for the first ${TAX_DATA.US.AOTC.years} years of college? The credit is up to ${usd(TAX_DATA.US.AOTC.max)} a year per student, and ${TAX_DATA.US.AOTC.refundablePct}% of it (up to ${usd(TAX_DATA.US.AOTC.refundableMax)}) is refundable even if you owe nothing (${taxCite(TAX_DATA.US.AOTC)}).`,savings:`Up to ${usd(TAX_DATA.US.AOTC.max)}/yr (${taxCite(TAX_DATA.US.AOTC)})`,flag:"🇺🇸",priority:"medium",action:"Form 8863"},
+      {title:"Medical Expense Deduction",body:`Medical expenses above ${TAX_DATA.US.MEDICAL_AGI_FLOOR.pct}% of your adjusted gross income are deductible if you itemize (${taxCite(TAX_DATA.US.MEDICAL_AGI_FLOOR)}).`,savings:"Varies",flag:"🇺🇸",priority:"low",action:"Schedule A"},
+      {title:"Home Office Deduction",body:`Self-employed and work from home? The simplified method allows ${usd(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.perSqFt)} per square foot, up to ${TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.maxSqFt} sq ft: ${TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.maxSqFt} × ${usd(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.perSqFt)} = ${usd(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.max)} (${taxCite(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED)}).`,savings:`Up to ${usd(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED.max)} (${taxCite(TAX_DATA.US.HOME_OFFICE_SIMPLIFIED)})`,flag:"🇺🇸",priority:"medium",action:"Form 8829 or Schedule C"},
+      {title:`No Tax on Tips (${TAX_DATA.US.TIPS_DEDUCTION.firstYear} to ${TAX_DATA.US.TIPS_DEDUCTION.lastYear})`,body:`Work in a tipped occupation: restaurant, salon, hotel, rideshare, personal trainer? Deduct up to ${usd(TAX_DATA.US.TIPS_DEDUCTION.max)} of qualified tips from your federal income. No itemizing required. It phases out above ${usd(TAX_DATA.US.TIPS_DEDUCTION.phaseStartSingle)} of modified adjusted gross income (${usd(TAX_DATA.US.TIPS_DEDUCTION.phaseStartJoint)} joint), and applies ${TAX_DATA.US.TIPS_DEDUCTION.firstYear} through ${TAX_DATA.US.TIPS_DEDUCTION.lastYear} (${taxCite(TAX_DATA.US.TIPS_DEDUCTION)}).`,savings:`Up to ${usd(TAX_DATA.US.TIPS_DEDUCTION.max)} deduction`,flag:"🇺🇸",priority:"high",action:"Form 4137"},
+      {title:`No Tax on Overtime (${TAX_DATA.US.OVERTIME_DEDUCTION.firstYear} to ${TAX_DATA.US.OVERTIME_DEDUCTION.lastYear})`,body:`For FLSA-required overtime (time-and-a-half), the premium 'half' portion can be deducted, up to ${usd(TAX_DATA.US.OVERTIME_DEDUCTION.max)} (${usd(TAX_DATA.US.OVERTIME_DEDUCTION.maxJoint)} if married filing jointly). It phases out above ${usd(TAX_DATA.US.OVERTIME_DEDUCTION.phaseStartSingle)} of modified adjusted gross income (${usd(TAX_DATA.US.OVERTIME_DEDUCTION.phaseStartJoint)} joint), and applies ${TAX_DATA.US.OVERTIME_DEDUCTION.firstYear} through ${TAX_DATA.US.OVERTIME_DEDUCTION.lastYear} (${taxCite(TAX_DATA.US.OVERTIME_DEDUCTION)}). Salary-exempt workers generally don't qualify.`,savings:`Up to ${usd(TAX_DATA.US.OVERTIME_DEDUCTION.max)} deduction`,flag:"🇺🇸",priority:"medium",action:"Your W-2"},
     ],
     learnCards:[
-      {emoji:"🏦",title:"401(k) vs Roth IRA: Which First?",body:"Your 401(k) lowers taxes now. Great if you're in a high bracket. A Roth IRA gives tax-free income in retirement. Great if you're younger or lower income. Rule of thumb: get the full 401k employer match first, then max your Roth IRA, then go back to the 401k.",key:"Always get the full employer match first. It's a 50 to 100% instant return."},
-      {emoji:"🏥",title:"The Emergency Fund is Different in the US",body:"Unlike Canada, a medical emergency in the US can mean a $10,000 to $50,000 bill. Your emergency fund isn't just for job loss. It's healthcare insurance. Most financial planners recommend 6 months of expenses, not 3.",key:"Aim for 6 months of expenses, not 3."},
-      {emoji:"📋",title:"Medical Debt: Know Your Rights",body:"Medical debt under $500 was removed from credit reports in 2023. Negotiate bills before paying. Hospitals routinely accept 40 to 60 cents on the dollar. Never pay full price without asking for a discount.",key:"Always negotiate medical bills before paying."},
-      {emoji:"🎓",title:"Federal vs Private Student Loans",body:"Federal loans have income-driven repayment, deferment, and forgiveness programs. Private loans have none of these protections. If you have both, pay private first. Federal loans have a safety net.",key:"Never refinance federal loans to private. You lose your safety net."},
-      {emoji:"💳",title:"Why minimum payments are a trap",body:"If you owe $3,000 at 20% and pay only the minimum, it takes 8+ years and costs nearly $3,000 extra. You buy everything twice.",key:"Never just pay the minimum."},
-      {emoji:"🆘",title:"The emergency fund rule",body:"Medical emergencies are the #1 cause of bankruptcy in America. A $1,000 cushion in a high-yield savings account (4 to 5% APY) breaks the cycle of borrowing.",key:"Keep your emergency fund in a high-yield savings account."},
+      // Concepts only, as in Canada's list: no instructions, no figure without TAX_DATA or shown arithmetic.
+      {emoji:"🏦",title:"401(k) vs Roth IRA: how they differ",body:"A traditional 401(k) contribution lowers your taxable income now, and withdrawals are taxed later. A Roth IRA is funded with after-tax money, and qualified withdrawals in retirement, growth included, are not taxed. Many employers add a match to 401(k) contributions, up to a limit the plan sets.",key:"401(k): tax relief now. Roth IRA: tax-free later."},
+      {emoji:"🏥",title:"Emergency funds and medical costs",body:"In the US an emergency fund often has to cover medical bills as well as job loss, because insurance can leave deductibles and out-of-pocket costs. How big a fund needs to be depends on your expenses and your coverage.",key:"Medical costs are part of what an emergency fund covers."},
+      {emoji:"📋",title:"Medical bills: what can be asked",body:"A hospital bill can be itemized and checked for errors, and many providers offer payment plans or discounts on request. The credit bureaus and the CFPB set the rules on when medical debt appears on a credit report.",key:"A medical bill can be questioned before it is paid."},
+      {emoji:"🎓",title:"Federal vs private student loans",body:"Federal student loans come with income-driven repayment, deferment and forgiveness programs. Private loans do not have those protections, and refinancing a federal loan into a private one gives them up.",key:"Federal loans carry protections that private loans do not."},
+      {emoji:"💳",title:"How minimum payments work",body:"Early on, most of a credit card's minimum payment goes to interest, so the balance falls slowly while interest keeps being added. A larger payment shortens the time to pay off and lowers the total interest. The debt simulator in Goals works this out on your own debts.",key:"Most of an early minimum payment goes to interest."},
+      {emoji:"🆘",title:"What an emergency fund does",body:"An emergency fund is cash kept for unplanned costs. A high-yield savings account pays interest while the money waits; the rate changes over time.",key:"It keeps a surprise cost off a credit card."},
     ],
     retirementAccounts:[
-      {id:"401k",name:"401(k)",fullName:"Employer Retirement Plan",icon:"🏦",color:"#2E8B2E",annualLimit:`$${TAX_DATA.US.K401_DEFERRAL.value.toLocaleString("en-US")}/yr (2026; $${TAX_DATA.US.K401_CATCHUP_50PLUS.value.toLocaleString("en-US")} if 50+)`,taxNote:"Traditional: contributions pre-tax, withdrawals taxed. Roth 401k: after-tax contributions, tax-free withdrawals.",tip:"Always contribute enough to get the full employer match: it's free money."},
-      {id:"roth",name:"Roth IRA",fullName:"Individual Retirement Account",icon:"🛡️",color:"#2FADA6",annualLimit:"$7,000/yr ($8,000 if 50+). Phaseout at $150k single/$236k MFJ (2025)",taxNote:"After-tax contributions. All growth and qualified withdrawals 100% tax-free.",tip:"Open early: the tax-free compounding over decades is massive. Use Fidelity or Vanguard."},
-      {id:"hsa",name:"HSA",fullName:"Health Savings Account",icon:"🏥",color:"#CFA03E",annualLimit:`$${TAX_DATA.US.HSA_SELF_ONLY.value.toLocaleString("en-US")} single / $${TAX_DATA.US.HSA_FAMILY.value.toLocaleString("en-US")} family (2026)`,taxNote:"Triple tax advantage: pre-tax in, tax-free growth, tax-free for medical expenses.",tip:"After 65, HSA funds can be used for anything (taxed like a 401k). Best account in the US tax code."},
-      {id:"529",name:"529 Plan",fullName:"Education Savings Account",icon:"🎓",color:"#8A5FC8",annualLimit:`No annual limit. $${TAX_DATA.US.GIFT_EXCLUSION_529.value.toLocaleString("en-US")}/yr gift tax exclusion (2026).`,taxNote:"State deduction varies. Federal tax-free growth and withdrawals for education.",tip:"Start when kids are young. Some states give immediate tax deductions."},
+      {id:"401k",name:"401(k)",fullName:"Employer Retirement Plan",icon:"🏦",color:"#2E8B2E",annualLimit:`$${TAX_DATA.US.K401_DEFERRAL.value.toLocaleString("en-US")}/yr ($${TAX_DATA.US.K401_CATCHUP_50PLUS.value.toLocaleString("en-US")} if 50+) (${taxCite(TAX_DATA.US.K401_DEFERRAL)})`,taxNote:"Traditional: contributions pre-tax, withdrawals taxed. Roth 401k: after-tax contributions, tax-free withdrawals.",tip:"Many employers match part of what you put in, up to a limit the plan sets."},
+      {id:"roth",name:"Roth IRA",fullName:"Individual Retirement Account",icon:"🛡️",color:"#2FADA6",annualLimit:"Set each year by the IRS, with income limits (irs.gov)",taxNote:"After-tax contributions. All growth and qualified withdrawals 100% tax-free.",tip:"Qualified withdrawals, growth included, are not taxed."},
+      {id:"hsa",name:"HSA",fullName:"Health Savings Account",icon:"🏥",color:"#CFA03E",annualLimit:`$${TAX_DATA.US.HSA_SELF_ONLY.value.toLocaleString("en-US")} single / $${TAX_DATA.US.HSA_FAMILY.value.toLocaleString("en-US")} family (${taxCite(TAX_DATA.US.HSA_SELF_ONLY)})`,taxNote:"Triple tax advantage: pre-tax in, tax-free growth, tax-free for medical expenses.",tip:"After 65, HSA money can be used for anything; withdrawals not for medical costs are taxed like a 401(k)."},
+      {id:"529",name:"529 Plan",fullName:"Education Savings Account",icon:"🎓",color:"#8A5FC8",annualLimit:`No annual limit. $${TAX_DATA.US.GIFT_EXCLUSION_529.value.toLocaleString("en-US")}/yr gift tax exclusion (${taxCite(TAX_DATA.US.GIFT_EXCLUSION_529)}).`,taxNote:"State deduction varies. Federal tax-free growth and withdrawals for education.",tip:"Some states give a deduction for contributions; the rules vary by state."},
     ],
     benefitsChecker:[
-      {name:"Earned Income Tax Credit",icon:"💰",eligible:"Working, under $61,555 (single) / $68,675 (MFJ)",amount:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,apply:"File taxes (IRS Free File)",url:"https://irs.gov/eitc"},
-      {name:"SNAP (Food Stamps)",icon:"🛒",eligible:"Low income households",amount:"~$191/mo per person (USDA FY2025)",apply:"Benefits.gov",url:"https://benefits.gov"},
+      {name:"Earned Income Tax Credit",icon:"💰",eligible:`Working; with 3+ children, under ${usd(TAX_DATA.US.EITC_PHASEOUT_3PLUS.single)} (single) / ${usd(TAX_DATA.US.EITC_PHASEOUT_3PLUS.joint)} (joint) (${taxCite(TAX_DATA.US.EITC_PHASEOUT_3PLUS)})`,amount:`Up to $${TAX_DATA.US.EITC_MAX_3PLUS.value.toLocaleString("en-US")} (${TAX_DATA.US.EITC_MAX_3PLUS.year}, 3+ children)`,apply:"Through a tax return (IRS Free File)",url:"https://irs.gov/eitc"},
+      {name:"SNAP (Food Stamps)",icon:"🛒",eligible:"Low income households",amount:`Up to ${usd(TAX_DATA.US.SNAP_MAX_1.value)}/mo for a household of 1 in the 48 states and DC (${taxCite(TAX_DATA.US.SNAP_MAX_1)})`,apply:"Benefits.gov",url:"https://benefits.gov"},
       {name:"Medicaid / CHIP",icon:"🏥",eligible:"Low-income adults and children",amount:"Free/low-cost healthcare",apply:"Healthcare.gov",url:"https://healthcare.gov"},
-      {name:"Child Tax Credit",icon:"👶",eligible:"Children under 17",amount:"Up to $2,200/child (2025)",apply:"File taxes",url:"https://irs.gov/ctc"},
+      {name:"Child Tax Credit",icon:"👶",eligible:"Children under 17",amount:`Up to ${usd(TAX_DATA.US.CHILD_TAX_CREDIT.value)}/child (${taxCite(TAX_DATA.US.CHILD_TAX_CREDIT)})`,apply:"Through a tax return",url:"https://irs.gov/ctc"},
       {name:"LIHEAP Energy Assistance",icon:"⚡",eligible:"Low income, utility hardship",amount:"Varies by state",apply:"Benefits.gov",url:"https://benefits.gov"},
       {name:"WIC Program",icon:"🍼",eligible:"Pregnant/postpartum, children under 5",amount:"Food + support",apply:"Local health dept",url:"https://wic.fns.usda.gov"},
     ],
-    creditBureaus:["Equifax","Experian","TransUnion: all three count for FICO"],
+    creditBureaus:["Equifax","Experian","TransUnion"],
     emergencyMonths:6,
-    healthcareNote:"Medical emergencies are the #1 cause of US bankruptcy. 6 months of expenses is the minimum.",
+    healthcareNote:"In the US an emergency fund often has to cover medical costs as well as job loss.",
     // Phase D12: 50 states + DC. Code is the canonical USPS 2-letter abbreviation.
     regions: [
       { code: "AL", name: "Alabama" }, { code: "AK", name: "Alaska" },
@@ -314,7 +332,7 @@ function getPersonalizedTaxCredits(profile) {
     if ((t.includes("working income") || t.includes("cwb")) && isSenior && !hasStage("t4","w2","selfemployed","incorporated","contractor")) return false;
     // Self-employment tips — only for self-employed
     // Self-employment tips only. This used to test t.includes("hst"), which also caught the two
-    // consumer-facing GST/HST CREDIT tips — so every Canadian who is not self-employed silently lost
+    // consumer-facing benefit tips (now the Canada Groceries and Essentials Benefit), so every Canadian who is not self-employed silently lost
     // the one base tip that interpolates live CRA figures, and it is aimed at exactly the low-income
     // households least likely to know they qualify. "registration" is the actual self-employment
     // concept, and it matches the one tip that means it ("HST Registration Threshold").
@@ -328,40 +346,39 @@ function getPersonalizedTaxCredits(profile) {
   if (hasStage("student")) {
     if (country === "CA") {
       tips.unshift(
-        {title:"Tuition Tax Credit",body:`Your T2202 slip from your school lets you claim every dollar of tuition as a federal tax credit (${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% federal rate for ${TAX_DATA.CA.FEDERAL_LOWEST_RATE.year}). Unused amounts carry forward indefinitely. You can use them in future high-income years, or transfer part of the unused amount to a parent or spouse.`,savings:`${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% of tuition paid`,flag:"🇨🇦",priority:"high",action:"Get Your T2202"},
-        {title:"Canada Training Credit",body:`If you were ${TAX_DATA.CA.CANADA_TRAINING_CREDIT.minAge} to ${TAX_DATA.CA.CANADA_TRAINING_CREDIT.maxAge} at the end of the year, resident in Canada all year, and your income met the CRA's limits, your training credit room grows by $${TAX_DATA.CA.CANADA_TRAINING_CREDIT.annualAccrual}, up to $${TAX_DATA.CA.CANADA_TRAINING_CREDIT.lifetimeMax.toLocaleString()} in a lifetime. When you take an eligible course you claim the LESSER of the room you have saved up and ${TAX_DATA.CA.CANADA_TRAINING_CREDIT.claimSharePct}% of your eligible fees, so a claim can be worth far more than one year's room. It is refundable. You get it even if you owe no tax. Line 45350, with Schedule 11.`,savings:`${TAX_DATA.CA.CANADA_TRAINING_CREDIT.claimSharePct}% of eligible fees, up to the room you have saved`,flag:"🇨🇦",priority:"high",action:"Check CTC Room on CRA"},
-        {title:"Groceries and Essentials Benefit: Students Almost Always Qualify",body:`If your income is low (most students qualify), file your taxes and the CRA pays you the Canada Groceries and Essentials Benefit quarterly. It replaced the GST/HST credit in July 2026. Filing is normally all it takes, though ${TAX_DATA.CA.CGEB.applyNote}. Many students skip filing because they 'don't earn much' and miss hundreds.`,savings:`Up to $${TAX_DATA.CA.CGEB.maxSingleNoChildren}/yr if you are single with no children`,flag:"🇨🇦",priority:"high",action:"File Your Taxes"},
-        {title:"Student Loan Interest Credit",body:"Paying interest on government student loans (OSAP, NSLSC)? That interest is 100% claimable as a non-refundable federal tax credit. Private loans don't qualify, only government loans. Keep your annual interest statement.",savings:"15% of interest paid",flag:"🇨🇦",priority:"medium",action:"Get NSLSC Statement"},
-        {title:"Moving Expenses Deduction",body:"If you moved more than 40km to attend school full-time, you can deduct eligible moving expenses from your scholarship or research income. Keep your receipts. This is often missed.",savings:"Varies",flag:"🇨🇦",priority:"medium",action:"Track Moving Receipts"}
+        {title:"Tuition Tax Credit",body:`Your T2202 slip from your school lets you claim every dollar of tuition as a federal tax credit (${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% federal rate for ${TAX_DATA.CA.FEDERAL_LOWEST_RATE.year}). Unused amounts carry forward indefinitely. You can use them in future high-income years, or transfer part of the unused amount to a parent or spouse.`,savings:`${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% of tuition paid`,flag:"🇨🇦",priority:"high",action:"Form T2202"},
+        {title:"Canada Training Credit",body:`If you were ${TAX_DATA.CA.CANADA_TRAINING_CREDIT.minAge} to ${TAX_DATA.CA.CANADA_TRAINING_CREDIT.maxAge} at the end of the year, resident in Canada all year, and your income met the CRA's limits, your training credit room grows by $${TAX_DATA.CA.CANADA_TRAINING_CREDIT.annualAccrual}, up to $${TAX_DATA.CA.CANADA_TRAINING_CREDIT.lifetimeMax.toLocaleString()} in a lifetime. When you take an eligible course you claim the LESSER of the room you have saved up and ${TAX_DATA.CA.CANADA_TRAINING_CREDIT.claimSharePct}% of your eligible fees, so a claim can be worth far more than one year's room. It is refundable. You get it even if you owe no tax. Line 45350, with Schedule 11.`,savings:`${TAX_DATA.CA.CANADA_TRAINING_CREDIT.claimSharePct}% of eligible fees, up to the room you have saved`,flag:"🇨🇦",priority:"high",action:"CTC room: CRA My Account"},
+        {title:"Groceries and Essentials Benefit for Students",body:`The CRA pays the ${TAX_DATA.CA.CGEB.name} every quarter to people with a low income who file a tax return (${taxCite(TAX_DATA.CA.CGEB)}). It is worked out from the return, so filing is normally all it takes, though ${TAX_DATA.CA.CGEB.applyNote}.`,savings:`Up to $${TAX_DATA.CA.CGEB.maxSingleNoChildren}/yr if you are single with no children`,flag:"🇨🇦",priority:"high",action:"Paid after a return is filed"},
+        {title:"Student Loan Interest Credit",body:"Paying interest on government student loans (OSAP, NSLSC)? That interest is claimable in full as a non-refundable federal tax credit. Interest on private loans does not qualify, only on government loans. The annual interest statement shows the amount.",savings:`${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% of interest paid (federal, ${TAX_DATA.CA.FEDERAL_LOWEST_RATE.year})`,flag:"🇨🇦",priority:"medium",action:"Your NSLSC statement"},
+        {title:"Moving Expenses Deduction",body:`If your new home is at least ${TAX_DATA.CA.STUDENT_MOVE_KM.value} km closer to your school (${taxCite(TAX_DATA.CA.STUDENT_MOVE_KM)}) and you moved to attend full-time, you can deduct eligible moving expenses from your scholarship or research income. Receipts support the claim.`,savings:"Varies",flag:"🇨🇦",priority:"medium",action:"Line 21900"}
       );
       // Province-specific student credits
-      if (province === "MB") {
-        tips.push({title:"Manitoba Tuition Fee Income Tax Rebate",body:"Stay and work in Manitoba after graduating and you can recover up to 60% of your Manitoba tuition paid over your working years. Claim up to $2,500/year as a Manitoba resident.",savings:"Up to 60% of MB tuition",flag:"🏙️ MB",priority:"high",action:"Apply After Graduation"});
-      }
+      // Manitoba's Tuition Fee Income Tax Rebate was removed here: Manitoba eliminated it for the 2018 tax
+      // year (gov.mb.ca 2017 budget bulletin, checked 2026-10-01).
       if (province === "SK") {
-        tips.push({title:"Saskatchewan Graduate Retention Program",body:"Graduate and work in Saskatchewan to receive provincial tax credits over several years, one of the most generous graduate incentives in Canada. Check the current amounts on Saskatchewan.ca before you count on a figure.",savings:"Provincial tax credit for graduates",flag:"🏙️ SK",priority:"high",action:"Apply After Graduation"});
+        tips.push({title:"Saskatchewan Graduate Retention Program",body:"Graduates who work in Saskatchewan can receive provincial tax credits over several years. Check the current amounts on Saskatchewan.ca.",savings:"Provincial tax credit for graduates",flag:"🏙️ SK",priority:"high",action:"Details: saskatchewan.ca"});
       }
       if (province === "NB" || province === "NS" || province === "PE" || province === "PEI" || province === "NL") {
-        tips.push({title:"Atlantic Graduate Tax Credit",body:"Atlantic provinces offer graduate tax credits to encourage graduates to stay and work in the region. Specific amounts vary by province. Check your provincial tax return.",savings:"Varies by province",flag:"🏙️ Atlantic",priority:"medium",action:"Check Provincial Return"});
+        tips.push({title:"Atlantic Graduate Tax Credit",body:"Atlantic provinces offer graduate tax credits to encourage graduates to stay and work in the region. Specific amounts vary by province, and each province's tax return sets them out.",savings:"Varies by province",flag:"🏙️ Atlantic",priority:"medium",action:"Your provincial return"});
       }
     }
     if (country === "US") {
       tips.unshift(
-        {title:"American Opportunity Tax Credit (AOTC)",body:"In your first 4 years of college? Claim up to $2,500/year per eligible student. 40% is fully refundable, meaning you get up to $1,000 back even if you owe nothing. This is the most valuable education credit available.",savings:"Up to $2,500/yr",flag:"🇺🇸",priority:"high",action:"Claim on Form 8863"},
-        {title:"Lifetime Learning Credit",body:"Beyond the first 4 years, or taking part-time courses? The Lifetime Learning Credit gives you 20% of up to $10,000 in tuition = $2,000/year. No limit on the number of years you can claim it.",savings:"Up to $2,000/yr",flag:"🇺🇸",priority:"high",action:"Claim on Form 8863"},
-        {title:"Student Loan Interest Deduction",body:"Paying interest on student loans? Deduct up to $2,500 of interest per year, even without itemizing. Income phase-out starts at $75k single / $155k married. Check your 1098-E form from your loan servicer.",savings:"Up to $2,500",flag:"🇺🇸",priority:"high",action:"Find Your 1098-E"},
-        {title:"Scholarship & Fellowship Exclusion",body:"Scholarships used for tuition, fees, and required course materials are tax-free. Amounts used for room, board, or stipends are taxable. Keep records of how scholarship funds are spent.",savings:"Potentially thousands",flag:"🇺🇸",priority:"medium",action:"Track Scholarship Use"},
-        {title:"529 Plan Tax-Free Withdrawals",body:"If a parent or grandparent has a 529 plan for you, qualified withdrawals for tuition, fees, books, and room & board are 100% tax-free. Some states also let you deduct contributions.",savings:"Tax-free growth",flag:"🇺🇸",priority:"medium",action:"Confirm Qualified Expenses"}
+        {title:"American Opportunity Tax Credit (AOTC)",body:`In your first ${TAX_DATA.US.AOTC.years} years of college? The credit is up to ${usd(TAX_DATA.US.AOTC.max)} a year per eligible student, and ${TAX_DATA.US.AOTC.refundablePct}% of it is refundable: up to ${usd(TAX_DATA.US.AOTC.refundableMax)} back even if you owe nothing (${taxCite(TAX_DATA.US.AOTC)}).`,savings:`Up to ${usd(TAX_DATA.US.AOTC.max)}/yr (${taxCite(TAX_DATA.US.AOTC)})`,flag:"🇺🇸",priority:"high",action:"Form 8863"},
+        {title:"Lifetime Learning Credit",body:`Beyond the first ${TAX_DATA.US.AOTC.years} years, or taking part-time courses? The Lifetime Learning Credit is ${TAX_DATA.US.LLC.ratePct}% of up to ${usd(TAX_DATA.US.LLC.expensesMax)} in tuition: ${TAX_DATA.US.LLC.ratePct}% × ${usd(TAX_DATA.US.LLC.expensesMax)} = ${usd(TAX_DATA.US.LLC.max)} a year per return (${taxCite(TAX_DATA.US.LLC)}). There is no limit on the number of years you can claim it.`,savings:`Up to ${usd(TAX_DATA.US.LLC.max)}/yr (${taxCite(TAX_DATA.US.LLC)})`,flag:"🇺🇸",priority:"high",action:"Form 8863"},
+        {title:"Student Loan Interest Deduction",body:`Paying interest on student loans? Deduct up to ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.max)} of interest a year, even without itemizing. It phases out above ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.phaseStartSingle)} of income (single) or ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.phaseStartJoint)} (joint) (${taxCite(TAX_DATA.US.STUDENT_LOAN_INTEREST)}). Your loan servicer sends the 1098-E form.`,savings:`Up to ${usd(TAX_DATA.US.STUDENT_LOAN_INTEREST.max)} (${taxCite(TAX_DATA.US.STUDENT_LOAN_INTEREST)})`,flag:"🇺🇸",priority:"high",action:"Form 1098-E"},
+        {title:"Scholarship & Fellowship Exclusion",body:"Scholarships used for tuition, fees, and required course materials are tax-free. Amounts used for room, board, or stipends are taxable, so records of how the funds were spent show which part is tax-free.",savings:"Depends on how the funds are used",flag:"🇺🇸",priority:"medium",action:"Details: irs.gov"},
+        {title:"529 Plan Tax-Free Withdrawals",body:"If a parent or grandparent has a 529 plan for you, qualified withdrawals for tuition, fees, books, and room & board are 100% tax-free. Some states also let you deduct contributions.",savings:"Tax-free growth",flag:"🇺🇸",priority:"medium",action:"Details: irs.gov"}
       );
       // State-specific student credits
       if (province === "NY") {
-        tips.push({title:"New York College Tuition Tax Credit",body:"New York residents can claim a tuition credit of up to $400 per student, or a tuition itemized deduction on your NY state return. Both can be worth claiming. Compare which is larger for your situation.",savings:"Up to $400 credit",flag:"🗽 NY",priority:"medium",action:"Check IT-272 Form"});
+        tips.push({title:"New York College Tuition Tax Credit",body:`New York residents can claim a college tuition credit of up to ${usd(TAX_DATA.US.NY_TUITION.creditMax)} per eligible student, or an itemized deduction of up to ${usd(TAX_DATA.US.NY_TUITION.deductionMax)} per student, but not both (${taxCite(TAX_DATA.US.NY_TUITION)}). Form IT-272 works out which is larger.`,savings:`Up to ${usd(TAX_DATA.US.NY_TUITION.creditMax)} credit (${taxCite(TAX_DATA.US.NY_TUITION)})`,flag:"🗽 NY",priority:"medium",action:"Form IT-272"});
       }
       if (province === "IL") {
-        tips.push({title:"Illinois Education Expense Credit",body:"Illinois residents can claim a 25% credit on qualified K-12 education expenses up to $500, and college expenses for dependent students may also qualify under certain conditions.",savings:"Up to $500",flag:"🏙️ IL",priority:"medium",action:"Check Schedule ICR"});
+        tips.push({title:"Illinois Education Expense Credit",body:`Illinois residents can claim ${TAX_DATA.US.IL_EDUCATION.ratePct}% of qualified K-12 education expenses after the first ${usd(TAX_DATA.US.IL_EDUCATION.afterFirst)}, up to ${usd(TAX_DATA.US.IL_EDUCATION.max)} per return (${taxCite(TAX_DATA.US.IL_EDUCATION)}).`,savings:`Up to ${usd(TAX_DATA.US.IL_EDUCATION.max)} (${taxCite(TAX_DATA.US.IL_EDUCATION)})`,flag:"🏙️ IL",priority:"medium",action:"Schedule ICR"});
       }
       if (province === "MN") {
-        tips.push({title:"Minnesota K-12 Education Credit",body:"Minnesota offers education credits and deductions that can apply to post-secondary expenses for dependents. Check Form M1ED for your specific eligibility.",savings:"Varies",flag:"🏙️ MN",priority:"medium",action:"Check Form M1ED"});
+        tips.push({title:"Minnesota K-12 Education Credit",body:"Minnesota offers education credits and deductions that can apply to post-secondary expenses for dependents. Form M1ED sets out who qualifies.",savings:"Varies",flag:"🏙️ MN",priority:"medium",action:"Form M1ED"});
       }
     }
   }
@@ -370,22 +387,22 @@ function getPersonalizedTaxCredits(profile) {
   if (hasStage("senior", "retired")) {
     if (country === "CA") {
       tips.unshift(
-        {title:"Age Amount Credit",body:`If you're 65 or older, you can claim the Age Amount, a federal non-refundable tax credit on up to $${TAX_DATA.CA.INDEXED_2026.ageAmount.toLocaleString()} for ${TAX_DATA.CA.INDEXED_2026.taxYear}. It reduces once your net income passes $${TAX_DATA.CA.INDEXED_2026.ageAmountThreshold.toLocaleString()}. Even a partial claim is worth claiming.`,savings:`Up to $${creditWorth(TAX_DATA.CA.INDEXED_2026.ageAmount).toLocaleString()} in tax saved`,flag:"🇨🇦",priority:"high",action:"Claim on Line 30100"},
-        {title:"Pension Income Splitting",body:"If you receive eligible pension income (RPP, RRIF, annuity), you can split up to 50% with your spouse. If your spouse is in a lower tax bracket, this can save your household thousands every year.",savings:"Potentially thousands",flag:"🇨🇦",priority:"high",action:"File Form T1032"},
-        {title:"Pension Income Tax Credit",body:"Eligible pension income qualifies for a federal non-refundable credit, up to a set maximum. Even if you're splitting pension income, your spouse can also claim this credit on the transferred amount. Check the current maximum on line 31400 before you file.",savings:"Federal credit on pension income",flag:"🇨🇦",priority:"high",action:"Claim on Line 31400"},
-        {title:"OAS & GIS: Are You Getting Everything?",body:`Old Age Security pays up to ~$${TAX_DATA.CA.OAS.maxMonthly65to74.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo at 65 to 74 (approximate: it re-adjusts every quarter, checked ${TAX_DATA.CA.OAS.lastVerified}). Service Canada enrols most people automatically and sends an enrolment letter around your 64th birthday. It tries to enrol you for the Guaranteed Income Supplement (GIS) the same way. Some people are not enrolled automatically and get a letter inviting them to apply instead. If no letter arrives within a month of your 64th birthday, contact Service Canada. GIS is for low-income seniors: single and under $${TAX_DATA.CA.GIS.incomeUnderSingle.toLocaleString()} a year is the single-person test.`,savings:`Up to $${TAX_DATA.CA.GIS.maxMonthlySingle.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo (GIS), if you qualify`,flag:"🇨🇦",priority:"high",action:"Apply at Service Canada"},
-      {title:"CPP Maximum: Know What You're Entitled To",body:`The maximum CPP retirement pension is $${TAX_DATA.CA.CPP_MAX_MONTHLY.value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo at age 65 (January ${TAX_DATA.CA.RRSP_LIMIT.year}). Your actual amount depends on contributions history. You can check your CPP Statement of Contributions at My Service Canada Account.`,savings:`Up to $${TAX_DATA.CA.CPP_MAX_MONTHLY.value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo`,flag:"🇨🇦",priority:"medium",action:"Check My Service Canada"},
-        {title:"Medical Expense Tax Credit",body:`Seniors often have significant medical costs: prescriptions, dental, vision, hearing aids, home care. Expenses over 3% of your net income (or $${TAX_DATA.CA.INDEXED_2026.medicalExpenseCeiling.toLocaleString()} for ${TAX_DATA.CA.INDEXED_2026.taxYear}, whichever is less) are claimable. Keep every receipt.`,savings:`${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% of qualifying expenses`,flag:"🇨🇦",priority:"high",action:"Gather Medical Receipts"},
-        {title:"Home Accessibility Tax Credit",body:`Making your home safer and more accessible? Renovations like grab bars, wheelchair ramps, or walk-in tubs qualify for a ${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% federal credit on up to $${TAX_DATA.CA.HOME_ACCESSIBILITY_MAX.value.toLocaleString()} of expenses per year.`,savings:`Up to $${creditWorth(TAX_DATA.CA.HOME_ACCESSIBILITY_MAX.value).toLocaleString()}`,flag:"🇨🇦",priority:"medium",action:"Keep Renovation Receipts"}
+        {title:"Age Amount Credit",body:`If you're 65 or older, you can claim the Age Amount, a federal non-refundable tax credit on up to $${TAX_DATA.CA.INDEXED_2026.ageAmount.toLocaleString()} for ${TAX_DATA.CA.INDEXED_2026.taxYear}. It reduces once your net income passes $${TAX_DATA.CA.INDEXED_2026.ageAmountThreshold.toLocaleString()}, and a reduced amount can still be claimed.`,savings:`Up to $${creditWorth(TAX_DATA.CA.INDEXED_2026.ageAmount).toLocaleString()} in tax saved`,flag:"🇨🇦",priority:"high",action:"Line 30100"},
+        {title:"Pension Income Splitting",body:`If you receive eligible pension income (RPP, RRIF, annuity), you can split up to ${TAX_DATA.CA.PENSION_SPLIT_MAX.pct}% with your spouse (${taxCite(TAX_DATA.CA.PENSION_SPLIT_MAX)}). If your spouse is in a lower tax bracket, this can lower your household's total tax.`,savings:"Depends on the tax bracket gap",flag:"🇨🇦",priority:"high",action:"Form T1032"},
+        {title:"Pension Income Tax Credit",body:"Eligible pension income qualifies for a federal non-refundable credit, up to a set maximum. Even if you're splitting pension income, your spouse can also claim this credit on the transferred amount. Check the current maximum on line 31400 before you file.",savings:"Federal credit on pension income",flag:"🇨🇦",priority:"high",action:"Line 31400"},
+        {title:"OAS & GIS: Are You Getting Everything?",body:`Old Age Security pays up to ~$${TAX_DATA.CA.OAS.maxMonthly65to74.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo at 65 to 74 (approximate: it re-adjusts every quarter, checked ${TAX_DATA.CA.OAS.lastVerified}). Service Canada enrols most people automatically and sends an enrolment letter around your 64th birthday. It tries to enrol you for the Guaranteed Income Supplement (GIS) the same way. Some people are not enrolled automatically and get a letter inviting them to apply instead. If no letter arrives within a month of your 64th birthday, contact Service Canada. GIS is for low-income seniors: single and under $${TAX_DATA.CA.GIS.incomeUnderSingle.toLocaleString()} a year is the single-person test.`,savings:`Up to $${TAX_DATA.CA.GIS.maxMonthlySingle.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo (GIS), if you qualify`,flag:"🇨🇦",priority:"high",action:"Service Canada"},
+      {title:"CPP Maximum: Know What You're Entitled To",body:`The maximum CPP retirement pension is $${TAX_DATA.CA.CPP_MAX_MONTHLY.value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo at age 65 (January ${TAX_DATA.CA.RRSP_LIMIT.year}). Your actual amount depends on contributions history. You can check your CPP Statement of Contributions at My Service Canada Account.`,savings:`Up to $${TAX_DATA.CA.CPP_MAX_MONTHLY.value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}/mo`,flag:"🇨🇦",priority:"medium",action:"My Service Canada Account"},
+        {title:"Medical Expense Tax Credit",body:`Seniors often have significant medical costs: prescriptions, dental, vision, hearing aids, home care. Expenses over ${TAX_DATA.CA.MEDICAL_NET_INCOME_PCT.pct}% of your net income (or $${TAX_DATA.CA.INDEXED_2026.medicalExpenseCeiling.toLocaleString()} for ${TAX_DATA.CA.INDEXED_2026.taxYear}, whichever is less) are claimable. Receipts support the claim.`,savings:`${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% of qualifying expenses`,flag:"🇨🇦",priority:"high",action:"Lines 33099 and 33199"},
+        {title:"Home Accessibility Tax Credit",body:`Making your home safer and more accessible? Renovations like grab bars, wheelchair ramps, or walk-in tubs qualify for a ${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% federal credit on up to $${TAX_DATA.CA.HOME_ACCESSIBILITY_MAX.value.toLocaleString()} of expenses per year.`,savings:`Up to $${creditWorth(TAX_DATA.CA.HOME_ACCESSIBILITY_MAX.value).toLocaleString()}`,flag:"🇨🇦",priority:"medium",action:"Line 31285"}
       );
     }
     if (country === "US") {
       tips.unshift(
-        {title:"Social Security Taxation: Know Your Threshold",body:"Up to 85% of Social Security benefits may be taxable depending on your 'combined income'. If you're near the threshold, strategic Roth conversions or timing of other income can reduce how much gets taxed.",savings:"Potentially thousands",flag:"🇺🇸",priority:"high",action:"Calculate Combined Income"},
-        {title:"Higher Standard Deduction at 65+",body:"Americans 65 and older get an additional standard deduction ($1,950 single / $1,550 married per qualifying spouse in 2024) on top of the regular deduction. No action needed. It applies automatically when you file.",savings:"$1,550 to $3,900 extra deduction",flag:"🇺🇸",priority:"high",action:"File Taxes: Applied Automatically"},
-        {title:"Credit for the Elderly or Disabled",body:"Low-income seniors (under $17,500 single) may qualify for a tax credit of $3,750 to $7,500. Often overlooked because Social Security recipients don't expect to owe tax, but this is a direct credit against taxes owed.",savings:"Up to $7,500",flag:"🇺🇸",priority:"high",action:"Check Schedule R"},
-        {title:"Required Minimum Distributions (RMDs)",body:"At age 73, you must begin taking RMDs from traditional IRAs and 401(k)s. Missing an RMD triggers a 25% penalty on the missed amount. Plan withdrawals carefully. Roth IRAs have no RMD requirement.",savings:"Avoid 25% penalty",flag:"🇺🇸",priority:"high",action:"Calculate Your RMD"},
-        {title:"Qualified Charitable Distribution (QCD)",body:"If you're 70½ or older, you can transfer up to $105,000/year directly from your IRA to charity. This counts toward your RMD and is excluded from taxable income. Better than donating cash.",savings:"Up to $105,000 excluded",flag:"🇺🇸",priority:"medium",action:"Contact Your IRA Custodian"}
+        {title:"Social Security Taxation: Know Your Threshold",body:`Up to ${TAX_DATA.US.SS_TAXABLE_MAX.pct}% of Social Security benefits may be taxable depending on your 'combined income' (${taxCite(TAX_DATA.US.SS_TAXABLE_MAX)}). If you're near the threshold, Roth conversions or the timing of other income can change how much gets taxed.`,savings:"Depends on combined income",flag:"🇺🇸",priority:"high",action:"Details: irs.gov"},
+        {title:"Higher Standard Deduction at 65+",body:`Americans 65 and older get an additional standard deduction on top of the regular one: ${usd(TAX_DATA.US.ADDITIONAL_STD_65.unmarried)} if unmarried, ${usd(TAX_DATA.US.ADDITIONAL_STD_65.married)} for each qualifying spouse if married (${taxCite(TAX_DATA.US.ADDITIONAL_STD_65)}). From ${TAX_DATA.US.SENIOR_DEDUCTION.firstYear} through ${TAX_DATA.US.SENIOR_DEDUCTION.lastYear} there is also a senior deduction of ${usd(TAX_DATA.US.SENIOR_DEDUCTION.perPerson)} per person 65 or older, phasing out above ${usd(TAX_DATA.US.SENIOR_DEDUCTION.phaseStartSingle)} of modified adjusted gross income (${usd(TAX_DATA.US.SENIOR_DEDUCTION.phaseStartJoint)} joint) (${taxCite(TAX_DATA.US.SENIOR_DEDUCTION)}). The additional standard deduction applies when you file.`,savings:`${usd(TAX_DATA.US.ADDITIONAL_STD_65.married)} to ${usd(TAX_DATA.US.ADDITIONAL_STD_65.unmarried)} extra per person (${taxCite(TAX_DATA.US.ADDITIONAL_STD_65)})`,flag:"🇺🇸",priority:"high",action:"Applied when you file"},
+        {title:"Credit for the Elderly or Disabled",body:`Seniors on a low income may qualify for this credit. A single filer with adjusted gross income of ${usd(TAX_DATA.US.SCHEDULE_R.agiLimitSingle)} or more cannot take it. The credit is figured from an initial amount of ${usd(TAX_DATA.US.SCHEDULE_R.initialMFS)}, ${usd(TAX_DATA.US.SCHEDULE_R.initialSingle)} or ${usd(TAX_DATA.US.SCHEDULE_R.initialJointBoth)} depending on filing status (${taxCite(TAX_DATA.US.SCHEDULE_R)} instructions). Check the current amounts on IRS.gov.`,savings:"Credit against tax owed",flag:"🇺🇸",priority:"high",action:"Schedule R"},
+        {title:"Required Minimum Distributions (RMDs)",body:`From age ${TAX_DATA.US.RMD.startAge}, traditional IRAs and 401(k)s require minimum distributions each year. A missed RMD can bring an excise tax of ${TAX_DATA.US.RMD.exciseTaxPct}% of the amount, ${TAX_DATA.US.RMD.correctedPct}% if corrected in time (${taxCite(TAX_DATA.US.RMD)}). Roth IRAs have no RMD requirement for the owner.`,savings:`${TAX_DATA.US.RMD.exciseTaxPct}% excise tax on a missed RMD`,flag:"🇺🇸",priority:"high",action:"Details: irs.gov"},
+        {title:"Qualified Charitable Distribution (QCD)",body:`If you're ${TAX_DATA.US.QCD_LIMIT.minAge} or older, you can transfer up to ${usd(TAX_DATA.US.QCD_LIMIT.value)} a year directly from your IRA to charity (${taxCite(TAX_DATA.US.QCD_LIMIT)}). It counts toward your RMD and is excluded from taxable income.`,savings:`Up to ${usd(TAX_DATA.US.QCD_LIMIT.value)} excluded (${taxCite(TAX_DATA.US.QCD_LIMIT)})`,flag:"🇺🇸",priority:"medium",action:"Your IRA custodian"}
       );
     }
   }
@@ -394,16 +411,16 @@ function getPersonalizedTaxCredits(profile) {
   if (hasStage("selfemployed", "contractor")) {
     if (country === "CA") {
       tips.push(
-        {title:"Business Expenses: What You Can Actually Claim",body:"Vehicle (business km %), phone (business %), internet, software, accounting fees, professional dues, advertising, and meals (50%). Every legitimate expense reduces your taxable income dollar for dollar.",savings:"Varies: often $3,000 to $15,000",flag:"🇨🇦",priority:"high",action:"Track All Receipts"},
-        {title:"HST Registration Threshold",body:`Once your revenue exceeds $${TAX_DATA.CA.GSTHST_SMALL_SUPPLIER.value.toLocaleString()} in a calendar quarter or over 4 quarters, you must register for HST. Register voluntarily earlier to claim Input Tax Credits on business purchases.`,savings:"Claim back HST paid",flag:"🇨🇦",priority:"high",action:"Register on CRA Business"},
-        {title:"CPP Contributions: Both Sides",body:"As self-employed, you pay both the employee (5.95%) and employer (5.95%) portions of CPP on net self-employment income. The employer portion is deductible. CPP2 contributions also apply above the second ceiling.",savings:"Employer portion is deductible",flag:"🇨🇦",priority:"high",action:"See Schedule 8"}
+        {title:"Business Expenses: What You Can Actually Claim",body:`Vehicle (business km %), phone (business %), internet, software, accounting fees, professional dues, advertising, and meals (${TAX_DATA.CA.MEALS_DEDUCTIBLE.pct}%, ${taxCite(TAX_DATA.CA.MEALS_DEDUCTIBLE)}). Every legitimate expense reduces your taxable income dollar for dollar.`,savings:"Varies",flag:"🇨🇦",priority:"high",action:"Form T2125"},
+        {title:"HST Registration Threshold",body:`Once your revenue exceeds $${TAX_DATA.CA.GSTHST_SMALL_SUPPLIER.value.toLocaleString()} in a calendar quarter or over 4 quarters, HST registration is required. A business that registers voluntarily before then can claim Input Tax Credits on its purchases.`,savings:"Input Tax Credits on HST paid",flag:"🇨🇦",priority:"high",action:"CRA Business Registration"},
+        {title:"CPP Contributions: Both Sides",body:`As self-employed, you pay both the employee (${TAX_DATA.CA.CPP_RATES.employeePct}%) and employer (${TAX_DATA.CA.CPP_RATES.employerPct}%) portions of CPP on net self-employment income, ${TAX_DATA.CA.CPP_RATES.selfEmployedPct}% in all (${taxCite(TAX_DATA.CA.CPP_RATES)}). The employer portion is deductible. CPP2 contributions also apply above the second ceiling.`,savings:"Employer portion is deductible",flag:"🇨🇦",priority:"high",action:"Schedule 8"}
       );
     }
     if (country === "US") {
       tips.push(
-        {title:"Self-Employment Tax Deduction",body:"You pay 15.3% self-employment tax on net earnings, but you can deduct half of it from your gross income. This reduces your taxable income before the standard deduction, often worth $1,000 to $4,000.",savings:"Half of SE tax deducted",flag:"🇺🇸",priority:"high",action:"See Schedule SE"},
-        {title:"Qualified Business Income (QBI) Deduction",body:"If you're a sole proprietor, partnership, or S-corp, you may deduct up to 20% of qualified business income from your taxable income. One of the largest deductions available to self-employed people.",savings:"Up to 20% of net income",flag:"🇺🇸",priority:"high",action:"Check Form 8995"},
-        {title:"SEP-IRA or Solo 401(k)",body:"Self-employed? You can contribute up to 25% of net self-employment income to a SEP-IRA (max $69,000 in 2024), fully deductible. Solo 401(k) allows even higher contributions plus a Roth option.",savings:"Up to $69,000/yr",flag:"🇺🇸",priority:"high",action:"Open SEP-IRA or Solo 401k"}
+        {title:"Self-Employment Tax Deduction",body:`You pay ${TAX_DATA.US.SE_TAX.ratePct}% self-employment tax on net earnings, and you can deduct half of it from your gross income (${taxCite(TAX_DATA.US.SE_TAX)}). This reduces your taxable income before the standard deduction.`,savings:"Half of SE tax deducted",flag:"🇺🇸",priority:"high",action:"Schedule SE"},
+        {title:"Qualified Business Income (QBI) Deduction",body:`If you're a sole proprietor, partnership, or S-corp, you may deduct up to ${TAX_DATA.US.QBI.pct}% of qualified business income from your taxable income (${taxCite(TAX_DATA.US.QBI)}).`,savings:`Up to ${TAX_DATA.US.QBI.pct}% of qualified business income`,flag:"🇺🇸",priority:"high",action:"Form 8995"},
+        {title:"SEP-IRA or Solo 401(k)",body:`Self-employed? A SEP-IRA contribution is limited to the lesser of ${TAX_DATA.US.SEP_LIMIT.pctOfComp}% of compensation or ${usd(TAX_DATA.US.SEP_LIMIT.value)} (${taxCite(TAX_DATA.US.SEP_LIMIT)}), and it is deductible. A Solo 401(k) has its own limits and a Roth option.`,savings:`Up to ${usd(TAX_DATA.US.SEP_LIMIT.value)}/yr (${taxCite(TAX_DATA.US.SEP_LIMIT)})`,flag:"🇺🇸",priority:"high",action:"Details: irs.gov"}
       );
     }
   }
@@ -418,31 +435,30 @@ function getPersonalizedTaxCredits(profile) {
   if (isCouple && partnerIsSelfEmp && country === "CA") {
     tips.push({
       title: "Spousal Income Splitting: Self-Employed",
-      body: "If your partner earns income through a business, paying them a reasonable salary or dividends can split income between tax brackets, potentially saving thousands. Requires legitimate work and documentation.",
+      body: "When a partner earns through a business, a reasonable salary or dividends paid to the other partner splits income between tax brackets, which can lower total tax. It requires real work and documentation.",
       savings: "Varies by bracket gap",
       flag: "🇨🇦",
       priority: "medium",
-      action: "Talk to an accountant"
+      action: "An accountant can set this up"
     });
   }
 
   // ── ADD: Province-specific credits for all users ───────────────────────────
   if (country === "CA") {
     if (province === "ON" && !tips.find(t => t.title.includes("Trillium"))) {
-      tips.push({title:"Ontario Trillium Benefit",body:`Ontario pays three credits as one monthly payment, and what you get depends on your age, your income and what you paid in rent, property tax or energy costs. Energy and property tax credit: up to $${TAX_DATA.CA.OTB.oeptc18to64.toLocaleString()} if you are 18 to 64, up to $${TAX_DATA.CA.OTB.oeptc65plus.toLocaleString()} if you are 65 or older. Sales tax credit: up to $${TAX_DATA.CA.OTB.ostcPerPerson} for you, and the same again for a spouse and for each child under 19. Northern Ontario energy credit, if you live in the north: up to $${TAX_DATA.CA.OTB.noecSingle} single or $${TAX_DATA.CA.OTB.noecFamily} for a family. There is no single maximum. Use the calculator for your own figure.`,savings:"Depends on age, income and rent or property tax paid",flag:"🏙️ ON",priority:"medium",action:"Apply with your return"});
+      tips.push({title:"Ontario Trillium Benefit",body:`Ontario pays three credits as one monthly payment, and what you get depends on your age, your income and what you paid in rent, property tax or energy costs. Energy and property tax credit: up to $${TAX_DATA.CA.OTB.oeptc18to64.toLocaleString()} if you are 18 to 64, up to $${TAX_DATA.CA.OTB.oeptc65plus.toLocaleString()} if you are 65 or older. Sales tax credit: up to $${TAX_DATA.CA.OTB.ostcPerPerson} for you, and the same again for a spouse and for each child under 19. Northern Ontario energy credit, if you live in the north: up to $${TAX_DATA.CA.OTB.noecSingle} single or $${TAX_DATA.CA.OTB.noecFamily} for a family. There is no single maximum. The calculator shows your own figure.`,savings:"Depends on age, income and rent or property tax paid",flag:"🏙️ ON",priority:"medium",action:"With your tax return"});
     }
     if (province === "QC") {
       tips.push(
-        {title:"Quebec Solidarity Tax Credit",body:"Quebec's refundable solidarity tax credit combines housing, QST, and northern village components. Apply on your Quebec TP-1 return. Many Quebecers are eligible and never claim it. Check the current amounts on Revenu Québec before you count on a figure.",savings:"Refundable Quebec credit",flag:"🏙️ QC",priority:"high",action:"Claim on TP-1 Return"},
-        {title:"Quebec Child Assistance Payment",body:"Quebec provides a refundable tax credit for families with children, separate from the federal CCB. Amounts depend on income and number of children, paid quarterly.",savings:"Varies by family",flag:"🏙️ QC",priority:"high",action:"Apply via Revenu Québec"}
+        {title:"Quebec Solidarity Tax Credit",body:"Quebec's refundable solidarity tax credit combines housing, QST, and northern village components. It is claimed on the Quebec TP-1 return. Check the current amounts on Revenu Québec.",savings:"Refundable Quebec credit",flag:"🏙️ QC",priority:"high",action:"TP-1 return"},
+        {title:"Quebec Child Assistance Payment",body:"Quebec provides a refundable tax credit for families with children, separate from the federal CCB. Amounts depend on income and number of children, paid quarterly.",savings:"Varies by family",flag:"🏙️ QC",priority:"high",action:"Revenu Québec"}
       );
     }
     if (province === "AB") {
-      tips.push({title:"Alberta Child and Family Benefit",body:"Alberta does charge provincial income tax, but at a low 8% on your first $61,200 (2026), rising to 15% over $370,220, with the highest basic personal amount of any province ($22,769 tax-free). Families with children under 18 can also claim the refundable Alberta Child and Family Benefit, paid tax-free every quarter.",savings:"Up to $750/yr (8% bracket)",flag:"🏙️ AB",priority:"medium",action:"Claim the ACFB"});
+      tips.push({title:"Alberta Child and Family Benefit",body:`Alberta's income tax starts at ${TAX_DATA.CA.AB_TAX.lowRatePct}% on your first ${usd(TAX_DATA.CA.AB_TAX.lowBracketTop)} and reaches ${TAX_DATA.CA.AB_TAX.topRatePct}% over ${usd(TAX_DATA.CA.AB_TAX.topBracketOver)}, with a basic personal amount of ${usd(TAX_DATA.CA.AB_TAX.basicPersonalAmount)} (${taxCite(TAX_DATA.CA.AB_TAX)}). Families with children under 18 can also get the Alberta Child and Family Benefit, paid tax-free every quarter. For one child the base part is up to ${usd(TAX_DATA.CA.AB_ACFB.baseOneChild)} and the working part up to ${usd(TAX_DATA.CA.AB_ACFB.workingOneChild)}; they reduce once family net income passes ${usd(TAX_DATA.CA.AB_ACFB.baseReducesOver)} and ${usd(TAX_DATA.CA.AB_ACFB.workingReducesOver)} (${taxCite(TAX_DATA.CA.AB_ACFB)}).`,savings:`One child: up to ${usd(TAX_DATA.CA.AB_ACFB.baseOneChild)} + ${usd(TAX_DATA.CA.AB_ACFB.workingOneChild)} = ${usd(TAX_DATA.CA.AB_ACFB.baseOneChild + TAX_DATA.CA.AB_ACFB.workingOneChild)}/yr`,flag:"🏙️ AB",priority:"medium",action:"Details: alberta.ca"});
     }
-    if (province === "BC") {
-      tips.push({title:"BC Climate Action Tax Credit",body:"BC residents with moderate incomes receive a quarterly climate action tax credit, automatic when you file your taxes. Single individuals can receive up to $447/year.",savings:"Up to $447/yr",flag:"🏙️ BC",priority:"medium",action:"File Your Taxes"});
-    }
+    // The BC Climate Action Tax Credit was removed here: BC ended it, and April 2025 was the final payment
+    // (gov.bc.ca, checked 2026-10-01).
   }
 
   // ── Deduplicate by title ──────────────────────────────────────────────────
@@ -977,6 +993,13 @@ function Icon({ id, size=20, color="currentColor", strokeWidth=1.5, style={} }){
 // ──────────────────────────────────────────────────────────────────────────────
 
 
+// How the spare amount was worked out, in words (prompt 3e). The arithmetic is shown in full; the
+// rounding is down to the dollar, so "25% of $973" reads $243, not $243.25.
+function spareWorking(spare, safe) {
+  const exact = Math.round(safe * 25) / 100;
+  return `A quarter of your ${formatMoney(safe)} safe to spend: 25% × ${formatMoney(safe)} = ${formatMoney(exact, { cents: exact !== Math.floor(exact) })}${exact !== spare ? `, rounded down to ${formatMoney(spare)}` : ""}. Flourish does not assign it to anything.`;
+}
+
 // ── DECISION ENGINE ─────────────────────────────────────────────────────────────
 function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, dailyPace, setScreen}) {
   const bills = data.bills || [];
@@ -989,11 +1012,11 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
   const daysToPayday = daysToNextDepositFor(data, todayD);
   // Consolidation 1: the suggested daily figure is owned by suggestedDailyView and passed in as dailyPace,
   // so Today and Decisions show the SAME number (this card used to divide safe by a 14-floored divisor here).
-  // The same debt list What-If and Meet model (a bank-linked card with its bank's APR and minimum).
-  const topDebt = selectHighestRateDebt(buildDebtListForSimulator(debts, data.liabilities));
-  const extraPayment = 150;
-  const monthsSaved = computeDebtPayoffImpact(topDebt, extraPayment);
-  const safeToMove = computeSavingsOpportunity(safe);
+  // Prompt 3e: THE spare amount (spareUntilDeposit), the one figure the Money Plan and Meet show too.
+  // It is shown with how it was worked out and is never assigned to savings, a debt or a goal; the
+  // "$150 more a month on <debt>" card is gone with the rest of the suggested amounts.
+  const spareInfo = spareUntilDeposit(data, todayD);
+  const safeToMove = spareInfo.spare;
   // The one tight-cash rule, the call Today's Money Plan makes too. When it fires, the cards below do
   // not also suggest moving money to savings or paying extra on a debt.
   const lowCash = cashIsTight(data, todayD).tight;
@@ -1019,7 +1042,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       icon: "⚠️",
       color: C.orange,
       title: "Cash is running tight",
-      detail: `Your safe to spend (${formatMoney(safe)}) is below 15% of your monthly income (${formatMoney(Math.round(monthlyIncome))}). Hold non-essential spending for ${daysToPayday != null ? daysToPayday : "a few"} days.`,
+      detail: `Your safe to spend (${formatMoney(safe)}) is below 15% of your monthly income (${formatMoney(Math.round(monthlyIncome))}). ${daysToPayday != null ? `Your next deposit is ${daysToPayday === 1 ? "tomorrow" : `in ${daysToPayday} days`}.` : "The date of your next deposit isn't known yet."}`,
       action: "See Plan", screen: "plan"
     });
   }
@@ -1028,19 +1051,9 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       type: "savings",
       icon: "💚",
       color: C.green,
-      title: `Move $${safeToMove} to savings`,
-      detail: "You can do this now and still stay safe until your next deposit.",
+      title: `$${safeToMove} spare until your next deposit`,
+      detail: spareWorking(safeToMove, spareInfo.safe),
       action: "See Goals", screen: "goals"
-    });
-  }
-  if (!lowCash && topDebt && monthsSaved > 0) {
-    decisions.push({
-      type: "debt",
-      icon: "🎯",
-      color: C.purple,
-      title: `Pay $${extraPayment} extra on ${topDebt.name}`,
-      detail: `Cuts ${monthsSaved} month${monthsSaved!==1?"s":""} off your payoff date. Worth more than any subscription cancel.`,
-      action: "Debt Plan", screen: "goals"
     });
   }
 
@@ -1051,7 +1064,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       <div style={row({justifyContent:"space-between",marginBottom:GAP.textToControl})}>
         <div style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:7,minWidth:0}}>
           <Icon id="zap" size={15} color={C.goldBright} strokeWidth={2}/>
-          What to do today
+          Your numbers today
         </div>
         <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Worked out by Flourish</span>
       </div>
@@ -1085,7 +1098,6 @@ function AutopilotCard({data, setScreen}) {
   const [showDrillDown, setShowDrillDown] = useState(false);
   const plan = AutopilotEngine.generate(data, getCatOv());
   const today = new Date().toLocaleDateString("en-CA", {weekday:"long", month:"long", day:"numeric"});
-  const hasActions = plan.savingsTransfer > 0 || plan.debtPayment > 0 || plan.goalContribution > 0;
 
   // Build overdraft drill-down: which specific bills cause the shortfall
   const { forecast, overdraftRisk } = ForecastEngine.generate(data, 14);
@@ -1118,25 +1130,23 @@ function AutopilotCard({data, setScreen}) {
       icon:"💡", label:"Safe to spend per day", amount:formatMoney(plan.dailySpendLimit),
       color:C.green, detail:`for the next ${plan.daysLeft} day${plan.daysLeft!==1?"s":""}`,
     },
-    plan.savingsTransfer > 0 && {
-      icon:"🐷", label:`Move to ${plan.savingsTarget}`, amount:formatMoney(plan.savingsTransfer),
-      color:C.teal, detail:"builds your safety net",
-    },
-    plan.debtPayment > 0 && plan.debtTarget && {
-      icon:"🎯", label:`Extra toward ${plan.debtTarget.name}`, amount:formatMoney(plan.debtPayment),
-      color:C.purple, detail:`saves on ${plan.debtTarget.rate}% interest`,
-    },
-    plan.goalContribution > 0 && plan.goalTarget && {
-      icon:"🌱", label:plan.goalTarget.name||"Goal contribution", amount:formatMoney(plan.goalContribution),
-      color:C.gold, detail:"progress toward your goal",
-    },
-    plan.buffer > 100 && {
-      // NOT "buffer" -- that word belongs to the "Spending buffer" line inside safe-to-spend.
-      // This is the residual after today's plan allocates everything: a different quantity.
-      icon:"🔒", label:"Left over", amount:formatMoney(plan.buffer||0),
-      color:C.muted, detail:"after bills, debt minimums and today's plan",
+    // Prompt 3e: the spare amount as a fact (spareUntilDeposit, the figure Decisions and Meet show),
+    // with how it was worked out. It is not split: the old 40% savings / 40% debt / 50% goal amounts
+    // are gone, and so is "Left over" (it was net of those amounts, and read as more money free).
+    {
+      icon:"🐷", label:"Spare until your next deposit", amount:formatMoney(plan.spare),
+      color:C.teal, detail: plan.spare > 0 ? spareWorking(plan.spare, plan.spareFrom)
+        : plan.spareReason === "tight" ? "Nothing: safe to spend is below 15% of your monthly income."
+        : plan.spareReason === "overdraft" ? "Nothing: the forecast shows an overdraft in the next 30 days."
+        : `Nothing: a quarter of your ${formatMoney(plan.spareFrom)} safe to spend is $0.`,
     },
   ].filter(Boolean);
+  // The household's own goals and debts, by name, with their own balances. No amount is suggested
+  // for any of them.
+  const ownItems = [
+    ...(plan.debtsOwed||[]).map(d => ({ icon:"💳", label:d.name, amount:formatMoney(d.balance), detail:`owed${d.rate ? `, ${d.rate}%${d.rateEstimated ? " (assumed rate)" : ""}` : ""}` })),
+    ...(plan.goalsSaved||[]).map(g => ({ icon:"🌱", label:g.name, amount:formatMoney(g.saved), detail: g.target > 0 ? `saved of ${formatMoney(g.target)}` : "saved" })),
+  ];
 
   const autoBg = C.isDark
     ? `linear-gradient(155deg,#061510 0%,#0B1E14 50%,#080D10 100%)`
@@ -1211,7 +1221,7 @@ function AutopilotCard({data, setScreen}) {
             ))}
           </div>
           <div style={{marginTop:10,padding:"8px 10px",background:"rgba(255,79,106,0.08)",borderRadius:10,color:C.redBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,textAlign:"center"}}>
-            💡 Move money before these hit to avoid NSF fees ($45 to $48 each)
+            💡 A payment your balance can't cover can bring a bank fee.
           </div>
         </div>
       )}
@@ -1231,11 +1241,28 @@ function AutopilotCard({data, setScreen}) {
           </div>
         ))}
       </div>
+      {ownItems.length>0&&(
+        <div style={{margin:"0 20px",padding:"12px 0 4px",borderTop:`1px solid ${autoDivider}`}}>
+          <div style={{color:autoMuted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:SPACE.sm}}>Your goals and debts</div>
+          {ownItems.map((item,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:SPACE.md,paddingBottom:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:SPACE.sm,minWidth:0}}>
+                <span style={{fontSize:16,flexShrink:0}}>{item.icon}</span>
+                <div style={{minWidth:0}}>
+                  <div style={{color:autoText,fontWeight:600,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.label}</div>
+                  <div style={{color:autoSubtle,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.detail}</div>
+                </div>
+              </div>
+              <div style={{color:autoText,fontWeight:700,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0}}>{item.amount}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
-      {/* Weekly adherence bar */}
+      {/* Spending consistency bar (spendingStability; it measured no plan) */}
       <div style={{margin:"0 20px",padding:"12px 0 16px",borderTop:`1px solid ${autoDivider}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-          <span style={{color:autoMuted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Plan adherence</span>
+          <span style={{color:autoMuted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Spending consistency</span>
           <span style={{color:plan.adherence>=75?C.greenBright:plan.adherence>=50?C.goldBright:C.redBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800}}>{plan.adherence}%</span>
         </div>
         <div style={{height:4,borderRadius:99,background:autoTrack,overflow:"hidden"}}>
@@ -1664,6 +1691,20 @@ function DailySpendSheet({ data, setAppData, onClose }) {
   );
 }
 
+// The Time Machine's low-balance line (prompt 3d): the facts, from the forecast it draws. It used to
+// say "Hold non-essential spending until after this date". Now it names the lowest balance between this
+// day and the next deposit, and when that deposit lands.
+function lowStretchLine(forecast, ev) {
+  const fmtD = (d) => new Date(d).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
+  const list = forecast || [];
+  const pay = list.find(f => f.day > ev.day && f.isPayday);
+  const stretch = list.filter(f => f.day >= ev.day && (!pay || f.day < pay.day));
+  const low = stretch.reduce((m, f) => (f.balance < m.balance ? f : m), ev);
+  return pay
+    ? `Before your next deposit, your balance is lowest on ${fmtD(low.date)}, at ${formatMoney(low.balance)}. The deposit lands on ${fmtD(pay.date)}.`
+    : `Your balance is lowest on ${fmtD(low.date)}, at ${formatMoney(low.balance)}. No deposit is expected in the 30 days shown.`;
+}
+
 function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData}) {
   const [expanded, setExpanded] = useState(false);
   const [expandedDay, setExpandedDay] = useState(null); // day index that is drilled into
@@ -1808,8 +1849,8 @@ function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData
                     {isLow&&(
                       <div style={{marginTop:8,background:baseBalance<0?C.red+"18":C.gold+"11",borderRadius:8,padding:"7px 10px",color:baseBalance<0?C.redBright:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
                         {baseBalance<0
-                          ? "⚠ Projected overdraft: NSF fees $45 to $48 each. Transfer funds before this date."
-                          : "⚠ Balance near safety floor. Hold non-essential spending until after this date."}
+                          ? "⚠ Projected overdraft: a payment your balance can't cover can bring a bank fee."
+                          : lowStretchLine(forecast, ev)}
                       </div>
                     )}
                   </div>
@@ -1940,7 +1981,63 @@ function investVerdictReason({ isLumpSum, parsedAmount, initialPrincipal, monthl
       : `Investing $${monthlyContribution}/month at an assumed 7% a year, not a prediction, for 30 years grows to $${Math.round(result.finalValue).toLocaleString()}, with $${Math.round(result.totalGrowth).toLocaleString()} of that being pure growth.`;
 }
 
-function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onScenarioChange, onUpgrade}) {
+// The debt What-If's one sentence, from the payoff engine's own dates and totals (prompt 3c). It says
+// what changes, or that nothing does, and never whether that is good.
+const _payoffMonth = (iso) => { const [y, m] = String(iso || "").split("-").map(Number); return y && m ? new Date(y, m - 1, 1).toLocaleDateString("en-CA", { month: "long", year: "numeric" }) : ""; };
+function debtResultSentence(r, extraPayment, currentPayment) {
+  const x = formatMoney(extraPayment), b = r.baseline, a = r.boosted;
+  const fin = (v) => Number.isFinite(v);
+  if (!fin(b.monthsToPayoff) && !fin(a.monthsToPayoff))
+    return `At ${formatMoney(currentPayment)} a month, or ${x} more, the payment does not cover the interest, so the balance is not paid off.`;
+  if (!fin(b.monthsToPayoff))
+    return `At the current ${formatMoney(currentPayment)} a month the balance is not paid off. Paying ${x} more a month pays it off by ${_payoffMonth(a.payoffDate)}, with total interest of ${formatMoney(a.totalInterest, { cents: true })}.`;
+  if (b.monthsToPayoff === a.monthsToPayoff && b.totalInterest === a.totalInterest)
+    return `Paying ${x} more a month changes nothing: the payoff date stays ${_payoffMonth(b.payoffDate)} and total interest stays ${formatMoney(b.totalInterest, { cents: true })}.`;
+  const dates = b.monthsToPayoff === a.monthsToPayoff ? `keeps the payoff date at ${_payoffMonth(b.payoffDate)}` : `moves the payoff date from ${_payoffMonth(b.payoffDate)} to ${_payoffMonth(a.payoffDate)}`;
+  return `Paying ${x} more a month ${dates} and changes total interest from ${formatMoney(b.totalInterest, { cents: true })} to ${formatMoney(a.totalInterest, { cents: true })}.`;
+}
+
+// What-If's debt scenario for one debt (the one payoff model Decisions and Meet use too). Kept as a
+// function so a rate the household enters in place of an assumed one recomputes the same result
+// without running (and counting) another simulation (prompt 3b).
+function debtScenarioResult(targetDebt, extraPayment, debts) {
+  const balance = targetDebt.balance;
+  const apr = targetDebt.rate;
+  const currentPayment = debtMinimumPayment(targetDebt);
+  // Phase D9: natural-language label for the debt's type (used in fallback copy)
+  const debtTypeLabel = targetDebt.debtType === "mortgage" ? "mortgage"
+    : targetDebt.debtType === "student" ? "student loan"
+    : targetDebt.debtType === "credit_card" ? "credit card"
+    : "debt";
+  const result = simulateDebtPayoffForDebt(targetDebt, extraPayment); // the one payoff model (Decisions and Meet use it too)
+  // Sprint 4b: when the current payment never fully amortizes (payment <= monthly interest), baseline
+  // months/interest are Infinity; debtResultSentence says so in words, and the UI never renders raw Infinity.
+  return {
+    // Prompt 3c: no verdict or evaluation line. The card states what the payoff
+    // engine computed, and nothing else (debtResultSentence).
+    title: "The result",
+    scenarioType: "debt",
+    debtName: targetDebt.name || debtTypeLabel.replace(/\b\w/g, c => c.toUpperCase()),
+    debtType: targetDebt.debtType,
+    debtBalance: balance,
+    debtApr: apr,
+    debtAprEstimated: !!targetDebt.rateEstimated, // Sprint 4b: APR was a fallback, not the user's real rate
+    currentPayment,
+    extraPayment,
+    baselineMonths: result.baseline.monthsToPayoff,
+    baselineInterest: result.baseline.totalInterest,
+    boostedMonths: result.boosted.monthsToPayoff,
+    boostedInterest: result.boosted.totalInterest,
+    monthsSaved: result.monthsSaved,
+    interestSaved: result.interestSaved,
+    summary: debtResultSentence(result, extraPayment, currentPayment),
+    availableDebts: debts.map(d => ({ name: d.name, balance: d.balance, rate: d.rate, debtType: d.debtType })),
+    debtRef: targetDebt,
+  };
+}
+
+function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onScenarioChange, onUpgrade, setAppData}) {
+  const [rateDraft, setRateDraft] = useState(null); // an assumed debt rate being replaced (null = not editing)
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -1965,7 +2062,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
     // ── PAYWALL GATE (Phase 2) ───────────────────────────────────────────
     // Free tier: 3 simulations/day. Premium and beta_founder: unlimited.
     // Soft gate — show a clear message in the result card instead of an alert.
-    if (!canRunSimulation()) {
+    if (!canRunSimulation({ native: isNativeApp() })) {
       setQuery(qText);
       setResult({
         cashImpact: "tight",
@@ -1980,12 +2077,15 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
         healthScoreDelta: 0,
         healthDetail: "",
         verdict: isNativeApp() ? "Daily limit reached" : "Upgrade to continue",
-        verdictReason: isNativeApp() ? "" : "Daily simulation limit reached on the free plan.",
+        // The card shows this line; on a store app it is the limit and when it resets (it was empty).
+        verdictReason: isNativeApp()
+          ? `You've used today's ${FREE_TIER_LIMITS.simulationsPerDay} simulation${FREE_TIER_LIMITS.simulationsPerDay === 1 ? "" : "s"}. ${FREE_TIER_LIMITS.simulationsPerDay === 1 ? "It resets" : "They reset"} tomorrow.`
+          : "Daily simulation limit reached on the free plan.",
         tip: "",
       });
       return;
     }
-    recordSimulationUse();
+    recordSimulationUse({ native: isNativeApp() });
 
     setQuery(qText);
     setLoading(true);
@@ -2025,46 +2125,11 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
       }
       // Default to highest-APR debt
       const targetDebt = [...debts].sort((a,b) => b.rate - a.rate)[0];
-      const balance = targetDebt.balance;
-      const apr = targetDebt.rate;
-      const currentPayment = debtMinimumPayment(targetDebt);
-      // Phase D9: natural-language label for the debt's type (used in fallback copy)
-      const debtTypeLabel = targetDebt.debtType === "mortgage" ? "mortgage"
-        : targetDebt.debtType === "student" ? "student loan"
-        : targetDebt.debtType === "credit_card" ? "credit card"
-        : "debt";
       // Default extra payment from query (or $100/mo if none specified)
       const parsedAmount = parseAmountFromQuery(qText);
-      const extraPayment = parsedAmount > 0 && parsedAmount < currentPayment * 5 ? parsedAmount : 100;
-      const result = simulateDebtPayoffForDebt(targetDebt, extraPayment); // the one payoff model (Decisions and Meet use it too)
-      // Sprint 4b: when the current payment never fully amortizes (payment <= monthly interest),
-      // baseline months/interest are Infinity. Detect it so the verdict stays meaningful instead
-      // of implying "already optimal" (and so the UI never renders raw Infinity).
-      const baselineNever = !Number.isFinite(result.baseline.monthsToPayoff);
-      const boostedPays   = Number.isFinite(result.boosted.monthsToPayoff);
-      setResult({
-        scenarioType: "debt",
-        debtName: targetDebt.name || debtTypeLabel.replace(/\b\w/g, c => c.toUpperCase()),
-        debtType: targetDebt.debtType,
-        debtBalance: balance,
-        debtApr: apr,
-        debtAprEstimated: !!targetDebt.rateEstimated, // Sprint 4b: APR was a fallback, not the user's real rate
-        currentPayment,
-        extraPayment,
-        baselineMonths: result.baseline.monthsToPayoff,
-        baselineInterest: result.baseline.totalInterest,
-        boostedMonths: result.boosted.monthsToPayoff,
-        boostedInterest: result.boosted.totalInterest,
-        monthsSaved: result.monthsSaved,
-        interestSaved: result.interestSaved,
-        verdict: (result.monthsSaved > 0 || (baselineNever && boostedPays)) ? "Worth doing" : "No change",
-        verdictReason: baselineNever && boostedPays
-          ? `Your current payment never fully clears this debt, adding $${extraPayment}/mo pays it off in ${result.boosted.monthsToPayoff} months.`
-          : result.monthsSaved > 0
-            ? `Adding $${extraPayment}/mo clears your ${targetDebt.name || debtTypeLabel} ${result.monthsSaved} months sooner and saves $${result.interestSaved} in interest.`
-            : "Your current payment is already optimal for this debt.",
-        availableDebts: debts.map(d => ({ name: d.name, balance: d.balance, rate: d.rate, debtType: d.debtType })),
-      });
+      const currentPaymentQ = debtMinimumPayment(targetDebt);
+      const extraPayment = parsedAmount > 0 && parsedAmount < currentPaymentQ * 5 ? parsedAmount : 100;
+      setResult(debtScenarioResult(targetDebt, extraPayment, debts));
       setLoading(false);
       return;
     }
@@ -2108,8 +2173,8 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
         twentyYr:      { value: twentyYr.finalValue, growth: twentyYr.totalGrowth },
         thirtyYr:      { value: result.finalValue, growth: result.totalGrowth },
         yearByYear:    result.yearByYear,
-        verdict: "Long-term winner",
-        verdictReason: investVerdictReason({ isLumpSum, parsedAmount, initialPrincipal, monthlyContribution, result }),
+        title: "The result",
+        summary: investVerdictReason({ isLumpSum, parsedAmount, initialPrincipal, monthlyContribution, result }),
       });
       setLoading(false);
       return;
@@ -2144,12 +2209,10 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
       monthlyIncome:      cashFlowObj.monthlyIncome,
       monthlySurplus,
     });
-    const verdictObj = calculateScenarioVerdict({
-      cashImpact:       impact.cashImpact,
-      healthScoreDelta: impact.healthScoreDelta,
-      recoveryMonths:   impact.recoveryMonths,
-    });
-    const frozenSummary = summarizeScenarioForCoach(impact, verdictObj);
+    // Prompt 3c: the explanation gets the facts only (summarizeScenarioForCoach): no verdict, no cash
+    // rating ("safe", "tight", "risky"), and no health score change, a fixed -4 / -8 the health score
+    // engine never computed, so it is not shown either.
+    const factsForProse = summarizeScenarioForCoach(impact);
 
     // Step 4: Format JS-computed values to match the UI contract.
     // Granularity: "none" only for true zero-day delay. "X days" for 1-6 days.
@@ -2175,12 +2238,12 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
     const prompt = `Write plain-language explanation text for a financial scenario the Flourish app already calculated. The user said: ${safeQText}.
 
 The app's calculated results (DO NOT CHANGE THESE NUMBERS, only explain them):
-${JSON.stringify(frozenSummary, null, 2)}
+${JSON.stringify(factsForProse, null, 2)}
 
 Write a short, warm response. Return ONLY valid JSON (no markdown) with EXACTLY these fields:
-{"cashDetail":"1 sentence describing the cash impact","debtDetail":"1 sentence (use 'No direct debt change.' for cash purchases)","healthDetail":"1 sentence describing the score impact","verdictReason":"1 sentence justifying the verdict","tip":"1 sentence with an alternative if risky/tight, else empty string"}
+{"cashDetail":"1 sentence describing the cash impact","debtDetail":"1 sentence (use 'No direct debt change.' for cash purchases)"}
 
-Rules: do not invent or quote any number not in the calculated results above. Do not include cashImpact, savingsDelay, healthScoreDelta, or verdict. Those are already determined.`;
+Rules: do not invent or quote any number not in the calculated results above. State facts only: do not recommend, judge, or call the purchase safe, risky, affordable or unaffordable, and do not suggest an alternative.`;
 
     let prose = {};
     try {
@@ -2206,9 +2269,6 @@ Rules: do not invent or quote any number not in the calculated results above. Do
       prose = {
         cashDetail:    "This purchase will reduce your safe-to-spend balance.",
         debtDetail:    "No direct debt change.",
-        healthDetail:  "Your financial health score will be affected as shown.",
-        verdictReason: "Based on your current cash flow and buffer.",
-        tip:           "",
       };
     }
 
@@ -2219,14 +2279,12 @@ Rules: do not invent or quote any number not in the calculated results above. Do
       cashImpact:       impact.cashImpact,
       debtImpact:       "none",
       savingsDelay:     savingsDelayStr,
-      healthScoreDelta: impact.healthScoreDelta,
-      verdict:          verdictObj.verdict,
+      newSafeToSpend:   impact.newSafeToSpend,
+      title:            "The result",
+      summary:          `Spending ${formatMoney(impact.amount)} takes safe to spend until payday from ${formatMoney(safeToSpend)} to ${formatMoney(impact.newSafeToSpend)}.`,
       // Claude-written explanations:
       cashDetail:    prose.cashDetail    || "This purchase will reduce your safe-to-spend balance.",
       debtDetail:    prose.debtDetail    || "No direct debt change.",
-      healthDetail:  prose.healthDetail  || "Your financial health score will be affected as shown.",
-      verdictReason: prose.verdictReason || "Based on your current cash flow and buffer.",
-      tip:           prose.tip           || "",
     });
     setLoading(false);
   };
@@ -2243,31 +2301,19 @@ Rules: do not invent or quote any number not in the calculated results above. Do
   // Phase 1D: scenario-aware verdict styling. Maps each verdict (across all 3 scenario types) to a color/bg/emoji.
   const _verdictMeta = (v) => {
     switch (v) {
-      // Purchase verdicts
-      case "Go for it":           return { color: C.greenBright,  bg: C.greenDim,  emoji: "🟢" };
-      case "Proceed carefully":   return { color: C.goldBright,   bg: C.goldDim,   emoji: "🟡" };
-      case "Think twice":         return { color: C.orangeBright, bg: C.orangeDim, emoji: "🟠" };
-      case "Not recommended":     return { color: C.redBright,    bg: C.redDim,    emoji: "🔴" };
-      // Debt verdicts
-      case "Worth doing":         return { color: C.greenBright,  bg: C.greenDim,  emoji: "✨" };
-      case "No change":           return { color: C.muted,        bg: C.surface,   emoji: "➖" };
+      // Prompt 3c: no scenario verdicts. A result card is neutral and states facts; only these status
+      // cards keep a heading of their own.
       case "No debts tracked":    return { color: C.muted,        bg: C.surface,   emoji: "📋" };
-      // Invest verdict
-      case "Long-term winner":    return { color: C.greenBright,  bg: C.greenDim,  emoji: "📈" };
+      case "Daily limit reached": return { color: C.muted,        bg: C.surface,   emoji: "" };
       // Paywall
       case "Upgrade to continue": return { color: C.purple,       bg: C.purpleDim || C.surface, emoji: "🔒" };
-      default:                    return { color: C.redBright,    bg: C.redDim,    emoji: "🔴" };
+      default:                    return { color: C.cream,        bg: C.card,      emoji: "" };
     }
   };
   const verdictColor = result ? _verdictMeta(result.verdict).color : C.muted;
   const verdictBg    = result ? _verdictMeta(result.verdict).bg    : C.surface;
-  // "days" delays are minor (yellow ~), "weeks" are notable (yellow ~), "months" are major (red ✗).
-  // "none"/"safe"/"decreases" stay green ✓. "tight"/"increases" stay yellow ~. "risky" stays red ✗.
-  const _isDayDelay   = (v) => typeof v === "string" && /\bdays?\b/.test(v);
-  const _isWeekDelay  = (v) => typeof v === "string" && /\bweeks?\b/.test(v);
-  const _isMonthDelay = (v) => typeof v === "string" && /\bmonths?\b/.test(v);
-  const impactIcon  = (v) => v==="safe"||v==="none"||v==="decreases" ? "✓" : v==="tight"||v==="increases"||_isDayDelay(v)||_isWeekDelay(v) ? "~" : "✗";
-  const impactColor = (v) => v==="safe"||v==="none"||v==="decreases" ? C.greenBright : v==="tight"||v==="increases"||_isDayDelay(v)||_isWeekDelay(v) ? C.goldBright : C.redBright;
+  const cardTitle    = result ? (result.verdict || result.title) : "";
+  const cardText     = result ? (result.verdictReason || result.summary) : "";
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(6px)",zIndex:999,display:"flex",alignItems:window.innerWidth>900?"center":"flex-end",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -2320,9 +2366,9 @@ Rules: do not invent or quote any number not in the calculated results above. Do
             </div>
             {/* Verdict */}
             <div style={{background:verdictBg,border:`2px solid ${verdictColor}33`,borderRadius:20,padding:"18px 20px",textAlign:"center"}}>
-              <div style={{fontSize:36,marginBottom:6}}>{_verdictMeta(result.verdict).emoji}</div>
-              <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:verdictColor,marginBottom:6}}>{result.verdict}</div>
-              <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>{result.verdictReason}</div>
+              {_verdictMeta(result.verdict).emoji&&<div style={{fontSize:36,marginBottom:6}}>{_verdictMeta(result.verdict).emoji}</div>}
+              <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:verdictColor,marginBottom:6}}>{cardTitle}</div>
+              <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>{cardText}</div>
               {result.verdict === "Upgrade to continue" && onUpgrade && (
                 <button onClick={onUpgrade} style={{
                   marginTop:14,
@@ -2344,17 +2390,18 @@ Rules: do not invent or quote any number not in the calculated results above. Do
             {result.scenarioType === "purchase" && (
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 {[
-                  {label:"Cash Impact",    val:result.cashImpact,    detail:result.cashDetail,    icon:"💵"},
+                  // Prompt 3c: facts, not ratings. The cash tile shows safe to spend after the purchase
+                  // (it used to say "safe", "tight" or "risky"), and the health score tile is gone.
+                  {label:"Safe to spend after", val:formatMoney(result.newSafeToSpend), detail:result.cashDetail, icon:"💵"},
                   {label:"Debt Impact",    val:result.debtImpact,    detail:result.debtDetail,    icon:"💳"},
                   {label:"Savings Delay",  val:result.savingsDelay,  detail:"Impact on savings goals", icon:"🐷"},
-                  {label:"Health Score",   val:result.healthScoreDelta>=0?`+${result.healthScoreDelta}`:String(result.healthScoreDelta), detail:result.healthDetail, icon:"💚"},
                 ].map((item,i)=>(
                   <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px 14px 12px"}}>
                     <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
                       <span style={{fontSize:16}}>{item.icon}</span>
                       <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{item.label}</span>
                     </div>
-                    <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,color:i===3?(result.healthScoreDelta>=0?C.greenBright:C.redBright):impactColor(item.val),marginBottom:4}}>{i===3?(result.healthScoreDelta>=0?`+${result.healthScoreDelta}`:`${result.healthScoreDelta}`)+" pts":impactIcon(item.val)+" "+item.val}</div>
+                    <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,color:C.cream,marginBottom:4}}>{item.val}</div>
                     <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>{item.detail}</div>
                   </div>
                 ))}
@@ -2367,7 +2414,33 @@ Rules: do not invent or quote any number not in the calculated results above. Do
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"12px 14px"}}>
                   <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>Applied to</div>
                   <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,color:C.cream}}>{result.debtName}</div>
-                  <div style={{color:C.muted,fontSize:13,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${result.debtBalance.toFixed(2)} @ {result.debtApr}% APR{result.debtAprEstimated ? " (est.)" : ""} · ${result.currentPayment.toFixed(0)}/mo current payment</div>
+                  <div style={{color:C.muted,fontSize:13,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${result.debtBalance.toFixed(2)} @ {result.debtApr}% APR · ${result.currentPayment.toFixed(0)}/mo current payment</div>
+                  {/* Prompt 3b: an assumed rate is labelled as one, and the household can enter theirs. Saving it
+                      recomputes this result with the same model, without counting another simulation. */}
+                  {result.debtAprEstimated && (rateDraft===null
+                    ? <button onClick={()=>setRateDraft("")} disabled={!setAppData}
+                        style={{marginTop:8,background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 12px",minHeight:LAYOUT.minTap,color:C.goldBright,fontSize:13,fontWeight:700,cursor:setAppData?"pointer":"default",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                        Assumed rate, tap to enter yours
+                      </button>
+                    : (()=>{
+                        const n=Number(rateDraft); const ok=rateDraft!==""&&Number.isFinite(n)&&n>0&&n<100;
+                        const save=()=>{
+                          if(!ok||!setAppData) return;
+                          setAppData(prev=>({...prev,debts:applyDebtRate(prev.debts,result.debtRef,n)}));
+                          setResult(debtScenarioResult({...result.debtRef,rate:n,rateEstimated:false},result.extraPayment,result.availableDebts));
+                          setRateDraft(null);
+                        };
+                        return <div style={{display:"flex",gap:8,alignItems:"center",marginTop:8}}>
+                          <input type="number" inputMode="decimal" min={0} max={99} step="0.01" value={rateDraft} autoFocus aria-label="Your interest rate (APR %)"
+                            onChange={e=>setRateDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")save();if(e.key==="Escape")setRateDraft(null);}}
+                            style={{width:90,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 11px",color:C.cream,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none"}}/>
+                          <span style={{color:C.muted,fontSize:13}}>% APR</span>
+                          <button onClick={save} disabled={!ok}
+                            style={{background:ok?C.green:C.cardAlt,border:"none",borderRadius:10,padding:"10px 14px",minHeight:LAYOUT.minTap,color:ok?(C.isDark?"#041810":"#fff"):C.muted,fontSize:13,fontWeight:800,cursor:ok?"pointer":"default",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Save</button>
+                          <button onClick={()=>setRateDraft(null)}
+                            style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",minHeight:LAYOUT.minTap,color:C.mutedHi,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Cancel</button>
+                        </div>;
+                      })())}
                 </div>
                 {/* Before / After comparison */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -2403,7 +2476,7 @@ Rules: do not invent or quote any number not in the calculated results above. Do
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {/* Hero number — moderate 30y */}
                 <div style={{background:C.greenDim,border:`1px solid ${C.greenBright}`,borderRadius:16,padding:"18px 16px",textAlign:"center"}}>
-                  <div style={{color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:6}}>${result.monthlyContribution}/mo · 30y · 7%</div>
+                  <div style={{color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:6}}>${result.monthlyContribution}/mo · 30y · assumed 7%</div>
                   <div style={{fontFamily:"'Playfair Display',serif",fontSize:32,fontWeight:900,color:C.greenBright,lineHeight:1}}>${Math.round(result.thirtyYr.value).toLocaleString()}</div>
                   <div style={{color:C.muted,fontSize:13,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${Math.round(result.thirtyYr.growth).toLocaleString()} of growth on top of contributions</div>
                 </div>
@@ -2423,9 +2496,9 @@ Rules: do not invent or quote any number not in the calculated results above. Do
                 {/* Risk-tolerance comparison */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
                   {[
-                    {label:"5% conservative",  val: Math.round(result.conservative30.value), color: C.muted},
-                    {label:"7% moderate",      val: Math.round(result.moderate30.value),     color: C.cream},
-                    {label:"9% aggressive",    val: Math.round(result.aggressive30.value),   color: C.greenBright},
+                    {label:"Assumed 5%",  val: Math.round(result.conservative30.value), color: C.muted},
+                    {label:"Assumed 7%",      val: Math.round(result.moderate30.value),     color: C.cream},
+                    {label:"Assumed 9%",    val: Math.round(result.aggressive30.value),   color: C.greenBright},
                   ].map((r,i)=>(
                     <div key={i} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"10px 8px",textAlign:"center"}}>
                       <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>{r.label}</div>
@@ -2433,14 +2506,6 @@ Rules: do not invent or quote any number not in the calculated results above. Do
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-
-            {/* Tip */}
-            {result.tip && (
-              <div style={{background:C.tealDim,border:`1px solid ${C.teal}33`,borderRadius:14,padding:"12px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
-                <span style={{fontSize:18,flexShrink:0}}>💡</span>
-                <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}><strong style={{color:C.teal}}>Better option:</strong> {result.tip}</div>
               </div>
             )}
 
@@ -2498,31 +2563,31 @@ const personas = {
   convenience: {
     name:"The Convenience Spender", emoji:"🛍️", color:C.orange,
     traits:["High food & delivery spend","Values time over money","Subscription-heavy"],
-    insight:"Replacing 3 food deliveries/week with home cooking saves ~$180/mo.",
+    insight:"Food and delivery are a large share of your spending.",
     shareText:"I'm a Convenience Spender 🛍️ on @flourishmoney"
   },
   lifestyle: {
     name:"The Experience Collector", emoji:"✈️", color:C.purple,
     traits:["Prioritizes experiences","Shopping for quality","Social spending peaks"],
-    insight:"You spend richly on life. Automating $200/mo to savings before spending keeps goals on track.",
+    insight:"Experiences are where much of your money goes.",
     shareText:"I'm an Experience Collector ✈️ on @flourishmoney"
   },
   digital: {
     name:"The Digital Native", emoji:"💻", color:C.teal,
     traits:["Heavy subscription stack","Tech-first spending","Optimizes with apps"],
-    insight:"Audit your subscriptions: cancelling unused ones often frees $50-100/mo instantly.",
+    insight:"Subscriptions are a big part of your spending, and each one renews on its own.",
     shareText:"I'm a Digital Native 💻 on @flourishmoney"
   },
   mobile: {
     name:"The Commuter", emoji:"🚗", color:C.gold,
     traits:["High transport spend","Life on the go","Gas & parking costs add up"],
-    insight:"Transport is your biggest variable cost. Carpooling or transit 2x/week can save $150+/mo.",
+    insight:"Transport is your biggest variable cost.",
     shareText:"I'm a Commuter 🚗 on @flourishmoney"
   },
   builder: {
     name:"The Wealth Builder", emoji:"🏗️", color:C.green,
     traits:["Saving for retirement","Goal-oriented mindset","Building long-term wealth"],
-    insight:`You're building real wealth. Make sure your ${retirementAccountsLabel(data?.profile?.country)} are maximized each year.`,
+    insight:`Retirement saving shows up in your spending: contributions to your ${retirementAccountsLabel(data?.profile?.country)}.`,
     shareText:"I'm a Wealth Builder 🏗️ on @flourishmoney"
   }
 };
@@ -2675,7 +2740,7 @@ function WealthForecast({data}) {
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
             <span style={{background:C.purple+"22",border:`1px solid ${C.purple}44`,borderRadius:99,padding:"2px 8px",color:C.purpleBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.5}}>PROJECTED</span>
             <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-              ${startingBal.toLocaleString()} balance · ${Math.round(monthlyContrib).toLocaleString()}/mo · 7% avg return
+              ${startingBal.toLocaleString()} balance · ${Math.round(monthlyContrib).toLocaleString()}/mo · assumed 7% a year
             </span>
           </div>
           {/* Bars */}
@@ -2744,8 +2809,8 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
     opportunities.push({
       id:"subs", icon:"📱", color:C.teal,
       title:`$${subs.monthlyTotal}/mo in subscriptions`,
-      detail:`${subs.activeCount} active subscription${subs.activeCount===1?"":"s"} detected. Cancelling any you don't use frees that money every month.`,
-      action:"Review", screen:"spend", badge:"Review"
+      detail:`${subs.activeCount} active subscription${subs.activeCount===1?"":"s"} detected. Each one renews on its own.`,
+      action:"See them", screen:"spend", badge:"Spending"
     });
   }
 
@@ -2756,9 +2821,9 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
     // invented one ("a 6.5% personal loan could save ~$461/yr") is a promise nobody made.
     opportunities.push({
       id:"refi", icon:"💳", color:C.orange,
-      title:`Compare rates on ${highRateDebt.name}`,
-      detail:`At ${highRateDebt.rate}% this is expensive money. A lower-rate loan or a balance transfer could cut the interest. Compare the rate you'd actually be offered before you switch.`,
-      action:"Debt Plan", screen:"goals", tab:"sim", badge:"Compare"
+      title:`${highRateDebt.name}: ${highRateDebt.rate}% interest`,
+      detail:`Interest on this balance is charged at ${highRateDebt.rate}% a year. A balance transfer or a lower-rate loan moves a balance to a different rate, set by the lender.`,
+      action:"Debt Plan", screen:"goals", tab:"sim", badge:"Debt"
     });
   }
 
@@ -2785,8 +2850,8 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
       opportunities.push({
         id:"tax", icon:isCA?"🍁":"🦅", color:isCA?C.red:C.blue,
         title:isCA?"Tax benefits you may qualify for":"US tax credits available",
-        detail:`Worth checking for your situation: ${topCredits.join(", ")}.`,
-        action:"Tax Tips", screen:"goals", tab:"tax", badge:"Review"
+        detail:`In your tax tips: ${topCredits.join(", ")}.`,
+        action:"Tax Tips", screen:"goals", tab:"tax", badge:"Tax"
       });
     }
   }
@@ -2797,10 +2862,10 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
     const bal = parseFloat(savingsAcct.balance||0);
     if (bal > 500) opportunities.push({
       id:"hisa", icon:"🏦", color:C.gold,
-      title:`Earn more on your savings`,
-      // No rates quoted (the old "typical 0.3%" and "4%+" were invented): compare the real ones.
-      detail:`${formatMoney(Math.round(bal||0))} in savings. ${savingsAccountTerm(data.profile?.country).replace(/^a /,"A ")} may pay more than your current account. Compare the rate you earn now with what's on offer.`,
-      action:"Learn More", screen:"goals", tab:"learn", badge:"Compare"
+      title:`Your savings: ${formatMoney(Math.round(bal||0))}`,
+      // No rates quoted (the old "typical 0.3%" and "4%+" were invented), and no instruction to switch.
+      detail:`The interest it earns depends on the account's rate. Rates differ from bank to bank, and ${savingsAccountTerm(data.profile?.country)} is one kind of account.`,
+      action:"Learn More", screen:"goals", tab:"learn", badge:"Savings"
     });
   }
 
@@ -2855,7 +2920,7 @@ function MoneyWrapped({data, onClose}) {
   // Sprint C Fix 2: no trustworthy annual baseline exists (see moneyWrapped.js), so present net worth
   // as CURRENT STATE — a signed figure with no leading "+", never "changed by … this year".
   const nwHeadline = formatWrappedNetWorth(_wrappedNW);
-  const {score} = calcHealthScore(data, getCatOv());
+  const {score,basisLabel:healthBasis} = calcHealthScore(data, getCatOv());
   const year = new Date().getFullYear();
 
   const slides = [
@@ -2950,11 +3015,12 @@ function MoneyWrapped({data, onClose}) {
         <div style={{textAlign:"center"}}>
           <div style={{fontSize:52,marginBottom:12}}>🌱</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:"#fff",lineHeight:1.2,marginBottom:8}}>Here's to an even better {year+1}</div>
-          <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7,marginBottom:24}}>Keep checking in, keep improving your score, and let Flourish guide every money decision.</div>
+          <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7,marginBottom:24}}>Flourish works out the numbers and explains them. The decisions are yours.</div>
           <div style={{background:"rgba(255,255,255,0.12)",borderRadius:16,padding:"16px",marginBottom:20}}>
             <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>Your {year} number</div>
             <div style={{fontFamily:"'Playfair Display',serif",fontSize:52,fontWeight:900,color:"#6EF0A0",letterSpacing:-2}}>{score}</div>
             <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Financial Health Score</div>
+            {healthBasis&&<div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:6,lineHeight:1.5}}>{healthBasis}</div>}
           </div>
           <button onClick={()=>{if(navigator.share)navigator.share({title:"My Flourish Money Wrapped",text:`My Financial Health Score is ${score}/100. Check yours on Flourish! 🌱`,url:"https://flourishmoney.app"}).catch(()=>{});}} style={{width:"100%",background:"rgba(255,255,255,0.2)",border:"2px solid rgba(255,255,255,0.4)",color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,cursor:"pointer",marginBottom:10}}>Share My Wrapped 🔗</button>
           <button onClick={onClose} style={{width:"100%",background:"none",border:"none",color:"#ffffff66",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:13,padding:"10px",cursor:"pointer"}}>Back to Flourish</button>
@@ -3049,6 +3115,19 @@ function useWindowSize(){
   return size;
 }
 
+// Patterns: only figures from the household's own transactions this month (computeStats), each stated
+// as observed with a neutral question. No promised saving, no "studies show", no estimate Flourish did
+// not calculate; a card with no computed figure is not shown (prelaunch-copy, prompt 3).
+function patternCards(stats){
+  const fmc=(n)=>formatMoney(n,{cents:true});
+  return [
+    stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee this month",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month, ${fmc(stats.coffee)}. At the same pace for a year: 12 × ${fmc(stats.coffee)} = ${fmc(stats.coffee*12)}. Is that about what you expected?`,color:C.orange},
+    stats.delivery>0&&{id:2,icon:"package",title:"Food delivery this month",body:`${stats.deliveryCount} delivery order${stats.deliveryCount===1?"":"s"} this month, ${fmc(stats.delivery)}. Is that about what you expected?`,color:C.orange},
+    stats.subs>0&&{id:4,icon:"zap",title:"Subscriptions this month",body:`${fmc(stats.subs)} on subscriptions this month. Which of them did you use?`,color:C.purple},
+    stats.busiestTotal>0&&{id:5,icon:"chartUp",title:`${stats.busiest} is your biggest spending day`,body:`${fmc(stats.busiestTotal)} spent on ${stats.busiest}s this month, more than on any other day of the week. Does that match how your week goes?`,color:C.blue},
+  ].filter(Boolean);
+}
+
 function computeStats(txns, catOverrides={}) {
   // Skip non-expense categories AND bill categories (bills are tracked separately)
   const SKIP = new Set([...NON_SPEND_CATS, ...BILL_CATS]);
@@ -3056,20 +3135,22 @@ function computeStats(txns, catOverrides={}) {
   const getC = (t) => effCat(t, catOverrides);
   const sp = txns.filter(t=>t.amount>0 && !SKIP.has(getC(t)));
   const byCat={}, byDow={0:0,1:0,2:0,3:0,4:0,5:0,6:0};
-  let coffee=0,coffeeCount=0,delivery=0,subs=0;
+  let coffee=0,coffeeCount=0,delivery=0,deliveryCount=0,subs=0;
   sp.forEach(t=>{
     const cat = getC(t);
     byCat[cat]=(byCat[cat]||0)+t.amount;
     byDow[t.dow]=(byDow[t.dow]||0)+t.amount;
     if(t.icon==="☕"){coffee+=t.amount;coffeeCount++;}
-    if(t.name.toLowerCase().includes("uber eats")||t.name.toLowerCase().includes("doordash"))delivery+=t.amount;
+    if(t.name.toLowerCase().includes("uber eats")||t.name.toLowerCase().includes("doordash")){delivery+=t.amount;deliveryCount++;}
     if(cat==="Subscriptions")subs+=t.amount;
   });
   const totalSpent=sp.reduce((a,t)=>a+t.amount,0); // excludes non-spend + bill categories
   const topCats=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,6);
   const days=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-  const busiest=days[Object.entries(byDow).sort((a,b)=>b[1]-a[1])[0][0]];
-  return{totalSpent,topCats,busiest,coffee,coffeeCount,delivery,subs,byCat};
+  const busiestEntry=Object.entries(byDow).sort((a,b)=>b[1]-a[1])[0];
+  const busiest=days[busiestEntry[0]];
+  const busiestTotal=busiestEntry[1]||0;
+  return{totalSpent,topCats,busiest,busiestTotal,coffee,coffeeCount,delivery,deliveryCount,subs,byCat};
 }
 
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
@@ -3280,11 +3361,12 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
   const fetchInsight = async () => {
     setLoading(true);
     const txns = (data.transactions || []).slice(0, 15).map(t=>`${sanitizeField(t.name||t.merchant||"Purchase",80)} $${Math.abs(parseFloat(t.amount)||0)}`).join(", ");
-    const {score} = calcHealthScore(data, getCatOv());
+    const {score,partial:healthPartial} = calcHealthScore(data, getCatOv());
     // Sprint 3: send the user's data as `context` (the server wraps it in UNTRUSTED_USER_DATA
     // INSIDE the system prompt) and a fixed instruction as the user-role `prompt` — so untrusted
     // transaction text never rides in the user turn.
-    const context = `Financial Health Score: ${score}/100. Money mood this week: ${moods.find(m=>m.val===mood)?.label||"Neutral"}. Biggest spending surprise: ${sanitizeField(surprise||"none",60)}. Financial win: ${sanitizeField(win||"none",60)}. Recent transactions: ${txns}`;
+    // Prompt 3d: a score on 5 of 6 parts says so, so the coach says so too.
+    const context = `Financial Health Score: ${score}/100${healthPartial?` (${HEALTH_SCORE_PARTIAL_COACH}; say so whenever you mention the score)`:""}. Money mood this week: ${moods.find(m=>m.val===mood)?.label||"Neutral"}. Biggest spending surprise: ${sanitizeField(surprise||"none",60)}. Financial win: ${sanitizeField(win||"none",60)}. Recent transactions: ${txns}`;
     // Round-3: the coach explains, it does not direct. One pattern from this week's numbers and what it
     // means; no action to take and no promised score change.
     const prompt = "The user just completed their weekly money check-in. Using only the data provided, explain ONE pattern in this week's numbers and what it means. Do not tell the user what to do and do not promise any change to their score. Keep it to 2 sentences max. Calm and concrete.";
@@ -3440,7 +3522,7 @@ const DASH_TILES = [
   { id: 'networth',    label: 'Net Worth Trend',      lucide:'trending-up'  },
   { id: 'investments', label: 'Investment Portfolio', lucide:'trending-up'  },
   { id: 'forecast',    label: 'Cash Flow Forecast',   lucide:'calendar'     },
-  { id: 'decision',    label: 'What to do today',     lucide:'cpu'          },
+  { id: 'decision',    label: 'Your numbers today',     lucide:'cpu'          },
   { id: 'autopilot',   label: 'Autopilot',            lucide:'navigation'   },
   { id: 'opportunity', label: 'Opportunities',        lucide:'star'         },
   { id: 'health',      label: 'Health Score',         lucide:'shield'       },
@@ -3892,7 +3974,10 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
       // Bug fix: surface needs_reconnect errors distinctly
       const msg = err.message?.includes("needs_reconnect") || err.needs_reconnect
         ? "Your bank session expired. Please reconnect your bank."
-        : "Connection failed: "+err.message;
+        : (isNativeApp() && /plan_limit/.test(String(err.message||"")))
+          // A store app has nothing to buy, so never show the server's plan code or an upgrade path.
+          ? "Only one bank can be connected in this version. You can import a statement for another account."
+          : "Connection failed: "+err.message;
       setBankError(msg);
       setBankStage("select");
     }
@@ -4089,7 +4174,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         {/* Statement upload — primary path for non-Plaid accounts */}
         <div style={{background:C.cardAlt,borderRadius:14,padding:'12px 14px',border:`1px solid ${C.border}`}}>
           <div style={{color:C.mutedHi,fontWeight:700,fontSize:13,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📄 Upload a statement instead</div>
-          <div style={{color:C.muted,fontSize:13,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Best for accounts Plaid can't connect: employer RRSPs, some credit unions, older institutions.</div>
+          <div style={{color:C.muted,fontSize:13,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>For accounts Plaid can't connect: employer RRSPs, some credit unions, older institutions.</div>
           <label style={{display:'block',cursor:'pointer'}}>
             <input type="file" accept=".pdf,.csv" style={{display:'none'}} onChange={handleStatementUpload} disabled={stmtStatus==='parsing'}/>
             <div style={{background:stmtStatus==='parsing'?C.card:`linear-gradient(135deg,${C.gold}22,${C.gold}0A)`,border:`1px dashed ${stmtStatus==='error'?C.red:stmtStatus==='done'?C.green:C.gold}`,borderRadius:10,padding:'10px 14px',textAlign:'center',color:stmtStatus==='error'?C.redBright:stmtStatus==='done'?C.greenBright:C.goldBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,transition:'all .2s'}}>
@@ -4164,6 +4249,8 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
           rental:{label:"Rental Income",emoji:"🏠"},
           gig:{label:"Gig / Freelance",emoji:"🚗"},
           other:{label:"Other",emoji:"➕"},
+          benefit:{label:"Other benefit",emoji:"📋"},
+          pension:{label:"Pension",emoji:"🏛️"},
           // US
           salary:{label:"Salary",emoji:"💼"},
           hourly:{label:"Hourly",emoji:"⏱️"},
@@ -4385,7 +4472,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
     // 6: Credit Score
     <div>
       <div style={{fontSize:28,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5,marginBottom:6}}>Your credit score (optional)</div>
-      <div style={{color:C.muted,fontSize:14,marginBottom:16}}>Optional. Add it and the coach can show you how to improve it.</div>
+      <div style={{color:C.muted,fontSize:14,marginBottom:16}}>Optional. Add it and the coach can explain what affects it.</div>
       <div style={{background:C.tealDim,border:`1px solid ${C.teal}44`,borderRadius:16,padding:"14px 16px",marginBottom:20}}>
         <div style={{color:C.tealBright,fontWeight:700,marginBottom:6}}>🔒 How Flourish uses this</div>
         {[["✅","Soft pull only, never affects your score"],["✅","Personalized tips tied to your real balances"],["✅","Tracks improvement over time"],["❌","Never shared with lenders or third parties"]].map(([ico,t],i)=><div key={i} style={{display:"flex",gap:8,padding:"3px 0",color:ico==="✅"?C.cream:C.muted,fontSize:13}}><span>{ico}</span><span>{t}</span></div>)}
@@ -4405,7 +4492,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
           </div>
           <input type="range" min={300} max={p.country==="US"?850:900} step={1} value={Math.min(p.creditScore,p.country==="US"?850:900)} onChange={e=>setP({...p,creditScore:Number(e.target.value)})} style={{width:"100%",accentColor:C.teal,height:6,cursor:"pointer",marginBottom:8}}/>
           <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.red,fontSize:13}}>300 Poor</span><span style={{color:C.gold,fontSize:13}}>650 Good</span><span style={{color:C.greenBright,fontSize:13}}>{p.country==="US"?"850 Excellent":"900 Excellent"}</span></div>
-          <div style={{color:C.muted,fontSize:13,marginTop:4,textAlign:"center",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{p.country==="US"?"FICO scale · 300 to 850":"Equifax / TransUnion Canada · 300 to 900"}</div>
+          <div style={{color:C.muted,fontSize:13,marginTop:4,textAlign:"center",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{creditScaleNote(p.country)}</div>
         </div>
         <div style={{color:C.muted,fontSize:13,textAlign:"center",marginBottom:16}}>Check your score free at Borrowell (CA) or Credit Karma (US/CA), soft pull only.</div>
       </>}
@@ -4478,7 +4565,7 @@ function buildLiveNotifs(data) {
       notifs.push({
         id:`debt_${i}`,icon:"target",
         title:`${d.name} is ${pct}% paid off! 🎉`,
-        body:`$${parseFloat(d.balance).toLocaleString()} remaining. Keep going!`,
+        body:`$${parseFloat(d.balance).toLocaleString()} remaining.`,
         read:true,time:"Today",type:"win",color:NOTIF_COLORS.win,
       });
     }
@@ -5141,13 +5228,15 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const heroColorBright=overdraftImmediate?C.redBright:sevenDayOverdraft?C.goldBright:C.greenBright;
   // Combined overdraft signal: immediate (10-day window) OR imminent (7-day forecast)
   const overdraft = overdraftImmediate || sevenDayOverdraft;
-  const {score:healthScore,pillars}=calcHealthScore(data, getCatOv());
+  const {score:healthScore,pillars,basisLabel:healthBasis}=calcHealthScore(data, getCatOv());
   const adjScore=Math.min(100,healthScore+(checkInBonus||0));
   const scoreColor=adjScore>=80?C.greenBright:adjScore>=65?C.tealBright:adjScore>=50?C.goldBright:adjScore>=35?C.orangeBright:C.redBright;
   const scoreBase=adjScore>=80?C.green:adjScore>=65?C.teal:adjScore>=50?C.gold:adjScore>=35?C.orange:C.red;
   const scoreGrade=adjScore>=80?"Excellent":adjScore>=65?"Good":adjScore>=50?"Fair":adjScore>=35?"Needs Work":"Critical";
   const topPillar=pillars.reduce((a,b)=>((b.max-b.pts)>=(a.max-a.pts)?b:a),pillars[0]);
-  const scoreInsight=topPillar.label==="Emergency Fund"?`Build a 3-month emergency fund → +5 pts`:topPillar.label==="Debt Ratio"?`Pay $150/mo extra on highest-rate debt → +4 pts`:topPillar.label==="Budget"?`Cut discretionary 10% this month → +3 pts`:`Improve ${topPillar.label.toLowerCase()} to boost your score`;
+  // Prompt 3b: the old lines promised point gains (and a monthly extra payment and a spending cut) that
+  // the health score engine never computed. The tip stays; the numbers are gone.
+  const scoreInsight=topPillar.label==="Emergency Fund"?`A larger emergency fund raises this score.`:topPillar.label==="Debt Ratio"?`Paying down debt raises this score.`:topPillar.label==="Budget"?`Spending less on extras raises this score.`:`Improving ${topPillar.label.toLowerCase()} raises this score.`;
 
   // ── Generative priority logic ────────────────────────────────────────────────
   // Sprint D Fix (Bug 1): daysUntilDueDay rolls a passed due-day to next month, so a bill due the
@@ -5342,18 +5431,19 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           const know = todayKnowItem({ overdraftImmediate, sevenDayOverdraft, nextBill: (soonBills||[])[0] });
           // Consolidation 1: the daily number is the ONE suggested pace (same as Decisions), never a
           // second division of safe. The weekly framing is that daily figure, not safe/7.
+          // Prompt 3d: the engine's pace as a fact, not an instruction. "deposit", not "paycheque":
+          // this surface has not established WHICH income arrives next.
           const doIt = safe>0
-            ? `Keeping today under ${dailyPace.dailyText} leaves room across the week.`
-            // Same class as the DecisionEngine fallback above: a claim about WHICH income arrives
-            // next, made by a surface that has not established it. "deposit" is true either way.
-            : "Hold off on non-essentials until your next deposit lands.";
+            // The displayed headline (ssView), so this reads the same figure as the hero above (prompt 3e fix).
+            ? `Today's pace is ${dailyPace.dailyText}: ${formatMoney(ssView.headline)} safe to spend spread over ${dailyPace.daysLeft} days.`
+            : "Nothing is left to spend until your next deposit lands.";
           return (
             <div style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"14px 16px",marginBottom:12}}>
               {know && <>
               <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>One thing to know</div>
               <div style={{color:C.cream,fontSize:13.5,lineHeight:1.55,margin:"3px 0 10px"}}>{know}</div>
               </>}
-              <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>One thing you could do</div>
+              <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Today's pace</div>
               <div style={{color:C.cream,fontSize:13.5,lineHeight:1.55,margin:"3px 0 4px"}}>{doIt}</div>
               {/* The row this rule was written for. It said space-between with flex:1 on the button:
                   the button grew until there was no space left to put between anything, and the
@@ -5509,24 +5599,25 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                   if (r.state === "yes") {
                     setAffordResult({
                       state: "yes",
-                      msg: "Yes, you can afford this",
-                      sub: `${r.remainingText} left in your safe limit today`,
+                      msg: "It fits in your safe to spend",
+                      sub: `${r.remainingText} left to spend until payday`,
                       color: C.green,
                     });
                   } else if (r.state === "tight") {
-                    // R6: $0 remaining says "Nothing left" not "Only $0 left"
-                    const leftMsg = r.remaining < 1 ? "Nothing left after this" : `Only ${r.remainingText} left`;
+                    // R6: $0 remaining says "Nothing left" not "Only $0 left". The fact, until payday, and no
+                    // instruction (it used to end by telling the household to hold off on everything else today).
+                    const leftMsg = r.remaining < 1 ? "After this, nothing is left to spend until payday." : `Only ${r.remainingText} left to spend until payday.`;
                     setAffordResult({
                       state: "tight",
-                      msg: "You can, but it's tight",
-                      sub: `${leftMsg}. Hold everything else today.`,
+                      msg: "It fits, with little left",
+                      sub: leftMsg,
                       color: C.gold,
                     });
                   } else {
                     setAffordResult({
                       state: "no",
-                      msg: "Not right now",
-                      sub: `This puts you ${r.overByText} over your limit. Wait ${waitMsg}.`,
+                      msg: "It's more than your safe to spend",
+                      sub: `It is ${r.overByText} over your safe to spend until payday. Your next deposit lands ${waitMsg}.`,
                       color: C.red,
                     });
                   }
@@ -5701,6 +5792,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2,lineHeight:1.4}}>{scoreInsight}</div>
               </div>
             </div>
+            {/* Prompt 3c: a score worked out without the credit part says so. */}
+            {healthBasis&&<div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.45,marginBottom:12}}>{healthBasis}</div>}
             <div style={{display:"flex",gap:GAP.controlToControl}}>
               {onCheckIn&&<button onClick={onCheckIn} style={{flex:1,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,padding:"0 8px",minHeight:LAYOUT.minTap,borderRadius:99,border:"none",cursor:"pointer",whiteSpace:"nowrap"}}>Check-In ✦</button>}
               <button onClick={()=>setScreen("coach")} style={{flex:1,background:"none",border:`1px solid ${scoreBase}44`,color:scoreBase,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:13,padding:"0 8px",minHeight:LAYOUT.minTap,borderRadius:99,cursor:"pointer",whiteSpace:"nowrap"}}>Coach →</button>
@@ -5728,7 +5821,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               ))}
             </div>
             <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-              {streak>=7?"🎉 Weekly goal crushed!":streak>=4?`${streakMax-streak} more to goal`:streak>0?`${streak}-day streak · keep going`:"Start your streak today"}
+              {streak>=7?"🎉 Weekly goal crushed!":streak>=4?`${streakMax-streak} more to goal`:streak>0?`${streak}-day streak`:"No streak yet"}
             </div>
           </div>
         </div>
@@ -5806,8 +5899,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               <div style={{...anim(170),background:"rgba(0,204,133,0.07)",border:`1px solid ${C.green}33`,borderRadius:20,padding:"14px 16px",display:"flex",gap:12,alignItems:"center",cursor:"pointer"}} onClick={()=>setScreen("goals")}>
                 <div style={{width:44,height:44,borderRadius:14,background:C.green+"18",border:`1px solid ${C.green}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>💸</div>
                 <div style={{flex:1}}>
-                  <div style={{color:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Payday: save before you spend</div>
-                  <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>Transfer ${((safe||0)*0.2).toFixed(0)} now and you'll barely notice it · See your goals</div>
+                  <div style={{color:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>A deposit lands today</div>
+                  <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>{formatMoney(safe||0)} safe to spend until the next one · See your goals</div>
                 </div>
                 <span style={{color:C.greenBright,fontSize:18}}>→</span>
               </div>
@@ -5969,6 +6062,13 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           {expandedTile==="pillars"&&(
             <div style={{marginTop:14,display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"10px 14px"}}>
               {pillars.map(p=>{
+                // A pillar with nothing to rate (Credit with no score entered) shows that, not 0/0.
+                if(!p.max) return <div key={p.label}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                    <span style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{p.label}</span>
+                    <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>{p.detail}</span>
+                  </div>
+                </div>;
                 const pct=p.pts/p.max;
                 const pc=pct>=0.75?C.green:pct>=0.5?C.teal:pct>=0.25?C.gold:C.red;
                 return <div key={p.label}>
@@ -5986,8 +6086,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         </div>}
 
         {/* ── CREDIT SCORE ──────────────────────────────────────────────── */}
-        {isVisible('credit')&&data.profile?.creditKnown&&(()=>{
-          const score=data.profile.creditScore||720;
+        {isVisible('credit')&&creditScoreEntered(data.profile)!=null&&(()=>{
+          const score=creditScoreEntered(data.profile); // the household's own score, never a default (prompt 3b)
           const sc=score>=750?C.greenBright:score>=700?C.tealBright:score>=650?C.goldBright:score>=600?C.orangeBright:C.redBright;
           const scBase=score>=750?C.green:score>=700?C.teal:score>=650?C.gold:score>=600?C.orange:C.red;
           const lbl=score>=750?"Excellent":score>=700?"Good":score>=650?"Fair":score>=600?"Poor":"Very Poor";
@@ -6042,7 +6142,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                     style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.mutedHi,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Cancel</button>
                 </div>
                 <div style={{color:creditDraft&&!draftValid?C.redBright:C.muted,fontSize:13,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                  {data.profile?.country==="US"?"FICO scale · 300 to 850":"Equifax / TransUnion Canada · 300 to 900"}
+                  {creditScaleNote(data.profile?.country)}
                 </div>
               </>):(
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
@@ -6637,8 +6737,8 @@ function SupportingFigures({ label = "How this is worked out", rows = [], defaul
       </button>
       {open&&(
         <div style={{display:"flex",flexDirection:"column",gap:SPACE.sm,paddingBottom:SPACE.sm}}>
-          {visible.map(r=>(
-            <div key={r.label} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:SPACE.md,minHeight:r.onEdit?LAYOUT.minTap:0}}>
+          {visible.map((r,i)=>(
+            <div key={`${r.label}-${i}`} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:SPACE.md,minHeight:r.onEdit?LAYOUT.minTap:0}}>
               <span style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.label}</span>
               {r.onEdit
                 ? <button onClick={r.onEdit} aria-label={`Edit ${r.label}`}
@@ -6983,8 +7083,14 @@ function PlanAhead({data, setAppData, setScreen}){
   // Item 4 in a second surface: the balance-bar scale is "balance + one real paycheque". Read the primary
   // income's REAL per-deposit amount from incomeSchedule (never the blended monthly divided by a cadence);
   // 0 when it can't be determined (this is only a chart scale, not a displayed figure).
-  const income = perDepositAmount((data.incomes||[])[0]) || 0;
-  const minBalance = Math.min(...days.map(d => d.balance));
+  // Through primaryIncome() (lib/watchIncome.js), never whichever income was added first.
+  const watchIncome = watchIncomeFigures(data);
+  const income = watchIncome.scalePerDeposit;
+  // The overdraft card's figure comes from the SAME forecast its flag (willGoNeg) was computed over,
+  // Math.max(range, 30) days, not only the days on screen (lib/forecastView.js forecastLow).
+  const forecastDays = Math.max(range, 30); // the window the forecast above was generated for (today plus these days)
+  const lowPoint = forecastLow(_forecast);
+  const minBalance = lowPoint ? lowPoint.balance : Math.min(...days.map(d => d.balance));
   // The bar's scale has to cover what the RANGE shows. It was "balance + one paycheque", which is
   // always enough for a fortnight and is not enough for a month: Bar paints RED when the value
   // exceeds its max, so on this demo every balance after the second paycheque — $6,591 and up —
@@ -7009,7 +7115,7 @@ function PlanAhead({data, setAppData, setScreen}){
       {dataIssues.length>5&&<div style={{color:C.muted,fontSize:13,marginTop:5}}>…and {dataIssues.length-5} more.</div>}
     </div>}
     <FirstRunTip id="watch">Tap any number to see how Flourish got it.</FirstRunTip>
-    <ScreenHeader title="Watch" subtitle="The next 90 days."
+    <ScreenHeader title="Watch" subtitle={`The next ${range} days.`}
       onBack={setScreen?()=>setScreen("home"):null}
       controls={
           <div style={{display:"flex",gap:GAP.controlToControl,background:C.surface,borderRadius:12,padding:SPACE.xs,width:"100%",boxSizing:"border-box"}}>{RANGES.map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",transition:"all .22s"}}>{r}d</button>)}</div>
@@ -7021,12 +7127,12 @@ function PlanAhead({data, setAppData, setScreen}){
       const _fbalText = safeToSpendView(SafeSpendEngine.calculate(data)).balanceText;
       const _favg = FinancialCalcEngine.avgDailySpend(data);
       const _fSpendEdited = correctionsOf(data).dailySpend != null;
-      const _ffreq = (data.incomes||[])[0]?.freq||"biweekly";
+      const _ffreq = watchIncome.freq||"biweekly";
       // Est. paycheque: the primary income's REAL per-deposit amount, read from incomeSchedule — never the
       // blended monthlyIncome divided by incomes[0]'s cadence (item 4's bug). null => show an explicit unknown.
       // As the household corrected it: a change from a date on, or the low end when the pay varies.
-      const _inc0 = (data.incomes||[])[0];
-      const _fPay = perDepositAmount(_inc0) != null || (_inc0 && _inc0.isVariable) ? monthlyIncomeBasis(_inc0, data, new Date()) : null;
+      // One paycheque per job, the primary job first (lib/watchIncome.js). One job: the single row as before.
+      const _fPays = watchIncome.paycheques;
       return (
         <div style={{background:C.isDark?"rgba(255,255,255,0.03)":C.surface,borderRadius:16,padding:LAYOUT.cardPadding,border:`1px solid ${C.border}`}}>
           <div style={{color:C.muted,...TYPE.subhead,fontWeight:400,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Starting balance</div>
@@ -7036,15 +7142,17 @@ function PlanAhead({data, setAppData, setScreen}){
           <SupportingFigures label="What the forecast is built from" rows={[
             {label:"Est. daily spend", value:`$${(_favg||0).toFixed(0)}/day`, onEdit:setAppData?()=>setShowDailySpend(true):null, tag:_fSpendEdited?<EditedTag/>:null},
             {label:"Pay frequency", value:frequencyLabel(_ffreq)},
-            {label:`Est. ${payWord(data.profile?.country)}`, value:_fPay!=null ? formatMoney(_fPay) : "Not set"},
+            ...(_fPays.length <= 1
+              ? [{label:`Est. ${payWord(data.profile?.country)}`, value:_fPays[0] ? formatMoney(_fPays[0].amount) : "Not set"}]
+              : _fPays.map((p,i)=>({label:`Est. ${payWord(data.profile?.country)}, ${p.label||`job ${i+1}`}`, value:`${formatMoney(p.amount)} ${cadenceLabel(p.freq)}`}))),
           ]}/>
         </div>
       );
     })()}
     {willGoNeg&&<div style={{background:C.redDim,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.red}55`}}>
       <div style={{color:C.redBright,...TYPE.headline,fontWeight:800,marginBottom:SPACE.xs}}>Projected overdraft</div>
-      <div style={{color:C.cream,...TYPE.callout,lineHeight:1.5}}>Heads up: your balance could dip to <strong style={{color:C.red}}>{formatBalance(minBalance)}</strong> before your next deposit.</div>
-      <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.sm}}>The day-by-day list below shows which day, and what lands on it.</div>
+      <div style={{color:C.cream,...TYPE.callout,lineHeight:1.5}}>Heads up: your balance could dip to <strong style={{color:C.red}}>{formatBalance(minBalance)}</strong>{lowPoint&&lowPoint.date?(lowPoint.day===0?" today":` on ${fmtOccDay(lowPoint.date)}`):""}, within the next {forecastDays} days.</div>
+      <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.sm}}>{lowPoint && lowPoint.day >= range ? "That day is past the range shown. Pick a longer range above to see it." : "The day-by-day list below shows that day, and what lands on it."}</div>
     </div>}
     {/* Bills summary — BillManager is the single bill entry point */}
     <Card style={row({justifyContent:"space-between",border:`1px solid ${C.teal}33`,background:`linear-gradient(135deg,rgba(0,200,224,0.05) 0%,${C.card} 100%)`})}>
@@ -7065,7 +7173,9 @@ function PlanAhead({data, setAppData, setScreen}){
     <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
     {(()=>{
       const avgDailySpend = FinancialCalcEngine.avgDailySpend(data);
-      return days.filter((d,i)=>i===0||d.income>0||d.bills.length>0||(d.occurrences||[]).length>0).map((day,i)=>{
+      // The overdraft card's low day is listed too, even with nothing landing on it (usually the eve of a
+      // payday), so "the list below shows that day" is true. Only while the card is showing.
+      return days.filter((d,i)=>i===0||d.income>0||d.bills.length>0||(d.occurrences||[]).length>0||(willGoNeg&&lowPoint&&d.idx===lowPoint.day)).map((day,i)=>{
         const isToday=day.idx===0,neg=day.balance<0,low=day.balance<150&&day.balance>=0;
         const isDrilled=expandedPlanDay===day.idx;
         const prevBalance=day.idx>0?(_forecast[day.idx-1]?.balance||0):day.balance;
@@ -7095,7 +7205,7 @@ function PlanAhead({data, setAppData, setScreen}){
                 </div>
               </div>
               <Bar v={Math.max(0,day.balance)} max={barMax} color={neg?C.red:low?C.gold:C.green} h={4}/>
-              {neg&&<div style={{marginTop:8,color:C.redBright,fontSize:13,fontWeight:600}}>Heads up: an overdraft here usually costs $45 to $48 in NSF fees. Tap the day to see what lands on it.</div>}
+              {neg&&<div style={{marginTop:8,color:C.redBright,fontSize:13,fontWeight:600}}>Heads up: an overdraft here can bring a bank fee. Tap the day to see what lands on it.</div>}
               {low&&!neg&&<div style={{marginTop:6,color:C.goldBright,fontSize:13}}>Heads up: this day runs close to empty.</div>}
             </div>
             {isDrilled&&(
@@ -7146,7 +7256,7 @@ function PlanAhead({data, setAppData, setScreen}){
         meaning="Where the forecast starts from: what is in your everyday accounts right now. Every day after this one adds your expected pay and takes off the bills and average spending."
         inputs={[
           {label:"Est. daily spend", value:`$${(FinancialCalcEngine.avgDailySpend(data)||0).toFixed(0)}/day`},
-          {label:"Pay frequency", value:frequencyLabel((data.incomes||[])[0]?.freq||"biweekly")},
+          {label:"Pay frequency", value:frequencyLabel(watchIncome.freq||"biweekly")},
           {label:"Bills tracked", value:`${(data.bills||[]).length}`},
         ]}
         changeLabel={setAppData?"Change your daily spend":null}
@@ -7777,7 +7887,7 @@ function BudgetPlanCard({data, setAppData}) {
         </div>
         {overDiscret&&(
           <div style={{color:C.redBright,fontSize:13,marginTop:3}}>
-            ⚠️ ${Math.round(totalEdited-discret).toLocaleString()} over your discretionary budget. Consider trimming some categories
+            ⚠️ ${Math.round(totalEdited-discret).toLocaleString()} over your discretionary budget
           </div>
         )}
         {!overDiscret&&totalEdited>0&&(
@@ -7965,13 +8075,7 @@ function SpendScreen({data, setAppData, setScreen}){
   const totalSpent=acctFiltered.filter(t=>t.amount>0&&!EXCLUDE_CATS.has(getCat(t))&&!isCardPaymentCharge(t,data.debts||[])).reduce((a,t)=>a+t.amount,0);
   const totalIn=acctFiltered.filter(t=>t.amount<0&&getCat(t)!=="Transfer").reduce((a,t)=>a+Math.abs(t.amount),0);
 
-  const cuts=[
-    stats.coffee>0&&{id:1,icon:"coffee",title:"Coffee is adding up",body:`${stats.coffeeCount} coffee run${stats.coffeeCount===1?"":"s"} this month totalling $${stats.coffee.toFixed(2)}. That's $${(stats.coffee*12).toFixed(0)}/year. Making coffee at home 4 days a week cuts this by 60%.`,saving:`$${Math.round(stats.coffee*0.6)}/mo`,effort:"Low",color:C.orange},
-    stats.delivery>0&&{id:2,icon:"package",title:"Food delivery every week",body:`$${(stats.delivery||0).toFixed(2)} on delivery this month. One fewer order per week saves $40 to $60/month reliably. Your wallet will notice in 30 days.`,saving:"$50/mo",effort:"Low",color:C.orange},
-    {id:3,icon:"bag",title:"Amazon impulse purchases",body:"Try the 48-hour rule: add to cart, wait 2 days. Most impulse buys get removed without regret. Studies show this cuts impulse spend by 30 to 40%.",saving:"$40 to $70/mo",effort:"Low",color:C.pink},
-    stats.subs>0&&{id:4,icon:"zap",title:"Subscriptions creeping up",body:`$${(stats.subs||0).toFixed(2)}/mo in subscriptions. Go through each one. Did you use it last month? Most households find 1 to 2 to cancel painlessly.`,saving:"$15 to $35/mo",effort:"Low",color:C.purple},
-    {id:5,icon:"chartUp",title:`${stats.busiest} is your expensive day`,body:`You spend significantly more on ${stats.busiest}s than any other day. Knowing this is half the battle. Awareness alone cuts it 20 to 30%.`,saving:"$30 to $60/mo",effort:"Very Low",color:C.blue},
-  ].filter(Boolean).filter(s=>!dismissed.includes(s.id));
+  const cuts=patternCards(stats).filter(s=>!dismissed.includes(s.id));
 
   const ALL_CATS = ["Food & Drink","Groceries","Transport","Shopping","Entertainment","Bills & Utilities","Health","Income","Subscriptions","Travel","Other"];
 
@@ -8295,7 +8399,7 @@ function SpendScreen({data, setAppData, setScreen}){
     {!isDemo&&<IncomeDetectionBanner transactions={incomeEvidence({ transactions: txns, depositDecisions: data.depositDecisions, depositRules: data.depositRules })} incomes={data.incomes} setAppData={setAppData} country={data.profile?.country}/>}
     <div style={{display:"flex",gap:GAP.controlToControl,background:C.surface,borderRadius:16,padding:SPACE.xs}}>
       {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeBright:C.muted,borderRadius:12,padding:"0",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
-        {t==="txn"?"Transactions":t==="breakdown"?"Breakdown":"Smart Cuts"}
+        {t==="txn"?"Transactions":t==="breakdown"?"Breakdown":"Patterns"}
       </button>)}
     </div>
     {tab==="txn"&&<>
@@ -8449,26 +8553,14 @@ function SpendScreen({data, setAppData, setScreen}){
       })()}
     </>}
     {tab==="cuts"&&<>
-      <Card style={{background:`linear-gradient(135deg,${C.orangeDim} 0%,${C.card} 100%)`,border:`1px solid ${C.orange}44`}}>
-        <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Potential Monthly Savings</div>
-        <div style={{fontSize:32,fontWeight:900,color:C.goldBright,fontFamily:"Georgia,serif"}}>${(()=>{
-              const total = cuts.reduce((s,c)=>{
-                // saving field is like "$50/mo" or "$40–70/mo" — extract first number
-                const match = (c.saving||"").match(/\d+/);
-                return s + (match ? parseInt(match[0]) : 0);
-              },0);
-              return total > 0 ? total.toLocaleString() : "0";
-            })()}</div>
-        <div style={{color:C.muted,fontSize:13}}>from {cuts.length} suggestions based on your real transactions</div>
-      </Card>
-      {cuts.length===0?<Card style={{textAlign:"center",padding:"30px 20px"}}><div style={{fontSize:40}}>🎉</div><div style={{color:C.greenBright,fontWeight:700,marginTop:10}}>All suggestions reviewed!</div></Card>
+      <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>From your own transactions this month. Calculated by Flourish.</div>
+      {cuts.length===0?<Card style={{textAlign:"center",padding:"30px 20px"}}><div style={{color:C.mutedHi,fontWeight:700}}>Nothing to show this month.</div></Card>
         :cuts.map(s=><Card key={s.id} glow={s.color}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
             <div style={{display:"flex",gap:10,alignItems:"center"}}><Icon id={s.icon||"card"} size={20} color={C.mutedHi} strokeWidth={1.5}/><span style={{color:s.color,fontWeight:800,fontSize:14}}>{s.title}</span></div>
             <button aria-label="Dismiss" onClick={()=>setDismissed(d=>[...d,s.id])} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>✕</button>
           </div>
-          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:10}}>{s.body}</div>
-          <div style={{display:"flex",gap:8}}><Chip label={`Save ${s.saving}`} color={C.green}/><Chip label={`Effort: ${s.effort}`} color={s.effort.includes("Very")?C.teal:C.green}/></div>
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>{s.body}</div>
         </Card>)}
     </>}
   </div>;
@@ -8728,7 +8820,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
               <span style={{fontSize:18}}>🤖</span>
               <div style={{flex:1}}>
                 <div style={{color:C.purpleBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Ask Coach about your goals</div>
-                <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>Your goals are shared with the AI Coach. Ask it to suggest contributions or adjust timelines.</div>
+                <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:1}}>Your goals are shared with the AI Coach. It can explain what different monthly amounts would mean for each timeline.</div>
               </div>
               <span style={{color:C.purpleBright,fontSize:16}}>→</span>
             </div>
@@ -8744,7 +8836,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
           <span style={{fontSize:16,flexShrink:0}}>⚡</span>
           <div>
             <div style={{color:C.goldBright,fontWeight:700,fontSize:13,marginBottom:2}}>Add interest rates to run the simulator</div>
-            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>Your credit card rate is on your statement or card agreement, typically 19.99% to 29.99%. Add it in Settings → Debts to see your exact debt-free date and total interest saved.</div>
+            <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>Your credit card rate is on your statement or card agreement. Add it in Settings → Debts to see your exact debt-free date and total interest saved.</div>
           </div>
         </div>
       )}
@@ -8885,20 +8977,16 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
         {/* Hero banner */}
         <div style={{background:`linear-gradient(135deg,${C.gold}18 0%,${C.gold}08 100%)`,border:`1px solid ${C.gold}40`,borderRadius:20,padding:"18px 20px",position:"relative",overflow:"hidden"}}>
           <div style={{position:"absolute",top:-18,right:-18,fontSize:64,opacity:0.08}}>💰</div>
-          <div style={{color:C.goldBright,fontWeight:800,fontSize:13,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{cfg.flag} {cfg.name}-Specific Tax Opportunities</div>
-          <div style={{color:C.muted,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>Most people leave thousands on the table. These are the credits and benefits you may be missing right now.</div>
+          <div style={{color:C.goldBright,fontWeight:800,fontSize:13,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{cfg.flag} {cfg.name} Tax Credits and Benefits</div>
+          <div style={{color:C.muted,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>These are the credits and benefits that may apply to you.</div>
           <div style={{display:"flex",gap:10}}>
             <div style={{background:C.gold+"22",borderRadius:12,padding:"8px 14px",textAlign:"center"}}>
               <div style={{color:C.goldBright,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{highPriority.length}</div>
-              <div style={{color:C.muted,fontSize:13,fontWeight:600}}>High Priority</div>
+              <div style={{color:C.muted,fontSize:13,fontWeight:600}}>Main credits</div>
             </div>
             <div style={{background:C.teal+"18",borderRadius:12,padding:"8px 14px",textAlign:"center"}}>
               <div style={{color:C.tealBright,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{_eligibleBenefits.length}</div>
               <div style={{color:C.muted,fontSize:13,fontWeight:600}}>Benefits</div>
-            </div>
-            <div style={{background:C.green+"18",borderRadius:12,padding:"8px 14px",textAlign:"center",flex:1}}>
-              <div style={{color:C.greenBright,fontWeight:900,fontSize:14,fontFamily:"'Playfair Display',serif"}}>$$$</div>
-              <div style={{color:C.muted,fontSize:13,fontWeight:600}}>Unclaimed</div>
             </div>
           </div>
         </div>
@@ -8907,7 +8995,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
         {highPriority.length>0&&<>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <div style={{height:1,flex:1,background:C.gold+"33"}}/>
-            <span style={{color:C.goldBright,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>🔥 High Priority</span>
+            <span style={{color:C.goldBright,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Main credits for your situation</span>
             <div style={{height:1,flex:1,background:C.gold+"33"}}/>
           </div>
           {highPriority.map((tip,i)=>(
@@ -8920,12 +9008,12 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
                 </div>
                 <div style={{background:C.gold+"18",borderRadius:12,padding:"8px 10px",textAlign:"center",flexShrink:0,minWidth:56}}>
                   <div style={{fontSize:18}}>{tip.flag}</div>
-                  <div style={{color:C.goldBright,fontSize:13,fontWeight:800,marginTop:3}}>Priority</div>
+                  <div style={{color:C.goldBright,fontSize:13,fontWeight:800,marginTop:3}}>Main</div>
                 </div>
               </div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:12,borderTop:`1px solid ${C.gold}22`}}>
                 <div>
-                  <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>Potential savings</div>
+                  <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:2}}>Amount</div>
                   <div style={{color:C.goldBright,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',serif"}}>{tip.savings}</div>
                 </div>
                 <span style={{display:"inline-block",background:`linear-gradient(135deg,${C.gold}33,${C.gold}18)`,border:`1px solid ${C.gold}55`,borderRadius:99,padding:"8px 16px",color:C.goldBright,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
@@ -8940,7 +9028,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
         {medPriority.length>0&&<>
           <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
             <div style={{height:1,flex:1,background:C.border}}/>
-            <span style={{color:C.muted,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Also Worth Reviewing</span>
+            <span style={{color:C.muted,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>More credits and benefits</span>
             <div style={{height:1,flex:1,background:C.border}}/>
           </div>
           {medPriority.map((tip,i)=>(
@@ -8988,7 +9076,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
         <div style={{background:C.green+"10",border:`1px solid ${C.green}28`,borderRadius:16,padding:"14px 18px",textAlign:"center",marginTop:4}}>
           <div style={{fontSize:20,marginBottom:6}}>🌱</div>
           <div style={{color:C.greenBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>Not sure what applies to you?</div>
-          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Ask your AI Coach: tell it your situation and it will identify exactly which credits you qualify for.</div>
+          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>The coach can explain how each of these relates to your situation. Eligibility is decided by the CRA or IRS.</div>
         </div>
 
       </div>;
@@ -9006,7 +9094,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
       return <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={{background:C.blueDim,border:`1px solid ${C.blue}33`,borderRadius:16,padding:"14px 16px"}}>
           <div style={{color:C.blueBright,fontWeight:700,fontSize:13,marginBottom:4}}>{cfg.flag} Registered & Tax-Advantaged Accounts</div>
-          <div style={{color:C.muted,fontSize:13,lineHeight:1.6}}>These accounts are legal ways to keep more of your money. Most people don't maximize them.</div>
+          <div style={{color:C.muted,fontSize:13,lineHeight:1.6}}>Accounts with tax rules of their own. Limits are from the CRA or IRS, with the year.</div>
         </div>
 
         {/* ── My Balances & Contributions ─────────────────────── */}
@@ -9125,7 +9213,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
               </div>
             </div>
             <div style={{background:a.color+"12",border:`1px solid ${a.color}33`,borderRadius:12,padding:"10px 14px"}}>
-              <span style={{color:a.color,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>💡 Pro tip: </span>
+              <span style={{color:a.color,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How it works: </span>
               <span style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{a.tip}</span>
             </div>
           </div>
@@ -9134,9 +9222,8 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
         <div style={{background:C.card,borderRadius:18,padding:"18px",border:`1px solid ${C.orange}33`}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
             <span style={{fontSize:24}}>🆘</span>
-            <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>Emergency Fund Target</div>
+            <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif"}}>Emergency fund</div>
           </div>
-          <div style={{color:C.orangeBright,fontSize:28,fontWeight:900,fontFamily:"'Playfair Display',serif",marginBottom:6}}>{cfg.emergencyMonths} months</div>
           <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{cfg.healthcareNote}</div>
         </div>
       </div>;
@@ -9219,7 +9306,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
           {/* Where to save suggestions */}
           {saveSuggestions.length>0&&(
             <div style={{background:C.orange+"12",border:`1px solid ${C.orange}33`,borderRadius:12,padding:"12px 14px"}}>
-              <div style={{color:C.orange,fontWeight:800,fontSize:13,marginBottom:8}}>💡 Where you could save</div>
+              <div style={{color:C.orange,fontWeight:800,fontSize:13,marginBottom:8}}>Over budget this month</div>
               {saveSuggestions.map(({cat,over})=>(
                 <div key={cat} style={{marginBottom:6}}>
                   <div style={{color:C.cream,fontSize:13}}>{catEmojis[cat]||"📌"} {cat}</div>
@@ -9294,7 +9381,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
           <div style={{color:C.greenBright,fontWeight:700,fontSize:13}}>{cfg.flag} {cfg.name} Financial Essentials</div>
           <div style={{color:C.muted,fontSize:13,marginTop:2}}>Country-specific concepts that directly affect your money.</div>
         </div>
-        {cfg.learnCards.concat([{emoji:"📈",title:"Compound interest: your best friend",body:"$100 at 7% for 30 years becomes $761. The same math works in reverse with debt. Start investing early. Pay debt fast.",key:"Time is the most powerful financial tool."}]).map((l,i)=>(
+        {cfg.learnCards.concat([{emoji:"📈",title:"How compound interest works",body:"Growth earns growth. $100 growing 7% a year for 30 years: $100 × 1.07 to the power of 30 = $761. The 7% is an example rate, not a prediction. Debt compounds the same way when interest is added to the balance.",key:"Interest on interest is what makes time matter."}]).map((l,i)=>(
           <Card key={i}>
             <div style={{fontSize:28,marginBottom:8}}>{l.emoji}</div>
             <div style={{color:C.cream,fontWeight:900,fontSize:16,fontFamily:"'Playfair Display',Georgia,serif",marginBottom:8,lineHeight:1.3}}>{l.title}</div>
@@ -9333,7 +9420,9 @@ function MeetAgenda({ data, isCouple, setScreen }){
       return quietWeekAgendaFor({});
     }
   }, [data]);
-  const canFacilitate = isUnlimited();     // premium, beta_founder, or active trial
+  // Web: premium, beta_founder, or an active trial. A store app: every user (nothing to buy in 1.0.0,
+  // and nothing closes when a trial ends), lib/featureAccess.js.
+  const canFacilitate = facilitatorAvailable({ native: isNativeApp() });
   const aiOn = aiEnabled();
   // Item 3: only a signed-in eligible tier with AI on sees the input; demo/free → trial line, AI off → off line.
   const facilitatorGate = facilitatorGateState({ demo: !!data.demo, canFacilitate, aiOn });
@@ -9425,7 +9514,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
       <div style={{color:C.muted,fontSize:13,marginBottom:14,lineHeight:1.5}}>Flourish writes this agenda from your week, using the numbers it already worked out.{facilitatorGate === "ready" ? " The coach keeps it calm and about the numbers." : ""}</div>
 
       <div style={card}>
-        <div style={sTitle}>Flourish noticed</div>
+        <div style={sTitle}>This week</div>
         {items.length>0
           ? items.map((it,i)=><div key={i} style={{color:C.cream,fontSize:13,lineHeight:1.6,marginBottom:5}}>• {it.text}</div>)
           : <div style={{color:C.muted,fontSize:13}}>Nothing stood out this week. Your numbers held steady.</div>}
@@ -9670,7 +9759,8 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
       return acc;
     },{});
   const topCat=Object.entries(topSpend).sort((a,b)=>b[1]-a[1])[0];
-  const {score:healthScore}=calcHealthScore(data, getCatOv());
+  const {score:healthScore,partial:healthPartial}=calcHealthScore(data, getCatOv());
+  const healthNote=healthPartial?` (${HEALTH_SCORE_PARTIAL_SHORT})`:""; // prompt 3d: say when a score is on 5 of 6 parts
   const soonBills=_ss.soonBills||[];
   const householdCode_gen="FLRSH"+Math.random().toString(36).substring(2,5).toUpperCase();
 
@@ -9683,15 +9773,15 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
      metric:topCat?`Top category: ${topCat[0]} · $${(topCat[1]||0).toFixed(0)} this month`:"No transaction data yet",
      metricColor:C.tealBright,
      prompt:"Was any category a surprise? What would you do differently?"},
-    {id:"debt",icon:"📉",title:"Celebrate debt progress",desc:"Even $1 less is a win.",
+    {id:"debt",icon:"📉",title:"Debt progress",desc:"Any change in a balance counts.",
      metric:totalDebt>0?`Total debt: $${totalDebt.toLocaleString()} · Min payments: $${(data.debts||[]).reduce((a,d)=>a+parseFloat(d.min||0),0).toFixed(0)}/mo`:"No debt tracked. Nice work.",
      metricColor:totalDebt>0?C.orangeBright:C.greenBright,
      prompt:"Did you make any extra payments? What felt hard this week?"},
     {id:"goal",icon:"🎯",title:"Check in on your shared goal",desc:"Emergency fund? Vacation? House?",
-     metric:`Cash flow: ${cashFlow>=0?"$"+(cashFlow||0).toFixed(0)+" surplus":"$"+Math.abs(cashFlow).toFixed(0)+" deficit"} · Health score: ${healthScore}/100`,
+     metric:`Cash flow: ${cashFlow>=0?"$"+(cashFlow||0).toFixed(0)+" surplus":"$"+Math.abs(cashFlow).toFixed(0)+" deficit"} · Health score: ${healthScore}/100${healthNote}`,
      metricColor:cashFlow>=0?C.greenBright:C.redBright,
      prompt:"Does the goal still feel right? Are you on track?"},
-    {id:"wins",icon:"⭐",title:"Name one win each",desc:"Rewires how you both feel about money.",
+    {id:"wins",icon:"⭐",title:"Name one win each",desc:"A win can be small.",
      metric:"Both share one money win from this week, no skipping.",
      metricColor:C.purpleBright,
      prompt:"What did you each name? Write it down to revisit next time."},
@@ -9714,16 +9804,16 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
      metric:topCat?`Biggest spend: ${topCat[0]} · $${(topCat[1]||0).toFixed(0)}`:`Income: $${(monthlyIncome||0).toFixed(0)} · Bills: $${monthlyBills.toFixed(0)}`,
      metricColor:C.tealBright,
      prompt:"Did anything feel out of control? What triggered it?"},
-    {id:"mood",icon:"💭",title:"How do you feel about money right now?",desc:"Your emotional state affects every decision.",
+    {id:"mood",icon:"💭",title:"How do you feel about money right now?",desc:"Feelings about money are part of the picture.",
      metric:"Anxious? Calm? Overwhelmed? Be honest with yourself.",
      metricColor:C.purpleBright,
      prompt:"What's driving that feeling? Has anything changed?"},
-    {id:"win",icon:"⭐",title:"Name one win",desc:"Cooked at home? Resisted a sale? Put $20 away?",
+    {id:"win",icon:"⭐",title:"Name one win",desc:"A meal at home, a purchase skipped, money saved?",
      metric:cashFlow>=0?`You have a $${(cashFlow||0).toFixed(0)}/mo surplus. That's real progress.`:"Tight this month, but showing up to check in IS the win.",
      metricColor:cashFlow>=0?C.greenBright:C.goldBright,
      prompt:"Say it out loud. Write it down. Wins compound."},
     {id:"goal",icon:"🎯",title:"Check in on your goal",desc:"Even 1% closer is worth acknowledging.",
-     metric:`Health score: ${healthScore}/100 · Debt: $${totalDebt>0?totalDebt.toLocaleString():"0"}`,
+     metric:`Health score: ${healthScore}/100${healthNote} · Debt: $${totalDebt>0?totalDebt.toLocaleString():"0"}`,
      metricColor:C.tealBright,
      prompt:"How much closer are you? What's the next milestone?"},
     {id:"next",icon:"📌",title:"One intention for next week",desc:"Small wins build into lasting change.",
@@ -9738,8 +9828,8 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <ScreenHeader title="Meet" subtitle="Your 15-minute money meeting" onBack={setScreen?()=>setScreen("home"):null}/>
     {(()=>{
-      // Step 10: Kids entry point removed from primary UI. The /kids route and its code (KidsMiniSite,
-      // the tab==="kids" block below) are intentionally kept for the future family add-on.
+      // Step 10: Kids entry point removed from primary UI. Since prompt 3d /kids redirects to / as well;
+      // the code (KidsMiniSite, the tab==="kids" block below) is kept, unrendered, for the future family add-on.
       const meetTabs=[["meeting",isCouple?"Money Meeting":"Check-In"],...(HOUSEHOLD_ENABLED?[["household","Household"]]:[])];
       // Truth-fix item 1: a single selected tab reads as a dead control. Hide the row unless it holds ≥2 tabs.
       if(meetTabs.length<2) return null;
@@ -9770,9 +9860,10 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
             </div>
           ))}
         </div>
+        {healthPartial&&<div style={{color:C.muted,fontSize:13,lineHeight:1.45,marginTop:-4}}>Health: {HEALTH_SCORE_PARTIAL_LABEL}</div>}
         <Card style={{background:C.purpleDim,border:`1px solid ${C.purple}44`}}>
           <div style={{color:C.purpleBright,fontWeight:800,fontSize:16,marginBottom:8}}>{isCouple?"💑 Money Meeting":"🧘 Check-In"}</div>
-          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65}}>{isCouple?`The #1 habit of couples who build wealth: a short, structured money talk. No fights, no blame.${data.profile.partnerName?` Ready to go with ${data.profile.partnerName}?`:""}`:
+          <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65}}>{isCouple?`A short, structured money talk. No fights, no blame.${data.profile.partnerName?` Ready to go with ${data.profile.partnerName}?`:""}`:
             "A few honest minutes on where your money went and where you're heading."}</div>
           {/* ── Schedule — profile.meetingSchedule; next date is derived (computeNextMeeting), never stored ── */}
           {setAppData&&<div style={{marginTop:14,borderTop:`1px solid ${C.purple}33`,paddingTop:12}}>
@@ -10015,7 +10106,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
         <div style={{textAlign:"center",marginBottom:16}}>
           <div style={{display:"flex",justifyContent:"center",marginBottom:6}}><Icon id="sparkles" size={48} color={C.green} strokeWidth={1.3}/></div>
           <div style={{fontSize:22,fontWeight:800,color:C.purpleBright,fontFamily:"Georgia,serif",marginTop:12,marginBottom:8}}>{isCouple?"Meeting complete!":"Check-in done!"}</div>
-          <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.7,marginBottom:16}}>{isCouple?"You just did what most couples never do: talked openly about money. That's the habit that builds wealth.":"10 minutes every week. This is the habit."}</div>
+          <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.7,marginBottom:16}}>{isCouple?"You talked openly about money together.":"10 minutes every week. This is the habit."}</div>
         </div>
         {/* Meeting summary */}
         <Card style={{background:`linear-gradient(135deg,${C.purpleDim},${C.card})`,border:`1px solid ${C.purple}33`,marginBottom:12}}>
@@ -10024,7 +10115,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
             {[
               {label:"Balance",value:`$${(_ss.balance||0).toFixed(0)}`},
               {label:"Monthly Cash Flow",value:`${cashFlow>=0?"+":""}$${(cashFlow||0).toFixed(0)}`},
-              {label:"Health Score",value:`${healthScore}/100`},
+              {label:`Health Score${healthNote}`,value:`${healthScore}/100`},
               {label:"Total Debt",value:totalDebt>0?`$${totalDebt.toLocaleString()}`:"None 🎉"},
             ].map(m=>(
               <div key={m.label} style={{background:C.cardAlt,borderRadius:10,padding:"10px 12px",border:`1px solid ${C.border}`}}>
@@ -10364,27 +10455,12 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
       {(()=>{
         const kidName=activeKid?.name||"your child";
         const lessonAge=activeKid?.age||globalKidAge;
-        const allLessons={
-          "4-7":[
-            {emoji:"🪙",title:"Money is for trading",body:"When you want something at the store, you give money and get the thing. Money is like a trade ticket!",activity:"Play store at home. Use toy coins to 'buy' snacks from a parent.",key:"Money is how we trade for things we want."},
-            {emoji:"🐷",title:"Saving means waiting",body:"If a toy costs $10 and you have $3, you need to save $7 more. Saving means keeping money safe until you have enough.",activity:"Put $1 in a piggy bank each day and count it every 3 days.",key:"Waiting for something makes it even better."},
-          ],
-          "8-12":[
-            {emoji:"🏦",title:"What banks do",body:"A bank keeps your money safe and pays you a little extra (interest) to use it while it's there. Like a super-safe piggy bank that rewards patience.",activity:"Ask a parent to open a youth savings account. Watch the interest appear.",key:"Banks keep money safe AND pay you to use them."},
-            {emoji:"💳",title:"Credit cards are loans",body:"A credit card lets you buy now, pay later. If you don't pay it ALL back quickly, they charge you extra. That's how people get into trouble.",activity:"If you borrowed $10 and had to pay back $11, would you? That's what a credit card charges.",key:"Pay your credit card in full every month, always."},
-            {emoji:"📈",title:"Money can grow",body:"$100 saved today at 7% becomes $386 in 20 years without doing anything extra. This is compound interest: money making more money.",activity:"Use an online compound interest calculator with a parent. Put in small numbers and watch.",key:"Start saving young. Time is the secret ingredient."},
-          ],
-          "13+":[
-            {emoji:"💰",title:"Budget like a boss",body:"50% needs, 30% wants, 20% savings. Without a budget, money just disappears. A budget isn't restriction. It's a plan for the life you actually want.",key:"A budget gives your money direction."},
-            {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet, and paying extra for the privilege. Use debt only for things that gain value.",key:"Debt is expensive. Use it wisely or not at all."},
-            {emoji:"📊",title:"Start investing at your first job",body:"$50/month invested at 7% starting at age 16 = $245,000 at retirement. The same $50 starting at 30 = $68,000. Starting early nearly triples your outcome.",key:`Invest with your very first ${payWord(data.profile?.country)}.`},
-          ],
-        };
+        const allLessons=KIDS_LESSONS;
         return(<>
           {/* 3 Jar Method */}
           <Card style={{background:`linear-gradient(135deg,${C.goldDim} 0%,${C.card} 100%)`,border:`1px solid ${C.gold}33`}}>
             <div style={{color:C.gold,fontWeight:800,marginBottom:8}}>🫙 The 3 Jar Method</div>
-            <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>Split every dollar {kidName} earns into 3 jars.</div>
+            <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>Every dollar {kidName} earns is split across 3 jars.</div>
             <div style={{display:"flex",gap:8}}>
               {[{name:"Spend",emoji:"🎮",color:C.orange,desc:"Fun now"},{name:"Save",emoji:"🏦",color:C.blue,desc:"Big goals"},{name:"Give",emoji:"❤️",color:C.pink,desc:"Others"}].map((j,i)=>(
                 <div key={i} style={{flex:1,background:j.color+"18",border:`1px solid ${j.color}33`,borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
@@ -10415,7 +10491,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
               <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',Georgia,serif",marginBottom:8}}>{l.title}</div>
               <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65,marginBottom:l.activity?10:0}}>{l.body}</div>
               {l.activity&&<div style={{background:C.teal+"18",border:`1px solid ${C.teal}44`,borderRadius:12,padding:"10px 14px",marginBottom:10}}>
-                <div style={{color:C.tealBright,fontSize:13,fontWeight:700,marginBottom:4}}>Try this activity</div>
+                <div style={{color:C.tealBright,fontSize:13,fontWeight:700,marginBottom:4}}>An activity</div>
                 <div style={{color:C.cream,fontSize:13}}>{l.activity}</div>
               </div>}
               <Chip label={l.key} color={C.pink} size={12}/>
@@ -10439,7 +10515,8 @@ function WidgetScreen({data,onBack}){
   const overdraft=_ss.overdraft;     // …and item 2: balance comes from ssView.balanceText, not a local re-format
   const soonBills=_ss.soonBills||[];
   const nextBill=soonBills[0];
-  const {score:healthScore}=calcHealthScore(data, getCatOv());
+  const {score:healthScore,partial:healthPartial}=calcHealthScore(data, getCatOv());
+  const healthTileLabel=healthPartial?`Health (${HEALTH_SCORE_PARTIAL_SHORT})`:"Health"; // prompt 3d
   const heroColor=overdraft?C.red:C.green;
   const heroColorBright=overdraft?C.redBright:C.greenBright;
   const today=new Date().toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"});
@@ -10492,7 +10569,7 @@ function WidgetScreen({data,onBack}){
   // Build list of active medium tiles (up to 3 slots, Safe always first)
   const medTiles=[
     wContent.balance&&{label:"Balance",value:ssView.balanceText,color:"rgba(237,233,226,0.85)"},
-    wContent.health&&{label:"Health",value:`${healthScore}/100`,color:"rgba(0,232,154,0.9)"},
+    wContent.health&&{label:healthTileLabel,value:`${healthScore}/100`,color:"rgba(0,232,154,0.9)"},
     wContent.nextBill&&nextBill&&{label:"Next Bill",value:`${nextBill.name} $${parseFloat(nextBill.amount).toFixed(0)}`,color:"rgba(245,204,106,0.95)"},
     wContent.cashFlow&&{label:"Cash Flow",value:`${wCashFlow>=0?"+":""}$${Math.round(wCashFlow)}/mo`,color:wCashFlow>=0?"rgba(0,232,154,0.9)":"rgba(255,79,106,0.9)"},
     wContent.streak&&{label:"Streak",value:`${wStreak} days 🔥`,color:"rgba(237,233,226,0.85)"},
@@ -10501,7 +10578,7 @@ function WidgetScreen({data,onBack}){
   // Build list of active large grid tiles
   const largeTiles=[
     wContent.balance&&{label:"Balance",value:ssView.balanceText,bg:"rgba(255,255,255,0.05)",color:"rgba(237,233,226,0.9)"},
-    wContent.health&&{label:"Health Score",value:`${healthScore}`,bg:"rgba(0,204,133,0.08)",color:"rgba(0,232,154,0.95)"},
+    wContent.health&&{label:healthPartial?`Health Score (${HEALTH_SCORE_PARTIAL_SHORT})`:"Health Score",value:`${healthScore}`,bg:"rgba(0,204,133,0.08)",color:"rgba(0,232,154,0.95)"},
     wContent.nextBill&&{label:"Due Soon",value:`$${Math.round(_ss.upcomingBills)}`,bg:"rgba(232,184,75,0.08)",color:"rgba(245,204,106,0.95)"},
     wContent.cashFlow&&{label:"Cash Flow",value:`${wCashFlow>=0?"+":""}$${Math.round(wCashFlow)}`,bg:wCashFlow>=0?"rgba(0,204,133,0.08)":"rgba(255,79,106,0.08)",color:wCashFlow>=0?"rgba(0,232,154,0.95)":"rgba(255,79,106,0.95)"},
     wContent.streak&&{label:"Streak",value:`${wStreak}d 🔥`,bg:"rgba(161,140,255,0.08)",color:"rgba(179,161,255,0.95)"},
@@ -10631,6 +10708,7 @@ function WidgetScreen({data,onBack}){
         {wSize==="small"&&<PhoneFrame wW={158} wH={158}><SmallWidget/></PhoneFrame>}
         {wSize==="medium"&&<PhoneFrame wW={338} wH={158}><MediumWidget/></PhoneFrame>}
         {wSize==="large"&&<PhoneFrame wW={338} wH={338}><LargeWidget/></PhoneFrame>}
+        {healthPartial&&wContent.health&&<div style={{color:C.muted,fontSize:13,lineHeight:1.45,textAlign:"center",marginTop:10}}>Health: {HEALTH_SCORE_PARTIAL_LABEL}</div>}
       </div>
     </div>
 
@@ -10917,8 +10995,10 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
     }));
     const addIncomeSource = () => setAppData && setAppData(prev => ({
       ...prev,
-      incomes: [...(prev.incomes || []), { id: Date.now(), label: "", amount: "", freq: "biweekly", type: "employment", isVariable: false, owner: "self" }],
+      incomes: [...(prev.incomes || []), newSettingsIncome()],
     }));
+    // Prompt 3b: each income's type, so a benefit is not counted as a paycheque (lib/incomeTypes.js).
+    const updateIncomeType = (id, type) => setAppData && setAppData(prev => ({ ...prev, incomes: setIncomeType(prev.incomes, id, type) }));
     return (
     <div style={s}>
       <div style={row}><span style={lbl}>Name</span>
@@ -10946,6 +11026,18 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
           ))}
         </select>
       </div>
+      {/* Prompt 3b: the household's own credit score, the only one Flourish uses (blank = not entered). */}
+      <div style={row}><span style={lbl}>Credit score</span>
+        <input key={`cs-${creditScoreEntered(data.profile)??""}`} defaultValue={creditScoreEntered(data.profile)??""} type="number" inputMode="numeric" min={300} max={(data.profile?.country||"CA")==="US"?850:900}
+          placeholder="Not entered" aria-label="Your credit score"
+          onBlur={e=>{
+            const raw=e.target.value.trim(); const n=Math.round(Number(raw)); const max=(data.profile?.country||"CA")==="US"?850:900;
+            if(!setAppData) return;
+            if(raw==="") { setAppData(prev=>({...prev,profile:{...prev.profile,creditKnown:false}})); return; }
+            if(Number.isFinite(n)&&n>=300&&n<=max) setAppData(prev=>({...prev,profile:{...prev.profile,creditScore:n,creditKnown:true,creditScoreUpdated:Date.now()}}));
+          }}
+          style={{background:"none",border:"none",borderBottom:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,textAlign:"right",outline:"none",fontFamily:"inherit",padding:"2px 4px",width:110}}/>
+      </div>
       {/* BUG 4: the "& Income" half of this section. Status / Has Kids intentionally removed here
           (BUG 2) — they now live ONLY in Family Settings. This edits appData.incomes directly. */}
       <div style={{color:C.mutedHi,fontSize:13,fontWeight:700,marginTop:14,marginBottom:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Income</div>
@@ -10959,6 +11051,13 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
               <button onClick={()=>removeIncome(inc.id)} aria-label="Remove income" title="Remove this income"
                 style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:14,padding:"4px 6px",minWidth:32,minHeight:34,flexShrink:0}}>✕</button>
             </div>
+            <label style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+              <span style={{color:C.muted,fontSize:13,flexShrink:0}}>Type</span>
+              <select value={pickerValue(inc)} required aria-label="Income type" onChange={e=>updateIncomeType(inc.id,e.target.value)}
+                style={{flex:1,minWidth:0,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",cursor:"pointer"}}>
+                {incomeTypeOptions(data.profile?.country,inc).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </label>
             <div style={{display:"flex",gap:8}}>
               <div style={{flex:1.2,display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
                 <span style={{color:C.muted,padding:"0 8px",fontSize:13,flexShrink:0}}>$</span>
@@ -11185,7 +11284,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
 
   const handleShare=()=>{
     const url="https://flourishmoney.app";
-    const text="I've been using Flourish to track my spending and it actually tells me exactly how much I can spend today. Worth checking out.";
+    const text="I've been using Flourish to track my spending. It shows how much is safe to spend each day, until my next deposit.";
     if(navigator.share){navigator.share({title:"Flourish Money",text,url}).catch(()=>{});}
     else{navigator.clipboard?.writeText(url).then(()=>alertModal({message:"Link copied! Share it with a friend 🌱"})).catch(()=>window.open(url,"_blank"));}
   };
@@ -11828,20 +11927,20 @@ ${coachSafeToSpendLine(data)}${(()=>{ const l = coachPurchaseLine(data, userText
 </UNTRUSTED_USER_DATA>
 
 Reference rules (name and explain these; do not compute new figures from them):
-${country==="CA"?`- Employment: ${isSelfEmp?"SELF-EMPLOYED: HST/GST registration ($30k threshold), quarterly instalments, home office and business deductions may be relevant; check canada.ca or CRA My Account":"T4 EMPLOYEE: standard employment deductions, RRSP, union dues and home office (if remote) may be relevant; check canada.ca"}
+${country==="CA"?`- Employment: ${isSelfEmp?`SELF-EMPLOYED: HST/GST registration ($${TAX_DATA.CA.GSTHST_SMALL_SUPPLIER.value.toLocaleString("en-US")} threshold), quarterly instalments, home office and business deductions may be relevant; check canada.ca or CRA My Account`:"T4 EMPLOYEE: standard employment deductions, RRSP, union dues and home office (if remote) may be relevant; check canada.ca"}
 ${partnerEmpLabel ? `- Partner employment: ${partnerIsSelfEmp ? "SELF-EMPLOYED PARTNER: income splitting, spousal RRSP contributions and household business deductions may be relevant" : "EMPLOYED PARTNER: dual income household; spousal RRSP may be relevant"}`: ""}
-- ${age&&age>=65?"SENIOR 65+: Age Amount credit, pension income splitting (Form T1032), OAS ($727/mo), GIS if low income, medical expense credit and RRIF withdrawals may be relevant; check eligibility at canada.ca":""}
+- ${age&&age>=65?`SENIOR 65+: Age Amount credit, pension income splitting (Form T1032), OAS (up to $${TAX_DATA.CA.OAS.maxMonthly65to74}/mo at 65 to 74), GIS if low income, medical expense credit and RRIF withdrawals may be relevant; check eligibility at canada.ca`:""}
 - ${age&&age<71?"RRSP: an RRSP converts by the end of the year the holder turns 71; check canada.ca":"age 71+: RRIF rules and minimum withdrawals may be relevant; check canada.ca"}
-- RRSP deadline: ${new Date().getMonth() < 2 || (new Date().getMonth() === 2 && new Date().getDate() === 1) ? "the RRSP contribution deadline for last tax year is March 1; check canada.ca" : new Date().getMonth() <= 11 ? "the RRSP contribution deadline for last tax year has passed; contributions now count toward this tax year" : ""}
+- RRSP deadline: ${(()=>{ const n=nextRrspDeadline(); return n.taxYear===new Date().getFullYear()-1 ? `the RRSP contribution deadline for the ${n.taxYear} tax year is ${formatRrspDeadline(n.date)} (CRA: the 60th day of the year, or the next business day after a weekend); check canada.ca` : `the RRSP contribution deadline for the ${n.taxYear-1} tax year has passed; contributions now count toward the ${n.taxYear} tax year, whose deadline is ${formatRrspDeadline(n.date)}`; })()}
 - ${!profile.isHomeowner&&(!age||age<40)?`FIRST-TIME BUYER programs may be relevant; check eligibility at canada.ca: FHSA ($${TAX_DATA.CA.FHSA_ANNUAL.value.toLocaleString()}/yr deductible, tax-free growth, $${TAX_DATA.CA.FHSA_LIFETIME.value.toLocaleString()} lifetime), HBP (borrow up to $${TAX_DATA.CA.HBP_WITHDRAWAL_LIMIT.value.toLocaleString()} from RRSP), Home Buyers' Tax Credit (claim the $${TAX_DATA.CA.HOME_BUYERS_AMOUNT.value.toLocaleString()} amount, worth ~$${creditWorth(TAX_DATA.CA.HOME_BUYERS_AMOUNT.value).toLocaleString()} in federal tax at the ${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% ${TAX_DATA.CA.FEDERAL_LOWEST_RATE.year} rate)`:""}
 - ${profile.hasKids?`PARENT: CCB (${TAX_DATA.CA.CCB.yearLabel}: $${TAX_DATA.CA.CCB.maxUnder6.toLocaleString()}/yr under-6, $${TAX_DATA.CA.CCB.max6to17.toLocaleString()}/yr ages 6 to 17. Tax-free, income-tested, full amount at an adjusted family net income of $${TAX_DATA.CA.CCB.phaseOutStart.toLocaleString()} or less, then it reduces gradually and more slowly again over $${TAX_DATA.CA.CCB.phaseOutSecond.toLocaleString()}), RESP+CESG (the government adds a grant on top of RESP contributions. Quote the rate only from Canada.ca, never from memory), childcare deduction (lower-income spouse claims), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?"college-age child: RESP withdrawal rules may be relevant":""}`:""}
 - Province ${prov||"ON"}: provincial tax rates and credits apply; check canada.ca or the province for eligibility`:
-`- Employment: ${isSelfEmp?"SELF-EMPLOYED: quarterly estimated taxes, Schedule C, SE tax deduction (50% of SE tax), home office Form 8829, SEP-IRA or Solo 401k may be relevant; check irs.gov":"W-2 EMPLOYEE: withholding and any employer 401k match may be relevant; check irs.gov"}
+`- Employment: ${isSelfEmp?`SELF-EMPLOYED: quarterly estimated taxes, Schedule C, SE tax (${TAX_DATA.US.SE_TAX.ratePct}%, half of it deductible), home office Form 8829, SEP-IRA (up to ${usd(TAX_DATA.US.SEP_LIMIT.value)} for ${TAX_DATA.US.SEP_LIMIT.year}) or Solo 401k may be relevant; check irs.gov`:"W-2 EMPLOYEE: withholding and any employer 401k match may be relevant; check irs.gov"}
 ${partnerEmpLabel ? `- Partner employment: ${partnerIsSelfEmp ? "SELF-EMPLOYED PARTNER: income splitting, spousal RRSP contributions and household business deductions may be relevant" : "EMPLOYED PARTNER: dual income household; spousal RRSP may be relevant"}`: ""}
-- ${age&&age>=65?"SENIOR 65+ (may be relevant; check eligibility at irs.gov): Social Security taxation (up to 85% taxable), RMDs start at 73, higher standard deduction ($1,950 extra single), OBBBA NEW $6,000 senior bonus deduction (2025 to 2028, phases out at $75k MAGI), QCD from IRA up to $108,000 (2025 indexed limit)":""}
-- ${age&&age>=73?"RMDs may be relevant (age 73+); the penalty on a missed amount is 25%; check irs.gov":""}
-- ${!profile.isHomeowner&&(!age||age<40)?"FIRST-TIME BUYER programs may be relevant; check eligibility at irs.gov: mortgage interest deduction, property tax deduction, $10k IRA penalty-free withdrawal, state programs":""}
-- ${profile.hasKids?`PARENT: Child Tax Credit ($2,200/child under 17, OBBBA 2025), Dependent Care FSA ($5,000 pre-tax for 2025; rises to $7,500 for 2026 per OBBBA), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?"AOTC for college ($2,500/yr, 40% refundable)":""}`:""}
+- ${age&&age>=65?`SENIOR 65+ (may be relevant; check eligibility at irs.gov): Social Security taxation (up to ${TAX_DATA.US.SS_TAXABLE_MAX.pct}% taxable), RMDs start at ${TAX_DATA.US.RMD.startAge}, additional standard deduction (${usd(TAX_DATA.US.ADDITIONAL_STD_65.unmarried)} unmarried, ${usd(TAX_DATA.US.ADDITIONAL_STD_65.married)} per spouse if married, ${TAX_DATA.US.ADDITIONAL_STD_65.year}), senior deduction (${usd(TAX_DATA.US.SENIOR_DEDUCTION.perPerson)} per person, ${TAX_DATA.US.SENIOR_DEDUCTION.firstYear} to ${TAX_DATA.US.SENIOR_DEDUCTION.lastYear}, phases out above ${usd(TAX_DATA.US.SENIOR_DEDUCTION.phaseStartSingle)} MAGI, ${usd(TAX_DATA.US.SENIOR_DEDUCTION.phaseStartJoint)} joint), QCD from IRA up to ${usd(TAX_DATA.US.QCD_LIMIT.value)} (${TAX_DATA.US.QCD_LIMIT.year})`:""}
+- ${age&&age>=TAX_DATA.US.RMD.startAge?`RMDs may be relevant (age ${TAX_DATA.US.RMD.startAge}+); the excise tax on a missed amount is ${TAX_DATA.US.RMD.exciseTaxPct}% (${TAX_DATA.US.RMD.correctedPct}% if corrected in time); check irs.gov`:""}
+- ${!profile.isHomeowner&&(!age||age<40)?`FIRST-TIME BUYER programs may be relevant; check eligibility at irs.gov: mortgage interest deduction, property tax deduction, IRA first-home withdrawal without the early-withdrawal tax (up to ${usd(TAX_DATA.US.IRA_FIRST_HOME.value)} lifetime), state programs`:""}
+- ${profile.hasKids?`PARENT: Child Tax Credit (${usd(TAX_DATA.US.CHILD_TAX_CREDIT.value)}/child under 17, ${TAX_DATA.US.CHILD_TAX_CREDIT.year}), Dependent Care FSA (up to ${usd(TAX_DATA.US.DEPENDENT_CARE_FSA.value)} pre-tax for ${TAX_DATA.US.DEPENDENT_CARE_FSA.year}), ${kidsArr.some(k=>parseInt(k.birthYear||0)>0&&new Date().getFullYear()-parseInt(k.birthYear)>=17)?`AOTC for college (${usd(TAX_DATA.US.AOTC.max)}/yr, ${TAX_DATA.US.AOTC.refundablePct}% refundable)`:""}`:""}
 - State ${prov||"unknown"}: ${NO_STATE_WAGE_TAX.has(profile.province)?"NO state income tax on wages":"state income tax applies"}`}
 
 When user agrees to a specific goal or plan: FLOURISH_UPDATE:{"action":"update_goal","name":"<n>","target":<n>,"saved":<n>,"monthly":<n>}
@@ -12184,121 +12283,76 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
 }
 
 // ─── CREDIT SCREEN ────────────────────────────────────────────────────────────
+// The credit score range, from each country's government consumer agency (prompt 3c): FCAC, "Scores
+// usually range from 300 to 900" (canada.ca/en/financial-consumer-agency/services/credit-reports-score/
+// credit-report-score-basics.html); CFPB, "many scores range from 300 to 850"
+// (consumerfinance.gov/ask-cfpb/what-is-a-credit-score-en-315/). Checked 2026-10-01.
+function creditScaleNote(country){
+  return country==="US" ? "Most scores range from 300 to 850 (CFPB)" : "Scores usually range from 300 to 900 (FCAC)";
+}
+
 function CreditScreen({data,setScreen}){
   const profile = data.profile||{};
   const country = profile.country||"CA";
   const isCA = country==="CA";
-
-  // Score derived from behavioral signals (mock until Plaid/bureau integration)
-  const txns = data.transactions||[];
-  const accounts = data.accounts||[];
-
-  // Empty state — no bank and no credit score entered
-  if(!data.bankConnected && !profile.creditKnown) return (
-    <EmptyState icon="💳" title="Connect your bank for credit coaching"
-      body="Flourish analyses your spending patterns and debt utilization to build a personalized credit improvement plan. Connect your bank to use this."
-      action="Connect Bank" onAction={()=>window.dispatchEvent(new CustomEvent("flourish:settings"))} color={C.blue}/>
-  );
-  // Monthly income using frequency-aware conversion (same as FinancialCalcEngine)
-  const toMonthlyC = toMonthly; // Bug 1: canonical converter
-  const income = (data.incomes||[]).reduce((s,i)=>s+toMonthlyC(i.amount,i.freq),0); // Bug 5: no fake income fallback
-  const spending = txns.filter(t=>t.amount>0&&t.cat!=="Income"&&t.cat!=="Transfer"&&t.cat!=="Fees").reduce((s,t)=>s+t.amount,0);
-  const utilization = Math.min(1, spending / Math.max(income, 1));
-  const baseScore = isCA ? 720 : 718;
-  const score = Math.round(baseScore - (utilization * 60) + (accounts.length * 8));
-  const clampedScore = Math.min(850, Math.max(580, score));
-
-  const scoreColor = clampedScore >= 740 ? C.green : clampedScore >= 670 ? C.gold : C.red;
-  const scoreLabel = clampedScore >= 740 ? "Very Good" : clampedScore >= 670 ? "Fair" : "Needs Work";
-
+  // Prompt 3b: Flourish shows no estimated score. The old screen built one from a fixed base (720 in
+  // Canada, 718 in the US) and spending; nothing in it came from a bureau. The only score shown is the
+  // one the household entered themselves (creditScoreEntered), with the scale it is on.
+  const entered = creditScoreEntered(profile);
+  // What each factor is and what affects it. Prompt 3c: no weights in either country. A scoring
+  // company's own percentages are not an official source, and Canada's bureaus publish none.
   const factors = [
-    {label:"Payment History", weight:"35%", score:clampedScore>700?95:78, tip:"Never miss a payment: set up auto-pay on all accounts."},
-    {label:"Credit Utilization", weight:"30%", score:Math.max(40, Math.round(100-(utilization*80))), tip:`Keep balances below 30% of your limit. Yours is ~${Math.round(utilization*100)}%.`},
-    {label:"Credit Age", weight:"15%", score:72, tip:"Don't close old accounts: length of history matters."},
-    {label:"Credit Mix", weight:"10%", score:accounts.length>1?80:55, tip:"A mix of credit types (card + loan) helps your score."},
-    {label:"New Inquiries", weight:"10%", score:85, tip:"Limit hard inquiries: only apply for credit you need."},
+    {label:"Payment history", what:"Whether bills and credit payments are made on time. Late and missed payments are recorded on your credit report."},
+    {label:"Credit utilization", what:"How much of your available credit you are using. A lower balance compared with your credit limits counts in your favour."},
+    {label:"Length of credit history", what:"How long your accounts have been open. Older accounts add to the length of your history."},
+    {label:"Credit mix", what:"The kinds of credit you have, such as a card, a car loan or a mortgage."},
+    {label:"New credit", what:"Recent applications for credit. Each hard inquiry, made when you apply, is recorded on your report."},
   ];
-
   const tips = isCA ? [
-    {icon:"🏦", title:"Check your Equifax & TransUnion reports", desc:"Get free annual reports at equifax.ca and transunion.ca. Dispute any errors immediately."},
-    {icon:"🤝", title:"Become an authorized user", desc:"Ask a family member with excellent credit to add you to their card. Their history helps yours."},
-    {icon:"📅", title:"Pay twice a month", desc:"Paying every 2 weeks instead of monthly lowers your reported utilization significantly."},
+    {icon:"🏦", title:"Your Equifax and TransUnion reports", desc:"Both bureaus give free access to your report at equifax.ca and transunion.ca. An error on a report can be disputed with the bureau."},
+    {icon:"🤝", title:"Authorized users", desc:"Being added as an authorized user on someone else's card can put that card's history on your report."},
+    {icon:"📅", title:"Paying more than once a month", desc:"Paying every 2 weeks instead of monthly can lower the balance reported to the credit bureaus, which is part of utilization."},
   ] : [
-    {icon:"🏦", title:"Get your free credit report", desc:"Check AnnualCreditReport.com. You're entitled to free reports from all 3 bureaus."},
-    {icon:"💳", title:"Request a credit limit increase", desc:"A higher limit with the same spending = lower utilization. Do this every 12 months."},
-    {icon:"📅", title:"Pay twice a month", desc:"Paying every 2 weeks lowers your reported utilization and can boost your score in 60 days."},
+    {icon:"🏦", title:"Your free credit reports", desc:"AnnualCreditReport.com gives free reports from all 3 bureaus. An error on a report can be disputed with the bureau."},
+    {icon:"💳", title:"Credit limits", desc:"A higher limit with the same spending means lower utilization."},
+    {icon:"📅", title:"Paying more than once a month", desc:"Paying every 2 weeks can lower the balance reported to the credit bureaus, which is part of utilization."},
   ];
-
-  const arc = (score)=>{
-    const pct = (score - 300) / 550;
-    const angle = -210 + pct * 240;
-    const rad = (angle * Math.PI) / 180;
-    const r = 70;
-    const cx = 100, cy = 95;
-    return {x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad)};
-  };
-
-  const scoreAngle = -210 + ((clampedScore-300)/550)*240;
-  const rad = scoreAngle * Math.PI / 180;
-  const needleX = 100 + 55 * Math.cos(rad);
-  const needleY = 95 + 55 * Math.sin(rad);
+  // The range, from the government consumer agency in each country.
+  const scale = creditScaleNote(country);
 
   return(
     <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"20px 20px 80px",maxWidth:430,margin:"0 auto"}}>
-      <ScreenHeader title="Credit" subtitle="Estimated, not your bureau score." onBack={setScreen?()=>setScreen("home"):null} cta="Ask Coach" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
-      {/* Score gauge */}
-      <div style={{background:C.card,borderRadius:20,padding:"24px 20px 20px",border:`1px solid ${C.border}`,marginBottom:16,textAlign:"center"}}>
-        <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:12}}>Credit Score Estimate</div>
-        <svg viewBox="0 0 200 120" style={{width:"100%",maxWidth:240,margin:"0 auto",display:"block"}}>
-          {/* Track arc */}
-          <path d="M 20 95 A 80 80 0 0 1 180 95" fill="none" stroke={C.border} strokeWidth="12" strokeLinecap="round"/>
-          {/* Colored arc */}
-          <path d="M 20 95 A 80 80 0 0 1 180 95" fill="none" stroke={scoreColor} strokeWidth="12" strokeLinecap="round"
-            strokeDasharray={`${((clampedScore-300)/550)*251} 251`}/>
-          {/* Needle */}
-          <line x1="100" y1="95" x2={needleX} y2={needleY} stroke={scoreColor} strokeWidth="3" strokeLinecap="round"/>
-          <circle cx="100" cy="95" r="5" fill={scoreColor}/>
-          {/* Score text */}
-          <text x="100" y="82" textAnchor="middle" fill={scoreColor} fontSize="28" fontWeight="900" fontFamily="Plus Jakarta Sans,sans-serif">{clampedScore}</text>
-          <text x="100" y="112" textAnchor="middle" fill={scoreColor} fontSize="11" fontWeight="700" fontFamily="Plus Jakarta Sans,sans-serif">{scoreLabel}</text>
-        </svg>
-        <div style={{color:C.muted,fontSize:13,marginTop:8}}>
-          Estimated from your spending behaviour · {isCA?"Equifax/TransUnion scale 300 to 900":"FICO® scale 300 to 850"}
-        </div>
-        <div style={{display:"flex",justifyContent:"center",gap:6,marginTop:12}}>
-          {[["580","Poor",C.red],["670","Fair",C.gold],["740","Good",C.green],["800","Excellent",C.teal]].map(([s,l,col])=>(
-            <div key={s} style={{background:col+"22",border:`1px solid ${col}44`,borderRadius:8,padding:"3px 8px",textAlign:"center"}}>
-              <div style={{color:col,fontSize:13,fontWeight:800}}>{s}+</div>
-              <div style={{color:col,fontSize:13,fontWeight:600}}>{l}</div>
-            </div>
-          ))}
-        </div>
+      <ScreenHeader title="Credit" subtitle="What goes into a credit score." onBack={setScreen?()=>setScreen("home"):null} cta="Ask Coach" onCta={setScreen?()=>setScreen("coach"):null} ctaColor={C.purple}/>
+      {/* The household's own score, or where to get one. Never an estimate. */}
+      <div style={{background:C.card,borderRadius:20,padding:"20px",border:`1px solid ${C.border}`,marginBottom:16,textAlign:"center"}}>
+        {entered!=null ? (<>
+          <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:6}}>The score you entered</div>
+          <div style={{color:C.cream,fontSize:40,fontWeight:900,fontFamily:"'Playfair Display',serif"}}>{entered}</div>
+          <div style={{color:C.muted,fontSize:13,marginTop:4}}>{scale}</div>
+        </>) : (<>
+          <div style={{color:C.cream,fontSize:14,fontWeight:800,marginBottom:6}}>Flourish does not estimate your credit score</div>
+          <div style={{color:C.muted,fontSize:13,lineHeight:1.6}}>
+            {isCA?"Equifax and TransUnion can show you yours.":"Your card issuer, your bank or a credit bureau can show you yours."} If you know it, you can enter it in Settings, under Profile & Income.
+          </div>
+        </>)}
       </div>
 
-      {/* Factors */}
+      {/* Factors: what each is and what affects it */}
       <div style={{background:C.card,borderRadius:20,padding:"18px 18px",border:`1px solid ${C.border}`,marginBottom:16}}>
-        <div style={{color:C.cream,fontWeight:800,fontSize:14,marginBottom:14}}>Score Factors</div>
-        <div style={{display:"flex",flexDirection:"column",gap:11}}>
+        <div style={{color:C.cream,fontWeight:800,fontSize:14,marginBottom:4}}>What goes into a score</div>
+        <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:10}}>
           {factors.map((f,i)=>(
             <div key={i}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
-                <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                  <span style={{color:C.cream,fontSize:13,fontWeight:700}}>{f.label}</span>
-                  <span style={{color:C.muted,fontSize:13,fontWeight:600}}>{f.weight}</span>
-                </div>
-                <span style={{color:f.score>=80?C.green:f.score>=60?C.gold:C.red,fontWeight:800,fontSize:13}}>{f.score}/100</span>
+              <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:3}}>
+                <span style={{color:C.cream,fontSize:13,fontWeight:700}}>{f.label}</span>
               </div>
-              <div style={{background:C.cardAlt,borderRadius:99,height:6,overflow:"hidden"}}>
-                <div style={{height:"100%",width:`${f.score}%`,background:f.score>=80?C.green:f.score>=60?C.gold:C.red,borderRadius:99,transition:"width 1s ease"}}/>
-              </div>
-              <div style={{color:C.muted,fontSize:13,marginTop:4,lineHeight:1.5}}>{f.tip}</div>
+              <div style={{color:C.muted,fontSize:13,lineHeight:1.5}}>{f.what}</div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Action tips */}
-      <div style={{color:C.cream,fontWeight:800,fontSize:14,marginBottom:10}}>Your Action Plan</div>
+      <div style={{color:C.cream,fontWeight:800,fontSize:14,marginBottom:10}}>Good to know</div>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
         {tips.map((t,i)=>(
           <div key={i} style={{background:C.card,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}`,display:"flex",gap:12,alignItems:"flex-start"}}>
@@ -12309,13 +12363,6 @@ function CreditScreen({data,setScreen}){
             </div>
           </div>
         ))}
-      </div>
-
-      {/* Disclaimer */}
-      <div style={{marginTop:16,padding:"12px 16px",background:C.cardAlt,borderRadius:14,border:`1px solid ${C.border}`}}>
-        <div style={{color:C.muted,fontSize:13,lineHeight:1.6,textAlign:"center"}}>
-          ⚠️ This is a behavioural estimate, not your official credit score. Connect a bureau account or check {isCA?"Equifax/TransUnion directly":"AnnualCreditReport.com"} for your actual score.
-        </div>
       </div>
     </div>
   );
@@ -12546,8 +12593,8 @@ function TermsOfService({onBack}){
       <div style={h2}>6. Acceptable Use</div>
       <div style={p}>You agree not to: use the App for any unlawful purpose; attempt to reverse-engineer, decompile, or hack the App; use the App to process another person's financial data without their consent; resell or sublicense the App; or interfere with the security or integrity of the App or its infrastructure.</div>
 
-      <div style={h2}>7. Subscription & Billing</div>
-      <div style={p}>{isNativeApp() ? "In the iOS and Android apps there is nothing to buy. Some features have usage limits, shown where they apply." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
+      <div style={h2}>{isNativeApp() ? "7. Cost and usage limits" : "7. Subscription & Billing"}</div>
+      <div style={p}>{isNativeApp() ? "The iOS and Android apps are free, and there is nothing to buy in them. No feature closes after you sign up. There are usage limits, the same from the first day: the coach has a weekly message limit and What-If has a daily limit. Each is shown where it applies." : <><strong style={{color:C.cream}}>Free Tier:</strong> Core features are available at no charge with a 14-day trial of premium features.<br/><br/><strong style={{color:C.cream}}>Flourish Plus:</strong> Premium features require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. Prices are displayed in CAD for Canadian users and USD for US users, inclusive of applicable taxes. You may cancel at any time; cancellations take effect at the end of the current billing period. No refunds are provided for partial billing periods unless required by applicable law.</>}</div>
 
       <div style={h2}>8. Intellectual Property</div>
       <div style={p}>The App, including its design, logo, code, AI systems, and content, is the exclusive property of GrowSmart Inc. and is protected by copyright, trademark, and other intellectual property laws. You receive a limited, non-exclusive, non-transferable licence to use the App for personal, non-commercial purposes.</div>
@@ -12574,7 +12621,7 @@ function TermsOfService({onBack}){
 }
 
 // ─── PREMIUM GATE ─────────────────────────────────────────────────────────────
-function PremiumGate({feature,desc,onUpgrade}){
+function PremiumGate({feature,desc,onUpgrade,nativeNote}){
   return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"60px 20px",gap:20,minHeight:400}}>
       <div style={{width:72,height:72,borderRadius:24,background:`linear-gradient(135deg,${C.purple}30,${C.purple}08)`,border:`1px solid ${C.purple}44`,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon id="sparkles" size={32} color={C.purpleBright} strokeWidth={1.35}/></div>
@@ -12588,7 +12635,7 @@ function PremiumGate({feature,desc,onUpgrade}){
       {isNativeApp() ? (
         <div style={{background:"rgba(255,255,255,0.05)",borderRadius:16,padding:"14px 20px",border:`1px solid ${C.border}`,maxWidth:280}}>
           <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7}}>
-            {feature} isn't included in this version.
+            {nativeNote || <>{feature} isn't included in this version.</>}
           </div>
         </div>
       ) : (
@@ -12716,7 +12763,7 @@ function Paywall({onClose,onPromoValid,country}){
   // Step 3: all prices come from src/lib/pricing.js — no hard-coded price or "save %" here.
   const _pr = getPricing(country);
   const plans={
-    annual:{label:"Annual",price:`${formatPrice(_pr.annual)}/yr`,monthly:`${formatPrice(monthlyEquivalentOfAnnual(country))}/mo`,save:`Save ${annualSavingsPercent(country)}%`,badge:"Best Value"},
+    annual:{label:"Annual",price:`${formatPrice(_pr.annual)}/yr`,monthly:`${formatPrice(monthlyEquivalentOfAnnual(country))}/mo`,save:`Save ${annualSavingsPercent(country)}%`,badge:"Billed yearly"},
     monthly:{label:"Monthly",price:`${formatPrice(_pr.monthly)}/mo`,monthly:null,save:null,badge:null},
   };
   const features=[
@@ -12882,7 +12929,7 @@ function FirstVisitScreen({data, onDismiss}) {
                 {formatNumber(Math.abs(ssView.headline))}
               </span>
             </div>
-            {!ssView.isShort&&<div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>to spend freely today</div>}
+            {!ssView.isShort&&<div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>safe to spend until payday</div>}
           </>) : data.bankConnected ? (
             /* Bank linked but balances still syncing — a loader, not a placeholder number */
             <div style={{marginTop:8}}>
@@ -12908,7 +12955,7 @@ function FirstVisitScreen({data, onDismiss}) {
           {ssView.isShort || ssView.needsSetup || noIncome
             ? null
             : incomeAmt > 0
-              ? "Bills paid. Buffer set. Everything above this number is yours. No guilt, no stress."
+              ? "Bills due before payday, minimum debt payments, a spending buffer and a savings amount are accounted for."
               : "Add your income in Settings to see your personalised safe-to-spend number."}
         </div>
 
@@ -12949,7 +12996,7 @@ function FirstVisitScreen({data, onDismiss}) {
         )}
 
         <div style={{marginTop:4,color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6,maxWidth:260,margin:"0 auto"}}>
-          Open Flourish before you spend, not after. That's the whole idea.
+          Flourish shows what's safe to spend before you spend it.
         </div>
         <button onClick={onDismiss} style={{background:"none",border:"none",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"12px 8px 4px"}}>
           Skip for now
@@ -13226,6 +13273,30 @@ function KidsGoal({goal, jars, code, theme, primary, playSound}){
   );
 }
 
+// ── KIDS MONEY LESSONS (prompt 3c) ──────────────────────────────────────────────
+// One deck for both kids screens (Meet's kids tab and the /kids mini site), so they can no longer
+// drift. Concepts only, the same way the Learn cards were done: what a thing is and how it works,
+// never an instruction (the lines on paying cards in full, using debt only for things that gain
+// value and investing from the first paycheque are gone). Figures are plain
+// arithmetic shown in full. The activities describe what an exercise shows, rather than telling
+// anyone to do it.
+const KIDS_LESSONS={
+  "4-7":[
+    {emoji:"🪙",title:"Money is for trading",body:"When you want something at the store, you give money and get the thing. Money is like a trade ticket!",activity:"Playing store at home with toy coins shows how a trade works: coins go one way and a snack comes back.",key:"Money is how we trade for things we want."},
+    {emoji:"🐷",title:"Saving means waiting",body:"If a toy costs $10 and you have $3, you need $10 - $3 = $7 more. Saving means keeping money safe until you have enough.",activity:"A piggy bank that gets $1 a day holds $1 × 3 = $3 more every 3 days, so the savings can be seen adding up.",key:"Saving is waiting until there is enough."},
+  ],
+  "8-12":[
+    {emoji:"🏦",title:"What banks do",body:"A bank keeps your money safe and pays you a little extra, called interest, while it is there. Like a super-safe piggy bank that adds a bit on its own.",activity:"A youth savings account shows interest being added to the balance over time.",key:"A bank keeps money safe and pays interest on it."},
+    {emoji:"💳",title:"Credit cards are loans",body:"A credit card lets you buy now and pay later. Whatever is not paid back by the due date is charged interest, an extra cost on top of the price.",activity:"If you borrowed $10 and had to pay back $11, the extra $1 is interest. A credit card charges interest on any balance not paid in full.",key:"Interest is charged on any part of a card balance not paid back in time."},
+    {emoji:"📈",title:"Money can grow",body:"$100 growing 7% a year for 20 years: $100 × 1.07 to the power of 20 = $387. The 7% is an example rate. This is compound interest: money making more money.",activity:"A compound interest calculator shows how a small amount grows when the growth itself earns growth.",key:"The longer money grows, the more the growth builds on itself."},
+  ],
+  "13+":[
+    {emoji:"💰",title:"What a budget is",body:"One common rule of thumb splits income into 50% needs, 30% wants and 20% savings. A budget is a plan for where money goes before it is spent.",key:"A budget gives your money direction."},
+    {emoji:"🚫",title:"Debt borrows from your future self",body:"Debt is spending money you have not earned yet, and interest makes it cost more than the price. Some debts pay for things that keep or grow in value, such as an education or a home; others pay for things that get used up.",key:"Debt costs more than the price of what it buys."},
+    {emoji:"📊",title:"Investing from a first job",body:"Money invested at a first job has more years to grow than the same money invested later, and each year of growth builds on the growth before it.",key:"Money invested early has the most years to grow."},
+  ],
+};
+
 function KidsMiniSite({country}){ // `country` threaded from the render site (profile.country) so a US family reads "paycheck"
   const params=new URLSearchParams(window.location.search);
   const code=params.get("code")||"";
@@ -13352,22 +13423,7 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
   const kidName=kidData?.name||"Your";
   const kidEmoji=kidData?.emoji||"🌱";
 
-  const lessons={
-    "4-7":[
-      {emoji:"🪙",title:"Money is for trading",body:"When you want something at the store, you give money and get the thing. Money is like a trade ticket!",activity:"Play store at home. Use toy coins to 'buy' snacks from a parent.",key:"Money is how we trade for things we want."},
-      {emoji:"🐷",title:"Saving means waiting",body:"If a toy costs $10 and you have $3, you need to save $7 more. Saving means keeping money safe until you have enough.",activity:"Put $1 in a piggy bank each day and count it every 3 days.",key:"Waiting for something makes it even better."},
-    ],
-    "8-12":[
-      {emoji:"🏦",title:"What banks do",body:"A bank keeps your money safe and pays you a little extra called interest. Like a super-safe piggy bank that rewards you for saving.",key:"Banks keep money safe AND pay you to use them."},
-      {emoji:"💳",title:"Credit cards are loans",body:"A credit card lets you buy now and pay later. But if you don't pay it all back quickly, they charge you extra. That's how people get into trouble.",key:"Pay your credit card in full every month."},
-      {emoji:"📈",title:"Money can grow",body:"$100 at 7% interest becomes $386 in 20 years without doing anything extra! This is compound interest: money making more money.",key:"Start saving young. Time is the secret ingredient."},
-    ],
-    "13+":[
-      {emoji:"💰",title:"Budget like a boss",body:"50% needs, 30% wants, 20% savings. Without a budget, money just disappears. A budget is a plan for the life you actually want.",key:"A budget gives your money direction."},
-      {emoji:"🚫",title:"Debt borrows from your future self",body:"When you go into debt, you're spending money you haven't earned yet, and paying extra for the privilege.",key:"Debt is expensive. Use it wisely or not at all."},
-      {emoji:"📊",title:"Start investing at your first job",body:"$50/month at 7% starting at 16 = $245,000 at retirement. Starting at 30 = only $68,000. Starting early nearly triples your outcome.",key:`Invest with your very first ${payWord(country)}.`},
-    ],
-  };
+  const lessons=KIDS_LESSONS;
 
   return(
     <div style={{minHeight:"100dvh",background:theme.bg,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"0 0 80px",transition:"background .4s"}}>
@@ -13390,7 +13446,7 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
         {streak>0&&(
           <div style={{background:"rgba(255,140,66,0.15)",border:"1px solid rgba(255,140,66,0.3)",borderRadius:10,padding:"8px 14px",display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
             <span style={{fontSize:18}}>🔥</span>
-            <span style={{color:"#FF8C42",fontWeight:700,fontSize:13}}>{streak} week streak! Keep it going!</span>
+            <span style={{color:"#FF8C42",fontWeight:700,fontSize:13}}>{streak} week streak!</span>
           </div>
         )}
         {/* Theme picker — visual swatch grid */}
@@ -13483,7 +13539,7 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
               <div style={{color:theme.text,fontWeight:800,fontSize:14,marginBottom:8}}>{l.title}</div>
               <div style={{color:theme.textMuted,fontSize:13,lineHeight:1.65,marginBottom:l.activity?10:0}}>{l.body}</div>
               {l.activity&&<div style={{background:theme.primaryDim,border:`1px solid ${theme.primaryBorder}`,borderRadius:10,padding:"8px 12px",marginBottom:8}}>
-                <div style={{color:primary,fontSize:13,fontWeight:700,marginBottom:4}}>Try this</div>
+                <div style={{color:primary,fontSize:13,fontWeight:700,marginBottom:4}}>An activity</div>
                 <div style={{color:theme.text,fontSize:13}}>{l.activity}</div>
               </div>}
               <div style={{background:theme.primaryDim,border:`1px solid ${theme.primaryBorder}`,borderRadius:8,padding:"6px 10px",color:primary,fontSize:13,fontWeight:600}}>💡 {l.key}</div>
@@ -14626,10 +14682,10 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
                 <span style={{color:totalEdited>discret?C.redBright:C.greenBright,fontWeight:800,fontSize:14}}>${Math.round(totalEdited).toLocaleString()}/mo</span>
               </div>
               {totalEdited>discret&&<div style={{color:C.muted,fontSize:13,marginTop:3}}>
-                ${Math.round(totalEdited-discret).toLocaleString()} over, see suggested cuts below
+                ${Math.round(totalEdited-discret).toLocaleString()} over what's available to spend
               </div>}
               {totalEdited<=discret&&totalEdited>0&&<div style={{color:C.muted,fontSize:13,marginTop:3}}>
-                ${Math.round(discret-totalEdited).toLocaleString()} unallocated. Consider adding to savings
+                ${Math.round(discret-totalEdited).toLocaleString()} not given to a category
               </div>}
             </div>
           </div>
@@ -14654,7 +14710,7 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
                   <div style={{width:24,height:24,borderRadius:"50%",background:C.red,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:"#fff",flexShrink:0}}>3</div>
                   <div>
                     <div style={{color:C.redBright,fontWeight:800,fontSize:14}}>This doesn't quite fit</div>
-                    <div style={{color:C.muted,fontSize:13,marginTop:1}}>You're ${Math.round(totalEdited-discret).toLocaleString()} over, here's what to trim</div>
+                    <div style={{color:C.muted,fontSize:13,marginTop:1}}>It is ${Math.round(totalEdited-discret).toLocaleString()} over. One way to fit it, worked out by Flourish:</div>
                   </div>
                 </div>
                 {liveCuts.length>0?(
@@ -14675,12 +14731,12 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
                       </div>
                     ))}
                     {remaining>0&&<div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"4px"}}>
-                      ${remaining} still to cut. Consider reducing more categories or removing one
+                      ${remaining} is still over after these amounts
                     </div>}
                   </div>
                 ):(
                   <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"8px 0"}}>
-                    Consider removing a category or reducing your savings rate temporarily.
+                    Flourish found no category it lowers here. The plan is ${Math.round(totalEdited-discret).toLocaleString()} over what's available.
                   </div>
                 )}
               </div>
@@ -14694,7 +14750,7 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
               fontWeight:800,fontSize:14,cursor:totalEdited<=discret?"pointer":"not-allowed",fontFamily:"inherit",transition:"all .2s"}}>
             {saved?"✅ Budget Plan Saved!":"✓ Save My Budget Plan"}
           </button>
-          {totalEdited>discret&&<div style={{color:C.muted,fontSize:13,textAlign:"center",marginTop:-8}}>Apply the suggested cuts above to start saving</div>}
+          {totalEdited>discret&&<div style={{color:C.muted,fontSize:13,textAlign:"center",marginTop:-8}}>The plan can be saved once it fits what's available.</div>}
 
         </div>
       )}
@@ -14868,17 +14924,13 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
               {/* Where to save — only when over budget */}
               {saveSuggestions.length > 0 && (
                 <div style={{ background: C.orange + "12", border: `1px solid ${C.orange}33`, borderRadius: 16, padding: "14px 16px" }}>
-                  <div style={{ color: C.orange, fontWeight: 800, fontSize: 13, marginBottom: 10 }}>💡 Where you could cut back</div>
-                  {saveSuggestions.map(({ cat, over, potential }) => (
+                  <div style={{ color: C.orange, fontWeight: 800, fontSize: 13, marginBottom: 10 }}>Over budget this month</div>
+                  {saveSuggestions.map(({ cat, over }) => (
                     <div key={cat} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, paddingBottom: 8, borderBottom: `1px solid ${C.border}` }}>
                       <div>
                         <div style={{ color: C.cream, fontSize:13, fontWeight: 600 }}>{catEmoji[cat] || "📌"} {cat}</div>
                         <div style={{ color: C.redBright, fontSize:13, marginTop: 2 }}>${Math.round(over)} over budget this month</div>
                       </div>
-                      {potential > 0 && <div style={{ textAlign: "right" }}>
-                        <div style={{ color: C.green, fontSize:13, fontWeight: 700 }}>Save ~${potential}</div>
-                        <div style={{ color: C.muted, fontSize:13 }}>per month</div>
-                      </div>}
                     </div>
                   ))}
                 </div>
@@ -15103,7 +15155,9 @@ export default function FlourishApp(){
     if (path === "/delete-account") return "delete-account";
     if (path === "/support") return "support";
     if (path === "/confirmed") return "confirmed";
-    if (path === "/kids")    return "kids";
+    // Prompt 3d: Kids is parked. /kids serves nothing and redirects to /, so the mini site
+    // (KidsMiniSite, kept for the future family add-on) is not reachable in any build.
+    if (path === "/kids") { try { window.history.replaceState(null, "", "/"); } catch { /* no history */ } return "home"; }
     return "home";
   })();
   const [screen,setScreen]=useState(initialScreen);
@@ -15149,10 +15203,12 @@ export default function FlourishApp(){
   // The new library uses a daily-resetting counter and respects plan tiers
   // (free / premium / beta_founder). On first boot after Phase 2 ships, we
   // also run the grandfather check so existing users get beta_founder status.
-  const [coachMsgCount,setCoachMsgCount]=useState(()=>getCoachMessagesRemaining()===Infinity?0:(FREE_TIER_LIMITS.coachMessagesPerWeek-getCoachMessagesRemaining()));
+  // A store app counts every user's coach messages against the weekly limit, trial or not (only a paid
+  // or founder flag lifts it there); the web keeps trial, premium and founder unlimited.
+  const [coachMsgCount,setCoachMsgCount]=useState(()=>{ const left=getCoachMessagesRemaining({ native: isNativeApp() }); return left===Infinity?0:(FREE_TIER_LIMITS.coachMessagesPerWeek-left); });
   const bumpCoachMsg=()=>{
-    if (isUnlimited()) return; // Phase D10: don't count messages for trial/premium/founder users
-    recordCoachUse();
+    if (coachUnlimited({ native: isNativeApp(), isPremium: isUnlimited() })) return; // Phase D10: unlimited users are not counted
+    recordCoachUse({ native: isNativeApp() });
     setCoachMsgCount(c=>c+1);
   };
 
@@ -16135,7 +16191,6 @@ export default function FlourishApp(){
   if(screen==="delete-account")return <div style={legalShell}><DeleteAccount onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="support")return <div style={legalShell}><SupportPage onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="confirmed")return <ConfirmedPage/>;
-  if(screen==="kids")return <KidsMiniSite country={appData?.profile?.country}/>;
 
   // ── Auth gate ───────────────────────────────────────────────────
   if(authLoading)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
@@ -16162,7 +16217,7 @@ export default function FlourishApp(){
   if(!aiDisclosureSeen)return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={declineAIDisclosure} onViewLegal={s=>setScreen(s)}/>;
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
-  if(showWhatIf)return <WhatIfSimulator data={appData||{}} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={()=>setShowPaywall(true)} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
+  if(showWhatIf)return <WhatIfSimulator data={appData||{}} setAppData={setAppData} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={()=>setShowPaywall(true)} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
   if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);reviewOnCheckInDone({demo:!!appData?.demo});}}/>;
   if(!onboarded)return <Onboarding
     connectedAccounts={appData?.accounts||[]}
@@ -16366,7 +16421,7 @@ export default function FlourishApp(){
         {sub==="goals"
           ? <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen} onEditBudget={editBudget}/>
           : sub==="credit"
-            ? (isPremium?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="Factor-by-factor breakdown and a plan with amounts and dates. Calculated by Flourish, explained by your coach." onUpgrade={()=>setShowPaywall(true)}/>)
+            ? (creditAvailable({ native: nativeApp, isPremium })?<CreditScreen data={dataWithHousehold} setScreen={setScreen}/>:<PremiumGate feature="Credit Coaching" desc="What goes into a credit score, factor by factor, and what affects each one." onUpgrade={()=>setShowPaywall(true)}/>)
             : <BudgetScreen data={dataWithHousehold} setAppData={setAppData} setScreen={setScreen} startInEdit={budgetEditRequested} onEditStarted={()=>setBudgetEditRequested(false)}/>}</>;
     }
     if(screen==="coach"){
@@ -16374,11 +16429,16 @@ export default function FlourishApp(){
       if(!aiCoachEnabled) return <AIDisabledNotice onOpenSettings={()=>setShowSettings(true)} onClose={()=>setScreen("home")}/>;
       if(!aiDisclosureSeen) return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={()=>{declineAIDisclosure();setScreen("home");}} onViewLegal={s=>setScreen(s)}/>;
       // Phase D7: gate via library (handles trial unlimited + post-trial daily caps + tiers)
-      const freeCoachAllowed = canUseCoach();
-      const showCoach = isPremium || freeCoachAllowed;
-      if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={isPremium || isTrialActive()} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={openUpgrade} setScreen={setScreen} setAppData={setAppData} onExitDemo={exitDemo} postCoachConsent={postCoachConsent} onNeedConsent={requireAIDisclosure}/>;
+      // A store app: the weekly limit applies to every user, so only a paid or founder flag lifts it;
+      // the trial does not (lib/featureAccess.js). The web is unchanged.
+      const freeCoachAllowed = canUseCoach({ native: nativeApp });
+      const coachIsOpenEnded = coachUnlimited({ native: nativeApp, isPremium: isPremium || isTrialActive() });
+      const showCoach = (nativeApp ? coachIsOpenEnded : isPremium) || freeCoachAllowed;
+      if(showCoach)return <AICoach data={dataWithHousehold} isOnline={isOnline} isPremium={coachIsOpenEnded} coachMsgCount={coachMsgCount} onSend={bumpCoachMsg} onUpgrade={openUpgrade} setScreen={setScreen} setAppData={setAppData} onExitDemo={exitDemo} postCoachConsent={postCoachConsent} onNeedConsent={requireAIDisclosure}/>;
       // Phase D10: removed stale 5-message gate (D7 dropped FREE_TIER_LIMITS.coachMessagesPerDay to 1; line below handles all gated cases).
-      return <PremiumGate feature="AI Coach" desc="Coaching from your own numbers: what they mean and what to do next." onUpgrade={()=>setShowPaywall(true)}/>;
+      // On a store app this gate only appears once the week's free coach messages are used: the coach is
+      // included, so say what actually happened and when it lifts, not that the feature is missing.
+      return <PremiumGate feature="AI Coach" desc="Coaching from your own numbers: what they mean and your options." nativeNote={`You've used this week's ${FREE_TIER_LIMITS.coachMessagesPerWeek} coach messages. They reset Monday.`} onUpgrade={()=>setShowPaywall(true)}/>;
     }
     if(screen==="family")return <Family data={dataWithHousehold} setAppData={setAppData} household={household} setHousehold={setHousehold} setScreen={setScreen}/>;
     // goals + credit are re-homed under the "Do" tab (segmented control) above.

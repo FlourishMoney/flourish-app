@@ -4,7 +4,7 @@
 //   1. The dead types plan, insights, buckets, tax are gone; only chat/simulator/checkin/document
 //      are live. coach.js validates against isLiveCoachType() before dispatch.
 //   2. No LIVE type hands the app a numeric financial field to display as data. The What-If figures
-//      are computed by the engine (simulatePurchaseImpact/calculateScenarioVerdict) and only FROZEN
+//      are computed by the engine (simulatePurchaseImpact) and only FROZEN
 //      for the model to explain; the simulator asks the model for prose fields only, and none of
 //      those prose fields is a scenario figure. (document is hardened separately in Step 2b.)
 "use strict";
@@ -15,8 +15,8 @@ const t = create();
 (async () => {
   const { LIVE_COACH_TYPES, PROSE_ONLY_COACH_TYPES, SIMULATOR_PROSE_FIELDS, SCENARIO_NUMERIC_FIELDS,
           isLiveCoachType } = require("../netlify/functions/_lib/coachTypes.js");
-  const { simulatePurchaseImpact, calculateScenarioVerdict, summarizeScenarioForCoach } =
-    await import("../src/lib/financialCalculations.js");
+  const FC = await import("../src/lib/financialCalculations.js");
+  const { simulatePurchaseImpact, summarizeScenarioForCoach } = FC;
 
   // ── 1. dead types removed ─────────────────────────────────────────────────────────────────────
   ["plan", "insights", "buckets", "tax"].forEach(dead => {
@@ -49,22 +49,21 @@ const t = create();
        "3c savings-delay is JS-computed");
   t.ok(Number.isFinite(impact.healthScoreDelta), "3d healthScoreDelta is a JS number");
   t.ok(typeof impact.cashImpact === "string",  "3e cashImpact is a JS category string");
-  const verdict = calculateScenarioVerdict({
-    cashImpact: impact.cashImpact, healthScoreDelta: impact.healthScoreDelta, recoveryMonths: impact.recoveryMonths });
-  t.ok(typeof verdict.verdict === "string", "3f verdict is JS-computed");
+  // Prompt 3d: What-If gives no verdict, so the engine no longer grades a purchase at all.
+  t.eq(typeof FC.calculateScenarioVerdict, "undefined", "3f there is no verdict function to grade a purchase");
 
   // Determinism: identical inputs → identical figures (no model in the loop).
   const again = simulatePurchaseImpact(inputs);
   t.eq(again, impact, "3g simulation is deterministic");
 
-  // The block the model receives is entirely engine-produced: every value equals an impact/verdict
-  // value. The model can echo these but cannot originate them.
-  const frozen = summarizeScenarioForCoach(impact, verdict);
+  // The block the model receives is entirely engine-produced: every value equals an impact value.
+  // The model can echo these but cannot originate them, and it is handed no judgment to repeat.
+  const frozen = summarizeScenarioForCoach(impact);
   t.eq(frozen.newBalance,       impact.newBalance,       "3h frozen.newBalance === engine value");
   t.eq(frozen.newSafeToSpend,   impact.newSafeToSpend,   "3i frozen.newSafeToSpend === engine value");
-  t.eq(frozen.healthScoreDelta, impact.healthScoreDelta, "3j frozen.healthScoreDelta === engine value");
+  t.ok(!("healthScoreDelta" in frozen) && !("cashImpact" in frozen), "3j the model is sent no health change (it was a fixed -4/-8) and no safe/tight/risky rating");
   t.eq(frozen.savingsDelayDays, impact.savingsDelayDays, "3k frozen.savingsDelayDays === engine value");
-  t.eq(frozen.verdict,          verdict.verdict,         "3l frozen.verdict === engine verdict");
+  t.ok(!("verdict" in frozen), "3l the model is sent no verdict");
   // Every key the model sees is a scenario figure or amount — supplied BY the engine, not requested FROM the model.
   Object.keys(frozen).forEach(k =>
     t.ok(k === "amount" || SCENARIO_NUMERIC_FIELDS.includes(k) || k === "newBalance" || k === "newSafeToSpend",
