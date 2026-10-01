@@ -208,7 +208,8 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     const caMine = credit({ country: "CA", creditScore: 742, creditKnown: true });
     t.ok(/The score you entered 742/.test(caMine) && !/%/.test(caMine), "4z4 a Canadian score the household entered is shown as theirs");
     const usNone = credit({ country: "US" });
-    t.ok(/Payment history 35%/.test(usNone) && /FICO's published figures \(myfico\.com\)/.test(usNone), "4z5 the US list shows FICO's weights, named as FICO's");
+    // Prompt 3c: the US screen shows no weights either (it showed FICO's, credited to myfico.com).
+    t.ok(/Payment history/.test(usNone) && !/\d+%/.test(usNone) && !/myfico|FICO/i.test(usNone), "4z5 the US list shows the factors only: no weights, no FICO source");
     t.ok(!/baseScore|isCA \? 720 : 718|creditScore\|\|720|: 680;/.test(APP + fs.readFileSync(path.join(REPO, "src", "lib", "decisionEngine.js"), "utf8")), "4z6 no assumed score anywhere (720, 718, 680)");
     globalThis.Capacitor = real;
   }
@@ -319,6 +320,19 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     t.ok(today({ ...D.demoProfileFor("CA"), creditKnown: false }).includes(LABEL), "8e Today's health score tile shows the label when no credit score is entered");
     t.ok(!today(D.demoProfileFor("CA")).includes(LABEL), "8f …and not when one is (the demo's 718)");
     t.ok(/\{healthBasis&&<div style=\{\{color:"#ffffff88"/.test(APP), "8g Money Wrapped shows it under its score too");
+  }
+
+  // ── 9. Prompt 3c: credit factors without weights, the range from official agencies ──────────
+  {
+    const credit = (profile) => textOf(A.render(A.h(A.CreditScreen, { data: { profile, transactions: [], accounts: [], incomes: [], bankConnected: true }, setScreen: () => {} })));
+    for (const c of ["CA", "US"]) {
+      const txt = credit({ country: c, creditScore: 742, creditKnown: true });
+      for (const f of ["Payment history", "Credit utilization", "Length of credit history", "Credit mix", "New credit"]) t.ok(txt.includes(f), `9a ${c}: the factor "${f}" is shown`);
+      t.ok(!/\b(35|30|15|10)%/.test(txt) && !/myfico|FICO/i.test(txt), `9b ${c}: no weights and no scoring company named as a source`);
+    }
+    t.ok(credit({ country: "CA", creditScore: 742, creditKnown: true }).includes("Scores usually range from 300 to 900 (FCAC)") &&
+      credit({ country: "US", creditScore: 742, creditKnown: true }).includes("Most scores range from 300 to 850 (CFPB)"), "9c the score range is cited to the FCAC and the CFPB");
+    t.ok(!/weight:"\d+%"/.test(APP) && !/FICO scale|count for FICO|myfico/i.test(APP), "9d no weight field, \"FICO scale\" or myfico anywhere in the app");
   }
 
   t.summary("sourcedFigures.test");

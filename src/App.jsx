@@ -260,7 +260,7 @@ const CC = {
       {name:"LIHEAP Energy Assistance",icon:"⚡",eligible:"Low income, utility hardship",amount:"Varies by state",apply:"Benefits.gov",url:"https://benefits.gov"},
       {name:"WIC Program",icon:"🍼",eligible:"Pregnant/postpartum, children under 5",amount:"Food + support",apply:"Local health dept",url:"https://wic.fns.usda.gov"},
     ],
-    creditBureaus:["Equifax","Experian","TransUnion: all three count for FICO"],
+    creditBureaus:["Equifax","Experian","TransUnion"],
     emergencyMonths:6,
     healthcareNote:"In the US an emergency fund often has to cover medical costs as well as job loss.",
     // Phase D12: 50 states + DC. Code is the canonical USPS 2-letter abbreviation.
@@ -4467,7 +4467,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
           </div>
           <input type="range" min={300} max={p.country==="US"?850:900} step={1} value={Math.min(p.creditScore,p.country==="US"?850:900)} onChange={e=>setP({...p,creditScore:Number(e.target.value)})} style={{width:"100%",accentColor:C.teal,height:6,cursor:"pointer",marginBottom:8}}/>
           <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.red,fontSize:13}}>300 Poor</span><span style={{color:C.gold,fontSize:13}}>650 Good</span><span style={{color:C.greenBright,fontSize:13}}>{p.country==="US"?"850 Excellent":"900 Excellent"}</span></div>
-          <div style={{color:C.muted,fontSize:13,marginTop:4,textAlign:"center",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{p.country==="US"?"FICO scale · 300 to 850":"Equifax / TransUnion Canada · 300 to 900"}</div>
+          <div style={{color:C.muted,fontSize:13,marginTop:4,textAlign:"center",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{creditScaleNote(p.country)}</div>
         </div>
         <div style={{color:C.muted,fontSize:13,textAlign:"center",marginBottom:16}}>Check your score free at Borrowell (CA) or Credit Karma (US/CA), soft pull only.</div>
       </>}
@@ -6116,7 +6116,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                     style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.mutedHi,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Cancel</button>
                 </div>
                 <div style={{color:creditDraft&&!draftValid?C.redBright:C.muted,fontSize:13,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                  {data.profile?.country==="US"?"FICO scale · 300 to 850":"Equifax / TransUnion Canada · 300 to 900"}
+                  {creditScaleNote(data.profile?.country)}
                 </div>
               </>):(
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
@@ -12258,6 +12258,14 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
 }
 
 // ─── CREDIT SCREEN ────────────────────────────────────────────────────────────
+// The credit score range, from each country's government consumer agency (prompt 3c): FCAC, "Scores
+// usually range from 300 to 900" (canada.ca/en/financial-consumer-agency/services/credit-reports-score/
+// credit-report-score-basics.html); CFPB, "many scores range from 300 to 850"
+// (consumerfinance.gov/ask-cfpb/what-is-a-credit-score-en-315/). Checked 2026-10-01.
+function creditScaleNote(country){
+  return country==="US" ? "Most scores range from 300 to 850 (CFPB)" : "Scores usually range from 300 to 900 (FCAC)";
+}
+
 function CreditScreen({data,setScreen}){
   const profile = data.profile||{};
   const country = profile.country||"CA";
@@ -12266,14 +12274,14 @@ function CreditScreen({data,setScreen}){
   // Canada, 718 in the US) and spending; nothing in it came from a bureau. The only score shown is the
   // one the household entered themselves (creditScoreEntered), with the scale it is on.
   const entered = creditScoreEntered(profile);
-  // What each factor is and what affects it. Canada's bureaus publish no weights, so Canadian users see
-  // none; the US list shows FICO's own published weights, named as FICO's.
+  // What each factor is and what affects it. Prompt 3c: no weights in either country. A scoring
+  // company's own percentages are not an official source, and Canada's bureaus publish none.
   const factors = [
-    {label:"Payment history", weight:"35%", what:"Whether bills and credit payments are made on time. Late and missed payments are recorded on your credit report."},
-    {label:"Credit utilization", weight:"30%", what:"How much of your available credit you are using. A lower balance compared with your credit limits counts in your favour."},
-    {label:"Length of credit history", weight:"15%", what:"How long your accounts have been open. Older accounts add to the length of your history."},
-    {label:"Credit mix", weight:"10%", what:"The kinds of credit you have, such as a card, a car loan or a mortgage."},
-    {label:"New credit", weight:"10%", what:"Recent applications for credit. Each hard inquiry, made when you apply, is recorded on your report."},
+    {label:"Payment history", what:"Whether bills and credit payments are made on time. Late and missed payments are recorded on your credit report."},
+    {label:"Credit utilization", what:"How much of your available credit you are using. A lower balance compared with your credit limits counts in your favour."},
+    {label:"Length of credit history", what:"How long your accounts have been open. Older accounts add to the length of your history."},
+    {label:"Credit mix", what:"The kinds of credit you have, such as a card, a car loan or a mortgage."},
+    {label:"New credit", what:"Recent applications for credit. Each hard inquiry, made when you apply, is recorded on your report."},
   ];
   const tips = isCA ? [
     {icon:"🏦", title:"Your Equifax and TransUnion reports", desc:"Both bureaus give free access to your report at equifax.ca and transunion.ca. An error on a report can be disputed with the bureau."},
@@ -12284,7 +12292,8 @@ function CreditScreen({data,setScreen}){
     {icon:"💳", title:"Credit limits", desc:"A higher limit with the same spending means lower utilization."},
     {icon:"📅", title:"Paying more than once a month", desc:"Paying every 2 weeks can lower the balance reported to the credit bureaus, which is part of utilization."},
   ];
-  const scale = isCA ? "Equifax / TransUnion Canada · 300 to 900" : "FICO scale · 300 to 850";
+  // The range, from the government consumer agency in each country.
+  const scale = creditScaleNote(country);
 
   return(
     <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"20px 20px 80px",maxWidth:430,margin:"0 auto"}}>
@@ -12306,13 +12315,11 @@ function CreditScreen({data,setScreen}){
       {/* Factors: what each is and what affects it */}
       <div style={{background:C.card,borderRadius:20,padding:"18px 18px",border:`1px solid ${C.border}`,marginBottom:16}}>
         <div style={{color:C.cream,fontWeight:800,fontSize:14,marginBottom:4}}>What goes into a score</div>
-        {!isCA&&<div style={{color:C.muted,fontSize:13,marginBottom:12}}>Weights are FICO's published figures (myfico.com).</div>}
-        <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:isCA?10:0}}>
+        <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:10}}>
           {factors.map((f,i)=>(
             <div key={i}>
               <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:3}}>
                 <span style={{color:C.cream,fontSize:13,fontWeight:700}}>{f.label}</span>
-                {!isCA&&<span style={{color:C.muted,fontSize:13,fontWeight:600}}>{f.weight}</span>}
               </div>
               <div style={{color:C.muted,fontSize:13,lineHeight:1.5}}>{f.what}</div>
             </div>
