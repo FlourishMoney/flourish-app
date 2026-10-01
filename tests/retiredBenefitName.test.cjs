@@ -6,10 +6,10 @@
 // reads "No longer available". An app that lists it as a benefit someone can get is wrong in a way a
 // reviewer, or a family counting on it, can check.
 //
-// So no user-visible string under src/ may name "GST/HST credit", with one exception: a sentence
-// that says it was REPLACED. That is history, told correctly, and two tips rely on it ("The CGEB
-// replaced the GST/HST credit in July 2026"). The exception is narrow: the words "replaced the"
-// must come immediately before the name, in the same string.
+// So no user-visible string under src/ may name "GST/HST credit". There used to be one exception, a
+// sentence saying it was REPLACED ("The CGEB replaced the GST/HST credit in July 2026"); the
+// prelaunch-copy batch (2026-10-01) removed those too, so there is no exception now: any mention
+// fails, history included. tests/caFigures.test.cjs also scans src/, netlify/ and docs/ as plain text.
 //
 // Only what a person can read is checked (string literals, template text, JSX text); comments and
 // data keys may still say the old name.
@@ -20,7 +20,7 @@ const fs = require("fs");
 const path = require("path");
 
 const OLD = /GST\/HST credit/i;
-const HISTORY = /\breplaced the GST\/HST credit\b/gi;
+const HISTORY = /\breplaced the GST\/HST credit\b/gi; // no longer allowed: counted only to prove there are none
 
 function userVisibleStrings(file, parser) {
   const out = [];
@@ -67,19 +67,19 @@ function userVisibleStrings(file, parser) {
   for (const f of files) {
     for (const { text, line } of userVisibleStrings(f, parser)) {
       history += (text.match(HISTORY) || []).length;
-      if (OLD.test(text.replace(HISTORY, ""))) hits.push(`${path.relative(REPO, f)}:${line} "${text.trim().slice(0, 90)}"`);
+      if (OLD.test(text)) hits.push(`${path.relative(REPO, f)}:${line} "${text.trim().slice(0, 90)}"`);
     }
   }
-  t.eq(hits, [], "no user-visible string under src/ names the GST/HST credit as a current benefit");
+  t.eq(hits, [], "no user-visible string under src/ names the GST/HST credit, not even as history");
   const readers = files.filter((f) => /\.replaced\b|\["replaced"\]/.test(fs.readFileSync(f, "utf8"))).map((f) => path.relative(REPO, f));
   t.eq(readers, [], "nothing reads taxData's CGEB.replaced record, so its old name is never printed");
-  t.ok(history >= 2, `sanity: the two tips that say it was replaced are still read and allowed (${history})`);
+  t.eq(history, 0, "the history sentences (\"replaced the GST/HST credit\") are gone too: there is no exception");
 
-  // The exception does not swallow a listing that merely mentions replacement elsewhere.
-  const probe = (s) => OLD.test(s.replace(HISTORY, ""));
+  // With no exception, every form is caught.
+  const probe = (s) => OLD.test(s);
   t.eq(probe("CCB, GST/HST credit, Trillium"), true, "a list that names it is caught");
-  t.eq(probe("It replaced the GST/HST credit in July 2026."), false, "a sentence saying it was replaced is allowed");
-  t.eq(probe("The CGEB replaced the GST/HST credit. Apply for the GST/HST credit now."), true, "…but not if the same string also offers it");
+  t.eq(probe("It replaced the GST/HST credit in July 2026."), true, "a sentence saying it was replaced is caught too");
+  t.eq(probe("The CGEB replaced the GST/HST credit. Apply for the GST/HST credit now."), true, "…and one that offers it");
 
   // The feature list names the benefit that exists.
   const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");

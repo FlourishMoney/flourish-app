@@ -10,7 +10,7 @@ Canada first. An AI money coach for overwhelmed households. Flourish's determini
 
 ## 2. Voice rules (apply everywhere)
 
-Direct: say the thing in the first sentence. Smart: assume the reader is capable and busy. Canadian in the CA locale: chequing, paycheque, behaviour, centre; CRA, CCB, GST/HST credit, Trillium, RRSP, TFSA, FHSA; RBC, TD, Scotiabank, BMO, CIBC, Tangerine, Simplii, Desjardins, credit unions. US bank and tax terms stay in the US locale strings only, behind the country flag.
+Direct: say the thing in the first sentence. Smart: assume the reader is capable and busy. Canadian in the CA locale: chequing, paycheque, behaviour, centre; CRA, CCB, CGEB, Trillium, RRSP, TFSA, FHSA; RBC, TD, Scotiabank, BMO, CIBC, Tangerine, Simplii, Desjardins, credit unions. US bank and tax terms stay in the US locale strings only, behind the country flag.
 
 Words we stop using in marketing and UI: "financial advice", "advisor", "AI-powered", "crystal ball", "stress-free", "incredible!", "unlock", "leaving money on the table". Words we use: "calculated by Flourish", "your number", "what this means", "what to do next", "your options", "the largest flexible category".
 
@@ -155,7 +155,7 @@ RULES
 1. Flourish calculates; you coach. Every dollar figure, date, rate or score you cite must appear verbatim in the snapshot above. You may compare, rank and contrast those figures ("dining is $186 above your usual pace and is the largest flexible category"). You may not derive new ones. If the user needs a number that isn't there, say "Flourish hasn't calculated that yet" and name the screen that will (Watch for forecasts and what-ifs, Do for payoff dates and budgets).
 2. Never invent a number, limit, rate, date or program detail. If a rule isn't in the reference list, say you don't have it and point to CRA My Account or the relevant CRA page.
 3. Coach, don't lecture. Identify the problem, say why it matters using the snapshot, offer one or two options with their computed trade-offs, and ask which the user wants. Challenge unsustainable patterns plainly and without judgment.
-4. Boundaries: you do not recommend specific investments, securities, insurance products, legal structures, or individualized tax positions (what to claim, file, deduct or shelter). You may explain how RRSP, TFSA, FHSA, CCB, GST/HST credit and similar programs work and which rule applies to the user's situation. If asked for a regulated recommendation, say you're not a licensed adviser, explain the concept and the trade-off, and suggest a professional for the decision.
+4. Boundaries: you do not recommend specific investments, securities, insurance products, legal structures, or individualized tax positions (what to claim, file, deduct or shelter). You may explain how RRSP, TFSA, FHSA, CCB and similar programs work and which rule applies to the user's situation. If asked for a regulated recommendation, say you're not a licensed adviser, explain the concept and the trade-off, and suggest a professional for the decision.
 5. Plain English, Canadian spelling, no jargon without a one-line definition. Max 4 sentences unless asked for more.
 6. Calm and direct. No praise, no scolding, no exclamation marks.
 7. Never mention Plaid or tell the user to check their bank app; Flourish is their view.
@@ -216,7 +216,7 @@ Old copy replaced: "Money is a team sport", "Today's agenda", "Start Meeting ▶
 | Downsell headline | You're leaving money on the table | **What Plus adds** |
 | Downsell body | Most people on free leave unclaimed credits, untracked debt, and zero coaching behind. Plus fixes all of that. | **Live numbers from linked accounts, unlimited coaching, and the weekly meeting with agenda and facilitator. Free keeps Today, Watch and Do with manual entry.** |
 | Feature: AI Coach | Personalized advice from your real transaction data | **Coach** / **Unlimited coaching from your own numbers: what they mean and what to do next** |
-| Feature: Tax Tips & Benefits | RRSP, TFSA, CCB, GST credit, Trillium and more | **Benefits explained** / **CCB, Canada Groceries and Essentials Benefit, Trillium, RRSP, TFSA, FHSA: which rule applies to you and why** |
+| Feature: Tax Tips & Benefits | RRSP, TFSA, CCB, Trillium and more (the old copy also named the retired federal benefit) | **Benefits explained** / **CCB, Canada Groceries and Essentials Benefit, Trillium, RRSP, TFSA, FHSA: which rule applies to you and why** |
 | Feature: Credit Coaching | Full factor breakdown + improvement plan | **Credit plan** / **Factor breakdown with amounts and dates** |
 | Feature: Investment Tracking | RRSP, TFSA, Questrade, Wealthsimple | **Contribution room** / **RRSP, TFSA and FHSA balances and room together** |
 | Feature: Household Sharing | Connect with a partner, track shared goals | **Weekly money meeting** / **Agenda from your week, coach as facilitator, solo or couple** |

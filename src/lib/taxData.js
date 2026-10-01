@@ -115,16 +115,15 @@ export const TAX_DATA = {
       lastVerified: "2026-09-21",
     },
 
-    // ── The GST/HST credit became the Canada Groceries and Essentials Benefit in July 2026. ────
-    // The CRA's GST/HST credit page now reads "No longer available - Replaced by the CGEB", so the
-    // app must not describe this as something that is still going to happen.
+    // ── The Canada Groceries and Essentials Benefit, paid since July 2026. ─────────────────────
+    // The CRA's page for the benefit it replaced now reads "No longer available - Replaced by the
+    // CGEB". The app names only the CGEB, and never the retired benefit (tests/caFigures.test.cjs).
     // https://www.canada.ca/en/revenue-agency/services/child-family-benefits/canada-groceries-essentials-benefit/how-much.html
     CGEB: {
       name: "Canada Groceries and Essentials Benefit",
       benefitYear: "2026-07/2027-06",
       basedOnTaxYear: 2025,
       replacedOn: "2026-07",
-      replaced: "the GST/HST credit",
       // The CRA builds the payment from these parts, which is why a single figure cannot be shown
       // as "the" amount: a single parent with one child gets the adult amount PLUS the first-child
       // amount PLUS the single supplement ($445 + $445 + $234 = $1,124), not $679 + $234.

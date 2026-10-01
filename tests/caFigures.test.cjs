@@ -187,6 +187,25 @@ function walk(dir, out = []) {
     "5a nothing still says the GST/HST credit is about to become the CGEB: it already did, in July 2026");
   t.ok(app.includes("Canada Groceries and Essentials Benefit"), "5b the benefit is named as what it is now");
   t.ok(!/name:"GST\/HST Credit"/.test(app), "5c the benefits checker no longer lists a GST/HST credit a user cannot claim");
+  // The retired benefit's name appears nowhere the app, its server functions or its docs can say it
+  // (prelaunch-copy item 4): not in the coach's prompt, not as history ("replaced the …"), not in a
+  // comment someone could copy into copy. Every text file under src/, netlify/ and docs/ is read.
+  {
+    const RETIRED = /GST\/HST credit|GST credit|GSTHST credit|GST\/HST tax credit/i;
+    const hits = [];
+    const walk = (dir) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) { if (e.name !== "node_modules") walk(p); continue; }
+        if (!/\.(js|jsx|cjs|mjs|ts|md|txt|html|json|sql)$/.test(e.name)) continue;
+        fs.readFileSync(p, "utf8").split("\n").forEach((line, i) => { if (RETIRED.test(line)) hits.push(`${path.relative(path.join(__dirname, ".."), p)}:${i + 1}`); });
+      }
+    };
+    for (const d of ["src", "netlify", "docs"]) walk(path.join(__dirname, "..", d));
+    t.eq(hits, [], "5d the retired benefit's name appears nowhere in src/, netlify/ or docs/, including the coach prompt");
+    const coach = fs.readFileSync(path.join(__dirname, "..", "netlify", "functions", "_lib", "coachPrompt.js"), "utf8");
+    t.ok(/CCB/.test(coach) && !RETIRED.test(coach), "5e (the coach prompt was read, and is clean)");
+  }
 
   // ── 6. Figures REMOVED because no official page could be found for them ──────────────────────
   // The rule for this audit was: if it cannot be verified, the dollar amount comes out of the UI
