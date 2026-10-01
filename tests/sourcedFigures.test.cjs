@@ -44,7 +44,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
 (async () => {
   const t = create();
   let A = {};
-  try { A = loadApp(["patternCards", "computeStats", "CC", "TAX_DATA", "getPersonalizedTaxCredits", "CreditScreen", "debtResultSentence", "KIDS_LESSONS"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
+  try { A = loadApp(["patternCards", "computeStats", "CC", "TAX_DATA", "getPersonalizedTaxCredits", "CreditScreen", "debtResultSentence", "KIDS_LESSONS", "Dashboard"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
 
   // ── 1. Patterns ──────────────────────────────────────────────────────────────────────────────
   {
@@ -291,6 +291,34 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     t.eq(sentences.filter(x => IMPERATIVE.test(x)), [], "7c no lesson sentence is an instruction");
     t.ok(!/\b(should|always|never|don't|must)\b/i.test(text), "7d no should / always / never / don't / must");
     t.ok(/\$10 - \$3 = \$7/.test(text) && /\$1 × 3 = \$3/.test(text), "7e the lesson figures are arithmetic shown in full ($10 - $3 = $7; $1 × 3 = $3)");
+  }
+
+  // ── 8. Prompt 3c: a health score on 5 of 6 parts says so ─────────────────────────────────────
+  {
+    const DE = await import("../src/lib/decisionEngine.js");
+    const LABEL = "Based on 5 of 6 parts. Add your credit score in Settings for the full score.";
+    t.eq(DE.HEALTH_SCORE_PARTIAL_LABEL, LABEL, "8a the label, word for word");
+    const JUN = new Date("2026-06-15T12:00:00");
+    const base = { accounts: [{ type: "checking", balance: "3000" }, { type: "savings", balance: "6000" }], bills: [{ name: "Rent", amount: "1500", freq: "monthly", date: "1" }],
+      debts: [], incomes: [{ amount: "5000", freq: "monthly", type: "employment" }], transactions: [] };
+    const none = DE.calcHealthScore({ ...base, profile: { country: "CA" } }, {}, JUN);
+    const mine = DE.calcHealthScore({ ...base, profile: { country: "CA", creditScore: 718, creditKnown: true } }, {}, JUN);
+    t.eq([none.score, none.partial, none.basisLabel], [89, true, LABEL], "8b no credit score: 80 × 100 / 90 = 89, labelled as 5 of 6 parts");
+    t.eq([mine.score, mine.partial, mine.basisLabel], [86, false, null], "8c a credit score entered (718): 80 + 6 = 86, no label");
+    const engine = fs.readFileSync(path.join(REPO, "src", "lib", "decisionEngine.js"), "utf8");
+    t.ok(!/neither costs nor earns points/.test(engine) && engine.includes("That is a score on 5 of 6 parts, and it can") &&
+      engine.includes("differ from the score the same household gets once a credit score is entered, in either direction"),
+      "8d the engine comment says what the code does (scaled, and it can differ either way), not that it costs or earns nothing");
+    // The Today tile shows the label beside the score
+    const D = await import("../src/lib/demoFixture.js");
+    const now = new Date();
+    const data = { accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(now, "CA"), bills: D.buildDemoBills(now, "CA"),
+      transactions: D.buildDemoTxns(now, "CA"), bankConnected: true };
+    const noop = () => {};
+    const today = (profile) => textOf(A.render(A.h(A.Dashboard, { data: { ...data, profile }, setAppData: noop, setScreen: noop, setShowNotifs: noop, onUpgrade: noop, onWhatIf: noop })));
+    t.ok(today({ ...D.demoProfileFor("CA"), creditKnown: false }).includes(LABEL), "8e Today's health score tile shows the label when no credit score is entered");
+    t.ok(!today(D.demoProfileFor("CA")).includes(LABEL), "8f …and not when one is (the demo's 718)");
+    t.ok(/\{healthBasis&&<div style=\{\{color:"#ffffff88"/.test(APP), "8g Money Wrapped shows it under its score too");
   }
 
   t.summary("sourcedFigures.test");

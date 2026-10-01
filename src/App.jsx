@@ -2896,7 +2896,7 @@ function MoneyWrapped({data, onClose}) {
   // Sprint C Fix 2: no trustworthy annual baseline exists (see moneyWrapped.js), so present net worth
   // as CURRENT STATE — a signed figure with no leading "+", never "changed by … this year".
   const nwHeadline = formatWrappedNetWorth(_wrappedNW);
-  const {score} = calcHealthScore(data, getCatOv());
+  const {score,basisLabel:healthBasis} = calcHealthScore(data, getCatOv());
   const year = new Date().getFullYear();
 
   const slides = [
@@ -2996,6 +2996,7 @@ function MoneyWrapped({data, onClose}) {
             <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>Your {year} number</div>
             <div style={{fontFamily:"'Playfair Display',serif",fontSize:52,fontWeight:900,color:"#6EF0A0",letterSpacing:-2}}>{score}</div>
             <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Financial Health Score</div>
+            {healthBasis&&<div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:6,lineHeight:1.5}}>{healthBasis}</div>}
           </div>
           <button onClick={()=>{if(navigator.share)navigator.share({title:"My Flourish Money Wrapped",text:`My Financial Health Score is ${score}/100. Check yours on Flourish! 🌱`,url:"https://flourishmoney.app"}).catch(()=>{});}} style={{width:"100%",background:"rgba(255,255,255,0.2)",border:"2px solid rgba(255,255,255,0.4)",color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,cursor:"pointer",marginBottom:10}}>Share My Wrapped 🔗</button>
           <button onClick={onClose} style={{width:"100%",background:"none",border:"none",color:"#ffffff66",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:13,padding:"10px",cursor:"pointer"}}>Back to Flourish</button>
@@ -5202,7 +5203,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const heroColorBright=overdraftImmediate?C.redBright:sevenDayOverdraft?C.goldBright:C.greenBright;
   // Combined overdraft signal: immediate (10-day window) OR imminent (7-day forecast)
   const overdraft = overdraftImmediate || sevenDayOverdraft;
-  const {score:healthScore,pillars}=calcHealthScore(data, getCatOv());
+  const {score:healthScore,pillars,basisLabel:healthBasis}=calcHealthScore(data, getCatOv());
   const adjScore=Math.min(100,healthScore+(checkInBonus||0));
   const scoreColor=adjScore>=80?C.greenBright:adjScore>=65?C.tealBright:adjScore>=50?C.goldBright:adjScore>=35?C.orangeBright:C.redBright;
   const scoreBase=adjScore>=80?C.green:adjScore>=65?C.teal:adjScore>=50?C.gold:adjScore>=35?C.orange:C.red;
@@ -5765,6 +5766,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2,lineHeight:1.4}}>{scoreInsight}</div>
               </div>
             </div>
+            {/* Prompt 3c: a score worked out without the credit part says so. */}
+            {healthBasis&&<div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.45,marginBottom:12}}>{healthBasis}</div>}
             <div style={{display:"flex",gap:GAP.controlToControl}}>
               {onCheckIn&&<button onClick={onCheckIn} style={{flex:1,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,padding:"0 8px",minHeight:LAYOUT.minTap,borderRadius:99,border:"none",cursor:"pointer",whiteSpace:"nowrap"}}>Check-In ✦</button>}
               <button onClick={()=>setScreen("coach")} style={{flex:1,background:"none",border:`1px solid ${scoreBase}44`,color:scoreBase,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:13,padding:"0 8px",minHeight:LAYOUT.minTap,borderRadius:99,cursor:"pointer",whiteSpace:"nowrap"}}>Coach →</button>

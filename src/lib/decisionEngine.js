@@ -333,6 +333,9 @@ export function creditScoreEntered(profile) {
   return Number.isFinite(n) && n >= 300 && n <= 900 ? n : null;
 }
 
+// Shown beside a health score worked out without the credit part (prompt 3c).
+export const HEALTH_SCORE_PARTIAL_LABEL = "Based on 5 of 6 parts. Add your credit score in Settings for the full score.";
+
 export function calcHealthScore(data, catOverrides = {}, currentDate = new Date()) {
   // Pull from engines for consistency
   const { monthlyIncome, totalExpenses, monthlySpend } = FinancialCalcEngine.cashFlow(data, catOverrides, currentDate);
@@ -364,7 +367,10 @@ export function calcHealthScore(data, catOverrides = {}, currentDate = new Date(
 
   // ⑥ Credit Health: 10 pts, from the score the household entered. With none entered there is no
   // score to rate (the engine used to assume 680), so this pillar is left out and the other five,
-  // worth 90 points, are scaled to 100: not entering a score neither costs nor earns points.
+  // worth 90 points, are scaled up to 100 (× 100 / 90). That is a score on 5 of 6 parts, and it can
+  // differ from the score the same household gets once a credit score is entered, in either direction:
+  // pillars worth 80 give 89 with no score, 86 with a score of 718 (6 points) and 90 with 780 (10).
+  // So the result carries basisLabel, and the screens show it beside the score.
   const rawCredit = creditScoreEntered(data.profile);
   const hasCredit = rawCredit != null;
   const crScore = !hasCredit ? 0 : rawCredit >= 760 ? 10 : rawCredit >= 720 ? 8 : rawCredit >= 670 ? 6 : rawCredit >= 620 ? 4 : 2;
@@ -380,5 +386,6 @@ export function calcHealthScore(data, catOverrides = {}, currentDate = new Date(
     {label:"Investments",     pts:ivScore, max:10, detail:hasInv?`$${(invBal||0).toFixed(0)} invested`:`Not started`},
     {label:"Credit",          pts:crScore, max:hasCredit ? 10 : 0, detail:hasCredit ? `Score you entered: ${rawCredit}` : "Not entered"},
   ];
-  return { score, pillars, breakdown:{ srScore, drScore, efScore, ssScore, ivScore, crScore } };
+  return { score, pillars, breakdown:{ srScore, drScore, efScore, ssScore, ivScore, crScore },
+    partial: !hasCredit, basisLabel: hasCredit ? null : HEALTH_SCORE_PARTIAL_LABEL };
 }
