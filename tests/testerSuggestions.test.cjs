@@ -242,6 +242,39 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     t.ok(/appVersion:appVersionLabel\(\)/.test(APP), "7g feedback is sent with the version it came from");
   }
 
+  // ── 8. Accessibility (the browser half is a11y.browser.test.cjs) ─────────────────────────────
+  {
+    const pal = (name) => { const m = APP.match(new RegExp(`const ${name} = \\{([\\s\\S]*?)\\n\\};`)); const o = {};
+      for (const [, k, v] of (m ? m[1] : "").matchAll(/(\w+):"([^"]+)"/g)) o[k] = v; return o; };
+    const hex = (h) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+    const rgba = (s) => { const m = s.match(/rgba\((\d+),(\d+),(\d+),([\d.]+)\)/); return m ? [[+m[1], +m[2], +m[3]], +m[4]] : [hex(s), 1]; };
+    const mix = (fg, a, bg) => fg.map((c, i) => c * a + bg[i] * (1 - a));
+    const lum = (c) => { const l = c.map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2]; };
+    const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+    for (const name of ["DARK_C", "LIGHT_C"]) {
+      const P = pal(name);
+      for (const [ink, base] of [["greenInk", "green"], ["tealInk", "teal"], ["redInk", "red"]]) {
+        t.ok(/^#[0-9A-F]{6}$/i.test(P[ink] || ""), `8a ${name}.${ink} is defined`);
+        if (!P[ink]) continue;
+        // The worst case: the colour's own tint (up to 0x33 = 20%) on the darkest (light) or lightest (dark) surface.
+        for (const surf of ["bg", "card", "cardAlt"]) {
+          const s0 = rgba(P[surf])[0];
+          const tinted = mix(hex(P[base]), 0x33 / 255, s0);
+          const r = ratio(hex(P[ink]), tinted);
+          t.ok(r >= 4.5, `8b ${name}: ${ink} on a ${base} tint over ${surf} clears AA 4.5:1 (${r.toFixed(2)})`);
+        }
+      }
+    }
+    t.ok(/aria-pressed=\{on\}/.test(APP), "8c segmented tabs say which one is selected (aria-pressed)");
+    t.ok(/aria-label="Confirm budget amount"/.test(APP) && /aria-label="Add chore"/.test(APP), "8d the two icon-only buttons the browser check does not reach are named");
+    const icon = [...APP.matchAll(/<button\b((?:[^<>]|=>|\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})*?)>([^<{]{1,6})<\/button>/g)]
+      .filter(m => { const x = m[2].trim(); return x && !/[A-Za-z0-9]/.test(x) && !/aria-label|title=/.test(m[1]); }).map(m => m[2].trim());
+    t.eq(icon, [], "8e no icon-only button in App.jsx without an aria-label");
+    const pkg = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8"));
+    t.ok(/node tests\/a11y\.browser\.test\.cjs/.test(pkg.scripts["test:math"]), "8f the axe check runs in the gate");
+    t.ok(!!(pkg.devDependencies || {})["axe-core"], "8g axe-core is a dev dependency, not shipped");
+  }
+
   t.summary("testerSuggestions.test");
   setImmediate(() => process.exit(process.exitCode || 0));
 })();

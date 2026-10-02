@@ -499,6 +499,10 @@ const DARK_C = {
   red:"#FF4F6A",redBright:"#FF6B84",redDim:"rgba(255,79,106,0.11)",
   blue:"#4DA8FF",blueBright:"#6DBCFF",blueDim:"rgba(77,168,255,0.11)",
   teal:"#00C8E0",tealBright:"#22D8EE",tealDim:"rgba(0,200,224,0.11)",
+  // Tester suggestions item 8: text on a tinted background (an active chip, a tinted button). Same as
+  // the Bright colours in the dark theme; darker in the light theme, where Bright on its own tint fell
+  // under 4.5:1 (axe, a11y.browser.test.cjs).
+  greenInk:"#00E89A",tealInk:"#22D8EE",redInk:"#FF6B84",
   orange:"#FF8C42",orangeBright:"#FFA060",orangeDim:"rgba(255,140,66,0.11)",
   purple:"#9B7DFF",purpleBright:"#B09AFF",purpleDim:"rgba(155,125,255,0.11)",
   pink:"#FF6B9D",pinkBright:"#FF85AE",pinkDim:"rgba(255,107,157,0.11)",
@@ -526,6 +530,7 @@ const LIGHT_C = {
   red:"#C82944",redBright:"#D0193C",redDim:"rgba(212,46,74,0.08)",
   blue:"#226ABA",blueBright:"#226BB4",blueDim:"rgba(36,114,200,0.09)",
   teal:"#007487",tealBright:"#007486",tealDim:"rgba(0,138,160,0.10)", // Sprint Q item 8.2: darkened for AA
+  greenInk:"#005C37",tealInk:"#005E6C",redInk:"#9C1A32", // tester suggestions item 8: >= 4.5:1 on their own tints
   orange:"#A8500E",orangeBright:"#A55314",orangeDim:"rgba(196,94,16,0.10)",
   purple:"#5840BC",purpleBright:"#6A52CC",purpleDim:"rgba(88,64,188,0.10)",
   pink:"#BC3070",pinkBright:"#BD3373",pinkDim:"rgba(188,48,112,0.10)",
@@ -1337,7 +1342,7 @@ function SegPick({ options, value, onChange, label }) {
         const on = value === o.value;
         return (
           <button key={o.value} role="radio" aria-checked={on} onClick={() => onChange(o.value)}
-            style={{ flex: 1, background: on ? C.teal + "28" : "transparent", border: `1px solid ${on ? C.teal + "55" : "transparent"}`, color: on ? C.tealBright : C.muted, borderRadius: 10, padding: "9px 6px", fontSize:13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", minHeight: LAYOUT.minTap }}>
+            style={{ flex: 1, background: on ? C.teal + "28" : "transparent", border: `1px solid ${on ? C.teal + "55" : "transparent"}`, color: on ? C.tealInk : C.muted, borderRadius: 10, padding: "9px 6px", fontSize:13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", minHeight: LAYOUT.minTap }}>
             {o.label}
           </button>
         );
@@ -1617,7 +1622,7 @@ function DepositQuestionCard({ data, setAppData, style }) {
           <strong style={{ color: C.cream }}>+{formatMoney(Math.abs(Number(t.amount) || 0), { cents: true })}</strong> from <strong style={{ color: C.cream }}>{t.name}</strong>{when ? ` on ${when}` : ""}. Flourish is leaving it out of your forecast until you say.
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: GAP.controlToControl, marginTop: GAP.textToControl }}>
-          <button onClick={() => setOpen(t)} style={{ background: C.teal, border: "none", borderRadius: 99, padding: "8px 16px", color: "#fff", fontWeight: 700, fontSize:13, cursor: "pointer", fontFamily: "inherit", minHeight: LAYOUT.minTap }}>Answer</button>
+          <button onClick={() => setOpen(t)} style={{ background: C.teal, border: "none", borderRadius: 99, padding: "8px 16px", color: C.isDark ? "#021208" : "#fff", fontWeight: 700, fontSize:13, cursor: "pointer", fontFamily: "inherit", minHeight: LAYOUT.minTap }}>Answer</button>
           <button onClick={() => setAppData(prev => ({ ...prev, depositDecisions: decideDeposit(prev.depositDecisions, t, NOT_NOW) }))}
             style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 99, padding: "8px 14px", color: C.muted, fontSize:13, cursor: "pointer", fontFamily: "inherit", minHeight: LAYOUT.minTap }}>Not now</button>
         </div>
@@ -5478,7 +5483,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             background: dashTab===t.id ? C.green+"22" : "transparent",
             border:     dashTab===t.id ? `1px solid ${C.green}44` : "1px solid transparent",
             borderRadius:10,
-            color:      dashTab===t.id ? C.greenBright : C.muted,
+            color:      dashTab===t.id ? C.greenInk : C.muted,
             cursor:"pointer",
             fontFamily:"'Plus Jakarta Sans',sans-serif",
             transition:"all .15s",
@@ -7272,7 +7277,7 @@ function PlanAhead({data, setAppData, setScreen}){
     <ScreenHeader title="Watch" subtitle={`The next ${range} days.`}
       onBack={setScreen?()=>setScreen("home"):null}
       controls={
-          <div style={{display:"flex",gap:GAP.controlToControl,background:C.surface,borderRadius:12,padding:SPACE.xs,width:"100%",boxSizing:"border-box"}}>{RANGES.map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",transition:"all .22s"}}>{r}d</button>)}</div>
+          <div style={{display:"flex",gap:GAP.controlToControl,background:C.surface,borderRadius:12,padding:SPACE.xs,width:"100%",boxSizing:"border-box"}}>{RANGES.map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealInk:C.muted,borderRadius:10,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",transition:"all .22s"}}>{r}d</button>)}</div>
       }/>
     {(()=>{
       // Item 1: the starting balance is the SAME displayed value as Today's "In your accounts" — read from
@@ -7322,7 +7327,7 @@ function PlanAhead({data, setAppData, setScreen}){
         <div style={{color:C.greenBright,fontWeight:700,fontSize:14}}>Expected money in or out</div>
         <div style={{color:C.muted,fontSize:13,marginTop:2}}>{correctionsOf(data).expected.length ? `${correctionsOf(data).expected.length} added · in your forecast` : "A tax refund, a yearly bill, a gift"}</div>
       </div>
-      <button onClick={()=>setShowExpected(true)} style={{...rowControl(),background:C.green+"22",border:`1px solid ${C.green}44`,color:C.greenBright,borderRadius:99,padding:"11px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>+ Add</button>
+      <button onClick={()=>setShowExpected(true)} style={{...rowControl(),background:C.green+"22",border:`1px solid ${C.green}44`,color:C.greenInk,borderRadius:99,padding:"11px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>+ Add</button>
     </Card>}
     <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
     {(()=>{
@@ -7619,7 +7624,7 @@ function ExpandableCatCard({cat, amt, totalSpent, color, catTxns, budget, onSetB
                     autoFocus onKeyDown={e=>e.key==="Enter"&&saveBudget()}
                     style={{flex:1,background:"none",border:"none",padding:"6px 4px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
                 </div>
-                <button onClick={saveBudget} style={{background:color,border:"none",borderRadius:8,padding:"6px 10px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✓</button>
+                <button aria-label="Confirm budget amount" onClick={saveBudget} style={{background:color,border:"none",borderRadius:8,padding:"6px 10px",color:C.isDark?"#021208":"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:LAYOUT.minTap,minWidth:LAYOUT.minTap}}>✓</button>
                 <button aria-label="Close" onClick={()=>setEditBudget(false)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 8px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>✕</button>
               </div>
             ) : (
@@ -10611,8 +10616,8 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                   style={{flex:3,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
                 <input value={newChoreReward} onChange={e=>setNewChoreReward(e.target.value)} placeholder="$" type="number" inputMode="decimal"
                   style={{width:56,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 8px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
-                <button onClick={()=>addChoreToKid(activeKid.id)}
-                  style={{background:C.green,border:"none",borderRadius:8,padding:"9px 14px",color:"#fff",fontWeight:800,cursor:"pointer",fontSize:14,minHeight:40}}>+</button>
+                <button aria-label="Add chore" onClick={()=>addChoreToKid(activeKid.id)}
+                  style={{background:C.green,border:"none",borderRadius:8,padding:"9px 14px",color:C.isDark?"#021208":"#fff",fontWeight:800,cursor:"pointer",fontSize:14,minHeight:LAYOUT.minTap,minWidth:LAYOUT.minTap}}>+</button>
               </div>
               <div style={{display:"flex",gap:6}}>
                 {[{v:"daily",l:"Daily"},{v:"few",l:"Few/week"},{v:"weekly",l:"Weekly"},{v:"monthly",l:"Monthly"}].map(f=>(
@@ -11771,7 +11776,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     </div>
     {/* ── Delete all data ──────────────────────────────────────── */}
     <div style={{marginTop:10,padding:"16px",background:C.redDim,borderRadius:16,border:`1px solid ${C.red}33`}}>
-      <div style={{color:C.red,fontWeight:700,marginBottom:4}}>Delete Account</div>
+      <div style={{color:C.redInk,fontWeight:700,marginBottom:SPACE.xs}}>Delete Account</div>
       <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>Permanently deletes your Flourish account and all associated data from our servers, and revokes any bank connections. This cannot be undone.</div>
       <Btn label="Delete Account" onClick={onDeleteData||onReset} color={C.red} small/>
     </div>
@@ -11988,7 +11993,7 @@ function SegTabs({ tabs, value, onChange }) {
     <div style={{display:"flex",gap:GAP.controlToControl,padding:`${SPACE.md}px ${LAYOUT.sideMargin}px ${GAP.textToControl}px`,maxWidth:640,margin:"0 auto",width:"100%",boxSizing:"border-box"}}>
       {tabs.map(([id,label])=>{
         const on = value===id;
-        return <button key={id} onClick={()=>onChange(id)} style={{flex:1,padding:"9px 10px",minHeight:LAYOUT.minTap,borderRadius:11,border:`1px solid ${on?C.green+"66":C.border}`,background:on?C.green+"1E":"transparent",color:on?C.greenBright:C.muted,fontSize:13,fontWeight:on?700:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .15s"}}>{label}</button>;
+        return <button key={id} onClick={()=>onChange(id)} aria-pressed={on} style={{flex:1,padding:"9px 10px",minHeight:LAYOUT.minTap,borderRadius:11,border:`1px solid ${on?C.green+"66":C.border}`,background:on?C.green+"1E":"transparent",color:on?C.greenInk:C.muted,fontSize:13,fontWeight:on?700:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .15s"}}>{label}</button>;
       })}
     </div>
   );
@@ -16720,7 +16725,7 @@ input,button,select,textarea { font-family:inherit; }
           so nagging to connect a bank misreads the context. This button is also the ONLY route out
           of demo — exitDemo has no other caller, and signOut cannot clear it (it preserves
           flourish_v1, where demo state lives). Do not remove it without adding another exit. */}
-      <button onClick={exitDemo} style={{background:C.teal+"33",border:`1px solid ${C.teal}66`,color:C.tealBright,cursor:"pointer",fontWeight:800,fontSize:13,padding:"0 14px",minHeight:LAYOUT.minTap,borderRadius:99,fontFamily:"inherit"}}>Exit demo →</button>
+      <button onClick={exitDemo} style={{background:C.teal+"33",border:`1px solid ${C.teal}66`,color:C.tealInk,cursor:"pointer",fontWeight:800,fontSize:13,padding:"0 14px",minHeight:LAYOUT.minTap,borderRadius:99,fontFamily:"inherit"}}>Exit demo →</button>
       {/* Hides the banner for this session only (screenshots). Absolutely positioned so the message
           stays optically centred; the banner's 34px side padding reserves its gutter. */}
       <button aria-label="Hide demo banner" title="Hide for now" onClick={()=>setDemoBannerHidden(true)}
