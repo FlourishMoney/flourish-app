@@ -331,7 +331,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     const today = (profile) => textOf(A.render(A.h(A.Dashboard, { data: { ...data, profile }, setAppData: noop, setScreen: noop, setShowNotifs: noop, onUpgrade: noop, onWhatIf: noop })));
     t.ok(today({ ...D.demoProfileFor("CA"), creditKnown: false }).includes(LABEL), "8e Today's health score tile shows the label when no credit score is entered");
     t.ok(!today(D.demoProfileFor("CA")).includes(LABEL), "8f …and not when one is (the demo's 718)");
-    t.ok(/\{healthBasis&&<div style=\{\{color:"#ffffff88"/.test(APP), "8g Money Wrapped shows it under its score too");
+    t.ok(/\{healthBasis&&<div style=\{\{color:WRAP_SUB/.test(APP), "8g Money Wrapped shows it under its score too (at 86% white since prompt 4b, for contrast)");
     // Prompt 3d: Meet, the widgets and the coach say so too.
     const partialData = { ...data, profile: { ...D.demoProfileFor("CA"), creditKnown: false } };
     const fullData = { ...data, profile: D.demoProfileFor("CA") };

@@ -503,7 +503,7 @@ const DARK_C = {
   // Tester suggestions item 8: text on a tinted background (an active chip, a tinted button). Same as
   // the Bright colours in the dark theme; darker in the light theme, where Bright on its own tint fell
   // under 4.5:1 (axe, a11y.browser.test.cjs).
-  greenInk:"#00E89A",tealInk:"#22D8EE",redInk:"#FF6B84",
+  greenInk:"#00E89A",tealInk:"#22D8EE",redInk:"#FF6B84",orangeInk:"#FFA060",
   orange:"#FF8C42",orangeBright:"#FFA060",orangeDim:"rgba(255,140,66,0.11)",
   purple:"#9B7DFF",purpleBright:"#B09AFF",purpleDim:"rgba(155,125,255,0.11)",
   pink:"#FF6B9D",pinkBright:"#FF85AE",pinkDim:"rgba(255,107,157,0.11)",
@@ -522,18 +522,20 @@ const LIGHT_C = {
   cream:"#1A2035",muted:"rgba(26,32,53,0.66)",mutedHi:"rgba(26,32,53,0.72)", // Sprint Q item 8: .44→.66 clears AA body 4.5:1 (.60 only reached 4.14:1)
   glass:"rgba(255,255,255,0.84)",glassBright:"rgba(255,255,255,0.94)",
   glassEdge:"rgba(0,0,0,0.07)",glassEdgeHi:"rgba(0,0,0,0.13)",
-  green:"#00784D",greenBright:"#007A48",greenDim:"rgba(0,147,95,0.10)", // Sprint Q item 8.2: darkened for AA body text (light theme); dark theme unchanged
-  gold:"#92580C",goldBright:"#9A5B0D",goldDim:"rgba(184,112,16,0.10)", // Sprint Q item 8.2: darkened for AA
+  green:"#007048",greenBright:"#007042",greenDim:"rgba(0,147,95,0.10)", // Sprint Q item 8.2: darkened for AA body text (light theme); dark theme unchanged
+  gold:"#8E550C",goldBright:"#8F550C",goldDim:"rgba(184,112,16,0.10)", // Sprint Q item 8.2: darkened for AA
   // Tag pair (see DARK_C). gold on goldDim over cardAlt measured 4.36:1 — under AA — so the ink is
   // darkened and the tint lightened: 5.72:1 on cardAlt, 6.08 on bg, 6.82 on card. Scoped to the tag
   // so every other gold in the light theme is untouched.
   tagInk:"#7A4A0A",tagBg:"rgba(184,112,16,0.08)",
-  red:"#C82944",redBright:"#D0193C",redDim:"rgba(212,46,74,0.08)",
+  red:"#BE2741",redBright:"#D0193C",redDim:"rgba(212,46,74,0.08)",
   blue:"#226ABA",blueBright:"#226BB4",blueDim:"rgba(36,114,200,0.09)",
   teal:"#007487",tealBright:"#007486",tealDim:"rgba(0,138,160,0.10)", // Sprint Q item 8.2: darkened for AA
-  greenInk:"#005C37",tealInk:"#005E6C",redInk:"#9C1A32", // tester suggestions item 8: >= 4.5:1 on their own tints
+  greenInk:"#005C37",tealInk:"#005E6C",redInk:"#9C1A32",orangeInk:"#984C12", // tester suggestions item 8: >= 4.5:1 on their own tints
+  // Prompt 4b item 4: green, gold, red (not redBright) and purpleBright darkened a further 3-16% (lightness only) so
+  // they clear 4.5:1 on the tinted cards axe measured them on (green tints, cream, red and purple tints).
   orange:"#A8500E",orangeBright:"#A55314",orangeDim:"rgba(196,94,16,0.10)",
-  purple:"#5840BC",purpleBright:"#6A52CC",purpleDim:"rgba(88,64,188,0.10)",
+  purple:"#5840BC",purpleBright:"#5945AB",purpleDim:"rgba(88,64,188,0.10)",
   pink:"#BC3070",pinkBright:"#BD3373",pinkDim:"rgba(188,48,112,0.10)",
   border:"rgba(0,0,0,0.08)",borderHi:"rgba(0,0,0,0.17)",
   heroGreen:"linear-gradient(160deg,#E4F5EE 0%,#EEF9F3 45%,#F4F1EB 100%)",
@@ -542,6 +544,46 @@ const LIGHT_C = {
 };
 // Mutable reference — FlourishApp reassigns this before each render pass
 let C = DARK_C;
+
+// TEXT ON A FILLED COLOUR (prompt 4b item 4). White text sat on 45 coloured fills, and on the bright
+// dark-theme fills (green #00CC85, teal #00C8E0, red #FF4F6A, purple #9B7DFF) white is under 3:1.
+// textOn takes the fill (every colour of a gradient) and returns white when white clears AA 4.5:1 on
+// all of them, otherwise a near-black ink, whichever reads better. Theme-aware by construction: the
+// light theme's darker fills keep their white text.
+const ON_FILL_DARK = "#0B1220";
+function _relLum(hex) {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})(?:[0-9a-f]{2})?$/i.exec(String(hex || "").trim());
+  if (!m) return null;
+  const h = m[1].length === 3 ? m[1].split("").map(x => x + x).join("") : m[1];
+  const ch = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16) / 255).map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+}
+function contrastRatio(a, b) {
+  const la = _relLum(a), lb = _relLum(b);
+  if (la == null || lb == null) return null;
+  const [x, y] = la > lb ? [la, lb] : [lb, la];
+  return (x + 0.05) / (y + 0.05);
+}
+// A fixed colour used AS TEXT (a category's colour, an account type's colour), moved just far enough
+// toward black (light theme) or white (dark theme) to clear 5:1 on the card it sits on. 5, not 4.5,
+// because these labels also sit on their own 10% tint of the card. The colour keeps its hue; icons,
+// borders and tints keep the original.
+function readable(color, bg = C.card) {
+  const m = /^#?([0-9a-f]{6})/i.exec(String(color || ""));
+  if (!m || contrastRatio(bg, "#000000") == null) return color;
+  const base = [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16));
+  const to = C.isDark ? 255 : 0;
+  for (let k = 0; k <= 20; k++) {
+    const hexOut = "#" + base.map(v => Math.round(v + (to - v) * k / 20).toString(16).padStart(2, "0")).join("").toUpperCase();
+    if (contrastRatio(hexOut, bg) >= 5) return hexOut;
+  }
+  return C.isDark ? "#FFFFFF" : "#000000";
+}
+function textOn(...fills) {
+  const worst = (ink) => Math.min(...fills.map(f => contrastRatio(ink, f) ?? 21));
+  const white = worst("#FFFFFF");
+  return white >= 4.5 || white >= worst(ON_FILL_DARK) ? "#FFFFFF" : ON_FILL_DARK;
+}
 
 // The "Example · sample data" tag, in one place so every screen that shows it shows the same thing.
 //
@@ -2387,7 +2429,7 @@ Rules: do not invent or quote any number not in the calculated results above. St
                 <button onClick={onUpgrade} style={{
                   marginTop:14,
                   background: verdictColor,
-                  color: "#fff",
+                  color: textOn(verdictColor),
                   border: "none",
                   borderRadius: 12,
                   padding: "10px 20px",
@@ -2640,7 +2682,7 @@ const bars = [
         <div style={{textAlign:"center",padding:"16px 0 8px"}}>
           <div style={{fontSize:48,marginBottom:10,filter:"blur(8px)",transition:"filter .3s"}}>?</div>
           <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:16}}>Based on your spending patterns</div>
-          <button onClick={()=>setRevealed(true)} style={{background:`linear-gradient(135deg,${p.color},${p.color}BB)`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"12px 28px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 4px 16px ${p.color}44`}}>Reveal My Type →</button>
+          <button onClick={()=>setRevealed(true)} style={{background:`linear-gradient(135deg,${p.color},${p.color}BB)`,color:textOn(p.color),fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"12px 28px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 4px 16px ${p.color}44`}}>Reveal My Type →</button>
         </div>
       ) : (
         <div style={{animation:"fadeUp 0.4s ease both"}}>
@@ -2787,7 +2829,7 @@ function WealthForecast({data}) {
               <span style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Extra monthly investment</span>
               <span style={{color:C.greenBright,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{extra}/mo</span>
             </div>
-            <input type="range" min={0} max={1000} step={25} value={extra} onChange={e=>setExtra(Number(e.target.value))}
+            <input aria-label="Extra monthly investment" type="range" min={0} max={1000} step={25} value={extra} onChange={e=>setExtra(Number(e.target.value))}
               style={{width:"100%",accentColor:C.green,cursor:"pointer"}}/>
             <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
               <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>$0</span>
@@ -2915,6 +2957,12 @@ function OpportunityDetector({data, setScreen, setGoalsTab}) {
 }
 
 // ── MONEY WRAPPED ──────────────────────────────────────────────────────────────
+// Money Wrapped's slides put white text on bright colour gradients (white on dark-theme green is
+// 2:1). A 60% black scrim over every slide, secondary text at 86% white, and card overlays at most
+// 12% white keep every line at 5.4:1 or better on all eight slide colours, light and dark (worked out
+// for prompt 4b item 4; tests/testerSuggestions.test.cjs pins the three numbers).
+const WRAP_SCRIM = "linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6))";
+const WRAP_SUB = "rgba(255,255,255,0.86)";
 function MoneyWrapped({data, onClose}) {
   const [slide, setSlide] = useState(0);
   const txns = (data.transactions || []).filter(t => t.amount > 0);  // expenses are positive
@@ -2940,24 +2988,24 @@ function MoneyWrapped({data, onClose}) {
   const slides = [
     // Slide 0: Opener
     {
-      bg:`linear-gradient(160deg,${C.green} 0%,#1A3D2A 100%)`,
+      bg:`${WRAP_SCRIM},linear-gradient(160deg,${C.green} 0%,#1A3D2A 100%)`,
       content:(
         <div style={{textAlign:"center",padding:"0 8px"}}>
           <div style={{fontSize:56,marginBottom:16}}>🌱</div>
-          <div style={{color:"#ffffff99",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>Your money, right now</div>
+          <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>Your money, right now</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:38,fontWeight:900,color:"#fff",lineHeight:1.1,marginBottom:12}}>Money Wrapped</div>
-          <div style={{color:"#ffffff88",fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7}}>A snapshot of your spending,<br/>saving, and financial habits.</div>
+          <div style={{color:WRAP_SUB,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7}}>A snapshot of your spending,<br/>saving, and financial habits.</div>
         </div>
       )
     },
     // Slide 1: Net Worth Change
     {
-      bg:`linear-gradient(160deg,${C.teal} 0%,#0A3A4A 100%)`,
+      bg:`${WRAP_SCRIM},linear-gradient(160deg,${C.teal} 0%,#0A3A4A 100%)`,
       content:(
         <div style={{textAlign:"center"}}>
-          <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>{nwHeadline.label}</div>
+          <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>{nwHeadline.label}</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:64,fontWeight:900,color:nwHeadline.positive?"#6EF0A0":"#FF7070",letterSpacing:-2,lineHeight:1,marginBottom:8}}>{nwHeadline.display}</div>
-          <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:24}}>{nwHeadline.caption}</div>
+          <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:24}}>{nwHeadline.caption}</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
             {[
               {label:"Invested",   val:`$${((invBal||0)/1000).toFixed(1)}k`, icon:"📈"},
@@ -2966,7 +3014,7 @@ function MoneyWrapped({data, onClose}) {
               <div key={i} style={{background:"rgba(255,255,255,0.12)",borderRadius:16,padding:"14px 12px",textAlign:"center"}}>
                 <div style={{fontSize:24,marginBottom:6}}>{s.icon}</div>
                 <div style={{color:"#fff",fontWeight:900,fontFamily:"'Playfair Display',serif",fontSize:20}}>{s.val}</div>
-                <div style={{color:"#ffffff77",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3}}>{s.label}</div>
+                <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3}}>{s.label}</div>
               </div>
             ))}
           </div>
@@ -2975,12 +3023,12 @@ function MoneyWrapped({data, onClose}) {
     },
     // Slide 2: Spending Story
     {
-      bg:`linear-gradient(160deg,${C.purple} 0%,#1A0A3A 100%)`,
+      bg:`${WRAP_SCRIM},linear-gradient(160deg,${C.purple} 0%,#1A0A3A 100%)`,
       content:(
         <div style={{textAlign:"center"}}>
-          <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>Your spending story</div>
+          <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>Your spending story</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:48,fontWeight:900,color:"#fff",letterSpacing:-1,marginBottom:6}}>{`$${((totalSpent||0)/1000).toFixed(1)}k`}</div>
-          <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:20}}>spent across {txns.length} transactions</div>
+          <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:20}}>spent across {txns.length} transactions</div>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {[
               {label:"Biggest splurge", val:biggestTxn?`$${Math.abs(biggestTxn.amount||0).toFixed(0)} at ${biggestTxn.merchant||biggestTxn.name}`:"None", icon:"💸", color:"#FF9EBC"},
@@ -2990,7 +3038,7 @@ function MoneyWrapped({data, onClose}) {
               <div key={i} style={{background:"rgba(255,255,255,0.1)",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,textAlign:"left"}}>
                 <span style={{fontSize:22,flexShrink:0}}>{item.icon}</span>
                 <div>
-                  <div style={{color:"#ffffff66",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:3}}>{item.label}</div>
+                  <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:3}}>{item.label}</div>
                   <div style={{color:item.color,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13}}>{item.val}</div>
                 </div>
               </div>
@@ -3001,21 +3049,21 @@ function MoneyWrapped({data, onClose}) {
     },
     // Slide 3: Money Personality
     {
-      bg:`linear-gradient(160deg,${C.orange} 0%,#3A1500 100%)`,
+      bg:`${WRAP_SCRIM},linear-gradient(160deg,${C.orange} 0%,#3A1500 100%)`,
       content:(()=>{
         const p = calcPersonality(txns, data);
         return (
           <div style={{textAlign:"center"}}>
-            <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>Your money personality</div>
+            <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>Your money personality</div>
             <div style={{fontSize:64,marginBottom:10}}>{p.emoji}</div>
             <div style={{fontFamily:"'Playfair Display',serif",fontSize:26,fontWeight:900,color:"#fff",marginBottom:12,lineHeight:1.3}}>{p.name}</div>
             <div style={{display:"flex",gap:6,justifyContent:"center",flexWrap:"wrap",marginBottom:20}}>
               {p.traits.map((t,i)=>(
-                <span key={i} style={{background:"rgba(255,255,255,0.15)",color:"#fff",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,padding:"5px 12px",borderRadius:99}}>{t}</span>
+                <span key={i} style={{background:"rgba(255,255,255,0.12)",color:"#fff",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,padding:"5px 12px",borderRadius:99}}>{t}</span>
               ))}
             </div>
             <div style={{background:"rgba(255,255,255,0.12)",borderRadius:16,padding:"14px 16px"}}>
-              <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:6}}>Your coach says</div>
+              <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:6}}>Your coach says</div>
               <div style={{color:"#fff",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.65}}>{p.insight}</div>
             </div>
           </div>
@@ -3024,20 +3072,20 @@ function MoneyWrapped({data, onClose}) {
     },
     // Slide 4: Share / CTA
     {
-      bg:`linear-gradient(160deg,#1A3D2A 0%,${C.green} 100%)`,
+      bg:`${WRAP_SCRIM},linear-gradient(160deg,#1A3D2A 0%,${C.green} 100%)`,
       content:(
         <div style={{textAlign:"center"}}>
           <div style={{fontSize:52,marginBottom:12}}>🌱</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:"#fff",lineHeight:1.2,marginBottom:8}}>Here's to an even better {year+1}</div>
-          <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7,marginBottom:24}}>Flourish works out the numbers and explains them. The decisions are yours.</div>
+          <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7,marginBottom:24}}>Flourish works out the numbers and explains them. The decisions are yours.</div>
           <div style={{background:"rgba(255,255,255,0.12)",borderRadius:16,padding:"16px",marginBottom:20}}>
-            <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>Your {year} number</div>
+            <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8}}>Your {year} number</div>
             <div style={{fontFamily:"'Playfair Display',serif",fontSize:52,fontWeight:900,color:"#6EF0A0",letterSpacing:-2}}>{score}</div>
-            <div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Financial Health Score</div>
-            {healthBasis&&<div style={{color:"#ffffff88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:6,lineHeight:1.5}}>{healthBasis}</div>}
+            <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Financial Health Score</div>
+            {healthBasis&&<div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:6,lineHeight:1.5}}>{healthBasis}</div>}
           </div>
-          <button onClick={()=>{if(navigator.share)navigator.share({title:"My Flourish Money Wrapped",text:`My Financial Health Score is ${score}/100. Check yours on Flourish! 🌱`,url:"https://flourishmoney.app"}).catch(()=>{});}} style={{width:"100%",background:"rgba(255,255,255,0.2)",border:"2px solid rgba(255,255,255,0.4)",color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,cursor:"pointer",marginBottom:10}}>Share My Wrapped 🔗</button>
-          <button onClick={onClose} style={{width:"100%",background:"none",border:"none",color:"#ffffff66",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:13,padding:"10px",cursor:"pointer"}}>Back to Flourish</button>
+          <button onClick={()=>{if(navigator.share)navigator.share({title:"My Flourish Money Wrapped",text:`My Financial Health Score is ${score}/100. Check yours on Flourish! 🌱`,url:"https://flourishmoney.app"}).catch(()=>{});}} style={{width:"100%",background:"rgba(255,255,255,0.12)",border:"2px solid rgba(255,255,255,0.4)",color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,cursor:"pointer",marginBottom:10}}>Share My Wrapped 🔗</button>
+          <button onClick={onClose} style={{width:"100%",background:"none",border:"none",color:WRAP_SUB,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:13,padding:"10px",cursor:"pointer"}}>Back to Flourish</button>
         </div>
       )
     }
@@ -3053,7 +3101,7 @@ function MoneyWrapped({data, onClose}) {
           <div key={i} style={{flex:1,height:3,borderRadius:99,background:i<=slide?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.25)",transition:"background 0.3s"}}/>
         ))}
       </div>
-      <button aria-label="Close" onClick={onClose} style={{position:"absolute",top:52,right:24,background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",fontSize:18,width:36,height:36,borderRadius:"50%",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+      <button aria-label="Close" onClick={onClose} style={{position:"absolute",top:52,right:24,background:"rgba(255,255,255,0.12)",border:"none",color:"#fff",fontSize:18,width:36,height:36,borderRadius:"50%",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
 
       {/* Slide content */}
       <div style={{width:"100%",maxWidth:400,padding:"0 24px",animation:"fadeUp 0.4s ease both"}}>
@@ -3063,10 +3111,10 @@ function MoneyWrapped({data, onClose}) {
       {/* Navigation */}
       <div style={{position:"absolute",bottom:48,left:24,right:24,display:"flex",gap:12}}>
         {slide > 0 && (
-          <button onClick={()=>setSlide(s=>s-1)} style={{flex:1,background:"rgba(255,255,255,0.15)",border:"2px solid rgba(255,255,255,0.2)",color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:14,padding:"14px",borderRadius:99,cursor:"pointer"}}>← Back</button>
+          <button onClick={()=>setSlide(s=>s-1)} style={{flex:1,background:"rgba(255,255,255,0.12)",border:"2px solid rgba(255,255,255,0.2)",color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:14,padding:"14px",borderRadius:99,cursor:"pointer"}}>← Back</button>
         )}
         {slide < slides.length-1 ? (
-          <button onClick={()=>setSlide(s=>s+1)} style={{flex:2,background:"rgba(255,255,255,0.25)",border:"2px solid rgba(255,255,255,0.5)",color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px",borderRadius:99,cursor:"pointer",boxShadow:"0 4px 20px rgba(0,0,0,0.2)"}}>Next →</button>
+          <button onClick={()=>setSlide(s=>s+1)} style={{flex:2,background:"rgba(255,255,255,0.12)",border:"2px solid rgba(255,255,255,0.5)",color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px",borderRadius:99,cursor:"pointer",boxShadow:"0 4px 20px rgba(0,0,0,0.2)"}}>Next →</button>
         ) : null}
       </div>
     </div>
@@ -3083,7 +3131,7 @@ function EmptyState({icon, title, body, action, onAction, color}) {
       <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.cream,marginBottom:8,lineHeight:1.3}}>{title}</div>
       <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.7,marginBottom:20,maxWidth:260,margin:"0 auto 20px"}}>{body}</div>
       {action&&onAction&&(
-        <button onClick={onAction} style={{background:`linear-gradient(135deg,${c},${c}CC)`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,padding:"12px 28px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 4px 16px ${c}33`}}>{action}</button>
+        <button onClick={onAction} style={{background:`linear-gradient(135deg,${c},${c}CC)`,color:textOn(c),fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,padding:"12px 28px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 4px 16px ${c}33`}}>{action}</button>
       )}
     </div>
   );
@@ -3262,7 +3310,7 @@ function Inp({label,value,onChange,type="text",prefix,placeholder,note,sm,inputM
 function Sel({label,value,onChange,options}){
   return <div style={{marginBottom:16}}>
     {label&&<div style={{color:C.muted,fontSize:13,marginBottom:6,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{label}</div>}
-    <select value={value} onChange={e=>onChange(e.target.value)} style={{width:"100%",background:C.isDark?`rgba(255,255,255,0.04)`:C.cardAlt,border:`1.5px solid ${C.border}`,borderRadius:16,color:C.cream,fontSize:14,padding:"13px 15px",fontFamily:"inherit",outline:"none",cursor:"pointer",transition:"border .2s"}}
+    <select aria-label={label||undefined} value={value} onChange={e=>onChange(e.target.value)} style={{width:"100%",background:C.isDark?`rgba(255,255,255,0.04)`:C.cardAlt,border:`1.5px solid ${C.border}`,borderRadius:16,color:C.cream,fontSize:14,padding:"13px 15px",fontFamily:"inherit",outline:"none",cursor:"pointer",transition:"border .2s"}}
       onFocus={e=>e.target.style.borderColor=C.green+"77"} onBlur={e=>e.target.style.borderColor=C.border}>
       {options.map(o=><option key={o.value} value={o.value} style={{background:C.bg}}>{o.label}</option>)}
     </select>
@@ -3766,6 +3814,7 @@ function DashCustomize({ layout, onChange, onClose }) {
                   {tile.locked&&<span style={{color:C.gold,fontSize:13,fontWeight:700,flexShrink:0}}>pinned</span>}
                 </div>
                 <button onClick={()=>setItems(prev=>prev.map(t=>t.id===tile.id?{...t,locked:!t.locked}:t))}
+                  aria-label={`Pin ${m.label} in place`} aria-pressed={!!tile.locked}
                   style={{background:'none',border:`1px solid ${tile.locked?C.gold+'55':C.border}`,borderRadius:8,...tap(),cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,flexShrink:0,color:tile.locked?C.gold:C.muted,transition:'all .15s'}}>
                   {tile.locked?'🔒':'🔓'}
                 </button>
@@ -3839,7 +3888,7 @@ function StatementReview({ batch, onConfirm, onCancel }) {
         <div style={{overflowY:"auto",flex:1,marginBottom:12}}>
           {rows.map(r => (
             <div key={r.id} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`}}>
-              <input type="checkbox" checked={selected.has(r.id) && isSelectable(r)} disabled={!isSelectable(r)} onChange={()=>toggle(r.id)} style={{width:18,height:18,flexShrink:0,marginTop:4,accentColor:C.green,cursor:isSelectable(r)?"pointer":"not-allowed"}}/>
+              <input aria-label={`Import ${r.name||"this row"}, ${r.date||""}`} type="checkbox" checked={selected.has(r.id) && isSelectable(r)} disabled={!isSelectable(r)} onChange={()=>toggle(r.id)} style={{width:18,height:18,flexShrink:0,marginTop:4,accentColor:C.green,cursor:isSelectable(r)?"pointer":"not-allowed"}}/>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:"flex",gap:6}}>
                   <input value={r.name} onChange={e=>edit(r.id,"name",e.target.value)} placeholder="Description" style={{flex:1,minWidth:0,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:"5px 7px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
@@ -4159,7 +4208,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
         <button
           onClick={canConnect?()=>setShowBankConsent(true):undefined}
           disabled={!canConnect}
-          style={{width:"100%",background:canConnect?`linear-gradient(135deg,${C.teal},${C.tealBright})`:"rgba(255,255,255,0.06)",border:canConnect?"none":`1px solid ${C.border}`,borderRadius:14,padding:"15px 18px",color:"white",fontSize:15,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:10,cursor:canConnect?"pointer":"default",fontFamily:"inherit",marginBottom:10,transition:"all .3s",opacity:canConnect?1:0.55}}>
+          style={{width:"100%",background:canConnect?`linear-gradient(135deg,${C.teal},${C.tealBright})`:"rgba(255,255,255,0.06)",border:canConnect?"none":`1px solid ${C.border}`,borderRadius:14,padding:"15px 18px",color:canConnect?textOn(C.teal,C.tealBright):C.mutedHi,fontSize:15,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:10,cursor:canConnect?"pointer":"default",fontFamily:"inherit",marginBottom:10,transition:"all .3s",opacity:canConnect?1:0.55}}>
           {linkTokenLoading?(
             <><span style={{width:18,height:18,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"white",display:"inline-block",animation:"pulse 0.8s linear infinite"}}/><span>Connecting to Plaid…</span></>
           ):(
@@ -4351,7 +4400,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
                   </div>
                   {/* Frequency — always shown */}
                   <div style={{flex:1}}>
-                    <select value={inc.freq} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,freq:e.target.value}:x))}
+                    <select aria-label="How often" value={inc.freq} onChange={e=>setIncomes(incomes.map(x=>x.id===inc.id?{...x,freq:e.target.value}:x))}
                       style={{width:"100%",height:"100%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 10px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}>
                       <option value="weekly">Weekly</option>
                       <option value="biweekly">Every 2 weeks</option>
@@ -4504,7 +4553,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
             <div style={{fontSize:52,fontWeight:900,fontFamily:"Georgia,serif",color:p.creditScore>=750?C.greenBright:p.creditScore>=700?C.teal:p.creditScore>=650?C.goldBright:p.creditScore>=600?C.orange:C.redBright}}>{p.creditScore}</div>
             <Chip label={p.creditScore>=750?"Excellent 🌟":p.creditScore>=700?"Very Good 👍":p.creditScore>=650?"Good ✓":p.creditScore>=600?"Fair ⚠️":"Needs Work 🔧"} color={p.creditScore>=750?C.green:p.creditScore>=700?C.teal:p.creditScore>=650?C.gold:p.creditScore>=600?C.orange:C.red} size={13}/>
           </div>
-          <input type="range" min={300} max={p.country==="US"?850:900} step={1} value={Math.min(p.creditScore,p.country==="US"?850:900)} onChange={e=>setP({...p,creditScore:Number(e.target.value)})} style={{width:"100%",accentColor:C.teal,height:6,cursor:"pointer",marginBottom:8}}/>
+          <input aria-label="Credit score" type="range" min={300} max={p.country==="US"?850:900} step={1} value={Math.min(p.creditScore,p.country==="US"?850:900)} onChange={e=>setP({...p,creditScore:Number(e.target.value)})} style={{width:"100%",accentColor:C.teal,height:6,cursor:"pointer",marginBottom:8}}/>
           <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.red,fontSize:13}}>300 Poor</span><span style={{color:C.gold,fontSize:13}}>650 Good</span><span style={{color:C.greenBright,fontSize:13}}>{p.country==="US"?"850 Excellent":"900 Excellent"}</span></div>
           <div style={{color:C.muted,fontSize:13,marginTop:4,textAlign:"center",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{creditScaleNote(p.country)}</div>
         </div>
@@ -5146,7 +5195,7 @@ function IncomeReconcileCard({data, setAppData}){
         Your plan currently uses <strong style={{color:C.cream}}>{money(c.amount)}</strong> {cadenceLabel(c.freq)}. Update to match your bank?
       </div>
       <div style={{display:"flex",gap:10}}>
-        <button onClick={accept} style={{flex:1,background:C.teal,border:"none",borderRadius:99,padding:"11px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:42}}>Update</button>
+        <button onClick={accept} style={{flex:1,background:C.teal,border:"none",borderRadius:99,padding:"11px",color:textOn(C.teal),fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:42}}>Update</button>
         <button onClick={decline} style={{flex:1,background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px",color:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:42}}>Keep mine</button>
       </div>
     </div>
@@ -5793,7 +5842,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                         />
                       </div>
                       {affordInput&&(
-                        <button onClick={()=>{setAffordInput("");setAffordResult(null);}}
+                        <button onClick={()=>{setAffordInput("");setAffordResult(null);}} aria-label="Reset the amount"
                           style={{background:"rgba(255,255,255,0.06)",border:`1px solid ${heroColor}22`,borderRadius:10,padding:"10px 12px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0,...tap(),display:"flex",alignItems:"center",justifyContent:"center"}}>
                           ✕
                         </button>
@@ -6570,20 +6619,20 @@ function BillManager({data, setAppData, onClose}){
             <div style={{color:C.muted,fontSize:13,marginBottom:3,textAlign:"center"}}>Amount</div>
             <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",width:80}}>
               <span style={{color:C.muted,fontSize:13,padding:"0 4px 0 6px"}}>$</span>
-              <input value={b.amount} onChange={e=>updateBill(i,"amount",e.target.value)} type="number" inputMode="decimal"
+              <input aria-label={`${b.name||"Bill"} amount`} value={b.amount} onChange={e=>updateBill(i,"amount",e.target.value)} type="number" inputMode="decimal"
                 style={{flex:1,background:"none",border:"none",padding:"7px 4px 7px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,fontWeight:700}}/>
             </div>
           </div>
           {isOneOff ? (
             <div>
               <div style={{color:C.muted,fontSize:13,marginBottom:3,textAlign:"center"}}>Date</div>
-              <input type="date" value={b.isoDate||""} onChange={e=>updateBill(i,"isoDate",e.target.value)}
+              <input aria-label={`${b.name||"Bill"} date`} type="date" value={b.isoDate||""} onChange={e=>updateBill(i,"isoDate",e.target.value)}
                 style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 6px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",minHeight:33}}/>
             </div>
           ) : (
             <div>
               <div style={{color:C.muted,fontSize:13,marginBottom:3,textAlign:"center"}}>Due</div>
-              <select value={b.date||"1"} onChange={e=>updateBill(i,"date",e.target.value)}
+              <select aria-label="Due day" value={b.date||"1"} onChange={e=>updateBill(i,"date",e.target.value)}
                 style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 6px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",minHeight:33}}>
                 {Array.from({length:28},(_,d)=><option key={d+1} value={String(d+1)}>{d+1}{ord(d+1)}</option>)}
               </select>
@@ -6601,7 +6650,7 @@ function BillManager({data, setAppData, onClose}){
                 style={{flex:1,background:on?clr+"22":"none",border:`1px solid ${on?clr:C.border}`,color:on?(tp==="variable"?C.tealBright:C.greenBright):C.muted,borderRadius:8,padding:"5px 6px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textTransform:"capitalize",minHeight:30}}>{tp}</button>;
             })}
           </div>
-          <select value={b.freq||"monthly"} onChange={e=>updateBill(i,"freq",e.target.value)}
+          <select aria-label="How often" value={b.freq||"monthly"} onChange={e=>updateBill(i,"freq",e.target.value)}
             style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 6px",color:C.mutedHi,fontSize:13,fontFamily:"inherit",outline:"none",minHeight:30,textTransform:"capitalize"}}>
             {FREQS.map(f=><option key={f} value={f}>{f}</option>)}
           </select>
@@ -6688,9 +6737,9 @@ function BillManager({data, setAppData, onClose}){
                 <div>
                   <div style={{color:C.muted,fontSize:13,marginBottom:5}}>{billType==="one_off"?"Date":"Day Due"}</div>
                   {billType==="one_off"
-                    ? <input type="date" value={oneOffDate} onChange={e=>setOneOffDate(e.target.value)}
+                    ? <input aria-label="Date" type="date" value={oneOffDate} onChange={e=>setOneOffDate(e.target.value)}
                         style={{width:"100%",boxSizing:"border-box",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}/>
-                    : <select value={dueDate} onChange={e=>setDueDate(e.target.value)}
+                    : <select aria-label="Day due" value={dueDate} onChange={e=>setDueDate(e.target.value)}
                         style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}>
                         {Array.from({length:28},(_,i)=><option key={i+1} value={String(i+1)}>{i+1}{ord(i+1)}</option>)}
                       </select>}
@@ -6706,7 +6755,7 @@ function BillManager({data, setAppData, onClose}){
                       style={{flex:1,background:on?clr+"22":"none",border:`1px solid ${on?clr:C.border}`,color:on?(tp==="variable"?C.tealBright:C.greenBright):C.muted,borderRadius:10,padding:"9px 6px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textTransform:"capitalize"}}>{tp}</button>;
                   })}
                 </div>
-                <select value={freq} onChange={e=>setFreq(e.target.value)}
+                <select aria-label="How often" value={freq} onChange={e=>setFreq(e.target.value)}
                   style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 8px",color:C.cream,fontSize:13,fontFamily:"inherit",textTransform:"capitalize"}}>
                   {FREQS.map(f=><option key={f} value={f}>{f}</option>)}
                 </select>
@@ -6715,7 +6764,7 @@ function BillManager({data, setAppData, onClose}){
               <div style={{display:"flex",gap:8}}>
                 <button onClick={()=>saveBill(adding.name==="__custom__"?customName:adding.name)}
                   disabled={!amount||(adding.name==="__custom__"&&!customName)}
-                  style={{flex:1,background:amount?C.green:"rgba(255,255,255,0.08)",border:"none",borderRadius:10,padding:"11px",color:"#fff",fontWeight:700,fontSize:13,cursor:amount?"pointer":"default",fontFamily:"inherit",opacity:(!amount||(adding.name==="__custom__"&&!customName))?0.4:1}}>
+                  style={{flex:1,background:amount?C.green:"rgba(255,255,255,0.08)",border:"none",borderRadius:10,padding:"11px",color:amount?textOn(C.green):C.mutedHi,fontWeight:700,fontSize:13,cursor:amount?"pointer":"default",fontFamily:"inherit",opacity:(!amount||(adding.name==="__custom__"&&!customName))?0.4:1}}>
                   Add Bill ✓
                 </button>
                 <button onClick={()=>{setAdding(null);setAmount("");setDueDate("1");setCustomName("");}}
@@ -7085,7 +7134,7 @@ function ManualBillForm({data, setAppData, onClose}){
             </div>
           </div>
           <div style={{flex:1,minWidth:0}}><div style={lbl}>Day of month</div>
-            <select value={day} onChange={e=>setDay(e.target.value)} style={{...fld,cursor:"pointer"}}>
+            <select aria-label="Day of month" value={day} onChange={e=>setDay(e.target.value)} style={{...fld,cursor:"pointer"}}>
               {Array.from({length:31},(_,i)=>i+1).map(d=><option key={d} value={String(d)}>{d}</option>)}
             </select>
           </div>
@@ -7174,7 +7223,7 @@ function ManualBillForm({data, setAppData, onClose}){
       </div>
       <div style={{color:C.muted,fontSize:13,marginBottom:GAP.textToControl,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Bills you enter before they're due, so the forecast isn't blind to them.</div>
       {editId ? form : (
-        <button onClick={openAdd} style={{width:"100%",background:C.teal+"18",border:`1px dashed ${C.teal}55`,borderRadius:12,padding:"11px",minHeight:LAYOUT.minTap,color:C.tealBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>+ Add a bill</button>
+        <button onClick={openAdd} style={{width:"100%",background:C.teal+"18",border:`1px dashed ${C.teal}55`,borderRadius:12,padding:"11px",minHeight:LAYOUT.minTap,color:C.tealInk,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:12}}>+ Add a bill</button>
       )}
       {manualBills.length===0 && !editId && (
         <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"8px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>No manual bills yet. Add bills before they're due so your forecast sees them coming.</div>
@@ -7581,7 +7630,7 @@ function AddCustomCategory({onAdd}){
         <input value={val} onChange={e=>setVal(e.target.value)} placeholder="Or type a custom name…"
           onKeyDown={e=>{if(e.key==="Enter") save();}}
           style={{flex:1,background:C.cardAlt,border:`1px solid ${C.green}`,borderRadius:10,padding:"8px 12px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}} autoFocus/>
-        <button onClick={()=>save()} style={{background:C.green,border:"none",borderRadius:10,padding:"8px 14px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>Add</button>
+        <button onClick={()=>save()} style={{background:C.green,border:"none",borderRadius:10,padding:"8px 14px",color:textOn(C.green),fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>Add</button>
         <button aria-label="Close" onClick={()=>{setShow(false);setVal("");}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 12px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>✕</button>
       </div>
     </div>
@@ -7668,7 +7717,7 @@ function IncomeDetectionBanner({transactions, incomes, setAppData, country}){ //
           <strong style={{color:C.cream}}>{c0.name}</strong> appears {c0.count}× averaging <strong style={{color:C.greenBright}}>${c0.avgAmount.toLocaleString()}</strong>. Is this your {payWord(country)}?
         </div>
         <div style={{display:"flex",gap:8,marginTop:10}}>
-          <button onClick={addIncome} style={{background:C.green,border:"none",borderRadius:99,padding:"7px 14px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>
+          <button onClick={addIncome} style={{background:C.green,border:"none",borderRadius:99,padding:"7px 14px",color:textOn(C.green),fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>
             Yes, add as income ✓
           </button>
           <button onClick={dismiss} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"7px 12px",color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>
@@ -8116,7 +8165,7 @@ function BudgetPlanCard({data, setAppData}) {
               <div style={{display:"flex",alignItems:"center",background:C.card,
                 border:`1px solid ${cc}55`,borderRadius:8,overflow:"hidden",width:90,flexShrink:0}}>
                 <span style={{color:C.muted,padding:"0 4px",fontSize:13}}>$</span>
-                <input type="number" inputMode="decimal" value={val}
+                <input aria-label={`${cat} budget`} type="number" inputMode="decimal" value={val}
                   onChange={e=>setEditVals(prev=>({...prev,[cat]:e.target.value}))}
                   style={{width:50,background:"none",border:"none",padding:"6px 2px",color:C.cream,
                     fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
@@ -8387,7 +8436,7 @@ function SpendScreen({data, setAppData, setScreen}){
           <div style={{padding:"16px 20px 20px"}}>
             <div style={{marginBottom:12}}>
               <div style={{color:C.muted,fontSize:13,marginBottom:5}}>Bill Name</div>
-              <input value={billForm.name} onChange={e=>setBillForm(v=>({...v,name:e.target.value}))}
+              <input aria-label="Bill name" value={billForm.name} onChange={e=>setBillForm(v=>({...v,name:e.target.value}))}
                 style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.cream,fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}/>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
@@ -8395,13 +8444,13 @@ function SpendScreen({data, setAppData, setScreen}){
                 <div style={{color:C.muted,fontSize:13,marginBottom:5}}>Monthly Amount</div>
                 <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.green}`,borderRadius:10,overflow:"hidden"}}>
                   <span style={{color:C.muted,padding:"0 10px",fontSize:14}}>$</span>
-                  <input value={billForm.amount} onChange={e=>setBillForm(v=>({...v,amount:e.target.value}))} type="number" inputMode="decimal"
+                  <input aria-label="Monthly amount" value={billForm.amount} onChange={e=>setBillForm(v=>({...v,amount:e.target.value}))} type="number" inputMode="decimal"
                     style={{flex:1,background:"none",border:"none",padding:"10px 10px 10px 0",color:C.cream,fontSize:14,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
                 </div>
               </div>
               <div>
                 <div style={{color:C.muted,fontSize:13,marginBottom:5}}>Day Due</div>
-                <select value={billForm.date} onChange={e=>setBillForm(v=>({...v,date:e.target.value}))}
+                <select aria-label="Day due" value={billForm.date} onChange={e=>setBillForm(v=>({...v,date:e.target.value}))}
                   style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",color:C.cream,fontSize:13,fontFamily:"inherit"}}>
                   {Array.from({length:28},(_,i)=>{const n=i+1;const s=[11,12,13].includes(n)?"th":["st","nd","rd"][n%10-1]||"th";return <option key={n} value={String(n)}>{n}{s}</option>;})}
                 </select>
@@ -8424,7 +8473,7 @@ function SpendScreen({data, setAppData, setScreen}){
             {/* Reports-under category */}
             <div style={{marginBottom:14}}>
               <div style={{color:C.muted,fontSize:13,marginBottom:5}}>Reports under (in Budget)</div>
-              <select value={billForm.category||"Other Bills"} onChange={e=>setBillForm(v=>({...v,category:e.target.value}))}
+              <select aria-label="Reports under (in Budget)" value={billForm.category||"Other Bills"} onChange={e=>setBillForm(v=>({...v,category:e.target.value}))}
                 style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",
                   color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}>
                 {["Housing","Utilities","Phone & Internet","Insurance","Subscriptions","Transportation","Health","Education","Other Bills"].map(c=>(
@@ -8565,7 +8614,7 @@ function SpendScreen({data, setAppData, setScreen}){
           </div>
           <div style={{padding:"14px 20px 20px",display:"flex",flexDirection:"column",gap:10}}>
             <button onClick={()=>recat(applyAllPrompt.txn, applyAllPrompt.newCat, true)}
-              style={{background:`linear-gradient(135deg,${C.orange},${C.orangeBright})`,border:"none",borderRadius:14,padding:"14px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",textAlign:"center"}}>
+              style={{background:`linear-gradient(135deg,${C.orange},${C.orangeBright})`,border:"none",borderRadius:14,padding:"14px",color:textOn(C.orange,C.orangeBright),fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",textAlign:"center"}}>
               Apply "{applyAllPrompt.newCat}" to all {applyAllPrompt.count} transactions ✓
             </button>
             <button onClick={()=>recat(applyAllPrompt.txn, applyAllPrompt.newCat, false)}
@@ -8680,7 +8729,7 @@ function SpendScreen({data, setAppData, setScreen}){
     {/* Only deposits that COUNT as income (they repeat like pay, or the household said so) can be offered as a paycheque. */}
     {!isDemo&&<IncomeDetectionBanner transactions={incomeEvidence({ transactions: txns, depositDecisions: data.depositDecisions, depositRules: data.depositRules })} incomes={data.incomes} setAppData={setAppData} country={data.profile?.country}/>}
     <div style={{display:"flex",gap:GAP.controlToControl,background:C.surface,borderRadius:16,padding:SPACE.xs}}>
-      {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeBright:C.muted,borderRadius:12,padding:"0",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
+      {["txn","breakdown","cuts"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,background:tab===t?C.orange+"28":"transparent",border:`1px solid ${tab===t?C.orange+"55":"transparent"}`,color:tab===t?C.orangeInk:C.muted,borderRadius:12,padding:"0",minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}>
         {t==="txn"?"Transactions":t==="breakdown"?"Breakdown":"Patterns"}
       </button>)}
     </div>
@@ -8690,7 +8739,7 @@ function SpendScreen({data, setAppData, setScreen}){
         {accountsWithNames.length>1&&(
           <div>
             <div style={{color:C.muted,fontSize:13,marginBottom:GAP.textToControl}}>Account</div>
-            <select value={accountFilter} onChange={e=>{setAccountFilter(e.target.value);setCatFilter("All");}}
+            <select aria-label="Account" value={accountFilter} onChange={e=>{setAccountFilter(e.target.value);setCatFilter("All");}}
               style={{width:"100%",background:C.card,border:`1px solid ${accountFilter!=="All"?C.blue:C.border}`,borderRadius:10,padding:"9px 10px",minHeight:LAYOUT.minTap,color:accountFilter!=="All"?C.blueBright:C.cream,fontSize:13,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
               <option value="All">All Accounts</option>
               {accountsWithNames.map(a=>{
@@ -8702,14 +8751,14 @@ function SpendScreen({data, setAppData, setScreen}){
         )}
         <div>
           <div style={{color:C.muted,fontSize:13,marginBottom:GAP.textToControl}}>Category</div>
-          <select value={catFilter} onChange={e=>setCatFilter(e.target.value)}
+          <select aria-label="Category" value={catFilter} onChange={e=>setCatFilter(e.target.value)}
             style={{width:"100%",background:C.card,border:`1px solid ${catFilter!=="All"?C.orange:C.border}`,borderRadius:10,padding:"9px 10px",minHeight:LAYOUT.minTap,color:catFilter!=="All"?C.orangeBright:C.cream,fontSize:13,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
             {cats.map(c=><option key={c} value={c}>{c}</option>)}
           </select>
         </div>
         <div>
           <div style={{color:C.muted,fontSize:13,marginBottom:GAP.textToControl}}>Period</div>
-          <select value={period} onChange={e=>setPeriod(e.target.value)}
+          <select aria-label="Period" value={period} onChange={e=>setPeriod(e.target.value)}
             style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 10px",minHeight:LAYOUT.minTap,color:C.cream,fontSize:13,fontFamily:"inherit",fontWeight:600,cursor:"pointer",outline:"none"}}>
             <option value="week">This week</option>
             <option value="month">{monthLabel}</option>
@@ -8752,7 +8801,7 @@ function SpendScreen({data, setAppData, setScreen}){
           <div style={{flex:1,minWidth:0}}>
             <div style={{color:C.cream,fontWeight:600,fontSize:14,...wrapText()}}>{txn.name}</div>
             <div style={{display:"flex",columnGap:GAP.textToControl,rowGap:GAP.textToControl,marginTop:GAP.textToControl,alignItems:"center",flexWrap:"wrap"}}>
-              <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.amount<0?C.green+"18":txnDispColor+"18",border:`1px solid ${txn.amount<0?C.green:txnDispColor}33`,borderRadius:99,padding:"2px 8px",minHeight:LAYOUT.minTap,color:txn.amount<0?C.greenBright:txnDispColor,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",flexWrap:"wrap",gap:3,minWidth:0,maxWidth:"100%",textAlign:"left"}}>
+              <button onClick={e=>{e.stopPropagation();setRecatTxn(txn);}} style={{background:txn.amount<0?C.green+"18":txnDispColor+"18",border:`1px solid ${txn.amount<0?C.green:txnDispColor}33`,borderRadius:99,padding:"2px 8px",minHeight:LAYOUT.minTap,color:txn.amount<0?C.greenBright:readable(txnDispColor),fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",flexWrap:"wrap",gap:3,minWidth:0,maxWidth:"100%",textAlign:"left"}}>
                 {txn.amount<0&&getCat(txn)==="Transfer"?"Received ↓ tap to label":getCat(txn)} <span style={{opacity:0.6,fontSize:13}}>✎</span>
               </button>
               <span style={{color:C.muted,fontSize:13}}>{txn.date}</span>
@@ -8932,7 +8981,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
               </div>
             </div>
             <button onClick={openAdd}
-              style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:LAYOUT.minTap}}>
+              style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"8px 16px",color:textOn(C.purple,C.purpleBright),fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",minHeight:LAYOUT.minTap}}>
               + Add Goal
             </button>
           </div>
@@ -9141,7 +9190,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
             <div style={{color:C.cream,fontSize:13,fontWeight:600}}>Extra monthly payment</div>
             <div style={{color:C.purpleBright,fontWeight:800,fontSize:20}}>+{extra}<span style={{color:C.muted,fontSize:13}}>/mo</span></div>
           </div>
-          <input type="range" min={0} max={500} step={10} value={extra} onChange={e=>setExtra(Number(e.target.value))} style={{width:"100%",accentColor:C.purple,height:LAYOUT.minTap,cursor:"pointer","--thumb-color":C.purple}}/>
+          <input aria-label="Extra monthly payment" type="range" min={0} max={500} step={10} value={extra} onChange={e=>setExtra(Number(e.target.value))} style={{width:"100%",accentColor:C.purple,height:LAYOUT.minTap,cursor:"pointer","--thumb-color":C.purple}}/>
           <div style={{display:"flex",justifyContent:"space-between",gap:GAP.textToControl,marginTop:GAP.textToControl}}><span style={{color:C.muted,fontSize:13}}>+$0 (min only)</span><span style={{color:C.muted,fontSize:13}}>+$500/mo</span></div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -9427,11 +9476,11 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
                 <div style={{display:"flex",gap:6,alignItems:"center"}}>
                   <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
                     <span style={{color:C.muted,fontSize:13,padding:"0 5px 0 8px"}}>$</span>
-                    <input value={ret[field]||""} onChange={e=>updateRet(field,e.target.value)}
+                    <input aria-label={label} value={ret[field]||""} onChange={e=>updateRet(field,e.target.value)}
                       type="number" inputMode="decimal" placeholder="0"
                       style={{flex:1,minWidth:0,boxSizing:"border-box",background:"none",border:"none",padding:"10px 8px 10px 0",color:C.tealBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",outline:"none",fontWeight:700}}/>
                   </div>
-                  <select value={freq} onChange={e=>updateRet(freqField,e.target.value)}
+                  <select aria-label={`${label}: how often`} value={freq} onChange={e=>updateRet(freqField,e.target.value)}
                     style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 8px",
                       color:C.mutedHi,fontSize:13,fontFamily:"inherit",outline:"none",flexShrink:0,cursor:"pointer"}}>
                     <option value="weekly">Weekly</option>
@@ -9480,7 +9529,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
               <div style={{width:46,height:46,borderRadius:14,background:a.color+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{a.icon}</div>
               <div>
-                <div style={{color:a.color,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{a.name}</div>
+                <div style={{color:readable(a.color),fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{a.name}</div>
                 <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{a.fullName}</div>
               </div>
             </div>
@@ -9495,7 +9544,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
               </div>
             </div>
             <div style={{background:a.color+"12",border:`1px solid ${a.color}33`,borderRadius:12,padding:"10px 14px"}}>
-              <span style={{color:a.color,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How it works: </span>
+              <span style={{color:readable(a.color),fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>How it works: </span>
               <span style={{color:C.cream,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{a.tip}</span>
             </div>
           </div>
@@ -9846,7 +9895,7 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData }){
       ) : facilitatorGate === "ai-off" ? (
         <div style={{...card,background:C.cardAlt}}><div style={{color:C.mutedHi,fontSize:13,lineHeight:1.5}}>Coach is off in Settings. Your agenda is above.</div></div>
       ) : !started ? (
-        <button onClick={start} style={{width:"100%",background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:14,padding:"13px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{isCouple?"Start the meeting":"Start solo check-in"}</button>
+        <button onClick={start} style={{width:"100%",background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:14,padding:"13px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{isCouple?"Start the meeting":"Start solo check-in"}</button>
       ) : (
         <div style={card}>
           <div style={{color:C.muted,fontSize:13,marginBottom:8}}>Your coach works only from the agenda above. Nothing here moves money; a choice is only recorded after you confirm it.</div>
@@ -9874,7 +9923,7 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData }){
           )}
           <div style={{display:"flex",gap:8}}>
             <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")send();}} placeholder="Your answer…" style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
-            <button onClick={send} disabled={busy} style={{background:C.purple,border:"none",borderRadius:10,padding:"9px 16px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Send</button>
+            <button onClick={send} disabled={busy} style={{background:C.purple,border:"none",borderRadius:10,padding:"9px 16px",color:textOn(C.purple),fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Send</button>
           </div>
         </div>
       )}
@@ -10461,7 +10510,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
           <div style={{fontSize:48,marginBottom:12}}>👧</div>
           <div style={{color:C.cream,fontWeight:800,fontSize:16,fontFamily:"'Playfair Display',Georgia,serif",marginBottom:8}}>Add your first child</div>
           <div style={{color:C.muted,fontSize:13,lineHeight:1.6,marginBottom:20}}>Each child gets their own chore list, jar tracker, savings goal, and a shareable mini app, with no access to your financial data.</div>
-          <button onClick={()=>setShowAddKid(true)} style={{background:`linear-gradient(135deg,${C.pink},#ff8cb8)`,border:"none",borderRadius:12,padding:"13px 28px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>+ Add Child</button>
+          <button onClick={()=>setShowAddKid(true)} style={{background:`linear-gradient(135deg,${C.pink},${C.pinkBright})`,border:"none",borderRadius:12,padding:"13px 28px",color:textOn(C.pink,C.pinkBright),fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>+ Add Child</button>
         </Card>
       )}
 
@@ -10516,7 +10565,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
             </div>
           </div>
           <div style={{display:"flex",gap:8}}>
-            <button onClick={addKid} style={{flex:1,background:newKidName.trim()?`linear-gradient(135deg,${C.pink},#ff8cb8)`:"rgba(255,107,157,0.3)",border:"none",borderRadius:10,padding:"12px",color:"#fff",fontWeight:800,fontSize:13,cursor:newKidName.trim()?"pointer":"default",fontFamily:"inherit",minHeight:44}}>
+            <button onClick={addKid} style={{flex:1,background:newKidName.trim()?`linear-gradient(135deg,${C.pink},${C.pinkBright})`:"rgba(255,107,157,0.3)",border:"none",borderRadius:10,padding:"12px",color:newKidName.trim()?textOn(C.pink,C.pinkBright):C.mutedHi,fontWeight:800,fontSize:13,cursor:newKidName.trim()?"pointer":"default",fontFamily:"inherit",minHeight:44}}>
               Add {newKidEmoji} {newKidName||"Child"}
             </button>
             <button onClick={()=>{setShowAddKid(false);setNewKidName("");}} style={{padding:"12px 16px",borderRadius:10,border:`1px solid ${C.border}`,background:"none",color:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>Cancel</button>
@@ -10560,7 +10609,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
             <div style={{marginBottom:14}}>
               <div style={{color:C.muted,fontSize:13,marginBottom:8,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>🎨 Colour Theme</div>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <select value={activeKid.theme||"pink"} onChange={e=>updateKid(activeKid.id,{theme:e.target.value})}
+                <select aria-label="Colour theme" value={activeKid.theme||"pink"} onChange={e=>updateKid(activeKid.id,{theme:e.target.value})}
                   style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.cream,fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:"pointer",outline:"none",appearance:"none",WebkitAppearance:"none"}}>
                   {Object.entries(KID_THEMES).map(([key,t])=>(
                     <option key={key} value={key}>{t.emoji} {t.name}</option>
@@ -10576,7 +10625,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
               <div style={{fontSize:13,color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",wordBreak:"break-all",marginBottom:10}}>{kidUrl}</div>
               <div style={{display:"flex",gap:8}}>
                 <button onClick={()=>{navigator.clipboard.writeText(kidUrl).then(()=>{setCopiedKidId(activeKid.id);setTimeout(()=>setCopiedKidId(null),2500);});}}
-                  style={{flex:1,background:copiedKidId===String(activeKid.id)?C.green:kidTheme.primary,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all .2s",minHeight:44}}>
+                  style={{flex:1,background:copiedKidId===String(activeKid.id)?C.green:kidTheme.primary,border:"none",borderRadius:10,padding:"11px",color:textOn(copiedKidId===String(activeKid.id)?C.green:kidTheme.primary),fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all .2s",minHeight:44}}>
                   {copiedKidId===String(activeKid.id)?"✓ Copied!":"📋 Copy Link"}
                 </button>
                 <button onClick={()=>{if(navigator.share)navigator.share({title:`${activeKid.name}'s Flourish`,url:kidUrl}).catch(()=>{});}}
@@ -10616,7 +10665,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                     {["spend","save","give"].map(key=>(
                       <div key={key} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
                         <div style={{width:44,color:colors[key],fontWeight:700,fontSize:13,textTransform:"capitalize"}}>{key}</div>
-                        <input type="range" min={0} max={100} value={split[key]}
+                        <input aria-label={`${key} share`} type="range" min={0} max={100} value={split[key]}
                           onChange={e=>{
                             const val=parseInt(e.target.value)||0;
                             const others=["spend","save","give"].filter(k=>k!==key);
@@ -10716,7 +10765,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                     <span style={{flex:1,color:C.cream,fontSize:13}}>{ch.task}</span>
                     <span style={{color:C.gold,fontSize:13}}>+${(ch.reward||0).toFixed(2)}</span>
                     <button onClick={()=>approveKidChore(activeKid.id,ch.id)}
-                      style={{background:C.green,border:"none",borderRadius:8,padding:"4px 10px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>✓ Approve</button>
+                      style={{background:C.green,border:"none",borderRadius:8,padding:"4px 10px",color:textOn(C.green),fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>✓ Approve</button>
                   </div>
                 ))}
               </div>
@@ -11115,7 +11164,7 @@ function InlineDebtEditor({data, setAppData, color, navToScreen}){
                 <div style={{color:C.muted,fontSize:13,marginBottom:3}}>{lbl}</div>
                 <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
                   <span style={{color:C.muted,fontSize:13,padding:"0 4px"}}>{pre}</span>
-                  <input value={d[field]||""} onChange={e=>updateDebt(i,field,e.target.value)} type="number" inputMode="decimal"
+                  <input aria-label={`${d.name||"Debt"} ${lbl}`} value={d[field]||""} onChange={e=>updateDebt(i,field,e.target.value)} type="number" inputMode="decimal"
                     style={{flex:1,background:"none",border:"none",padding:"6px 4px 6px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,minWidth:0}}/>
                 </div>
               </div>
@@ -11125,7 +11174,7 @@ function InlineDebtEditor({data, setAppData, color, navToScreen}){
       ))}
       {adding?(
         <div style={{background:C.cardAlt,borderRadius:12,padding:"12px 14px",border:`1px solid ${color}44`,marginBottom:8}}>
-          <select value={form.name} onChange={e=>setForm(v=>({...v,name:e.target.value}))}
+          <select aria-label="Debt type" value={form.name} onChange={e=>setForm(v=>({...v,name:e.target.value}))}
             style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:form.name?C.cream:C.muted,fontSize:13,fontFamily:"inherit",marginBottom:8}}>
             <option value="">Select debt type…</option>
             {DEBT_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
@@ -11144,7 +11193,7 @@ function InlineDebtEditor({data, setAppData, color, navToScreen}){
           </div>
           <div style={{display:"flex",gap:8}}>
             <button onClick={saveDebt} disabled={!form.name||!form.balance}
-              style={{flex:1,background:form.name&&form.balance?color:"rgba(255,255,255,0.08)",border:"none",borderRadius:10,padding:"10px",color:"#fff",fontWeight:700,fontSize:13,cursor:form.name&&form.balance?"pointer":"default",fontFamily:"inherit",opacity:!form.name||!form.balance?0.4:1}}>
+              style={{flex:1,background:form.name&&form.balance?color:"rgba(255,255,255,0.08)",border:"none",borderRadius:10,padding:"10px",color:form.name&&form.balance?textOn(color):C.mutedHi,fontWeight:700,fontSize:13,cursor:form.name&&form.balance?"pointer":"default",fontFamily:"inherit",opacity:!form.name||!form.balance?0.4:1}}>
               Save Debt ✓
             </button>
             <button onClick={()=>{setAdding(false);setForm({name:"",balance:"",rate:"",min:""}); }}
@@ -11200,7 +11249,7 @@ function InlineGoalEditor({data, setAppData, color}){
                   <div style={{color:C.muted,fontSize:13,marginBottom:3}}>{lbl}</div>
                   <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
                     <span style={{color:C.muted,fontSize:13,padding:"0 5px"}}>$</span>
-                    <input value={g[field]||""} onChange={e=>setAppData(prev=>({...prev,goals:(prev.goals||[]).map((x,j)=>j===i?{...x,[field]:e.target.value}:x)}))} type="number" inputMode="decimal"
+                    <input aria-label={`${g.name||"Goal"} ${lbl}`} value={g[field]||""} onChange={e=>setAppData(prev=>({...prev,goals:(prev.goals||[]).map((x,j)=>j===i?{...x,[field]:e.target.value}:x)}))} type="number" inputMode="decimal"
                       style={{flex:1,background:"none",border:"none",padding:"6px 4px 6px 0",color:field==="saved"?C.greenBright:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:field==="saved"?700:400,width:0,minWidth:0}}/>
                   </div>
                 </div>
@@ -11215,7 +11264,7 @@ function InlineGoalEditor({data, setAppData, color}){
       })}
       {adding?(
         <div style={{background:C.cardAlt,borderRadius:12,padding:"12px 14px",border:`1px solid ${color}44`,marginBottom:8}}>
-          <select value={form.name} onChange={e=>setForm(v=>({...v,name:e.target.value}))}
+          <select aria-label="Goal type" value={form.name} onChange={e=>setForm(v=>({...v,name:e.target.value}))}
             style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:form.name?C.cream:C.muted,fontSize:13,fontFamily:"inherit",marginBottom:8}}>
             <option value="">Select goal type…</option>
             {GOAL_PRESETS.map(t=><option key={t} value={t}>{t}</option>)}
@@ -11234,7 +11283,7 @@ function InlineGoalEditor({data, setAppData, color}){
           </div>
           <div style={{display:"flex",gap:8}}>
             <button onClick={saveGoal} disabled={!form.name||!form.target}
-              style={{flex:1,background:form.name&&form.target?color:"rgba(255,255,255,0.08)",border:"none",borderRadius:10,padding:"10px",color:"#fff",fontWeight:700,fontSize:13,cursor:form.name&&form.target?"pointer":"default",fontFamily:"inherit",opacity:!form.name||!form.target?0.4:1}}>
+              style={{flex:1,background:form.name&&form.target?color:"rgba(255,255,255,0.08)",border:"none",borderRadius:10,padding:"10px",color:form.name&&form.target?textOn(color):C.mutedHi,fontWeight:700,fontSize:13,cursor:form.name&&form.target?"pointer":"default",fontFamily:"inherit",opacity:!form.name||!form.target?0.4:1}}>
               Save Goal ✓
             </button>
             <button onClick={()=>{setAdding(false);setForm({name:"",target:"",saved:""}); }}
@@ -11316,11 +11365,11 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
     return (
     <div style={s}>
       <div style={row}><span style={lbl}>Name</span>
-        <input defaultValue={data.profile?.name||""} onBlur={e=>updateProfile("name",e.target.value)}
+        <input aria-label="Name" defaultValue={data.profile?.name||""} onBlur={e=>updateProfile("name",e.target.value)}
           style={{background:"none",border:"none",borderBottom:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,textAlign:"right",outline:"none",fontFamily:"inherit",padding:"2px 4px",width:140}}/>
       </div>
       <div style={row}><span style={lbl}>Country</span>
-        <select defaultValue={data.profile?.country||"CA"} onChange={e=>{
+        <select aria-label="Country" defaultValue={data.profile?.country||"CA"} onChange={e=>{
           // Phase D12: reset province to a sensible default when country changes
           // so Canadian "ON" doesn't persist for users switching to US (or vice versa).
           const newCountry = e.target.value;
@@ -11333,7 +11382,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
       </div>
       {/* Phase D12: Province/State picker. Controlled value so it updates on country change. */}
       <div style={row}><span style={lbl}>{(data.profile?.country||"CA")==="CA" ? "Province" : "State"}</span>
-        <select value={data.profile?.province||"ON"} onChange={e=>updateProfile("province",e.target.value)}
+        <select aria-label={(data.profile?.country||"CA")==="CA" ? "Province" : "State"} value={data.profile?.province||"ON"} onChange={e=>updateProfile("province",e.target.value)}
           style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit",maxWidth:180}}>
           {(CC[data.profile?.country||"CA"]?.regions||[]).map(r=>(
             <option key={r.code} value={r.code}>{r.name}</option>
@@ -11378,7 +11427,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
                 <input value={inc.amount||""} onChange={e=>updateIncome(inc.id,"amount",e.target.value)} type="number" inputMode="decimal" placeholder="0"
                   style={{flex:1,minWidth:0,background:"none",border:"none",padding:"7px 8px 7px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
               </div>
-              <select value={inc.freq||"biweekly"} onChange={e=>updateIncome(inc.id,"freq",e.target.value)}
+              <select aria-label="How often" value={inc.freq||"biweekly"} onChange={e=>updateIncome(inc.id,"freq",e.target.value)}
                 style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",cursor:"pointer"}}>
                 <option value="weekly">Weekly</option>
                 <option value="biweekly">Every 2 weeks</option>
@@ -11507,7 +11556,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
               </div>
               <div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",width:78,flexShrink:0}}>
                 <span style={{color:C.muted,fontSize:13,padding:"0 4px",flexShrink:0}}>$</span>
-                <input value={b.amount} onChange={e=>updateBillAmt(i,e.target.value)} type="number" inputMode="decimal"
+                <input aria-label={`${b.name||"Bill"} amount`} value={b.amount} onChange={e=>updateBillAmt(i,e.target.value)} type="number" inputMode="decimal"
                   style={{flex:1,background:"none",border:"none",padding:"5px 4px 5px 0",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",width:0,fontWeight:600}}/>
               </div>
               <button aria-label="Remove" onClick={()=>removeBillS(i,b.name)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:13,padding:"4px",flexShrink:0,minWidth:24,minHeight:24}}>✕</button>
@@ -11528,7 +11577,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
   if(sectionKey==="family") return (
     <div style={s}>
       <div style={row}><span style={lbl}>Status</span>
-        <select defaultValue={data.profile?.status||"single"} onChange={e=>updateProfile("status",e.target.value)}
+        <select aria-label="Status" defaultValue={data.profile?.status||"single"} onChange={e=>updateProfile("status",e.target.value)}
           style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
           <option value="single">Single</option><option value="couple">Couple</option>
         </select>
@@ -11542,7 +11591,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
       </div>
       )}
       <div style={row}><span style={lbl}>Has Kids</span>
-        <select defaultValue={data.profile?.hasKids?"yes":"no"} onChange={e=>updateProfile("hasKids",e.target.value==="yes")}
+        <select aria-label="Has kids" defaultValue={data.profile?.hasKids?"yes":"no"} onChange={e=>updateProfile("hasKids",e.target.value==="yes")}
           style={{background:C.card,border:`1px solid ${color}44`,color:C.cream,fontSize:13,fontWeight:600,borderRadius:8,padding:"4px 8px",fontFamily:"inherit"}}>
           <option value="no">No</option><option value="yes">Yes</option>
         </select>
@@ -11758,7 +11807,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
           <FlourishMark size={28}/>
         </div>
         <div style={{textAlign:"left"}}>
-          <div style={{color:"#fff",fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15,letterSpacing:-0.3}}>Share Flourish</div>
+          <div style={{color:textOn("#0D3320","#0A2518"),fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:15,letterSpacing:-0.3}}>Share Flourish</div>
           <div style={{color:"rgba(255,255,255,0.62)",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:3}}>Invite a friend · help them thrive</div>
         </div>
       </div>
@@ -11776,8 +11825,9 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         const isActive = activeSection === item.key;
         return (
         <div key={i}>
-          <div
+          <div role="button" tabIndex={0} aria-expanded={isActive}
             onClick={()=>setActiveSection(isActive ? null : item.key)}
+            onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();setActiveSection(isActive ? null : item.key);}}}
             style={{background:isActive?item.color+"14":C.card,borderRadius:isActive?"18px 18px 0 0":18,padding:"13px 16px",marginBottom:isActive?0:8,border:`1px solid ${isActive?item.color+"55":C.border}`,borderBottom:isActive?"none":"",display:"flex",alignItems:"center",gap:13,cursor:"pointer",transition:"all .22s cubic-bezier(.16,1,.3,1)"}}
             onMouseEnter={e=>{if(!isActive){e.currentTarget.style.borderColor=item.color+"55";e.currentTarget.style.transform="translateX(2px)";}}}
             onMouseLeave={e=>{if(!isActive){e.currentTarget.style.borderColor=C.border;e.currentTarget.style.transform="none";}}}>
@@ -12528,7 +12578,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
                   <div style={{flex:1,height:1,background:C.border}}/>
                 </div>
               : m.role==="user"
-                ? <div style={{maxWidth:"82%",background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:"#fff",borderRadius:"18px 18px 4px 18px",padding:"11px 15px",fontSize:13,lineHeight:1.65,fontFamily:"inherit",whiteSpace:"pre-wrap"}}>{m.content}</div>
+                ? <div style={{maxWidth:"82%",background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:textOn(C.purple,C.purpleBright),borderRadius:"18px 18px 4px 18px",padding:"11px 15px",fontSize:13,lineHeight:1.65,fontFamily:"inherit",whiteSpace:"pre-wrap"}}>{m.content}</div>
                 : <div style={{maxWidth:"82%",display:"flex",flexDirection:"column",gap:3}}>
                     <YourCoachTag/>
                     <div style={{background:C.card,color:C.cream,border:`1px solid ${C.border}`,borderRadius:"18px 18px 18px 4px",padding:"11px 15px",fontSize:13,lineHeight:1.65,fontFamily:"inherit"}}>{renderCoachMarkdown(m.content)}</div>
@@ -12555,7 +12605,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
               {pendingAction.action==="add_goal"?"Add a new goal":"Update goal"}: "{sanitizeField(pendingAction.name||"Goal",80)}"{pendingAction.target!=null?`, target $${parseFloat(pendingAction.target)||0}`:""}
             </div>
             <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>applyPendingAction(pendingAction)} style={{flex:1,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:"#fff",border:"none",borderRadius:10,padding:"9px",fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:"pointer",minHeight:38}}>Apply</button>
+              <button onClick={()=>applyPendingAction(pendingAction)} style={{flex:1,background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:textOn(C.purple,C.purpleBright),border:"none",borderRadius:10,padding:"9px",fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:"pointer",minHeight:38}}>Apply</button>
               <button onClick={()=>setPendingAction(null)} style={{flex:1,background:"none",border:`1px solid ${C.border}`,color:C.mutedHi,borderRadius:10,padding:"9px",fontSize:13,fontWeight:600,fontFamily:"inherit",cursor:"pointer",minHeight:38}}>Dismiss</button>
             </div>
           </div>
@@ -12604,13 +12654,14 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
         <button
           onClick={send}
           disabled={!input.trim()||loading}
+          aria-label="Send"
           style={{
-            width:42,height:42,borderRadius:13,border:"none",cursor:input.trim()&&!loading?"pointer":"not-allowed",
+            width:LAYOUT.minTap,height:LAYOUT.minTap,borderRadius:13,border:"none",cursor:input.trim()&&!loading?"pointer":"not-allowed",
             background:input.trim()&&!loading?`linear-gradient(135deg,${C.purple},${C.purpleBright})`:`${C.purple}33`,
             display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .15s",
           }}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={input.trim()&&!loading?textOn(C.purple,C.purpleBright):C.purpleBright} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
           </svg>
         </button>
@@ -13003,7 +13054,7 @@ function PremiumGate({feature,desc,onUpgrade,nativeNote}){
             ))}
           </div>
         </div>
-        <button onClick={onUpgrade} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.purple}40`}}>
+        <button onClick={onUpgrade} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,color:textOn(C.purple,C.purpleBright),fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px 36px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 6px 24px ${C.purple}40`}}>
           {getTrialStartedAt() ? "Get Flourish Plus →" : "Start 14 days free →"}
         </button>
         {/* Never offer a free trial to someone who has already had one — this gate also renders for
@@ -13079,7 +13130,7 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"18px"}}>
             <div style={{color:C.cream,fontWeight:700,marginBottom:6}}>You're on Flourish Plus</div>
             <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6,marginBottom:14}}>Change your card, switch plan or cancel in Stripe's billing portal.</div>
-            <button onClick={()=>onManage ? onManage() : go("__portal__")} disabled={busy==="__portal__"} style={{width:"100%",background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"14px",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>
+            <button onClick={()=>onManage ? onManage() : go("__portal__")} disabled={busy==="__portal__"} style={{width:"100%",background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:12,padding:"14px",color:textOn(C.purple,C.purpleBright),fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>
               {busy==="__portal__"?"Opening…":"Manage subscription"}
             </button>
           </div>
@@ -13152,7 +13203,7 @@ function Paywall({onClose,onPromoValid,country}){
         <div style={{display:"flex",gap:10,marginBottom:20}}>
           {Object.entries(plans).map(([key,plan])=>(
             <button key={key} onClick={()=>setSelected(key)} style={{flex:1,background:selected===key?C.purple+"22":C.card,border:`2px solid ${selected===key?C.purple:C.border}`,borderRadius:16,padding:"14px 12px",cursor:"pointer",textAlign:"center",position:"relative",transition:"all .2s"}}>
-              {plan.badge&&<div style={{position:"absolute",top:-10,left:"50%",transform:"translateX(-50%)",background:C.purple,color:"#fff",fontSize:13,fontWeight:800,borderRadius:99,padding:"3px 10px",whiteSpace:"nowrap"}}>{plan.badge}</div>}
+              {plan.badge&&<div style={{position:"absolute",top:-10,left:"50%",transform:"translateX(-50%)",background:C.purple,color:textOn(C.purple),fontSize:13,fontWeight:800,borderRadius:99,padding:"3px 10px",whiteSpace:"nowrap"}}>{plan.badge}</div>}
               <div style={{color:selected===key?C.purpleBright:C.muted,fontWeight:700,fontSize:13,marginBottom:4,fontFamily:"inherit"}}>{plan.label}</div>
               <div style={{color:selected===key?C.cream:C.mutedHi,fontWeight:900,fontSize:18,fontFamily:"'Playfair Display',serif"}}>{plan.price}</div>
               {plan.monthly&&<div style={{color:C.muted,fontSize:13,marginTop:2}}>{plan.monthly} · billed annually</div>}
@@ -13201,7 +13252,7 @@ function Paywall({onClose,onPromoValid,country}){
         {promoNote&&<div style={{color:C.muted,fontSize:13,marginBottom:8,textAlign:"center",lineHeight:1.5}}>{promoNote}</div>}
 
         {/* CTA — says what is true. It changes no plan and charges nothing. */}
-        <button onClick={()=>setUpgradeNote("Paid plans aren't open yet. Nothing has been charged and your plan hasn't changed. We'll email you the moment checkout is live.")} style={{width:"100%",background:`linear-gradient(135deg,${C.purple} 0%,${C.purpleBright} 100%)`,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:16,padding:"16px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 8px 32px ${C.purple}40`,marginBottom:12}}>
+        <button onClick={()=>setUpgradeNote("Paid plans aren't open yet. Nothing has been charged and your plan hasn't changed. We'll email you the moment checkout is live.")} style={{width:"100%",background:`linear-gradient(135deg,${C.purple} 0%,${C.purpleBright} 100%)`,color:textOn(C.purple,C.purpleBright),fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:16,padding:"16px",borderRadius:99,border:"none",cursor:"pointer",boxShadow:`0 8px 32px ${C.purple}40`,marginBottom:12}}>
           Start 14 days free →
         </button>
         {upgradeNote&&<div style={{color:C.purpleBright,fontSize:13,marginBottom:12,textAlign:"center",lineHeight:1.6}}>{upgradeNote}</div>}
@@ -13340,12 +13391,12 @@ function FirstVisitScreen({data, onDismiss}) {
             opens it would do nothing — go straight to the dashboard instead. */}
         {!breakdownOpen&&!ssView.needsSetup&&!noIncome?(
           <button onClick={()=>setShowBreakdown(true)}
-            style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
+            style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:textOn(C.green,C.greenBright),fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
             How is this calculated? →
           </button>
         ):(
           <button onClick={onDismiss}
-            style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
+            style={{width:"100%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,border:"none",borderRadius:16,padding:"18px",color:textOn(C.green,C.greenBright),fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",boxShadow:`0 8px 32px ${C.green}40`,marginBottom:12}}>
             Take me to my dashboard →
           </button>
         )}
@@ -13429,7 +13480,7 @@ function AIDisabledNotice({onOpenSettings, onClose}){
         <div style={{fontSize:42,marginBottom:12}}>🤖</div>
         <div style={{fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,fontSize:22,color:C.cream,marginBottom:8}}>AI features are off</div>
         <div style={{color:C.muted,fontSize:13,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:20}}>You've turned off AI in Settings. Enable it to chat with the Coach and use AI explanations.</div>
-        <button onClick={onOpenSettings} style={{background:C.green,color:"#fff",border:"none",borderRadius:99,padding:"11px 24px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer",marginRight:8}}>Open Settings</button>
+        <button onClick={onOpenSettings} style={{background:C.green,color:textOn(C.green),border:"none",borderRadius:99,padding:"11px 24px",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer",marginRight:8}}>Open Settings</button>
         <button onClick={onClose} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px 18px",color:C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,cursor:"pointer"}}>Back</button>
       </div>
     </div>
@@ -14943,7 +14994,7 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
                   </div>
                   <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${C.teal}44`,borderRadius:8,overflow:"hidden",flexShrink:0}}>
                     <span style={{color:C.muted,padding:"0 4px 0 8px",fontSize:13}}>$</span>
-                    <input type="number" inputMode="decimal" defaultValue={parseFloat(b.amount||0).toFixed(0)}
+                    <input aria-label={`${b.name||"Bill"} amount`} type="number" inputMode="decimal" defaultValue={parseFloat(b.amount||0).toFixed(0)}
                       onBlur={e=>{
                         const val=parseFloat(e.target.value);
                         if(!isNaN(val)&&val>=0&&setAppData){
@@ -15004,7 +15055,7 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
                     </div>
                     <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${color}55`,borderRadius:8,overflow:"hidden",flexShrink:0}}>
                       <span style={{color:C.muted,padding:"0 4px 0 8px",fontSize:13}}>$</span>
-                      <input type="number" inputMode="decimal" value={val}
+                      <input aria-label={`${cat} budget`} type="number" inputMode="decimal" value={val}
                         onChange={e=>setEditVals(prev=>({...prev,[cat]:e.target.value}))}
                         style={{width:54,background:"none",border:"none",padding:"7px 2px",color:C.cream,fontSize:13,fontFamily:"inherit",outline:"none",fontWeight:700}}/>
                       <span style={{color:C.muted,padding:"0 4px",fontSize:13}}>/mo</span>
@@ -15062,7 +15113,7 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
             return(
               <div style={{background:C.red+"10",border:`1px solid ${C.red}33`,borderRadius:18,padding:"16px"}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
-                  <div style={{width:24,height:24,borderRadius:"50%",background:C.red,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:"#fff",flexShrink:0}}>3</div>
+                  <div style={{width:24,height:24,borderRadius:"50%",background:C.red,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:textOn(C.red),flexShrink:0}}>3</div>
                   <div>
                     <div style={{color:C.redBright,fontWeight:800,fontSize:14}}>This doesn't quite fit</div>
                     <div style={{color:C.muted,fontSize:13,marginTop:1}}>It is ${Math.round(totalEdited-discret).toLocaleString()} over. One way to fit it, worked out by Flourish:</div>
@@ -16899,7 +16950,7 @@ input,button,select,textarea { font-family:inherit; }
                 style={{background:active?C.green+"18":"transparent",border:`1px solid ${active?C.green+"33":"transparent"}`,borderRadius:12,padding:"11px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,color:active?C.greenBright:C.muted,fontWeight:active?700:400,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"all .18s",textAlign:"left",width:"100%"}}>
                 <Icon id={n.icon} size={17} color={active?C.greenBright:C.muted} strokeWidth={active?1.9:1.4}/>
                 {n.label}
-                {n.id==="home"&&unread>0&&<div style={{marginLeft:"auto",width:18,height:18,borderRadius:99,background:C.red,color:"#fff",fontSize:13,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{unread}</div>}
+                {n.id==="home"&&unread>0&&<div style={{marginLeft:"auto",width:18,height:18,borderRadius:99,background:C.red,color:textOn(C.red),fontSize:13,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{unread}</div>}
               </button>
             );
           })}
@@ -16954,7 +17005,7 @@ input,button,select,textarea { font-family:inherit; }
             {HOUSEHOLD_ENABLED&&household&&<div style={{background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>🏠 Household #{household.code}</div>}
             <button onClick={()=>{setShowSettings(false);setShowNotifs(true);}} aria-label="Notifications" style={{position:"relative",background:C.card,border:`1px solid ${unread>0?C.red+"55":C.border}`,borderRadius:12,padding:"10px 14px",cursor:"pointer",fontSize:18,transition:"all .18s"}} onMouseEnter={e=>e.currentTarget.style.borderColor=C.borderHi} onMouseLeave={e=>e.currentTarget.style.borderColor=unread>0?C.red+"55":C.border}>
               <Icon id="bell" size={18} color={C.mutedHi} strokeWidth={1.5}/>
-              {unread>0&&<div style={{position:"absolute",top:-4,right:-4,width:18,height:18,borderRadius:99,background:C.red,color:"#fff",fontSize:13,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{unread}</div>}
+              {unread>0&&<div style={{position:"absolute",top:-4,right:-4,width:18,height:18,borderRadius:99,background:C.red,color:textOn(C.red),fontSize:13,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{unread}</div>}
             </button>
           </div>
         </div>
@@ -16995,7 +17046,7 @@ input,button,select,textarea { font-family:inherit; }
             <span style={{color:trialDaysLeft<=2?C.orangeBright:C.purpleBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,flex:1}}>
               {trialDaysLeft===0?"Trial ends today":"Trial: "+trialDaysLeft+" day"+(trialDaysLeft===1?"":"s")+" left"}
             </span>
-            <button onClick={()=>setShowPaywall(true)} style={{background:trialDaysLeft<=2?"linear-gradient(135deg,"+C.orange+","+C.gold+")":"linear-gradient(135deg,"+C.purple+","+C.purpleBright+")",border:"none",borderRadius:8,padding:"5px 12px",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+            <button onClick={()=>setShowPaywall(true)} style={{background:trialDaysLeft<=2?"linear-gradient(135deg,"+C.orange+","+C.gold+")":"linear-gradient(135deg,"+C.purple+","+C.purpleBright+")",border:"none",borderRadius:8,padding:"5px 12px",color:trialDaysLeft<=2?textOn(C.orange,C.gold):textOn(C.purple,C.purpleBright),fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
               Upgrade →
             </button>
           </div>
@@ -17004,7 +17055,7 @@ input,button,select,textarea { font-family:inherit; }
           <div style={{background:"#180800",borderBottom:`2px solid ${C.red}55`,padding:"10px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
             <span style={{fontSize:13}}>🔒</span>
             <span style={{color:DARK_C.redBright,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,fontWeight:700,flex:1}}>Your free trial has ended</span>
-            <button onClick={()=>setShowPaywall(true)} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:8,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+            <button onClick={()=>setShowPaywall(true)} style={{background:`linear-gradient(135deg,${C.purple},${C.purpleBright})`,border:"none",borderRadius:8,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:textOn(C.purple,C.purpleBright),fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
               Upgrade Now
             </button>
           </div>
@@ -17017,7 +17068,7 @@ input,button,select,textarea { font-family:inherit; }
           <div style={{display:"flex",gap:8}}>
             <button onClick={()=>{setShowSettings(false);setShowNotifs(true);}} aria-label="Notifications" style={{position:"relative",background:"rgba(255,255,255,0.07)",border:`1px solid ${unread>0?C.red+"55":C.border}`,borderRadius:12,padding:"8px 12px",cursor:"pointer",...tap({display:"flex",alignItems:"center",justifyContent:"center"})}}>
               <Icon id="bell" size={17} color={unread>0?C.redBright:C.mutedHi} strokeWidth={1.5}/>
-              {unread>0&&<div style={{position:"absolute",top:-4,right:-4,width:17,height:17,borderRadius:99,background:C.red,color:"#fff",fontSize:13,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 8px ${C.red}88`}}>{unread}</div>}
+              {unread>0&&<div style={{position:"absolute",top:-4,right:-4,width:17,height:17,borderRadius:99,background:C.red,color:textOn(C.red),fontSize:13,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 8px ${C.red}88`}}>{unread}</div>}
             </button>
             <button onClick={()=>{setShowNotifs(false);setShowSettings(true);}} aria-label="Settings" style={{background:"rgba(255,255,255,0.07)",border:`1px solid ${C.border}`,borderRadius:12,padding:"8px 12px",cursor:"pointer",...tap({display:"flex",alignItems:"center",justifyContent:"center"})}}><Icon id="settings" size={17} color={C.mutedHi} strokeWidth={1.5}/></button>
           </div>
