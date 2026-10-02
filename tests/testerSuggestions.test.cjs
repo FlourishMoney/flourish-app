@@ -222,6 +222,24 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     t.ok(/enable row level security/.test(sql) && /for insert to authenticated with check \(auth\.uid\(\) = user_id\)/.test(sql), "6u RLS: a signed-in person may insert their own rows");
     t.ok(!/for (select|update|delete|all)\b/.test(sql) && /grant insert\s+on table public\.feedback to authenticated;/.test(sql) && !/to anon/.test(sql), "6v …and nothing else: no read-back, no anon access");
     t.ok(/for \(const table of \["meeting_records", "subscriptions", "feedback"\]\)/.test(fs.readFileSync(path.join(REPO, "netlify", "functions", "plaid.js"), "utf8")), "6w deleting the account deletes the feedback too");
+    // Prompt 4b item 5: production already had an older public.feedback (no created_at, 0 rows), so
+    // the first run stopped at the created_at index (ERROR 42703) and changed nothing. Step 0 moves an
+    // empty older table aside, stops on one with rows, and never drops anything. (Run against the
+    // Supabase Postgres 17.6 image in a local throwaway container for this commit: fresh, old and
+    // empty, old with a row, and a second run of each.)
+    const code = sql.replace(/--[^\n]*/g, "");
+    const step0 = code.slice(code.indexOf("do $$"), code.indexOf("create table if not exists public.feedback"));
+    t.ok(step0.length > 200 && /information_schema\.columns[\s\S]*column_name = 'created_at'/.test(step0), "6y step 0 looks for an older public.feedback without created_at, before the table is created");
+    t.ok(/select count\(\*\) from public\.feedback/.test(step0) && /if rows_in_old > 0 then\s*raise exception/.test(step0), "6y2 …with rows in it, it stops with an error and changes nothing");
+    t.ok(/alter table public\.feedback rename to feedback_legacy_unused;/.test(step0) && /rename constraint/.test(step0) && /alter index public\.%I rename to %I/.test(step0),
+      "6y3 …empty, it is renamed public.feedback_legacy_unused, its constraint and index names with it");
+    t.ok(/raise exception 'public\.feedback has created_at but not the shape/.test(step0), "6y4 a public.feedback with created_at but another shape stops it too");
+    t.ok(!/\bdrop\s+table\b/i.test(code) && !/\bdrop\s+(column|schema)\b/i.test(code), "6y5 the migration drops nothing");
+    const newTable = code.slice(code.indexOf("create table if not exists public.feedback"), code.indexOf(");", code.indexOf("create table if not exists public.feedback")));
+    t.ok(newTable.length > 100 && !/\bemail\b/i.test(newTable), "6y6 the new table has no email column");
+    t.ok(/revoke all\s+on table public\.feedback from anon, authenticated;\s*grant insert\s+on table public\.feedback to authenticated;/.test(code), "6y7 the default Data API grants are revoked, then INSERT alone is granted");
+    t.ok(!/\bemail\b/.test(fs.readFileSync(path.join(REPO, "src", "lib", "feedback.js"), "utf8").replace(/\/\/[^\n]*/g, "")) && !Object.keys(F.feedbackRow({ userId: "u", kind: "idea", message: "Hi" })).includes("email"),
+      "6y8 …and the form never stores an email address");
     const allSrc = fs.readdirSync(path.join(REPO, "src", "lib")).map(f => fs.readFileSync(path.join(REPO, "src", "lib", f), "utf8")).join("\n") + APP;
     t.ok(!/typeform|forms\.gle|docs\.google\.com\/forms|formspree|tally\.so|jotform|surveymonkey/i.test(allSrc), "6x no third-party form service");
   }
