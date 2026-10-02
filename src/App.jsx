@@ -1703,7 +1703,9 @@ function lowStretchLine(forecast, ev) {
   const low = stretch.reduce((m, f) => (f.balance < m.balance ? f : m), ev);
   return pay
     ? `Before your next deposit, your balance is lowest on ${fmtD(low.date)}, at ${formatMoney(low.balance)}. The deposit lands on ${fmtD(pay.date)}.`
-    : `Your balance is lowest on ${fmtD(low.date)}, at ${formatMoney(low.balance)}. No deposit is expected in the 30 days shown.`;
+    // The range named from the forecast it was given (lib/watchRange.js, as Watch names its ranges):
+    // days 0 to N are today and the next N days.
+    : `Your balance is lowest on ${fmtD(low.date)}, at ${formatMoney(low.balance)}. No deposit is expected in ${rangePhrase(Math.max(0, list.length - 1))}.`;
 }
 
 function TimeMachine({data, activeScenario = null, setActiveScenario, setAppData}) {

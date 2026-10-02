@@ -136,6 +136,18 @@ const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
       t.eq((/Balance on ([A-Z][a-z]{2}, [A-Z][a-z]{2} \d{1,2}) /.exec(txt) || [])[1], occDay(last.date), `2k ${c} ${r}d: the last day named is the last entry's date (${occDay(last.date)}, day ${last.day})`);
     }
   }
+  // ── 2l. Today's Time Machine names its range the same way (watch-meet-fixes 5c) ────────────────
+  // It draws ForecastEngine.generate(data, 30): 31 entries, days 0 to 30. With no deposit in them it
+  // said "the 30 days shown"; it now says "today and the next 30 days", through the same helper.
+  {
+    let TM = {};
+    try { TM = loadApp(["lowStretchLine"]); } catch (e) { t.ok(false, `2l bundles: ${describe(e)}`); }
+    const g = ForecastEngine.generate(rent, 30, null, T);
+    const line = TM.lowStretchLine ? TM.lowStretchLine(g.forecast, g.forecast[0]) : "";
+    const n = Number((/No deposit is expected in today and the next (\d+) days\.$/.exec(line) || [])[1]);
+    t.eq([n, g.forecast.length - 1], [30, 30], `2l the Time Machine's day count is its forecast's entries minus one ("${line.slice(-52)}")`);
+    t.ok(!/days shown/.test(line) && /No deposit is expected in \$\{rangePhrase\(Math\.max\(0, list\.length - 1\)\)\}\./.test(APP), "2m …named by rangePhrase, the helper Watch uses, never \"the 30 days shown\"");
+  }
   // The hand-worked rent case, rendered on the real calendar: at 7 days the card names the day and quotes nothing.
   {
     const due2 = new Date(); due2.setDate(due2.getDate() + 20);
