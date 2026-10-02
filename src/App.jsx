@@ -6722,6 +6722,12 @@ const TERMS = {
 // Every answer was checked against the build. "Where do the numbers come from?" is corrected from the
 // brief: not every figure is calculated from the household's own data (tax and benefit amounts come
 // from the CRA or IRS, and What-If states the rates it assumes), so the answer says so.
+// "What makes flourish different" (tester suggestions, item 5): flourish's own mechanisms only, no
+// other app named, no "better than", no "only". "Every number shows its math." is narrowed to what is
+// true: safe to spend shows its working line by line, but not every figure in the app does (bank
+// balances, transactions and tax amounts are shown as they come, with their source).
+const WHAT_MAKES_DIFFERENT = "flourish shows what's safe to spend before payday, not just what you spent. Safe to spend shows its math, line by line. A weekly 15-minute money meeting is built from your own week. Bank connections are read-only, and it works without one.";
+
 const FAQ = [
   { q: "What is safe to spend?", a: "What's left until your next payday after bills due before payday, minimum debt payments, a spending buffer and a savings amount are accounted for. Tap the number to see the math." },
   { q: "Is my bank login safe?", a: "Bank connections go through Plaid and are read-only. flourish never sees or stores your bank password and cannot move money." },
@@ -12562,6 +12568,11 @@ function SupportPage({onBack}){
         </div>
       </div>
 
+      <section aria-labelledby="different-title" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:LAYOUT.cardPadding,marginTop:SPACE.sm}}>
+        <h2 id="different-title" style={{...s,fontSize:15,fontWeight:800,color:C.cream,margin:0}}>What makes flourish different</h2>
+        <div style={{...p,marginTop:SPACE.xs}}>{WHAT_MAKES_DIFFERENT}</div>
+      </section>
+
       <h2 style={h2}>Questions and answers</h2>
       <div>
         {FAQ.map((f,i)=>(
@@ -12594,7 +12605,7 @@ function SupportPage({onBack}){
 
 function DeleteAccount({onBack}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
-  const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:8};
+  const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:28,marginBottom:SPACE.sm};
   const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75,marginBottom:0};
   const li={...p,marginBottom:6};
   const last="September 25, 2026";

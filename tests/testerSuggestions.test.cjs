@@ -22,7 +22,7 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
   const noAdvice = (label, texts) => t.eq(texts.flatMap(x => adviceProblems(x).map(w => `${w}: ${x.slice(0, 60)}`)), [], `${label}: passes the advice scan (no money instruction, no verdict)`);
   const noBanned = (label, text) => t.ok(!BANNED.test(text), `${label}: no banned word, competitor or dash${BANNED.test(text) ? ` (found "${text.match(BANNED)[0]}")` : ""}`);
   let A = {};
-  try { A = loadApp(["Settings", "Dashboard", "MeetAgenda", "FAQ", "TERMS", "SupportPage", "SpendScreen"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
+  try { A = loadApp(["Settings", "Dashboard", "MeetAgenda", "FAQ", "TERMS", "SupportPage", "SpendScreen", "WHAT_MAKES_DIFFERENT"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
   const D = await import("../src/lib/demoFixture.js");
   const noop = () => {};
   const demo = (c = "CA", extra = {}) => { const now = new Date(); return { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c),
@@ -160,6 +160,21 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     t.ok(spend(noBank).includes("From your statements and entries") && !spend(noBank).includes("Sample data"), "4i a household with no bank sees its own data as its own, not \"Sample data\"");
     t.ok(spend({ ...demo(), demo: true }).includes("Sample data") && spend(demo()).includes("Live from your bank"), "4j (the demo is still sample data; a linked bank is still live)");
     t.ok(/const isDemo=!!data\.demo;/.test(APP), "4k only the demo counts as sample data on Activity");
+  }
+
+  // ── 5. What makes flourish different ─────────────────────────────────────────────────────────
+  {
+    const W = A.WHAT_MAKES_DIFFERENT;
+    t.eq(W, "flourish shows what's safe to spend before payday, not just what you spent. Safe to spend shows its math, line by line. A weekly 15-minute money meeting is built from your own week. Bank connections are read-only, and it works without one.",
+      "5a the card, word for word (\"Every number shows its math.\" narrowed to what is true)");
+    t.ok(!/(?<!read-)\bonly\b|better than|\bbest\b|unlike/i.test(W), "5b no \"only\" (read-only is about the connection), no \"better than\", no comparison");
+    noBanned("5c different card", W);
+    noAdvice("5d different card", [W]);
+    const support = textOf(A.render(A.h(A.SupportPage, { onBack: noop })));
+    t.ok(support.includes("What makes flourish different") && support.includes(W), "5e Help & Support shows the card");
+    // The claims hold
+    t.ok(/kind: "deduction"|kind:"deduction"/.test(fs.readFileSync(path.join(REPO, "src", "lib", "safeToSpendView.js"), "utf8")), "5f (safe to spend is shown as its rows: the math, line by line)");
+    t.ok(/Your 15-minute money meeting/.test(APP), "5g (Meet is the 15-minute money meeting, built from the week)");
   }
 
   t.summary("testerSuggestions.test");
