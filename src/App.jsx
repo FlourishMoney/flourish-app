@@ -55,6 +55,7 @@ import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSE
 import { shareFlourish, SHARE_URL } from "./lib/share.js";
 import { rateUrl } from "./lib/storeReview.js";
 import { FEEDBACK_KINDS, WEEK_ONE_KIND, WEEK_ONE_QUESTION, MAX_MESSAGE, submitFeedback, weekOneDue } from "./lib/feedback.js";
+import WHATS_NEW from "./whatsNew.json";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
 import { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
@@ -5147,6 +5148,11 @@ function IncomeReconcileCard({data, setAppData}){
 // ── FEEDBACK (tester suggestions, item 6) ──────────────────────────────────────────────────────
 // Saved to our own Supabase table (lib/feedback.js, migration 0013). Signed out, nothing is sent.
 const currentPlatform = () => { try { return window.Capacitor?.getPlatform?.() || "web"; } catch { return "web"; } };
+// "1.0.0 (526902)" on iOS, "1.0.0 (13)" on Android, "1.0.0" on the web, from src/whatsNew.json (item 7).
+const appVersionLabel = (platform = currentPlatform()) => {
+  const b = WHATS_NEW.builds && WHATS_NEW.builds[platform];
+  return b ? `${WHATS_NEW.version} (${b})` : WHATS_NEW.version;
+};
 function useSignedInAccount(){
   const [account,setAccount]=useState(null);
   useEffect(()=>{ let live=true; (async()=>{ try{ const { data } = await supabase.auth.getSession(); if(live) setAccount(data?.session?.user||null); }catch{} })(); return ()=>{live=false;}; },[]);
@@ -5160,7 +5166,7 @@ function FeedbackSheet({onClose}){
   const [status,setStatus]=useState(null); // null | "sending" | "sent" | "error"
   const send=async()=>{
     setStatus("sending");
-    const r=await submitFeedback({ client:supabase, userId:account?.id, kind, message, platform:currentPlatform() });
+    const r=await submitFeedback({ client:supabase, userId:account?.id, kind, message, platform:currentPlatform(), appVersion:appVersionLabel() });
     setStatus(r.ok?"sent":"error");
   };
   const field={width:"100%",boxSizing:"border-box",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px",color:C.cream,fontSize:14,fontFamily:"inherit"};
@@ -5211,7 +5217,7 @@ function WeekOneCard({data,setAppData,style}){
   const finish=(field)=>setAppData&&setAppData(prev=>({...prev,profile:{...(prev.profile||{}),weekOneCheckIn:{[field]:new Date().toISOString()}}}));
   const send=async()=>{
     setStatus("sending");
-    const r=await submitFeedback({ client:supabase, userId:account?.id, kind:WEEK_ONE_KIND, message:text, platform:currentPlatform() });
+    const r=await submitFeedback({ client:supabase, userId:account?.id, kind:WEEK_ONE_KIND, message:text, platform:currentPlatform(), appVersion:appVersionLabel() });
     if(r.ok) finish("answeredAt"); else setStatus("error");
   };
   return (
@@ -11416,6 +11422,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
   // notifToggles state removed with the Notifications preference section (no notification system yet — see audit).
   const [activeSection,setActiveSection]=useState(null);
   const [showFeedback,setShowFeedback]=useState(false); // tester suggestions item 6
+  const [showWhatsNew,setShowWhatsNew]=useState(false); // tester suggestions item 7
   // Apple 5.1.2(i): flipping the AI Coach toggle ON re-grants third-party sharing consent via
   // onAcceptAIConsent. A control labelled "AI Coach enabled" is not informed consent to send data
   // to Anthropic, so anyone without current consent (declined at the disclosure, or revoked here)
@@ -11738,6 +11745,17 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         })()}
       </div>
     {showFeedback&&<FeedbackSheet onClose={()=>setShowFeedback(false)}/>}
+    </div>
+    {/* ── What's new (tester suggestions, item 7): version, build and notes from src/whatsNew.json ── */}
+    <div style={{marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
+      <button onClick={()=>setShowWhatsNew(v=>!v)} aria-expanded={showWhatsNew} aria-controls="whats-new-notes"
+        style={{...tap(),width:"100%",display:"flex",flexWrap:"wrap",alignItems:"center",justifyContent:"space-between",gap:GAP.controlToControl,background:"none",border:"none",padding:0,cursor:"pointer",color:C.cream,fontWeight:700,fontSize:14,fontFamily:"inherit",textAlign:"left"}}>
+        <span>What's new</span>
+        <span style={{color:C.muted,fontSize:13,fontWeight:600}}>Version {appVersionLabel()} {showWhatsNew?"▴":"▾"}</span>
+      </button>
+      {showWhatsNew&&<ul id="whats-new-notes" style={{paddingLeft:20,marginTop:SPACE.sm,marginBottom:SPACE.xs,color:C.mutedHi,fontSize:13,lineHeight:1.6}}>
+        {WHATS_NEW.notes.map((n,i)=><li key={i} style={{marginBottom:SPACE.xs}}>{n}</li>)}
+      </ul>}
     </div>
     {/* ── Sign out ─────────────────────────────────────────────── */}
     <div style={{marginTop:10,padding:"16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>

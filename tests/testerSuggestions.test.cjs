@@ -201,7 +201,7 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     // The form, signed out (the demo is signed out)
     const sheet = textOf(A.render(A.h(A.FeedbackSheet, { onClose: noop })));
     t.ok(sheet.includes("Sign in to send feedback") && !/>Send</.test(A.render(A.h(A.FeedbackSheet, { onClose: noop }))), "6m signed out, the form says so and offers no Send");
-    t.ok(/submitFeedback\(\{ client:supabase, userId:account\?\.id, kind, message, platform:currentPlatform\(\) \}\)/.test(APP), "6n the form sends as the signed-in account only");
+    t.ok(/submitFeedback\(\{ client:supabase, userId:account\?\.id, kind, message, platform:currentPlatform\(\), appVersion:appVersionLabel\(\) \}\)/.test(APP), "6n the form sends as the signed-in account only");
     t.ok(settingsText().includes("Send feedback"), "6o Settings → Help & Support offers \"Send feedback\"");
     // The day-7 question
     const day = 24 * 60 * 60 * 1000, start = new Date("2026-10-01T09:00:00");
@@ -220,6 +220,26 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     t.ok(/for \(const table of \["meeting_records", "subscriptions", "feedback"\]\)/.test(fs.readFileSync(path.join(REPO, "netlify", "functions", "plaid.js"), "utf8")), "6w deleting the account deletes the feedback too");
     const allSrc = fs.readdirSync(path.join(REPO, "src", "lib")).map(f => fs.readFileSync(path.join(REPO, "src", "lib", f), "utf8")).join("\n") + APP;
     t.ok(!/typeform|forms\.gle|docs\.google\.com\/forms|formspree|tally\.so|jotform|surveymonkey/i.test(allSrc), "6x no third-party form service");
+  }
+
+  // ── 7. What's new ────────────────────────────────────────────────────────────────────────────
+  {
+    const W = JSON.parse(fs.readFileSync(path.join(REPO, "src", "whatsNew.json"), "utf8"));
+    const pkg = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8"));
+    const pbx = fs.readFileSync(path.join(REPO, "ios", "App", "App.xcodeproj", "project.pbxproj"), "utf8");
+    const gradle = fs.readFileSync(path.join(REPO, "android", "app", "build.gradle"), "utf8");
+    const iosBuilds = [...new Set([...pbx.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map(m => Number(m[1])))];
+    const iosVersions = [...new Set([...pbx.matchAll(/MARKETING_VERSION = ([\d.]+);/g)].map(m => m[1]))];
+    t.eq([W.version, pkg.version, iosVersions, (gradle.match(/versionName "([^"]+)"/) || [])[1]], ["1.0.0", "1.0.0", ["1.0.0"], "1.0.0"], "7a one version, 1.0.0, in whatsNew.json, package.json, Xcode and Gradle");
+    t.eq([W.builds.ios, iosBuilds, W.builds.android, Number((gradle.match(/versionCode (\d+)/) || [])[1])], [526902, [526902], 13, 13], "7b the builds in whatsNew.json are the ones the projects build: iOS 526902, Android 13");
+    t.ok(Array.isArray(W.notes) && W.notes.length >= 3, "7c release notes are in the same file");
+    noBanned("7d release notes", W.notes.join(" "));
+    noAdvice("7e release notes", W.notes);
+    const st = settingsText();
+    t.ok(st.includes("What's new") && st.includes("Version 1.0.0") && /aria-expanded="false" aria-controls="whats-new-notes"/.test(A.render(A.h(A.Settings, { data: demo(), setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop, bankConnected: true, billingUi: { show: false }, onOpenUpgrade: noop }))),
+      "7f Settings shows What's new and the version, and opens the notes from it");
+    t.ok(/\{WHATS_NEW\.notes\.map\(\(n,i\)=><li key=\{i\}/.test(APP), "7f2 …the notes from whatsNew.json");
+    t.ok(/appVersion:appVersionLabel\(\)/.test(APP), "7g feedback is sent with the version it came from");
   }
 
   t.summary("testerSuggestions.test");
