@@ -84,9 +84,11 @@ const PERSIST = fs.readFileSync(path.join(__dirname, "..", "src", "lib", "persis
   t.ok(/t\[id\]=Date\.now\(\); localStorage\.setItem\(TIPS_KEY/.test(APP),
     "4e dismissal is written down, per tip");
   const tips = [...APP.matchAll(/<FirstRunTip id="([a-z]+)"/g)].map(m => m[1]);
-  t.eq(tips.sort().join(","), "meet,today,watch", "4f one tip each on Today, Watch and Meet");
+  // watch-meet-fixes item 2: the tip shows only where every figure is tappable, so not on Today
+  // (tapFigures.test.cjs checks the screens that keep it).
+  t.eq(tips.sort().join(","), "meet,watch", "4f one tip each on Watch and Meet, and none on Today");
   t.eq(new Set(tips).size, tips.length, "4g …and no screen shows two");
-  const tipText = (APP.match(/<FirstRunTip id="today">([^<]+)</) || [])[1];
+  const tipText = (APP.match(/<FirstRunTip id="watch">([^<]+)</) || [])[1];
   t.eq(tipText, "Tap any number to see how Flourish got it.", "4h the wording is the one agreed");
   t.ok(/aria-label="Dismiss tip"/.test(APP), "4i and it can be dismissed");
 

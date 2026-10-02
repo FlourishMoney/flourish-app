@@ -240,6 +240,7 @@ const VIEWS = [
   { name: "Sheet Daily spend", scope: "overlay", reload: true, go: async (p) => { await TAB(p, "Watch"); await TXT(p, "What the forecast is built from"); await ARIA(p, "Edit Est. daily spend"); } },
   { name: "Sheet Starting balance working", scope: "overlay", reload: true, go: async (p) => { await TAB(p, "Watch"); await ARIA(p, "How Flourish got this number"); } },
   { name: "Sheet Range lowest working", scope: "overlay", reload: true, go: async (p) => { await TAB(p, "Watch"); await p.locator('button[aria-label^="Lowest balance"]').first().click(); } },
+  { name: "Sheet Meet figure working", scope: "overlay", reload: true, go: async (p) => { await TAB(p, "Meet"); await p.locator('button[aria-label$="How Flourish got it"]').first().click(); } },
   { name: "Sheet Clear chat", scope: "overlay", reload: true, go: async (p) => { await TAB(p, "Learn"); await TXT(p, "🗑️"); } },
   // "Do → Goals" opens on Debt Sim, so My Goals and its form are separate views. The goal form is
   // inline rather than an overlay, so it is scanned at page scope.

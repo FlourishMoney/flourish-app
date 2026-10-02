@@ -18,6 +18,21 @@ import { isCashAccount, num, buildDebtListForSimulator } from "./financialCalcul
 import { weekVersusUsual, categoryPaceDeltas } from "./weeklyReview.js";
 
 const _round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+// The safe-to-spend working, exactly as Today's breakdown prints it (safeToSpendView rows), for How
+// we got this on Meet. null when Today would show no figure either.
+function _safeRows(data) {
+  try {
+    const hasCashAccount = (data.accounts || []).filter(a => isCashAccount(a)).length > 0;
+    const hasIncome = (data.incomes || []).some(i => num(i && i.amount) > 0);
+    if (!hasCashAccount || !hasIncome) return null;
+    const view = safeToSpendView(SafeSpendEngine.calculate(data), { hasCashAccount, hasIncome });
+    if (view.needsSetup || !view.headlineText) return null;
+    return [...view.rows.map(r => ({ label: r.sign ? `${r.sign} ${r.label}` : r.label, value: r.value })),
+            { label: view.totalLabel, value: view.headlineText }];
+  } catch { return null; }
+}
+const SAFE_MEANING = "What's left in your accounts after the bills due before payday, minimum debt payments, a spending buffer and a savings amount are accounted for. The same figure as Today.";
+const _day = (d) => { try { return new Date(d).toLocaleDateString("en-CA", { weekday: "short", month: "short", day: "numeric" }); } catch { return String(d); } };
 const _num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
 function _fmtDate(d) {
   try { return new Date(d).toLocaleDateString("en-CA", { weekday: "short", day: "numeric" }); }
@@ -99,11 +114,29 @@ export function buildMeetSnapshot(data = {}) {
         const pay = (fc2.forecast || []).find(f => f.day > 0 && f.isPayday);
         if (pay && pay.date) periodEnd = new Date(pay.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
       } catch { /* no payday found → generic period label */ }
+      const savingsAccts = (data.accounts || []).filter(a => String((a && (a.type || a.subtype)) || "").toLowerCase() === "savings");
       snap.decisions = [{
         question: `${formatMoney(extra)} is spare ${periodEnd ? `before ${periodEnd}` : "until your next deposit"}: a quarter of your ${formatMoney(safe)} safe to spend. Is there anything you want to do with it?`,
+        explain: {
+          title: `Spare ${periodEnd ? `before ${periodEnd}` : "until your next deposit"}`, value: formatMoney(extra),
+          meaning: "A quarter of what's safe to spend until your next payday, rounded down to the dollar. It is a figure to talk about: nothing is moved.",
+          rows: [...(_safeRows(data) || [{ label: "= Safe until next payday", value: formatMoney(safe) }]),
+                 { label: "× 25%, rounded down", value: formatMoney(extra) }],
+          source: "Safe to spend on Today",
+        },
         options: [
-          { label: top.name || "Your top debt", outcome: `${formatMoney(top.balance)} owed at ${top.rate}%` },
-          { label: "Savings", outcome: `${formatMoney(buf.current)} saved now` },
+          { label: top.name || "Your top debt", outcome: `${formatMoney(top.balance)} owed at ${top.rate}%`,
+            explain: { title: top.name || "Your top debt", value: formatMoney(top.balance),
+              meaning: "The debt with the highest interest rate in your list, and what is owed on it now.",
+              rows: [{ label: "Owed now", value: formatMoney(top.balance) },
+                     { label: "Interest rate", value: `${top.rate}%${top.rateEstimated ? " (assumed: no rate entered)" : ""}` },
+                     ...(num(top.min) > 0 ? [{ label: "Minimum payment", value: formatMoney(num(top.min)) }] : [])],
+              source: top.source === "manual" ? "Your debts" : "Your bank" } },
+          { label: "Savings", outcome: `${formatMoney(buf.current)} saved now`,
+            explain: { title: "Savings", value: formatMoney(buf.current),
+              meaning: "The balance of your savings accounts now.",
+              rows: [...savingsAccts.map(a => ({ label: a.name || "Savings", value: formatMoney(_num(a.balance)) })), { label: "Total", value: formatMoney(buf.current) }],
+              source: "Your accounts" } },
         ],
       }];
     }
@@ -171,7 +204,7 @@ export function meetOpeningFor(data = {}) {
 // adds, rounds or estimates. The text carries no bare number of its own — "in the week ahead"
 // rather than "in the next 7 days" — so anything numeric that reaches the facilitator can be traced
 // to an engine that calculated it.
-export function quietWeekAgendaFor({ safeToSpendText = null, safeToSpend = null, safeToSpendLabel = "Safe until next payday", upcoming = [], truncated = false } = {}) {
+export function quietWeekAgendaFor({ safeToSpendText = null, safeToSpend = null, safeToSpendLabel = "Safe until next payday", upcoming = [], truncated = false, safeToSpendRows = null } = {}) {
   const progress = [];
   // The figure comes PRE-FORMATTED from safeToSpendView, the one owner of how this number is shown.
   // Formatting the engine's raw safeAmount here produced a different number from the rest of the
@@ -179,11 +212,12 @@ export function quietWeekAgendaFor({ safeToSpendText = null, safeToSpend = null,
   // ceils the deductions, so a $2,950 dashboard became a $2,951 agenda. Overstating what is
   // available is the single thing that policy exists to prevent.
   if (safeToSpendText) {
-    progress.push({ text: `${safeToSpendLabel}: ${safeToSpendText}.`, value: safeToSpend, source: "safeSpendEngine" });
+    progress.push({ text: `${safeToSpendLabel}: ${safeToSpendText}.`, value: safeToSpend, source: "safeSpendEngine",
+      ...(safeToSpendRows ? { explain: { title: safeToSpendLabel, value: safeToSpendText, meaning: SAFE_MEANING, rows: safeToSpendRows, source: "Safe to spend on Today" } } : {}) });
   }
   // What is coming is neither a risk nor a win. Listing a paycheque under "Upcoming risks" — which
   // the facilitator reads out in order — is simply wrong, and mislabels routine rent the same way.
-  const up = (upcoming || []).filter(u => u && u.text).map(u => ({ text: u.text, value: u.value ?? null, source: "forecastEngine" }));
+  const up = (upcoming || []).filter(u => u && u.text).map(u => ({ text: u.text, value: u.value ?? null, source: "forecastEngine", ...(u.explain ? { explain: u.explain } : {}) }));
   if (truncated) up.push({ text: "More items follow in the week ahead.", value: null, source: "meetSnapshot" });
   // Always last, and always present. It speaks about the week that HAPPENED, so it does not
   // contradict the items above, which are about the week ahead.
@@ -196,15 +230,15 @@ export function quietWeekFiguresFor(data = {}) {
   // Read the figure through safeToSpendView, exactly as every screen that shows it does — including
   // its refusals. No cash account means no balance to subtract from, and no income means the app
   // already declines to show this number anywhere else; the meeting does not get a private version.
-  let safeToSpendText = null, safeToSpend = null;
+  let safeToSpendText = null, safeToSpend = null, safeToSpendRows = null;
   try {
     const hasCashAccount = (data.accounts || []).filter(a => isCashAccount(a)).length > 0;
     const hasIncome = (data.incomes || []).some(i => num(i && i.amount) > 0);
     if (hasCashAccount && hasIncome) {
       const view = safeToSpendView(SafeSpendEngine.calculate(data), { hasCashAccount, hasIncome });
-      if (!view.needsSetup && view.headlineText) { safeToSpendText = view.headlineText; safeToSpend = view.headline; }
+      if (!view.needsSetup && view.headlineText) { safeToSpendText = view.headlineText; safeToSpend = view.headline; safeToSpendRows = _safeRows(data); }
     }
-  } catch { safeToSpendText = null; safeToSpend = null; }
+  } catch { safeToSpendText = null; safeToSpend = null; safeToSpendRows = null; }
 
   const upcoming = [];
   try {
@@ -214,16 +248,26 @@ export function quietWeekFiguresFor(data = {}) {
       (day.bills || []).forEach(b => {
         const amt = num(b?.amount);   // num(), not parseFloat: "$1,800" must not read as 1
         if (!b?.name || !amt) return;
-        upcoming.push({ text: `${_fmtDate(day.date)}: ${b.name} ${formatMoney(amt)} out.`, value: amt });
+        upcoming.push({ text: `${_fmtDate(day.date)}: ${b.name} ${formatMoney(amt)} out.`, value: amt,
+          explain: { title: b.name, value: formatMoney(amt),
+            meaning: b._debt ? "The minimum payment on this debt, on the day the forecast expects it."
+              : b._expected ? "A payment out you added as expected money on Watch."
+              : "A bill from your list, on the day the forecast expects it.",
+            rows: [{ label: "Due", value: _day(day.date) }, { label: "Amount", value: formatMoney(amt) }],
+            source: b._debt ? "Your debts" : b._expected ? "Expected money in or out, on Watch" : "Your bills" } });
       });
       (day.deposits || []).forEach(dep => {
         const amt = num(dep?.amount);
         if (!dep?.label || !amt) return;
-        upcoming.push({ text: `${_fmtDate(day.date)}: ${dep.label} ${formatMoney(amt)} in.`, value: amt });
+        upcoming.push({ text: `${_fmtDate(day.date)}: ${dep.label} ${formatMoney(amt)} in.`, value: amt,
+          explain: { title: dep.label, value: formatMoney(amt),
+            meaning: dep.kind === "income" ? "A deposit from your income, on the day the forecast expects it." : "Money in you added as expected on Watch.",
+            rows: [{ label: "Expected", value: _day(day.date) }, { label: "Amount", value: formatMoney(amt) }],
+            source: dep.kind === "income" ? "Your income" : "Expected money in or out, on Watch" } });
       });
     });
   } catch { /* no forecast is not a reason to refuse the meeting */ }
-  return { safeToSpendText, safeToSpend, upcoming: upcoming.slice(0, 6), truncated: upcoming.length > 6 };
+  return { safeToSpendText, safeToSpend, safeToSpendRows, upcoming: upcoming.slice(0, 6), truncated: upcoming.length > 6 };
 }
 
 // ── WHAT IS COMING IS NOT ONLY FOR A QUIET WEEK ─────────────────────────────────────────────────
@@ -246,7 +290,7 @@ export function withWeekAhead(agenda, data = {}, label = "Safe until next payday
   const already = (agenda.upcoming || []);
   const upcoming = already.length || (agenda.risks || []).length ? already
     : (f.upcoming || []).filter(u => u && u.text)
-        .map(u => ({ text: u.text, value: u.value != null ? u.value : null, source: "forecastEngine" }))
+        .map(u => ({ text: u.text, value: u.value != null ? u.value : null, source: "forecastEngine", ...(u.explain ? { explain: u.explain } : {}) }))
         .concat(f.truncated ? [{ text: "More items follow in the week ahead.", value: null, source: "meetSnapshot" }] : []);
   const progress = [...(agenda.progress || [])];
   // Keyed on the line itself, not on whether anything else was added: with nothing falling due in
@@ -254,7 +298,8 @@ export function withWeekAhead(agenda, data = {}, label = "Safe until next payday
   // this line again on every call.
   const line = f.safeToSpendText ? `${label}: ${f.safeToSpendText}.` : null;
   if (line && !progress.some(p => p && p.text === line)) {
-    progress.unshift({ text: line, value: f.safeToSpend, source: "safeSpendEngine" });
+    progress.unshift({ text: line, value: f.safeToSpend, source: "safeSpendEngine",
+      ...(f.safeToSpendRows ? { explain: { title: label, value: f.safeToSpendText, meaning: SAFE_MEANING, rows: f.safeToSpendRows, source: "Safe to spend on Today" } } : {}) });
   }
   // Compare by CONTENT, not by identity: with nothing falling due in the next seven days the
   // computed list is a fresh empty array, so an identity check returned a new object for a call

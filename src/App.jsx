@@ -5741,7 +5741,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         </div>
         )}
 
-        <FirstRunTip id="today">Tap any number to see how Flourish got it.</FirstRunTip>
+        {/* No "Tap any number" tip on Today (watch-meet-fixes item 2): the tip may only show where every
+            figure on the screen opens How we got this, and Today's cards carry figures that do not
+            (the bill due soon, an unconfirmed deposit, the pace line). Watch and Meet keep it. */}
         {/* Three tiles across 375px gave each about 110px — an icon, a label, a number and a
             caption stacked in a column narrower than this sentence. They are three separate
             places to go, not three supporting figures, so they are now three full-width rows:
@@ -6632,7 +6634,7 @@ function BillManager({data, setAppData, onClose}){
 // Every figure in here is handed in by the caller from an engine. This sheet computes nothing and
 // asks nothing of the AI; it reads back what was already worked out, which is the only reason it
 // can be trusted as an explanation.
-function HowWeGotThis({ title, value, meaning, inputs = [], changeLabel, onChange, onClose }) {
+function HowWeGotThis({ title, value, meaning, inputs = [], source, changeLabel, onChange, onClose }) {
   return (
     <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
       <div onClick={e=>e.stopPropagation()} style={{background:C.card,width:"100%",maxWidth:480,borderRadius:"22px 22px 0 0",
@@ -6658,6 +6660,7 @@ function HowWeGotThis({ title, value, meaning, inputs = [], changeLabel, onChang
             <CalcByFlourish style={{marginTop:SPACE.md}}/>
           </div>
         )}
+        {source&&<div style={{color:C.muted,...TYPE.footnote,marginTop:SPACE.sm,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Source: {source}</div>}
         {changeLabel&&onChange&&(
           <button onClick={onChange} style={{marginTop:SPACE.lg,width:"100%",background:C.green+"1A",border:`1px solid ${C.green}55`,borderRadius:14,
             minHeight:LAYOUT.minTap,color:C.greenBright,...TYPE.headline,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:"pointer"}}>{changeLabel}</button>
@@ -9545,7 +9548,14 @@ function MeetAgenda({ data, isCouple, setScreen }){
 
   const items = [...agenda.wins, ...agenda.changes, ...agenda.risks, ...(agenda.upcoming || []), ...agenda.progress];
   const card = {background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:"14px 16px",marginBottom:12};
-  const sTitle = {color:C.mutedHi,fontSize:15,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:8};
+  // How we got this, for any agenda figure (watch-meet-fixes item 2). Each item carries its own working
+  // (item.explain, built in lib/meetingAgenda.js and lib/meetSnapshot.js from the same engine values
+  // as its text). The meeting's chat below stays plain text.
+  const [explainItem, setExplainItem] = useState(null);
+  const figureBtn = {background:"none",border:"none",padding:`${SPACE.xs}px 0`,width:"100%",minHeight:LAYOUT.minTap,cursor:"pointer",
+    textAlign:"left",font:"inherit",color:"inherit",display:"flex",alignItems:"center",justifyContent:"space-between",gap:SPACE.sm};
+  const More = () => <span aria-hidden="true" style={{color:C.muted,flexShrink:0}}>›</span>;
+  const sTitle = {color:C.mutedHi,fontSize:15,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:GAP.textToControl};
 
   // Never put words in the coach's mouth. The response was read as
   //   d.content?.[0]?.text || <a hard-coded opening line>
@@ -9624,24 +9634,30 @@ function MeetAgenda({ data, isCouple, setScreen }){
       <div style={card}>
         <div style={sTitle}>This week</div>
         {items.length>0
-          ? items.map((it,i)=><div key={i} style={{color:C.cream,fontSize:13,lineHeight:1.6,marginBottom:5}}>• {it.text}</div>)
+          ? <div style={{display:"flex",flexDirection:"column",gap:GAP.controlToControl}}>{items.map((it,i)=>it.explain
+              ? <button key={i} onClick={()=>setExplainItem(it.explain)} aria-label={`${it.text} How Flourish got it`} style={{...figureBtn,color:C.cream,fontSize:13,lineHeight:1.6}}><span>• {it.text}</span><More/></button>
+              : <div key={i} style={{color:C.cream,fontSize:13,lineHeight:1.6}}>• {it.text}</div>)}</div>
           : <div style={{color:C.muted,fontSize:13}}>Nothing stood out this week. Your numbers held steady.</div>}
-        {items.length>0 && <CalcByFlourish style={{marginTop:8}}/>}
+        {items.length>0 && <CalcByFlourish style={{marginTop:GAP.textToControl}}/>}
       </div>
 
       {agenda.decisions.map((dec,i)=>(
         <div key={i} style={card}>
           <div style={sTitle}>One decision this week</div>
-          <div style={{color:C.cream,fontSize:14,fontWeight:600,marginBottom:10,lineHeight:1.4}}>{dec.text}</div>
+          {dec.explain
+            ? <button onClick={()=>setExplainItem(dec.explain)} aria-label={`${dec.text} How Flourish got it`} style={{...figureBtn,color:C.cream,fontSize:14,fontWeight:600,lineHeight:1.4,marginBottom:GAP.controlToControl}}><span>{dec.text}</span><More/></button>
+            : <div style={{color:C.cream,fontSize:14,fontWeight:600,marginBottom:10,lineHeight:1.4}}>{dec.text}</div>}
           <div style={{display:"flex",gap:8}}>
-            {dec.options.map((o,j)=>(
-              <div key={j} style={{flex:1,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px"}}>
-                <div style={{color:C.cream,fontSize:13,fontWeight:700,marginBottom:3}}>{o.label}</div>
-                <div style={{color:C.greenBright,fontSize:13,lineHeight:1.4}}>{o.outcome}</div>
-              </div>
-            ))}
+            {dec.options.map((o,j)=>{
+              const inner = <><div style={{color:C.cream,fontSize:13,fontWeight:700,marginBottom:3}}>{o.label}</div>
+                <div style={{color:C.greenBright,fontSize:13,lineHeight:1.4}}>{o.outcome}</div></>;
+              const box = {flex:1,minWidth:0,background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px"};
+              return o.explain
+                ? <button key={j} onClick={()=>setExplainItem(o.explain)} aria-label={`${o.label}, ${o.outcome}: how Flourish got it`} style={{...box,cursor:"pointer",textAlign:"left",font:"inherit",minHeight:LAYOUT.minTap}}>{inner}</button>
+                : <div key={j} style={box}>{inner}</div>;
+            })}
           </div>
-          <CalcByFlourish style={{marginTop:8}}/>
+          <CalcByFlourish style={{marginTop:GAP.textToControl}}/>
         </div>
       ))}
 
@@ -9650,7 +9666,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
            no /api/coach call. The real "trial" paywall below is unchanged for signed-in free-tier users. */
         <div style={{...card,background:C.cardAlt}}>
           <div style={{marginBottom:SPACE.sm}}><span style={exampleTagStyle()}>{DEMO_STATUS_LABEL}</span></div>
-          <div style={{color:C.cream,fontSize:13,lineHeight:1.6}}>{demoFacilitatorLine(data, new Date()) || "Your coach works through the agenda above with you, one item at a time."}</div>
+          <div data-chat="plain" style={{color:C.cream,fontSize:13,lineHeight:1.6}}>{demoFacilitatorLine(data, new Date()) || "Your coach works through the agenda above with you, one item at a time."}</div>
           <div style={{color:C.muted,fontSize:13,lineHeight:1.5,marginTop:8}}>A scripted preview. Create a free account to run this meeting on your own numbers.</div>
         </div>
       ) : facilitatorGate === "trial" ? (
@@ -9666,7 +9682,7 @@ function MeetAgenda({ data, isCouple, setScreen }){
           {msgs.filter(m=>m.role!=="user").map((m,i)=>(
             <div key={i} style={{marginBottom:10}}>
               <YourCoachTag/>
-              <div style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 13px",fontSize:13,lineHeight:1.6,color:C.cream,marginTop:3}}>{renderCoachMarkdown(m.content)}</div>
+              <div data-chat="plain" style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 13px",fontSize:13,lineHeight:1.6,color:C.cream,marginTop:3}}>{renderCoachMarkdown(m.content)}</div>
             </div>
           ))}
           {/* The acknowledgement of the tap: started flips synchronously, so this card replaces the
@@ -9691,6 +9707,8 @@ function MeetAgenda({ data, isCouple, setScreen }){
           </div>
         </div>
       )}
+      {explainItem&&<HowWeGotThis title={explainItem.title} value={explainItem.value} meaning={explainItem.meaning}
+        inputs={explainItem.rows||[]} source={explainItem.source} onClose={()=>setExplainItem(null)}/>}
     </div>
   );
 }
