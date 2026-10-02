@@ -107,8 +107,8 @@ const path = require("path");
     t.eq((plan.match(/incomes\|\|\[\]\)\[0\]/g) || []).length, 0, "E1 PlanAhead no longer reads incomes[0] anywhere");
     t.ok(/const income = watchIncome\.scalePerDeposit;/.test(plan), "E2 the bar scale reads the primary income");
     t.ok(/const _ffreq = watchIncome\.freq\|\|"biweekly";/.test(plan) && /frequencyLabel\(watchIncome\.freq\|\|"biweekly"\)/.test(plan), "E3 both Pay frequency rows read it");
-    t.ok(/_fPays\.map\(\(p,i\)=>\(\{label:`Est\. \$\{payWord\(data\.profile\?\.country\)\}, \$\{p\.label\|\|`job \$\{i\+1\}`\}`, value:`\$\{formatMoney\(p\.amount\)\} \$\{cadenceLabel\(p\.freq\)\}`\}\)\)/.test(plan),
-      "E4 a two-job household gets one Est. paycheque row per job, with its amount and how often it lands");
+    t.ok(/_fPays\.map\(\(p,i\)=>\(\{label:`Est\. \$\{payWord\(data\.profile\?\.country\)\}, \$\{p\.label\|\|`job \$\{i\+1\}`\}`, value:`\$\{formatMoney\(p\.amount\)\} \$\{cadenceLabel\(p\.freq\)\}`, onExplain:\(\)=>setExplainRange\(`pay:\$\{i\}`\)\}\)\)/.test(plan),
+      "E4 a two-job household gets one Est. paycheque row per job, with its amount and how often it lands, and each opens its working");
   }
 
   t.summary("watchIncome.test");

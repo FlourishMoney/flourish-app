@@ -42,9 +42,13 @@ const path = require("path");
   const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
   t.ok(/const \{ forecast: _forecast, willGoNegative: willGoNeg[^}]*\} = ForecastEngine\.generate\(data, Math\.max\(range, 30\)\);/.test(app)
     && /const lowPoint = forecastLow\(_forecast\);/.test(app), "2a Watch takes the low point from _forecast, the array willGoNeg came from");
-  t.ok(/const forecastDays = Math\.max\(range, 30\);/.test(app) && /within the next \{forecastDays\} days\./.test(app) && !/dip to <strong[^>]*>\{formatBalance\(minBalance\)\}<\/strong> before your next deposit/.test(app),
-    "2b the card names the window it looked at, and no longer claims \"before your next deposit\"");
-  t.ok(/lowPoint && lowPoint\.day >= range \? "That day is past the range shown\. Pick a longer range above to see it\."/.test(app), "2c …and says when that day is past the range on screen (the list shows days 0 to range - 1)");
+  // watch-meet-fixes item 1: the card and the range summary quote ONE lowest balance. The flag is still
+  // raised over at least 30 days (1a), so a 7-day view still hears about the day-20 rent; the figure is
+  // the range's own low (summary.low, lib/watchRange.js), which at 30 and 90 days is the whole forecast's.
+  t.ok(/within the next \{range\} days\./.test(app) && !/before your next deposit/.test(app.slice(app.indexOf("Projected overdraft"), app.indexOf("Projected overdraft") + 1500)),
+    "2b the card names the range it quotes, and no longer claims \"before your next deposit\"");
+  t.ok(/could go below zero on \{firstNegative\?fmtOccDay\(firstNegative\.date\):"a day ahead"\}, after the \{range\} days shown\./.test(app) && /const dipInRange = !!\(rangeLow && rangeLow\.balance < 0\);/.test(app),
+    "2c …and when the dip is after the range on screen (7 days, rent on day 20) it names the day and quotes no figure, so it cannot contradict the summary's lowest balance (tapFigures/watchRange tests pin both)");
 
   // ── 3. Rendered: the card names a day, and the list below shows that day ────────────────────
   // The low point is usually the eve of a payday, when nothing lands, so the list (paydays and bill

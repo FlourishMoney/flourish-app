@@ -19,6 +19,7 @@ import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
 import { paydayLineAmount, depositLines, billLines, skippedLines, forecastLow } from "./lib/forecastView.js";
+import { WATCH_RANGES, rangeWindow, rangeSummary } from "./lib/watchRange.js";
 import { depositsToAsk, depositStatus, depositContext, incomeEvidence, decideDeposit, clearDepositDecision, setDepositRule, clearDepositRule,
          depositRuleFor, countDepositsFrom, DEPOSIT_REASONS, NOT_NOW, reasonLabel, reasonPhrase, isUsableDepositKey, depositSheetInitial, depositTxnKey } from "./lib/depositClassify.js";
 import { editOccurrence, resetOccurrence, upsertExpected, removeExpected, setDailySpend, correctionsOf, validExpectedItem, REPEATS,
@@ -6738,13 +6739,19 @@ function SupportingFigures({ label = "How this is worked out", rows = [], defaul
       {open&&(
         <div style={{display:"flex",flexDirection:"column",gap:SPACE.sm,paddingBottom:SPACE.sm}}>
           {visible.map((r,i)=>(
-            <div key={`${r.label}-${i}`} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:SPACE.md,minHeight:r.onEdit?LAYOUT.minTap:0}}>
+            <div key={`${r.label}-${i}`} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:SPACE.md,minHeight:r.onEdit||r.onExplain?LAYOUT.minTap:0}}>
               <span style={{color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.label}</span>
               {r.onEdit
                 ? <button onClick={r.onEdit} aria-label={`Edit ${r.label}`}
                     style={{background:"none",border:"none",cursor:"pointer",padding:`${SPACE.sm}px 0`,minHeight:LAYOUT.minTap,
                       color:C.greenBright,...TYPE.footnote,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:6}}>
                     {r.value}<span aria-hidden="true" style={{opacity:0.75}}>✎</span>{r.tag}
+                  </button>
+                : r.onExplain
+                ? <button onClick={r.onExplain} aria-label={`${r.label}, ${r.value}: how Flourish got it`}
+                    style={{background:"none",border:"none",cursor:"pointer",padding:`${SPACE.sm}px 0`,minHeight:LAYOUT.minTap,
+                      color:C.cream,...TYPE.footnote,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:SPACE.xs}}>
+                    {r.value}<span aria-hidden="true" style={{color:C.muted}}>›</span>{r.tag}
                   </button>
                 : <span style={{color:C.cream,...TYPE.footnote,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.value}</span>}
             </div>
@@ -7052,15 +7059,53 @@ function ManualBillForm({data, setAppData, onClose}){
   );
 }
 
-function PlanAhead({data, setAppData, setScreen}){
+// The selected range, added up (watch-meet-fixes item 1, lib/watchRange.js). Every figure is a button
+// that opens How we got this; the check line is the working, to the cent.
+function WatchRangeSummary({ summary, range, dayLabel, onOpen }) {
+  const rows = [
+    { key: "low",   label: "Lowest balance", value: `${summary.text.low} ${summary.lowDay === 0 ? "today" : `on ${dayLabel(summary.low)}`}` },
+    { key: "end",   label: `Balance on ${dayLabel({ day: summary.endDay, date: summary.endDate })}`, value: summary.text.end },
+    { key: "in",    label: "Money in", value: summary.text.in },
+    { key: "bills", label: "Bills and minimum payments", value: summary.text.bills },
+    { key: "spend", label: "Everyday spending", note: "Estimated from your usual spending", value: summary.text.spend },
+  ];
+  return (
+    <div style={{marginTop:SPACE.md,borderTop:`1px solid ${C.border}`,paddingTop:SPACE.md}}>
+      <div style={{color:C.mutedHi,...TYPE.subhead,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>The next {range} days</div>
+      <div style={{display:"flex",flexDirection:"column",gap:GAP.controlToControl,marginTop:GAP.textToControl}}>
+      {rows.map(r => (
+        <button key={r.key} onClick={() => onOpen(r.key)} aria-label={`${r.label}, ${r.value}: how Flourish got it`}
+          style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",gap:SPACE.md,minHeight:LAYOUT.minTap,
+            background:"none",border:"none",borderBottom:`1px solid ${C.border}44`,padding:`${SPACE.sm}px 0`,cursor:"pointer",textAlign:"left",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+          <span style={{minWidth:0}}>
+            <span style={{display:"block",color:C.muted,...TYPE.footnote}}>{r.label}</span>
+            {r.note&&<span style={{display:"block",color:C.muted,...TYPE.footnote,opacity:0.85}}>{r.note}</span>}
+          </span>
+          <span style={{color:C.cream,...TYPE.footnote,fontWeight:700,textAlign:"right",flexShrink:0}}>{r.value} <span aria-hidden="true" style={{color:C.muted}}>›</span></span>
+        </button>
+      ))}
+      <button onClick={() => onOpen("end")} aria-label={`The check: ${summary.check.line}`}
+        style={{width:"100%",background:"none",border:"none",padding:`${SPACE.sm}px 0`,minHeight:LAYOUT.minTap,cursor:"pointer",textAlign:"left",
+          color:C.muted,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.5}}>
+        Check: {summary.check.line}
+      </button>
+      </div>
+    </div>
+  );
+}
+
+function PlanAhead({data, setAppData, setScreen, initialRange = 30}){
   // The header has always promised "the next 90 days" while the range offered 7 or 14, so the list
   // stopped two weeks out and the rent — the event a household most needs to see coming — was never
   // on screen. 30 is the default because a month is the unit a bill cycle is measured in; 90 matches
   // what the header says. The day-by-day list below still shows only today, income days and bill
   // days, so 90d is a longer list, not a wall of empty dates.
-  const [range,setRange]=useState(30);
+  const [range,setRange]=useState(WATCH_RANGES.includes(initialRange) ? initialRange : 30);
   const [explainWatch,setExplainWatch]=useState(false);
-  const RANGES = [7, 30, 90];
+  // Which figure of the range summary is open in How we got this: low, end, in, bills, spend, or a
+  // paycheque ("pay:<index>").
+  const [explainRange,setExplainRange]=useState(null);
+  const RANGES = WATCH_RANGES;
   const [showBillManager,setShowBillManager]=useState(false);
   const [expandedPlanDay, setExpandedPlanDay] = useState(null);
   // Forecast corrections: a projected deposit or bill being edited, the expected-money sheet, daily spend.
@@ -7072,8 +7117,9 @@ function PlanAhead({data, setAppData, setScreen}){
   // Math.max keeps the ENGINE's window at 30 days minimum (the risk flags below read further ahead
   // than the list shows); passing `range` straight through would shorten those to 7 days on the 7d
   // view. With range 90 it projects 90, which is what the list then slices.
-  const { forecast: _forecast, willGoNegative: willGoNeg, overdraftRisk, lowBalanceWarnings, canProject, dataIssues } = ForecastEngine.generate(data, Math.max(range, 30));
-  const days = _forecast.slice(0, range).map(f => ({
+  const { forecast: _forecast, willGoNegative: willGoNeg, overdraftRisk, lowBalanceWarnings, canProject, dataIssues, avgDailySpend: engineDailySpend } = ForecastEngine.generate(data, Math.max(range, 30));
+  // Today and the `range` days after it: the day list and the range summary read the same slice.
+  const days = rangeWindow(_forecast, range).map(f => ({
     d: f.date, dayNum: f.date.getDate(),
     isPayday: f.isPayday, bills: f.bills,
     income: f.income, deposits: f.deposits, balance: f.balance, idx: f.day,
@@ -7086,11 +7132,18 @@ function PlanAhead({data, setAppData, setScreen}){
   // Through primaryIncome() (lib/watchIncome.js), never whichever income was added first.
   const watchIncome = watchIncomeFigures(data);
   const income = watchIncome.scalePerDeposit;
-  // The overdraft card's figure comes from the SAME forecast its flag (willGoNeg) was computed over,
-  // Math.max(range, 30) days, not only the days on screen (lib/forecastView.js forecastLow).
-  const forecastDays = Math.max(range, 30); // the window the forecast above was generated for (today plus these days)
+  // What the selected range adds up to (lib/watchRange.js), from the same forecast as the list.
+  const summary = canProject ? rangeSummary(_forecast, range, { avgDailySpend: engineDailySpend }) : null;
+  // The overdraft flag (willGoNeg) is raised over at least 30 days, so a 7-day view still hears about
+  // a dip on day 22. The card and the summary quote ONE lowest balance: the range's own (summary.low),
+  // which at 30 and 90 days is the low point of the whole forecast. When the dip is after the range
+  // shown (only possible at 7 days), the card names the first day below zero and quotes no figure,
+  // so it can never contradict the summary under it.
+  const rangeLow = summary ? summary.low : null;
   const lowPoint = forecastLow(_forecast);
-  const minBalance = lowPoint ? lowPoint.balance : Math.min(...days.map(d => d.balance));
+  const firstNegative = (overdraftRisk || [])[0] || null;
+  const dipInRange = !!(rangeLow && rangeLow.balance < 0);
+  const dayLabel = (low) => low && low.date ? (low.day === 0 ? "today" : fmtOccDay(low.date)) : "";
   // The bar's scale has to cover what the RANGE shows. It was "balance + one paycheque", which is
   // always enough for a fortnight and is not enough for a month: Bar paints RED when the value
   // exceeds its max, so on this demo every balance after the second paycheque — $6,591 and up —
@@ -7139,20 +7192,23 @@ function PlanAhead({data, setAppData, setScreen}){
           <button onClick={e=>{e.stopPropagation();setExplainWatch(true);}} aria-label="How Flourish got this number"
             style={{background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",minHeight:LAYOUT.minTap,
             color:C.cream,...TYPE.largeTitle,fontFamily:"'Playfair Display',serif",marginTop:GAP.textToControl}}>{_fbalText}</button>
+          {summary&&<WatchRangeSummary summary={summary} range={range} dayLabel={dayLabel} onOpen={setExplainRange}/>}
           <SupportingFigures label="What the forecast is built from" rows={[
-            {label:"Est. daily spend", value:`$${(_favg||0).toFixed(0)}/day`, onEdit:setAppData?()=>setShowDailySpend(true):null, tag:_fSpendEdited?<EditedTag/>:null},
+            {label:"Est. daily spend", value:`$${(_favg||0).toFixed(0)}/day`, onEdit:setAppData?()=>setShowDailySpend(true):null, onExplain:()=>setExplainRange("spend"), tag:_fSpendEdited?<EditedTag/>:null},
             {label:"Pay frequency", value:frequencyLabel(_ffreq)},
             ...(_fPays.length <= 1
-              ? [{label:`Est. ${payWord(data.profile?.country)}`, value:_fPays[0] ? formatMoney(_fPays[0].amount) : "Not set"}]
-              : _fPays.map((p,i)=>({label:`Est. ${payWord(data.profile?.country)}, ${p.label||`job ${i+1}`}`, value:`${formatMoney(p.amount)} ${cadenceLabel(p.freq)}`}))),
+              ? [{label:`Est. ${payWord(data.profile?.country)}`, value:_fPays[0] ? formatMoney(_fPays[0].amount) : "Not set", onExplain:_fPays[0]?()=>setExplainRange("pay:0"):null}]
+              : _fPays.map((p,i)=>({label:`Est. ${payWord(data.profile?.country)}, ${p.label||`job ${i+1}`}`, value:`${formatMoney(p.amount)} ${cadenceLabel(p.freq)}`, onExplain:()=>setExplainRange(`pay:${i}`)}))),
           ]}/>
         </div>
       );
     })()}
     {willGoNeg&&<div style={{background:C.redDim,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.red}55`}}>
       <div style={{color:C.redBright,...TYPE.headline,fontWeight:800,marginBottom:SPACE.xs}}>Projected overdraft</div>
-      <div style={{color:C.cream,...TYPE.callout,lineHeight:1.5}}>Heads up: your balance could dip to <strong style={{color:C.red}}>{formatBalance(minBalance)}</strong>{lowPoint&&lowPoint.date?(lowPoint.day===0?" today":` on ${fmtOccDay(lowPoint.date)}`):""}, within the next {forecastDays} days.</div>
-      <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.sm}}>{lowPoint && lowPoint.day >= range ? "That day is past the range shown. Pick a longer range above to see it." : "The day-by-day list below shows that day, and what lands on it."}</div>
+      {dipInRange
+        ? <div style={{color:C.cream,...TYPE.callout,lineHeight:1.5}}>Heads up: your balance could dip to <button onClick={()=>setExplainRange("low")} aria-label={`Lowest balance ${formatBalance(rangeLow.balance)}: how Flourish got it`} style={{background:"none",border:"none",padding:0,font:"inherit",fontWeight:800,color:C.red,cursor:"pointer",textDecoration:"underline",textUnderlineOffset:3,minHeight:LAYOUT.minTap}}>{formatBalance(rangeLow.balance)}</button>{rangeLow.day===0?" today":` on ${dayLabel(rangeLow)}`}, within the next {range} days.</div>
+        : <div style={{color:C.cream,...TYPE.callout,lineHeight:1.5}}>Heads up: your balance could go below zero on {firstNegative?fmtOccDay(firstNegative.date):"a day ahead"}, after the {range} days shown.</div>}
+      <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.sm}}>{!dipInRange ? "Pick a longer range above to see it." : lowPoint && lowPoint.balance < rangeLow.balance ? "It goes lower after that. Pick a longer range above to see it." : "The day-by-day list below shows that day, and what lands on it."}</div>
     </div>}
     {/* Bills summary — BillManager is the single bill entry point */}
     <Card style={row({justifyContent:"space-between",border:`1px solid ${C.teal}33`,background:`linear-gradient(135deg,rgba(0,200,224,0.05) 0%,${C.card} 100%)`})}>
@@ -7175,7 +7231,9 @@ function PlanAhead({data, setAppData, setScreen}){
       const avgDailySpend = FinancialCalcEngine.avgDailySpend(data);
       // The overdraft card's low day is listed too, even with nothing landing on it (usually the eve of a
       // payday), so "the list below shows that day" is true. Only while the card is showing.
-      return days.filter((d,i)=>i===0||d.income>0||d.bills.length>0||(d.occurrences||[]).length>0||(willGoNeg&&lowPoint&&d.idx===lowPoint.day)).map((day,i)=>{
+      // The range's lowest day is always listed, even with nothing landing on it (usually the eve of a
+      // payday), so the lowest balance the summary and the overdraft card quote is on the list too.
+      return days.filter((d,i)=>i===0||d.income>0||d.bills.length>0||(d.occurrences||[]).length>0||(rangeLow&&d.idx===rangeLow.day)).map((day,i)=>{
         const isToday=day.idx===0,neg=day.balance<0,low=day.balance<150&&day.balance>=0;
         const isDrilled=expandedPlanDay===day.idx;
         const prevBalance=day.idx>0?(_forecast[day.idx-1]?.balance||0):day.balance;
@@ -7183,7 +7241,9 @@ function PlanAhead({data, setAppData, setScreen}){
         const borderColor=isToday?C.green+"55":neg?C.red+"55":low?C.gold+"44":isDrilled?C.teal+"33":C.border;
         return (
           <div key={i} style={{background:isToday?C.greenDim:neg?C.redDim:C.card,borderRadius:20,border:`1px solid ${borderColor}`,boxShadow:isToday?`0 0 24px ${C.green}18`:neg?`0 0 24px ${C.red}18`:"none",overflow:"hidden"}}>
-            <div onClick={()=>setExpandedPlanDay(isDrilled?null:day.idx)} style={{padding:"16px 18px",cursor:"pointer"}}>
+            <div role="button" tabIndex={0} aria-expanded={isDrilled} onClick={()=>setExpandedPlanDay(isDrilled?null:day.idx)}
+              onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==="Enter"||e.key===" ")){e.preventDefault();setExpandedPlanDay(isDrilled?null:day.idx);}}}
+              style={{padding:"16px 18px",cursor:"pointer"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:GAP.textToControl,marginBottom:8}}>
                 {/* A flex column, so every line in the day is GAP.textToControl from the date above it
                     and from the line before it. The lines used to sit flush against the date. */}
@@ -7209,7 +7269,7 @@ function PlanAhead({data, setAppData, setScreen}){
               {low&&!neg&&<div style={{marginTop:6,color:C.goldBright,fontSize:13}}>Heads up: this day runs close to empty.</div>}
             </div>
             {isDrilled&&(
-              <div style={{borderTop:`1px solid ${C.border}`,padding:"12px 18px 14px",background:"rgba(0,0,0,0.2)"}}>
+              <div data-explanation="day" style={{borderTop:`1px solid ${C.border}`,padding:"12px 18px 14px",background:"rgba(0,0,0,0.2)"}}>
                 <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:10}}>Cash flow breakdown</div>
                 {/* Same owner as the Time Machine drill-down (lib/forecastWalk.js): cents throughout,
                     so the equation is exactly true; the collapsed row above stays floored whole dollars. */}
@@ -7249,6 +7309,54 @@ function PlanAhead({data, setAppData, setScreen}){
     {editOcc&&setAppData&&<OccurrenceSheet occ={editOcc} data={data} setAppData={setAppData} onClose={()=>setEditOcc(null)}/>}
     {showExpected&&setAppData&&<ExpectedItemSheet data={data} setAppData={setAppData} onClose={()=>setShowExpected(false)}/>}
     {showDailySpend&&setAppData&&<DailySpendSheet data={data} setAppData={setAppData} onClose={()=>setShowDailySpend(false)}/>}
+    {explainRange&&summary&&(()=>{
+      const S = summary;
+      const yourFigure = correctionsOf(data).dailySpend != null;
+      const spendRow = { label:"Usual daily spending", value:`${formatMoney(S.spendPerDay,{cents:true})} a day, ${yourFigure?"your figure":"from your transactions"}` };
+      const close = () => setExplainRange(null);
+      let ex = null;
+      if (explainRange === "low") {
+        const to = rangeSummary(_forecast, S.lowDay, { avgDailySpend: engineDailySpend });
+        ex = { title:"Lowest balance", value:S.text.low,
+          meaning:`The lowest your balance is projected to go in the next ${range} days, ${S.lowDay===0?"today":`on ${dayLabel(S.low)}`}. It comes from the same forecast as the day-by-day list below, which shows that day.`,
+          inputs: to ? [
+            {label:"Starting balance", value:to.check.start},
+            {label:"Money in until then", value:`+${to.check.in}`},
+            {label:"Bills and minimum payments until then", value:`−${to.check.bills}`},
+            {label:"Everyday spending until then (estimate)", value:`−${to.check.spend}`},
+            {label:`Balance ${S.lowDay===0?"today":`on ${dayLabel(S.low)}`}`, value:to.check.end},
+          ] : [] };
+      } else if (explainRange === "end") {
+        ex = { title:`Balance on ${dayLabel({day:S.endDay,date:S.endDate})}`, value:S.text.end,
+          meaning:"Where the forecast lands on the last day of the range: the starting balance, plus the money in, less the bills and the everyday spending. Shown here to the cent, so it adds up exactly. Elsewhere a balance is rounded down to the dollar.",
+          inputs:[
+            {label:"Starting balance", value:S.check.start},
+            {label:"Money in", value:`+${S.check.in}`},
+            {label:"Bills and minimum payments", value:`−${S.check.bills}`},
+            {label:"Everyday spending (estimate)", value:`−${S.check.spend}`},
+            {label:"Balance on the last day", value:S.check.end},
+          ] };
+      } else if (explainRange === "in") {
+        ex = { title:"Money in", value:S.text.in,
+          meaning:S.deposits.length?`Every deposit the forecast expects in the next ${range} days, from your income and any expected money you added. Anything that already arrived today is in the starting balance.`:`No deposit is expected in the next ${range} days. Anything that already arrived today is in the starting balance.`,
+          inputs:[...S.deposits.map(d=>({label:d.count>1?`${d.label} × ${d.count}`:d.label, value:d.text})), {label:"Total", value:S.check.in}] };
+      } else if (explainRange === "bills") {
+        ex = { title:"Bills and minimum payments", value:S.text.bills,
+          meaning:S.bills.length?`Every bill, payment you added as expected, and minimum debt payment due in the next ${range} days. A regular bill due today counts as already paid, so it is in the starting balance.`:`Nothing is due in the next ${range} days. A regular bill due today counts as already paid, so it is in the starting balance.`,
+          inputs:[...S.bills.map(b=>({label:b.count>1?`${b.label} × ${b.count}`:b.label, value:b.text})), {label:"Total", value:S.check.bills}] };
+      } else if (explainRange === "spend") {
+        ex = { title:"Everyday spending", value:S.text.spend,
+          meaning:`An estimate, not a record: your usual daily spending, taken off each day after today. ${yourFigure?"It is the figure you set.":"It is your average daily spending from your transactions, with bills, transfers and card payments left out."} Bills are counted separately.`,
+          inputs:[spendRow, {label:"Days after today", value:`${S.spendDays}`}, {label:"Total", value:S.check.spend}],
+          changeLabel:setAppData?"Change your daily spend":null, onChange:setAppData?()=>{close();setShowDailySpend(true);}:null };
+      } else if (/^pay:\d+$/.test(explainRange)) {
+        const p = watchIncome.paycheques[Number(explainRange.slice(4))];
+        if (p) ex = { title:`Est. ${payWord(data.profile?.country)}`, value:formatMoney(p.amount),
+          meaning:"One deposit from this income, as you entered it. If you set a new amount from a date, or your pay varies, it is the amount from that date or the low end of your pay. It is what the forecast plans on for each payday, unless you edit one on the list below.",
+          inputs:[{label:"Income", value:p.label||"Your pay"}, {label:"How often", value:frequencyLabel(p.freq||"biweekly")}, {label:"Each deposit", value:formatMoney(p.amount)}] };
+      }
+      return ex ? <HowWeGotThis title={ex.title} value={ex.value} meaning={ex.meaning} inputs={ex.inputs} changeLabel={ex.changeLabel} onChange={ex.onChange} onClose={close}/> : null;
+    })()}
     {explainWatch&&(
       <HowWeGotThis
         title="Starting balance"

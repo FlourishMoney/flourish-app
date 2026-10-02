@@ -158,6 +158,9 @@ generate(data, days = 90, scenario = null, today = new Date()) {
   const canProject = dedupedIssues.length === 0;
 
   return { forecast, overdraftRisk, lowBalanceWarnings,
+           // The daily spending figure this forecast took off each day after today, so a summary of it
+           // (lib/watchRange.js) uses the number the engine used rather than working it out again.
+           avgDailySpend: avgDaily,
            willGoNegative: canProject ? overdraftRisk.length > 0 : null,
            firstNegativeDay: overdraftRisk[0] || null,
            canProject,
