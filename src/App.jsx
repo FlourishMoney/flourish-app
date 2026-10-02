@@ -19,7 +19,7 @@ import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
 import { decideConsentAction, canProceedAfterAccept } from "./lib/consentHeal.js";
 import { formatWrappedNetWorth } from "./lib/moneyWrapped.js";
 import { paydayLineAmount, depositLines, billLines, skippedLines, forecastLow } from "./lib/forecastView.js";
-import { WATCH_RANGES, rangeWindow, rangeSummary } from "./lib/watchRange.js";
+import { WATCH_RANGES, rangeWindow, rangeSummary, rangeLabel, rangePhrase } from "./lib/watchRange.js";
 import { depositsToAsk, depositStatus, depositContext, incomeEvidence, decideDeposit, clearDepositDecision, setDepositRule, clearDepositRule,
          depositRuleFor, countDepositsFrom, DEPOSIT_REASONS, NOT_NOW, reasonLabel, reasonPhrase, isUsableDepositKey, depositSheetInitial, depositTxnKey } from "./lib/depositClassify.js";
 import { editOccurrence, resetOccurrence, upsertExpected, removeExpected, setDailySpend, correctionsOf, validExpectedItem, REPEATS,
@@ -7074,7 +7074,7 @@ function WatchRangeSummary({ summary, range, dayLabel, onOpen }) {
   ];
   return (
     <div style={{marginTop:SPACE.md,borderTop:`1px solid ${C.border}`,paddingTop:SPACE.md}}>
-      <div style={{color:C.mutedHi,...TYPE.subhead,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>The next {range} days</div>
+      <div style={{color:C.mutedHi,...TYPE.subhead,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{rangeLabel(range)}</div>
       <div style={{display:"flex",flexDirection:"column",gap:GAP.controlToControl,marginTop:GAP.textToControl}}>
       {rows.map(r => (
         <button key={r.key} onClick={() => onOpen(r.key)} aria-label={`${r.label}, ${r.value}: how Flourish got it`}
@@ -7171,7 +7171,7 @@ function PlanAhead({data, setAppData, setScreen, initialRange = 30}){
       {dataIssues.length>5&&<div style={{color:C.muted,fontSize:13,marginTop:5}}>…and {dataIssues.length-5} more.</div>}
     </div>}
     <FirstRunTip id="watch">Tap any number to see how Flourish got it.</FirstRunTip>
-    <ScreenHeader title="Watch" subtitle={`The next ${range} days.`}
+    <ScreenHeader title="Watch" subtitle={`${rangeLabel(range)}.`}
       onBack={setScreen?()=>setScreen("home"):null}
       controls={
           <div style={{display:"flex",gap:GAP.controlToControl,background:C.surface,borderRadius:12,padding:SPACE.xs,width:"100%",boxSizing:"border-box"}}>{RANGES.map(r=><button key={r} onClick={()=>setRange(r)} style={{background:range===r?C.teal+"28":"transparent",border:`1px solid ${range===r?C.teal+"55":"transparent"}`,color:range===r?C.tealBright:C.muted,borderRadius:10,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",transition:"all .22s"}}>{r}d</button>)}</div>
@@ -7209,8 +7209,8 @@ function PlanAhead({data, setAppData, setScreen, initialRange = 30}){
     {willGoNeg&&<div style={{background:C.redDim,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.red}55`}}>
       <div style={{color:C.redBright,...TYPE.headline,fontWeight:800,marginBottom:SPACE.xs}}>Projected overdraft</div>
       {dipInRange
-        ? <div style={{color:C.cream,...TYPE.callout,lineHeight:1.5}}>Heads up: your balance could dip to <button onClick={()=>setExplainRange("low")} aria-label={`Lowest balance ${formatBalance(rangeLow.balance)}: how Flourish got it`} style={{background:"none",border:"none",padding:0,font:"inherit",fontWeight:800,color:C.red,cursor:"pointer",textDecoration:"underline",textUnderlineOffset:3,minHeight:LAYOUT.minTap}}>{formatBalance(rangeLow.balance)}</button>{rangeLow.day===0?" today":` on ${dayLabel(rangeLow)}`}, within the next {range} days.</div>
-        : <div style={{color:C.cream,...TYPE.callout,lineHeight:1.5}}>Heads up: your balance could go below zero on {firstNegative?fmtOccDay(firstNegative.date):"a day ahead"}, after the {range} days shown.</div>}
+        ? <div style={{color:C.cream,...TYPE.callout,lineHeight:1.5}}>Heads up: your balance could dip to <button onClick={()=>setExplainRange("low")} aria-label={`Lowest balance ${formatBalance(rangeLow.balance)}: how Flourish got it`} style={{background:"none",border:"none",padding:0,font:"inherit",fontWeight:800,color:C.red,cursor:"pointer",textDecoration:"underline",textUnderlineOffset:3,minHeight:LAYOUT.minTap}}>{formatBalance(rangeLow.balance)}</button>{rangeLow.day===0?" today":` on ${dayLabel(rangeLow)}`}, within {rangePhrase(range)}.</div>
+        : <div style={{color:C.cream,...TYPE.callout,lineHeight:1.5}}>Heads up: your balance could go below zero on {firstNegative?fmtOccDay(firstNegative.date):"a day ahead"}, after the range shown ({rangePhrase(range)}).</div>}
       <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.sm}}>{!dipInRange ? "Pick a longer range above to see it." : lowPoint && lowPoint.balance < rangeLow.balance ? "It goes lower after that. Pick a longer range above to see it." : "The day-by-day list below shows that day, and what lands on it."}</div>
     </div>}
     {/* Bills summary — BillManager is the single bill entry point */}
@@ -7321,7 +7321,7 @@ function PlanAhead({data, setAppData, setScreen, initialRange = 30}){
       if (explainRange === "low") {
         const to = rangeSummary(_forecast, S.lowDay, { avgDailySpend: engineDailySpend });
         ex = { title:"Lowest balance", value:S.text.low,
-          meaning:`The lowest your balance is projected to go in the next ${range} days, ${S.lowDay===0?"today":`on ${dayLabel(S.low)}`}. It comes from the same forecast as the day-by-day list below, which shows that day.`,
+          meaning:`The lowest your balance is projected to go in ${rangePhrase(range)}, ${S.lowDay===0?"today":`on ${dayLabel(S.low)}`}. It comes from the same forecast as the day-by-day list below, which shows that day.`,
           inputs: to ? [
             {label:"Starting balance", value:to.check.start},
             {label:"Money in until then", value:`+${to.check.in}`},
@@ -7341,11 +7341,11 @@ function PlanAhead({data, setAppData, setScreen, initialRange = 30}){
           ] };
       } else if (explainRange === "in") {
         ex = { title:"Money in", value:S.text.in,
-          meaning:S.deposits.length?`Every deposit the forecast expects in the next ${range} days, from your income and any expected money you added. Anything that already arrived today is in the starting balance.`:`No deposit is expected in the next ${range} days. Anything that already arrived today is in the starting balance.`,
+          meaning:S.deposits.length?`Every deposit the forecast expects in ${rangePhrase(range)}, from your income and any expected money you added. Anything that already arrived today is in the starting balance.`:`No deposit is expected in ${rangePhrase(range)}. Anything that already arrived today is in the starting balance.`,
           inputs:[...S.deposits.map(d=>({label:d.count>1?`${d.label} × ${d.count}`:d.label, value:d.text})), {label:"Total", value:S.check.in}] };
       } else if (explainRange === "bills") {
         ex = { title:"Bills and minimum payments", value:S.text.bills,
-          meaning:S.bills.length?`Every bill, payment you added as expected, and minimum debt payment due in the next ${range} days. A regular bill due today counts as already paid, so it is in the starting balance.`:`Nothing is due in the next ${range} days. A regular bill due today counts as already paid, so it is in the starting balance.`,
+          meaning:S.bills.length?`Every bill, payment you added as expected, and minimum debt payment due in ${rangePhrase(range)}. A regular bill due today counts as already paid, so it is in the starting balance.`:`Nothing is due in ${rangePhrase(range)}. A regular bill due today counts as already paid, so it is in the starting balance.`,
           inputs:[...S.bills.map(b=>({label:b.count>1?`${b.label} × ${b.count}`:b.label, value:b.text})), {label:"Total", value:S.check.bills}] };
       } else if (explainRange === "spend") {
         ex = { title:"Everyday spending", value:S.text.spend,

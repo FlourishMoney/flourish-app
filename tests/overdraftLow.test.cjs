@@ -9,7 +9,7 @@
 //   $1,000 in chequing, no income, no spending history, one $1,500 rent bill due in 20 days.
 //   Days 1 to 19: $1,000. Day 20: $1,000 - $1,500 = -$500.
 //   before (7 days on screen):  the card said "$1,000", which is not an overdraft.
-//   after  (the whole forecast): the card says "-$500", on day 20, within the next 30 days.
+//   after  (the whole forecast): the card says "-$500", on day 20, within today and the next 30 days.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -45,9 +45,9 @@ const path = require("path");
   // watch-meet-fixes item 1: the card and the range summary quote ONE lowest balance. The flag is still
   // raised over at least 30 days (1a), so a 7-day view still hears about the day-20 rent; the figure is
   // the range's own low (summary.low, lib/watchRange.js), which at 30 and 90 days is the whole forecast's.
-  t.ok(/within the next \{range\} days\./.test(app) && !/before your next deposit/.test(app.slice(app.indexOf("Projected overdraft"), app.indexOf("Projected overdraft") + 1500)),
+  t.ok(/within \{rangePhrase\(range\)\}\./.test(app) && !/before your next deposit/.test(app.slice(app.indexOf("Projected overdraft"), app.indexOf("Projected overdraft") + 1500)),
     "2b the card names the range it quotes, and no longer claims \"before your next deposit\"");
-  t.ok(/could go below zero on \{firstNegative\?fmtOccDay\(firstNegative\.date\):"a day ahead"\}, after the \{range\} days shown\./.test(app) && /const dipInRange = !!\(rangeLow && rangeLow\.balance < 0\);/.test(app),
+  t.ok(/could go below zero on \{firstNegative\?fmtOccDay\(firstNegative\.date\):"a day ahead"\}, after the range shown \(\{rangePhrase\(range\)\}\)\./.test(app) && /const dipInRange = !!\(rangeLow && rangeLow\.balance < 0\);/.test(app),
     "2c …and when the dip is after the range on screen (7 days, rent on day 20) it names the day and quotes no figure, so it cannot contradict the summary's lowest balance (tapFigures/watchRange tests pin both)");
 
   // ── 3. Rendered: the card names a day, and the list below shows that day ────────────────────
@@ -67,7 +67,7 @@ const path = require("path");
     try { A = loadApp(["PlanAhead"]); txt = textOf(A.render(A.h(A.PlanAhead, { data: broke, setAppData: () => {}, setScreen: () => {} }))); }
     catch (e) { t.ok(false, `3 Watch renders: ${describe(e)}`); }
     const label = lp.date.toLocaleDateString("en-CA", { weekday: "short", month: "short", day: "numeric" });
-    t.ok(txt.includes(`on ${label}, within the next 30 days.`), `3b the card names the low day (${label})`);
+    t.ok(txt.includes(`on ${label}, within today and the next 30 days.`), `3b the card names the low day (${label})`);
     t.ok(txt.split(label).length - 1 >= 2, "3c …and the day-by-day list shows that day too, under the card");
     t.ok(txt.includes("The day-by-day list below shows that day, and what lands on it."), "3d …which is what the card says");
   }

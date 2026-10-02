@@ -97,7 +97,7 @@ const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
       const txt = textOf(html);
       const { g, s } = summaryOf(data, r, data === rent ? new Date() : now);
       if (data === rent) continue; // rendered against today's date; the hand-worked figures are pinned in 1m to 1p
-      t.ok(txt.includes(`The next ${r} days`) && txt.includes(`Lowest balance ${s.text.low}`) && txt.includes(`Money in ${s.text.in}`)
+      t.ok(txt.includes(`Today and the next ${r} days.`) && txt.includes(`Today and the next ${r} days Lowest balance`) && txt.includes(`Lowest balance ${s.text.low}`) && txt.includes(`Money in ${s.text.in}`)
         && txt.includes(`Bills and minimum payments ${s.text.bills}`) && txt.includes(`Everyday spending Estimated from your usual spending ${s.text.spend}`)
         && txt.includes(`Check: ${s.check.line}`), `2a ${name} ${r}d: the summary shows the range's figures and the check line`);
       // The lowest day is on the day list, at the balance the summary quotes.
@@ -114,12 +114,34 @@ const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
       } else t.ok(!card, `2c ${name} ${r}d: no overdraft, no card`);
     }
   }
+  // ── 2g. The label says exactly which days the range covers (watch-meet-fixes 5b) ──────────────
+  // Forecast days 0..N are today and N more days, N + 1 calendar days. "The next 7 days" undercounted
+  // that by one; every place Watch names a range now says "Today and the next N days", and N must be
+  // the number of forecast entries in the window minus one. The last day the summary names must be
+  // the window's last entry.
+  const occDay = (d) => new Date(d).toLocaleDateString("en-CA", { weekday: "short", month: "short", day: "numeric" });
+  for (const c of D.DEMO_COUNTRIES) {
+    for (const r of W.WATCH_RANGES) {
+      const g = ForecastEngine.generate(demo(c), Math.max(r, 30), null, now);
+      const win = W.rangeWindow(g.forecast, r);
+      const n = Number((/(\d+) days$/.exec(W.rangeLabel(r)) || [])[1]);
+      t.eq([W.rangeLabel(r), n], [`Today and the next ${r} days`, win.length - 1], `2g ${c} ${r}d: the label's day count is the window's entries minus one (${win.length} entries)`);
+      t.eq(W.rangePhrase(r), `today and the next ${r} days`, `2h ${c} ${r}d: …and the same words mid-sentence`);
+      let txt = "";
+      try { txt = textOf(watch(demo(c), r)); } catch (e) { t.ok(false, `2i ${c} ${r}d renders: ${describe(e)}`); continue; }
+      const named = [...txt.matchAll(/[Tt]oday and the next (\d+) days/g)].map(m => Number(m[1]));
+      t.ok(named.length >= 2 && named.every(x => x === win.length - 1), `2i ${c} ${r}d: every range named on Watch (heading and summary) counts ${win.length - 1} days after today (${named.join(", ")})`);
+      t.ok(!/\bthe next \d+ days\b/.test(txt.replace(/[Tt]oday and the next \d+ days/g, "")) && !/\d+ days shown/.test(txt), `2j ${c} ${r}d: no range is named the old way`);
+      const last = win[win.length - 1];
+      t.eq((/Balance on ([A-Z][a-z]{2}, [A-Z][a-z]{2} \d{1,2}) /.exec(txt) || [])[1], occDay(last.date), `2k ${c} ${r}d: the last day named is the last entry's date (${occDay(last.date)}, day ${last.day})`);
+    }
+  }
   // The hand-worked rent case, rendered on the real calendar: at 7 days the card names the day and quotes nothing.
   {
     const due2 = new Date(); due2.setDate(due2.getDate() + 20);
     const r2 = { ...rent, bills: [{ ...rent.bills[0], date: String(due2.getDate()) }] };
     const txt = textOf(watch(r2, 7));
-    t.ok(/Heads up: your balance could go below zero on .*, after the 7 days shown\./.test(txt) && txt.includes("Lowest balance $1,000 today"),
+    t.ok(/Heads up: your balance could go below zero on .*, after the range shown \(today and the next 7 days\)\./.test(txt) && txt.includes("Lowest balance $1,000 today"),
       "2e $1,000 and rent on day 20, 7 days: the card names the day after the range and quotes no figure; the summary's lowest is $1,000 today");
     const t30 = textOf(watch(r2, 30));
     t.ok(t30.includes("Heads up: your balance could dip to -$500 on") && t30.includes("Lowest balance -$500 on"), "2f …and at 30 days both say -$500");

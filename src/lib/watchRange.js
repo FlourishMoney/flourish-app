@@ -45,6 +45,12 @@ export function rangeWindow(forecast, range) {
   return (forecast || []).slice(0, n + 1);
 }
 
+// THE RANGE'S NAME. Forecast days 0..N are today and N more days, N + 1 calendar days, so "the next
+// 7 days" undercounted it by one. Every place Watch names a range says exactly this instead.
+export function rangeLabel(range) { return `Today and the next ${Math.max(0, Math.floor(Number(range) || 0))} days`; }
+// The same words inside a sentence.
+export function rangePhrase(range) { return rangeLabel(range).replace(/^Today/, "today"); }
+
 // Lines grouped by name, in first-seen order: [{ label, count, cents, text }].
 function _group(items) {
   const by = new Map();

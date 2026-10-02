@@ -90,7 +90,7 @@ export function buildMeetingAgenda(snapshot = {}) {
     const amt = _n(r.amount), after = _n(r.balanceAfter);
     risks.push({ text: `${r.date}: ${r.label} ${_money(amt)}${after != null ? ` takes you to ${_money(after)}` : ""}.`, value: after != null ? after : amt, source: "forecastEngine",
       explain: _explain(`${r.label}, ${r.date}`, after != null ? _money(after) : _money(amt),
-        "From the forecast on Watch: your balance now, your pay, your bills and your usual daily spending, day by day for the next 14 days.", [
+        "From the forecast on Watch: your balance now, your pay, your bills and your usual daily spending, day by day for today and the next 14 days.", [
           { label: "Money out that day", value: _money(amt) }, { label: "Balance after", value: _money(after) },
         ], "The forecast on Watch") });
   });

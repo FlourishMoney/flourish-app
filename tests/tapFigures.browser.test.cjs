@@ -103,7 +103,7 @@ const UNTAPPED = () => {
     const seen = {};
     for (const r of [7, 30, 90]) {
       await p.getByRole("button", { name: `${r}d`, exact: true }).click(); await p.waitForTimeout(500);
-      t.ok(await p.getByText(`The next ${r} days`, { exact: true }).count() === 1, `3a ${r}d: the summary names the range`);
+      t.ok(await p.getByText(`Today and the next ${r} days`, { exact: true }).count() === 1, `3a ${r}d: the summary names the range`);
       t.eq(await p.evaluate(UNTAPPED), [], `3b ${r}d: every figure on Watch is a tap target`);
       const rows = p.locator('button[aria-label$=": how Flourish got it"]').filter({ hasText: /Lowest balance|Balance on|Money in|Bills and minimum payments|Everyday spending/ });
       const n = await rows.count();

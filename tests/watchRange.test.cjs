@@ -87,7 +87,7 @@ const NOW = new Date("2026-09-24T12:00:00Z");
   t.ok(!/\{\[7,14\]\.map/.test(app), "4c the old 7/14 toggle is gone");
   t.ok(/ForecastEngine\.generate\(data, Math\.max\(range, 30\)\)/.test(app),
     "4d the engine is still called with Math.max(range, 30), so 90 passes through and 7 does not shrink the risk window");
-  t.ok(/subtitle=\{`The next \$\{range\} days\.`\}/.test(app) && !/"The next 90 days\."/.test(app),
+  t.ok(/subtitle=\{`\$\{rangeLabel\(range\)\}\.`\}/.test(app) && !/"The next 90 days\."/.test(app),
     "4e the header states the selected range (7, 30 or 90 days), not 90 on every range (prelaunch-copy item 5)");
 
   // ── 5. The balance bar must not call a healthy forecast dangerous ────────────────────────────
