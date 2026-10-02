@@ -83,14 +83,16 @@ const { create } = require("./_runner.cjs");
     t.eq(iso(bw.nextDate), iso(new Date(2026,0,21)), "5: biweekly still Jan 21");
   }
 
-  // ── 6. defaults: missing cadence → biweekly; missing dayOfWeek → 0 (Sunday) ──────────────────────
+  // ── 6. defaults: missing cadence → weekly (prompt 4b item 3); missing dayOfWeek → 0 (Sunday) ────
+  // MATH-LOCK: last meeting Sun Jan 4 2026, no cadence stored → next is Jan 4 + 7 = Sun Jan 11.
+  // (Before: biweekly, Jan 18, which no public claim matched: every one of them says weekly.)
   {
     const today = new Date(2026, 0, 1);
     const def = computeNextMeeting({ lastMeetingAt: null }, today);      // no cadence, no dayOfWeek
     t.eq(def.nextDate.getDay(), 0, "6: default dayOfWeek is Sunday (0)");
-    const last = new Date(2026, 0, 4);   // a Sunday-ish anchor; cadence defaults to biweekly
-    const bw = computeNextMeeting({ dayOfWeek: last.getDay(), lastMeetingAt: last }, today);
-    t.eq(iso(bw.nextDate), iso(new Date(2026, 0, 18)), "6: default cadence biweekly → +14");
+    const last = new Date(2026, 0, 4);
+    const wk = computeNextMeeting({ dayOfWeek: last.getDay(), lastMeetingAt: last }, today);
+    t.eq(iso(wk.nextDate), iso(new Date(2026, 0, 11)), "6: default cadence weekly → +7 (Jan 11)");
   }
 
   t.summary("meetingSchedule.test");

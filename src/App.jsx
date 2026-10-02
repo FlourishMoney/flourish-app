@@ -43,7 +43,7 @@ import { DEMO_STATUS_LABEL, statusChip, heroFreshness, refreshStamp } from "./li
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
 import { reconcileBills } from "./lib/billReconcile.js";
-import { computeNextMeeting } from "./lib/meetingSchedule.js";
+import { computeNextMeeting, meetingScheduleOf } from "./lib/meetingSchedule.js";
 import { getNotificationPermission, requestNotificationPermission, scheduleNotification, cancelAllOfType } from "./lib/notifications.js";
 import { planNotifications } from "./lib/notificationPlanner.js";
 import { SCREENSHOT_EMAIL, normalizeEmail, isReviewAccount } from "./lib/sampleHouseholdAccount.js";
@@ -9886,8 +9886,7 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData }){
         const last = data.profile?.meetingSchedule?.lastMeetingAt;
         const heldToday = !!last && new Date(last).toDateString() === new Date().toDateString();
         const markDone = () => {
-          setAppData(prev => ({ ...prev, profile: { ...(prev.profile||{}), meetingSchedule: { cadence:"biweekly", dayOfWeek:0, enabled:false,
-            ...((prev.profile||{}).meetingSchedule||{}), lastMeetingAt: new Date().toISOString() } } }));
+          setAppData(prev => ({ ...prev, profile: { ...(prev.profile||{}), meetingSchedule: { ...meetingScheduleOf((prev.profile||{}).meetingSchedule), lastMeetingAt: new Date().toISOString() } } }));
           // The store's own review sheet, once, after the FIRST meeting (reviewRules.js decides; never
           // on the web or in demo mode, never within 24 hours of trouble, and nothing in front of it).
           reviewOnMeetingDone({ demo: !!data.demo, firstMeeting: !last });
@@ -9915,9 +9914,9 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
   const [editingSchedule,setEditingSchedule]=useState(false);
   // Money Meeting schedule (profile.meetingSchedule, nested like profile.retirement). The next date is
   // DERIVED every render — never stored — so it can't go stale when cadence changes or a meeting slips.
-  const meetingSchedule = data.profile?.meetingSchedule || { cadence:"biweekly", dayOfWeek:0, lastMeetingAt:null, enabled:false };
+  const meetingSchedule = meetingScheduleOf(data.profile?.meetingSchedule);
   const nextMeeting = computeNextMeeting(meetingSchedule, new Date());
-  const setSchedule = (patch) => setAppData && setAppData(prev => ({ ...prev, profile: { ...(prev.profile||{}), meetingSchedule: { cadence:"biweekly", dayOfWeek:0, lastMeetingAt:null, enabled:false, ...(prev.profile?.meetingSchedule||{}), ...patch } } }));
+  const setSchedule = (patch) => setAppData && setAppData(prev => ({ ...prev, profile: { ...(prev.profile||{}), meetingSchedule: { ...meetingScheduleOf(prev.profile?.meetingSchedule), ...patch } } }));
   const [kids,setKids]=useState(()=>{
     try{
       const saved=safeLoadLS("flourish_kids", null)||[];
@@ -10141,7 +10140,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
   const earned=(activeKid?.chores||[]).filter(c=>c.done).reduce((a,c)=>a+(c.reward||0),0);
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <ScreenHeader title="Meet" subtitle="Your 15-minute money meeting" onBack={setScreen?()=>setScreen("home"):null}/>
+    <ScreenHeader title="Meet" subtitle="Your weekly 15-minute money meeting" onBack={setScreen?()=>setScreen("home"):null}/>
     {(()=>{
       // Step 10: Kids entry point removed from primary UI. Since prompt 3d /kids redirects to / as well;
       // the code (KidsMiniSite, the tab==="kids" block below) is kept, unrendered, for the future family add-on.

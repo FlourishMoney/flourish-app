@@ -180,7 +180,7 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     t.ok(support.includes("What makes Flourish different") && support.includes(W), "5e Help & Support shows the card");
     // The claims hold
     t.ok(/kind: "deduction"|kind:"deduction"/.test(fs.readFileSync(path.join(REPO, "src", "lib", "safeToSpendView.js"), "utf8")), "5f (safe to spend is shown as its rows: the math, line by line)");
-    t.ok(/Your 15-minute money meeting/.test(APP), "5g (Meet is the 15-minute money meeting, built from the week)");
+    t.ok(/Your weekly 15-minute money meeting/.test(APP), "5g (Meet is the weekly 15-minute money meeting, built from the week)");
   }
 
   // ── 6. Feedback, saved to our own table ──────────────────────────────────────────────────────
@@ -261,6 +261,28 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     ];
     t.eq(strings.filter(x => lower.test(x)), [], "2b every string this PR added says \"Flourish\" with a capital F");
     t.ok(/<Btn label="Rate Flourish"/.test(APP) && />What makes Flourish different<\/h2>/.test(APP) && !/label="Rate flourish"/.test(APP), "2c …including the Rate row and the card's heading");
+  }
+
+  // ── 3b. The meeting is weekly everywhere (prompt 4b item 3) ──────────────────────────────────
+  {
+    const MS = await import("../src/lib/meetingSchedule.js");
+    const Tr = await import("../src/lib/tour.js"), Ck = await import("../src/lib/setupChecklist.js");
+    t.eq([MS.DEFAULT_MEETING_CADENCE, MS.meetingScheduleOf(undefined).cadence, MS.meetingScheduleOf({}).cadence], ["weekly", "weekly", "weekly"],
+      "3b1 a household with no schedule gets a weekly one");
+    const chosen = { cadence: "biweekly", dayOfWeek: 3, lastMeetingAt: "2026-09-20T10:00:00.000Z", enabled: true };
+    t.eq(MS.meetingScheduleOf(chosen), chosen, "3b2 a schedule a household already chose keeps every field, cadence included");
+    t.eq(MS.meetingScheduleOf({ cadence: "monthly" }).cadence, "monthly", "3b3 …monthly too");
+    const last = new Date(2026, 0, 4);
+    t.eq([MS.computeNextMeeting({ dayOfWeek: 0, lastMeetingAt: last }, new Date(2026, 0, 5)).nextDate.getDate(),
+          MS.computeNextMeeting({ cadence: "biweekly", dayOfWeek: 0, lastMeetingAt: last }, new Date(2026, 0, 5)).nextDate.getDate()], [11, 18],
+      "3b4 no cadence stored: next meeting a week on (Jan 11); a stored biweekly one stays two weeks (Jan 18)");
+    t.ok(!/cadence:"biweekly"/.test(APP) && (APP.match(/meetingScheduleOf\(/g) || []).length >= 3,
+      "3b5 the Meet screen, its schedule and \"Mark this meeting done\" all take the default from meetingScheduleOf, none writes biweekly");
+    const meetBody = Tr.TOUR_STEPS.find(st => st.title === "Meet").body;
+    const copy = [meetBody, A.FAQ.find(f => /money meeting/.test(f.q)).a, A.WHAT_MAKES_DIFFERENT, ...Ck.setupChecklist({}).map(i => i.label)];
+    t.ok(/a week\b/.test(meetBody) && /on the week\b/.test(copy[1]) && /\bweekly\b/.test(A.WHAT_MAKES_DIFFERENT) && /subtitle="Your weekly 15-minute money meeting"/.test(APP),
+      "3b6 the tour, the FAQ, the card and Meet's heading all say weekly");
+    t.eq(copy.filter(x => /biweekly|bi-weekly|two weeks|2 weeks|fortnight|every other week|monthly/i.test(x)), [], "3b7 …and none of them, or the setup checklist, names another cadence");
   }
 
   // ── 8. Accessibility (the browser half is a11y.browser.test.cjs) ─────────────────────────────
