@@ -22,9 +22,11 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
   const noAdvice = (label, texts) => t.eq(texts.flatMap(x => adviceProblems(x).map(w => `${w}: ${x.slice(0, 60)}`)), [], `${label}: passes the advice scan (no money instruction, no verdict)`);
   const noBanned = (label, text) => t.ok(!BANNED.test(text), `${label}: no banned word, competitor or dash${BANNED.test(text) ? ` (found "${text.match(BANNED)[0]}")` : ""}`);
   let A = {};
-  try { A = loadApp(["Settings", "Dashboard", "MeetAgenda", "FAQ", "TERMS", "SupportPage", "SpendScreen", "WHAT_MAKES_DIFFERENT"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
+  try { A = loadApp(["Settings", "Dashboard", "MeetAgenda", "FAQ", "TERMS", "SupportPage", "SpendScreen", "WHAT_MAKES_DIFFERENT", "FeedbackSheet", "WeekOneCard"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
   const D = await import("../src/lib/demoFixture.js");
   const noop = () => {};
+  const settingsText = () => textOf(A.render(A.h(A.Settings, { data: demo(), setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop,
+    bankConnected: true, billingUi: { show: false }, onOpenUpgrade: noop, onReplayTour: noop })));
   const demo = (c = "CA", extra = {}) => { const now = new Date(); return { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c),
     incomes: D.buildDemoIncomes(now, c), bills: D.buildDemoBills(now, c), transactions: D.buildDemoTxns(now, c), bankConnected: true, ...extra }; };
 
@@ -175,6 +177,49 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     // The claims hold
     t.ok(/kind: "deduction"|kind:"deduction"/.test(fs.readFileSync(path.join(REPO, "src", "lib", "safeToSpendView.js"), "utf8")), "5f (safe to spend is shown as its rows: the math, line by line)");
     t.ok(/Your 15-minute money meeting/.test(APP), "5g (Meet is the 15-minute money meeting, built from the week)");
+  }
+
+  // ── 6. Feedback, saved to our own table ──────────────────────────────────────────────────────
+  {
+    const F = await import("../src/lib/feedback.js");
+    t.eq(F.FEEDBACK_KINDS.map(k => k.value), ["idea", "problem", "praise"], "6a three kinds: idea, problem, praise");
+    t.eq(F.WEEK_ONE_QUESTION, "What did flourish help you understand about your money this week?", "6b the day-7 question, word for word");
+    noBanned("6c feedback copy", [F.WEEK_ONE_QUESTION, ...F.FEEDBACK_KINDS.map(k => k.label)].join(" "));
+    // Signed out: nothing is written
+    const calls = [];
+    const client = { from: (tbl) => ({ insert: async (row) => { calls.push([tbl, row]); return { error: null }; } }) };
+    t.eq(await F.submitFeedback({ client, userId: null, kind: "idea", message: "Hello" }), { ok: false, reason: "signed_out" }, "6d signed out: refused");
+    t.eq(await F.submitFeedback({ client, userId: undefined, kind: F.WEEK_ONE_KIND, message: "Hello" }), { ok: false, reason: "signed_out" }, "6e …the day-7 answer too");
+    t.eq(calls, [], "6f …and nothing reached the database");
+    t.eq(await F.submitFeedback({ client, userId: "u1", kind: "idea", message: "   " }), { ok: false, reason: "invalid" }, "6g an empty message is not sent");
+    t.eq(await F.submitFeedback({ client, userId: "u1", kind: "rating", message: "5 stars" }), { ok: false, reason: "invalid" }, "6h nor an unknown kind");
+    t.eq(calls, [], "6i (still nothing written)");
+    t.eq(await F.submitFeedback({ client, userId: "u1", kind: "problem", message: " The forecast skipped my rent. ", platform: "android" }), { ok: true }, "6j signed in: sent");
+    t.eq(calls, [["feedback", { user_id: "u1", kind: "problem", message: "The forecast skipped my rent.", app_version: null, platform: "android" }]], "6k …one row in our own feedback table");
+    const failing = { from: () => ({ insert: async () => ({ error: { message: "x" } }) }) };
+    t.eq((await F.submitFeedback({ client: failing, userId: "u1", kind: "praise", message: "Nice" })).reason, "error", "6l a failed write says so");
+    // The form, signed out (the demo is signed out)
+    const sheet = textOf(A.render(A.h(A.FeedbackSheet, { onClose: noop })));
+    t.ok(sheet.includes("Sign in to send feedback") && !/>Send</.test(A.render(A.h(A.FeedbackSheet, { onClose: noop }))), "6m signed out, the form says so and offers no Send");
+    t.ok(/submitFeedback\(\{ client:supabase, userId:account\?\.id, kind, message, platform:currentPlatform\(\) \}\)/.test(APP), "6n the form sends as the signed-in account only");
+    t.ok(settingsText().includes("Send feedback"), "6o Settings → Help & Support offers \"Send feedback\"");
+    // The day-7 question
+    const day = 24 * 60 * 60 * 1000, start = new Date("2026-10-01T09:00:00");
+    const due = (o) => F.weekOneDue({ signedUpAt: start.toISOString(), signedIn: true, ...o });
+    t.eq([due({ now: new Date(start.getTime() + 6.9 * day) }), due({ now: new Date(start.getTime() + 7 * day) }), due({ now: new Date(start.getTime() + 30 * day) })],
+      [false, true, true], "6p shown from day 7 after signup (not before)");
+    t.eq([due({ now: new Date(start.getTime() + 8 * day), done: true }), due({ now: new Date(start.getTime() + 8 * day), demo: true }), due({ now: new Date(start.getTime() + 8 * day), signedIn: false })],
+      [false, false, false], "6q once (not after it was answered or skipped), never in demo, never signed out");
+    t.eq(A.render(A.h(A.WeekOneCard, { data: demo(), setAppData: noop })), "", "6r signed out, the card renders nothing");
+    t.ok(/weekOneCheckIn:\{\[field\]:new Date\(\)\.toISOString\(\)\}/.test(APP) && /finish\("skippedAt"\)/.test(APP), "6s answering or skipping is recorded on the profile (a date, never the answer)");
+    // The table
+    const sql = fs.readFileSync(path.join(REPO, "supabase", "migrations", "0013_feedback.sql"), "utf8");
+    t.ok(/create table if not exists public\.feedback/.test(sql) && /references auth\.users\(id\) on delete cascade/.test(sql), "6t migration 0013 adds public.feedback, deleted with the account");
+    t.ok(/enable row level security/.test(sql) && /for insert to authenticated with check \(auth\.uid\(\) = user_id\)/.test(sql), "6u RLS: a signed-in person may insert their own rows");
+    t.ok(!/for (select|update|delete|all)\b/.test(sql) && /grant insert\s+on table public\.feedback to authenticated;/.test(sql) && !/to anon/.test(sql), "6v …and nothing else: no read-back, no anon access");
+    t.ok(/for \(const table of \["meeting_records", "subscriptions", "feedback"\]\)/.test(fs.readFileSync(path.join(REPO, "netlify", "functions", "plaid.js"), "utf8")), "6w deleting the account deletes the feedback too");
+    const allSrc = fs.readdirSync(path.join(REPO, "src", "lib")).map(f => fs.readFileSync(path.join(REPO, "src", "lib", f), "utf8")).join("\n") + APP;
+    t.ok(!/typeform|forms\.gle|docs\.google\.com\/forms|formspree|tally\.so|jotform|surveymonkey/i.test(allSrc), "6x no third-party form service");
   }
 
   t.summary("testerSuggestions.test");

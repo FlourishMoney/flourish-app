@@ -54,6 +54,7 @@ import { TOUR_STEPS, TOUR_DONE_KEY } from "./lib/tour.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
 import { shareFlourish, SHARE_URL } from "./lib/share.js";
 import { rateUrl } from "./lib/storeReview.js";
+import { FEEDBACK_KINDS, WEEK_ONE_KIND, WEEK_ONE_QUESTION, MAX_MESSAGE, submitFeedback, weekOneDue } from "./lib/feedback.js";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
 import { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
@@ -5143,6 +5144,90 @@ function IncomeReconcileCard({data, setAppData}){
   );
 }
 
+// ── FEEDBACK (tester suggestions, item 6) ──────────────────────────────────────────────────────
+// Saved to our own Supabase table (lib/feedback.js, migration 0013). Signed out, nothing is sent.
+const currentPlatform = () => { try { return window.Capacitor?.getPlatform?.() || "web"; } catch { return "web"; } };
+function useSignedInAccount(){
+  const [account,setAccount]=useState(null);
+  useEffect(()=>{ let live=true; (async()=>{ try{ const { data } = await supabase.auth.getSession(); if(live) setAccount(data?.session?.user||null); }catch{} })(); return ()=>{live=false;}; },[]);
+  return account;
+}
+
+function FeedbackSheet({onClose}){
+  const account=useSignedInAccount();
+  const [kind,setKind]=useState("idea");
+  const [message,setMessage]=useState("");
+  const [status,setStatus]=useState(null); // null | "sending" | "sent" | "error"
+  const send=async()=>{
+    setStatus("sending");
+    const r=await submitFeedback({ client:supabase, userId:account?.id, kind, message, platform:currentPlatform() });
+    setStatus(r.ok?"sent":"error");
+  };
+  const field={width:"100%",boxSizing:"border-box",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px",color:C.cream,fontSize:14,fontFamily:"inherit"};
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div role="dialog" aria-modal="true" aria-labelledby="feedback-title" style={{background:C.bg,borderRadius:"24px 24px 0 0",padding:"24px 20px 36px",width:"100%",maxWidth:520,maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={row({justifyContent:"space-between",marginBottom:SPACE.md})}>
+          <h2 id="feedback-title" style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:900,color:C.cream,margin:0}}>Send feedback</h2>
+          <button onClick={onClose} aria-label="Close" style={{...rowControl(),...tap(),background:"none",border:`1px solid ${C.border}`,borderRadius:12,color:C.mutedHi,fontSize:16,cursor:"pointer"}}>✕</button>
+        </div>
+        {status==="sent" ? (
+          <div role="status" style={{color:C.cream,fontSize:14,lineHeight:1.6}}>Thanks. Your feedback was sent.</div>
+        ) : !account ? (
+          <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6}}>Sign in to send feedback. Nothing is sent from the demo or while signed out.</div>
+        ) : (<>
+          <fieldset style={{border:"none",padding:0,margin:0}}>
+            <legend style={{color:C.mutedHi,fontSize:13,fontWeight:700,marginBottom:SPACE.sm}}>What kind of feedback?</legend>
+            <div style={{display:"flex",flexWrap:"wrap",gap:GAP.controlToControl}}>
+              {FEEDBACK_KINDS.map(k=>(
+                <label key={k.value} style={{...tap(),display:"flex",alignItems:"center",gap:SPACE.sm,padding:"0 14px",borderRadius:12,cursor:"pointer",
+                  border:`1px solid ${kind===k.value?C.green:C.border}`,background:kind===k.value?C.green+"18":C.cardAlt,color:C.cream,fontSize:14}}>
+                  <input type="radio" name="feedback-kind" value={k.value} checked={kind===k.value} onChange={()=>setKind(k.value)}/>{k.label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <label htmlFor="feedback-message" style={{display:"block",color:C.mutedHi,fontSize:13,fontWeight:700,marginTop:SPACE.lg,marginBottom:SPACE.sm}}>Your message</label>
+          <textarea id="feedback-message" value={message} maxLength={MAX_MESSAGE} rows={5} onChange={e=>setMessage(e.target.value)} style={field}/>
+          {status==="error"&&<div role="alert" style={{color:C.redBright,fontSize:13,marginTop:SPACE.sm}}>It didn't send. Check your connection and try again.</div>}
+          <button onClick={send} disabled={!message.trim()||status==="sending"}
+            style={{width:"100%",minHeight:LAYOUT.minTap,marginTop:SPACE.lg,background:message.trim()?C.green:C.cardAlt,border:"none",borderRadius:12,color:message.trim()?(C.isDark?"#041810":"#fff"):C.muted,fontWeight:800,fontSize:14,cursor:message.trim()?"pointer":"default",fontFamily:"inherit"}}>
+            {status==="sending"?"Sending…":"Send"}
+          </button>
+        </>)}
+      </div>
+    </div>
+  );
+}
+
+// The one-question check-in, once, on or after day 7 from signup. Free text, skippable, saved the
+// same way. Answering or skipping is recorded on the profile (a date only, never the answer).
+function WeekOneCard({data,setAppData,style}){
+  const account=useSignedInAccount();
+  const [text,setText]=useState("");
+  const [status,setStatus]=useState(null);
+  const done=!!data.profile?.weekOneCheckIn;
+  if(!weekOneDue({ signedUpAt:account?.created_at, done, demo:!!data.demo, signedIn:!!account })) return null;
+  const finish=(field)=>setAppData&&setAppData(prev=>({...prev,profile:{...(prev.profile||{}),weekOneCheckIn:{[field]:new Date().toISOString()}}}));
+  const send=async()=>{
+    setStatus("sending");
+    const r=await submitFeedback({ client:supabase, userId:account?.id, kind:WEEK_ONE_KIND, message:text, platform:currentPlatform() });
+    if(r.ok) finish("answeredAt"); else setStatus("error");
+  };
+  return (
+    <section aria-labelledby="week-one-title" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:LAYOUT.cardPadding,...style}}>
+      <label id="week-one-title" htmlFor="week-one-answer" style={{display:"block",color:C.cream,fontWeight:800,fontSize:14,lineHeight:1.4,marginBottom:SPACE.sm}}>{WEEK_ONE_QUESTION}</label>
+      <textarea id="week-one-answer" value={text} maxLength={MAX_MESSAGE} rows={3} onChange={e=>setText(e.target.value)}
+        style={{width:"100%",boxSizing:"border-box",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",color:C.cream,fontSize:14,fontFamily:"inherit"}}/>
+      {status==="error"&&<div role="alert" style={{color:C.redBright,fontSize:13,marginTop:SPACE.sm}}>It didn't send. Check your connection and try again.</div>}
+      <div style={{display:"flex",gap:GAP.controlToControl,marginTop:SPACE.md}}>
+        <button onClick={()=>finish("skippedAt")} style={{...tap(),flex:"0 0 auto",background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"0 16px",color:C.mutedHi,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Skip</button>
+        <button onClick={send} disabled={!text.trim()||status==="sending"} style={{...tap(),flex:1,background:text.trim()?C.green:C.cardAlt,border:"none",borderRadius:12,color:text.trim()?(C.isDark?"#041810":"#fff"):C.muted,fontWeight:800,fontSize:13,cursor:text.trim()?"pointer":"default",fontFamily:"inherit"}}>{status==="sending"?"Sending…":"Send"}</button>
+      </div>
+    </section>
+  );
+}
+
 // ── SETUP CHECKLIST (tester suggestions, item 1) ───────────────────────────────────────────────
 // Each line ticks itself off from real state (lib/setupChecklist.js); nothing here can tick one.
 function SetupChecklistCard({items,onDismiss,style}){
@@ -5498,6 +5583,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           <SetupChecklistCard items={setupChecklist(data,{numberSeen})} style={{...anim(57),marginBottom:12}}
             onDismiss={()=>{ try{localStorage.setItem(CHECKLIST_DISMISSED_KEY,"1");}catch{} setChecklistDismissed(true); }}/>
         )}
+        <WeekOneCard data={data} setAppData={setAppData} style={{...anim(58),marginBottom:12}}/>
         {/* ── HERO: Safe to Spend ── full width ─────────────────────────── */}
         {isVisible('hero')&&(
         <div style={{...anim(60),cursor:"pointer",position:"relative",overflow:"hidden",borderRadius:28,
@@ -11329,6 +11415,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
 function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onReplayTour,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade}){
   // notifToggles state removed with the Notifications preference section (no notification system yet — see audit).
   const [activeSection,setActiveSection]=useState(null);
+  const [showFeedback,setShowFeedback]=useState(false); // tester suggestions item 6
   // Apple 5.1.2(i): flipping the AI Coach toggle ON re-grants third-party sharing consent via
   // onAcceptAIConsent. A control labelled "AI Coach enabled" is not informed consent to send data
   // to Anthropic, so anyone without current consent (declined at the disclosure, or revoked here)
@@ -11643,22 +11730,24 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
       <div style={{color:C.mutedHi,fontSize:13,marginBottom:GAP.textToControl}}>Questions and answers, how to reach us, who runs Flourish, and links to the privacy policy and account deletion.</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:GAP.controlToControl}}>
         <Btn label="Open Support" onClick={()=>navToScreen&&navToScreen("support")} color={C.mutedHi} outline small/>
+        <Btn label="Send feedback" onClick={()=>setShowFeedback(true)} color={C.mutedHi} outline small/>
         {onReplayTour&&<Btn label="Replay the tour" onClick={onReplayTour} color={C.mutedHi} outline small/>}
         {(()=>{ // "Rate flourish": the store's own review page (lib/storeReview.js). Android only until the App Store ID is set.
           const url=rateUrl((()=>{ try{ return window.Capacitor?.getPlatform?.()||"web"; }catch{ return "web"; } })());
           return url ? <Btn label="Rate flourish" onClick={()=>{ try{ window.location.href=url; }catch{} }} color={C.mutedHi} outline small/> : null;
         })()}
       </div>
+    {showFeedback&&<FeedbackSheet onClose={()=>setShowFeedback(false)}/>}
     </div>
     {/* ── Sign out ─────────────────────────────────────────────── */}
     <div style={{marginTop:10,padding:"16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
-      <div style={{color:C.cream,fontWeight:700,marginBottom:4}}>Sign Out</div>
-      <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>End your session on this device. Your data stays saved for when you sign back in.</div>
+      <div style={{color:C.cream,fontWeight:700,marginBottom:SPACE.xs}}>Sign Out</div>
+      <div style={{color:C.mutedHi,fontSize:13,marginBottom:SPACE.md}}>End your session on this device. Your data stays saved for when you sign back in.</div>
       <Btn label="Sign Out" onClick={onSignOut} color={C.mutedHi} outline small/>
     </div>
     {/* ── Export your data ─────────────────────────────────────── */}
     <div style={{marginTop:10,padding:"16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
-      <div style={{color:C.cream,fontWeight:700,marginBottom:4}}>Your Data</div>
+      <div style={{color:C.cream,fontWeight:700,marginBottom:SPACE.xs}}>Your Data</div>
       <div style={{color:C.mutedHi,fontSize:13,marginBottom:12}}>Download everything you've entered, including your profile, goals, budgets, debts, accounts and history, as a JSON file. Yours to keep, back up, or take elsewhere.</div>
       <Btn label="⬇ Export my data (JSON)" onClick={exportMyData} color={C.green} small/>
     </div>
