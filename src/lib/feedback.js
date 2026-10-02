@@ -15,7 +15,7 @@ export const FEEDBACK_KINDS = [
   { value: "praise", label: "Praise" },
 ];
 export const WEEK_ONE_KIND = "week_one";
-export const WEEK_ONE_QUESTION = "What did flourish help you understand about your money this week?";
+export const WEEK_ONE_QUESTION = "What did Flourish help you understand about your money this week?";
 export const MAX_MESSAGE = 2000;
 export const WEEK_ONE_DAYS = 7;
 

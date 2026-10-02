@@ -6825,20 +6825,20 @@ const TERMS = {
 // Every answer was checked against the build. "Where do the numbers come from?" is corrected from the
 // brief: not every figure is calculated from the household's own data (tax and benefit amounts come
 // from the CRA or IRS, and What-If states the rates it assumes), so the answer says so.
-// "What makes flourish different" (tester suggestions, item 5): flourish's own mechanisms only, no
+// "What makes Flourish different" (tester suggestions, item 5): Flourish's own mechanisms only, no
 // other app named, no "better than", no "only". "Every number shows its math." is narrowed to what is
 // true: safe to spend shows its working line by line, but not every figure in the app does (bank
 // balances, transactions and tax amounts are shown as they come, with their source).
-const WHAT_MAKES_DIFFERENT = "flourish shows what's safe to spend before payday, not just what you spent. Safe to spend shows its math, line by line. A weekly 15-minute money meeting is built from your own week. Bank connections are read-only, and it works without one.";
+const WHAT_MAKES_DIFFERENT = "Flourish shows what's safe to spend before payday, not just what you spent. Safe to spend shows its math, line by line. A weekly 15-minute money meeting is built from your own week. Bank connections are read-only, and it works without one.";
 
 const FAQ = [
   { q: "What is safe to spend?", a: "What's left until your next payday after bills due before payday, minimum debt payments, a spending buffer and a savings amount are accounted for. Tap the number to see the math." },
-  { q: "Is my bank login safe?", a: "Bank connections go through Plaid and are read-only. flourish never sees or stores your bank password and cannot move money." },
+  { q: "Is my bank login safe?", a: "Bank connections go through Plaid and are read-only. Flourish never sees or stores your bank password and cannot move money." },
   { q: "My bank won't connect.", a: "Import a PDF or CSV statement, or enter your numbers by hand. Everything works without a bank connection." },
-  { q: "Where do the numbers come from?", a: "flourish calculates your figures from your accounts, bills and paydays. Tax and benefit amounts come from the CRA or IRS, with the year, and What-If shows any rate it assumes. The coach explains the numbers and never makes one up." },
+  { q: "Where do the numbers come from?", a: "Flourish calculates your figures from your accounts, bills and paydays. Tax and benefit amounts come from the CRA or IRS, with the year, and What-If shows any rate it assumes. The coach explains the numbers and never makes one up." },
   { q: "What is the money meeting?", a: TERMS["Money meeting"] },
   { q: "Can I turn the AI coach off?", a: "Yes, in Settings. With it off, nothing is sent to AI, and every number, forecast and what-if still works." },
-  { q: "Is this financial advice?", a: "No. flourish explains your numbers and your options. It isn't a licensed adviser, and the decisions are yours." },
+  { q: "Is this financial advice?", a: "No. Flourish explains your numbers and your options. It isn't a licensed adviser, and the decisions are yours." },
   { q: "How do I delete my account?", a: "Settings, then Delete Account. You can also use flourishmoney.app/delete-account.", link: { href: "/delete-account", text: "flourishmoney.app/delete-account" } },
   { q: "How do I contact you?", a: `Email ${SUPPORT_EMAIL}.`, link: { href: `mailto:${SUPPORT_EMAIL}`, text: SUPPORT_EMAIL } },
 ];
@@ -11879,9 +11879,9 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <Btn label="Open Support" onClick={()=>navToScreen&&navToScreen("support")} color={C.mutedHi} outline small/>
         <Btn label="Send feedback" onClick={()=>setShowFeedback(true)} color={C.mutedHi} outline small/>
         {onReplayTour&&<Btn label="Replay the tour" onClick={onReplayTour} color={C.mutedHi} outline small/>}
-        {(()=>{ // "Rate flourish": the store's own review page (lib/storeReview.js), on Android and iOS; no row on the web.
+        {(()=>{ // "Rate Flourish": the store's own review page (lib/storeReview.js), on Android and iOS; no row on the web.
           const url=rateUrl((()=>{ try{ return window.Capacitor?.getPlatform?.()||"web"; }catch{ return "web"; } })());
-          return url ? <Btn label="Rate flourish" onClick={()=>{ try{ window.location.href=url; }catch{} }} color={C.mutedHi} outline small/> : null;
+          return url ? <Btn label="Rate Flourish" onClick={()=>{ try{ window.location.href=url; }catch{} }} color={C.mutedHi} outline small/> : null;
         })()}
       </div>
     {showFeedback&&<FeedbackSheet onClose={()=>setShowFeedback(false)}/>}
@@ -12816,7 +12816,7 @@ function SupportPage({onBack}){
       </div>
 
       <section aria-labelledby="different-title" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:LAYOUT.cardPadding,marginTop:SPACE.sm}}>
-        <h2 id="different-title" style={{...s,fontSize:15,fontWeight:800,color:C.cream,margin:0}}>What makes flourish different</h2>
+        <h2 id="different-title" style={{...s,fontSize:15,fontWeight:800,color:C.cream,margin:0}}>What makes Flourish different</h2>
         <div style={{...p,marginTop:SPACE.xs}}>{WHAT_MAKES_DIFFERENT}</div>
       </section>
 

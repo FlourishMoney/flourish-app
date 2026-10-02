@@ -9,7 +9,7 @@
 // 2. The wrapper (reviewPrompt.js) on the web does nothing at all, not even write its record.
 // 3. The wiring in the app: trouble is noted where things go wrong, the one trigger sits on "Mark this
 //    meeting done", the plugin is called from one place only, and no screen of Flourish's own stands
-//    in front of the store's sheet. "Rate flourish" in Settings opens the store page the person chose.
+//    in front of the store's sheet. "Rate Flourish" in Settings opens the store page the person chose.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -142,10 +142,10 @@ const path = require("path");
     }
     t.ok(copy.length > 1000, `sanity: the copy scan reads real strings (${copy.length})`);
     const PRE_PROMPT = /\benjoying flourish\b|\brate (?:us|flourish|the app)\b|\bleave (?:us )?a review\b|\bdo you (?:like|love) (?:us|flourish)\b|\breview (?:us|flourish) (?:for|and get)\b|\bhow (?:are we|is flourish) doing\b/i;
-    // One exact exception: "Rate flourish", the Settings row a person taps to open the store's review
+    // One exact exception: "Rate Flourish", the Settings row a person taps to open the store's review
     // page themselves (tester suggestions item 3). It is a link, not a pre-prompt: nothing asks first.
-    t.eq(copy.filter((c) => PRE_PROMPT.test(c) && c.trim() !== "Rate flourish").map((c) => c.trim().slice(0, 80)), [], "no pre-prompt, rating screen or reward copy anywhere in src/");
-    t.eq(copy.filter((c) => c.trim() === "Rate flourish").length, 1, "…\"Rate flourish\" appears once, as the Settings row");
+    t.eq(copy.filter((c) => PRE_PROMPT.test(c) && c.trim() !== "Rate Flourish").map((c) => c.trim().slice(0, 80)), [], "no pre-prompt, rating screen or reward copy anywhere in src/");
+    t.eq(copy.filter((c) => c.trim() === "Rate Flourish").length, 1, "…\"Rate Flourish\" appears once, as the Settings row");
     t.ok(PRE_PROMPT.test("Enjoying Flourish?") && !PRE_PROMPT.test("solely to operate the App"), "sanity: the check catches a pre-prompt and not ordinary words");
     t.ok(!/import\s*\{[^}]*\}\s*from\s*["']@capacitor-community\/in-app-review["']/.test(all), "the plugin is never a static import, so the web never loads it");
 

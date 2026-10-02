@@ -40,7 +40,7 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
       "Your number. What's safe to spend until payday, after bills, minimum debt payments, a spending buffer and a savings amount are accounted for. Tap it to see the math.",
       "Every bill and payday on one dated list, so a tight day shows up before it arrives.",
       "Your plans. Budgets, goals and debt payoff dates, calculated from your numbers.",
-      "Your coach. Ask what a number means. It explains flourish's math and never invents a figure.",
+      "Your coach. Ask what a number means. It explains Flourish's math and never invents a figure.",
       "15 minutes a week. An agenda built from your week, for you or for you and your partner.",
     ], "1c the copy, word for word (Watch without \"The next 90 days.\": Watch opens on 30 days)");
     noBanned("1d tour", T.TOUR_STEPS.map(s => s.title + " " + s.body).join(" "));
@@ -115,7 +115,7 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     noBanned("2m share copy", S.SHARE_TEXT);
   }
 
-  // ── 3. Rate flourish, and the one automatic ask ──────────────────────────────────────────────
+  // ── 3. Rate Flourish, and the one automatic ask ──────────────────────────────────────────────
   {
     const SR = await import("../src/lib/storeReview.js");
     t.eq(SR.rateUrl("android"), "https://play.google.com/store/apps/details?id=com.flourishmoney.app", "3a Android: the Play listing for com.flourishmoney.app");
@@ -130,7 +130,7 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     const as = (pl, fn) => { Object.defineProperty(globalThis, "Capacitor", { value: { ...real, getPlatform: () => pl, isNativePlatform: () => pl !== "web" }, configurable: true, writable: true }); try { return fn(); } finally { Object.defineProperty(globalThis, "Capacitor", { value: real, configurable: true, writable: true }); } };
     const settingsOn = (pl) => as(pl, () => textOf(A.render(A.h(A.Settings, { data: demo(), setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop,
       bankConnected: true, billingUi: { show: false }, onOpenUpgrade: noop, onReplayTour: noop }))));
-    t.eq(["android", "ios", "web"].map(pl => settingsOn(pl).includes("Rate flourish")), [true, true, false], "3f Settings shows \"Rate flourish\" on Android and iOS, and not on the web");
+    t.eq(["android", "ios", "web"].map(pl => settingsOn(pl).includes("Rate Flourish")), [true, true, false], "3f Settings shows \"Rate Flourish\" on Android and iOS, and not on the web");
     t.ok(/window\.location\.href=url/.test(APP), "3g the row opens the store page itself; nothing asks first");
   }
 
@@ -141,12 +141,12 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
       "Can I turn the AI coach off?", "Is this financial advice?", "How do I delete my account?", "How do I contact you?"], "4a the nine questions, in order");
     t.eq(A.FAQ.map(f => f.a), [
       "What's left until your next payday after bills due before payday, minimum debt payments, a spending buffer and a savings amount are accounted for. Tap the number to see the math.",
-      "Bank connections go through Plaid and are read-only. flourish never sees or stores your bank password and cannot move money.",
+      "Bank connections go through Plaid and are read-only. Flourish never sees or stores your bank password and cannot move money.",
       "Import a PDF or CSV statement, or enter your numbers by hand. Everything works without a bank connection.",
-      "flourish calculates your figures from your accounts, bills and paydays. Tax and benefit amounts come from the CRA or IRS, with the year, and What-If shows any rate it assumes. The coach explains the numbers and never makes one up.",
+      "Flourish calculates your figures from your accounts, bills and paydays. Tax and benefit amounts come from the CRA or IRS, with the year, and What-If shows any rate it assumes. The coach explains the numbers and never makes one up.",
       A.TERMS["Money meeting"],
       "Yes, in Settings. With it off, nothing is sent to AI, and every number, forecast and what-if still works.",
-      "No. flourish explains your numbers and your options. It isn't a licensed adviser, and the decisions are yours.",
+      "No. Flourish explains your numbers and your options. It isn't a licensed adviser, and the decisions are yours.",
       "Settings, then Delete Account. You can also use flourishmoney.app/delete-account.",
       `Email ${SUPPORT_EMAIL}.`,
     ], "4b the answers (the money meeting is TERMS[\"Money meeting\"]; contact is SUPPORT_EMAIL; \"where do the numbers come from\" corrected to what is true)");
@@ -168,16 +168,16 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     t.ok(/const isDemo=!!data\.demo;/.test(APP), "4k only the demo counts as sample data on Activity");
   }
 
-  // ── 5. What makes flourish different ─────────────────────────────────────────────────────────
+  // ── 5. What makes Flourish different ─────────────────────────────────────────────────────────
   {
     const W = A.WHAT_MAKES_DIFFERENT;
-    t.eq(W, "flourish shows what's safe to spend before payday, not just what you spent. Safe to spend shows its math, line by line. A weekly 15-minute money meeting is built from your own week. Bank connections are read-only, and it works without one.",
+    t.eq(W, "Flourish shows what's safe to spend before payday, not just what you spent. Safe to spend shows its math, line by line. A weekly 15-minute money meeting is built from your own week. Bank connections are read-only, and it works without one.",
       "5a the card, word for word (\"Every number shows its math.\" narrowed to what is true)");
     t.ok(!/(?<!read-)\bonly\b|better than|\bbest\b|unlike/i.test(W), "5b no \"only\" (read-only is about the connection), no \"better than\", no comparison");
     noBanned("5c different card", W);
     noAdvice("5d different card", [W]);
     const support = textOf(A.render(A.h(A.SupportPage, { onBack: noop })));
-    t.ok(support.includes("What makes flourish different") && support.includes(W), "5e Help & Support shows the card");
+    t.ok(support.includes("What makes Flourish different") && support.includes(W), "5e Help & Support shows the card");
     // The claims hold
     t.ok(/kind: "deduction"|kind:"deduction"/.test(fs.readFileSync(path.join(REPO, "src", "lib", "safeToSpendView.js"), "utf8")), "5f (safe to spend is shown as its rows: the math, line by line)");
     t.ok(/Your 15-minute money meeting/.test(APP), "5g (Meet is the 15-minute money meeting, built from the week)");
@@ -187,7 +187,7 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
   {
     const F = await import("../src/lib/feedback.js");
     t.eq(F.FEEDBACK_KINDS.map(k => k.value), ["idea", "problem", "praise"], "6a three kinds: idea, problem, praise");
-    t.eq(F.WEEK_ONE_QUESTION, "What did flourish help you understand about your money this week?", "6b the day-7 question, word for word");
+    t.eq(F.WEEK_ONE_QUESTION, "What did Flourish help you understand about your money this week?", "6b the day-7 question, word for word");
     noBanned("6c feedback copy", [F.WEEK_ONE_QUESTION, ...F.FEEDBACK_KINDS.map(k => k.label)].join(" "));
     // Signed out: nothing is written
     const calls = [];
@@ -244,6 +244,23 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
       "7f Settings shows What's new and the version, and opens the notes from it");
     t.ok(/\{WHATS_NEW\.notes\.map\(\(n,i\)=><li key=\{i\}/.test(APP), "7f2 …the notes from whatsNew.json");
     t.ok(/appVersion:appVersionLabel\(\)/.test(APP), "7g feedback is sent with the version it came from");
+  }
+
+  // ── 2b. Brand casing (prompt 4b item 2) ─────────────────────────────────────────────────────
+  // In-app copy says "Flourish". Every string this PR added names it with a capital F; the lowercase
+  // wordmark is an image and the header lockup, not copy, and is not checked here.
+  {
+    const lower = /(^|[^A-Za-z_.@/-])flourish(?![A-Za-z_.@-])/;
+    const Tr = await import("../src/lib/tour.js"), Ck = await import("../src/lib/setupChecklist.js"), Fb = await import("../src/lib/feedback.js"), Sh = await import("../src/lib/share.js");
+    const WN = JSON.parse(fs.readFileSync(path.join(REPO, "src", "whatsNew.json"), "utf8"));
+    const strings = [
+      ...Tr.TOUR_STEPS.flatMap(st => [st.title, st.body]),
+      ...A.FAQ.flatMap(f => [f.q, f.a]), A.WHAT_MAKES_DIFFERENT, "What makes Flourish different",
+      Fb.WEEK_ONE_QUESTION, ...Fb.FEEDBACK_KINDS.map(k => k.label), ...WN.notes,
+      ...Ck.setupChecklist({}).map(i => i.label), Sh.SHARE_TITLE, Sh.SHARE_TEXT,
+    ];
+    t.eq(strings.filter(x => lower.test(x)), [], "2b every string this PR added says \"Flourish\" with a capital F");
+    t.ok(/<Btn label="Rate Flourish"/.test(APP) && />What makes Flourish different<\/h2>/.test(APP) && !/label="Rate flourish"/.test(APP), "2c …including the Rate row and the card's heading");
   }
 
   // ── 8. Accessibility (the browser half is a11y.browser.test.cjs) ─────────────────────────────

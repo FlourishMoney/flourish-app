@@ -3,7 +3,7 @@
   "builds": { "ios": 526902, "android": 13 },
   "notes": [
     "A short tour of the five tabs, and a setup checklist on Today that ticks itself off as you go.",
-    "Share flourish from Settings on iPhone and Android.",
+    "Share Flourish from Settings on iPhone and Android.",
     "Questions and answers, and a way to send feedback, in Help & Support.",
     "Meet has a button to mark this week's meeting done.",
     "Watch → Activity shows your own statements and entries as yours when no bank is linked."
