@@ -11879,7 +11879,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         <Btn label="Open Support" onClick={()=>navToScreen&&navToScreen("support")} color={C.mutedHi} outline small/>
         <Btn label="Send feedback" onClick={()=>setShowFeedback(true)} color={C.mutedHi} outline small/>
         {onReplayTour&&<Btn label="Replay the tour" onClick={onReplayTour} color={C.mutedHi} outline small/>}
-        {(()=>{ // "Rate flourish": the store's own review page (lib/storeReview.js). Android only until the App Store ID is set.
+        {(()=>{ // "Rate flourish": the store's own review page (lib/storeReview.js), on Android and iOS; no row on the web.
           const url=rateUrl((()=>{ try{ return window.Capacitor?.getPlatform?.()||"web"; }catch{ return "web"; } })());
           return url ? <Btn label="Rate flourish" onClick={()=>{ try{ window.location.href=url; }catch{} }} color={C.mutedHi} outline small/> : null;
         })()}
