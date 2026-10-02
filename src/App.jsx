@@ -52,6 +52,7 @@ import { incomeTypeOptions, pickerValue, newSettingsIncome, setIncomeType } from
 import { nextRrspDeadline, formatRrspDeadline } from "./lib/rrspDeadline.js";
 import { TOUR_STEPS, TOUR_DONE_KEY } from "./lib/tour.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
+import { shareFlourish, SHARE_URL } from "./lib/share.js";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
 import { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
@@ -11335,11 +11336,13 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     return () => { cancelled = true; };
   }, [bankRefreshKey]);
 
-  const handleShare=()=>{
-    const url="https://flourishmoney.app";
-    const text="I've been using Flourish to track my spending. It shows how much is safe to spend each day, until my next deposit.";
-    if(navigator.share){navigator.share({title:"Flourish Money",text,url}).catch(()=>{});}
-    else{navigator.clipboard?.writeText(url).then(()=>alertModal({message:"Link copied! Share it with a friend 🌱"})).catch(()=>window.open(url,"_blank"));}
+  // Tester suggestions item 2: the system share sheet on iOS and Android (@capacitor/share), the
+  // browser's on the web, and a copied link where neither exists (lib/share.js).
+  const handleShare=async()=>{
+    const platform=(()=>{ try{ return window.Capacitor?.getPlatform?.()||"web"; }catch{ return "web"; } })();
+    const outcome=await shareFlourish({ platform });
+    if(outcome==="copied") alertModal({message:`Link copied: ${SHARE_URL}`});
+    else if(outcome==="failed") alertModal({message:`Share this link: ${SHARE_URL}`});
   };
 
   // Data portability (PIPEDA / Quebec Law 25) + user-owned backup: download

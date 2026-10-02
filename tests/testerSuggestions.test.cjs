@@ -79,6 +79,35 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     t.ok(/lastMeetingAt: new Date\(\)\.toISOString\(\)/.test(APP), "1y …which sets the schedule's lastMeetingAt");
   }
 
+  // ── 2. Share Flourish works on a store app ───────────────────────────────────────────────────
+  {
+    const S = await import("../src/lib/share.js");
+    t.eq(S.SHARE_URL, "https://flourishmoney.app", "2a the link is https://flourishmoney.app");
+    const calls = [];
+    const native = (p) => { calls.push(["native", p.url]); return Promise.resolve(); };
+    const copy = (u) => { calls.push(["copy", u]); return Promise.resolve(); };
+    // Android: no Web Share API in the WebView. The native sheet is used.
+    t.eq(await S.shareFlourish({ platform: "android", nativeShare: native, webShare: null, copy }), "shared", "2b Android: the native share sheet opens (the WebView has no navigator.share)");
+    t.eq(calls, [["native", "https://flourishmoney.app"]], "2c …with the flourishmoney.app link, and nothing copied");
+    calls.length = 0;
+    // Android where the plugin is missing or refuses: the link is copied, so the tap still does something.
+    t.eq(await S.shareFlourish({ platform: "android", nativeShare: () => Promise.reject(new Error("not implemented")), webShare: null, copy }), "copied", "2d Android without the plugin: the link is copied");
+    t.eq(calls, [["copy", "https://flourishmoney.app"]], "2e …the link itself");
+    calls.length = 0;
+    t.eq(await S.shareFlourish({ platform: "ios", nativeShare: () => Promise.reject(new Error("Share canceled")), copy }), "cancelled", "2f a share the person cancels does nothing more");
+    t.eq(calls, [], "2g …and copies nothing");
+    t.eq(await S.shareFlourish({ platform: "web", webShare: null, copy }), "copied", "2h a browser with no Web Share API copies the link");
+    t.eq(await S.shareFlourish({ platform: "web", webShare: () => Promise.resolve(), copy }), "shared", "2i a browser with it shares");
+    t.eq(await S.shareFlourish({ platform: "android", nativeShare: () => Promise.reject(new Error("x")), copy: () => Promise.reject(new Error("denied")) }), "failed", "2j if even copying fails, the caller shows the link");
+    t.ok(/if\(outcome==="copied"\) alertModal\(\{message:`Link copied: \$\{SHARE_URL\}`\}\);/.test(APP) && /else if\(outcome==="failed"\) alertModal\(\{message:`Share this link: \$\{SHARE_URL\}`\}\);/.test(APP),
+      "2k Settings says the link was copied, or shows it");
+    const pkg = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8"));
+    const spm = fs.readFileSync(path.join(REPO, "ios", "App", "CapApp-SPM", "Package.swift"), "utf8");
+    const gradle = fs.readFileSync(path.join(REPO, "android", "capacitor.settings.gradle"), "utf8") + fs.readFileSync(path.join(REPO, "android", "app", "capacitor.build.gradle"), "utf8");
+    t.ok(/^\^8\./.test(pkg.dependencies["@capacitor/share"] || "") && /CapacitorShare/.test(spm) && /:capacitor-share/.test(gradle), "2l @capacitor/share 8 is a dependency and registered in both native projects");
+    noBanned("2m share copy", S.SHARE_TEXT);
+  }
+
   t.summary("testerSuggestions.test");
   setImmediate(() => process.exit(process.exitCode || 0));
 })();
