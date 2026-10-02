@@ -396,7 +396,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       "Save Layout", "Get Started →", "Keep mine", "Save changes", "✨ Build Your Budget Plan", "Build Plan", "✓ Save Budget Plan", "Save Changes ✓", "Start the meeting",
       "Start solo check-in", "Start Meeting ▶", "Start Check-In ▶", "Start New", "Save Debt ✓", "Save Goal ✓", "Always visible", "Open Family Dashboard →", "Open Support",
       "Start coaching session →", "Clear chat history", "Clear history", "Apply this change?", "Open Settings", "Save Goal", "Save Plan", "✓ Save My Budget Plan",
-      "Build Your Budget Plan", "✨ Build My Budget Plan", "Skip Tour", "Skip for now", "Open Plan Ahead. Any surprises?", "Track your net worth over time",
+      "Build Your Budget Plan", "✨ Build My Budget Plan", "Skip for now", "Open Plan Ahead. Any surprises?", "Track your net worth over time",
       "Get coaching from your own numbers, based on your real transactions and",
       "Flourish needs your AI consent again before the coach can join. Open Settings → Privacy & AI, turn the coach on, then come back.",
       "From this date on changes every later … deposit too. Use it for a raise, parental leave, EI, a job ending or a benefit change.",

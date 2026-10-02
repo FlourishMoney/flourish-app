@@ -50,6 +50,8 @@ import { dueSoonList } from "./lib/dueSoon.js";
 import { watchIncomeFigures } from "./lib/watchIncome.js";
 import { incomeTypeOptions, pickerValue, newSettingsIncome, setIncomeType } from "./lib/incomeTypes.js";
 import { nextRrspDeadline, formatRrspDeadline } from "./lib/rrspDeadline.js";
+import { TOUR_STEPS, TOUR_DONE_KEY } from "./lib/tour.js";
+import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
 import { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
@@ -5139,6 +5141,32 @@ function IncomeReconcileCard({data, setAppData}){
   );
 }
 
+// ── SETUP CHECKLIST (tester suggestions, item 1) ───────────────────────────────────────────────
+// Each line ticks itself off from real state (lib/setupChecklist.js); nothing here can tick one.
+function SetupChecklistCard({items,onDismiss,style}){
+  const done=items.filter(i=>i.done).length;
+  return (
+    <section aria-labelledby="setup-checklist-title" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:LAYOUT.cardPadding,...style}}>
+      <div style={row({justifyContent:"space-between",marginBottom:SPACE.sm})}>
+        <div>
+          <div id="setup-checklist-title" style={{color:C.cream,fontWeight:800,fontSize:14,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Getting set up</div>
+          <div style={{color:C.muted,fontSize:13}}>{done} of {items.length} done</div>
+        </div>
+        <button onClick={onDismiss} aria-label="Dismiss the setup checklist"
+          style={{...rowControl(),background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",color:C.mutedHi,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Hide</button>
+      </div>
+      <ul style={{listStyle:"none",margin:0,padding:0}}>
+        {items.map(i=>(
+          <li key={i.id} style={{display:"flex",alignItems:"center",gap:SPACE.sm,padding:`${SPACE.xs}px 0`,color:i.done?C.mutedHi:C.cream,fontSize:13}}>
+            <span aria-hidden="true" style={{width:20,textAlign:"center",color:i.done?C.greenBright:C.muted,fontWeight:800}}>{i.done?"✓":"○"}</span>
+            <span>{i.label}<span style={{position:"absolute",width:1,height:1,overflow:"hidden",clip:"rect(0 0 0 0)"}}>{i.done?", done":", not done yet"}</span></span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBonus=0,onCheckIn,onWhatIf,onWrapped,isDesktop=false,dashLayout,setDashLayout,setGoalsTab,isRefreshing=false,activeScenario=null,setActiveScenario,onTryDemo}){
   const [mounted,setMounted]=useState(false);
   const [expandedTile,setExpandedTile]=useState(null);
@@ -5196,6 +5224,12 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const displayedSafe = displayedSafeToSpend(data); // what Today shows; Decisions' move-to-savings is 25% of it, as Meet's extra is
   const dailyPace   = suggestedDailyView(ssView.headline, data.incomes, data.transactions, new Date(), data); // Consolidation 1: the ONE suggested daily pace (Today + Decisions read this)
   const hasCashAccount = (data.accounts||[]).filter(a=>isCashAccount(a)).length > 0; // Sprint 1: gate safe-to-spend empty state
+  // Tester suggestions item 1: the setup checklist. "First number seen" is recorded the first time this
+  // hero shows a safe-to-spend figure (a real figure, on the household's own data, never the demo's).
+  const [numberSeen,setNumberSeen]=useState(()=>{ try{return localStorage.getItem(NUMBER_SEEN_KEY)==="1";}catch{return false;} });
+  const [checklistDismissed,setChecklistDismissed]=useState(()=>{ try{return localStorage.getItem(CHECKLIST_DISMISSED_KEY)==="1";}catch{return false;} });
+  const showsNumber = hasCashAccount && !SafeSpendEngine.calculate(data).noIncome;
+  useEffect(()=>{ if(showsNumber && !data.demo && !numberSeen){ try{localStorage.setItem(NUMBER_SEEN_KEY,"1");}catch{} setNumberSeen(true); } },[showsNumber,data.demo,numberSeen]);
   // overdraft: either bills in next 10 days exceed balance (immediate)
   // OR forecast shows negative balance within 7 days (imminent)
   // sevenDayRisk is calculated below — use a temporary check here with SafeSpend only,
@@ -5458,6 +5492,10 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         })()}
         {/* Ask, don't guess: a deposit that doesn't yet count as income, raised once */}
         <DepositQuestionCard data={data} setAppData={setAppData} style={{...anim(55),marginBottom:12}}/>
+        {showSetupChecklist(data,{numberSeen,dismissed:checklistDismissed})&&(
+          <SetupChecklistCard items={setupChecklist(data,{numberSeen})} style={{...anim(57),marginBottom:12}}
+            onDismiss={()=>{ try{localStorage.setItem(CHECKLIST_DISMISSED_KEY,"1");}catch{} setChecklistDismissed(true); }}/>
+        )}
         {/* ── HERO: Safe to Spend ── full width ─────────────────────────── */}
         {isVisible('hero')&&(
         <div style={{...anim(60),cursor:"pointer",position:"relative",overflow:"hidden",borderRadius:28,
@@ -9405,7 +9443,7 @@ const HOUSEHOLD_ENABLED = false;
 // Step 9: the Meet screen — the deterministic agenda (meetAgendaFor) rendered on the family tab,
 // with the facilitator gated by plan + AI-on. Free/AI-off users always get the agenda; only unlimited
 // tiers with AI on can start the facilitator, which operates ONLY on the supplied agenda.
-function MeetAgenda({ data, isCouple, setScreen }){
+function MeetAgenda({ data, isCouple, setScreen, setAppData }){
   // A quiet week used to produce an empty agenda, which greyed the start button out — so the week
   // nothing happened was the week the app refused to talk. It now falls back to a short agenda of
   // figures the engines already calculated. Substituted HERE, before anything reads it, so what the
@@ -9583,6 +9621,21 @@ function MeetAgenda({ data, isCouple, setScreen }){
           </div>
         </div>
       )}
+
+      {/* Tester suggestions: a meeting can be marked done. It sets the schedule's existing lastMeetingAt
+          (which also moves the next scheduled meeting on), and it is what "First money meeting held" on
+          Today's setup checklist reads. Never in demo mode: the sample household holds no meetings. */}
+      {!data.demo && setAppData && (()=>{
+        const last = data.profile?.meetingSchedule?.lastMeetingAt;
+        const heldToday = !!last && new Date(last).toDateString() === new Date().toDateString();
+        const markDone = () => {
+          setAppData(prev => ({ ...prev, profile: { ...(prev.profile||{}), meetingSchedule: { cadence:"biweekly", dayOfWeek:0, enabled:false,
+            ...((prev.profile||{}).meetingSchedule||{}), lastMeetingAt: new Date().toISOString() } } }));
+        };
+        return heldToday
+          ? <div role="status" style={{...card,background:C.cardAlt,color:C.mutedHi,fontSize:13}}>✓ This week's meeting is marked done.</div>
+          : <button onClick={markDone} style={{width:"100%",minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.purple}66`,borderRadius:14,padding:"12px",color:C.purpleBright,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginTop:SPACE.sm}}>Mark this meeting done</button>;
+      })()}
     </div>
   );
 }
@@ -9843,7 +9896,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
     })()}
 
     {/* ── MEETING TAB ── */}
-    {tab==="meeting"&&<MeetAgenda data={data} isCouple={isCouple} setScreen={setScreen}/>}
+    {tab==="meeting"&&<MeetAgenda data={data} isCouple={isCouple} setScreen={setScreen} setAppData={setAppData}/>}
     {/* Legacy solo/couple check-in flow — superseded by the agenda-driven Meet above (code kept). */}
     {false&&<>
       {!started&&!done2&&<>
@@ -11243,7 +11296,7 @@ function SettingsSectionContent({sectionKey,data,setAppData,navToScreen,color,on
   return null;
 }
 
-function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade}){
+function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,toggleTheme,onReplayTour,onOpenWidget,onDisconnectBank,onAddBank,onDeleteData,onSignOut,bankConnected,needsReconnect,reconnectLoading,onReconnect,aiCoachEnabled,setAiCoachEnabled,onRevokeAIConsent,onAcceptAIConsent,onExitDemo,billingUi,onOpenUpgrade}){
   // notifToggles state removed with the Notifications preference section (no notification system yet — see audit).
   const [activeSection,setActiveSection]=useState(null);
   // Apple 5.1.2(i): flipping the AI Coach toggle ON re-grants third-party sharing consent via
@@ -11555,8 +11608,11 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     {/* ── Help & Support: opens /support in the app, no reload ──────────── */}
     <div style={{marginTop:LAYOUT.cardGap,padding:LAYOUT.cardPadding,background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
       <div style={{color:C.cream,fontWeight:700,marginBottom:SPACE.xs}}>Help & Support</div>
-      <div style={{color:C.mutedHi,fontSize:13,marginBottom:GAP.textToControl}}>How to reach us, who runs Flourish, and links to the privacy policy and account deletion.</div>
-      <Btn label="Open Support" onClick={()=>navToScreen&&navToScreen("support")} color={C.mutedHi} outline small/>
+      <div style={{color:C.mutedHi,fontSize:13,marginBottom:GAP.textToControl}}>Questions and answers, how to reach us, who runs Flourish, and links to the privacy policy and account deletion.</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:GAP.controlToControl}}>
+        <Btn label="Open Support" onClick={()=>navToScreen&&navToScreen("support")} color={C.mutedHi} outline small/>
+        {onReplayTour&&<Btn label="Replay the tour" onClick={onReplayTour} color={C.mutedHi} outline small/>}
+      </div>
     </div>
     {/* ── Sign out ─────────────────────────────────────────────── */}
     <div style={{marginTop:10,padding:"16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`}}>
@@ -15169,8 +15225,10 @@ export default function FlourishApp(){
   const [recoveryMode,setRecoveryMode]=useState(()=>{ try { return window.location.hash.includes("type=recovery"); } catch { return false; } });
   const [showNotifs,setShowNotifs]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
-  const [tourStep,setTourStep]=useState(()=>{ try{return localStorage.getItem("flourish_tour_done")==="1"?null:0;}catch{return 0;} });
-  const dismissTour=()=>{ try{localStorage.setItem("flourish_tour_done","1");}catch{} setTourStep(null); };
+  const [tourStep,setTourStep]=useState(()=>{ try{return localStorage.getItem(TOUR_DONE_KEY)==="1"?null:0;}catch{return 0;} });
+  const dismissTour=()=>{ try{localStorage.setItem(TOUR_DONE_KEY,"1");}catch{} setTourStep(null); };
+  // "Replay the tour" in Settings → Help & Support: back to step 1, on Today.
+  const replayTour=()=>{ setShowSettings(false); setScreen(TOUR_STEPS[0].screen); setTourStep(0); };
   const [household,setHousehold]=useState(()=>saved?.household||null);
   const [isPremium,setIsPremium]=useState(()=>saved?.isPremium||false);
   const [showPaywall,setShowPaywall]=useState(false);
@@ -16400,7 +16458,7 @@ export default function FlourishApp(){
 
   const content=()=>{
     if(showNotifs)return <Notifications onClose={()=>setShowNotifs(false)} data={appData}/>;
-    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
+    if(showSettings)return <><Settings data={appData} setAppData={setAppData} onClose={()=>{setShowSettings(false);setPendingPlaid(null);}} onReset={handleReset} theme={theme} toggleTheme={toggleTheme} onReplayTour={replayTour} onOpenWidget={()=>{setShowSettings(false);setScreen("widget");}} onDisconnectBank={disconnectBank} onAddBank={handleAddNewBank} onDeleteData={deleteAllData} onSignOut={signOut} bankConnected={appData?.bankConnected||false} needsReconnect={needsReconnect} reconnectLoading={reconnectLoading} onReconnect={handleReconnectBank} setScreen={s=>{setShowSettings(false);setScreen(s);}} aiCoachEnabled={aiCoachEnabled} setAiCoachEnabled={setAiCoachEnabled} onRevokeAIConsent={revokeAIConsent} onAcceptAIConsent={acceptAIConsentServer} onExitDemo={exitDemo} billingUi={billingUi} onOpenUpgrade={()=>{setShowSettings(false);openUpgrade();}}/>{pendingPlaid&&<BankConsentModal
       onViewLegal={s=>{setShowSettings(false);setPendingPlaid(null);setScreen(s);}}
       onContinue={()=>{ const act=pendingPlaid; setPendingPlaid(null); try{ if(!localStorage.getItem("flourish_plaid_consented_at")) localStorage.setItem("flourish_plaid_consented_at",new Date().toISOString()); }catch{} if(act==="reconnect") doReconnectBank(); else doAddNewBank(); }}
       onCancel={()=>setPendingPlaid(null)}/>}</>;
@@ -16701,20 +16759,16 @@ input,button,select,textarea { font-family:inherit; }
         )}
 
         {/* ── ONBOARDING TOUR ──────────────────────────── */}
-        {tourStep!==null&&onboarded&&!showNotifs&&!showSettings&&(()=>{
-          const TOUR=[
-            {screen:"home",   emoji:"🏠", title:"Today Screen",        body:"Your financial snapshot: safe-to-spend, balance, and daily insights. This is your home base."},
-            {screen:"spend",  emoji:"📊", title:"Activity & Budgets",   body:"See where your money goes, set budgets per category, and track trends over time."},
-            {screen:"coach",  emoji:"✨", title:"AI Financial Guidance", body:"Ask anything: tax tips, debt strategy, savings plans. Powered by your real data."},
-            {screen:"goals",  emoji:"🎯", title:"Goals & Credit",        body:"Set savings goals, track your debt payoff, and monitor your credit score health."},
-          ];
+        {tourStep!==null&&onboarded&&!showNotifs&&!showSettings&&TOUR_STEPS[tourStep]&&(()=>{
+          // Tester suggestions item 1: one step per tab, from lib/tour.js. Skip on every step.
+          const TOUR=TOUR_STEPS;
           const step=TOUR[tourStep];
           const isLast=tourStep===TOUR.length-1;
           return(
             <div style={{position:"fixed",inset:0,zIndex:200,pointerEvents:"none"}}>
               <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.72)",pointerEvents:"auto"}}
                 onClick={()=>{if(isLast) dismissTour();}}/>
-              <div style={{position:"absolute",bottom:100,left:"50%",transform:"translateX(-50%)",
+              <div role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-body" style={{position:"absolute",bottom:100,left:"50%",transform:"translateX(-50%)",
                 width:"calc(100% - 40px)",maxWidth:390,
                 background:C.surface,borderRadius:20,padding:"20px 20px 16px",
                 border:`1px solid ${C.green}44`,boxShadow:`0 8px 40px rgba(0,0,0,0.6)`,
@@ -16725,26 +16779,24 @@ input,button,select,textarea { font-family:inherit; }
                       background:i<=tourStep?C.green:C.border}}/>
                   ))}
                 </div>
-                <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:14}}>
-                  <div style={{fontSize:28,lineHeight:1,flexShrink:0}}>{step.emoji}</div>
-                  <div>
-                    <div style={{color:C.greenBright,fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>
-                      {step.title}
-                    </div>
-                    <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>{step.body}</div>
+                <div style={{marginBottom:SPACE.md}}>
+                  <div style={{color:C.muted,fontSize:13,fontWeight:600,marginBottom:SPACE.xs}}>Step {tourStep+1} of {TOUR.length}</div>
+                  <div id="tour-title" style={{color:C.greenBright,fontWeight:800,fontSize:15,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:SPACE.xs}}>
+                    {step.title}
                   </div>
+                  <div id="tour-body" style={{color:C.mutedHi,fontSize:13,lineHeight:1.6}}>{step.body}</div>
                 </div>
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={dismissTour}
                     style={{background:"none",border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",
                       minHeight:LAYOUT.minTap,color:C.muted,fontSize:13,cursor:"pointer",fontFamily:"inherit",flex:"0 0 auto"}}>
-                    Skip Tour
+                    Skip
                   </button>
                   <button onClick={()=>{ if(isLast){dismissTour();}else{setTourStep(t=>t+1);setScreen(TOUR[tourStep+1].screen);}}}
                     style={{flex:1,background:`linear-gradient(135deg,${C.green},${C.greenBright})`,
                       border:"none",borderRadius:12,padding:"10px",minHeight:LAYOUT.minTap,color:"#041810",
                       fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-                    {isLast?"Done ✓":"Next →"}
+                    {isLast?"Done":"Next →"}
                   </button>
                 </div>
               </div>
