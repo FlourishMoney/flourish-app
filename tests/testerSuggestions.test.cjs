@@ -50,7 +50,9 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     t.ok(/role="dialog" aria-modal="true" aria-labelledby="tour-title"/.test(APP), "1g the tour is a labelled dialog");
     // The sentences hold in the build
     t.ok(/aria-label="How Flourish got this number"/.test(APP) && /setExplain\("safeToSpend"\)/.test(APP), "1h (Today: the number is a button that opens its math)");
-    t.ok(/const RANGES = \[7, 30, 90\];/.test(APP) && /useState\(30\)/.test(APP), "1i (Watch: 30 days by default, 90 is a range, so \"The next 90 days\" was not shipped)");
+    const WR = await import("../src/lib/watchRange.js");
+    t.ok(/const RANGES = WATCH_RANGES;/.test(APP) && WR.WATCH_RANGES.join() === "7,30,90" && /function PlanAhead\(\{data, setAppData, setScreen, initialRange = 30\}\)/.test(APP),
+      "1i (Watch: 30 days by default, 90 is a range, so \"The next 90 days\" was not shipped)");
     t.ok(fs.readFileSync(path.join(REPO, "netlify", "functions", "coach.js"), "utf8").includes("validateSnapshotProse(first, factText)"), "1j (Learn: a coach reply is checked against the figures it was given)");
     // Replay the tour
     const settings = (props = {}) => textOf(A.render(A.h(A.Settings, { data: demo(), setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop,

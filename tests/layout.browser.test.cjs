@@ -217,6 +217,9 @@ const VIEWS = [
   { name: "Today/Decisions", go: async (p) => { await TAB(p, "Today"); await TXT(p, "Decisions", true); } },
   { name: "Watch/Plan",      go: (p) => TAB(p, "Watch") },
   { name: "Watch/Activity",  go: async (p) => { await TAB(p, "Watch"); await TXT(p, "Activity", true); } },
+  // watch-meet-fixes: the range summary at its shortest and longest, and the working it opens.
+  { name: "Watch/Plan 7d",   reload: true, go: async (p) => { await TAB(p, "Watch"); await ARIA(p, "7d"); } },
+  { name: "Watch/Plan 90d",  reload: true, go: async (p) => { await TAB(p, "Watch"); await ARIA(p, "90d"); } },
   { name: "Do/Budget",       go: (p) => TAB(p, "Do") },
   { name: "Do/Goals",        go: async (p) => { await TAB(p, "Do"); await TXT(p, "Goals", true); } },
   { name: "Do/Credit",       go: async (p) => { await TAB(p, "Do"); await TXT(p, "Credit", true); } },
@@ -236,6 +239,8 @@ const VIEWS = [
   { name: "Sheet Expected money", scope: "overlay", reload: true, go: async (p) => { await TAB(p, "Watch"); await TXT(p, "+ Add", true); } },
   { name: "Sheet Daily spend", scope: "overlay", reload: true, go: async (p) => { await TAB(p, "Watch"); await TXT(p, "What the forecast is built from"); await ARIA(p, "Edit Est. daily spend"); } },
   { name: "Sheet Starting balance working", scope: "overlay", reload: true, go: async (p) => { await TAB(p, "Watch"); await ARIA(p, "How Flourish got this number"); } },
+  { name: "Sheet Range lowest working", scope: "overlay", reload: true, go: async (p) => { await TAB(p, "Watch"); await p.locator('button[aria-label^="Lowest balance"]').first().click(); } },
+  { name: "Sheet Meet figure working", scope: "overlay", reload: true, go: async (p) => { await TAB(p, "Meet"); await p.locator('button[aria-label$="How Flourish got it"]').first().click(); } },
   { name: "Sheet Clear chat", scope: "overlay", reload: true, go: async (p) => { await TAB(p, "Learn"); await TXT(p, "🗑️"); } },
   // "Do → Goals" opens on Debt Sim, so My Goals and its form are separate views. The goal form is
   // inline rather than an overlay, so it is scanned at page scope.
