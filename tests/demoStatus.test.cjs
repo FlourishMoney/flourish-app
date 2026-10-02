@@ -162,9 +162,10 @@ const t = create();
   t.ok(labelSites.length >= 2, `6f the shared label is rendered in more than one place (${labelSites.length})`);
   t.eq(labelSites.filter(m => !/exampleTagStyle\(\)/.test(code.slice(Math.max(0, m.index - 120), m.index))).length, 0,
        "6g …and every one of them is wrapped in exampleTagStyle()");
-  // The Activity subtitle keeps 'Live from your bank', but only behind isDemo (which includes data.demo).
-  t.ok(/isDemo\?"Sample data · connect your bank for real insights":"Live from your bank"/.test(code),
-       "6d the Activity subtitle checks isDemo before it may say 'Live from your bank'");
+  // The Activity subtitle keeps 'Live from your bank', but only behind isDemo (data.demo) AND a linked
+  // bank (tester suggestions item 4: a household with no bank says "From your statements and entries").
+  t.ok(/isDemo\?"Sample data · connect your bank for real insights":data\.bankConnected\?"Live from your bank":"From your statements and entries"/.test(code),
+       "6d the Activity subtitle checks isDemo, and a linked bank, before it may say 'Live from your bank'");
 
   t.summary("demoStatus.test");
 })();

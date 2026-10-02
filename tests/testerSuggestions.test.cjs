@@ -12,15 +12,17 @@ const { create } = require("./_runner.cjs");
 const fs = require("fs");
 const path = require("path");
 const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
+const { adviceProblems } = require("./_copyStrings.cjs");
 
 const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
 const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST credit|GST credit|—|–|\b(Mint|YNAB|Monarch|Rocket Money|Copilot|Quicken|Wealthsimple|KOHO|Credit Karma|Borrowell|Simplifi|EveryDollar|PocketGuard|Goodbudget|Emma)\b/;
 
 (async () => {
   const t = create();
+  const noAdvice = (label, texts) => t.eq(texts.flatMap(x => adviceProblems(x).map(w => `${w}: ${x.slice(0, 60)}`)), [], `${label}: passes the advice scan (no money instruction, no verdict)`);
   const noBanned = (label, text) => t.ok(!BANNED.test(text), `${label}: no banned word, competitor or dash${BANNED.test(text) ? ` (found "${text.match(BANNED)[0]}")` : ""}`);
   let A = {};
-  try { A = loadApp(["Settings", "Dashboard", "MeetAgenda"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
+  try { A = loadApp(["Settings", "Dashboard", "MeetAgenda", "FAQ", "TERMS", "SupportPage", "SpendScreen"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
   const D = await import("../src/lib/demoFixture.js");
   const noop = () => {};
   const demo = (c = "CA", extra = {}) => { const now = new Date(); return { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c),
@@ -40,6 +42,7 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
       "15 minutes a week. An agenda built from your week, for you or for you and your partner.",
     ], "1c the copy, word for word (Watch without \"The next 90 days.\": Watch opens on 30 days)");
     noBanned("1d tour", T.TOUR_STEPS.map(s => s.title + " " + s.body).join(" "));
+    noAdvice("1d2 tour", T.TOUR_STEPS.map(s => s.body));
     t.ok(!/AI Financial Guidance|tax tips, debt strategy|Activity & Budgets|Goals & Credit|Today Screen/.test(APP), "1e the stale tour (old screen names, \"Ask anything: tax tips, debt strategy\") is gone");
     t.ok(/const TOUR=TOUR_STEPS;/.test(APP) && />\s*Skip\s*<\/button>/.test(APP) && !/Skip Tour/.test(APP), "1f the tour reads lib/tour.js and every step has Skip");
     t.ok(/role="dialog" aria-modal="true" aria-labelledby="tour-title"/.test(APP), "1g the tour is a labelled dialog");
@@ -123,6 +126,40 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
       bankConnected: true, billingUi: { show: false }, onOpenUpgrade: noop, onReplayTour: noop }))));
     t.eq(["android", "ios", "web"].map(pl => settingsOn(pl).includes("Rate flourish")), [true, false, false], "3f Settings shows \"Rate flourish\" on Android, and not on iOS (no ID yet) or the web");
     t.ok(/window\.location\.href=url/.test(APP), "3g the row opens the store page itself; nothing asks first");
+  }
+
+  // ── 4. FAQ on /support and in Help & Support ─────────────────────────────────────────────────
+  {
+    const { SUPPORT_EMAIL } = await import("../src/lib/supportContact.js");
+    t.eq(A.FAQ.map(f => f.q), ["What is safe to spend?", "Is my bank login safe?", "My bank won't connect.", "Where do the numbers come from?", "What is the money meeting?",
+      "Can I turn the AI coach off?", "Is this financial advice?", "How do I delete my account?", "How do I contact you?"], "4a the nine questions, in order");
+    t.eq(A.FAQ.map(f => f.a), [
+      "What's left until your next payday after bills due before payday, minimum debt payments, a spending buffer and a savings amount are accounted for. Tap the number to see the math.",
+      "Bank connections go through Plaid and are read-only. flourish never sees or stores your bank password and cannot move money.",
+      "Import a PDF or CSV statement, or enter your numbers by hand. Everything works without a bank connection.",
+      "flourish calculates your figures from your accounts, bills and paydays. Tax and benefit amounts come from the CRA or IRS, with the year, and What-If shows any rate it assumes. The coach explains the numbers and never makes one up.",
+      A.TERMS["Money meeting"],
+      "Yes, in Settings. With it off, nothing is sent to AI, and every number, forecast and what-if still works.",
+      "No. flourish explains your numbers and your options. It isn't a licensed adviser, and the decisions are yours.",
+      "Settings, then Delete Account. You can also use flourishmoney.app/delete-account.",
+      `Email ${SUPPORT_EMAIL}.`,
+    ], "4b the answers (the money meeting is TERMS[\"Money meeting\"]; contact is SUPPORT_EMAIL; \"where do the numbers come from\" corrected to what is true)");
+    noBanned("4c FAQ", A.FAQ.map(f => f.q + " " + f.a).join(" "));
+    noAdvice("4d FAQ", A.FAQ.map(f => f.a));
+    const support = textOf(A.render(A.h(A.SupportPage, { onBack: noop })));
+    t.ok(A.FAQ.every(f => support.includes(f.q)) && support.includes("Questions and answers"), "4e /support (also Settings → Help & Support) shows every question");
+    const html = A.render(A.h(A.SupportPage, { onBack: noop }));
+    t.ok(/<details/.test(html) && /<summary[^>]*>What is safe to spend\?<\/summary>/.test(html) && /href="\/delete-account"/.test(html) && html.includes(`href="mailto:${SUPPORT_EMAIL}"`),
+      "4f each answer opens from its question, with working delete and email links");
+    // The claims hold in the build
+    t.ok(APP.includes("Flourish never sees your bank login. You sign in with your bank through Plaid.") && /Read-only\. We can never move your money/.test(APP), "4g (bank: the existing read-only and never-sees-the-login claims, locked by bankLoginClaim.test)");
+    t.ok(/ensureAiEnabled\("AI features are disabled\./.test(APP) && (APP.match(/ensureAiEnabled\("AI disabled"\)/g) || []).length >= 2, "4h (AI off: every call that sends to AI is gated)");
+    // "Everything works without a bank connection": Activity no longer treats a household with no bank as sample data
+    const noBank = { ...demo(), bankConnected: false, accounts: [{ id: "s1", name: "Chequing", type: "checking", balance: "2400", institution: "Statement" }] };
+    const spend = (d) => textOf(A.render(A.h(A.SpendScreen, { data: d, setAppData: noop, setScreen: noop })));
+    t.ok(spend(noBank).includes("From your statements and entries") && !spend(noBank).includes("Sample data"), "4i a household with no bank sees its own data as its own, not \"Sample data\"");
+    t.ok(spend({ ...demo(), demo: true }).includes("Sample data") && spend(demo()).includes("Live from your bank"), "4j (the demo is still sample data; a linked bank is still live)");
+    t.ok(/const isDemo=!!data\.demo;/.test(APP), "4k only the demo counts as sample data on Activity");
   }
 
   t.summary("testerSuggestions.test");

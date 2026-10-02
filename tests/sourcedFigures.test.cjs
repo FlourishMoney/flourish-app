@@ -383,13 +383,8 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
   // ── 11. Prompt 3d: no money instructions or verdicts in user-facing copy ─────────────────────
   {
     const { copyStrings, sentences } = require("./_copyStrings.cjs");
-    const MONEY_VERBS = ["Pay", "Invest", "Increase", "Open", "Avoid", "Hold", "Save", "Spend", "Cut", "Move", "Transfer", "Put", "Build", "Contribute", "Max", "Maximize",
-      "Reduce", "Cancel", "Consolidate", "Refinance", "Negotiate", "Compare", "Prioritize", "Consider", "Delay", "Wait", "Limit", "Lower", "Raise", "Pause", "Redirect",
-      "Allocate", "Automate", "Withdraw", "Fund", "Stop", "Keep", "Claim", "File", "Apply", "Track", "Trim", "Boost", "Earn", "Borrow", "Buy", "Sell", "Register", "Gather",
-      "Calculate", "Contact", "Get", "Start", "Use", "Don't", "Never", "Always", "Shop", "Switch", "Lock", "Set aside", "Plan", "Protect", "Grow", "Clear", "Tackle", "Skip",
-      "Celebrate", "Commit"];
-    const STARTS = new RegExp(`^(?:${MONEY_VERBS.join("|")})\\b`);
-    const VERDICT = /\b(should|shouldn't|worth (?:it|doing|claiming|getting|reviewing|checking)|best value|the best|recommend(?:ed|s)?|make sure|you must|must file|can afford|can't afford|go for it|think twice|not right now|free money|on the table|pro tip|high priority|unclaimed)\b/i;
+    // The lists live in _copyStrings.cjs so the tester-suggestions tests scan new copy with the same rules.
+    const { MONEY_VERBS, STARTS, VERDICT } = require("./_copyStrings.cjs");
     const ALLOW = new Set([
       // App navigation and controls: they act on the app, not on the household's money.
       "Move date", "Clear ✕", "Get My Insight →", "Use ↑↓ to reorder · 🔒 to pin. Show or hide cards in Settings → Dashboard.", "Move up", "Move down",

@@ -6718,6 +6718,22 @@ const TERMS = {
   "Health score": "A single 0 to 100 read on how your money is holding up, from your buffer, your bills, your debts and how steady your spending is. It moves slowly on purpose.",
 };
 
+// ── FAQ (tester suggestions, item 4): shown on /support, which is also Settings → Help & Support ──
+// Every answer was checked against the build. "Where do the numbers come from?" is corrected from the
+// brief: not every figure is calculated from the household's own data (tax and benefit amounts come
+// from the CRA or IRS, and What-If states the rates it assumes), so the answer says so.
+const FAQ = [
+  { q: "What is safe to spend?", a: "What's left until your next payday after bills due before payday, minimum debt payments, a spending buffer and a savings amount are accounted for. Tap the number to see the math." },
+  { q: "Is my bank login safe?", a: "Bank connections go through Plaid and are read-only. flourish never sees or stores your bank password and cannot move money." },
+  { q: "My bank won't connect.", a: "Import a PDF or CSV statement, or enter your numbers by hand. Everything works without a bank connection." },
+  { q: "Where do the numbers come from?", a: "flourish calculates your figures from your accounts, bills and paydays. Tax and benefit amounts come from the CRA or IRS, with the year, and What-If shows any rate it assumes. The coach explains the numbers and never makes one up." },
+  { q: "What is the money meeting?", a: TERMS["Money meeting"] },
+  { q: "Can I turn the AI coach off?", a: "Yes, in Settings. With it off, nothing is sent to AI, and every number, forecast and what-if still works." },
+  { q: "Is this financial advice?", a: "No. flourish explains your numbers and your options. It isn't a licensed adviser, and the decisions are yours." },
+  { q: "How do I delete my account?", a: "Settings, then Delete Account. You can also use flourishmoney.app/delete-account.", link: { href: "/delete-account", text: "flourishmoney.app/delete-account" } },
+  { q: "How do I contact you?", a: `Email ${SUPPORT_EMAIL}.`, link: { href: `mailto:${SUPPORT_EMAIL}`, text: SUPPORT_EMAIL } },
+];
+
 // The ONE ⓘ. Only beside a term a new reader cannot guess from the words themselves — never beside
 // an obvious label, where it is just noise that has to be read and dismissed.
 // The margins used to be -10 each side: a 44px tap box pulled back under its neighbours so the glyph
@@ -7969,7 +7985,10 @@ function SpendScreen({data, setAppData, setScreen}){
   const [showAllBdCats, setShowAllBdCats] = useState(false);
 
   // ── NON-HOOK DERIVED VALUES (after all hooks) ──────────────────────────────
-  const isDemo=!!data.demo||!data.bankConnected; // Sprint 3: Try-Demo sets bankConnected:true, so also check the demo flag
+  // Tester suggestions item 4: only the demo is sample data. A household with no bank connection (an
+  // imported statement, or numbers entered by hand) used to be labelled "Sample data" here, and its
+  // deposits were never offered as income; "Everything works without a bank connection" is now true.
+  const isDemo=!!data.demo;
   const txns=data.transactions||[];
   // "Is this income?" status for every deposit row, computed once (depositClassify caches by the txn list).
   const depCtx=depositContext({ transactions: txns, depositDecisions: data.depositDecisions, depositRules: data.depositRules });
@@ -8424,7 +8443,7 @@ function SpendScreen({data, setAppData, setScreen}){
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <div>
         <div style={{fontSize:24,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",letterSpacing:-0.5}}>Transactions</div>
-        <div style={{color:isDemo?C.gold:C.muted,fontSize:13,marginTop:3}}>{isDemo?"Sample data · connect your bank for real insights":"Live from your bank"}</div>
+        <div style={{color:isDemo?C.gold:C.muted,fontSize:13,marginTop:3}}>{isDemo?"Sample data · connect your bank for real insights":data.bankConnected?"Live from your bank":"From your statements and entries"}</div>
       </div>
       <div style={{textAlign:"right"}}>
         <div style={{color:C.red,fontWeight:800,fontSize:15}}>−${(totalSpent||0).toFixed(0)}</div>
@@ -12532,7 +12551,7 @@ function SupportPage({onBack}){
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:SPACE.xl,marginBottom:SPACE.sm};
   const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75};
   const li={...p,marginBottom:SPACE.sm};
-  const last="September 29, 2026";
+  const last="October 1, 2026";
   return(
     <div style={{maxWidth:600,margin:"0 auto",padding:"0 4px 80px"}}>
       <div style={{display:"flex",alignItems:"center",gap:GAP.textToControl,marginBottom:SPACE.xl,paddingTop:SPACE.xs}}>
@@ -12541,6 +12560,18 @@ function SupportPage({onBack}){
           <div style={{...s,fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.cream}}>Support</div>
           <div style={{...s,fontSize:13,color:C.muted}}>Last updated {last}</div>
         </div>
+      </div>
+
+      <h2 style={h2}>Questions and answers</h2>
+      <div>
+        {FAQ.map((f,i)=>(
+          <details key={i} style={{borderTop:`1px solid ${C.border}`,padding:`${SPACE.sm}px 0`}}>
+            <summary style={{...s,color:C.cream,fontSize:14,fontWeight:700,cursor:"pointer",minHeight:LAYOUT.minTap,display:"flex",alignItems:"center"}}>{f.q}</summary>
+            <div style={{...p,marginTop:SPACE.xs}}>
+              {f.link ? (()=>{ const k=f.a.indexOf(f.link.text); return <>{f.a.slice(0,k)}<a href={f.link.href} style={{color:C.greenBright}}>{f.link.text}</a>{f.a.slice(k+f.link.text.length)}</>; })() : f.a}
+            </div>
+          </details>
+        ))}
       </div>
 
       <div style={h2}>Contact us</div>
