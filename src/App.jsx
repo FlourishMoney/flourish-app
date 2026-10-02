@@ -2620,31 +2620,31 @@ const personas = {
     name:"The Convenience Spender", emoji:"🛍️", color:C.orange,
     traits:["High food & delivery spend","Values time over money","Subscription-heavy"],
     insight:"Food and delivery are a large share of your spending.",
-    shareText:"I'm a Convenience Spender 🛍️ on @flourishmoney"
+    shareText:"Money personality: Convenience Spender 🛍️, from Flourish."
   },
   lifestyle: {
     name:"The Experience Collector", emoji:"✈️", color:C.purple,
     traits:["Prioritizes experiences","Shopping for quality","Social spending peaks"],
     insight:"Experiences are where much of your money goes.",
-    shareText:"I'm an Experience Collector ✈️ on @flourishmoney"
+    shareText:"Money personality: Experience Collector ✈️, from Flourish."
   },
   digital: {
     name:"The Digital Native", emoji:"💻", color:C.teal,
     traits:["Heavy subscription stack","Tech-first spending","Optimizes with apps"],
     insight:"Subscriptions are a big part of your spending, and each one renews on its own.",
-    shareText:"I'm a Digital Native 💻 on @flourishmoney"
+    shareText:"Money personality: Digital Native 💻, from Flourish."
   },
   mobile: {
     name:"The Commuter", emoji:"🚗", color:C.gold,
     traits:["High transport spend","Life on the go","Gas & parking costs add up"],
     insight:"Transport is your biggest variable cost.",
-    shareText:"I'm a Commuter 🚗 on @flourishmoney"
+    shareText:"Money personality: Commuter 🚗, from Flourish."
   },
   builder: {
     name:"The Wealth Builder", emoji:"🏗️", color:C.green,
     traits:["Saving for retirement","Goal-oriented mindset","Building long-term wealth"],
     insight:`Retirement saving shows up in your spending: contributions to your ${retirementAccountsLabel(data?.profile?.country)}.`,
-    shareText:"I'm a Wealth Builder 🏗️ on @flourishmoney"
+    shareText:"Money personality: Wealth Builder 🏗️, from Flourish."
   }
 };
 return {...personas[top], scores, topKey:top};
@@ -2712,7 +2712,7 @@ const bars = [
               </div>
             ))}
           </div>
-          <button onClick={()=>{if(navigator.share)navigator.share({title:"My Money Personality",text:p.shareText,url:"https://flourishmoney.app"}).catch(()=>{});}} style={{width:"100%",background:"none",border:`1.5px solid ${p.color}44`,color:p.color,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,padding:"10px",borderRadius:14,cursor:"pointer"}}>Share My Type 🔗</button>
+          <button onClick={()=>{if(navigator.share)navigator.share({title:"Money personality",text:`${p.shareText} https://flourishmoney.app`}).catch(()=>{});}} style={{width:"100%",background:"none",border:`1.5px solid ${p.color}44`,color:p.color,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,padding:"10px",borderRadius:14,cursor:"pointer"}}>Share My Type 🔗</button>
         </div>
       )}
     </div>
@@ -3084,7 +3084,7 @@ function MoneyWrapped({data, onClose}) {
             <div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Financial Health Score</div>
             {healthBasis&&<div style={{color:WRAP_SUB,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:6,lineHeight:1.5}}>{healthBasis}</div>}
           </div>
-          <button onClick={()=>{if(navigator.share)navigator.share({title:"My Flourish Money Wrapped",text:`My Financial Health Score is ${score}/100. Check yours on Flourish! 🌱`,url:"https://flourishmoney.app"}).catch(()=>{});}} style={{width:"100%",background:"rgba(255,255,255,0.12)",border:"2px solid rgba(255,255,255,0.4)",color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,cursor:"pointer",marginBottom:10}}>Share My Wrapped 🔗</button>
+          <button onClick={()=>{if(navigator.share)navigator.share({title:"Flourish Money Wrapped",text:`A Financial Health Score of ${score}/100, worked out by Flourish. https://flourishmoney.app`}).catch(()=>{});}} style={{width:"100%",background:"rgba(255,255,255,0.12)",border:"2px solid rgba(255,255,255,0.4)",color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,padding:"14px",borderRadius:99,cursor:"pointer",marginBottom:10}}>Share My Wrapped 🔗</button>
           <button onClick={onClose} style={{width:"100%",background:"none",border:"none",color:WRAP_SUB,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:13,padding:"10px",cursor:"pointer"}}>Back to Flourish</button>
         </div>
       )

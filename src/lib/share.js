@@ -14,7 +14,10 @@
 
 export const SHARE_URL = "https://flourishmoney.app";
 export const SHARE_TITLE = "Flourish Money";
-export const SHARE_TEXT = "I've been using Flourish to track my spending. It shows how much is safe to spend each day, until my next deposit.";
+// Prompt 4d: what Flourish is, in its own words. Never the person's words: the old text ("I've been
+// using Flourish to track my spending…") put invented sentences in their mouth, and said "each day"
+// of a figure that is safe to spend until payday. They can still edit it in the share sheet.
+export const SHARE_TEXT = "Flourish is a Canadian household money app. It shows what's safe to spend until payday, and how it got that number. https://flourishmoney.app";
 
 const isCancel = (e) => /cancel|abort/i.test(String((e && (e.message || e.name)) || e || ""));
 
@@ -22,7 +25,9 @@ const isCancel = (e) => /cancel|abort/i.test(String((e && (e.message || e.name))
 // share function), webShare (navigator.share), copy (clipboard writeText).
 export async function shareFlourish(deps = {}) {
   const platform = deps.platform || "web";
-  const payload = { title: SHARE_TITLE, text: SHARE_TEXT, url: SHARE_URL };
+  // The link is in the text, and there is no separate url: Capacitor's Android share and several share
+  // targets append url to text, which printed the link twice.
+  const payload = { title: SHARE_TITLE, text: SHARE_TEXT };
 
   if (platform === "ios" || platform === "android") {
     let nativeShare = deps.nativeShare;

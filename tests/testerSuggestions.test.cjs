@@ -91,11 +91,11 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     const S = await import("../src/lib/share.js");
     t.eq(S.SHARE_URL, "https://flourishmoney.app", "2a the link is https://flourishmoney.app");
     const calls = [];
-    const native = (p) => { calls.push(["native", p.url]); return Promise.resolve(); };
+    const native = (p) => { calls.push(["native", p.text.match(/https:\/\/\S+/g)]); return Promise.resolve(); };
     const copy = (u) => { calls.push(["copy", u]); return Promise.resolve(); };
     // Android: no Web Share API in the WebView. The native sheet is used.
     t.eq(await S.shareFlourish({ platform: "android", nativeShare: native, webShare: null, copy }), "shared", "2b Android: the native share sheet opens (the WebView has no navigator.share)");
-    t.eq(calls, [["native", "https://flourishmoney.app"]], "2c …with the flourishmoney.app link, and nothing copied");
+    t.eq(calls, [["native", ["https://flourishmoney.app"]]], "2c …with the flourishmoney.app link, once (in the text, no separate url to be appended again), and nothing copied");
     calls.length = 0;
     // Android where the plugin is missing or refuses: the link is copied, so the tap still does something.
     t.eq(await S.shareFlourish({ platform: "android", nativeShare: () => Promise.reject(new Error("not implemented")), webShare: null, copy }), "copied", "2d Android without the plugin: the link is copied");
@@ -113,6 +113,19 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     const gradle = fs.readFileSync(path.join(REPO, "android", "capacitor.settings.gradle"), "utf8") + fs.readFileSync(path.join(REPO, "android", "app", "capacitor.build.gradle"), "utf8");
     t.ok(/^\^8\./.test(pkg.dependencies["@capacitor/share"] || "") && /CapacitorShare/.test(spm) && /:capacitor-share/.test(gradle), "2l @capacitor/share 8 is a dependency and registered in both native projects");
     noBanned("2m share copy", S.SHARE_TEXT);
+    // Prompt 4d: the share text is about Flourish, never the person's own words, and safe to spend is
+    // until payday, not a daily figure.
+    t.eq(S.SHARE_TEXT, "Flourish is a Canadian household money app. It shows what's safe to spend until payday, and how it got that number. https://flourishmoney.app", "2n the share text, word for word");
+    let sent = null;
+    await S.shareFlourish({ platform: "ios", nativeShare: (p) => { sent = p; return Promise.resolve(); } });
+    t.eq([sent && sent.text, sent && "url" in sent], [S.SHARE_TEXT, false], "2o …is what the share sheet receives, editable there, with no url field to duplicate the link");
+    // Every share text in the app: the shared lib, every navigator.share call and every shareText.
+    const shareStrings = [S.SHARE_TITLE, S.SHARE_TEXT,
+      ...[...APP.matchAll(/navigator\.share\(\{([\s\S]*?)\}\)\.catch/g)].flatMap(m => [...m[1].matchAll(/(?:title|text):\s*(["`])((?:(?!\1).)*)\1/g)].map(x => x[2])),
+      ...[...APP.matchAll(/shareText:\s*"([^"]*)"/g)].map(m => m[1])];
+    t.ok(shareStrings.length >= 10, `2p (the scan reads every share text: ${shareStrings.length})`);
+    t.eq(shareStrings.filter(x => /\b(I|I've|I'm|I'd|I'll|my|My|me|Me|mine|myself)\b/.test(x)), [], "2q no share text speaks as the person: no I, I've, I'm, my or me");
+    t.eq(shareStrings.filter(x => /each day|daily|per day|a day\b/i.test(x)), [], "2r …and none calls safe to spend a daily figure");
   }
 
   // ── 3. Rate Flourish, and the one automatic ask ──────────────────────────────────────────────
