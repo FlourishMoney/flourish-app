@@ -8,9 +8,10 @@
 // rules are the whole of that decision. They are pure: the caller passes the stored state and the
 // clock, and gets back yes or no with a reason, so every rule is testable without a phone.
 //
-// A GOOD MOMENT is one of two things, whichever happens first:
-//   • the third separate day this install opens Today (three days of use, not three taps in one), or
-//   • a weekly money check-in has just been finished.
+// A GOOD MOMENT is one thing (tester suggestions, item 3, as decided 2026-10-01): the FIRST money
+// meeting the household marks done. Asked once per install for that reason, and only for the first
+// meeting: a later meeting never asks. (It used to be the third day Today was opened, or a finished
+// weekly check-in; both are retired.)
 //
 // NEVER straight after something went wrong: an error, a bank link that failed, or a coach message
 // that was refused. Any of those in the last 24 hours rules the ask out, because a person who just
@@ -25,10 +26,9 @@
 // -----------------------------------------------------------------------------
 
 export const REVIEW_COOLDOWN_DAYS = 120;
-export const TODAY_DAYS_TO_ASK = 3;
 export const TROUBLE_QUIET_HOURS = 24;
 
-export const REVIEW_TRIGGERS = Object.freeze({ TODAY_OPEN: "today_open", CHECKIN_DONE: "checkin_done" });
+export const REVIEW_TRIGGERS = Object.freeze({ MEETING_DONE: "meeting_done" });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -41,7 +41,7 @@ export function localDayKey(now) {
 }
 
 export function emptyReviewState() {
-  return { todayDays: [], lastAskedAt: null, lastTroubleAt: null };
+  return { lastAskedAt: null, lastTroubleAt: null, meetingAsked: false };
 }
 
 // Whatever was stored (or nothing, or junk) becomes a well-formed state. A corrupt record must not
@@ -50,9 +50,8 @@ export function emptyReviewState() {
 export function normalizeReviewState(raw) {
   const s = emptyReviewState();
   if (!raw || typeof raw !== "object") return s;
-  if (Array.isArray(raw.todayDays)) {
-    s.todayDays = [...new Set(raw.todayDays.filter((d) => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)))].slice(-TODAY_DAYS_TO_ASK);
-  }
+  // Any value but false reads as "already asked": a corrupt record must not ask a second time.
+  if (raw.meetingAsked != null) s.meetingAsked = raw.meetingAsked !== false;
   if (raw.lastAskedAt != null) {
     const t = Date.parse(raw.lastAskedAt);
     s.lastAskedAt = Number.isFinite(t) ? new Date(t).toISOString() : new Date().toISOString();
@@ -64,30 +63,25 @@ export function normalizeReviewState(raw) {
   return s;
 }
 
-// Today was opened. Only the day counts, so opening it ten times on Monday is one day.
-export function withTodayOpen(state, now) {
-  const s = normalizeReviewState(state);
-  const key = localDayKey(now);
-  if (!s.todayDays.includes(key)) s.todayDays = [...s.todayDays, key].slice(-TODAY_DAYS_TO_ASK);
-  return s;
-}
-
 // Something went wrong: an error, a failed bank link or a refused coach message.
 export function withTrouble(state, now) {
   return { ...normalizeReviewState(state), lastTroubleAt: new Date(now).toISOString() };
 }
 
-// Flourish asked. The day count starts again, so after the cooldown it takes three NEW days.
+// Flourish asked. The first-meeting ask is spent for good on this install.
 export function withAsked(state, now) {
-  return { ...normalizeReviewState(state), lastAskedAt: new Date(now).toISOString(), todayDays: [] };
+  return { ...normalizeReviewState(state), lastAskedAt: new Date(now).toISOString(), meetingAsked: true };
 }
 
 // Returns { ask, reason }. `ask` is true only when every rule allows it.
-export function decideReviewAsk({ state, trigger, now, native, demo }) {
+// firstMeeting: true only when the meeting just marked done is the household's first.
+export function decideReviewAsk({ state, trigger, now, native, demo, firstMeeting = false }) {
   if (!native) return { ask: false, reason: "web" };
   if (demo) return { ask: false, reason: "demo" };
-  if (trigger !== REVIEW_TRIGGERS.TODAY_OPEN && trigger !== REVIEW_TRIGGERS.CHECKIN_DONE) return { ask: false, reason: "unknown_trigger" };
+  if (trigger !== REVIEW_TRIGGERS.MEETING_DONE) return { ask: false, reason: "unknown_trigger" };
+  if (!firstMeeting) return { ask: false, reason: "not_first_meeting" };
   const s = normalizeReviewState(state);
+  if (s.meetingAsked) return { ask: false, reason: "already_asked" };
   const t = new Date(now).getTime();
   if (s.lastAskedAt) {
     const since = t - Date.parse(s.lastAskedAt);
@@ -98,11 +92,5 @@ export function decideReviewAsk({ state, trigger, now, native, demo }) {
     const since = t - Date.parse(s.lastTroubleAt);
     if (since < TROUBLE_QUIET_HOURS * 60 * 60 * 1000) return { ask: false, reason: "recent_trouble" };
   }
-  if (trigger === REVIEW_TRIGGERS.CHECKIN_DONE) return { ask: true, reason: "checkin_done" };
-  // Only days on or after the end of the last cooldown count, so after an ask it takes three NEW
-  // days, even if Today was opened during the 120 days.
-  const from = s.lastAskedAt ? localDayKey(Date.parse(s.lastAskedAt) + REVIEW_COOLDOWN_DAYS * DAY_MS) : "";
-  const days = s.todayDays.filter((d) => d >= from);
-  if (days.length >= TODAY_DAYS_TO_ASK) return { ask: true, reason: "third_day" };
-  return { ask: false, reason: "not_yet" };
+  return { ask: true, reason: "first_meeting" };
 }

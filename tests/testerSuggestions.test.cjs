@@ -108,6 +108,23 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     noBanned("2m share copy", S.SHARE_TEXT);
   }
 
+  // ── 3. Rate flourish, and the one automatic ask ──────────────────────────────────────────────
+  {
+    const SR = await import("../src/lib/storeReview.js");
+    t.eq(SR.rateUrl("android"), "https://play.google.com/store/apps/details?id=com.flourishmoney.app", "3a Android: the Play listing for com.flourishmoney.app");
+    const gradle = fs.readFileSync(path.join(REPO, "android", "app", "build.gradle"), "utf8");
+    t.ok(gradle.includes(`applicationId "${SR.ANDROID_PACKAGE}"`), "3b (that is the app's applicationId)");
+    t.eq([SR.APP_STORE_ID, SR.rateUrl("ios")], [null, null], "3c iOS: no App Store ID in the repo, so no row until it is set");
+    t.eq(SR.rateUrl("ios", "6754321098"), "https://apps.apple.com/app/id6754321098?action=write-review", "3d …and once set, the App Store write-review page");
+    t.eq(SR.rateUrl("web"), null, "3e the web has no store to review in");
+    const real = globalThis.Capacitor;
+    const as = (pl, fn) => { Object.defineProperty(globalThis, "Capacitor", { value: { ...real, getPlatform: () => pl, isNativePlatform: () => pl !== "web" }, configurable: true, writable: true }); try { return fn(); } finally { Object.defineProperty(globalThis, "Capacitor", { value: real, configurable: true, writable: true }); } };
+    const settingsOn = (pl) => as(pl, () => textOf(A.render(A.h(A.Settings, { data: demo(), setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop,
+      bankConnected: true, billingUi: { show: false }, onOpenUpgrade: noop, onReplayTour: noop }))));
+    t.eq(["android", "ios", "web"].map(pl => settingsOn(pl).includes("Rate flourish")), [true, false, false], "3f Settings shows \"Rate flourish\" on Android, and not on iOS (no ID yet) or the web");
+    t.ok(/window\.location\.href=url/.test(APP), "3g the row opens the store page itself; nothing asks first");
+  }
+
   t.summary("testerSuggestions.test");
   setImmediate(() => process.exit(process.exitCode || 0));
 })();

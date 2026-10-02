@@ -2,13 +2,14 @@
 // -----------------------------------------------------------------------------
 // THE STORE REVIEW ASK: WHEN IT MAY HAPPEN, AND THAT NOTHING ELSE HAPPENS AROUND IT.
 //
-// 1. The rules (reviewRules.js), driven with a fake clock: the third separate day on Today, or a
-//    finished check-in, whichever is first; never within 24 hours of trouble; once per 120 days;
-//    never on the web or in demo mode.
+// 1. The rules (reviewRules.js), driven with a fake clock. Since tester suggestions item 3 (decided
+//    2026-10-01) the one good moment is the FIRST money meeting marked done, asked once per install;
+//    never within 24 hours of trouble; never within 120 days of an ask; never on the web or in demo
+//    mode. The retired triggers (third day on Today, weekly check-in) ask nothing.
 // 2. The wrapper (reviewPrompt.js) on the web does nothing at all, not even write its record.
-// 3. The wiring in the app: trouble is noted where things go wrong, the two triggers sit where the
-//    brief puts them, the plugin is called from one place only, and no screen of Flourish's own
-//    stands in front of the store's sheet.
+// 3. The wiring in the app: trouble is noted where things go wrong, the one trigger sits on "Mark this
+//    meeting done", the plugin is called from one place only, and no screen of Flourish's own stands
+//    in front of the store's sheet. "Rate flourish" in Settings opens the store page the person chose.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -18,85 +19,45 @@ const path = require("path");
 (async () => {
   const t = create();
   const R = await import("../src/lib/reviewRules.js");
-  const { decideReviewAsk, withTodayOpen, withTrouble, withAsked, normalizeReviewState, emptyReviewState, localDayKey, REVIEW_TRIGGERS: T } = R;
+  const { decideReviewAsk, withTrouble, withAsked, normalizeReviewState, emptyReviewState, localDayKey, REVIEW_TRIGGERS: T } = R;
 
   const at = (s) => new Date(s);                           // local wall-clock time
   const days = (n) => n * 24 * 60 * 60 * 1000;
-  const ask = (state, trigger, now, extra = {}) => decideReviewAsk({ state, trigger, now, native: true, demo: false, ...extra });
-  const openOn = (state, ...stamps) => stamps.reduce((s, x) => withTodayOpen(s, at(x)), state);
+  const ask = (state, now, extra = {}) => decideReviewAsk({ state, trigger: T.MEETING_DONE, now, native: true, demo: false, firstMeeting: true, ...extra });
 
-  // ── 1a. The constants the brief sets ──────────────────────────────────────────────────────────
+  // ── 1a. The constants ─────────────────────────────────────────────────────────────────────────
   t.eq(R.REVIEW_COOLDOWN_DAYS, 120, "the cooldown is 120 days");
-  t.eq(R.TODAY_DAYS_TO_ASK, 3, "Today must be opened on 3 separate days");
+  t.eq(Object.values(T), ["meeting_done"], "one trigger: a money meeting marked done");
+  t.eq(localDayKey(at("2026-10-02T00:00:01")), "2026-10-02", "(the day key is local, not UTC)");
 
-  // ── 1b. The third separate day on Today ───────────────────────────────────────────────────────
+  // ── 1b. The first meeting asks, once ──────────────────────────────────────────────────────────
   {
-    let s = emptyReviewState();
-    s = openOn(s, "2026-10-01T09:00:00");
-    t.eq(ask(s, T.TODAY_OPEN, at("2026-10-01T09:00:00")), { ask: false, reason: "not_yet" }, "day 1: no ask");
-    s = openOn(s, "2026-10-01T13:00:00", "2026-10-01T22:30:00");
-    t.eq(s.todayDays.length, 1, "opening Today three times on one day is still one day");
-    t.eq(ask(s, T.TODAY_OPEN, at("2026-10-01T22:30:00")).ask, false, "…and does not ask");
-    s = openOn(s, "2026-10-03T08:00:00");
-    t.eq(ask(s, T.TODAY_OPEN, at("2026-10-03T08:00:00")), { ask: false, reason: "not_yet" }, "day 2 (not consecutive): no ask");
-    s = openOn(s, "2026-10-09T19:00:00");
-    t.eq(ask(s, T.TODAY_OPEN, at("2026-10-09T19:00:00")), { ask: true, reason: "third_day" }, "the third separate day asks");
-  }
-  {
-    // Separate days are the person's calendar days: 11pm and 1am are two, not one.
-    const s = openOn(emptyReviewState(), "2026-10-01T23:00:00", "2026-10-02T01:00:00", "2026-10-02T23:59:00");
-    t.eq(s.todayDays, ["2026-10-01", "2026-10-02"], "11pm and 1am are two days; 1am and 11:59pm the next night are one");
-    t.eq(localDayKey(at("2026-10-02T00:00:01")), "2026-10-02", "the day key is local, not UTC");
-  }
-
-  // ── 1c. A finished check-in asks at once, whichever comes first ───────────────────────────────
-  {
-    const s = openOn(emptyReviewState(), "2026-10-01T09:00:00");
-    t.eq(ask(s, T.CHECKIN_DONE, at("2026-10-01T09:10:00")), { ask: true, reason: "checkin_done" }, "a check-in finished on day 1 asks without waiting for day 3");
-    const after = withAsked(s, at("2026-10-01T09:10:00"));
-    const later = openOn(after, "2026-10-02T09:00:00", "2026-10-03T09:00:00", "2026-10-04T09:00:00");
-    t.eq(ask(later, T.TODAY_OPEN, at("2026-10-04T09:00:00")), { ask: false, reason: "cooldown" }, "…and then the third day does not ask again: whichever came first used the ask");
-  }
-
-  // ── 1d. At most once per 120 days ─────────────────────────────────────────────────────────────
-  {
-    const asked = withAsked(emptyReviewState(), at("2026-10-01T09:00:00"));
-    t.eq(asked.todayDays, [], "asking resets the day count");
-    t.eq(ask(asked, T.CHECKIN_DONE, new Date(at("2026-10-01T09:00:00").getTime() + days(119))).reason, "cooldown", "119 days later: still no");
-    t.eq(ask(asked, T.CHECKIN_DONE, new Date(at("2026-10-01T09:00:00").getTime() + days(120))).ask, true, "120 days later: a check-in may ask again");
-    // After the cooldown the day trigger needs three NEW days, not the old ones.
-    const d120 = at("2026-10-01T09:00:00").getTime() + days(120);
-    const one = withTodayOpen(asked, new Date(d120));
-    t.eq(ask(one, T.TODAY_OPEN, new Date(d120)).reason, "not_yet", "after the cooldown, one new day on Today is not enough");
-    // Today opened DURING the cooldown does not count: after it, three new days are needed.
-    const busy = openOn(asked, "2026-10-10T09:00:00", "2026-11-10T09:00:00", "2026-12-10T09:00:00");
-    const d120b = new Date(at("2026-10-01T09:00:00").getTime() + days(120) + 60 * 60 * 1000);
-    t.eq(ask(withTodayOpen(busy, d120b), T.TODAY_OPEN, d120b).reason, "not_yet", "days opened during the 120-day wait do not count toward the next ask");
-    // A clock set backwards is not 120 days.
-    t.eq(ask(asked, T.CHECKIN_DONE, at("2026-09-01T09:00:00")).reason, "cooldown", "a clock set before the last ask waits");
-    // A corrupt ask time must not unlock an early ask.
-    const junk = normalizeReviewState({ lastAskedAt: "not a date", todayDays: ["2026-10-01", "2026-10-02", "2026-10-03"] });
+    const s = emptyReviewState();
+    t.eq(ask(s, at("2026-10-05T19:00:00")), { ask: true, reason: "first_meeting" }, "the first meeting marked done asks");
+    t.eq(ask(s, at("2026-10-05T19:00:00"), { firstMeeting: false }), { ask: false, reason: "not_first_meeting" }, "a later meeting never asks");
+    const asked = withAsked(s, at("2026-10-05T19:00:00"));
+    t.eq(asked.meetingAsked, true, "asking is on record");
+    t.eq(ask(asked, new Date(at("2026-10-05T19:00:00").getTime() + days(400))).reason, "already_asked", "never twice: not even 400 days later");
+    t.eq(ask({ meetingAsked: "yes" }, at("2026-10-05T19:00:00")).reason, "already_asked", "a junk record reads as already asked, not as never asked");
+    // An ask made before (by an older build's trigger) still holds the 120-day rule.
+    const older = { lastAskedAt: at("2026-10-01T09:00:00").toISOString() };
+    t.eq(ask(older, new Date(at("2026-10-01T09:00:00").getTime() + days(119))).reason, "cooldown", "within 120 days of any ask: no");
+    t.eq(ask(older, new Date(at("2026-10-01T09:00:00").getTime() + days(120))).ask, true, "120 days on: the first meeting may ask");
+    t.eq(ask(older, at("2026-09-01T09:00:00")).reason, "cooldown", "a clock set before the last ask waits");
+    const junk = normalizeReviewState({ lastAskedAt: "not a date" });
     t.ok(!!junk.lastAskedAt, "an unreadable ask time reads as asked, not as never asked");
-    t.eq(ask(junk, T.TODAY_OPEN, new Date()).reason, "cooldown", "…so it does not ask");
   }
 
-  // ── 1e. Never after trouble ───────────────────────────────────────────────────────────────────
+  // ── 1c. Never after trouble, on the web, in demo mode, or on any other moment ────────────────
   {
-    const ready = openOn(emptyReviewState(), "2026-10-01T09:00:00", "2026-10-02T09:00:00", "2026-10-03T09:00:00");
-    const hurt = withTrouble(ready, at("2026-10-03T08:55:00"));
-    t.eq(ask(hurt, T.TODAY_OPEN, at("2026-10-03T09:00:00")), { ask: false, reason: "recent_trouble" }, "an error five minutes ago: the third day does not ask");
-    t.eq(ask(hurt, T.CHECKIN_DONE, at("2026-10-03T09:00:00")).reason, "recent_trouble", "…nor does a finished check-in");
-    t.eq(ask(hurt, T.CHECKIN_DONE, at("2026-10-04T08:54:00")).reason, "recent_trouble", "23h59m later: still no");
-    t.eq(ask(hurt, T.CHECKIN_DONE, at("2026-10-04T08:56:00")).ask, true, "24 hours on, a good moment may ask");
-  }
-
-  // ── 1f. Web, demo, and anything that is not one of the two moments ────────────────────────────
-  {
-    const ready = openOn(emptyReviewState(), "2026-10-01T09:00:00", "2026-10-02T09:00:00", "2026-10-03T09:00:00");
-    t.eq(decideReviewAsk({ state: ready, trigger: T.TODAY_OPEN, now: at("2026-10-03T09:00:00"), native: false, demo: false }), { ask: false, reason: "web" }, "the web never asks");
-    t.eq(ask(ready, T.CHECKIN_DONE, at("2026-10-03T09:00:00"), { demo: true }), { ask: false, reason: "demo" }, "demo mode never asks");
-    for (const bad of ["app_open", "bank_linked", "coach_reply", "", undefined]) {
-      t.eq(ask(ready, bad, at("2026-10-03T09:00:00")).ask, false, `no ask on any other moment (${JSON.stringify(bad)})`);
+    const hurt = withTrouble(emptyReviewState(), at("2026-10-03T08:55:00"));
+    t.eq(ask(hurt, at("2026-10-03T09:00:00")), { ask: false, reason: "recent_trouble" }, "an error five minutes ago: no ask");
+    t.eq(ask(hurt, at("2026-10-04T08:54:00")).reason, "recent_trouble", "23h59m later: still no");
+    t.eq(ask(hurt, at("2026-10-04T08:56:00")).ask, true, "24 hours on, the first meeting may ask");
+    t.eq(ask(emptyReviewState(), at("2026-10-03T09:00:00"), { native: false }), { ask: false, reason: "web" }, "the web never asks");
+    t.eq(ask(emptyReviewState(), at("2026-10-03T09:00:00"), { demo: true }), { ask: false, reason: "demo" }, "demo mode never asks");
+    for (const bad of ["today_open", "checkin_done", "", null, undefined]) {
+      t.eq(ask(emptyReviewState(), at("2026-10-03T09:00:00"), { trigger: bad }).ask, false, `no ask on any other moment, including the retired ones (${JSON.stringify(bad)})`);
     }
     t.eq(normalizeReviewState("garbage"), emptyReviewState(), "a junk record reads as empty");
   }
@@ -106,24 +67,24 @@ const path = require("path");
     const store = {};
     global.window = { localStorage: { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = v; } } };
     const P = await import("../src/lib/reviewPrompt.js");
-    const r1 = await P.reviewOnTodayOpen();
-    const r2 = await P.reviewOnCheckInDone();
+    const r1 = await P.reviewOnMeetingDone({ firstMeeting: true });
     P.noteReviewTrouble();
-    t.eq([r1.reason, r2.reason], ["web", "web"], "web: neither trigger asks");
-    t.eq(Object.keys(store), [], "web: nothing is written, not even the day count");
+    t.eq(r1.reason, "web", "web: the meeting trigger does not ask");
+    t.eq(Object.keys(store), [], "web: nothing is written");
     t.ok(!P.REVIEW_STORAGE_KEY.startsWith("flourish_"), "the record's key is outside the flourish_ prefix that sign-out and the shared-device wipe remove");
+    t.eq(typeof P.reviewOnTodayOpen + typeof P.reviewOnCheckInDone, "undefinedundefined", "the retired triggers are gone from the wrapper");
 
     // On a native shell the ask is recorded before the plugin is called, so a crash mid-sheet
     // cannot lead to a second ask. (The plugin itself cannot run in node; the wrapper swallows that.)
     global.window.Capacitor = { isNativePlatform: () => true };
-    const rd = await P.reviewOnTodayOpen({ demo: true, now: at("2026-10-04T10:00:00") });
-    t.eq([rd.reason, store[P.REVIEW_STORAGE_KEY]], ["demo", undefined], "native demo: Today is not even counted");
-    const r3 = await P.reviewOnCheckInDone({ now: at("2026-10-05T10:00:00") });
-    t.eq(r3, { ask: true, reason: "checkin_done" }, "native: a finished check-in asks");
+    const rd = await P.reviewOnMeetingDone({ demo: true, firstMeeting: true, now: at("2026-10-04T10:00:00") });
+    t.eq([rd.reason, store[P.REVIEW_STORAGE_KEY]], ["demo", undefined], "native demo: never asks, and writes nothing");
+    const r3 = await P.reviewOnMeetingDone({ firstMeeting: true, now: at("2026-10-05T10:00:00") });
+    t.eq(r3, { ask: true, reason: "first_meeting" }, "native: the first meeting marked done asks");
     const rec = JSON.parse(store[P.REVIEW_STORAGE_KEY]);
-    t.eq(rec.lastAskedAt, at("2026-10-05T10:00:00").toISOString(), "…and the ask is on record");
-    const r4 = await P.reviewOnCheckInDone({ now: at("2026-10-06T10:00:00") });
-    t.eq(r4.reason, "cooldown", "…so the next check-in does not ask again");
+    t.eq([rec.lastAskedAt, rec.meetingAsked], [at("2026-10-05T10:00:00").toISOString(), true], "…and the ask is on record");
+    const r4 = await P.reviewOnMeetingDone({ firstMeeting: true, now: at("2027-03-05T10:00:00") });
+    t.eq(r4.reason, "already_asked", "…so it never fires twice, even if the meeting record were reset");
     P.noteReviewTrouble(at("2026-10-06T11:00:00"));
     t.eq(JSON.parse(store[P.REVIEW_STORAGE_KEY]).lastTroubleAt, at("2026-10-06T11:00:00").toISOString(), "native: trouble is recorded");
     delete global.window;
@@ -148,14 +109,11 @@ const path = require("path");
     // The sign-out and shared-device wipes only remove flourish_* keys, so the record survives them.
     t.ok(/k\.startsWith\("flourish_"\) && k !== STORAGE_KEY && k !== STAMP_KEY/.test(app), "(sign-out removes only flourish_* keys)");
 
-    const todayCalls = app.match(/reviewOnTodayOpen\(/g) || [];
-    t.eq(todayCalls.length, 1, "Today-open asks from exactly one place");
-    t.ok(/if \(screen !== "home" \|\| !onboarded \|\| !user \|\| showSettings\) return;\s*const t = setTimeout\(\(\) => \{ reviewOnTodayOpen\(\{ demo: !!appData\?\.demo \}\); \}, 2500\);\s*return \(\) => clearTimeout\(t\);/.test(app),
-         "…only while Today is the screen for a signed-in person, after a pause, cancelled if they leave");
-    const checkCalls = app.match(/reviewOnCheckInDone\(/g) || [];
-    t.eq(checkCalls.length, 1, "check-in asks from exactly one place");
-    t.ok(/<WeeklyCheckInModal data=\{appData\|\|\{\}\} onClose=\{\(\)=>setShowCheckIn\(false\)\} onComplete=\{\(pts\)=>\{setCheckInBonus\(prev=>Math\.min\(20,prev\+pts\)\);setShowCheckIn\(false\);reviewOnCheckInDone\(\{demo:!!appData\?\.demo\}\);\}\}\/>/.test(app),
-         "…the moment the weekly check-in is finished (its Done button), with the score bonus unchanged");
+    t.ok(!/reviewOnTodayOpen|reviewOnCheckInDone/.test(app), "the retired triggers are gone from the app");
+    const meetCalls = app.match(/reviewOnMeetingDone\(/g) || [];
+    t.eq(meetCalls.length, 1, "the meeting asks from exactly one place");
+    t.ok(/const last = data\.profile\?\.meetingSchedule\?\.lastMeetingAt;/.test(app) && /reviewOnMeetingDone\(\{ demo: !!data\.demo, firstMeeting: !last \}\);/.test(app),
+         "…\"Mark this meeting done\", passing demo and whether it is the first meeting (no meeting held before)");
 
     // The plugin is called from one file, and nowhere else can show a store sheet.
     const srcFiles = [];
@@ -184,7 +142,10 @@ const path = require("path");
     }
     t.ok(copy.length > 1000, `sanity: the copy scan reads real strings (${copy.length})`);
     const PRE_PROMPT = /\benjoying flourish\b|\brate (?:us|flourish|the app)\b|\bleave (?:us )?a review\b|\bdo you (?:like|love) (?:us|flourish)\b|\breview (?:us|flourish) (?:for|and get)\b|\bhow (?:are we|is flourish) doing\b/i;
-    t.eq(copy.filter((c) => PRE_PROMPT.test(c)).map((c) => c.trim().slice(0, 80)), [], "no pre-prompt, rating screen or reward copy anywhere in src/");
+    // One exact exception: "Rate flourish", the Settings row a person taps to open the store's review
+    // page themselves (tester suggestions item 3). It is a link, not a pre-prompt: nothing asks first.
+    t.eq(copy.filter((c) => PRE_PROMPT.test(c) && c.trim() !== "Rate flourish").map((c) => c.trim().slice(0, 80)), [], "no pre-prompt, rating screen or reward copy anywhere in src/");
+    t.eq(copy.filter((c) => c.trim() === "Rate flourish").length, 1, "…\"Rate flourish\" appears once, as the Settings row");
     t.ok(PRE_PROMPT.test("Enjoying Flourish?") && !PRE_PROMPT.test("solely to operate the App"), "sanity: the check catches a pre-prompt and not ordinary words");
     t.ok(!/import\s*\{[^}]*\}\s*from\s*["']@capacitor-community\/in-app-review["']/.test(all), "the plugin is never a static import, so the web never loads it");
 

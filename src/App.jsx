@@ -53,6 +53,7 @@ import { nextRrspDeadline, formatRrspDeadline } from "./lib/rrspDeadline.js";
 import { TOUR_STEPS, TOUR_DONE_KEY } from "./lib/tour.js";
 import { setupChecklist, showSetupChecklist, NUMBER_SEEN_KEY, CHECKLIST_DISMISSED_KEY } from "./lib/setupChecklist.js";
 import { shareFlourish, SHARE_URL } from "./lib/share.js";
+import { rateUrl } from "./lib/storeReview.js";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
 import { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
@@ -70,7 +71,7 @@ import { derivePlan } from "./lib/planFromProfile.js";
 import { passwordResetRedirect, startedInApp, PASSWORD_UPDATED_IN_APP } from "./lib/authRedirect.js";
 import { getPlan, isPremiumOrFounder, isUnlimited, canUseCoach, recordCoachUse, getCoachMessagesRemaining, canRunSimulation, recordSimulationUse, getSimulationsRemaining, applyGrandfatherIfEligible, markAccountIfNew, FREE_TIER_LIMITS, setPlan, startTrialIfEligible, expireTrialIfNeeded, getTrialDaysLeft, isTrialActive, getTrialStartedAt } from "./lib/usageLimits.js";
 import { TAX_DATA, ccbMonthly, creditWorth } from "./lib/taxData.js";
-import { noteReviewTrouble, reviewOnTodayOpen, reviewOnCheckInDone } from "./lib/reviewPrompt.js";
+import { noteReviewTrouble, reviewOnMeetingDone } from "./lib/reviewPrompt.js";
 import { monthSpendByCategory, isCardPaymentCharge } from "./lib/budgetSpend.js";
 import { SUPPORT_EMAIL, SUPPORT_OPERATOR_NAME_AND_ADDRESS } from "./lib/supportContact.js";
 import { effectiveCategory, setMerchantOverride, clearMerchantOverride, isUsableMerchantKey } from "./lib/categoryOverrides.js";
@@ -9632,6 +9633,9 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData }){
         const markDone = () => {
           setAppData(prev => ({ ...prev, profile: { ...(prev.profile||{}), meetingSchedule: { cadence:"biweekly", dayOfWeek:0, enabled:false,
             ...((prev.profile||{}).meetingSchedule||{}), lastMeetingAt: new Date().toISOString() } } }));
+          // The store's own review sheet, once, after the FIRST meeting (reviewRules.js decides; never
+          // on the web or in demo mode, never within 24 hours of trouble, and nothing in front of it).
+          reviewOnMeetingDone({ demo: !!data.demo, firstMeeting: !last });
         };
         return heldToday
           ? <div role="status" style={{...card,background:C.cardAlt,color:C.mutedHi,fontSize:13}}>✓ This week's meeting is marked done.</div>
@@ -11615,6 +11619,10 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
       <div style={{display:"flex",flexWrap:"wrap",gap:GAP.controlToControl}}>
         <Btn label="Open Support" onClick={()=>navToScreen&&navToScreen("support")} color={C.mutedHi} outline small/>
         {onReplayTour&&<Btn label="Replay the tour" onClick={onReplayTour} color={C.mutedHi} outline small/>}
+        {(()=>{ // "Rate flourish": the store's own review page (lib/storeReview.js). Android only until the App Store ID is set.
+          const url=rateUrl((()=>{ try{ return window.Capacitor?.getPlatform?.()||"web"; }catch{ return "web"; } })());
+          return url ? <Btn label="Rate flourish" onClick={()=>{ try{ window.location.href=url; }catch{} }} color={C.mutedHi} outline small/> : null;
+        })()}
       </div>
     </div>
     {/* ── Sign out ─────────────────────────────────────────────── */}
@@ -15297,14 +15305,8 @@ export default function FlourishApp(){
   const [checkInBonus,setCheckInBonus]=useState(()=>saved?.checkInBonus||0);
   const [showCheckIn,setShowCheckIn]=useState(false);
   const [budgetEditRequested,setBudgetEditRequested]=useState(false); // Goals → Budget's Edit opens Do → Budget's editor
-  // Store review prompt, trigger one: opening Today on a third separate day (reviewRules.js decides;
-  // the web and demo mode never ask). A short pause so the ask never lands on a screen still loading,
-  // and it is dropped if the person has already moved on.
-  useEffect(() => {
-    if (screen !== "home" || !onboarded || !user || showSettings) return;
-    const t = setTimeout(() => { reviewOnTodayOpen({ demo: !!appData?.demo }); }, 2500);
-    return () => clearTimeout(t);
-  }, [screen, onboarded, user, showSettings]);
+  // The store review prompt asks once, after the first money meeting marked done (MeetAgenda,
+  // reviewOnMeetingDone). The third-day-on-Today and weekly check-in triggers are retired.
   const [showWhatIf,setShowWhatIf]=useState(false);
   const [whatIfQuery, setWhatIfQuery] = useState("");
   const [whatIfType, setWhatIfType] = useState(null);
@@ -16279,7 +16281,7 @@ export default function FlourishApp(){
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} setAppData={setAppData} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={()=>setShowPaywall(true)} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
-  if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);reviewOnCheckInDone({demo:!!appData?.demo});}}/>;
+  if(showCheckIn)return <WeeklyCheckInModal data={appData||{}} onClose={()=>setShowCheckIn(false)} onComplete={(pts)=>{setCheckInBonus(prev=>Math.min(20,prev+pts));setShowCheckIn(false);}}/>;
   if(!onboarded)return <Onboarding
     connectedAccounts={appData?.accounts||[]}
     onAccountsConnected={promoteConnectedAccounts}
