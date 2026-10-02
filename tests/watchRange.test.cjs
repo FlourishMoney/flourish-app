@@ -79,12 +79,15 @@ const NOW = new Date("2026-09-24T12:00:00Z");
 
   // ── 4. The screen offers those ranges ────────────────────────────────────────────────────────
   const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
-  t.ok(/const RANGES = \[7, 30, 90\];/.test(app), "4a the Watch screen offers 7, 30 and 90 days");
-  t.ok(/const \[range,setRange\]=useState\(30\);/.test(app), "4b …and opens on 30");
+  // watch-meet-fixes: the ranges live in lib/watchRange.js, which the range summary reads too.
+  const WR = fs.readFileSync(path.join(__dirname, "..", "src", "lib", "watchRange.js"), "utf8");
+  t.ok(/const RANGES = WATCH_RANGES;/.test(app) && /export const WATCH_RANGES = \[7, 30, 90\];/.test(WR), "4a the Watch screen offers 7, 30 and 90 days");
+  t.ok(/function PlanAhead\(\{data, setAppData, setScreen, initialRange = 30\}\)/.test(app)
+    && /const \[range,setRange\]=useState\(WATCH_RANGES\.includes\(initialRange\) \? initialRange : 30\);/.test(app), "4b …and opens on 30");
   t.ok(!/\{\[7,14\]\.map/.test(app), "4c the old 7/14 toggle is gone");
   t.ok(/ForecastEngine\.generate\(data, Math\.max\(range, 30\)\)/.test(app),
     "4d the engine is still called with Math.max(range, 30), so 90 passes through and 7 does not shrink the risk window");
-  t.ok(/subtitle=\{`The next \$\{range\} days\.`\}/.test(app) && !/"The next 90 days\."/.test(app),
+  t.ok(/subtitle=\{`\$\{rangeLabel\(range\)\}\.`\}/.test(app) && !/"The next 90 days\."/.test(app),
     "4e the header states the selected range (7, 30 or 90 days), not 90 on every range (prelaunch-copy item 5)");
 
   // ── 5. The balance bar must not call a healthy forecast dangerous ────────────────────────────

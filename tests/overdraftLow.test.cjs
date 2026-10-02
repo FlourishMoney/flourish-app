@@ -9,7 +9,7 @@
 //   $1,000 in chequing, no income, no spending history, one $1,500 rent bill due in 20 days.
 //   Days 1 to 19: $1,000. Day 20: $1,000 - $1,500 = -$500.
 //   before (7 days on screen):  the card said "$1,000", which is not an overdraft.
-//   after  (the whole forecast): the card says "-$500", on day 20, within the next 30 days.
+//   after  (the whole forecast): the card says "-$500", on day 20, within today and the next 30 days.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -42,9 +42,13 @@ const path = require("path");
   const app = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
   t.ok(/const \{ forecast: _forecast, willGoNegative: willGoNeg[^}]*\} = ForecastEngine\.generate\(data, Math\.max\(range, 30\)\);/.test(app)
     && /const lowPoint = forecastLow\(_forecast\);/.test(app), "2a Watch takes the low point from _forecast, the array willGoNeg came from");
-  t.ok(/const forecastDays = Math\.max\(range, 30\);/.test(app) && /within the next \{forecastDays\} days\./.test(app) && !/dip to <strong[^>]*>\{formatBalance\(minBalance\)\}<\/strong> before your next deposit/.test(app),
-    "2b the card names the window it looked at, and no longer claims \"before your next deposit\"");
-  t.ok(/lowPoint && lowPoint\.day >= range \? "That day is past the range shown\. Pick a longer range above to see it\."/.test(app), "2c …and says when that day is past the range on screen (the list shows days 0 to range - 1)");
+  // watch-meet-fixes item 1: the card and the range summary quote ONE lowest balance. The flag is still
+  // raised over at least 30 days (1a), so a 7-day view still hears about the day-20 rent; the figure is
+  // the range's own low (summary.low, lib/watchRange.js), which at 30 and 90 days is the whole forecast's.
+  t.ok(/within \{rangePhrase\(range\)\}\./.test(app) && !/before your next deposit/.test(app.slice(app.indexOf("Projected overdraft"), app.indexOf("Projected overdraft") + 1500)),
+    "2b the card names the range it quotes, and no longer claims \"before your next deposit\"");
+  t.ok(/could go below zero on \{firstNegative\?fmtOccDay\(firstNegative\.date\):"a day ahead"\}, after the range shown \(\{rangePhrase\(range\)\}\)\./.test(app) && /const dipInRange = !!\(rangeLow && rangeLow\.balance < 0\);/.test(app),
+    "2c …and when the dip is after the range on screen (7 days, rent on day 20) it names the day and quotes no figure, so it cannot contradict the summary's lowest balance (tapFigures/watchRange tests pin both)");
 
   // ── 3. Rendered: the card names a day, and the list below shows that day ────────────────────
   // The low point is usually the eve of a payday, when nothing lands, so the list (paydays and bill
@@ -63,7 +67,7 @@ const path = require("path");
     try { A = loadApp(["PlanAhead"]); txt = textOf(A.render(A.h(A.PlanAhead, { data: broke, setAppData: () => {}, setScreen: () => {} }))); }
     catch (e) { t.ok(false, `3 Watch renders: ${describe(e)}`); }
     const label = lp.date.toLocaleDateString("en-CA", { weekday: "short", month: "short", day: "numeric" });
-    t.ok(txt.includes(`on ${label}, within the next 30 days.`), `3b the card names the low day (${label})`);
+    t.ok(txt.includes(`on ${label}, within today and the next 30 days.`), `3b the card names the low day (${label})`);
     t.ok(txt.split(label).length - 1 >= 2, "3c …and the day-by-day list shows that day too, under the card");
     t.ok(txt.includes("The day-by-day list below shows that day, and what lands on it."), "3d …which is what the card says");
   }

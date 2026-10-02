@@ -81,8 +81,8 @@ const BANNED = /sets? aside|holds? back|\blearns\b|\bremembers\b/i;
   {
     let txt = "";
     try { txt = textOf(A.render(A.h(A.PlanAhead, { data: demo, setAppData: () => {}, setScreen: () => {} }))); } catch (e) { t.ok(false, `5 Watch renders: ${describe(e)}`); }
-    t.ok(/The next 30 days\./.test(txt) && !/The next 90 days\./.test(txt), "5a Watch opens on 30 days and its heading says so");
-    t.ok(/RANGES\.map\(r=><button key=\{r\} onClick=\{\(\)=>setRange\(r\)\}/.test(APP) && /subtitle=\{`The next \$\{range\} days\.`\}/.test(APP),
+    t.ok(/Today and the next 30 days\./.test(txt) && !/next 90 days\./.test(txt), "5a Watch opens on 30 days and its heading says so");
+    t.ok(/RANGES\.map\(r=><button key=\{r\} onClick=\{\(\)=>setRange\(r\)\}/.test(APP) && /subtitle=\{`\$\{rangeLabel\(range\)\}\.`\}/.test(APP),
       "5b the heading reads the same range the 7 / 30 / 90 toggle sets");
   }
 
