@@ -277,6 +277,37 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     t.ok(/appVersion:appVersionLabel\(\)/.test(APP), "7g feedback is sent with the version it came from");
   }
 
+  // ── 1z. Meet with nothing to work from (prompt 4d item 2) ────────────────────────────────────
+  // A signed-in account with no bank and no data: the forecast starts from an assumed $0, so every
+  // day of it is a "low balance", and the agenda read "Low balance $0.00 takes you to $0.00" day after
+  // day. Now no low-balance line, and one plain line saying what the agenda is waiting for.
+  {
+    const MS = await import("../src/lib/meetSnapshot.js");
+    const { ForecastEngine } = await import("../src/lib/forecastEngine.js");
+    const MOCK = require("./_mockSupabase.cjs");
+    const empty = MOCK.emptyBlob().core.appData;              // the same empty account the axe sweep signs in as
+    t.ok(ForecastEngine.generate(empty, 14).lowBalanceWarnings.length > 3, "1z0 (the empty account's $0 forecast flags every day as low, which is where the lines came from)");
+    const full = MS.meetAgendaFor(empty);
+    const agenda = MS.agendaIsEmpty(full) ? MS.quietWeekAgendaFor(MS.quietWeekFiguresFor(empty)) : MS.withWeekAhead(full, empty);
+    const items = [...agenda.wins, ...agenda.changes, ...agenda.risks, ...(agenda.upcoming || []), ...agenda.progress];
+    t.eq(full.risks, [], "1z1 no low-balance line for an account with no balance");
+    t.eq(items.map(i => i.text), [MS.MEET_SETUP_LINE], "1z2 …and one plain line instead");
+    t.eq(MS.MEET_SETUP_LINE, "Your agenda fills in once Flourish has a balance and a payday to work from.", "1z3 the line, word for word");
+    t.ok(!/Low balance|\$0\.00/.test(MS.agendaToText(agenda)), "1z4 the coach is sent no $0.00 low-balance line either");
+    let html = "";
+    try { html = textOf(A.render(A.h(A.MeetAgenda, { data: { ...empty, demo: false }, isCouple: false, setScreen: noop, setAppData: noop }))); } catch (e) { t.ok(false, `1z5 Meet renders: ${describe(e)}`); }
+    t.ok(html.includes(MS.MEET_SETUP_LINE) && !/Low balance/.test(html), "1z5 Meet, rendered for the empty account, shows the line and no low-balance day");
+    // With a goal but still no balance, the line leads the agenda (the withWeekAhead path).
+    const withGoal = { ...empty, goals: [{ name: "Emergency fund", saved: 200, target: 1000 }] };
+    const g = MS.withWeekAhead(MS.meetAgendaFor(withGoal), withGoal);
+    t.ok(g.risks.length === 0 && g.progress[0].text === MS.MEET_SETUP_LINE, "1z6 an account with a goal but no balance gets the same line, and no low-balance days");
+    // A real balance still gets its risks: the CA demo with $0 in its cash accounts and its pay.
+    const now = new Date();
+    const broke = { profile: D.demoProfileFor("CA"), debts: D.demoDebtsFor("CA"), incomes: D.buildDemoIncomes(now, "CA"), bills: D.buildDemoBills(now, "CA"),
+      transactions: D.buildDemoTxns(now, "CA"), accounts: D.demoAccountsFor("CA").map(a => (a.type === "checking" || a.type === "savings") ? { ...a, balance: 0 } : a) };
+    t.ok(MS.meetAgendaFor(broke).risks.length > 0 && !MS.meetSetupState(broke).needsSetup, "1z7 a household with a real (if empty) bank account and a payday still hears about its low days");
+  }
+
   // ── 2b. Brand casing (prompt 4b item 2) ─────────────────────────────────────────────────────
   // In-app copy says "Flourish". Every string this PR added names it with a capital F; the lowercase
   // wordmark is an image and the header lockup, not copy, and is not checked here.

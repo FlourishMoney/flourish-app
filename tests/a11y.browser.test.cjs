@@ -77,7 +77,8 @@ const VIEWS = [
   { name: "How we got this: Today's pace", overlay: true, go: async (p) => { await TAB(p, "Today"); await TXT(p, "Explain this →"); } },
   { name: "How we got this: Watch", overlay: true, go: async (p) => { await TAB(p, "Watch"); await ARIA(p, "How Flourish got this number"); } },
   { name: "How we got this: range", overlay: true, go: async (p) => { await TAB(p, "Watch"); await p.locator('button[aria-label^="Lowest balance"]').first().click(); } },
-  { name: "How we got this: Meet",  overlay: true, go: async (p) => { await TAB(p, "Meet"); await p.locator('button[aria-label$="How Flourish got it"], button[aria-label$=": how Flourish got it"]').first().click(); } },
+  // A new account's Meet has no figure to open (one setup line, prompt 4d), so this is the demo's.
+  { name: "How we got this: Meet",  who: "demo", overlay: true, go: async (p) => { await TAB(p, "Meet"); await p.locator('button[aria-label$="How Flourish got it"], button[aria-label$=": how Flourish got it"]').first().click(); } },
   { name: "Glossary",              overlay: true, go: async (p) => { await TAB(p, "Today"); await ARIA(p, "What Safe to spend means"); } },
   { name: "Can I afford this: fits", who: "demo", overlay: true, go: async (p) => { await TAB(p, "Today"); await p.getByPlaceholder("0.00").first().fill("40"); } },
   { name: "Can I afford this: over", who: "demo", overlay: true, go: async (p) => { await TAB(p, "Today"); await p.getByPlaceholder("0.00").first().fill("9000"); } },
