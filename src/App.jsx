@@ -11815,7 +11815,9 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
     </button>
     {[
         {icon:"user",  color:C.purple, label:"Profile & Income",    sub:`${data.profile?.name||"You"} · ${data.profile?.country||"CA"}`,   key:"profile"},
-        {icon:"bank",  color:C.blue,   label:"Connected Accounts",  sub:`${data.accounts?.length||0} accounts`,              key:"accounts"},
+        // Prompt 4d: the demo's accounts are sample accounts, and no bank is connected. Say so, rather
+        // than "5 accounts" beside "No banks connected yet".
+        {icon:"bank",  color:C.blue,   label:"Connected Accounts",  sub:data.demo ? `${data.accounts?.length||0} sample accounts · no bank connected` : `${data.accounts?.length||0} accounts`, key:"accounts"},
         {icon:"calendar",color:C.teal, label:"Manage Bills",        sub:`${data.bills?.length||0} tracked`,                  key:"bills"},
         {icon:"trendUp",color:C.orange,label:"Manage Debts",        sub:`${data.debts?.length||0} in plan`,                  key:"debts"},
         {icon:"target", color:C.gold,  label:"Savings Goals",       sub:"Emergency fund & more",                             key:"goals"},
@@ -11866,7 +11868,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
         {bankItems === null ? (
           <div style={{color:C.muted,fontSize:13,padding:"8px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Loading banks…</div>
         ) : bankItems.length === 0 ? (
-          <div style={{color:C.muted,fontSize:13,padding:"8px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>No banks connected yet.</div>
+          <div style={{color:C.muted,fontSize:13,padding:"8px 0",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{data.demo ? "These are sample accounts. No bank is connected." : "No banks connected yet."}</div>
         ) : bankItems.map((b, i) => (
           <div key={b.id || b.item_id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom: i < bankItems.length - 1 ? `1px solid ${C.border}` : "none"}}>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -11902,7 +11904,7 @@ function Settings({data,setAppData,setScreen:navToScreen,onClose,onReset,theme,t
           </div>
         ))}
         <button onClick={onAddBank} style={{width:"100%",marginTop:GAP.textToControl,background:C.green+"18",border:`1px solid ${C.green}33`,borderRadius:10,padding:"10px",minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-          + Connect Another Bank
+          {bankItems && bankItems.length ? "+ Connect Another Bank" : "+ Connect a Bank"}
         </button>
       </div>
     )}

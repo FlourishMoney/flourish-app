@@ -308,6 +308,23 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
     t.ok(MS.meetAgendaFor(broke).risks.length > 0 && !MS.meetSetupState(broke).needsSetup, "1z7 a household with a real (if empty) bank account and a payday still hears about its low days");
   }
 
+  // ── 1y. Demo Settings says its accounts are samples (prompt 4d item 3) ─────────────────────────
+  // It said "5 accounts" beside "No banks connected yet". Both were half true: the demo's accounts are
+  // sample accounts, and no bank is connected.
+  {
+    const render = (data) => textOf(A.render(A.h(A.Settings, { data, setAppData: noop, setScreen: noop, onClose: noop, onReset: noop, theme: "dark", toggleTheme: noop,
+      bankConnected: !!data.bankConnected, billingUi: { show: false }, onOpenUpgrade: noop, onReplayTour: noop })));
+    const n = demo().accounts.length;
+    const inDemo = render(demo("CA", { demo: true })), signedIn = render(demo("CA", { demo: false }));
+    t.ok(inDemo.includes(`Connected Accounts ${n} sample accounts · no bank connected`), `1y1 demo: "Connected Accounts, ${n} sample accounts · no bank connected"`);
+    t.ok(!new RegExp(`Connected Accounts ${n} accounts`).test(inDemo), "1y2 …not a bare account count that reads as connected");
+    t.ok(signedIn.includes(`Connected Accounts ${n} accounts`) && !/sample accounts/.test(signedIn), "1y3 a real household's count is unchanged");
+    const SET = APP.slice(APP.indexOf("function Settings("), APP.indexOf("\n}\n", APP.indexOf("function Settings(")));
+    t.ok(/bankItems\.length === 0 \? \(\s*<div[^>]*>\{data\.demo \? "These are sample accounts\. No bank is connected\." : "No banks connected yet\."\}<\/div>/.test(SET),
+      "1y4 Connected Banks, in the demo: \"These are sample accounts. No bank is connected.\"");
+    t.ok(/\{bankItems && bankItems\.length \? "\+ Connect Another Bank" : "\+ Connect a Bank"\}/.test(SET), "1y5 …and the button says \"Connect a Bank\" until one is connected, not \"Another\"");
+  }
+
   // ── 2b. Brand casing (prompt 4b item 2) ─────────────────────────────────────────────────────
   // In-app copy says "Flourish". Every string this PR added names it with a capital F; the lowercase
   // wordmark is an image and the header lockup, not copy, and is not checked here.
