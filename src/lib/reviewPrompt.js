@@ -12,7 +12,7 @@
 // -----------------------------------------------------------------------------
 
 import {
-  decideReviewAsk, normalizeReviewState, withTodayOpen, withTrouble, withAsked, REVIEW_TRIGGERS,
+  decideReviewAsk, normalizeReviewState, withTrouble, withAsked, REVIEW_TRIGGERS,
 } from "./reviewRules.js";
 
 // Deliberately NOT under the "flourish_" prefix: sign-out and the shared-device wipe remove every
@@ -41,10 +41,10 @@ export function noteReviewTrouble(now = new Date()) {
   try { save(withTrouble(load(), now)); } catch {}
 }
 
-async function askIfAllowed(trigger, { demo = false, now = new Date() } = {}) {
+async function askIfAllowed(trigger, { demo = false, now = new Date(), firstMeeting = false } = {}) {
   const native = isNative();
   const state = native ? load() : null;
-  const decision = decideReviewAsk({ state, trigger, now, native, demo });
+  const decision = decideReviewAsk({ state, trigger, now, native, demo, firstMeeting });
   if (!decision.ask) return decision;
   // Recorded BEFORE the call: if the plugin throws or the app is killed mid-sheet, the next launch
   // must still see that Flourish asked, rather than asking again.
@@ -56,17 +56,8 @@ async function askIfAllowed(trigger, { demo = false, now = new Date() } = {}) {
   return decision;
 }
 
-// Today was opened. Counts the day, then asks only if this is the third separate day.
-export function reviewOnTodayOpen(opts = {}) {
-  if (!isNative()) return Promise.resolve({ ask: false, reason: "web" });
-  // A demo visit is a tour of sample data, not a day of use, so it is not counted at all.
-  if (opts.demo) return Promise.resolve({ ask: false, reason: "demo" });
-  const now = opts.now || new Date();
-  try { save(withTodayOpen(load(), now)); } catch {}
-  return askIfAllowed(REVIEW_TRIGGERS.TODAY_OPEN, { ...opts, now });
-}
-
-// A weekly money check-in was just finished.
-export function reviewOnCheckInDone(opts = {}) {
-  return askIfAllowed(REVIEW_TRIGGERS.CHECKIN_DONE, opts);
+// A money meeting was just marked done. Asks only for the household's first meeting, once per
+// install, and never in demo mode (tester suggestions, item 3).
+export function reviewOnMeetingDone(opts = {}) {
+  return askIfAllowed(REVIEW_TRIGGERS.MEETING_DONE, opts);
 }

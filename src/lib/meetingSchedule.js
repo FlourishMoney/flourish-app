@@ -12,6 +12,16 @@
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// THE DEFAULT IS WEEKLY (prompt 4b item 3). Every public claim says weekly: the tour ("15 minutes a
+// week"), the FAQ ("a check-in on the week"), Meet ("this week's meeting"), the "What makes Flourish
+// different" card. A household with no schedule stored gets this one. A schedule a household already
+// has keeps every field it stored, cadence included: meetingScheduleOf only fills what is missing.
+export const DEFAULT_MEETING_CADENCE = "weekly";
+export const DEFAULT_MEETING_SCHEDULE = Object.freeze({ cadence: DEFAULT_MEETING_CADENCE, dayOfWeek: 0, lastMeetingAt: null, enabled: false });
+export function meetingScheduleOf(stored) {
+  return { ...DEFAULT_MEETING_SCHEDULE, ...(stored && typeof stored === "object" ? stored : {}) };
+}
+
 function atMidnight(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
 function addDays(d, n) { const x = atMidnight(d); x.setDate(x.getDate() + n); return x; }
 
@@ -38,7 +48,7 @@ function addMonthClamped(d) {
 //   overdue           → nextDate is strictly before today (daysUntil < 0).
 export function computeNextMeeting(schedule = {}, today = new Date()) {
   const dow = Number.isInteger(schedule.dayOfWeek) ? (((schedule.dayOfWeek % 7) + 7) % 7) : 0;
-  const cadence = schedule.cadence || "biweekly";
+  const cadence = schedule.cadence || DEFAULT_MEETING_CADENCE;
   const todayMid = atMidnight(today);
 
   let nextDate;

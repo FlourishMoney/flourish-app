@@ -249,7 +249,8 @@ const VIEWS = [
   // swaps "Next →" for "Done ✓".
   { name: "Tour step 1", tour: true, scope: "overlay", reload: true, go: async () => {} },
   { name: "Tour last step", tour: true, scope: "overlay", reload: true, go: async (p) => {
-      for (let i = 0; i < 3; i++) { await TXT(p, "Next →"); await p.waitForTimeout(500); } } },
+      // Tester suggestions: five steps now, one per tab, so four Nexts reach the last.
+      for (let i = 0; i < 4; i++) { await TXT(p, "Next →"); await p.waitForTimeout(500); } } },
   { name: "Do/My Goals", reload: true, go: async (p) => { await TAB(p, "Do"); await TXT(p, "Goals", true); await TXT(p, "My Goals", true); } },
   { name: "Do/My Goals + new goal form", reload: true, go: async (p) => { await TAB(p, "Do"); await TXT(p, "Goals", true); await TXT(p, "My Goals", true); await TXT(p, "+ Add Goal"); } },
 ];

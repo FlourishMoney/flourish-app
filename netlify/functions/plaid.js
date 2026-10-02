@@ -626,7 +626,7 @@ exports.handler = async (event) => {
     // deletion before the auth user goes, so the person can try again and nothing is orphaned:
     //   - loading plaid_items: if it fails, nothing has been touched yet, so we stop at once and the
     //     client's "nothing was changed" is literally true;
-    //   - deleting plaid_items, meeting_records and subscriptions.
+    //   - deleting plaid_items, meeting_records, subscriptions and feedback.
     // Plaid /item/remove stays best-effort: a Plaid outage must not trap someone in an account they
     // cannot delete. user_data, coach_usage and profiles cascade with the auth user, so they stay
     // best-effort as before.
@@ -655,7 +655,7 @@ exports.handler = async (event) => {
       // this user, so "no such table" counts as done rather than trapping everyone in their account.
       const missingTable = (e) => !!e && (e.code === "42P01" || e.code === "PGRST205" ||
         /does not exist|could not find the table/i.test(String(e.message || "")));
-      for (const table of ["meeting_records", "subscriptions"]) {
+      for (const table of ["meeting_records", "subscriptions", "feedback"]) {
         const { error: tErr } = await admin.from(table).delete().eq("user_id", user_id);
         if (tErr && !missingTable(tErr)) {
           console.error(`[delete_account] ${table} delete:`, tErr.message);

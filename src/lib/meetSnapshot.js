@@ -39,13 +39,26 @@ function _fmtDate(d) {
   catch { return String(d); }
 }
 
+// IS THERE ANYTHING TO FORECAST FROM? (prompt 4d) A household with no cash account has no balance:
+// the forecast starts from an assumed $0 and every day of it reads as "Low balance $0.00 takes you to
+// $0.00", which the agenda used to list day after day. A balance (a cash account) and a payday (an
+// income with an amount) are what the meeting's figures are worked out from; until both exist the
+// agenda says so in one plain line, and lists no low-balance days.
+export const MEET_SETUP_LINE = "Your agenda fills in once Flourish has a balance and a payday to work from.";
+export function meetSetupState(data = {}) {
+  const hasCashAccount = (data.accounts || []).some(a => isCashAccount(a));
+  const hasIncome = (data.incomes || []).some(i => num(i && i.amount) > 0);
+  return { hasCashAccount, hasIncome, needsSetup: !hasCashAccount || !hasIncome };
+}
+
 // Assemble the snapshot from engine outputs. Sections with no data are omitted; buildMeetingAgenda
 // handles a partial snapshot gracefully.
 export function buildMeetSnapshot(data = {}) {
   const snap = {};
 
-  // Upcoming risks — from ForecastEngine only (overdraft + low-balance events, next 14 days).
-  try {
+  // Upcoming risks — from ForecastEngine only (overdraft + low-balance events, next 14 days). Only
+  // when there is a balance to project from: with no cash account, every day is an invented $0.
+  if (meetSetupState(data).hasCashAccount) try {
     const fc = ForecastEngine.generate(data, 14) || {};
     const forecast = fc.forecast || [];
     const byDay = new Map(forecast.map(f => [f.day, f]));
@@ -204,7 +217,7 @@ export function meetOpeningFor(data = {}) {
 // adds, rounds or estimates. The text carries no bare number of its own — "in the week ahead"
 // rather than "in the next 7 days" — so anything numeric that reaches the facilitator can be traced
 // to an engine that calculated it.
-export function quietWeekAgendaFor({ safeToSpendText = null, safeToSpend = null, safeToSpendLabel = "Safe until next payday", upcoming = [], truncated = false, safeToSpendRows = null } = {}) {
+export function quietWeekAgendaFor({ safeToSpendText = null, safeToSpend = null, safeToSpendLabel = "Safe until next payday", upcoming = [], truncated = false, safeToSpendRows = null, needsSetup = false } = {}) {
   const progress = [];
   // The figure comes PRE-FORMATTED from safeToSpendView, the one owner of how this number is shown.
   // Formatting the engine's raw safeAmount here produced a different number from the rest of the
@@ -219,9 +232,12 @@ export function quietWeekAgendaFor({ safeToSpendText = null, safeToSpend = null,
   // the facilitator reads out in order — is simply wrong, and mislabels routine rent the same way.
   const up = (upcoming || []).filter(u => u && u.text).map(u => ({ text: u.text, value: u.value ?? null, source: "forecastEngine", ...(u.explain ? { explain: u.explain } : {}) }));
   if (truncated) up.push({ text: "More items follow in the week ahead.", value: null, source: "meetSnapshot" });
-  // Always last, and always present. It speaks about the week that HAPPENED, so it does not
-  // contradict the items above, which are about the week ahead.
-  progress.push({ text: "Nothing unusual happened this week.", value: null, source: "meetSnapshot" });
+  // Always last. It speaks about the week that HAPPENED, so it does not contradict the items above,
+  // which are about the week ahead. With nothing to work from yet (no balance or no payday) there is
+  // no week to describe: the one line says what the agenda is waiting for instead.
+  progress.push(needsSetup
+    ? { text: MEET_SETUP_LINE, value: null, source: "meetSnapshot" }
+    : { text: "Nothing unusual happened this week.", value: null, source: "meetSnapshot" });
   return { wins: [], changes: [], risks: [], progress, decisions: [], questions: [], upcoming: up, quiet: true };
 }
 
@@ -267,7 +283,8 @@ export function quietWeekFiguresFor(data = {}) {
       });
     });
   } catch { /* no forecast is not a reason to refuse the meeting */ }
-  return { safeToSpendText, safeToSpend, safeToSpendRows, upcoming: upcoming.slice(0, 6), truncated: upcoming.length > 6 };
+  return { safeToSpendText, safeToSpend, safeToSpendRows, upcoming: upcoming.slice(0, 6), truncated: upcoming.length > 6,
+           needsSetup: meetSetupState(data).needsSetup };
 }
 
 // ── WHAT IS COMING IS NOT ONLY FOR A QUIET WEEK ─────────────────────────────────────────────────
@@ -297,6 +314,9 @@ export function withWeekAhead(agenda, data = {}, label = "Safe until next payday
   // the next seven days the upcoming list comes back empty, so a guard that read it would prepend
   // this line again on every call.
   const line = f.safeToSpendText ? `${label}: ${f.safeToSpendText}.` : null;
+  if (f.needsSetup && !progress.some(p => p && p.text === MEET_SETUP_LINE)) {
+    progress.unshift({ text: MEET_SETUP_LINE, value: null, source: "meetSnapshot" });
+  }
   if (line && !progress.some(p => p && p.text === line)) {
     progress.unshift({ text: line, value: f.safeToSpend, source: "safeSpendEngine",
       ...(f.safeToSpendRows ? { explain: { title: label, value: f.safeToSpendText, meaning: SAFE_MEANING, rows: f.safeToSpendRows, source: "Safe to spend on Today" } } : {}) });

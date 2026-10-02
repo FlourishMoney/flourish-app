@@ -331,7 +331,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
     const today = (profile) => textOf(A.render(A.h(A.Dashboard, { data: { ...data, profile }, setAppData: noop, setScreen: noop, setShowNotifs: noop, onUpgrade: noop, onWhatIf: noop })));
     t.ok(today({ ...D.demoProfileFor("CA"), creditKnown: false }).includes(LABEL), "8e Today's health score tile shows the label when no credit score is entered");
     t.ok(!today(D.demoProfileFor("CA")).includes(LABEL), "8f …and not when one is (the demo's 718)");
-    t.ok(/\{healthBasis&&<div style=\{\{color:"#ffffff88"/.test(APP), "8g Money Wrapped shows it under its score too");
+    t.ok(/\{healthBasis&&<div style=\{\{color:WRAP_SUB/.test(APP), "8g Money Wrapped shows it under its score too (at 86% white since prompt 4b, for contrast)");
     // Prompt 3d: Meet, the widgets and the coach say so too.
     const partialData = { ...data, profile: { ...D.demoProfileFor("CA"), creditKnown: false } };
     const fullData = { ...data, profile: D.demoProfileFor("CA") };
@@ -383,20 +383,15 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
   // ── 11. Prompt 3d: no money instructions or verdicts in user-facing copy ─────────────────────
   {
     const { copyStrings, sentences } = require("./_copyStrings.cjs");
-    const MONEY_VERBS = ["Pay", "Invest", "Increase", "Open", "Avoid", "Hold", "Save", "Spend", "Cut", "Move", "Transfer", "Put", "Build", "Contribute", "Max", "Maximize",
-      "Reduce", "Cancel", "Consolidate", "Refinance", "Negotiate", "Compare", "Prioritize", "Consider", "Delay", "Wait", "Limit", "Lower", "Raise", "Pause", "Redirect",
-      "Allocate", "Automate", "Withdraw", "Fund", "Stop", "Keep", "Claim", "File", "Apply", "Track", "Trim", "Boost", "Earn", "Borrow", "Buy", "Sell", "Register", "Gather",
-      "Calculate", "Contact", "Get", "Start", "Use", "Don't", "Never", "Always", "Shop", "Switch", "Lock", "Set aside", "Plan", "Protect", "Grow", "Clear", "Tackle", "Skip",
-      "Celebrate", "Commit"];
-    const STARTS = new RegExp(`^(?:${MONEY_VERBS.join("|")})\\b`);
-    const VERDICT = /\b(should|shouldn't|worth (?:it|doing|claiming|getting|reviewing|checking)|best value|the best|recommend(?:ed|s)?|make sure|you must|must file|can afford|can't afford|go for it|think twice|not right now|free money|on the table|pro tip|high priority|unclaimed)\b/i;
+    // The lists live in _copyStrings.cjs so the tester-suggestions tests scan new copy with the same rules.
+    const { MONEY_VERBS, STARTS, VERDICT } = require("./_copyStrings.cjs");
     const ALLOW = new Set([
       // App navigation and controls: they act on the app, not on the household's money.
       "Move date", "Clear ✕", "Get My Insight →", "Use ↑↓ to reorder · 🔒 to pin. Show or hide cards in Settings → Dashboard.", "Move up", "Move down",
       "Save Layout", "Get Started →", "Keep mine", "Save changes", "✨ Build Your Budget Plan", "Build Plan", "✓ Save Budget Plan", "Save Changes ✓", "Start the meeting",
       "Start solo check-in", "Start Meeting ▶", "Start Check-In ▶", "Start New", "Save Debt ✓", "Save Goal ✓", "Always visible", "Open Family Dashboard →", "Open Support",
       "Start coaching session →", "Clear chat history", "Clear history", "Apply this change?", "Open Settings", "Save Goal", "Save Plan", "✓ Save My Budget Plan",
-      "Build Your Budget Plan", "✨ Build My Budget Plan", "Skip Tour", "Skip for now", "Open Plan Ahead. Any surprises?", "Track your net worth over time",
+      "Build Your Budget Plan", "✨ Build My Budget Plan", "Skip for now", "Open Plan Ahead. Any surprises?", "Track your net worth over time",
       "Get coaching from your own numbers, based on your real transactions and",
       "Flourish needs your AI consent again before the coach can join. Open Settings → Privacy & AI, turn the coach on, then come back.",
       "From this date on changes every later … deposit too. Use it for a raise, parental leave, EI, a job ending or a benefit change.",

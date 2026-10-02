@@ -70,7 +70,8 @@ function untappedFigures(html) {
   const sf = plan.slice(plan.indexOf("<SupportingFigures"), plan.indexOf("]}/>", plan.indexOf("<SupportingFigures")));
   t.ok(/onExplain:\(\)=>setExplainRange\("spend"\)/.test(sf.split("\n").find(l => l.includes('label:"Est. daily spend"')) || "") && (sf.match(/onExplain:/g) || []).length >= 3, "3c every supporting figure with an amount opens its working (daily spend, each paycheque)");
   t.ok(/r\.onExplain\s*\? <button onClick=\{r\.onExplain\}/.test(APP), "3d …and SupportingFigures renders that as a button");
-  t.ok(/role="button" tabIndex=\{0\} aria-expanded=\{isDrilled\}/.test(plan), "3e each day row is a real button (keyboard and screen reader), opening its breakdown");
+  t.ok(/<button onClick=\{stopToggle\} aria-expanded=\{isDrilled\}/.test(plan) && (plan.match(/onClick=\{stopToggle\}/g) || []).length === 2 && !/role="button" tabIndex=\{0\} aria-expanded=\{isDrilled\}/.test(plan),
+    "3e each day's date and balance are real buttons opening its breakdown, and no role=\"button\" wraps the line buttons (no nested controls)");
 
   // ── 4. Meet: every figure has a working tap target, with its source and working ───────────────
   for (const c of D.DEMO_COUNTRIES) {

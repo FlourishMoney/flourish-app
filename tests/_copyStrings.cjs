@@ -101,4 +101,21 @@ function sentences(text) {
   return String(text).split(/(?<=[.!?:])\s+|\s+[·•|]\s+|\n/).map(s => s.replace(/^[^A-Za-z"'(]+/, "").trim()).filter(Boolean);
 }
 
-module.exports = { copyStrings, sentences, REPO };
+// The advice scan's rules (prompt 3d): a sentence may not start with a money instruction verb, and
+// no string may hold a verdict. Shared by sourcedFigures.test.cjs section 11 and testerSuggestions.
+const MONEY_VERBS = ["Pay", "Invest", "Increase", "Open", "Avoid", "Hold", "Save", "Spend", "Cut", "Move", "Transfer", "Put", "Build", "Contribute", "Max", "Maximize",
+  "Reduce", "Cancel", "Consolidate", "Refinance", "Negotiate", "Compare", "Prioritize", "Consider", "Delay", "Wait", "Limit", "Lower", "Raise", "Pause", "Redirect",
+  "Allocate", "Automate", "Withdraw", "Fund", "Stop", "Keep", "Claim", "File", "Apply", "Track", "Trim", "Boost", "Earn", "Borrow", "Buy", "Sell", "Register", "Gather",
+  "Calculate", "Contact", "Get", "Start", "Use", "Don't", "Never", "Always", "Shop", "Switch", "Lock", "Set aside", "Plan", "Protect", "Grow", "Clear", "Tackle", "Skip",
+  "Celebrate", "Commit"];
+const STARTS = new RegExp(`^(?:${MONEY_VERBS.join("|")})\\b`);
+const VERDICT = /\b(should|shouldn't|worth (?:it|doing|claiming|getting|reviewing|checking)|best value|the best|recommend(?:ed|s)?|make sure|you must|must file|can afford|can't afford|go for it|think twice|not right now|free money|on the table|pro tip|high priority|unclaimed)\b/i;
+
+// True when a piece of copy breaks either rule.
+function adviceProblems(text) {
+  const why = sentences(text).filter((x) => STARTS.test(x)).map((x) => `starts "${x.split(" ").slice(0, 3).join(" ")}"`);
+  const v = String(text).match(VERDICT); if (v) why.push(`verdict "${v[0]}"`);
+  return why;
+}
+
+module.exports = { copyStrings, sentences, adviceProblems, MONEY_VERBS, STARTS, VERDICT, REPO };
