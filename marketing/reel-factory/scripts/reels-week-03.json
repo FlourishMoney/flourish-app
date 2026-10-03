@@ -1,0 +1,124 @@
+[
+  {
+    "id": "reel-03-01",
+    "week": "week-03",
+    "pillar": "the-surprise",
+    "hook": "Ever get a bill that catches you off guard?",
+    "voice": [
+      { "text": "Ever get a bill that catches you off guard?", "screen": "today-headline" },
+      { "text": "Flourish already found it, before it did.", "screen": "bill-due-card" },
+      { "text": "Every bill.", "screen": "today-breakdown" },
+      { "text": "Every payday.", "screen": "payday-deposit" },
+      { "text": "Laid out before it happens.", "screen": "watch-top" },
+      { "text": "Your money, handled.", "screen": "end-card" }
+    ],
+    "captionLines": [
+      "Ever get a bill that catches you off guard?",
+      "Flourish already found it, before it did.",
+      "Every bill.",
+      "Every payday.",
+      "Laid out before it happens.",
+      "Your money, handled."
+    ],
+    "endCard": [
+      "Your money, handled.",
+      "Join the waitlist. First 50 households get the founding price.",
+      "Link in bio."
+    ],
+    "captions": {
+      "instagram": "Ever get a bill that catches you off guard? Flourish finds every bill and payday before they surprise you, and lays out the next 90 days. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio.",
+      "tiktok": "Ever get a bill that catches you off guard? Flourish finds every bill and payday before they surprise you, and lays out the next 90 days. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio.",
+      "facebook": "Ever get a bill that catches you off guard? Flourish finds every bill and payday before they surprise you, and lays out the next 90 days. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio."
+    }
+  },
+  {
+    "id": "reel-03-02",
+    "week": "week-03",
+    "pillar": "it-does-it-for-you",
+    "hook": "You shouldn't have to hunt for your own bills.",
+    "voice": [
+      { "text": "You shouldn't have to hunt for your own bills.", "screen": "watch-top" },
+      { "text": "Flourish finds them the moment you link your bank.", "screen": "bills-card" },
+      { "text": "Every bill, every payday,", "screen": "ninety-day-scroll" },
+      { "text": "laid out for the next 90 days.", "screen": "rent-row" },
+      { "text": "Your money, handled.", "screen": "end-card" }
+    ],
+    "captionLines": [
+      "You shouldn't have to hunt for your own bills.",
+      "Flourish finds them the moment you link your bank.",
+      "Every bill, every payday,",
+      "laid out for the next 90 days.",
+      "Your money, handled."
+    ],
+    "endCard": [
+      "Your money, handled.",
+      "Join the waitlist. First 50 households get the founding price.",
+      "Link in bio."
+    ],
+    "captions": {
+      "instagram": "You shouldn't have to hunt for your own bills. Link your bank once and Flourish finds every bill and payday, laid out for the next 90 days. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio.",
+      "tiktok": "You shouldn't have to hunt for your own bills. Link your bank once and Flourish finds every bill and payday, laid out for the next 90 days. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio.",
+      "facebook": "You shouldn't have to hunt for your own bills. Link your bank once and Flourish finds every bill and payday, laid out for the next 90 days. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio."
+    }
+  },
+  {
+    "id": "reel-03-03",
+    "week": "week-03",
+    "pillar": "canadian-money-calendar",
+    "hook": "Some months you get paid three times. Do you know which ones?",
+    "voice": [
+      { "text": "Some months you get paid three times.", "screen": "watch-top" },
+      { "text": "Flourish shows you exactly which ones.", "screen": "ninety-day-scroll" },
+      { "text": "So you know the extra paycheque is coming,", "screen": "payday-deposit" },
+      { "text": "and what to do with it.", "screen": "bills-card" },
+      { "text": "Your money, handled.", "screen": "end-card" }
+    ],
+    "captionLines": [
+      "Some months you get paid three times.",
+      "Flourish shows you exactly which ones.",
+      "So you know the extra paycheque is coming,",
+      "and what to do with it.",
+      "Your money, handled."
+    ],
+    "endCard": [
+      "Your money, handled.",
+      "Join the waitlist. First 50 households get the founding price.",
+      "Link in bio."
+    ],
+    "captions": {
+      "instagram": "Some months you get paid three times. Flourish's 90-day view shows you exactly which ones, so the extra paycheque never sneaks by unplanned. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio.",
+      "tiktok": "Some months you get paid three times. Flourish's 90-day view shows you exactly which ones, so the extra paycheque never sneaks by unplanned. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio.",
+      "facebook": "Some months you get paid three times. Flourish's 90-day view shows you exactly which ones, so the extra paycheque never sneaks by unplanned. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio."
+    }
+  },
+  {
+    "id": "reel-03-04",
+    "week": "week-03",
+    "pillar": "the-money-meeting",
+    "hook": "Send this to your partner. 15 minutes, no fights about money.",
+    "voice": [
+      { "text": "Money fights usually start with a surprise.", "screen": "today-headline" },
+      { "text": "The money meeting is one 15-minute conversation,", "screen": "meet-agenda" },
+      { "text": "built from your own numbers.", "screen": "meet-agenda" },
+      { "text": "So it's about the plan. Not the blame.", "screen": "meet-agenda" },
+      { "text": "Your money, handled.", "screen": "end-card" }
+    ],
+    "captionLines": [
+      "Money fights usually start with a surprise.",
+      "The money meeting is one 15-minute conversation,",
+      "built from your own numbers.",
+      "So it's about the plan. Not the blame.",
+      "Your money, handled."
+    ],
+    "endCard": [
+      "Your money, handled.",
+      "Join the waitlist. First 50 households get the founding price.",
+      "Link in bio."
+    ],
+    "captions": {
+      "instagram": "Send this to your partner. Flourish's weekly money meeting turns your own numbers into one calm 15-minute conversation, no fights required. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio.",
+      "tiktok": "Send this to your partner. Flourish's weekly money meeting turns your own numbers into one calm 15-minute conversation, no fights required. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio.",
+      "facebook": "Send this to your partner. Flourish's weekly money meeting turns your own numbers into one calm 15-minute conversation, no fights required. Built in Canada, for Canadian families. First 50 households get the founding price. Waitlist link in bio."
+    }
+  }
+]
