@@ -14,8 +14,9 @@
 //   before:  2,150.37 + 4,000.00 − 1,287.42 − 1,287.42 − 9,875.10 = −6,299.57  (both Visa rows marked)
 //   after Yes: the debt is the card already listed:           = −5,012.15  (counted once)
 //   after No:  they are different cards, both stay:           = −6,299.57  (no mark, never asked again)
-// Safe to spend, minimum payments, the debt simulator (with and without the bank's liability feed)
-// and the 90-day forecast are identical, to the cent, before and after linking.
+// Safe to spend, minimum payments and the 90-day forecast are identical, to the cent, before and
+// after linking. The debt simulator's list is not, since demo-fixes C8a: the linked pair becomes one
+// entry (pinned exactly in sections 3, 8 and 9).
 //
 // demo-fixes C5 (section 8): the debt editor names a debt by its type alone ("Credit Card"). Such a
 // debt is offered the one bank account of its kind that no other debt is linked to and that was not
@@ -78,14 +79,26 @@ const { loadApp, textOf, describe } = require("./_renderApp.cjs");
     ["minimum payments not already paid by a bill", d => F.unbilledDebtMinimums(d.debts, d.bills).map(m => [m.debt && m.debt.name, m.amount])],
     ["minimum payment dates in the forecast", d => F.debtMinimumDates(d, T, 90).map(m => [m.day, m.amount, m.debt && m.debt.name])],
     ["the 90-day forecast (every day's balance, money in and out)", d => ForecastEngine.generate(d, 90, null, T).forecast.map(f => [f.day, Math.round(f.balance * 100), Math.round(f.income * 100), Math.round(f.expenses * 100)])],
-    ["the debt simulator's list", d => F.buildDebtListForSimulator(d.debts, d.liabilities)],
-    ["the debt simulator with the bank's liability feed (no APR sent)", d => F.buildDebtListForSimulator(d.debts, feed)],
     ["monthly cash flow", d => F.FinancialCalcEngine.cashFlow(d, {}, T)],
     ["daily spending", d => F.FinancialCalcEngine.avgDailySpend(d)],
     ["net worth's assets", d => F.FinancialCalcEngine.netWorth(d).assets],
   ];
   const unchanged = (tag, b, a) => FIGURES.forEach(([label, f]) => t.eq(JSON.stringify(f(a)), JSON.stringify(f(b)), `${tag} ${label}: identical before and after linking`));
   unchanged("3", before, after);
+  // demo-fixes C8a: the debt simulator's list is the one figure besides net worth that linking changes,
+  // on purpose: until answered the pair is two entries, both marked; once linked it is one entry, the
+  // bank's balance with the debt's rate and minimum. (B4 to C6 pinned it as identical.) Every other
+  // entry is identical.
+  const simShape = (d, L) => F.buildDebtListForSimulator(d.debts, L, d).map(e => [e.name, e.balance, e.rate, Math.round(e.min * 100) / 100, e.mayBeSame || null, !!e.linked]);
+  const simulatorOnLink = (tag, b, a, want) => {
+    t.eq([simShape(b, undefined), simShape(a, undefined)], want.none, `${tag} the debt simulator's list: two entries, both marked, until answered; one entry once linked`);
+    t.eq([simShape(b, feed), simShape(a, feed)], want.feed, `${tag} the debt simulator with the bank's liability feed (no APR sent): the same`);
+  };
+  const CAR = ["Car loan", 9875.1, 6.49, 310, null, false];
+  simulatorOnLink("3", before, after, {
+    none: [[["Visa", 1287.42, 19.99, 40, "card", false], CAR], [["Visa ••1111", 1287.42, 19.99, 40, null, true], CAR]],
+    feed: [[["Visa ••1111", 1287.42, 20, 40, "card", false], ["Visa", 1287.42, 19.99, 40, "card", false], CAR], [["Visa ••1111", 1287.42, 19.99, 40, null, true], CAR]],
+  });
 
   // ── 4. No, they're different: both stay, unmarked, never asked again ─────────────────────────────
   const no = F.dismissDebtAccountMatch(before, matches[0]);
@@ -184,6 +197,11 @@ const { loadApp, textOf, describe } = require("./_renderApp.cjs");
     t.eq([g1.rows.map(r => r.label), g1.totalCents, Math.round(F.FinancialCalcEngine.netWorth(yes).netWorth * 100), g1.totalCents - g0.totalCents, g1.matches.length],
       [["Chequing", "Savings", "Visa ••1111", "Car Loan"], -501215, -501215, 128742, 0], "8d MATH-LOCK: net worth moves by exactly +$1,287.42, to −$5,012.15, and nothing is asked again");
     unchanged("8e", gen, yes);
+    const CAR2 = ["Car Loan", 9875.1, 6.49, 310, null, false];
+    simulatorOnLink("8e", gen, yes, {
+      none: [[["Credit Card", 1287.42, 19.99, 40, "card", false], CAR2], [["Visa ••1111", 1287.42, 19.99, 40, null, true], CAR2]],
+      feed: [[["Visa ••1111", 1287.42, 20, 40, "card", false], ["Credit Card", 1287.42, 19.99, 40, "card", false], CAR2], [["Visa ••1111", 1287.42, 19.99, 40, null, true], CAR2]],
+    });
     t.eq(one({ id: 1, name: "Credit Card", balance: "100" }, card("Visa ••1111", -5000)), ["onlyAccount"], "8f a balance far from the card's does not disqualify it either: balance only ranks");
     // (b) one "Credit Card" debt, two bank credit cards.
     const second = { id: "v2", name: "Rewards ••2222", type: "credit", balance: -1287.42 };
@@ -232,6 +250,10 @@ const { loadApp, textOf, describe } = require("./_renderApp.cjs");
     t.eq([s1.rows.map(r => r.label), s1.rows.filter(r => r.cents === -128742).length, s1.totalCents, Math.round(F.FinancialCalcEngine.netWorth(yes).netWorth * 100), s1.totalCents - s0.totalCents, s1.matches.length],
       [["Chequing", "Savings", "Visa ••1111"], 1, 486295, 486295, 128742, 0], "9f MATH-LOCK: after Yes the card is counted once: +$4,862.95, exactly +$1,287.42, and nothing is asked again");
     unchanged("9g", synced, yes);
+    simulatorOnLink("9g", synced, yes, {
+      none: [[["Visa ••1111", 1287.42, 20, 25.75, "card", false], ["Credit Card", 1287.42, 19.99, 40, "card", false]], [["Visa ••1111", 1287.42, 19.99, 40, null, true]]],
+      feed: [[["Visa ••1111", 1287.42, 20, 40, "card", false], ["Credit Card", 1287.42, 19.99, 40, "card", false]], [["Visa ••1111", 1287.42, 19.99, 40, null, true]]],
+    });
     // The live-balance row is never offered, whatever it is called or keyed by, and is never a target.
     const keyed = { ...synced, debts: [{ ...synced.debts[0], id: "bank-v1", name: "Credit Card" }, synced.debts[1]] };
     const all = [synced, yes, F.dismissDebtAccountMatch(synced, m[0]), keyed, { ...synced, debts: [synced.debts[0]] }, { ...keyed, debts: [keyed.debts[0]] }].flatMap(d => F.likelyDebtAccountMatches(d));

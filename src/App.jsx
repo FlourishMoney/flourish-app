@@ -1198,7 +1198,7 @@ function AutopilotCard({data, setScreen}) {
   // The household's own goals and debts, by name, with their own balances. No amount is suggested
   // for any of them.
   const ownItems = [
-    ...(plan.debtsOwed||[]).map(d => ({ icon:"💳", label:d.name, amount:formatMoney(d.balance), detail:`owed${d.rate ? `, ${d.rate}%${d.rateEstimated ? " (assumed rate)" : ""}` : ""}` })),
+    ...(plan.debtsOwed||[]).map(d => ({ icon:"💳", label:d.name, amount:formatMoney(d.balance), detail:`owed${d.rate ? `, ${d.rate}%${d.rateEstimated ? " (assumed rate)" : ""}` : ""}${d.mayBeSame ? `, may be the same ${d.mayBeSame}` : ""}` })),
     ...(plan.goalsSaved||[]).map(g => ({ icon:"🌱", label:g.name, amount:formatMoney(g.saved), detail: g.target > 0 ? `saved of ${formatMoney(g.target)}` : "saved" })),
   ];
 
@@ -2078,6 +2078,7 @@ function debtScenarioResult(targetDebt, extraPayment, debts) {
     debtBalance: balance,
     debtApr: apr,
     debtAprEstimated: !!targetDebt.rateEstimated, // Sprint 4b: APR was a fallback, not the user's real rate
+    debtMayBeSame: targetDebt.mayBeSame || null, // demo-fixes C8a: an unanswered likely pair is marked
     currentPayment,
     extraPayment,
     baselineMonths: result.baseline.monthsToPayoff,
@@ -2167,7 +2168,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
     // ── DEBT PAYOFF SCENARIO ─────────────────────────────────────────────
     if (scenarioType === "debt") {
       // Phase B4: unified debt list — Plaid liabilities (authoritative) + non-bank manual debts
-      const debts = buildDebtListForSimulator(data.debts, data.liabilities);
+      const debts = buildDebtListForSimulator(data.debts, data.liabilities, data);
       if (debts.length === 0) {
         setResult({
           scenarioType: "debt",
@@ -2471,6 +2472,7 @@ Rules: do not invent or quote any number not in the calculated results above. St
                   <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>Applied to</div>
                   <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,color:C.cream}}>{result.debtName}</div>
                   <div style={{color:C.muted,fontSize:13,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${result.debtBalance.toFixed(2)} @ {result.debtApr}% APR · ${result.currentPayment.toFixed(0)}/mo current payment</div>
+                  {result.debtMayBeSame&&<div style={{color:C.mutedHi,fontSize:13,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>May be the same {result.debtMayBeSame} as another debt in your list.</div>}
                   {/* Prompt 3b: an assumed rate is labelled as one, and the household can enter theirs. Saving it
                       recomputes this result with the same model, without counting another simulation. */}
                   {result.debtAprEstimated && (rateDraft===null

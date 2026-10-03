@@ -114,8 +114,8 @@ const path = require("path");
     const fmt = (m) => (m >= 240 ? "20+ yrs" : m >= 24 ? `${Math.round(m / 12)} yrs` : `${m} mo`);
     t.ok(extra > 0 && fmt(240) === "20+ yrs", "6c0 (the linked household has a spare amount)");
     t.eq(meetDec && meetDec.options[0].outcome, "$3,000 owed at 22.99%", "6c Meet names the card with the bank's balance and APR (prompt 3e: no payoff projection)");
-    t.ok(/const top = selectHighestRateDebt\(buildDebtListForSimulator\(data\.debts, data\.liabilities\)\);/.test(meet), "6d Meet picks from the What-If list");
-    t.ok(/buildDebtListForSimulator\(data\.debts, data\.liabilities\)/.test(read("src/lib/decisionEngine.js")), "6e the Money Plan lists debts from the What-If list too");
+    t.ok(/const top = selectHighestRateDebt\(buildDebtListForSimulator\(data\.debts, data\.liabilities, data\)\);/.test(meet), "6d Meet picks from the What-If list");
+    t.ok(/buildDebtListForSimulator\(data\.debts, data\.liabilities, data\)/.test(read("src/lib/decisionEngine.js")), "6e the Money Plan lists debts from the What-If list too");
   }
 
   t.summary("debtPayoffOneModel.test");

@@ -455,8 +455,58 @@ const DEFAULT_APR_CREDIT    = 20; // typical Canadian credit-card APR
 const DEFAULT_RATE_MORTGAGE = 5;  // mortgages typically 3–6%
 const DEFAULT_RATE_STUDENT  = 6;  // student loans typically 5–7%
 
-export function buildDebtListForSimulator(manualDebts, liabilities) {
+// demo-fixes C8a: `data` (the household: accounts, debtLinkDismissed) lets the list treat a linked pair
+// as one debt and mark an unanswered pair. A hand-entered debt the household linked to a bank account
+// (sameAsAccountId) and that account's own entries (its live-balance row, or the bank's liability
+// entry) are ONE entry: the bank's balance as it is now, with the hand-entered debt's rate and minimum
+// when it has them, else the bank's. A likely pair not yet answered stays two entries, each with
+// mayBeSame ("card" or "line of credit").
+export function buildDebtListForSimulator(manualDebts, liabilities, data = {}) {
   const manual = Array.isArray(manualDebts) ? manualDebts : [];
+  const accounts = Array.isArray(data && data.accounts) ? data.accounts : [];
+  const linkedHand = new Map(); // bank account id → [the hand-entered debt linked to it, its index]
+  manual.forEach((d, i) => {
+    const id = d && !d.fromBank && d.sameAsAccountId != null && d.sameAsAccountId !== "" ? String(d.sameAsAccountId) : null;
+    if (id && !linkedHand.has(id)) linkedHand.set(id, [d, i]);
+  });
+  const handFor = (accountId) => accountId != null ? linkedHand.get(String(accountId)) || null : null;
+  const isFoldedRow = (d) => !!(d && d.fromBank && handFor(d.account_id)); // the bank's row of a linked pair
+  // One entry for a linked pair, when the bank sends no liability entry for the account.
+  const linkedEntry = (d, manualIndex) => {
+    const accountId = String(d.sameAsAccountId);
+    const acct = accounts.find(a => a && String(a.id) === accountId);
+    const row = manual.find(m => m && m.fromBank && String(m.account_id) === accountId);
+    const balance = acct ? Math.abs(num(acct.balance)) : row ? num(row.balance) : num(d.balance);
+    const rate = num(d.rate) > 0 ? num(d.rate) : row && num(row.rate) > 0 ? num(row.rate) : 0;
+    const min = num(d.min) > 0 ? num(d.min) : row ? num(row.min) : 0;
+    return {
+      name: (acct && acct.name) || (row && row.name) || d.name || "Debt",
+      balance,
+      rate: rate > 0 ? rate : DEFAULT_APR_CREDIT,
+      rateEstimated: !(rate > 0),
+      min: debtMinimumPayment({ min, balance }),
+      source: "manual",
+      debtType: "manual",
+      manualIndex, // a rate entered here is saved on the hand-entered debt, which is read first
+      account_id: accountId,
+      linked: true,
+    };
+  };
+  const isLinkedHand = (d, manualIndex) => !!(d && !d.fromBank && handFor(d.sameAsAccountId) && handFor(d.sameAsAccountId)[1] === manualIndex);
+  // Unanswered likely pairs (B4): the hand-entered debt and the bank's entry for that account are marked.
+  const markByIndex = new Map(), markByAccount = new Map();
+  if (accounts.length) {
+    for (const m of likelyDebtAccountMatches({ accounts, debts: manual, debtLinkDismissed: data.debtLinkDismissed })) {
+      const word = m.accountKind === "loc" ? "line of credit" : "card";
+      markByIndex.set(m.debtIndex, word);
+      markByAccount.set(String(m.accountId), word);
+      manual.forEach((x, i) => { if (x && x.fromBank && String(x.account_id) === String(m.accountId)) markByIndex.set(i, word); });
+    }
+  }
+  const marked = (list) => list.map(e => {
+    const word = (e.source === "manual" && Number.isInteger(e.manualIndex) && markByIndex.get(e.manualIndex)) || (e.source !== "manual" && e.account_id != null && markByAccount.get(String(e.account_id)));
+    return word ? { ...e, mayBeSame: word } : e;
+  });
   const plaidCredit   = liabilities && Array.isArray(liabilities.credit)   ? liabilities.credit   : [];
   const plaidMortgage = liabilities && Array.isArray(liabilities.mortgage) ? liabilities.mortgage : [];
   const plaidStudent  = liabilities && Array.isArray(liabilities.student)  ? liabilities.student  : [];
@@ -464,10 +514,11 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
 
   // No Plaid liabilities → use manual debts unchanged (back-compat for users without bank-connected liabilities)
   if (!hasAnyPlaid) {
-    return manual
+    return marked(manual
       .map((d, manualIndex) => [d, manualIndex])
-      .filter(([d]) => num(d.balance) > 0)
+      .filter(([d, manualIndex]) => !isFoldedRow(d) && (isLinkedHand(d, manualIndex) || num(d.balance) > 0))
       .map(([d, manualIndex]) => {
+        if (isLinkedHand(d, manualIndex)) return linkedEntry(d, manualIndex);
         const real = num(d.rate);
         return {
           name: d.name || "Debt",
@@ -479,7 +530,8 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
           debtType: "manual",
           manualIndex, // where applyDebtRate writes a rate the household enters
         };
-      });
+      })
+      .filter(e => e.balance > 0));
   }
 
   // Plaid liabilities present → build authoritative list across all 3 categories.
@@ -492,18 +544,22 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
   const creditEntries = plaidCredit
     .filter(c => (c.balance || 0) > 0)
     .map(c => {
-      const real = num(c.apr) || entered(c.account_id);
+      const pair = handFor(c.account_id); // C8a: the hand-entered debt linked to this card, if any
+      const hand = pair ? pair[0] : null;
+      const real = (hand && num(hand.rate)) || num(c.apr) || entered(c.account_id);
       return {
         name: c.name || "Credit Card",
         balance: c.balance || 0,
         rate: real > 0 ? real : DEFAULT_APR_CREDIT, // Plaid sometimes returns null APR
         rateEstimated: !(real > 0),
-        min: debtMinimumPayment({ min: c.minPayment, balance: c.balance }),
+        min: debtMinimumPayment({ min: hand && num(hand.min) > 0 ? hand.min : c.minPayment, balance: c.balance }),
         source: "plaid_liability",
         debtType: "credit_card",
         account_id: c.account_id,
+        ...(hand ? { linked: true } : {}),
       };
     });
+  const fedIds = new Set(plaidCredit.map(c => String(c.account_id)));
 
   const mortgageEntries = plaidMortgage
     .filter(m => (m.balance || 0) > 0)
@@ -540,8 +596,11 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
   // Add manual debts that are NOT fromBank (user-entered standalones — IOUs, unconnected cards, etc.)
   const manualStandalones = manual
     .map((d, manualIndex) => [d, manualIndex])
-    .filter(([d]) => !d.fromBank && num(d.balance) > 0)
+    // C8a: a linked hand-entered debt is folded into the bank's entry for its account; with no such
+    // entry, it is one entry built from the account (linkedEntry).
+    .filter(([d, manualIndex]) => !d.fromBank && !(isLinkedHand(d, manualIndex) && fedIds.has(String(d.sameAsAccountId))) && (isLinkedHand(d, manualIndex) || num(d.balance) > 0))
     .map(([d, manualIndex]) => {
+      if (isLinkedHand(d, manualIndex)) return linkedEntry(d, manualIndex);
       const real = num(d.rate);
       return {
         name: d.name || "Debt",
@@ -555,7 +614,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
       };
     });
 
-  return [...creditEntries, ...mortgageEntries, ...studentEntries, ...manualStandalones];
+  return marked([...creditEntries, ...mortgageEntries, ...studentEntries, ...manualStandalones.filter(e => e.balance > 0)]);
 }
 
 // Sprint MATH-LOCK Group C: markTransfers moved to plaidNormalize.js (it belongs with the Plaid
