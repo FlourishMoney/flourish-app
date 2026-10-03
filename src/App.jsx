@@ -6830,7 +6830,7 @@ function DebtLinkPrompt({ match, setAppData }) {
   return (
     <div role="group" aria-labelledby={`debt-link-${match.pairKey}`} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:LAYOUT.cardPadding,marginBottom:LAYOUT.cardGap}}>
       <div id={`debt-link-${match.pairKey}`} style={{color:C.cream,...TYPE.headline,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Is this the same as your {match.accountLabel}?</div>
-      <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.xs,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your debt "{match.debtLabel}" may be that card. Until you say, net worth counts both, so it may be counted twice.</div>
+      <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.xs,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your debt "{match.debtLabel}" may be that {match.accountKind==="loc"?"line of credit":"card"}. Until you say, net worth counts both, so it may be counted twice.</div>
       <div style={{display:"flex",gap:GAP.controlToControl,marginTop:GAP.textToControl,flexWrap:"wrap"}}>
         <button onClick={()=>setAppData(prev=>linkDebtToAccount(prev, match))} style={{flex:"1 1 140px",minHeight:LAYOUT.minTap,background:C.green+"1A",border:`1px solid ${C.green}55`,borderRadius:12,color:C.greenInk,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Yes, link them</button>
         <button onClick={()=>setAppData(prev=>dismissDebtAccountMatch(prev, match))} style={{flex:"1 1 140px",minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.border}`,borderRadius:12,color:C.mutedHi,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>No, they're different</button>

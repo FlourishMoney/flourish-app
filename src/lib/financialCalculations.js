@@ -1191,8 +1191,13 @@ export function isBaseCurrencyAccount(account, data) {
 //   - they share the last 4 digits (from the name or the account's mask); or
 //   - the names share an issuer or network (Visa, Mastercard, Amex, Chase, TD, RBC, ...).
 // Balances alone never make a pair (C2): the closer balance only ranks pairs that already qualify.
+// A debt named only by its type, as the debt editor names it ("Credit Card", "Line of Credit": no digits,
+// issuer or network), qualifies when exactly one bank account of its kind (a credit card for a card, a line
+// of credit for a line of credit) is linked to no other debt and not dismissed for this debt (C5). With two
+// or more, nothing is asked.
 // Each debt is paired with at most one account and each account with at most one debt, the strongest
-// first (last 4 digits, then issuer, then the smaller balance gap). Debts are identified by id only (C1).
+// first (last 4 digits, then issuer, then the only account of its kind, then the smaller balance gap).
+// Debts are identified by id only (C1).
 const _ISSUERS = ["visa", "mastercard", "master card", "amex", "american express", "discover", "chase", "sapphire", "capital one", "citi", "citibank",
   "barclays", "synchrony", "wells fargo", "bank of america", "us bank", "u.s. bank", "td", "rbc", "bmo", "scotia", "scotiabank", "cibc", "tangerine",
   "simplii", "desjardins", "national bank", "pc financial", "mbna", "rogers", "triangle", "hsbc", "neo", "koho", "brim", "home trust", "costco"];
@@ -1203,6 +1208,10 @@ const _isBankCreditAccount = (a) => {
   const t = (a && a.type || "").toLowerCase(), s = (a && a.subtype || "").toLowerCase();
   return t === "credit" || t === "credit card" || s === "credit card" || t === "line of credit";
 };
+// demo-fixes C5: the generic type names, and the kind each one is.
+const _GENERIC_DEBT_KIND = { "credit card": "card", "card": "card", "line of credit": "loc", "credit line": "loc", "loc": "loc" };
+const _genericDebtKind = (d) => { const n = String(d && d.name || "").toLowerCase(); return /\d/.test(n) ? null : _GENERIC_DEBT_KIND[n.replace(/[^a-z]+/g, " ").trim()] || null; };
+const _accountKind = (a) => ((a && a.type || "").toLowerCase() === "line of credit" || (a && a.subtype || "").toLowerCase() === "line of credit" ? "loc" : "card");
 const _isCardLikeDebt = (d) => { const n = String(d && d.name || ""); return /credit card|line of credit|\bloc\b|\bcard\b|\bcredit\b/i.test(n) || _issuersIn(n).size > 0; };
 // demo-fixes C1: a debt is identified by its id and nothing else. Names are usually the debt's type
 // ("Credit Card"), so two cards can share one; keying on the name linked both. Every debt is given a
@@ -1224,10 +1233,10 @@ export function likelyDebtAccountMatches(data = {}) {
   debts.forEach((d, debtIndex) => {
     if (!d || debtKey(d) == null || d.fromBank || (d.account_id && cardIds.has(d.account_id)) || (d.sameAsAccountId && cardIds.has(d.sameAsAccountId))) return;
     if (!_isCardLikeDebt(d) || !(num(d.balance) > 0)) return;
-    for (const a of cards) {
-      if (linkedIds.has(a.id)) continue;
+    const open = cards.filter(a => !linkedIds.has(a.id) && !dismissed.has(`${debtKey(d)}|${a.id}`));
+    const kind = _genericDebtKind(d), ofKind = kind ? open.filter(a => _accountKind(a) === kind) : [];
+    for (const a of open) {
       const pairKey = `${debtKey(d)}|${a.id}`;
-      if (dismissed.has(pairKey)) continue;
       const aName = `${a.name || ""} ${a.institution || ""}`;
       const d4 = _last4(d.name), a4 = a.mask ? String(a.mask).slice(-4) : _last4(a.name);
       const shared = [..._issuersIn(d.name)].filter(x => _issuersIn(aName).has(x));
@@ -1237,10 +1246,12 @@ export function likelyDebtAccountMatches(data = {}) {
       const reasons = [];
       if (d4 && a4 && d4 === a4) reasons.push("last4");
       if (shared.length) reasons.push("issuer");
+      // demo-fixes C5: a name that is only a type pairs with the one open account of that kind, or none.
+      if (ofKind.length === 1 && ofKind[0] === a) reasons.push("onlyAccount");
       const balanceGap = Math.round(Math.abs(num(d.balance) - Math.abs(num(a.balance))) * 100) / 100;
       if (reasons.length) candidates.push({ debtIndex, debtKey: debtKey(d), accountId: a.id, pairKey, reasons, balanceGap,
-        debtLabel: String(d.name || "Debt"), accountLabel: accountLabelWithMask(a),
-        score: (reasons.includes("last4") ? 4 : 0) + (reasons.includes("issuer") ? 2 : 0) });
+        debtLabel: String(d.name || "Debt"), accountLabel: accountLabelWithMask(a), accountKind: _accountKind(a),
+        score: (reasons.includes("last4") ? 4 : 0) + (reasons.includes("issuer") ? 2 : 0) + (reasons.includes("onlyAccount") ? 1 : 0) });
     }
   });
   candidates.sort((x, y) => y.score - x.score || x.balanceGap - y.balanceGap || x.debtIndex - y.debtIndex);

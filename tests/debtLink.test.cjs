@@ -16,6 +16,11 @@
 //   after No:  they are different cards, both stay:           = −6,299.57  (no mark, never asked again)
 // Safe to spend, minimum payments, the debt simulator (with and without the bank's liability feed)
 // and the 90-day forecast are identical, to the cent, before and after linking.
+//
+// demo-fixes C5 (section 8): the debt editor names a debt by its type alone ("Credit Card"). Such a
+// debt is offered the one bank account of its kind that no other debt is linked to and that was not
+// dismissed for it; with two or more to choose from, nothing is asked. A "Line of Credit" debt is
+// never paired with a credit card. Balance never qualifies a pair; it only ranks.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -61,19 +66,22 @@ const { loadApp, textOf, describe } = require("./_renderApp.cjs");
     [["Chequing", "Savings", "Visa ••1111", "Car loan"], -501215, -501215, 0], "2b the card is counted once: −$5,012.15, and nothing is asked again");
 
   // ── 3. …and nothing else changes, to the cent ───────────────────────────────────────────────────
-  const same = (label, f) => t.eq(JSON.stringify(f(after)), JSON.stringify(f(before)), `3 ${label}: identical before and after linking`);
-  same("safe to spend (every field)", d => SafeSpendEngine.calculate(d, T));
-  same("the safe-to-spend figure Today shows", d => DE.displayedSafeToSpend(d, T));
-  same("the spare amount", d => DE.spareUntilDeposit(d, T));
-  same("minimum payments not already paid by a bill", d => F.unbilledDebtMinimums(d.debts, d.bills).map(m => [m.debt && m.debt.name, m.amount]));
-  same("minimum payment dates in the forecast", d => F.debtMinimumDates(d, T, 90).map(m => [m.day, m.amount, m.debt && m.debt.name]));
-  same("the 90-day forecast (every day's balance, money in and out)", d => ForecastEngine.generate(d, 90, null, T).forecast.map(f => [f.day, Math.round(f.balance * 100), Math.round(f.income * 100), Math.round(f.expenses * 100)]));
-  same("the debt simulator's list", d => F.buildDebtListForSimulator(d.debts, d.liabilities));
   const feed = { credit: [{ account_id: "v1", name: "Visa ••1111", balance: 1287.42, apr: null, minPayment: 40 }], mortgage: [], student: [] };
-  same("the debt simulator with the bank's liability feed (no APR sent)", d => F.buildDebtListForSimulator(d.debts, feed));
-  same("monthly cash flow", d => F.FinancialCalcEngine.cashFlow(d, {}, T));
-  same("daily spending", d => F.FinancialCalcEngine.avgDailySpend(d));
-  same("net worth's assets", d => F.FinancialCalcEngine.netWorth(d).assets);
+  const FIGURES = [
+    ["safe to spend (every field)", d => SafeSpendEngine.calculate(d, T)],
+    ["the safe-to-spend figure Today shows", d => DE.displayedSafeToSpend(d, T)],
+    ["the spare amount", d => DE.spareUntilDeposit(d, T)],
+    ["minimum payments not already paid by a bill", d => F.unbilledDebtMinimums(d.debts, d.bills).map(m => [m.debt && m.debt.name, m.amount])],
+    ["minimum payment dates in the forecast", d => F.debtMinimumDates(d, T, 90).map(m => [m.day, m.amount, m.debt && m.debt.name])],
+    ["the 90-day forecast (every day's balance, money in and out)", d => ForecastEngine.generate(d, 90, null, T).forecast.map(f => [f.day, Math.round(f.balance * 100), Math.round(f.income * 100), Math.round(f.expenses * 100)])],
+    ["the debt simulator's list", d => F.buildDebtListForSimulator(d.debts, d.liabilities)],
+    ["the debt simulator with the bank's liability feed (no APR sent)", d => F.buildDebtListForSimulator(d.debts, feed)],
+    ["monthly cash flow", d => F.FinancialCalcEngine.cashFlow(d, {}, T)],
+    ["daily spending", d => F.FinancialCalcEngine.avgDailySpend(d)],
+    ["net worth's assets", d => F.FinancialCalcEngine.netWorth(d).assets],
+  ];
+  const unchanged = (tag, b, a) => FIGURES.forEach(([label, f]) => t.eq(JSON.stringify(f(a)), JSON.stringify(f(b)), `${tag} ${label}: identical before and after linking`));
+  unchanged("3", before, after);
 
   // ── 4. No, they're different: both stay, unmarked, never asked again ─────────────────────────────
   const no = F.dismissDebtAccountMatch(before, matches[0]);
@@ -87,11 +95,15 @@ const { loadApp, textOf, describe } = require("./_renderApp.cjs");
   const one = (debt, acct) => F.likelyDebtAccountMatches({ accounts: [acct], debts: [debt] }).map(m => m.reasons.join("+"));
   t.eq(one({ id: 1, name: "Credit Card 4471", balance: "900" }, card("Rewards ••4471", -2000)), ["last4"], "5a the last 4 digits");
   t.eq(one({ id: 1, name: "Mastercard", balance: "900" }, card("World Elite Mastercard", -2000)), ["issuer"], "5b the issuer or network");
-  // demo-fixes C2: balances alone never make a pair.
-  t.eq(one({ id: 1, name: "Credit Card", balance: "1500.40" }, card("Card ••0001", -1500)), [], "5c balances within $1 alone do not (C2)");
-  t.eq(one({ id: 1, name: "Credit Card", balance: "1500" }, card("Card ••0001", -1500)), [], "5d …not even equal ones");
+  // demo-fixes C2: balances alone never make a pair. (C5: a debt named only by its type is offered the one
+  // account of its kind it could be, section 8; with two to choose from, a matching balance does not choose.)
+  const fromTwo = (debt, a, b) => F.likelyDebtAccountMatches({ accounts: [a, b], debts: [debt] }).map(m => m.reasons.join("+"));
+  const card2 = { id: "z", name: "Card ••0002", type: "credit", balance: -300 };
+  t.eq(fromTwo({ id: 1, name: "Credit Card", balance: "1500.40" }, card("Card ••0001", -1500), card2), [], "5c a balance within $1 of one of two cards does not pick it (C2)");
+  t.eq(fromTwo({ id: 1, name: "Credit Card", balance: "1500" }, card("Card ••0001", -1500), card2), [], "5d …not even an equal one");
   t.eq(one({ id: 1, name: "TD Line of Credit", balance: "3000" }, { id: "l", name: "TD Line of Credit", type: "line of credit", balance: -3000 }), ["issuer"], "5e a line of credit, by its issuer");
-  t.eq(one({ id: 1, name: "Line of Credit", balance: "3000" }, { id: "l", name: "TD Line of Credit", type: "line of credit", balance: -3000 }), [], "5e2 …not by its balance");
+  t.eq(fromTwo({ id: 1, name: "Line of Credit", balance: "3000" }, { id: "l", name: "TD Line of Credit", type: "line of credit", balance: -3000 },
+    { id: "m", name: "RBC Line of Credit", type: "line of credit", balance: -800 }), [], "5e2 …and of two lines of credit, not by its balance");
   t.eq(F.likelyDebtAccountMatches({ accounts: [card("Rewards ••1234", -2500), { id: "y", name: "Everyday ••5678", type: "credit", balance: -900 }],
     debts: [{ id: "a", name: "Credit Card", balance: "2500" }, { id: "b", name: "Mastercard ••9999", balance: "900" }] }), [],
     "5j two different cards with equal balances and no shared digits, issuer or network: no prompt");
@@ -115,8 +127,16 @@ const { loadApp, textOf, describe } = require("./_renderApp.cjs");
       debts: [{ id: "cc-a", name: "Credit Card", balance: "1287.42", rate: "19.99", min: "40" }, { id: "cc-b", name: "Credit Card", balance: "640.25", rate: "21.99", min: "25" }] };
     const nw = (d) => F.netWorthRows(d).totalCents;
     t.eq(nw(two), -106472, "7a two Credit Card debts and the bank Visa: −$1,064.72");
-    t.eq(F.likelyDebtAccountMatches(two), [], "7b (neither is offered: \"Credit Card\" shares no digits, issuer or network with Visa ••1111, C2)");
+    // (c) demo-fixes C5: each "Credit Card" debt is eligible for the one bank card; one is asked at a time,
+    // the closer balance first. (Under C2 alone neither was offered.)
+    t.eq(F.likelyDebtAccountMatches(two).map(m => [m.debtKey, m.accountId, m.reasons.join("+")]), [["cc-a", "v1", "onlyAccount"]],
+      "7b (c) both are eligible for the one bank card; cc-a, the closer balance, is asked first");
+    t.eq(F.likelyDebtAccountMatches(F.dismissDebtAccountMatch(two, { debtKey: "cc-a", accountId: "v1", pairKey: "cc-a|v1" })).map(m => [m.debtKey, m.accountId]), [["cc-b", "v1"]],
+      "7b2 …and cc-b is eligible too: after No on cc-a, cc-b is asked about the same card");
     const linked = F.linkDebtToAccount(two, { debtKey: "cc-a", accountId: "v1", pairKey: "cc-a|v1" });
+    t.eq(F.likelyDebtAccountMatches(linked), [], "7b3 once cc-a is linked to Visa ••1111, cc-b is no longer offered that card");
+    t.eq(F.likelyDebtAccountMatches({ ...linked, accounts: [...linked.accounts, { id: "v2", name: "Rewards ••2222", type: "credit", balance: -640.25 }] }).map(m => [m.debtKey, m.accountId]),
+      [["cc-b", "v2"]], "7b4 (a second bank card, the only one open, is then offered to cc-b)");
     t.eq(linked.debts.map(d => [d.id, d.sameAsAccountId || null]), [["cc-a", "v1"], ["cc-b", null]], "7c Yes on cc-a links cc-a only, by its id");
     t.eq([nw(linked), nw(linked) - nw(two)], [22270, 128742], "7d net worth changes by exactly that debt's balance: +$1,287.42, to +$222.70");
     t.ok(F.netWorthRows(linked).rows.some(r => r.kind === "debt" && r.id === "cc-b" && r.cents === -64025), "7e the other Credit Card is still counted, −$640.25");
@@ -139,6 +159,47 @@ const { loadApp, textOf, describe } = require("./_renderApp.cjs");
     t.ok(F.withDebtIds(once) === once && F.withDebtIds(once.map((d, i) => i === 0 ? { ...d, balance: "1000" } : d))[0].id === once[0].id, "7m once given, an id is kept when the debt changes");
   }
 
+  // ── 8. A debt named only by its type (demo-fixes C5) ──────────────────────────────────────────
+  // MATH-LOCK, hand-worked, to the cent: Chequing +2,150.37, Savings +4,000.00, Visa ••1111 (bank card)
+  // −1,287.42, "Credit Card" (hand-entered, id cc) −1,287.42, Car Loan (installment) −9,875.10.
+  //   before:    2,150.37 + 4,000.00 − 1,287.42 − 1,287.42 − 9,875.10 = −6,299.57  (both card rows marked)
+  //   after Yes: the debt is the card already listed                  = −5,012.15  (+1,287.42 exactly)
+  // Every other figure is identical before and after, to the cent.
+  {
+    const gen = { ...base, accounts: before.accounts,
+      debts: [{ id: "cc", name: "Credit Card", balance: "1287.42", rate: "19.99", min: "40" }, { id: "car", name: "Car Loan", balance: "9875.10", rate: "6.49", min: "310" }] };
+    // (a) one "Credit Card" debt, exactly one bank credit card.
+    const m = F.likelyDebtAccountMatches(gen);
+    t.eq(m.map(x => [x.debtKey, x.accountId, x.accountLabel, x.reasons.join("+"), x.balanceGap]), [["cc", "v1", "Visa ••1111", "onlyAccount", 0]],
+      "8a (a) one \"Credit Card\" debt and exactly one bank credit card: it is offered");
+    const g0 = F.netWorthRows(gen);
+    t.eq([g0.totalCents, g0.rows.filter(r => r.mayCountTwice).map(r => r.label)], [-629957, ["Visa ••1111", "Credit Card"]], "8b until it is answered, both rows are marked and summed: −$6,299.57");
+    const yes = F.linkDebtToAccount(gen, m[0]);
+    t.eq(yes.debts.map(d => [d.id, d.sameAsAccountId || null, d.account_id || null]), [["cc", "v1", null], ["car", null, null]], "8c Yes links that debt only, by its id");
+    const g1 = F.netWorthRows(yes);
+    t.eq([g1.rows.map(r => r.label), g1.totalCents, Math.round(F.FinancialCalcEngine.netWorth(yes).netWorth * 100), g1.totalCents - g0.totalCents, g1.matches.length],
+      [["Chequing", "Savings", "Visa ••1111", "Car Loan"], -501215, -501215, 128742, 0], "8d MATH-LOCK: net worth moves by exactly +$1,287.42, to −$5,012.15, and nothing is asked again");
+    unchanged("8e", gen, yes);
+    t.eq(one({ id: 1, name: "Credit Card", balance: "100" }, card("Visa ••1111", -5000)), ["onlyAccount"], "8f a balance far from the card's does not disqualify it either: balance only ranks");
+    // (b) one "Credit Card" debt, two bank credit cards.
+    const second = { id: "v2", name: "Rewards ••2222", type: "credit", balance: -1287.42 };
+    t.eq(F.likelyDebtAccountMatches({ ...gen, accounts: [...gen.accounts, second] }), [], "8g (b) one \"Credit Card\" debt and two bank credit cards: no prompt, even with a balance equal to both");
+    t.eq(F.likelyDebtAccountMatches({ ...gen, accounts: [...gen.accounts, second], debtLinkDismissed: ["cc|v1"] }).map(x => [x.debtKey, x.accountId]), [["cc", "v2"]],
+      "8h …unless No was said for one of them: the other is then the only one open");
+    t.eq(F.likelyDebtAccountMatches({ ...gen, accounts: [...gen.accounts, second], debts: [...gen.debts, { id: "r", name: "Rewards card", balance: "1287.42", account_id: "v2" }] }).map(x => [x.debtKey, x.accountId]),
+      [["cc", "v1"]], "8i …or another debt is linked to one of them");
+    t.eq(one({ id: 1, name: "Credit Card 4471", balance: "900" }, card("Rewards ••9999", -900)), [], "8j a name with digits is not only a type: \"Credit Card 4471\" is not offered the one card ••9999");
+    t.eq(one({ id: 1, name: "TD Credit Card", balance: "900" }, card("Rewards ••9999", -900, { institution: "RBC" })), [], "8k …nor one naming an issuer the card does not share");
+    // (d) a line of credit never pairs with a credit card.
+    const loc = { id: "l1", name: "Line of Credit ••3030", type: "line of credit", balance: -3000 };
+    t.eq(one({ id: 1, name: "Line of Credit", balance: "3000" }, card("Visa ••1111", -3000)), [], "8l (d) a \"Line of Credit\" debt is never paired with a credit card, even the only one, at the same balance");
+    t.eq(F.likelyDebtAccountMatches({ accounts: [card("Visa ••1111", -3000), loc], debts: [{ id: 1, name: "Line of Credit", balance: "3000" }] }).map(x => [x.accountId, x.reasons.join("+"), x.accountKind]),
+      [["l1", "onlyAccount", "loc"]], "8m …it is offered the one line of credit, beside a card");
+    t.eq(one({ id: 1, name: "Credit Card", balance: "3000" }, loc), [], "8n and a \"Credit Card\" debt is never paired with a line of credit");
+    t.eq(one({ id: 1, name: "Line of Credit", balance: "3000" }, { id: "l2", name: "Flex line", type: "credit", subtype: "line of credit", balance: -3000 }), ["onlyAccount"],
+      "8o a bank credit account whose subtype is line of credit counts as a line of credit");
+  }
+
   // ── 6. On screen ────────────────────────────────────────────────────────────────────────────────
   let A = {};
   try { A = loadApp(["Goals", "InlineDebtEditor"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
@@ -152,6 +213,14 @@ const { loadApp, textOf, describe } = require("./_renderApp.cjs");
     t.ok(!worth(after).includes("Is this the same as") && !editor(after).includes("Is this the same as") && !worth(no).includes("Is this the same as"), "6d once answered, neither asks again");
     const demo = { profile: D.demoProfileFor("CA"), accounts: D.demoAccountsFor("CA"), debts: D.demoDebtsFor("CA"), incomes: base.incomes, bills: base.bills, transactions: base.transactions, demo: true };
     t.ok(!worth(demo).includes("Is this the same as"), "6e the demo, whose card debt is linked, is not asked");
+    const genHome = { ...before, debts: [{ id: "cc", name: "Credit Card", balance: "1287.42" }] };
+    const w3 = worth(genHome), e3 = editor(genHome);
+    t.ok(w3.includes("Is this the same as your Visa ••1111?") && w3.includes("may be that card.") && e3.includes("Is this the same as your Visa ••1111?"),
+      "6h (C5) a debt named only \"Credit Card\" is asked about the one bank card, on Worth and in the debt editor");
+    const locHome = { ...before, accounts: [...before.accounts, { id: "l1", name: "Line of Credit ••3030", type: "line of credit", balance: -3000 }], debts: [{ id: "lc", name: "Line of Credit", balance: "3000" }] };
+    const w4 = worth(locHome);
+    t.ok(w4.includes("Is this the same as your Line of Credit ••3030?") && w4.includes("may be that line of credit.") && !w4.includes("may be that card"),
+      "6i a line of credit is called a line of credit in the question, and is not offered the card");
   } catch (e) { t.ok(false, `6 renders: ${describe(e)}`); }
   const fs = require("fs"), path = require("path");
   const APP = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
