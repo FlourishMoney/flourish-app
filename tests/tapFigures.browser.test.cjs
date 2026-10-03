@@ -109,7 +109,18 @@ const UNTAPPED = () => {
       const n = await rows.count();
       t.eq(n, 6, `3c ${r}d: six summary figures (the five the check line adds up, and the lowest balance)`);
       seen[r] = await rows.allInnerTexts();
-      for (let i = 0; i < n; i++) await opensWorking(rows.nth(i), `3d ${r}d "${seen[r][i].split("\n")[0]}"`);
+      for (let i = 0; i < n; i++) {
+        // demo-fixes C3: each row opens its own sheet, titled with that row's label.
+        const label = seen[r][i].split("\n")[0].trim();
+        await rows.nth(i).scrollIntoViewIfNeeded(); await rows.nth(i).click();
+        let title = "";
+        try { await p.getByText("How Flourish got this", { exact: true }).first().waitFor({ timeout: 4000 });
+          title = await p.getByText("How Flourish got this", { exact: true }).first().evaluate(el => (el.nextElementSibling && el.nextElementSibling.textContent || "").trim()); } catch {}
+        t.ok(title.length > 0, `3d ${r}d "${label}": opens How we got this`);
+        t.eq(title, label, `3d2 ${r}d "${label}" opens its own sheet`);
+        await p.getByRole("button", { name: "Close", exact: true }).last().click().catch(() => {}); await p.waitForTimeout(250);
+        t.eq(await p.getByText("How Flourish got this", { exact: true }).count(), 0, `3d3 ${r}d "${label}": …and closes`);
+      }
       await opensWorking(p.locator('button[aria-label^="The check: "]').first(), `3e ${r}d the check line`);
     }
     // Compared by label, not position: the starting balance is the same at every range, and the

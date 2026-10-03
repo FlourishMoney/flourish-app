@@ -7291,25 +7291,97 @@ function ManualBillForm({data, setAppData, onClose}){
 
 // The selected range, added up (watch-meet-fixes item 1, lib/watchRange.js). Every figure is a button
 // that opens How we got this; the check line is the working, to the cent.
-function WatchRangeSummary({ summary, range, dayLabel, onOpen }) {
-  // demo-fixes B3: every figure the check line adds up is shown to the cent, in the order the check
-  // line adds them, so the numbers on screen add up exactly. (The headline above keeps the whole-dollar
-  // balance Today shows, rounded down; this row says it is the same balance to the cent.) The lowest
-  // balance is not in the check line and stays in whole dollars, as the day list shows it.
-  const rows = [
-    { key: "start", open: "end", label: "Starting balance, to the cent", value: summary.check.start },
-    { key: "in",    label: "Money in", value: summary.check.in },
-    { key: "bills", label: "Bills and minimum payments", value: summary.check.bills },
-    { key: "spend", label: "Everyday spending", note: "Estimated from your usual spending", value: summary.check.spend },
-    { key: "end",   label: `Balance on ${dayLabel({ day: summary.endDay, date: summary.endDate })}`, value: summary.check.end },
-    { key: "low",   label: "Lowest balance", value: `${summary.text.low} ${summary.lowDay === 0 ? "today" : `on ${dayLabel(summary.low)}`}` },
+// A forecast day as Watch names it: "today", or "Wed, Oct 14".
+function watchDayLabel(low) { return low && low.date ? (low.day === 0 ? "today" : fmtOccDay(low.date)) : ""; }
+
+// The range summary's rows (demo-fixes B3, C3). demo-fixes B3: every figure the check line adds up is
+// shown to the cent, in the order the check line adds them, so the numbers on screen add up exactly.
+// (The headline above keeps the whole-dollar balance Today shows, rounded down; the first row says it
+// is the same balance to the cent.) The lowest balance is not in the check line and stays in whole
+// dollars, as the day list shows it. Each row opens its own figure: watchRangeExplanation(row.key)
+// has the row's label as its title and the row's figure as its value.
+function watchRangeRows(summary, dayLabel = watchDayLabel) {
+  return [
+    { key: "start", label: "Starting balance, to the cent", value: summary.check.start, figure: summary.check.start },
+    { key: "in",    label: "Money in", value: summary.check.in, figure: summary.check.in },
+    { key: "bills", label: "Bills and minimum payments", value: summary.check.bills, figure: summary.check.bills },
+    { key: "spend", label: "Everyday spending", note: "Estimated from your usual spending", value: summary.check.spend, figure: summary.check.spend },
+    { key: "end",   label: `Balance on ${dayLabel({ day: summary.endDay, date: summary.endDate })}`, value: summary.check.end, figure: summary.check.end },
+    { key: "low",   label: "Lowest balance", value: `${summary.text.low} ${summary.lowDay === 0 ? "today" : `on ${dayLabel(summary.low)}`}`, figure: summary.text.low },
   ];
+}
+
+// The How we got this sheet for one row of the range summary, or for a paycheque ("pay:<i>"). ctx:
+// { summary, range, forecast, avgDailySpend, data, watchIncome, dayLabel, canEdit, close, openDailySpend }.
+function watchRangeExplanation(key, ctx) {
+  const { summary: S, range, forecast, avgDailySpend, data, watchIncome, dayLabel = watchDayLabel, canEdit, close, openDailySpend } = ctx;
+  const yourFigure = correctionsOf(data).dailySpend != null;
+  const spendRow = { label:"Usual daily spending", value:`${formatMoney(S.spendPerDay,{cents:true})} a day, ${yourFigure?"your figure":"from your transactions"}` };
+  const rowLabel = (k) => (watchRangeRows(S, dayLabel).find(r => r.key === k) || {}).label;
+  if (key === "start") {
+    // What the forecast starts from: the everyday accounts Today counts, to the cent.
+    const base = baseCurrencyOf(data);
+    const cash = (data.accounts || []).filter(a => isCashAccount(a) && accountCurrencyOf(a, data) === base);
+    return { title: rowLabel("start"), value: S.check.start,
+      meaning: "What is in your everyday accounts now, to the cent: where the forecast starts. The headline above shows the same balance rounded down to the dollar, as Today does.",
+      inputs: [...cash.map(a => ({ label: a.name || "Account", value: formatMoney(num(a.balance), { cents: true }) })), { label: "Total", value: S.check.start }] };
+  }
+  if (key === "low") {
+    const to = rangeSummary(forecast, S.lowDay, { avgDailySpend });
+    return { title: rowLabel("low"), value: S.text.low,
+      meaning:`The lowest your balance is projected to go in ${rangePhrase(range)}, ${S.lowDay===0?"today":`on ${dayLabel(S.low)}`}. It comes from the same forecast as the day-by-day list below, which shows that day.`,
+      inputs: to ? [
+        {label:"Starting balance", value:to.check.start},
+        {label:"Money in until then", value:`+${to.check.in}`},
+        {label:"Bills and minimum payments until then", value:`−${to.check.bills}`},
+        {label:"Everyday spending until then (estimate)", value:`−${to.check.spend}`},
+        {label:`Balance ${S.lowDay===0?"today":`on ${dayLabel(S.low)}`}`, value:to.check.end},
+      ] : [] };
+  }
+  if (key === "end") {
+    return { title: rowLabel("end"), value: S.check.end,
+      meaning:"Where the forecast lands on the last day of the range: the starting balance, plus the money in, less the bills and the everyday spending. Shown here to the cent, so it adds up exactly. Elsewhere a balance is rounded down to the dollar.",
+      inputs:[
+        {label:"Starting balance", value:S.check.start},
+        {label:"Money in", value:`+${S.check.in}`},
+        {label:"Bills and minimum payments", value:`−${S.check.bills}`},
+        {label:"Everyday spending (estimate)", value:`−${S.check.spend}`},
+        {label:"Balance on the last day", value:S.check.end},
+      ] };
+  }
+  if (key === "in") {
+    return { title: rowLabel("in"), value: S.check.in,
+      meaning:S.deposits.length?`Every deposit the forecast expects in ${rangePhrase(range)}, from your income and any expected money you added. Anything that already arrived today is in the starting balance.`:`No deposit is expected in ${rangePhrase(range)}. Anything that already arrived today is in the starting balance.`,
+      inputs:[...S.deposits.map(d=>({label:d.count>1?`${d.label} × ${d.count}`:d.label, value:d.text})), {label:"Total", value:S.check.in}] };
+  }
+  if (key === "bills") {
+    return { title: rowLabel("bills"), value: S.check.bills,
+      meaning:S.bills.length?`Every bill, payment you added as expected, and minimum debt payment due in ${rangePhrase(range)}. A regular bill due today counts as already paid, so it is in the starting balance.`:`Nothing is due in ${rangePhrase(range)}. A regular bill due today counts as already paid, so it is in the starting balance.`,
+      inputs:[...S.bills.map(b=>({label:b.count>1?`${b.label} × ${b.count}`:b.label, value:b.text})), {label:"Total", value:S.check.bills}] };
+  }
+  if (key === "spend") {
+    return { title: rowLabel("spend"), value: S.check.spend,
+      meaning:`An estimate, not a record: your usual daily spending, taken off each day after today. ${yourFigure?"It is the figure you set.":"It is your average daily spending from your transactions, with bills, transfers and card payments left out."} Bills are counted separately.`,
+      inputs:[spendRow, {label:"Days after today", value:`${S.spendDays}`}, {label:"Total", value:S.check.spend}],
+      changeLabel: canEdit ? "Change your daily spend" : null, onChange: canEdit ? () => { close && close(); openDailySpend && openDailySpend(); } : null };
+  }
+  if (/^pay:\d+$/.test(key)) {
+    const p = watchIncome && watchIncome.paycheques[Number(key.slice(4))];
+    if (p) return { title:`Est. ${payWord(data.profile?.country)}`, value:formatMoney(p.amount),
+      meaning:"One deposit from this income, as you entered it. If you set a new amount from a date, or your pay varies, it is the amount from that date or the low end of your pay. It is what the forecast plans on for each payday, unless you edit one on the list below.",
+      inputs:[{label:"Income", value:p.label||"Your pay"}, {label:"How often", value:frequencyLabel(p.freq||"biweekly")}, {label:"Each deposit", value:formatMoney(p.amount)}] };
+  }
+  return null;
+}
+
+function WatchRangeSummary({ summary, range, dayLabel, onOpen }) {
+  const rows = watchRangeRows(summary, dayLabel);
   return (
     <div style={{marginTop:SPACE.md,borderTop:`1px solid ${C.border}`,paddingTop:SPACE.md}}>
       <div style={{color:C.mutedHi,...TYPE.subhead,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{rangeLabel(range)}</div>
       <div style={{display:"flex",flexDirection:"column",gap:GAP.controlToControl,marginTop:GAP.textToControl}}>
       {rows.map(r => (
-        <button key={r.key} onClick={() => onOpen(r.open || r.key)} aria-label={`${r.label}, ${r.value}: how Flourish got it`}
+        <button key={r.key} onClick={() => onOpen(r.key)} aria-label={`${r.label}, ${r.value}: how Flourish got it`}
           style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",gap:SPACE.md,minHeight:LAYOUT.minTap,
             background:"none",border:"none",borderBottom:`1px solid ${C.border}44`,padding:`${SPACE.sm}px 0`,cursor:"pointer",textAlign:"left",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
           <span style={{minWidth:0}}>
@@ -7378,7 +7450,7 @@ function PlanAhead({data, setAppData, setScreen, initialRange = 30}){
   const lowPoint = forecastLow(_forecast);
   const firstNegative = (overdraftRisk || [])[0] || null;
   const dipInRange = !!(rangeLow && rangeLow.balance < 0);
-  const dayLabel = (low) => low && low.date ? (low.day === 0 ? "today" : fmtOccDay(low.date)) : "";
+  const dayLabel = watchDayLabel;
   // The bar's scale has to cover what the RANGE shows. It was "balance + one paycheque", which is
   // always enough for a fortnight and is not enough for a month: Bar paints RED when the value
   // exceeds its max, so on this demo every balance after the second paycheque — $6,591 and up —
@@ -7552,51 +7624,9 @@ function PlanAhead({data, setAppData, setScreen, initialRange = 30}){
     {showExpected&&setAppData&&<ExpectedItemSheet data={data} setAppData={setAppData} onClose={()=>setShowExpected(false)}/>}
     {showDailySpend&&setAppData&&<DailySpendSheet data={data} setAppData={setAppData} onClose={()=>setShowDailySpend(false)}/>}
     {explainRange&&summary&&(()=>{
-      const S = summary;
-      const yourFigure = correctionsOf(data).dailySpend != null;
-      const spendRow = { label:"Usual daily spending", value:`${formatMoney(S.spendPerDay,{cents:true})} a day, ${yourFigure?"your figure":"from your transactions"}` };
       const close = () => setExplainRange(null);
-      let ex = null;
-      if (explainRange === "low") {
-        const to = rangeSummary(_forecast, S.lowDay, { avgDailySpend: engineDailySpend });
-        ex = { title:"Lowest balance", value:S.text.low,
-          meaning:`The lowest your balance is projected to go in ${rangePhrase(range)}, ${S.lowDay===0?"today":`on ${dayLabel(S.low)}`}. It comes from the same forecast as the day-by-day list below, which shows that day.`,
-          inputs: to ? [
-            {label:"Starting balance", value:to.check.start},
-            {label:"Money in until then", value:`+${to.check.in}`},
-            {label:"Bills and minimum payments until then", value:`−${to.check.bills}`},
-            {label:"Everyday spending until then (estimate)", value:`−${to.check.spend}`},
-            {label:`Balance ${S.lowDay===0?"today":`on ${dayLabel(S.low)}`}`, value:to.check.end},
-          ] : [] };
-      } else if (explainRange === "end") {
-        ex = { title:`Balance on ${dayLabel({day:S.endDay,date:S.endDate})}`, value:S.text.end,
-          meaning:"Where the forecast lands on the last day of the range: the starting balance, plus the money in, less the bills and the everyday spending. Shown here to the cent, so it adds up exactly. Elsewhere a balance is rounded down to the dollar.",
-          inputs:[
-            {label:"Starting balance", value:S.check.start},
-            {label:"Money in", value:`+${S.check.in}`},
-            {label:"Bills and minimum payments", value:`−${S.check.bills}`},
-            {label:"Everyday spending (estimate)", value:`−${S.check.spend}`},
-            {label:"Balance on the last day", value:S.check.end},
-          ] };
-      } else if (explainRange === "in") {
-        ex = { title:"Money in", value:S.text.in,
-          meaning:S.deposits.length?`Every deposit the forecast expects in ${rangePhrase(range)}, from your income and any expected money you added. Anything that already arrived today is in the starting balance.`:`No deposit is expected in ${rangePhrase(range)}. Anything that already arrived today is in the starting balance.`,
-          inputs:[...S.deposits.map(d=>({label:d.count>1?`${d.label} × ${d.count}`:d.label, value:d.text})), {label:"Total", value:S.check.in}] };
-      } else if (explainRange === "bills") {
-        ex = { title:"Bills and minimum payments", value:S.text.bills,
-          meaning:S.bills.length?`Every bill, payment you added as expected, and minimum debt payment due in ${rangePhrase(range)}. A regular bill due today counts as already paid, so it is in the starting balance.`:`Nothing is due in ${rangePhrase(range)}. A regular bill due today counts as already paid, so it is in the starting balance.`,
-          inputs:[...S.bills.map(b=>({label:b.count>1?`${b.label} × ${b.count}`:b.label, value:b.text})), {label:"Total", value:S.check.bills}] };
-      } else if (explainRange === "spend") {
-        ex = { title:"Everyday spending", value:S.text.spend,
-          meaning:`An estimate, not a record: your usual daily spending, taken off each day after today. ${yourFigure?"It is the figure you set.":"It is your average daily spending from your transactions, with bills, transfers and card payments left out."} Bills are counted separately.`,
-          inputs:[spendRow, {label:"Days after today", value:`${S.spendDays}`}, {label:"Total", value:S.check.spend}],
-          changeLabel:setAppData?"Change your daily spend":null, onChange:setAppData?()=>{close();setShowDailySpend(true);}:null };
-      } else if (/^pay:\d+$/.test(explainRange)) {
-        const p = watchIncome.paycheques[Number(explainRange.slice(4))];
-        if (p) ex = { title:`Est. ${payWord(data.profile?.country)}`, value:formatMoney(p.amount),
-          meaning:"One deposit from this income, as you entered it. If you set a new amount from a date, or your pay varies, it is the amount from that date or the low end of your pay. It is what the forecast plans on for each payday, unless you edit one on the list below.",
-          inputs:[{label:"Income", value:p.label||"Your pay"}, {label:"How often", value:frequencyLabel(p.freq||"biweekly")}, {label:"Each deposit", value:formatMoney(p.amount)}] };
-      }
+      const ex = watchRangeExplanation(explainRange, { summary, range, forecast: _forecast, avgDailySpend: engineDailySpend, data, watchIncome, dayLabel,
+        canEdit: !!setAppData, close, openDailySpend: () => setShowDailySpend(true) });
       return ex ? <HowWeGotThis title={ex.title} value={ex.value} meaning={ex.meaning} inputs={ex.inputs} changeLabel={ex.changeLabel} onChange={ex.onChange} onClose={close}/> : null;
     })()}
     {explainWatch&&(

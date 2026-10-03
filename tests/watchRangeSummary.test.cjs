@@ -124,6 +124,31 @@ const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
       } else t.ok(!card, `2c ${name} ${r}d: no overdraft, no card`);
     }
   }
+  // ── 2n. Every row of the summary opens its own figure (demo-fixes C3) ────────────────────────
+  // The "Starting balance, to the cent" row opened the last day's sheet. Each row now opens the sheet
+  // for its own key, titled with the row's label and showing the row's figure; the starting balance's
+  // sheet lists the everyday accounts, to the cent, and they add up to it.
+  {
+    let X = {};
+    try { X = loadApp(["watchRangeRows", "watchRangeExplanation"]); } catch (e) { t.ok(false, `2n bundles: ${describe(e)}`); }
+    for (const c of D.DEMO_COUNTRIES) for (const r of W.WATCH_RANGES) {
+      const data = demo(c);
+      const g = ForecastEngine.generate(data, Math.max(r, 30), null, now);
+      const s = W.rangeSummary(g.forecast, r, { avgDailySpend: g.avgDailySpend });
+      const rows = X.watchRangeRows(s);
+      const ctx = { summary: s, range: r, forecast: g.forecast, avgDailySpend: g.avgDailySpend, data, watchIncome: null, canEdit: false };
+      const wrong = rows.map(row => ({ row, ex: X.watchRangeExplanation(row.key, ctx) }))
+        .filter(({ row, ex }) => !ex || ex.title !== row.label || ex.value !== row.figure).map(({ row, ex }) => `${row.key}: "${row.label}" ${row.figure} opened ${ex ? `"${ex.title}" ${ex.value}` : "nothing"}`);
+      t.eq(wrong, [], `2n ${c} ${r}d: each of the ${rows.length} rows opens a sheet with its own label and figure`);
+      const start = X.watchRangeExplanation("start", ctx);
+      const listed = start.inputs.filter(i => i.label !== "Total").reduce((sum, i) => sum + Math.round(Number(i.value.replace(/[$,]/g, "")) * 100), 0);
+      t.eq(listed, s.startCents, `2o ${c} ${r}d: the starting balance's sheet lists the everyday accounts, adding up to ${s.check.start}`);
+    }
+    const SRC = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+    const rowsSrc = SRC.slice(SRC.indexOf("function watchRangeRows("), SRC.indexOf("function watchRangeExplanation("));
+    t.ok(!/\bopen:/.test(rowsSrc) && /onClick=\{\(\) => onOpen\(r\.key\)\}/.test(SRC), "2p no row is sent to another row's sheet");
+  }
+
   // ── 2g. The label says exactly which days the range covers (watch-meet-fixes 5b) ──────────────
   // Forecast days 0..N are today and N more days, N + 1 calendar days. "The next 7 days" undercounted
   // that by one; every place Watch names a range now says "Today and the next N days", and N must be
