@@ -21,6 +21,10 @@
 // debt is offered the one bank account of its kind that no other debt is linked to and that was not
 // dismissed for it; with two or more to choose from, nothing is asked. A "Line of Credit" debt is
 // never paired with a credit card. Balance never qualifies a pair; it only ranks.
+//
+// demo-fixes C6 (section 9): bank sync gives every bank card its own live-balance debt row (fromBank,
+// carrying the card's account_id). That row is the card, not another debt linked to it, so a
+// hand-entered debt in a household that has connected its bank can be offered the card.
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -200,6 +204,53 @@ const { loadApp, textOf, describe } = require("./_renderApp.cjs");
       "8o a bank credit account whose subtype is line of credit counts as a line of credit");
   }
 
+  // ── 9. A household that has connected its bank (demo-fixes C6) ───────────────────────────────
+  // MATH-LOCK, hand-worked, to the cent: Chequing +2,150.37, Savings +4,000.00, Visa ••1111 (bank card)
+  // −1,287.42, its live-balance row (not a row of net worth: it is the card), "Credit Card"
+  // (hand-entered) −1,287.42.
+  //   before:    2,150.37 + 4,000.00 − 1,287.42 − 1,287.42 = +3,575.53  (both card rows marked)
+  //   after Yes: the debt is the card already listed          = +4,862.95  (+1,287.42 exactly)
+  {
+    const APPSRC = require("fs").readFileSync(require("path").join(__dirname, "..", "src", "App.jsx"), "utf8");
+    t.ok((APPSRC.match(/name: a\.name \|\| "Credit Card",\s*balance: Math\.abs\(a\.balance ?\|\| ?0\)\.toFixed\(2\),\s*rate: "", min: "", fromBank: true, account_id: a\.id/g) || []).length >= 2,
+      "9a (bank connect and refresh both make the card's live-balance row in the shape this fixture uses)");
+    const liveRow = (a) => ({ name: a.name || "Credit Card", balance: Math.abs(a.balance || 0).toFixed(2), rate: "", min: "", fromBank: true, account_id: a.id });
+    const visa = before.accounts[2];
+    const synced = { ...base, accounts: before.accounts, debts: F.withDebtIds([liveRow(visa), { name: "Credit Card", balance: "1287.42", rate: "19.99", min: "40" }]) };
+    const ccId = synced.debts[1].id;
+    t.ok(synced.debts[0].id === undefined && ccId, "9b (on load, the live-balance row keeps the card's account id as its key; the hand-entered debt gets its own id)");
+    const m = F.likelyDebtAccountMatches(synced);
+    t.eq(m.map(x => [x.debtKey, x.accountId, x.reasons.join("+")]), [[ccId, "v1", "onlyAccount"]],
+      "9c the card's own live-balance row does not count as another debt linked to it: the hand-entered \"Credit Card\" is offered Visa ••1111");
+    const s0 = F.netWorthRows(synced);
+    t.eq([s0.rows.map(r => [r.label, r.cents, !!r.mayCountTwice]), s0.totalCents, Math.round(F.FinancialCalcEngine.netWorth(synced).netWorth * 100)],
+      [[["Chequing", 215037, false], ["Savings", 400000, false], ["Visa ••1111", -128742, true], ["Credit Card", -128742, true]], 357553, 357553],
+      "9d before: the live-balance row is not a row (it is the card); the two card rows are marked and summed: +$3,575.53");
+    const yes = F.linkDebtToAccount(synced, m[0]);
+    t.eq(yes.debts.map(d => [d.id || null, d.fromBank || false, d.sameAsAccountId || null]), [[null, true, null], [ccId, false, "v1"]], "9e Yes links the hand-entered debt by its id; the live-balance row is left alone");
+    const s1 = F.netWorthRows(yes);
+    t.eq([s1.rows.map(r => r.label), s1.rows.filter(r => r.cents === -128742).length, s1.totalCents, Math.round(F.FinancialCalcEngine.netWorth(yes).netWorth * 100), s1.totalCents - s0.totalCents, s1.matches.length],
+      [["Chequing", "Savings", "Visa ••1111"], 1, 486295, 486295, 128742, 0], "9f MATH-LOCK: after Yes the card is counted once: +$4,862.95, exactly +$1,287.42, and nothing is asked again");
+    unchanged("9g", synced, yes);
+    // The live-balance row is never offered, whatever it is called or keyed by, and is never a target.
+    const keyed = { ...synced, debts: [{ ...synced.debts[0], id: "bank-v1", name: "Credit Card" }, synced.debts[1]] };
+    const all = [synced, yes, F.dismissDebtAccountMatch(synced, m[0]), keyed, { ...synced, debts: [synced.debts[0]] }, { ...keyed, debts: [keyed.debts[0]] }].flatMap(d => F.likelyDebtAccountMatches(d));
+    t.ok(all.every(x => x.debtKey !== "bank-v1" && x.debtKey != null && x.accountId === "v1") && F.likelyDebtAccountMatches({ ...keyed, debts: [keyed.debts[0]] }).length === 0,
+      "9h the live-balance row is never offered or prompted (even named \"Credit Card\" and given an id), and every match targets the bank account");
+    // A second hand-entered debt is still blocked once the first is linked.
+    const two2 = { ...synced, debts: F.withDebtIds([...synced.debts, { name: "Credit Card", balance: "640.25", rate: "21.99", min: "25" }]) };
+    const m2 = F.likelyDebtAccountMatches(two2);
+    t.eq(m2.map(x => [x.debtKey, x.accountId]), [[ccId, "v1"]], "9i with two hand-entered \"Credit Card\" debts, the closer balance is asked first");
+    t.eq(F.likelyDebtAccountMatches(F.linkDebtToAccount(two2, m2[0])), [], "9j once it is linked, the second hand-entered debt is not offered that card");
+    // The earlier rules apply in a synced household too.
+    t.eq(F.likelyDebtAccountMatches({ ...synced, debts: [synced.debts[0], { id: "hv", name: "Visa", balance: "1287.42" }] }).map(x => [x.debtKey, x.reasons.join("+")]), [["hv", "issuer"]],
+      "9k a hand-entered \"Visa\" is offered the synced TD Visa by issuer (B4, C2)");
+    const rbc = { id: "v2", name: "RBC Mastercard ••2222", type: "credit", balance: -640.25 };
+    t.eq(F.likelyDebtAccountMatches({ ...synced, accounts: [...synced.accounts, rbc], debts: [...synced.debts, liveRow(rbc)] }), [],
+      "9l two synced cards, each with its live-balance row, and one \"Credit Card\": no prompt (C5, two to choose from)");
+    t.eq(F.likelyDebtAccountMatches({ ...synced, debts: [synced.debts[0], { ...synced.debts[1], account_id: "v1" }] }), [], "9m a hand-entered debt the household linked to the card itself still counts as linked");
+  }
+
   // ── 6. On screen ────────────────────────────────────────────────────────────────────────────────
   let A = {};
   try { A = loadApp(["Goals", "InlineDebtEditor"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
@@ -221,6 +272,10 @@ const { loadApp, textOf, describe } = require("./_renderApp.cjs");
     const w4 = worth(locHome);
     t.ok(w4.includes("Is this the same as your Line of Credit ••3030?") && w4.includes("may be that line of credit.") && !w4.includes("may be that card"),
       "6i a line of credit is called a line of credit in the question, and is not offered the card");
+    const syncedHome = { ...before, debts: [{ name: "Visa ••1111", balance: "1287.42", rate: "", min: "", fromBank: true, account_id: "v1" }, { id: "cc", name: "Credit Card", balance: "1287.42", min: "40" }] };
+    const w5 = worth(syncedHome), e5 = editor(syncedHome);
+    t.ok(w5.includes("Is this the same as your Visa ••1111?") && e5.includes("Is this the same as your Visa ••1111?") && (w5.match(/May be counted twice/g) || []).length === 2,
+      "6j (C6) a household that has connected its bank is asked, on Worth and in the debt editor, and both rows are marked");
   } catch (e) { t.ok(false, `6 renders: ${describe(e)}`); }
   const fs = require("fs"), path = require("path");
   const APP = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");

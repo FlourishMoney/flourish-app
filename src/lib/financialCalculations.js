@@ -1187,7 +1187,8 @@ export function isBaseCurrencyAccount(account, data) {
 // THE MATCH RULE. A debt that is not linked (no fromBank, no account_id or sameAsAccountId that names
 // a bank credit account) and is a card or a line of credit (the app records a debt's type as its name:
 // "Credit Card", "Line of Credit", or a name that says card or credit or names a card network or
-// issuer), paired with a bank credit account no other debt is linked to, when any of these hold:
+// issuer), paired with a bank credit account no other debt is linked to (the live-balance row bank sync
+// makes for that account is the account itself, not another debt, C6), when any of these hold:
 //   - they share the last 4 digits (from the name or the account's mask); or
 //   - the names share an issuer or network (Visa, Mastercard, Amex, Chase, TD, RBC, ...).
 // Balances alone never make a pair (C2): the closer balance only ranks pairs that already qualify.
@@ -1227,7 +1228,9 @@ export function likelyDebtAccountMatches(data = {}) {
   const accounts = data.accounts || [], debts = data.debts || [];
   const cards = accounts.filter(_isBankCreditAccount);
   const cardIds = new Set(cards.map(a => a.id));
-  const linkedIds = new Set(debts.flatMap(d => [d && d.account_id, d && d.sameAsAccountId]).filter(id => id != null && cardIds.has(id)));
+  // demo-fixes C6: bank sync gives every bank card a live-balance debt row (fromBank, carrying the card's
+  // account_id). That row is the card, so it never counts as another debt linked to it.
+  const linkedIds = new Set(debts.filter(d => d && !d.fromBank).flatMap(d => [d.account_id, d.sameAsAccountId]).filter(id => id != null && cardIds.has(id)));
   const dismissed = new Set(Array.isArray(data.debtLinkDismissed) ? data.debtLinkDismissed : []);
   const candidates = [];
   debts.forEach((d, debtIndex) => {
