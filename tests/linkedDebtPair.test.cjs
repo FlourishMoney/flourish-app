@@ -13,6 +13,10 @@
 //   simulator, linked:   one entry: Visa ••1111, $1,287.42 (the bank's), 19.99% and $40 (the debt's)
 //   simulator, unlinked: two entries, both marked: the bank's row (20% assumed, $25.75 = 2% of
 //                        1,287.42 above the $25 floor) and Credit Card (19.99%, $40)
+//   minimums held back:  linked $40 in both households (one minimum, the debt's, never the sum);
+//                        unlinked $40, or $80 in the variant (both kept until the household answers)
+//   90-day forecast minimums (due Nov 1 and Dec 1): linked $80; unlinked $80, or $160 in the variant
+//   Meet's week ahead (Oct 28): linked, one $40; unlinked variant, two
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -84,12 +88,46 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
       "1p Decisions lists both, marked, until answered; once linked, one and unmarked");
   } catch (e) { t.ok(false, `1o/1p render: ${describe(e)}`); }
 
+  // ── 2. Minimum payments (C8b) ────────────────────────────────────────────────────────────────
+  const { SafeSpendEngine } = await import("../src/lib/safeSpendEngine.js");
+  const { ForecastEngine } = await import("../src/lib/forecastEngine.js");
+  const mins = (d) => F.unbilledDebtMinimums(d.debts, d.bills).map(m => [m.debt.fromBank ? "bank row" : m.debt.name, m.amount]);
+  const held = (d) => SafeSpendEngine.calculate(d, T).debtPayments;
+  const ninety = (d) => F.debtMinimumDates(d, T, 90).reduce((n, m) => n + m.amount, 0);
+  t.eq([mins(HL), held(HL), ninety(HL)], [[["Credit Card", 40]], 40, 80], "2a linked: one minimum, the debt's: $40 held back, $80 over 90 days (Nov 1, Dec 1)");
+  t.eq([mins(VL), held(VL), ninety(VL)], [[["Credit Card", 40]], 40, 80], "2b linked, the bank's row with its own $40: still one minimum, never the sum");
+  const bankOnly = { ...VL, debts: [VL.debts[0], { ...VL.debts[1], min: "" }] };
+  t.eq([mins(bankOnly), held(bankOnly)], [[["bank row", 40]], 40], "2c linked, the debt with no minimum: the bank row's, once");
+  t.eq([mins(H), held(H), ninety(H)], [[["Credit Card", 40]], 40, 80], "2d unlinked: the debt's $40 (the bank's row has none)");
+  t.eq([mins(V), held(V), ninety(V)], [[["bank row", 40], ["Credit Card", 40]], 80, 160], "2e unlinked variant: both kept, $80 held back, until the household answers");
+  // A bill that pays either one pays the pair.
+  const billFor = (debtId) => ({ name: "Visa payment", amount: 40, dueDay: 1, frequency: "monthly", category: "Debt", debtId });
+  t.eq([mins({ ...VL, bills: [...VL.bills, billFor("v1")] }), mins({ ...VL, bills: [...VL.bills, billFor(VL.debts[1].id)] })], [[], []],
+    "2f linked: a bill that pays the bank's row or the hand-entered debt pays the pair's minimum");
+  const at28 = new Date("2026-10-28T12:00:00");
+  const weekAhead = (d) => (SafeSpendEngine.calculate(d, at28).minimumsDueSoon || []).map(x => `${x.name} ${x.amount}`);
+  const V28 = household("40", at28);
+  t.eq([weekAhead(link(V28)), weekAhead(V28)], [["Credit Card minimum payment 40"], ["Visa ••1111 minimum payment 40", "Credit Card minimum payment 40"]],
+    "2g Meet's week ahead and Today's Due soon (Oct 28): linked, one $40; unlinked variant, both");
+  // Linking moves nothing else. In the household as synced, every figure is identical; in the variant,
+  // exactly the bank row's minimum leaves: $40 more safe to spend, $80 more on day 90.
+  const figs = (d) => ({ safe: SafeSpendEngine.calculate(d, T), shown: DE.displayedSafeToSpend(d, T), spare: DE.spareUntilDeposit(d, T),
+    forecast: ForecastEngine.generate(d, 90, null, T).forecast.map(f => [f.day, Math.round(f.balance * 100), Math.round(f.income * 100), Math.round(f.expenses * 100)]),
+    flow: F.FinancialCalcEngine.cashFlow(d, {}, T), daily: F.FinancialCalcEngine.avgDailySpend(d), assets: F.FinancialCalcEngine.netWorth(d).assets });
+  t.eq(JSON.stringify(figs(HL)), JSON.stringify(figs(H)), "2h as synced: safe to spend, the spare amount, the 90-day forecast, cash flow, daily spending and assets are identical before and after linking");
+  const fv = figs(V), fvl = figs(VL), day90 = (f) => f.forecast[f.forecast.length - 1][1];
+  t.eq([Math.round((fvl.safe.safeAmount - fv.safe.safeAmount) * 100), fv.safe.debtPayments - fvl.safe.debtPayments, day90(fvl) - day90(fv), JSON.stringify(fvl.flow) === JSON.stringify(fv.flow), fvl.daily === fv.daily, fvl.assets === fv.assets],
+    [4000, 40, 8000, true, true, true], "2i variant: linking releases exactly the bank row's $40 (safe to spend +$40.00, day 90 +$80.00); nothing else moves");
+
   // ── 9. The demos are unchanged (their card debts carry account_id; nothing is linked by sameAsAccountId) ─
   const demo = (c) => ({ profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), incomes: D.buildDemoIncomes(T, c),
     bills: D.buildDemoBills(T, c), transactions: D.buildDemoTxns(T, c), goals: [], bankConnected: true, demo: true });
   const demoSim = (d) => F.buildDebtListForSimulator(d.debts, d.liabilities, d).map(e => [e.name, e.balance, e.rate, Math.round(e.min * 100) / 100, e.source, e.mayBeSame || null, !!e.linked]);
   t.eq(demoSim(demo("CA")), [["Visa card", 3420, 19.99, 68, "manual", null, false], ["Car Loan", 8200, 6.99, 280, "manual", null, false]], "9a CA demo: the simulator's list is unchanged");
   t.eq(demoSim(demo("US")), [["Chase Sapphire", 4180, 24.99, 105, "manual", null, false], ["Federal Student Loan", 18400, 5.5, 195, "manual", null, false]], "9b US demo: unchanged");
+  const demoMins = (d) => [mins(d), F.debtMinimumDates(d, T, 90).map(m => [m.day, m.amount]), SafeSpendEngine.calculate(d, T).debtPayments, Math.round(SafeSpendEngine.calculate(d, T).safeAmount * 100), DE.displayedSafeToSpend(d, T)];
+  t.eq(demoMins(demo("CA")), [[["Visa card", 68], ["Car Loan", 280]], [[30, 68], [60, 68], [30, 280], [60, 280]], 348, 194488, 1944], "9c CA demo: minimums, their dates and safe to spend unchanged");
+  t.eq(demoMins(demo("US")), [[["Chase Sapphire", 105], ["Federal Student Loan", 195]], [[30, 105], [60, 105], [30, 195], [60, 195]], 300, 241555, 2415], "9d US demo: unchanged");
 
   t.summary("linkedDebtPair.test");
   setImmediate(() => process.exit(process.exitCode || 0));

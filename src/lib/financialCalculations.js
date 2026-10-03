@@ -1119,11 +1119,35 @@ export function withDebtIds(debts, makeId = stableDebtId) {
 // The debt minimums still to pay on their own: every debt with a minimum above zero that no bill
 // already pays. Safe to spend reserves these and the forecast subtracts them, so both screens count
 // the same money once. [{ debt, amount }]
+// demo-fixes C8b: a hand-entered debt the household linked to a bank account (sameAsAccountId) and that
+// account's own debt row are one debt: one minimum, the hand-entered debt's when it has one, else the
+// bank row's, never the sum; and a bill that pays either one pays it. A pair not yet answered keeps
+// both minimums until the household answers.
 export function unbilledDebtMinimums(debts, bills) {
   const bs = bills || [];
-  return (debts || [])
+  const list = debts || [];
+  const handFor = new Map(); // bank account id → the hand-entered debt linked to it
+  for (const d of list) {
+    const id = d && !d.fromBank && d.sameAsAccountId != null && d.sameAsAccountId !== "" ? String(d.sameAsAccountId) : null;
+    if (id && !handFor.has(id)) handFor.set(id, d);
+  }
+  const partnerOf = (d) => {
+    if (!d) return null;
+    const hand = d.account_id != null && d.account_id !== "" ? handFor.get(String(d.account_id)) : null;
+    if (hand && hand !== d) return hand; // d is the account's own row; its partner is the hand-entered debt
+    if (d.sameAsAccountId != null && handFor.get(String(d.sameAsAccountId)) === d) {
+      return list.find(x => x && x !== d && x.account_id != null && String(x.account_id) === String(d.sameAsAccountId)) || null;
+    }
+    return null;
+  };
+  return list
     .map(debt => ({ debt, amount: num(debt && debt.min) }))
-    .filter(x => x.amount > 0 && !bs.some(b => billPaysDebt(b, x.debt)));
+    .filter(x => {
+      if (!(x.amount > 0)) return false;
+      const p = partnerOf(x.debt);
+      if (p && x.debt.account_id != null && handFor.get(String(x.debt.account_id)) === p && num(p.min) > 0) return false; // the hand-entered minimum is the pair's
+      return !bs.some(b => billPaysDebt(b, x.debt) || (p != null && billPaysDebt(b, p)));
+    });
 }
 
 // The day of the month a debt's minimum is due: its dueDay when it has one, otherwise the 1st.
