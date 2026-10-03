@@ -66,5 +66,17 @@ function imageSize(file) {
   t.ok(/<p className="fll-sample">Example, sample data\.<\/p>/.test(APP.slice(start, start + 2000)), "4c one line under the strip: \"Example, sample data.\"");
   t.ok(!entries.some(e => /any number/i.test(e.cap)), "4d no caption claims that any number can be tapped (not every figure on Today opens its working)");
 
+  // ── 5. The landing page's claims (A2) ────────────────────────────────────────────────────────
+  // There is no Windows build, and What-If tests a handful of decision types, not "any".
+  const fn = (name) => { const i = APP.indexOf(`function ${name}(`); return i < 0 ? "" : APP.slice(i, APP.indexOf("\n}\n", i)); };
+  const landing = [fn("AuthScreen"), fn("WaitlistForm"), fs.readFileSync(path.join(ROOT, "src", "lib", "waitlistConsent.js"), "utf8"), fs.readFileSync(path.join(ROOT, "index.html"), "utf8")].join("\n");
+  t.ok(landing.length > 20000 && /This is flourish\. No mockups\./.test(landing), "5 (the scan reads the landing page, its waitlist form and consent, and index.html)");
+  t.ok(!/windows/i.test(landing), "5a the landing page never says Windows");
+  t.ok(!/any money decision/i.test(landing), "5b …or \"any money decision\"");
+  t.ok(/Coming soon to iPhone and Android/.test(landing)
+    && /See exactly what's safe to spend before payday, test a money decision before you make it, and understand your finances in plain English\./.test(landing)
+    && /Test a decision, like a big purchase or an extra debt payment, and see the result before you commit\./.test(landing)
+    && /Join the waitlist and we'll email you the moment flourish launches in Canada\./.test(landing), "5c the badge, the hero, the What-If card and the waitlist line, word for word");
+
   t.summary("landingScreens.test");
 })();
