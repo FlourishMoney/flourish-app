@@ -14532,6 +14532,11 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-frame img{ display:block; width:100%; height:auto; border-radius:25px; }
             .fll-cap{ text-align:center; font-size:13px; color:#52624f; margin-top:11px; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-sample{ text-align:center; font-size:13px; color:#52624f; margin:14px auto 0; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-shot-btn .fll-frame{ display:block; }
+            .fll-shot-btn{ display:block; width:100%; padding:0; margin:0; border:none; background:none; cursor:pointer; border-radius:30px; text-align:inherit; }
+            .fll-shot-btn:focus-visible, .fll-try:focus-visible{ outline:3px solid #1b5e20; outline-offset:4px; }
+            .fll-try{ display:inline-flex; align-items:center; justify-content:center; min-height:44px; min-width:44px; margin:18px auto 0; padding:12px 24px; border-radius:99px; border:1.5px solid #2E8B2E; background:#fff; color:#1b5e20; font-size:15px; font-weight:700; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-try:hover{ background:#eef5ee; }
 
             .fll-benefits{ display:grid; grid-template-columns:1fr; gap:14px; max-width:760px; margin:0 auto; }
             .fll-card{ background:#fff; border:1px solid rgba(46,139,46,0.13); border-radius:18px; padding:22px; box-shadow:0 6px 22px rgba(22,58,28,0.05); }
@@ -14603,12 +14608,18 @@ function AuthScreen({ onAuth, onTryDemo }) {
                 ["/app-screens/how-we-got-this.jpg", "Tap safe to spend to see the math"],
               ].map(([src, cap]) => (
                 <div className="fll-shot" key={src}>
-                  <div className="fll-frame"><img src={src} alt={cap} loading="lazy" width={680} height={1474} /></div>
+                  {/* Each screenshot opens the demo, the same action as the hero's "preview the app" link. */}
+                  {onTryDemo
+                    ? <button type="button" className="fll-shot-btn" onClick={() => onTryDemo(waitlistCountry)} aria-label={`${cap}: try the interactive demo`}>
+                        <span className="fll-frame"><img src={src} alt={cap} loading="lazy" width={680} height={1474} /></span>
+                      </button>
+                    : <div className="fll-frame"><img src={src} alt={cap} loading="lazy" width={680} height={1474} /></div>}
                   <div className="fll-cap">{cap}</div>
                 </div>
               ))}
             </div>
             <p className="fll-sample">Example, sample data.</p>
+            {onTryDemo && <div style={{ textAlign: "center" }}><button type="button" className="fll-try" onClick={() => onTryDemo(waitlistCountry)}>Try the interactive demo</button></div>}
           </div>
 
           {/* Benefits */}
