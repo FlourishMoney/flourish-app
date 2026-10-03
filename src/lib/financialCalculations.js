@@ -1156,8 +1156,53 @@ export function isBaseCurrencyAccount(account, data) {
   return accountCurrencyOf(account, data) === baseCurrencyOf(data);
 }
 
+// NET WORTH, ROW BY ROW (demo-fixes B1). The ONE owner of what net worth is made of: every account and
+// debt it counts, each as a signed row, in the order a household reads them (cash, investments, cards,
+// debts). netWorth() below is the sum of these rows, and the Worth screen lists exactly these rows and
+// shows the sum in How we got this, so the headline is always the signed sum of what is listed under it.
+// The rules are netWorth's own, unchanged:
+//   - foreign-currency accounts are left out (no FX in v1), and so are debts owned by one;
+//   - a cash or investment account counts its balance, never below $0 (an overdrawn account is not an
+//     asset; its label says it was counted as $0);
+//   - a bank credit account counts its balance owed;
+//   - a debt counts unless it IS a bank credit account already listed (fromBank, or the same
+//     account_id). A debt entered by hand with no account_id always counts: two entries for one card
+//     can only be told apart by the account_id, never by a name.
+// Returns { rows: [{ id, label, kind, value, cents }], totalCents, total }.
+export function netWorthRows(data = {}) {
+  const accounts = data.accounts || [];
+  const debts    = data.debts    || [];
+  const base = baseCurrencyOf(data);
+  const isBase = a => accountCurrencyOf(a, data) === base;
+  const isBankCredit = a => {
+    const t = (a.type||"").toLowerCase(), s = (a.subtype||"").toLowerCase();
+    return t==="credit" || t==="credit card" || s==="credit card" || t==="line of credit";
+  };
+  const cents = (n) => Math.round((Number(n) || 0) * 100);
+  const rows = [];
+  const label = (a) => String((a && a.name) || (a && a.type) || "Account");
+  for (const kind of ["cash", "investment"]) {
+    for (const a of accounts.filter(isBase).filter(a => kind === "cash" ? isCashAccount(a) : isInvestmentAccount(a))) {
+      const bal = num(a.balance), v = Math.max(0, bal);
+      rows.push({ id: a.id ?? null, label: bal < 0 ? `${label(a)} (overdrawn, counted as $0)` : label(a), kind, value: v, cents: cents(v) });
+    }
+  }
+  for (const a of accounts.filter(isBase).filter(isBankCredit)) {
+    const v = -Math.abs(num(a.balance));
+    rows.push({ id: a.id ?? null, label: label(a), kind: "credit", value: v, cents: cents(v) });
+  }
+  // Every bank-credit account, foreign ones included, so a foreign card's debt is not re-added.
+  const bankCreditAcctIds = new Set(accounts.filter(isBankCredit).map(a => a.id));
+  for (const d of debts.filter(d => !d.fromBank && !(d.account_id && bankCreditAcctIds.has(d.account_id)))) {
+    const v = -Math.max(0, num(d.balance));
+    rows.push({ id: d.id ?? null, label: String(d.name || "Debt"), kind: "debt", value: v, cents: cents(v) });
+  }
+  const totalCents = rows.reduce((s, r) => s + r.cents, 0);
+  return { rows, totalCents, total: totalCents / 100 };
+}
+
 export const FinancialCalcEngine = {
-  /** Net Worth = all assets − all liabilities */
+  /** Net Worth = all assets − all liabilities: the sum of netWorthRows. */
   netWorth(data) {
     const accounts = data.accounts || [];
     const debts    = data.debts    || [];
@@ -1192,6 +1237,9 @@ export const FinancialCalcEngine = {
       .filter(d => !d.fromBank && !(d.account_id && bankCreditAcctIds.has(d.account_id)))
       .reduce((s,d) => s + Math.max(0, num(d.balance)), 0);
     const liabilities = bankCreditLiabilities + manualNonBankDebts;
+    // The rows are the owner; these sums are kept for the callers that read assets and liabilities.
+    // They are the same accounts and debts by the same rules, so the two cannot disagree (and
+    // tests/netWorthRows.test.cjs checks it to the cent).
     return { assets, liabilities, netWorth: assets - liabilities, bankCreditLiabilities, manualNonBankDebts, mixedCurrencyDetected };
   },
 

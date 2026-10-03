@@ -12,7 +12,7 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, summarizeScenarioForCoach, simulateDebtPayoffForDebt, debtMinimumPayment, debtLinkKey, withDebtIds, newDebtId, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, applyDebtRate, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
-  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums } from "./lib/financialCalculations.js";
+  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums, netWorthRows } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
 import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multibank.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
@@ -8901,6 +8901,7 @@ function SpendScreen({data, setAppData, setScreen}){
 // ─── GOALS ────────────────────────────────────────────────────────────────────
 function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudget}){
   const [tab,setTab]=useState(initialTab);
+  const [explainNetWorth,setExplainNetWorth]=useState(false);
   useEffect(()=>{ setTab(initialTab); },[initialTab]);
   const [selDebt,setSelDebt]=useState(0);
   const [extra,setExtra]=useState(50);
@@ -9245,18 +9246,25 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
       const checking=baseAccts.filter(a=>isCheckingAccount(a)).reduce((s,a)=>s+(a.balance||0),0);
       const savings=baseAccts.filter(a=>isSavingsAccount(a)).reduce((s,a)=>s+(a.balance||0),0);
       const totalAssets=checking+savings+totalInvested;
-      const { netWorth: realNetWorth, bankCreditLiabilities, manualNonBankDebts, mixedCurrencyDetected } = FinancialCalcEngine.netWorth(data);
+      const { bankCreditLiabilities, manualNonBankDebts, mixedCurrencyDetected } = FinancialCalcEngine.netWorth(data);
+      // demo-fixes B1: the headline is the sum of the rows listed under it (netWorthRows), to the cent.
+      const nwRows = netWorthRows(data);
+      const realNetWorth = nwRows.total;
       const savLabel=country==="US"?"Savings / HYSA":"Savings / TFSA";
-      const allItems=[
-        {label:"Chequing / Checking",value:checking,type:"asset",color:C.green,icon:"🏦"},
-        {label:savLabel,value:savings,type:"asset",color:C.teal,icon:"🛡️"},
-        ...investments.map(inv=>({label:inv.name,value:inv.balance||0,type:"investment",color:C.purple,icon:"📈"/* Phase D #4: this list renders item.icon as raw text (emoji), NOT via <Icon>/ICON_MAP — an ICON_MAP key like "chartUp" would print literally */,gain:inv.gain,gainPct:inv.gainPct,ticker:inv.ticker})),
-        ...(data.debts||[]).filter(d=>!(d.account_id && foreignAcctIds.has(d.account_id))).map(d=>({label:d.name,value:parseFloat(d.balance||0),type:"debt",color:C.red,icon:"💳"})),
-      ];
+      // demo-fixes B1: the list is netWorthRows, the same rows the headline is the sum of, so every
+      // account and debt it counts is listed once and nothing listed is left out. It used to list cash
+      // as two lumped rows and every debt, but never a bank credit account, so a card held both as an
+      // account and as an unlinked debt was subtracted twice while appearing once.
+      const acctById = new Map(allAccts.map(a => [a.id, a]));
+      const ROW_STYLE = { cash:{type:"asset",color:C.green,icon:"🏦"}, investment:{type:"investment",color:C.purple,icon:"📈"}, credit:{type:"debt",color:C.red,icon:"💳"}, debt:{type:"debt",color:C.red,icon:"💳"} };
+      const allItems = nwRows.rows.map(r => { const a = r.kind === "investment" ? acctById.get(r.id) : null;
+        return { label:r.label, value:Math.abs(r.value), cents:r.cents, ...ROW_STYLE[r.kind], ticker:a&&a.ticker, gainPct:a&&a.gainPct, gain:a&&a.gain }; });
       return <>
       <div style={{background:`linear-gradient(135deg,${C.tealDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"22px",border:`1px solid ${C.teal}44`}}>
         <div style={{color:C.muted,fontSize:13,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Your Net Worth</div>
-        <div style={{fontSize:44,fontWeight:900,color:realNetWorth<0?C.redBright:C.tealBright,fontFamily:"'Playfair Display',serif",letterSpacing:-1}}>{realNetWorth>=0?"+":"-"}$<CountUp to={Math.abs(realNetWorth)} decimals={0} sep/></div>
+        <button onClick={()=>setExplainNetWorth(true)} aria-label="Net worth: how Flourish got it" style={{background:"none",border:"none",padding:0,margin:0,cursor:"pointer",textAlign:"left",font:"inherit",display:"block",minHeight:LAYOUT.minTap}}>
+        <span style={{display:"block",fontSize:44,fontWeight:900,color:realNetWorth<0?C.redBright:C.tealBright,fontFamily:"'Playfair Display',serif",letterSpacing:-1}}>{realNetWorth>=0?"+":"-"}$<CountUp to={Math.abs(realNetWorth)} decimals={2} sep/></span>
+        </button>
         <div style={{color:C.muted,fontSize:13,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Assets minus liabilities · includes investments</div>
         <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
           {data.bankConnected
@@ -9287,11 +9295,17 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
             </div>
           </div>
           <div style={{textAlign:"right"}}>
-            <div style={{color:item.color,fontWeight:800,fontSize:15}}>{item.type==="debt"?"−":"+"}${item.value.toLocaleString()}</div>
+            <div style={{color:item.color,fontWeight:800,fontSize:15}}>{item.type==="debt"?"−":"+"}{formatMoney(item.value,{cents:true})}</div>
             {item.gain&&<div style={{color:C.greenBright,fontSize:13,fontWeight:600}}>+${item.gain.toLocaleString()}</div>}
           </div>
         </div>
-      ))}</>; })()}
+      ))}
+      {explainNetWorth&&<HowWeGotThis title="Net worth" value={`${nwRows.totalCents<0?"-":"+"}${formatMoney(Math.abs(nwRows.totalCents)/100,{cents:true})}`}
+        meaning="Every account and debt listed on this screen, added up: what you have, less what you owe. A card that is both a bank account and a debt is counted once. Accounts in another currency are left out."
+        inputs={[...nwRows.rows.map(r=>({label:r.label, value:`${r.cents<0?"−":"+"}${formatMoney(Math.abs(r.cents)/100,{cents:true})}`})),
+          {label:"= Net worth", value:`${nwRows.totalCents<0?"-":"+"}${formatMoney(Math.abs(nwRows.totalCents)/100,{cents:true})}`}]}
+        source="Your accounts and debts" onClose={()=>setExplainNetWorth(false)}/>}
+      </>; })()}
 
     {tab==="tax"&&(()=>{
       const cfg=CC[data.profile?.country||"CA"];
