@@ -455,8 +455,59 @@ const DEFAULT_APR_CREDIT    = 20; // typical Canadian credit-card APR
 const DEFAULT_RATE_MORTGAGE = 5;  // mortgages typically 3–6%
 const DEFAULT_RATE_STUDENT  = 6;  // student loans typically 5–7%
 
-export function buildDebtListForSimulator(manualDebts, liabilities) {
+// demo-fixes C8a: `data` (the household: accounts, debtLinkDismissed) lets the list treat a linked pair
+// as one debt and mark an unanswered pair. A hand-entered debt the household linked to a bank account
+// (sameAsAccountId) and that account's own entries (its live-balance row, or the bank's liability
+// entry) are ONE entry: the bank's balance as it is now, with the hand-entered debt's rate and minimum
+// when it has them, else the bank's. A likely pair not yet answered stays two entries, each with
+// mayBeSame ("card" or "line of credit").
+export function buildDebtListForSimulator(manualDebts, liabilities, data = {}) {
   const manual = Array.isArray(manualDebts) ? manualDebts : [];
+  const accounts = Array.isArray(data && data.accounts) ? data.accounts : [];
+  const linkedHand = new Map(); // bank account id → [the hand-entered debt linked to it, its index]
+  manual.forEach((d, i) => {
+    const id = d && !d.fromBank && d.sameAsAccountId != null && d.sameAsAccountId !== "" ? String(d.sameAsAccountId) : null;
+    if (id && !linkedHand.has(id)) linkedHand.set(id, [d, i]);
+  });
+  const handFor = (accountId) => accountId != null ? linkedHand.get(String(accountId)) || null : null;
+  const isFoldedRow = (d) => !!(d && d.fromBank && handFor(d.account_id)); // the bank's row of a linked pair
+  // One entry for a linked pair, when the bank sends no liability entry for the account.
+  const linkedEntry = (d, manualIndex) => {
+    const accountId = String(d.sameAsAccountId);
+    const acct = accounts.find(a => a && String(a.id) === accountId);
+    const row = manual.find(m => m && m.fromBank && String(m.account_id) === accountId);
+    const balance = acct ? Math.abs(num(acct.balance)) : row ? num(row.balance) : num(d.balance);
+    const rate = num(d.rate) > 0 ? num(d.rate) : row && num(row.rate) > 0 ? num(row.rate) : 0;
+    const min = num(d.min) > 0 ? num(d.min) : row ? num(row.min) : 0;
+    return {
+      name: (acct && acct.name) || (row && row.name) || d.name || "Debt",
+      balance,
+      rate: rate > 0 ? rate : DEFAULT_APR_CREDIT,
+      rateEstimated: !(rate > 0),
+      min: debtMinimumPayment({ min, balance }),
+      ...(min > 0 ? {} : { minEstimated: true }), // C8d: no minimum entered; the payment is the estimate
+      source: "manual",
+      debtType: "manual",
+      manualIndex, // a rate entered here is saved on the hand-entered debt, which is read first
+      account_id: accountId,
+      linked: true,
+    };
+  };
+  const isLinkedHand = (d, manualIndex) => !!(d && !d.fromBank && handFor(d.sameAsAccountId) && handFor(d.sameAsAccountId)[1] === manualIndex);
+  // Unanswered likely pairs (B4): the hand-entered debt and the bank's entry for that account are marked.
+  const markByIndex = new Map(), markByAccount = new Map();
+  if (accounts.length) {
+    for (const m of likelyDebtAccountMatches({ accounts, debts: manual, debtLinkDismissed: data.debtLinkDismissed })) {
+      const word = m.accountKind === "loc" ? "line of credit" : "card";
+      markByIndex.set(m.debtIndex, word);
+      markByAccount.set(String(m.accountId), word);
+      manual.forEach((x, i) => { if (x && x.fromBank && String(x.account_id) === String(m.accountId)) markByIndex.set(i, word); });
+    }
+  }
+  const marked = (list) => list.map(e => {
+    const word = (e.source === "manual" && Number.isInteger(e.manualIndex) && markByIndex.get(e.manualIndex)) || (e.source !== "manual" && e.account_id != null && markByAccount.get(String(e.account_id)));
+    return word ? { ...e, mayBeSame: word } : e;
+  });
   const plaidCredit   = liabilities && Array.isArray(liabilities.credit)   ? liabilities.credit   : [];
   const plaidMortgage = liabilities && Array.isArray(liabilities.mortgage) ? liabilities.mortgage : [];
   const plaidStudent  = liabilities && Array.isArray(liabilities.student)  ? liabilities.student  : [];
@@ -464,10 +515,11 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
 
   // No Plaid liabilities → use manual debts unchanged (back-compat for users without bank-connected liabilities)
   if (!hasAnyPlaid) {
-    return manual
+    return marked(manual
       .map((d, manualIndex) => [d, manualIndex])
-      .filter(([d]) => num(d.balance) > 0)
+      .filter(([d, manualIndex]) => !isFoldedRow(d) && (isLinkedHand(d, manualIndex) || num(d.balance) > 0))
       .map(([d, manualIndex]) => {
+        if (isLinkedHand(d, manualIndex)) return linkedEntry(d, manualIndex);
         const real = num(d.rate);
         return {
           name: d.name || "Debt",
@@ -475,11 +527,13 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
           rate: real > 0 ? real : DEFAULT_APR_CREDIT,
           rateEstimated: !(real > 0), // Sprint 4b: flag fabricated APRs so the UI can label them
           min: debtMinimumPayment(d),
+          ...(num(d.min) > 0 ? {} : { minEstimated: true }),
           source: "manual",
           debtType: "manual",
           manualIndex, // where applyDebtRate writes a rate the household enters
         };
-      });
+      })
+      .filter(e => e.balance > 0));
   }
 
   // Plaid liabilities present → build authoritative list across all 3 categories.
@@ -492,18 +546,23 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
   const creditEntries = plaidCredit
     .filter(c => (c.balance || 0) > 0)
     .map(c => {
-      const real = num(c.apr) || entered(c.account_id);
+      const pair = handFor(c.account_id); // C8a: the hand-entered debt linked to this card, if any
+      const hand = pair ? pair[0] : null;
+      const real = (hand && num(hand.rate)) || num(c.apr) || entered(c.account_id);
       return {
         name: c.name || "Credit Card",
         balance: c.balance || 0,
         rate: real > 0 ? real : DEFAULT_APR_CREDIT, // Plaid sometimes returns null APR
         rateEstimated: !(real > 0),
-        min: debtMinimumPayment({ min: c.minPayment, balance: c.balance }),
+        min: debtMinimumPayment({ min: hand && num(hand.min) > 0 ? hand.min : c.minPayment, balance: c.balance }),
+        ...((hand && num(hand.min) > 0) || num(c.minPayment) > 0 ? {} : { minEstimated: true }),
         source: "plaid_liability",
         debtType: "credit_card",
         account_id: c.account_id,
+        ...(hand ? { linked: true } : {}),
       };
     });
+  const fedIds = new Set(plaidCredit.map(c => String(c.account_id)));
 
   const mortgageEntries = plaidMortgage
     .filter(m => (m.balance || 0) > 0)
@@ -515,6 +574,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
         rate: real > 0 ? real : DEFAULT_RATE_MORTGAGE,
         rateEstimated: !(real > 0),
         min: m.monthlyPayment || Math.max(25, (m.balance || 0) * 0.005), // 0.5%/mo as last-resort default
+        ...(m.monthlyPayment ? {} : { minEstimated: true }),
         source: "plaid_liability",
         debtType: "mortgage",
         account_id: m.account_id,
@@ -531,6 +591,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
         rate: real > 0 ? real : DEFAULT_RATE_STUDENT,
         rateEstimated: !(real > 0),
         min: Math.max(25, (s.balance || 0) * 0.01), // Plaid student liabilities don't return min payment; default 1% of balance
+        minEstimated: true,
         source: "plaid_liability",
         debtType: "student",
         account_id: s.account_id,
@@ -540,8 +601,11 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
   // Add manual debts that are NOT fromBank (user-entered standalones — IOUs, unconnected cards, etc.)
   const manualStandalones = manual
     .map((d, manualIndex) => [d, manualIndex])
-    .filter(([d]) => !d.fromBank && num(d.balance) > 0)
+    // C8a: a linked hand-entered debt is folded into the bank's entry for its account; with no such
+    // entry, it is one entry built from the account (linkedEntry).
+    .filter(([d, manualIndex]) => !d.fromBank && !(isLinkedHand(d, manualIndex) && fedIds.has(String(d.sameAsAccountId))) && (isLinkedHand(d, manualIndex) || num(d.balance) > 0))
     .map(([d, manualIndex]) => {
+      if (isLinkedHand(d, manualIndex)) return linkedEntry(d, manualIndex);
       const real = num(d.rate);
       return {
         name: d.name || "Debt",
@@ -549,13 +613,14 @@ export function buildDebtListForSimulator(manualDebts, liabilities) {
         rate: real > 0 ? real : DEFAULT_APR_CREDIT,
         rateEstimated: !(real > 0),
         min: debtMinimumPayment(d),
+        ...(num(d.min) > 0 ? {} : { minEstimated: true }),
         source: "manual",
         debtType: "manual",
         manualIndex,
       };
     });
 
-  return [...creditEntries, ...mortgageEntries, ...studentEntries, ...manualStandalones];
+  return marked([...creditEntries, ...mortgageEntries, ...studentEntries, ...manualStandalones.filter(e => e.balance > 0)]);
 }
 
 // Sprint MATH-LOCK Group C: markTransfers moved to plaidNormalize.js (it belongs with the Plaid
@@ -1032,22 +1097,66 @@ export function debtLinkKey(debt) {
 export function newDebtId() {
   return `debt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
+// A debt's id when it is first given one on load (demo-fixes C1): derived from its place in the list
+// and what it holds, so two loads of the same saved data, on this device or another, give it the same
+// id even before that id has been saved. Once saved the id is kept, whatever the debt later becomes.
+function _fnv(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36); }
+export function stableDebtId(debt, index) {
+  const d = debt || {};
+  return `debt-${index}-${_fnv([index, d.name, d.balance, d.rate, d.min, d.dueDay].map(x => String(x ?? "")).join("|"))}`;
+}
 // Give every debt that has no link key an id, once. Returns the SAME array when nothing needed one,
-// so a caller can tell there is nothing to write.
-export function withDebtIds(debts, makeId = newDebtId) {
+// so a caller can tell there is nothing to write. The id is stableDebtId's unless a caller passes its
+// own maker; it never repeats an id already in the list. (A bank-imported debt keeps its bank account
+// id as its key: it is identified by that, stably, and a bank resync replaces the object.)
+export function withDebtIds(debts, makeId = stableDebtId) {
   const list = Array.isArray(debts) ? debts : [];
   if (!list.some(d => d && !debtLinkKey(d))) return debts;
-  return list.map(d => (d && !debtLinkKey(d)) ? { ...d, id: makeId() } : d);
+  const taken = new Set(list.map(d => d && d.id).filter(x => x != null && x !== "").map(String));
+  return list.map((d, i) => {
+    if (!d || debtLinkKey(d)) return d;
+    let id = String(makeId(d, i)), n = 2;
+    while (taken.has(id)) id = `${id}-${n++}`;
+    taken.add(id);
+    return { ...d, id };
+  });
 }
 
 // The debt minimums still to pay on their own: every debt with a minimum above zero that no bill
 // already pays. Safe to spend reserves these and the forecast subtracts them, so both screens count
 // the same money once. [{ debt, amount }]
+// demo-fixes C8b/C8d: every debt's minimum, with a hand-entered debt the household linked to a bank
+// account (sameAsAccountId) and that account's own debt row as ONE debt: the hand-entered minimum when it
+// has one, else the bank row's, never the sum. A pair not yet answered keeps both until the household
+// answers. [{ debt, amount, partner }], partner being the other half of a linked pair.
+export function debtMinimums(debts) {
+  const list = debts || [];
+  const handFor = new Map(); // bank account id → the hand-entered debt linked to it
+  for (const d of list) {
+    const id = d && !d.fromBank && d.sameAsAccountId != null && d.sameAsAccountId !== "" ? String(d.sameAsAccountId) : null;
+    if (id && !handFor.has(id)) handFor.set(id, d);
+  }
+  const partnerOf = (d) => {
+    if (!d) return null;
+    const hand = d.account_id != null && d.account_id !== "" ? handFor.get(String(d.account_id)) : null;
+    if (hand && hand !== d) return hand; // d is the account's own row; its partner is the hand-entered debt
+    if (d.sameAsAccountId != null && handFor.get(String(d.sameAsAccountId)) === d) {
+      return list.find(x => x && x !== d && x.account_id != null && String(x.account_id) === String(d.sameAsAccountId)) || null;
+    }
+    return null;
+  };
+  return list
+    .map(debt => ({ debt, amount: num(debt && debt.min), partner: partnerOf(debt) }))
+    .filter(x => x.amount > 0 && !(x.partner && x.debt.account_id != null && handFor.get(String(x.debt.account_id)) === x.partner && num(x.partner.min) > 0));
+}
+
+// The minimums safe to spend and the forecast still have to cover: debtMinimums, less any a bill already
+// pays (billPaysDebt). A bill that pays either half of a linked pair pays the pair.
 export function unbilledDebtMinimums(debts, bills) {
   const bs = bills || [];
-  return (debts || [])
-    .map(debt => ({ debt, amount: num(debt && debt.min) }))
-    .filter(x => x.amount > 0 && !bs.some(b => billPaysDebt(b, x.debt)));
+  return debtMinimums(debts)
+    .filter(x => !bs.some(b => billPaysDebt(b, x.debt) || (x.partner != null && billPaysDebt(b, x.partner))))
+    .map(({ debt, amount }) => ({ debt, amount }));
 }
 
 // The day of the month a debt's minimum is due: its dueDay when it has one, otherwise the 1st.
@@ -1156,41 +1265,184 @@ export function isBaseCurrencyAccount(account, data) {
   return accountCurrencyOf(account, data) === baseCurrencyOf(data);
 }
 
+// THE SAME CARD, ENTERED TWICE (demo-fixes B4). A household that links its bank and also adds the
+// card as a debt by hand has one card in two places: a bank credit account, and a debt with no link to
+// it. Net worth counts both (it never pairs them by name, Sprint Z3 #8), so it is off by the balance.
+// likelyDebtAccountMatches finds the likely pairs and the Worth screen and the debt editor ask once:
+// "Is this the same as your Visa ••1234?". Yes sets debt.sameAsAccountId (linkDebtToAccount); No
+// stores the pair in data.debtLinkDismissed (dismissDebtAccountMatch) so it is never asked again.
+//
+// sameAsAccountId is read by netWorthRows and nothing else. It is deliberately not account_id: that
+// field also lends the debt's rate to the bank's card in the debt simulator, and disconnecting the
+// bank deletes debts carrying it. Saying "yes, it's the same card" changes net worth and nothing else.
+//
+// THE MATCH RULE. A debt that is not linked (no fromBank, no account_id or sameAsAccountId that names
+// a bank credit account) and is a card or a line of credit (the app records a debt's type as its name:
+// "Credit Card", "Line of Credit", or a name that says card or credit or names a card network or
+// issuer), paired with a bank credit account no other debt is linked to (the live-balance row bank sync
+// makes for that account is the account itself, not another debt, C6), when any of these hold:
+//   - they share the last 4 digits (from the name or the account's mask); or
+//   - the names share an issuer or network (Visa, Mastercard, Amex, Chase, TD, RBC, ...).
+// Balances alone never make a pair (C2): the closer balance only ranks pairs that already qualify.
+// A debt named only by its type, as the debt editor names it ("Credit Card", "Line of Credit": no digits,
+// issuer or network), qualifies when exactly one bank account of its kind (a credit card for a card, a line
+// of credit for a line of credit) is linked to no other debt and not dismissed for this debt (C5). With two
+// or more, nothing is asked.
+// Each debt is paired with at most one account and each account with at most one debt, the strongest
+// first (last 4 digits, then issuer, then the only account of its kind, then the smaller balance gap).
+// Debts are identified by id only (C1).
+const _ISSUERS = ["visa", "mastercard", "master card", "amex", "american express", "discover", "chase", "sapphire", "capital one", "citi", "citibank",
+  "barclays", "synchrony", "wells fargo", "bank of america", "us bank", "u.s. bank", "td", "rbc", "bmo", "scotia", "scotiabank", "cibc", "tangerine",
+  "simplii", "desjardins", "national bank", "pc financial", "mbna", "rogers", "triangle", "hsbc", "neo", "koho", "brim", "home trust", "costco"];
+const _words = (s) => " " + String(s || "").toLowerCase().replace(/[^a-z0-9.]+/g, " ").trim() + " ";
+const _issuersIn = (s) => { const w = _words(s); return new Set(_ISSUERS.filter(x => w.includes(" " + x + " "))); };
+const _last4 = (s) => { const m = String(s || "").match(/(\d{4})(?!.*\d{4})/); return m ? m[1] : null; };
+const _isBankCreditAccount = (a) => {
+  const t = (a && a.type || "").toLowerCase(), s = (a && a.subtype || "").toLowerCase();
+  return t === "credit" || t === "credit card" || s === "credit card" || t === "line of credit";
+};
+// demo-fixes C5: the generic type names, and the kind each one is.
+const _GENERIC_DEBT_KIND = { "credit card": "card", "card": "card", "line of credit": "loc", "credit line": "loc", "loc": "loc" };
+const _genericDebtKind = (d) => { const n = String(d && d.name || "").toLowerCase(); return /\d/.test(n) ? null : _GENERIC_DEBT_KIND[n.replace(/[^a-z]+/g, " ").trim()] || null; };
+const _accountKind = (a) => ((a && a.type || "").toLowerCase() === "line of credit" || (a && a.subtype || "").toLowerCase() === "line of credit" ? "loc" : "card");
+const _isCardLikeDebt = (d) => { const n = String(d && d.name || ""); return /credit card|line of credit|\bloc\b|\bcard\b|\bcredit\b/i.test(n) || _issuersIn(n).size > 0; };
+// demo-fixes C1: a debt is identified by its id and nothing else. Names are usually the debt's type
+// ("Credit Card"), so two cards can share one; keying on the name linked both. Every debt is given a
+// stable id on load (withDebtIds); one without an id is never offered, linked or dismissed.
+export function debtKey(d) {
+  return d && d.id != null && d.id !== "" ? String(d.id) : null;
+}
+export function accountLabelWithMask(a) {
+  const name = String((a && a.name) || "your card");
+  return /••\s?\d{4}/.test(name) || !(a && a.mask) ? name : `${name} ••${a.mask}`;
+}
+export function likelyDebtAccountMatches(data = {}) {
+  const accounts = data.accounts || [], debts = data.debts || [];
+  const cards = accounts.filter(_isBankCreditAccount);
+  const cardIds = new Set(cards.map(a => a.id));
+  // demo-fixes C6: bank sync gives every bank card a live-balance debt row (fromBank, carrying the card's
+  // account_id). That row is the card, so it never counts as another debt linked to it.
+  const linkedIds = new Set(debts.filter(d => d && !d.fromBank).flatMap(d => [d.account_id, d.sameAsAccountId]).filter(id => id != null && cardIds.has(id)));
+  const dismissed = new Set(Array.isArray(data.debtLinkDismissed) ? data.debtLinkDismissed : []);
+  const candidates = [];
+  debts.forEach((d, debtIndex) => {
+    if (!d || debtKey(d) == null || d.fromBank || (d.account_id && cardIds.has(d.account_id)) || (d.sameAsAccountId && cardIds.has(d.sameAsAccountId))) return;
+    if (!_isCardLikeDebt(d) || !(num(d.balance) > 0)) return;
+    const open = cards.filter(a => !linkedIds.has(a.id) && !dismissed.has(`${debtKey(d)}|${a.id}`));
+    const kind = _genericDebtKind(d), ofKind = kind ? open.filter(a => _accountKind(a) === kind) : [];
+    for (const a of open) {
+      const pairKey = `${debtKey(d)}|${a.id}`;
+      const aName = `${a.name || ""} ${a.institution || ""}`;
+      const d4 = _last4(d.name), a4 = a.mask ? String(a.mask).slice(-4) : _last4(a.name);
+      const shared = [..._issuersIn(d.name)].filter(x => _issuersIn(aName).has(x));
+      // demo-fixes C2: only a shared last 4 digits or a shared issuer or network makes a pair. Two
+      // cards with the same balance are not the same card; closeness of balance only ranks pairs that
+      // already qualify.
+      const reasons = [];
+      if (d4 && a4 && d4 === a4) reasons.push("last4");
+      if (shared.length) reasons.push("issuer");
+      // demo-fixes C5: a name that is only a type pairs with the one open account of that kind, or none.
+      if (ofKind.length === 1 && ofKind[0] === a) reasons.push("onlyAccount");
+      const balanceGap = Math.round(Math.abs(num(d.balance) - Math.abs(num(a.balance))) * 100) / 100;
+      if (reasons.length) candidates.push({ debtIndex, debtKey: debtKey(d), accountId: a.id, pairKey, reasons, balanceGap,
+        debtLabel: String(d.name || "Debt"), accountLabel: accountLabelWithMask(a), accountKind: _accountKind(a),
+        score: (reasons.includes("last4") ? 4 : 0) + (reasons.includes("issuer") ? 2 : 0) + (reasons.includes("onlyAccount") ? 1 : 0) });
+    }
+  });
+  candidates.sort((x, y) => y.score - x.score || x.balanceGap - y.balanceGap || x.debtIndex - y.debtIndex);
+  const usedDebts = new Set(), usedAccounts = new Set(), out = [];
+  for (const c of candidates) {
+    if (usedDebts.has(c.debtIndex) || usedAccounts.has(c.accountId)) continue;
+    usedDebts.add(c.debtIndex); usedAccounts.add(c.accountId);
+    const { score, ...m } = c; out.push(m);
+  }
+  return out.sort((x, y) => x.debtIndex - y.debtIndex);
+}
+// "Yes, link them": the debt is the same card as the account. Net worth counts it once.
+export function linkDebtToAccount(data = {}, match) {
+  if (!match) return data;
+  if (!match || match.debtKey == null) return data;
+  return { ...data, debts: (data.debts || []).map(d => debtKey(d) != null && debtKey(d) === String(match.debtKey) && !d.sameAsAccountId ? { ...d, sameAsAccountId: match.accountId } : d) };
+}
+// "No, they're different": never ask about this pair again.
+export function dismissDebtAccountMatch(data = {}, match) {
+  if (!match || match.debtKey == null) return data;
+  const prev = Array.isArray(data.debtLinkDismissed) ? data.debtLinkDismissed : [];
+  return prev.includes(match.pairKey) ? data : { ...data, debtLinkDismissed: [...prev, match.pairKey] };
+}
+
+// NET WORTH, ROW BY ROW (demo-fixes B1). The ONE owner of what net worth is made of: every account and
+// debt it counts, each as a signed row, in the order a household reads them (cash, investments, cards,
+// debts). netWorth() below is the sum of these rows, and the Worth screen lists exactly these rows and
+// shows the sum in How we got this, so the headline is always the signed sum of what is listed under it.
+// The rules are netWorth's own, unchanged:
+//   - foreign-currency accounts are left out (no FX in v1), and so are debts owned by one;
+//   - a cash or investment account counts its balance, never below $0 (an overdrawn account is not an
+//     asset; its label says it was counted as $0);
+//   - a bank credit account counts its balance owed;
+//   - a debt counts unless it IS a bank credit account already listed (fromBank, or the same
+//     account_id). A debt entered by hand with no account_id always counts: two entries for one card
+//     can only be told apart by the account_id, never by a name.
+// Returns { rows: [{ id, label, kind, value, cents }], totalCents, total }.
+export function netWorthRows(data = {}) {
+  const accounts = data.accounts || [];
+  const debts    = data.debts    || [];
+  const base = baseCurrencyOf(data);
+  const isBase = a => accountCurrencyOf(a, data) === base;
+  const isBankCredit = a => {
+    const t = (a.type||"").toLowerCase(), s = (a.subtype||"").toLowerCase();
+    return t==="credit" || t==="credit card" || s==="credit card" || t==="line of credit";
+  };
+  const cents = (n) => Math.round((Number(n) || 0) * 100);
+  const rows = [];
+  const label = (a) => String((a && a.name) || (a && a.type) || "Account");
+  for (const kind of ["cash", "investment"]) {
+    for (const a of accounts.filter(isBase).filter(a => kind === "cash" ? isCashAccount(a) : isInvestmentAccount(a))) {
+      const bal = num(a.balance), v = Math.max(0, bal);
+      rows.push({ id: a.id ?? null, label: bal < 0 ? `${label(a)} (overdrawn, counted as $0)` : label(a), kind, value: v, cents: cents(v) });
+    }
+  }
+  for (const a of accounts.filter(isBase).filter(isBankCredit)) {
+    const v = -Math.abs(num(a.balance));
+    rows.push({ id: a.id ?? null, label: label(a), kind: "credit", value: v, cents: cents(v) });
+  }
+  // Every bank-credit account, foreign ones included, so a foreign card's debt is not re-added. A debt
+  // the household said is the same card (sameAsAccountId, B4) is that account too.
+  const bankCreditAcctIds = new Set(accounts.filter(isBankCredit).map(a => a.id));
+  const linked = (d) => (d.account_id && bankCreditAcctIds.has(d.account_id)) || (d.sameAsAccountId && bankCreditAcctIds.has(d.sameAsAccountId));
+  debts.forEach((d, debtIndex) => {
+    if (!d || d.fromBank || linked(d)) return;
+    const v = -Math.max(0, num(d.balance));
+    rows.push({ id: d.id ?? null, label: String(d.name || "Debt"), kind: "debt", value: v, cents: cents(v), debtIndex });
+  });
+  // B4: a likely pair not yet answered stays in, both rows marked. The total is still the sum of
+  // the rows shown: nothing is dropped on a guess.
+  const matches = likelyDebtAccountMatches(data);
+  for (const m of matches) {
+    for (const r of rows) {
+      if ((r.kind === "credit" && r.id === m.accountId) || (r.kind === "debt" && r.debtIndex === m.debtIndex)) r.mayCountTwice = true;
+    }
+  }
+  const totalCents = rows.reduce((s, r) => s + r.cents, 0);
+  return { rows, totalCents, total: totalCents / 100, matches };
+}
+
 export const FinancialCalcEngine = {
-  /** Net Worth = all assets − all liabilities */
+  /** Net Worth = all assets − all liabilities: the sum of netWorthRows (demo-fixes B1, B4). */
   netWorth(data) {
+    // Sprint Z3 #6: currency-mix safety. v1 has no FX conversion, so foreign-currency accounts are
+    // detected and left out (netWorthRows applies the same rule to every row).
     const accounts = data.accounts || [];
-    const debts    = data.debts    || [];
-    // Sprint Z3 #6: currency-mix safety. v1 has no FX conversion, so summing CAD+USD 1:1 gives
-    // cross-border users wrong totals. DETECT + EXCLUDE foreign-currency accounts (FX is a v1.x feature).
-    // Base = profile.baseCurrency, else USD for US profiles, else CAD. account.currency is stamped from
-    // Plaid (balance.iso_currency_code) and defaults CAD for legacy/unstamped accounts — so a
-    // single-currency CAD user sees IDENTICAL totals to before (every account stays in-base).
     const base = baseCurrencyOf(data);
-    const isBase = a => accountCurrencyOf(a, data) === base;
-    const mixedCurrencyDetected = accounts.some(a => !isBase(a));
-    const baseAccts = accounts.filter(isBase); // foreign-currency accounts are excluded from every sum
-    // Assets: only positive-balance accounts (cash + investment). Credit accounts have
-    // negative balances and are already captured in liabilities.
-    const assets = baseAccts
-      .filter(a => isCashAccount(a) || isInvestmentAccount(a))
-      .reduce((s,a) => s + Math.max(0, num(a.balance)), 0);
-    const isBankCredit = a => {
-      const t = (a.type||"").toLowerCase(), s = (a.subtype||"").toLowerCase();
-      return t==="credit" || t==="credit card" || s==="credit card" || t==="line of credit";
-    };
-    const bankCreditAccounts = baseAccts.filter(isBankCredit);
-    const bankCreditLiabilities = bankCreditAccounts
-      .reduce((s,a) => s + Math.abs(num(a.balance)), 0);
-    // Sprint Z3 #8: dedupe Plaid debts by ACCOUNT_ID, not name. fromBank debts are already represented by
-    // the credit ACCOUNTS above, and any debt whose account_id matches a bank-credit account is that same
-    // account — skip it. Manual debts (no account_id, not fromBank) ALWAYS count: a name coincidence with a
-    // bank account no longer silently drops a real user-entered debt. (ids from ALL bank-credit accounts,
-    // incl. excluded foreign ones, so a foreign-account debt isn't re-added into the base-currency total.)
-    const bankCreditAcctIds = new Set(accounts.filter(isBankCredit).map(a => a.id));
-    const manualNonBankDebts = debts
-      .filter(d => !d.fromBank && !(d.account_id && bankCreditAcctIds.has(d.account_id)))
-      .reduce((s,d) => s + Math.max(0, num(d.balance)), 0);
+    const mixedCurrencyDetected = accounts.some(a => accountCurrencyOf(a, data) !== base);
+    // The rows are the one owner (each counted account and debt, signed, with a debt linked to its
+    // bank card by account_id or by the household's yes counted once); these sums are read from them,
+    // so the headline, the Today tile and the Worth list cannot disagree.
+    const { rows } = netWorthRows(data);
+    const sumCents = (kinds) => rows.filter(r => kinds.includes(r.kind)).reduce((s, r) => s + r.cents, 0);
+    const assets = sumCents(["cash", "investment"]) / 100;
+    const bankCreditLiabilities = -sumCents(["credit"]) / 100;
+    const manualNonBankDebts = -sumCents(["debt"]) / 100;
     const liabilities = bankCreditLiabilities + manualNonBankDebts;
     return { assets, liabilities, netWorth: assets - liabilities, bankCreditLiabilities, manualNonBankDebts, mixedCurrencyDetected };
   },
@@ -1249,7 +1501,9 @@ export const FinancialCalcEngine = {
   /** Debt ratio = total debt / annual income (uses only monthlyIncome, override-independent — threaded for API uniformity) */
   debtRatio(data, catOverrides = {}, currentDate = new Date()) {
     const { monthlyIncome } = FinancialCalcEngine.cashFlow(data, catOverrides, currentDate);
-    const totalDebt = (data.debts||[]).reduce((s,d) => s + num(d.balance), 0);
+    // demo-fixes C8d: the same total as Today's Total debt (netWorthRows). Summing every debt row counted a
+    // synced card twice (its live-balance row and the hand-entered debt), linked or not.
+    const totalDebt = FinancialCalcEngine.netWorth(data).liabilities;
     return monthlyIncome > 0 ? totalDebt / (monthlyIncome * 12) : 0;
   },
 

@@ -70,7 +70,8 @@ const CA_FIXTURE = {
     { id: "a5", name: "RRSP ••9910", type: "investment", balance: 8_650.00,  institution: "Your bank",   currency: "CAD", ticker: "TDB902", gain: 890,   gainPct: 11.4 },
   ],
   debts: [
-    { name: "Visa card", balance: "3420", rate: "19.99", min: "68" },
+    // The same card as account a3: linked by account_id, so net worth counts it once (demo-fixes B1).
+    { name: "Visa card", balance: "3420", rate: "19.99", min: "68", account_id: "a3" },
     { name: "Car Loan", balance: "8200", rate: "6.99", min: "280" },
   ],
   profile: {
@@ -197,7 +198,8 @@ const US_FIXTURE = {
     { id: "u5", name: "Fidelity 401(k) ••8812",   type: "investment", balance: 23_400.00, institution: "Fidelity", currency: "USD", ticker: "Target 2055", gain: 3_890, gainPct: 19.9 },
   ],
   debts: [
-    { name: "Chase Sapphire", balance: "4180", rate: "24.99", min: "105" },
+    // The same card as account u3, linked the same way.
+    { name: "Chase Sapphire", balance: "4180", rate: "24.99", min: "105", account_id: "u3" },
     { name: "Federal Student Loan", balance: "18400", rate: "5.50", min: "195" },
   ],
   profile: {

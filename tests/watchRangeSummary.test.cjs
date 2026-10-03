@@ -10,6 +10,8 @@
 //   the lowest    balance matches the day list and the overdraft card.
 // MATH-LOCK, hand-worked: $1,000 in chequing, no pay, no spending, $1,500 rent due on day 20.
 //   7 days:  $1,000 + $0 - $0 - $0 = $1,000; lowest $1,000, today. The card names day 20, no figure.
+// demo-fixes B3: the summary shows every check-line figure to the cent, and 2a2 reads them back off
+// the rendered screen and adds them up.
 //   30 days: $1,000 + $0 - $1,500 - $0 = -$500; lowest -$500 on day 20, and the card quotes -$500.
 //   with a $20.00 daily spend of your own, 7 days: $1,000 - 7 x $20 = $860.
 // -----------------------------------------------------------------------------
@@ -97,9 +99,17 @@ const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
       const txt = textOf(html);
       const { g, s } = summaryOf(data, r, data === rent ? new Date() : now);
       if (data === rent) continue; // rendered against today's date; the hand-worked figures are pinned in 1m to 1p
-      t.ok(txt.includes(`Today and the next ${r} days.`) && txt.includes(`Today and the next ${r} days Lowest balance`) && txt.includes(`Lowest balance ${s.text.low}`) && txt.includes(`Money in ${s.text.in}`)
-        && txt.includes(`Bills and minimum payments ${s.text.bills}`) && txt.includes(`Everyday spending Estimated from your usual spending ${s.text.spend}`)
-        && txt.includes(`Check: ${s.check.line}`), `2a ${name} ${r}d: the summary shows the range's figures and the check line`);
+      // demo-fixes B3: the figures the check line adds up are shown to the cent, in its order.
+      const endLabel = `Balance on ${s.endDate.toLocaleDateString("en-CA", { weekday: "short", month: "short", day: "numeric" })}`;
+      const order = [`Today and the next ${r} days Starting balance, to the cent ${s.check.start}`, `Money in ${s.check.in}`, `Bills and minimum payments ${s.check.bills}`,
+        `Everyday spending Estimated from your usual spending ${s.check.spend}`, `${endLabel} ${s.check.end}`, `Lowest balance ${s.text.low}`, `Check: ${s.check.line}`];
+      const pos = order.map(x => txt.indexOf(x));
+      t.ok(txt.includes(`Today and the next ${r} days.`) && pos.every((x, i) => x > 0 && (i === 0 || x > pos[i - 1])),
+        `2a ${name} ${r}d: the summary shows start, money in, bills, spending and the last day to the cent, in the check line's order, then the lowest balance and the check line${pos.some(x => x < 0) ? ` (missing: ${order.filter((x, i) => pos[i] < 0).join(" | ")})` : ""}`);
+      // The figures as displayed, read back off the screen, add up to the displayed last day exactly.
+      const shown = (label) => { const i = txt.indexOf(label); const m = i < 0 ? null : /-?\$[\d,]+\.\d{2}/.exec(txt.slice(i + label.length)); return m ? Math.round(Number(m[0].replace(/[$,]/g, "")) * 100) : NaN; };
+      const [st, mi, bo, es, en] = ["Starting balance, to the cent", "Money in", "Bills and minimum payments", "Estimated from your usual spending", endLabel].map(shown);
+      t.eq(st + mi - bo - es, en, `2a2 ${name} ${r}d: as shown, ${s.check.start} + ${s.check.in} − ${s.check.bills} − ${s.check.spend} = ${s.check.end}, to the cent`);
       // The lowest day is on the day list, at the balance the summary quotes.
       const lowLabel = s.lowDay === 0 ? "Today ✦" : listLabel(s.low.date);
       const at = txt.indexOf(lowLabel, txt.indexOf("Day-by-Day Cash Flow"));
@@ -114,6 +124,31 @@ const APP = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
       } else t.ok(!card, `2c ${name} ${r}d: no overdraft, no card`);
     }
   }
+  // ── 2n. Every row of the summary opens its own figure (demo-fixes C3) ────────────────────────
+  // The "Starting balance, to the cent" row opened the last day's sheet. Each row now opens the sheet
+  // for its own key, titled with the row's label and showing the row's figure; the starting balance's
+  // sheet lists the everyday accounts, to the cent, and they add up to it.
+  {
+    let X = {};
+    try { X = loadApp(["watchRangeRows", "watchRangeExplanation"]); } catch (e) { t.ok(false, `2n bundles: ${describe(e)}`); }
+    for (const c of D.DEMO_COUNTRIES) for (const r of W.WATCH_RANGES) {
+      const data = demo(c);
+      const g = ForecastEngine.generate(data, Math.max(r, 30), null, now);
+      const s = W.rangeSummary(g.forecast, r, { avgDailySpend: g.avgDailySpend });
+      const rows = X.watchRangeRows(s);
+      const ctx = { summary: s, range: r, forecast: g.forecast, avgDailySpend: g.avgDailySpend, data, watchIncome: null, canEdit: false };
+      const wrong = rows.map(row => ({ row, ex: X.watchRangeExplanation(row.key, ctx) }))
+        .filter(({ row, ex }) => !ex || ex.title !== row.label || ex.value !== row.figure).map(({ row, ex }) => `${row.key}: "${row.label}" ${row.figure} opened ${ex ? `"${ex.title}" ${ex.value}` : "nothing"}`);
+      t.eq(wrong, [], `2n ${c} ${r}d: each of the ${rows.length} rows opens a sheet with its own label and figure`);
+      const start = X.watchRangeExplanation("start", ctx);
+      const listed = start.inputs.filter(i => i.label !== "Total").reduce((sum, i) => sum + Math.round(Number(i.value.replace(/[$,]/g, "")) * 100), 0);
+      t.eq(listed, s.startCents, `2o ${c} ${r}d: the starting balance's sheet lists the everyday accounts, adding up to ${s.check.start}`);
+    }
+    const SRC = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+    const rowsSrc = SRC.slice(SRC.indexOf("function watchRangeRows("), SRC.indexOf("function watchRangeExplanation("));
+    t.ok(!/\bopen:/.test(rowsSrc) && /onClick=\{\(\) => onOpen\(r\.key\)\}/.test(SRC), "2p no row is sent to another row's sheet");
+  }
+
   // ── 2g. The label says exactly which days the range covers (watch-meet-fixes 5b) ──────────────
   // Forecast days 0..N are today and N more days, N + 1 calendar days. "The next 7 days" undercounted
   // that by one; every place Watch names a range now says "Today and the next N days", and N must be

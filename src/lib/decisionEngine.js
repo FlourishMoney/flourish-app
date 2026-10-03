@@ -237,8 +237,8 @@ export const AutopilotEngine = {
     const spare = spareInfo.spare;
     const spareFrom = spareInfo.safe;
     const dailySpendLimit = Math.max(0, safeDaily);
-    const debtsOwed = buildDebtListForSimulator(data.debts, data.liabilities)
-      .map(d => ({ name: d.name, balance: d.balance, rate: d.rate, rateEstimated: !!d.rateEstimated }));
+    const debtsOwed = buildDebtListForSimulator(data.debts, data.liabilities, data)
+      .map(d => ({ name: d.name, balance: d.balance, rate: d.rate, rateEstimated: !!d.rateEstimated, ...(d.mayBeSame ? { mayBeSame: d.mayBeSame } : {}) }));
     const goalsSaved = goals.map(g => ({ name: g.name || "Goal", saved: num(g.saved), target: num(g.target) }));
 
     // ── ⑥ Adaptive alerts (contextual, not generic) ──────────────────────────

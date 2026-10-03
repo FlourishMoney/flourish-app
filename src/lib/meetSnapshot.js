@@ -117,7 +117,8 @@ export function buildMeetSnapshot(data = {}) {
   // suggested for either, and the two options never add up to more than the spare amount.
   try {
     // The same debt list What-If models (a bank-linked card with its bank's APR and minimum).
-    const top = selectHighestRateDebt(buildDebtListForSimulator(data.debts, data.liabilities));
+    // demo-fixes C8a: a linked pair is one entry; an unanswered pair is marked "may be the same card".
+    const top = selectHighestRateDebt(buildDebtListForSimulator(data.debts, data.liabilities, data));
     const { spare: extra, safe } = spareUntilDeposit(data);
     if (top && extra > 0) {
       const buf    = savingsBufferAfter(data.accounts, 0); // engine helper: the savings balance now
@@ -138,7 +139,7 @@ export function buildMeetSnapshot(data = {}) {
           source: "Safe to spend on Today",
         },
         options: [
-          { label: top.name || "Your top debt", outcome: `${formatMoney(top.balance)} owed at ${top.rate}%`,
+          { label: top.name || "Your top debt", outcome: `${formatMoney(top.balance)} owed at ${top.rate}%${top.mayBeSame ? `, may be the same ${top.mayBeSame}` : ""}`,
             explain: { title: top.name || "Your top debt", value: formatMoney(top.balance),
               meaning: "The debt with the highest interest rate in your list, and what is owed on it now.",
               rows: [{ label: "Owed now", value: formatMoney(top.balance) },

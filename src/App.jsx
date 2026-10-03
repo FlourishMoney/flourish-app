@@ -12,7 +12,7 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, summarizeScenarioForCoach, simulateDebtPayoffForDebt, debtMinimumPayment, debtLinkKey, withDebtIds, newDebtId, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, applyDebtRate, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
-  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums } from "./lib/financialCalculations.js";
+  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums, debtMinimums, netWorthRows, likelyDebtAccountMatches, linkDebtToAccount, dismissDebtAccountMatch } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
 import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multibank.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
@@ -1198,7 +1198,7 @@ function AutopilotCard({data, setScreen}) {
   // The household's own goals and debts, by name, with their own balances. No amount is suggested
   // for any of them.
   const ownItems = [
-    ...(plan.debtsOwed||[]).map(d => ({ icon:"💳", label:d.name, amount:formatMoney(d.balance), detail:`owed${d.rate ? `, ${d.rate}%${d.rateEstimated ? " (assumed rate)" : ""}` : ""}` })),
+    ...(plan.debtsOwed||[]).map(d => ({ icon:"💳", label:d.name, amount:formatMoney(d.balance), detail:`owed${d.rate ? `, ${d.rate}%${d.rateEstimated ? " (assumed rate)" : ""}` : ""}${d.mayBeSame ? `, may be the same ${d.mayBeSame}` : ""}` })),
     ...(plan.goalsSaved||[]).map(g => ({ icon:"🌱", label:g.name, amount:formatMoney(g.saved), detail: g.target > 0 ? `saved of ${formatMoney(g.target)}` : "saved" })),
   ];
 
@@ -2078,6 +2078,7 @@ function debtScenarioResult(targetDebt, extraPayment, debts) {
     debtBalance: balance,
     debtApr: apr,
     debtAprEstimated: !!targetDebt.rateEstimated, // Sprint 4b: APR was a fallback, not the user's real rate
+    debtMayBeSame: targetDebt.mayBeSame || null, // demo-fixes C8a: an unanswered likely pair is marked
     currentPayment,
     extraPayment,
     baselineMonths: result.baseline.monthsToPayoff,
@@ -2167,7 +2168,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
     // ── DEBT PAYOFF SCENARIO ─────────────────────────────────────────────
     if (scenarioType === "debt") {
       // Phase B4: unified debt list — Plaid liabilities (authoritative) + non-bank manual debts
-      const debts = buildDebtListForSimulator(data.debts, data.liabilities);
+      const debts = buildDebtListForSimulator(data.debts, data.liabilities, data);
       if (debts.length === 0) {
         setResult({
           scenarioType: "debt",
@@ -2471,6 +2472,7 @@ Rules: do not invent or quote any number not in the calculated results above. St
                   <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:4}}>Applied to</div>
                   <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:14,color:C.cream}}>{result.debtName}</div>
                   <div style={{color:C.muted,fontSize:13,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>${result.debtBalance.toFixed(2)} @ {result.debtApr}% APR · ${result.currentPayment.toFixed(0)}/mo current payment</div>
+                  {result.debtMayBeSame&&<div style={{color:C.mutedHi,fontSize:13,marginTop:2,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>May be the same {result.debtMayBeSame} as another debt in your list.</div>}
                   {/* Prompt 3b: an assumed rate is labelled as one, and the household can enter theirs. Saving it
                       recomputes this result with the same model, without counting another simulation. */}
                   {result.debtAprEstimated && (rateDraft===null
@@ -3480,7 +3482,9 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
           </button>
         ))}
       </div>
-      <button onClick={()=>mood&&setStep(1)} style={{background:mood?`linear-gradient(135deg,${C.green},${C.greenBright})`:"#e0e0e0",color:mood?"#fff":C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px",borderRadius:99,border:"none",cursor:mood?"pointer":"default",transition:"all .2s"}}>Next →</button>
+      {/* demo-fixes C9: before a mood is picked this was the theme's muted text on a fixed #e0e0e0 (1.05:1 in the
+          dark theme); it now uses the app's disabled button colours, and the picked state's text clears AA on the green. */}
+      <button onClick={()=>mood&&setStep(1)} style={{background:mood?`linear-gradient(135deg,${C.green},${C.greenBright})`:C.cardAlt,color:mood?textOn(C.green,C.greenBright):C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px",borderRadius:99,border:"none",cursor:mood?"pointer":"default",transition:"all .2s"}}>Next →</button>
     </div>,
 
     // Step 1: Surprise
@@ -5395,6 +5399,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const today       = new Date().getDate();
   const monthlyIncome = FinancialCalcEngine.cashFlow(data, getCatOv()).monthlyIncome;
   const { netWorth, liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
+  // demo-fixes C8c: the count under Total debt comes from the same rows as the total (netWorthRows), so a
+  // bank card linked to its hand-entered debt is one account. A row with nothing owed is not counted.
+  const owedCount = netWorthRows(data).rows.filter(r => (r.kind === "credit" || r.kind === "debt") && r.cents < 0).length;
   // Badge reads live from localStorage so it updates after Notifications marks-read
   const getUnreadCount = () => {
     try {
@@ -5940,7 +5947,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         <div style={{...anim(110),display:"flex",flexDirection:"column",gap:SPACE.sm}}>
           {[
             {label:"Due soon",value:formatMoney(dueSoonTotal||0),sub:dueSoon.windowLabel,color:C.gold,icon:"calendar",screen:"plan"},
-            {label:totalDebt>0?"Total debt":"Debt free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
+            {label:totalDebt>0?"Total debt":"Debt free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${owedCount} account${owedCount===1?"":"s"}`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
             // Week-2 defect b: colour follows the sign. A negative net worth is not a teal figure —
             // teal is this app's gain colour, and "-$14.5k" painted as a gain is the opposite of the fact.
             {label:"Net worth",value:`${netWorth>=0?"+":""}${formatCompactMoney(netWorth)}`,sub:"total net worth",color:netWorth<0?C.red:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},
@@ -6822,6 +6829,23 @@ function BillManager({data, setAppData, onClose}){
 // Every figure in here is handed in by the caller from an engine. This sheet computes nothing and
 // asks nothing of the AI; it reads back what was already worked out, which is the only reason it
 // can be trusted as an explanation.
+// demo-fixes B4: one calm question when a hand-entered debt looks like a card the bank already
+// lists. Yes links them (net worth counts the card once; nothing else changes); No is remembered for
+// that pair. The match rule is in lib/financialCalculations.js, likelyDebtAccountMatches.
+function DebtLinkPrompt({ match, setAppData }) {
+  if (!match || !setAppData) return null;
+  return (
+    <div role="group" aria-labelledby={`debt-link-${match.pairKey}`} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:LAYOUT.cardPadding,marginBottom:LAYOUT.cardGap}}>
+      <div id={`debt-link-${match.pairKey}`} style={{color:C.cream,...TYPE.headline,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Is this the same as your {match.accountLabel}?</div>
+      <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.xs,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your debt "{match.debtLabel}" may be that {match.accountKind==="loc"?"line of credit":"card"}. Until you say, net worth counts both, so it may be counted twice.</div>
+      <div style={{display:"flex",gap:GAP.controlToControl,marginTop:GAP.textToControl,flexWrap:"wrap"}}>
+        <button onClick={()=>setAppData(prev=>linkDebtToAccount(prev, match))} style={{flex:"1 1 140px",minHeight:LAYOUT.minTap,background:C.green+"1A",border:`1px solid ${C.green}55`,borderRadius:12,color:C.greenInk,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Yes, link them</button>
+        <button onClick={()=>setAppData(prev=>dismissDebtAccountMatch(prev, match))} style={{flex:"1 1 140px",minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.border}`,borderRadius:12,color:C.mutedHi,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>No, they're different</button>
+      </div>
+    </div>
+  );
+}
+
 function HowWeGotThis({ title, value, meaning, inputs = [], source, changeLabel, onChange, onClose }) {
   return (
     <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
@@ -7274,14 +7298,91 @@ function ManualBillForm({data, setAppData, onClose}){
 
 // The selected range, added up (watch-meet-fixes item 1, lib/watchRange.js). Every figure is a button
 // that opens How we got this; the check line is the working, to the cent.
-function WatchRangeSummary({ summary, range, dayLabel, onOpen }) {
-  const rows = [
-    { key: "low",   label: "Lowest balance", value: `${summary.text.low} ${summary.lowDay === 0 ? "today" : `on ${dayLabel(summary.low)}`}` },
-    { key: "end",   label: `Balance on ${dayLabel({ day: summary.endDay, date: summary.endDate })}`, value: summary.text.end },
-    { key: "in",    label: "Money in", value: summary.text.in },
-    { key: "bills", label: "Bills and minimum payments", value: summary.text.bills },
-    { key: "spend", label: "Everyday spending", note: "Estimated from your usual spending", value: summary.text.spend },
+// A forecast day as Watch names it: "today", or "Wed, Oct 14".
+function watchDayLabel(low) { return low && low.date ? (low.day === 0 ? "today" : fmtOccDay(low.date)) : ""; }
+
+// The range summary's rows (demo-fixes B3, C3). demo-fixes B3: every figure the check line adds up is
+// shown to the cent, in the order the check line adds them, so the numbers on screen add up exactly.
+// (The headline above keeps the whole-dollar balance Today shows, rounded down; the first row says it
+// is the same balance to the cent.) The lowest balance is not in the check line and stays in whole
+// dollars, as the day list shows it. Each row opens its own figure: watchRangeExplanation(row.key)
+// has the row's label as its title and the row's figure as its value.
+function watchRangeRows(summary, dayLabel = watchDayLabel) {
+  return [
+    { key: "start", label: "Starting balance, to the cent", value: summary.check.start, figure: summary.check.start },
+    { key: "in",    label: "Money in", value: summary.check.in, figure: summary.check.in },
+    { key: "bills", label: "Bills and minimum payments", value: summary.check.bills, figure: summary.check.bills },
+    { key: "spend", label: "Everyday spending", note: "Estimated from your usual spending", value: summary.check.spend, figure: summary.check.spend },
+    { key: "end",   label: `Balance on ${dayLabel({ day: summary.endDay, date: summary.endDate })}`, value: summary.check.end, figure: summary.check.end },
+    { key: "low",   label: "Lowest balance", value: `${summary.text.low} ${summary.lowDay === 0 ? "today" : `on ${dayLabel(summary.low)}`}`, figure: summary.text.low },
   ];
+}
+
+// The How we got this sheet for one row of the range summary, or for a paycheque ("pay:<i>"). ctx:
+// { summary, range, forecast, avgDailySpend, data, watchIncome, dayLabel, canEdit, close, openDailySpend }.
+function watchRangeExplanation(key, ctx) {
+  const { summary: S, range, forecast, avgDailySpend, data, watchIncome, dayLabel = watchDayLabel, canEdit, close, openDailySpend } = ctx;
+  const yourFigure = correctionsOf(data).dailySpend != null;
+  const spendRow = { label:"Usual daily spending", value:`${formatMoney(S.spendPerDay,{cents:true})} a day, ${yourFigure?"your figure":"from your transactions"}` };
+  const rowLabel = (k) => (watchRangeRows(S, dayLabel).find(r => r.key === k) || {}).label;
+  if (key === "start") {
+    // What the forecast starts from: the everyday accounts Today counts, to the cent.
+    const base = baseCurrencyOf(data);
+    const cash = (data.accounts || []).filter(a => isCashAccount(a) && accountCurrencyOf(a, data) === base);
+    return { title: rowLabel("start"), value: S.check.start,
+      meaning: "What is in your everyday accounts now, to the cent: where the forecast starts. The headline above shows the same balance rounded down to the dollar, as Today does.",
+      inputs: [...cash.map(a => ({ label: a.name || "Account", value: formatMoney(num(a.balance), { cents: true }) })), { label: "Total", value: S.check.start }] };
+  }
+  if (key === "low") {
+    const to = rangeSummary(forecast, S.lowDay, { avgDailySpend });
+    return { title: rowLabel("low"), value: S.text.low,
+      meaning:`The lowest your balance is projected to go in ${rangePhrase(range)}, ${S.lowDay===0?"today":`on ${dayLabel(S.low)}`}. It comes from the same forecast as the day-by-day list below, which shows that day.`,
+      inputs: to ? [
+        {label:"Starting balance", value:to.check.start},
+        {label:"Money in until then", value:`+${to.check.in}`},
+        {label:"Bills and minimum payments until then", value:`−${to.check.bills}`},
+        {label:"Everyday spending until then (estimate)", value:`−${to.check.spend}`},
+        {label:`Balance ${S.lowDay===0?"today":`on ${dayLabel(S.low)}`}`, value:to.check.end},
+      ] : [] };
+  }
+  if (key === "end") {
+    return { title: rowLabel("end"), value: S.check.end,
+      meaning:"Where the forecast lands on the last day of the range: the starting balance, plus the money in, less the bills and the everyday spending. Shown here to the cent, so it adds up exactly. Elsewhere a balance is rounded down to the dollar.",
+      inputs:[
+        {label:"Starting balance", value:S.check.start},
+        {label:"Money in", value:`+${S.check.in}`},
+        {label:"Bills and minimum payments", value:`−${S.check.bills}`},
+        {label:"Everyday spending (estimate)", value:`−${S.check.spend}`},
+        {label:"Balance on the last day", value:S.check.end},
+      ] };
+  }
+  if (key === "in") {
+    return { title: rowLabel("in"), value: S.check.in,
+      meaning:S.deposits.length?`Every deposit the forecast expects in ${rangePhrase(range)}, from your income and any expected money you added. Anything that already arrived today is in the starting balance.`:`No deposit is expected in ${rangePhrase(range)}. Anything that already arrived today is in the starting balance.`,
+      inputs:[...S.deposits.map(d=>({label:d.count>1?`${d.label} × ${d.count}`:d.label, value:d.text})), {label:"Total", value:S.check.in}] };
+  }
+  if (key === "bills") {
+    return { title: rowLabel("bills"), value: S.check.bills,
+      meaning:S.bills.length?`Every bill, payment you added as expected, and minimum debt payment due in ${rangePhrase(range)}. A regular bill due today counts as already paid, so it is in the starting balance.`:`Nothing is due in ${rangePhrase(range)}. A regular bill due today counts as already paid, so it is in the starting balance.`,
+      inputs:[...S.bills.map(b=>({label:b.count>1?`${b.label} × ${b.count}`:b.label, value:b.text})), {label:"Total", value:S.check.bills}] };
+  }
+  if (key === "spend") {
+    return { title: rowLabel("spend"), value: S.check.spend,
+      meaning:`An estimate, not a record: your usual daily spending, taken off each day after today. ${yourFigure?"It is the figure you set.":"It is your average daily spending from your transactions, with bills, transfers and card payments left out."} Bills are counted separately.`,
+      inputs:[spendRow, {label:"Days after today", value:`${S.spendDays}`}, {label:"Total", value:S.check.spend}],
+      changeLabel: canEdit ? "Change your daily spend" : null, onChange: canEdit ? () => { close && close(); openDailySpend && openDailySpend(); } : null };
+  }
+  if (/^pay:\d+$/.test(key)) {
+    const p = watchIncome && watchIncome.paycheques[Number(key.slice(4))];
+    if (p) return { title:`Est. ${payWord(data.profile?.country)}`, value:formatMoney(p.amount),
+      meaning:"One deposit from this income, as you entered it. If you set a new amount from a date, or your pay varies, it is the amount from that date or the low end of your pay. It is what the forecast plans on for each payday, unless you edit one on the list below.",
+      inputs:[{label:"Income", value:p.label||"Your pay"}, {label:"How often", value:frequencyLabel(p.freq||"biweekly")}, {label:"Each deposit", value:formatMoney(p.amount)}] };
+  }
+  return null;
+}
+
+function WatchRangeSummary({ summary, range, dayLabel, onOpen }) {
+  const rows = watchRangeRows(summary, dayLabel);
   return (
     <div style={{marginTop:SPACE.md,borderTop:`1px solid ${C.border}`,paddingTop:SPACE.md}}>
       <div style={{color:C.mutedHi,...TYPE.subhead,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{rangeLabel(range)}</div>
@@ -7356,7 +7457,7 @@ function PlanAhead({data, setAppData, setScreen, initialRange = 30}){
   const lowPoint = forecastLow(_forecast);
   const firstNegative = (overdraftRisk || [])[0] || null;
   const dipInRange = !!(rangeLow && rangeLow.balance < 0);
-  const dayLabel = (low) => low && low.date ? (low.day === 0 ? "today" : fmtOccDay(low.date)) : "";
+  const dayLabel = watchDayLabel;
   // The bar's scale has to cover what the RANGE shows. It was "balance + one paycheque", which is
   // always enough for a fortnight and is not enough for a month: Bar paints RED when the value
   // exceeds its max, so on this demo every balance after the second paycheque — $6,591 and up —
@@ -7530,51 +7631,9 @@ function PlanAhead({data, setAppData, setScreen, initialRange = 30}){
     {showExpected&&setAppData&&<ExpectedItemSheet data={data} setAppData={setAppData} onClose={()=>setShowExpected(false)}/>}
     {showDailySpend&&setAppData&&<DailySpendSheet data={data} setAppData={setAppData} onClose={()=>setShowDailySpend(false)}/>}
     {explainRange&&summary&&(()=>{
-      const S = summary;
-      const yourFigure = correctionsOf(data).dailySpend != null;
-      const spendRow = { label:"Usual daily spending", value:`${formatMoney(S.spendPerDay,{cents:true})} a day, ${yourFigure?"your figure":"from your transactions"}` };
       const close = () => setExplainRange(null);
-      let ex = null;
-      if (explainRange === "low") {
-        const to = rangeSummary(_forecast, S.lowDay, { avgDailySpend: engineDailySpend });
-        ex = { title:"Lowest balance", value:S.text.low,
-          meaning:`The lowest your balance is projected to go in ${rangePhrase(range)}, ${S.lowDay===0?"today":`on ${dayLabel(S.low)}`}. It comes from the same forecast as the day-by-day list below, which shows that day.`,
-          inputs: to ? [
-            {label:"Starting balance", value:to.check.start},
-            {label:"Money in until then", value:`+${to.check.in}`},
-            {label:"Bills and minimum payments until then", value:`−${to.check.bills}`},
-            {label:"Everyday spending until then (estimate)", value:`−${to.check.spend}`},
-            {label:`Balance ${S.lowDay===0?"today":`on ${dayLabel(S.low)}`}`, value:to.check.end},
-          ] : [] };
-      } else if (explainRange === "end") {
-        ex = { title:`Balance on ${dayLabel({day:S.endDay,date:S.endDate})}`, value:S.text.end,
-          meaning:"Where the forecast lands on the last day of the range: the starting balance, plus the money in, less the bills and the everyday spending. Shown here to the cent, so it adds up exactly. Elsewhere a balance is rounded down to the dollar.",
-          inputs:[
-            {label:"Starting balance", value:S.check.start},
-            {label:"Money in", value:`+${S.check.in}`},
-            {label:"Bills and minimum payments", value:`−${S.check.bills}`},
-            {label:"Everyday spending (estimate)", value:`−${S.check.spend}`},
-            {label:"Balance on the last day", value:S.check.end},
-          ] };
-      } else if (explainRange === "in") {
-        ex = { title:"Money in", value:S.text.in,
-          meaning:S.deposits.length?`Every deposit the forecast expects in ${rangePhrase(range)}, from your income and any expected money you added. Anything that already arrived today is in the starting balance.`:`No deposit is expected in ${rangePhrase(range)}. Anything that already arrived today is in the starting balance.`,
-          inputs:[...S.deposits.map(d=>({label:d.count>1?`${d.label} × ${d.count}`:d.label, value:d.text})), {label:"Total", value:S.check.in}] };
-      } else if (explainRange === "bills") {
-        ex = { title:"Bills and minimum payments", value:S.text.bills,
-          meaning:S.bills.length?`Every bill, payment you added as expected, and minimum debt payment due in ${rangePhrase(range)}. A regular bill due today counts as already paid, so it is in the starting balance.`:`Nothing is due in ${rangePhrase(range)}. A regular bill due today counts as already paid, so it is in the starting balance.`,
-          inputs:[...S.bills.map(b=>({label:b.count>1?`${b.label} × ${b.count}`:b.label, value:b.text})), {label:"Total", value:S.check.bills}] };
-      } else if (explainRange === "spend") {
-        ex = { title:"Everyday spending", value:S.text.spend,
-          meaning:`An estimate, not a record: your usual daily spending, taken off each day after today. ${yourFigure?"It is the figure you set.":"It is your average daily spending from your transactions, with bills, transfers and card payments left out."} Bills are counted separately.`,
-          inputs:[spendRow, {label:"Days after today", value:`${S.spendDays}`}, {label:"Total", value:S.check.spend}],
-          changeLabel:setAppData?"Change your daily spend":null, onChange:setAppData?()=>{close();setShowDailySpend(true);}:null };
-      } else if (/^pay:\d+$/.test(explainRange)) {
-        const p = watchIncome.paycheques[Number(explainRange.slice(4))];
-        if (p) ex = { title:`Est. ${payWord(data.profile?.country)}`, value:formatMoney(p.amount),
-          meaning:"One deposit from this income, as you entered it. If you set a new amount from a date, or your pay varies, it is the amount from that date or the low end of your pay. It is what the forecast plans on for each payday, unless you edit one on the list below.",
-          inputs:[{label:"Income", value:p.label||"Your pay"}, {label:"How often", value:frequencyLabel(p.freq||"biweekly")}, {label:"Each deposit", value:formatMoney(p.amount)}] };
-      }
+      const ex = watchRangeExplanation(explainRange, { summary, range, forecast: _forecast, avgDailySpend: engineDailySpend, data, watchIncome, dayLabel,
+        canEdit: !!setAppData, close, openDailySpend: () => setShowDailySpend(true) });
       return ex ? <HowWeGotThis title={ex.title} value={ex.value} meaning={ex.meaning} inputs={ex.inputs} changeLabel={ex.changeLabel} onChange={ex.onChange} onClose={close}/> : null;
     })()}
     {explainWatch&&(
@@ -8901,6 +8960,7 @@ function SpendScreen({data, setAppData, setScreen}){
 // ─── GOALS ────────────────────────────────────────────────────────────────────
 function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudget}){
   const [tab,setTab]=useState(initialTab);
+  const [explainNetWorth,setExplainNetWorth]=useState(false);
   useEffect(()=>{ setTab(initialTab); },[initialTab]);
   const [selDebt,setSelDebt]=useState(0);
   const [extra,setExtra]=useState(50);
@@ -8909,21 +8969,20 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
   const [showForm, setShowForm] = useState(false);
   const [editIdx, setEditIdx] = useState(null);
   const [form, setForm] = useState({name:"",target:"",saved:"",monthly:"",notes:""});
-  const debts=data.debts||[];
+  // demo-fixes C8d: the Do tab reads What-If's list (one entry per linked pair; an unanswered pair is two
+  // entries, each marked) and runs What-If's payoff model on the debt chosen, so the two screens agree. It
+  // used to list every stored debt row and run its own loop, at 0% for a debt with no rate and $68 for one
+  // with no minimum.
+  const debts=buildDebtListForSimulator(data.debts, data.liabilities, data);
   const safeSelDebt=Math.min(selDebt,Math.max(0,debts.length-1));
-  const debt=debts.length>0?debts[safeSelDebt]:{name:"Credit Card",balance:"3420",rate:"19.99",min:"68"};
+  const debt=debts.length>0?debts[safeSelDebt]:{name:"Credit Card",balance:3420,rate:19.99,min:68};
   const noDebts = debts.length === 0;
-  const bal=parseFloat(debt.balance||0),rate=parseFloat(debt.rate||0),minPay=parseFloat(debt.min||68);
-  const mRate=rate/100/12;
-  const calc=(xtra)=>{
-    const pay=minPay+xtra;if(pay<=bal*mRate)return{months:999,interest:999999};
-    let b=bal,m=0,int=0;while(b>0&&m<600){const i=b*mRate;int+=i;b=b+i-pay;m++;}
-    return{months:m,interest:Math.max(0,int)};
-  };
-  const base=calc(0),curr=calc(extra);
-  const saved=base.months-curr.months,intSaved=base.interest-curr.interest;
-  const toYM=(m)=>{if(m>=600)return"Never";const y=Math.floor(m/12),mo=m%12;return y>0?`${y}y ${mo}m`:`${mo}mo`;};
-  const payoffDate=()=>{const d=new Date();d.setMonth(d.getMonth()+curr.months);return d.toLocaleDateString("en",{month:"long",year:"numeric"});};
+  const bal=debt.balance,rate=debt.rate,minPay=Math.round(debt.min*100)/100;
+  const payoff=simulateDebtPayoffForDebt(debt, extra);
+  const curr={months:payoff.boosted.monthsToPayoff};
+  const saved=payoff.monthsSaved||0,intSaved=payoff.interestSaved||0;
+  const toYM=(m)=>{if(!(m<600))return"Never";const y=Math.floor(m/12),mo=m%12;return y>0?`${y}y ${mo}m`:`${mo}mo`;};
+  const payoffDate=()=>{if(!Number.isFinite(curr.months))return"Never";const d=new Date();d.setMonth(d.getMonth()+curr.months);return d.toLocaleDateString("en",{month:"long",year:"numeric"});};
   const { netWorth, liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -9162,7 +9221,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
 
     {tab==="sim"&&<>
       {noDebts&&<EmptyState icon="🎯" title="No debts tracked yet" body="Add debts during setup to simulate payoff strategies and see how much interest you can save." action="Add Debts in Settings" onAction={()=>window.dispatchEvent(new CustomEvent("flourish:settings"))} color={C.purple}/>}
-      {!noDebts&&debts.every(d=>!parseFloat(d.rate||0))&&(
+      {!noDebts&&debts.every(d=>d.rateEstimated)&&(
         <div style={{background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:14,padding:"12px 14px",marginBottom:12,display:"flex",gap:10,alignItems:"flex-start"}}>
           <span style={{fontSize:16,flexShrink:0}}>⚡</span>
           <div>
@@ -9176,8 +9235,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
           <div>
             <div style={{color:C.muted,fontSize:13}}>{debt.name}</div>
+            {debt.mayBeSame&&<div style={{color:C.mutedHi,fontSize:13}}>May be the same {debt.mayBeSame} as another debt in your list.</div>}
             <div style={{fontSize:36,fontWeight:900,color:C.purpleBright,fontFamily:"Georgia,serif",letterSpacing:-1}}>{`$${bal.toLocaleString()}`}</div>
-            <div style={{color:C.muted,fontSize:13}}>{rate}% interest · ${minPay}/mo minimum</div>
+            <div style={{color:C.muted,fontSize:13}}>{rate}% interest{debt.rateEstimated?" (assumed)":""} · ${minPay}/mo minimum{debt.minEstimated?" (estimated)":""}</div>
           </div>
           <div style={{textAlign:"right",background:C.green+"18",borderRadius:12,padding:"8px 12px",border:`1px solid ${C.green}33`}}>
             <div style={{color:C.muted,fontSize:13}}>Paid off</div>
@@ -9220,11 +9280,11 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
       </Card>
       {debts.length>0&&<Card>
         <div style={{color:C.cream,fontWeight:700,marginBottom:12}}>All Debts ({debts.length})</div>
-        {[...debts].sort((a,b)=>parseFloat(b.rate||0)-parseFloat(a.rate||0)).map((d,i)=>{
+        {[...debts].sort((a,b)=>b.rate-a.rate).map((d,i)=>{
           const colors=[C.red,C.gold,C.blue,C.purple];
           return <div key={i} style={{marginBottom:12}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{color:C.cream,fontSize:13}}>{d.name}</span><span style={{color:colors[i%4],fontWeight:700}}>${parseFloat(d.balance).toLocaleString()} · {d.rate}%</span></div>
-            <Bar v={parseFloat(d.balance)} max={totalDebt} color={colors[i%4]}/>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{color:C.cream,fontSize:13}}>{d.name}{d.mayBeSame?`, may be the same ${d.mayBeSame}`:""}</span><span style={{color:colors[i%4],fontWeight:700}}>${d.balance.toLocaleString()} · {d.rate}%</span></div>
+            <Bar v={d.balance} max={totalDebt} color={colors[i%4]}/>
           </div>;
         })}
       </Card>}
@@ -9245,18 +9305,25 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
       const checking=baseAccts.filter(a=>isCheckingAccount(a)).reduce((s,a)=>s+(a.balance||0),0);
       const savings=baseAccts.filter(a=>isSavingsAccount(a)).reduce((s,a)=>s+(a.balance||0),0);
       const totalAssets=checking+savings+totalInvested;
-      const { netWorth: realNetWorth, bankCreditLiabilities, manualNonBankDebts, mixedCurrencyDetected } = FinancialCalcEngine.netWorth(data);
+      const { bankCreditLiabilities, manualNonBankDebts, mixedCurrencyDetected } = FinancialCalcEngine.netWorth(data);
+      // demo-fixes B1: the headline is the sum of the rows listed under it (netWorthRows), to the cent.
+      const nwRows = netWorthRows(data);
+      const realNetWorth = nwRows.total;
       const savLabel=country==="US"?"Savings / HYSA":"Savings / TFSA";
-      const allItems=[
-        {label:"Chequing / Checking",value:checking,type:"asset",color:C.green,icon:"🏦"},
-        {label:savLabel,value:savings,type:"asset",color:C.teal,icon:"🛡️"},
-        ...investments.map(inv=>({label:inv.name,value:inv.balance||0,type:"investment",color:C.purple,icon:"📈"/* Phase D #4: this list renders item.icon as raw text (emoji), NOT via <Icon>/ICON_MAP — an ICON_MAP key like "chartUp" would print literally */,gain:inv.gain,gainPct:inv.gainPct,ticker:inv.ticker})),
-        ...(data.debts||[]).filter(d=>!(d.account_id && foreignAcctIds.has(d.account_id))).map(d=>({label:d.name,value:parseFloat(d.balance||0),type:"debt",color:C.red,icon:"💳"})),
-      ];
+      // demo-fixes B1: the list is netWorthRows, the same rows the headline is the sum of, so every
+      // account and debt it counts is listed once and nothing listed is left out. It used to list cash
+      // as two lumped rows and every debt, but never a bank credit account, so a card held both as an
+      // account and as an unlinked debt was subtracted twice while appearing once.
+      const acctById = new Map(allAccts.map(a => [a.id, a]));
+      const ROW_STYLE = { cash:{type:"asset",color:C.green,icon:"🏦"}, investment:{type:"investment",color:C.purple,icon:"📈"}, credit:{type:"debt",color:C.red,icon:"💳"}, debt:{type:"debt",color:C.red,icon:"💳"} };
+      const allItems = nwRows.rows.map(r => { const a = r.kind === "investment" ? acctById.get(r.id) : null;
+        return { label:r.label, value:Math.abs(r.value), cents:r.cents, ...ROW_STYLE[r.kind], ticker:a&&a.ticker, gainPct:a&&a.gainPct, gain:a&&a.gain, mayCountTwice:!!r.mayCountTwice }; });
       return <>
       <div style={{background:`linear-gradient(135deg,${C.tealDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"22px",border:`1px solid ${C.teal}44`}}>
         <div style={{color:C.muted,fontSize:13,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Your Net Worth</div>
-        <div style={{fontSize:44,fontWeight:900,color:realNetWorth<0?C.redBright:C.tealBright,fontFamily:"'Playfair Display',serif",letterSpacing:-1}}>{realNetWorth>=0?"+":"-"}$<CountUp to={Math.abs(realNetWorth)} decimals={0} sep/></div>
+        <button onClick={()=>setExplainNetWorth(true)} aria-label="Net worth: how Flourish got it" style={{background:"none",border:"none",padding:0,margin:0,cursor:"pointer",textAlign:"left",font:"inherit",display:"block",minHeight:LAYOUT.minTap}}>
+        <span style={{display:"block",fontSize:44,fontWeight:900,color:realNetWorth<0?C.redBright:C.tealBright,fontFamily:"'Playfair Display',serif",letterSpacing:-1}}>{realNetWorth>=0?"+":"-"}$<CountUp to={Math.abs(realNetWorth)} decimals={2} sep/></span>
+        </button>
         <div style={{color:C.muted,fontSize:13,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Assets minus liabilities · includes investments</div>
         <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
           {data.bankConnected
@@ -9276,6 +9343,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
           </div>
         </div>}
       </div>
+      {nwRows.matches[0]&&<DebtLinkPrompt match={nwRows.matches[0]} setAppData={setAppData}/>}
       {allItems.map((item,i)=>(
         <div key={i} style={{background:C.card,borderRadius:16,padding:"14px 16px",border:`1px solid ${item.type==="investment"?C.purple+"33":C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
@@ -9284,14 +9352,21 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
               <div style={{color:C.cream,fontWeight:600,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.label}</div>
               {item.ticker&&<div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.ticker}{item.gainPct?` · +${item.gainPct}%`:""}</div>}
               <Chip label={item.type==="investment"?"Investment 📈":item.type==="asset"?"Asset ↑":"Liability ↓"} color={item.color}/>
+              {item.mayCountTwice&&<div style={{color:C.mutedHi,fontSize:13,marginTop:SPACE.xs}}>May be counted twice</div>}
             </div>
           </div>
           <div style={{textAlign:"right"}}>
-            <div style={{color:item.color,fontWeight:800,fontSize:15}}>{item.type==="debt"?"−":"+"}${item.value.toLocaleString()}</div>
+            <div style={{color:item.color,fontWeight:800,fontSize:15}}>{item.type==="debt"?"−":"+"}{formatMoney(item.value,{cents:true})}</div>
             {item.gain&&<div style={{color:C.greenBright,fontSize:13,fontWeight:600}}>+${item.gain.toLocaleString()}</div>}
           </div>
         </div>
-      ))}</>; })()}
+      ))}
+      {explainNetWorth&&<HowWeGotThis title="Net worth" value={`${nwRows.totalCents<0?"-":"+"}${formatMoney(Math.abs(nwRows.totalCents)/100,{cents:true})}`}
+        meaning={`Every account and debt listed on this screen, added up: what you have, less what you owe. A debt linked to its bank card is counted once. Accounts in another currency are left out.${nwRows.matches.length?" Two rows marked below may be the same card counted twice: answer the question on this screen to link them.":""}`}
+        inputs={[...nwRows.rows.map(r=>({label:r.mayCountTwice?`${r.label}, may be counted twice`:r.label, value:`${r.cents<0?"−":"+"}${formatMoney(Math.abs(r.cents)/100,{cents:true})}`})),
+          {label:"= Net worth", value:`${nwRows.totalCents<0?"-":"+"}${formatMoney(Math.abs(nwRows.totalCents)/100,{cents:true})}`}]}
+        source="Your accounts and debts" onClose={()=>setExplainNetWorth(false)}/>}
+      </>; })()}
 
     {tab==="tax"&&(()=>{
       const cfg=CC[data.profile?.country||"CA"];
@@ -9950,6 +10025,14 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData }){
   );
 }
 
+// demo-fixes C8d: Family's "Debt progress" line. The total is Today's Total debt (net worth's liabilities)
+// and the minimums are the pair-aware ones, so a card linked to its hand-entered debt is one minimum.
+function familyDebtMetric(totalDebt, data) {
+  if (!(totalDebt > 0)) return "No debt tracked. Nice work.";
+  const mins = debtMinimums(data && data.debts).reduce((a, x) => a + x.amount, 0);
+  return `Total debt: $${totalDebt.toLocaleString()} · Min payments: $${mins.toFixed(0)}/mo`;
+}
+
 function Family({data,setAppData,household,setHousehold,setScreen}){
   const [tab,setTab]=useState("meeting");
   const [householdTab,setHouseholdTab]=useState("join");
@@ -10137,7 +10220,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
      metricColor:C.tealBright,
      prompt:"Was any category a surprise? What would you do differently?"},
     {id:"debt",icon:"📉",title:"Debt progress",desc:"Any change in a balance counts.",
-     metric:totalDebt>0?`Total debt: $${totalDebt.toLocaleString()} · Min payments: $${(data.debts||[]).reduce((a,d)=>a+parseFloat(d.min||0),0).toFixed(0)}/mo`:"No debt tracked. Nice work.",
+     metric:familyDebtMetric(totalDebt, data),
      metricColor:totalDebt>0?C.orangeBright:C.greenBright,
      prompt:"Did you make any extra payments? What felt hard this week?"},
     {id:"goal",icon:"🎯",title:"Check in on your shared goal",desc:"Emergency fund? Vacation? House?",
@@ -10371,7 +10454,9 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
               </div>;
             }
             if(item.id==="debt"){
-              const debts=(data.debts||[]).slice().sort((a,b)=>parseFloat(b.apr||0)-parseFloat(a.apr||0));
+              // demo-fixes C8d: What-If's pair-aware list, at each debt's rate (this read an "apr" field, which
+              // debts do not have, so every rate showed 0% and every interest figure $0).
+              const debts=buildDebtListForSimulator(data.debts, data.liabilities, data).sort((a,b)=>b.rate-a.rate);
               return debts.length===0?<div style={{color:C.greenBright,fontSize:13,textAlign:"center",padding:"8px 0"}}>No debts tracked.</div>:
               <div style={{display:"flex",flexDirection:"column",gap:5,marginTop:8}}>
                 <div style={{display:"flex",justifyContent:"space-between",padding:"4px 10px"}}>
@@ -10379,17 +10464,17 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                   <span style={{color:C.muted,fontSize:13}}>APR</span>
                 </div>
                 {debts.map((d,i)=>{
-                  const bal=parseFloat(d.balance||0);
-                  const apr=parseFloat(d.apr||0);
+                  const bal=d.balance;
+                  const apr=d.rate;
                   const interestPerMo=(bal*(apr/100)/12);
                   return<div key={i} style={{padding:"8px 10px",background:C.bg,borderRadius:10,border:`1px solid ${i===0?C.redBright+"33":C.border}`}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
-                      <span style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{d.name||"Debt"}</span>
-                      <span style={{color:i===0?C.redBright:C.muted,fontSize:13,fontWeight:700}}>{apr}%</span>
+                      <span style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{d.name||"Debt"}{d.mayBeSame?`, may be the same ${d.mayBeSame}`:""}</span>
+                      <span style={{color:i===0?C.redBright:C.muted,fontSize:13,fontWeight:700}}>{apr}%{d.rateEstimated?" (assumed)":""}</span>
                     </div>
                     <div style={{display:"flex",justifyContent:"space-between"}}>
                       <span style={{color:C.orangeBright,fontSize:13}}>Balance: ${bal.toLocaleString()}</span>
-                      <span style={{color:C.muted,fontSize:13}}>Interest: ${interestPerMo.toFixed(0)}/mo · Min: ${parseFloat(d.min||0).toFixed(0)}/mo</span>
+                      <span style={{color:C.muted,fontSize:13}}>Interest: ${interestPerMo.toFixed(0)}/mo · Min: ${d.min.toFixed(0)}/mo{d.minEstimated?" (estimated)":""}</span>
                     </div>
                   </div>;
                 })}
@@ -11143,6 +11228,7 @@ function InlineDebtEditor({data, setAppData, color, navToScreen}){
           <div style={{color:C.muted,fontSize:13,lineHeight:1.65}}>Connect your bank to auto-import credit cards, or tap + Add Debt below.</div>
         </div>
       )}
+      {(()=>{ const m = likelyDebtAccountMatches(data)[0]; return m ? <DebtLinkPrompt match={m} setAppData={setAppData}/> : null; })()}
       {(data.debts||[]).some(d=>d.fromBank)&&(
         <div style={{background:C.green+"0A",border:`1px solid ${C.green}22`,borderRadius:10,padding:"8px 12px",marginBottom:8,display:"flex",gap:6,alignItems:"center"}}>
           <span style={{fontSize:13}}>🏦</span>
@@ -12267,7 +12353,9 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     ).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`${sanitizeField(k,60)}: $${(v||0).toFixed(0)}`).join(", ");
     const goals = (data.goals||[]).map(g=>`${sanitizeField(g.name,80)}: $${parseFloat(g.saved||0).toFixed(0)} saved of $${parseFloat(g.target||0).toFixed(0)} target${g.monthly?`, $${parseFloat(g.monthly)||0}/mo contribution`:""}`).join("; ")||"none set";
     const bills = (data.bills||[]).map(b=>`${sanitizeField(b.name,80)} $${billMonthlyAmount(b).toFixed(0)}/mo${b.arrears?` (arrears: $${parseFloat(b.arrears)||0})`:""}` ).join("; ")||"none tracked";
-    const debts = (data.debts||[]).map(d=>`${sanitizeField(d.name,80)} $${parseFloat(d.balance||0).toFixed(0)}${d.rate?` @ ${parseFloat(d.rate)||0}%`:""}`).join("; ")||"none";
+    // demo-fixes C8d: each debt once, from What-If's pair-aware list (a linked card is one debt; an unanswered
+    // pair is marked so the coach does not add both).
+    const debts = buildDebtListForSimulator(data.debts, data.liabilities, data).map(d=>`${sanitizeField(d.name,80)} $${d.balance.toFixed(0)}${d.rateEstimated?"":` @ ${d.rate}%`}${d.mayBeSame?` (may be the same ${d.mayBeSame} as another debt listed)`:""}`).join("; ")||"none";
     const ret = profile.retirement||{};
     const retInfo = Object.entries(ret).filter(([,v])=>parseFloat(v)>0).map(([k,v])=>`${sanitizeField(k,40)}: $${parseFloat(v)||0}`).join(", ")||"none entered";
     const birthYear = parseInt(profile.birthYear||"0");
@@ -14725,7 +14813,9 @@ function ModalHost() {
   const isConfirm = m.kind === "confirm", isPrompt = m.kind === "prompt";
   const finish = (result) => { const r = m._resolve; setM(null); if (r) r(result); };
   const accentBg = m.destructive ? C.red : C.green;
-  const accentFg = m.destructive ? "#fff" : (C.isDark ? "#041810" : "#FFFFFF");
+  // demo-fixes C9: white on the dark theme's red (#FF4F6A) is 3.19:1; textOn picks white or the dark ink,
+  // whichever clears AA on the fill (white stays on the light theme's darker red).
+  const accentFg = m.destructive ? textOn(C.red) : (C.isDark ? "#041810" : "#FFFFFF");
   return (
     <div role="dialog" aria-modal="true" aria-label={m.title || "Dialog"}
       style={{position:"fixed",inset:0,zIndex:10000,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}
@@ -15008,7 +15098,9 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
                   </div>
                 </div>
               ))}
-                {(data.debts||[]).map((d,i)=>(
+                {/* demo-fixes C8d: the minimums "Total fixed" adds up (unbilledDebtMinimums): a linked pair once, and
+                    none a bill above already pays. */}
+                {unbilledDebtMinimums(data.debts, data.bills).map(({debt:d, amount},i)=>(
                   <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
                     <div style={{display:"flex",alignItems:"center",gap:7}}>
                       <span style={{fontSize:14}}>💳</span>
@@ -15017,7 +15109,7 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
                         <div style={{color:C.muted,fontSize:13}}>minimum payment</div>
                       </div>
                     </div>
-                    <span style={{color:C.muted,fontWeight:700,fontSize:13}}>${parseFloat(d.min||0).toFixed(0)}/mo</span>
+                    <span style={{color:C.muted,fontWeight:700,fontSize:13}}>${amount.toFixed(0)}/mo</span>
                   </div>
                 ))}
                 <div style={{display:"flex",justifyContent:"space-between",padding:"6px 10px",borderTop:`1px solid ${C.border}`,marginTop:2}}>
