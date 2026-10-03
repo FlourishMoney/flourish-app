@@ -19,6 +19,12 @@
 //                  with the phone's own text size (lib/textScale.js, applied at startup and checked
 //                  below), and iOS Safari ignores the lock on the open web.
 //
+// Each pass is pinned to its theme (demo-fixes C9). The app keeps its theme in localStorage and follows
+// the system setting until someone picks one; under Chromium's emulated colour scheme a reload could
+// flip a "dark" pass to light, so every sheet opened after one (Settings, its dialogs, Check-In) was
+// scanned in the light theme while reported as dark. Two dark-theme contrast failures hid that way.
+// Each pass now starts with its theme chosen, and check 6 confirms every screen was scanned in it.
+//
 // What axe cannot see is covered elsewhere: 44px tap targets and spacing by layout.browser.test.cjs,
 // and text at 1.3x by the same sweep. Icon-only buttons are checked here: axe accepts "✕" as a name.
 // -----------------------------------------------------------------------------
@@ -121,11 +127,13 @@ function buildApp(supabaseUrl) {
 
   const open = async (who, scheme, tour) => {
     const ctx = await browser.newContext({ viewport: { width: WIDTH, height: 932 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: scheme });
-    await ctx.addInitScript(([who, tour, key, session]) => { try {
+    await ctx.addInitScript(([who, tour, key, session, scheme]) => { try {
+      // The pass's theme, chosen, so a reload cannot fall back to another (check 6).
+      localStorage.setItem("flourish_theme", scheme); localStorage.setItem("flourish_theme_manual", "1");
       localStorage.setItem("flourish_first_visit_done", "1");
       if (!tour) localStorage.setItem("flourish_tour_done", "1");
       if (who === "empty") localStorage.setItem(key, session);
-    } catch (e) {} }, [who, !!tour, MOCK.storageKey(base), JSON.stringify(MOCK.makeSession())]);
+    } catch (e) {} }, [who, !!tour, MOCK.storageKey(base), JSON.stringify(MOCK.makeSession()), scheme]);
     const page = await ctx.newPage();
     page.setDefaultTimeout(10000);
     const ready = async () => {
@@ -182,7 +190,8 @@ function buildApp(supabaseUrl) {
         else if (v.overlay) await main.reload();
         await v.go(page);
         await page.waitForTimeout(600);
-        out.push({ view: label, ...(await scan(page)) });
+        const theme = await page.evaluate(() => { try { return localStorage.getItem("flourish_theme"); } catch { return null; } });
+        out.push({ view: label, scheme, theme, ...(await scan(page)) });
       } catch (e) {
         out.push({ view: label, unreachable: String(e.message).split("\n")[0].slice(0, 160) });
         try { await main.reload(); } catch {}
@@ -200,6 +209,8 @@ function buildApp(supabaseUrl) {
     t.eq(r.violations.map((v) => `${v.id} (${v.impact}, ${v.n}): ${v.nodes.join(" | ")}`), [], `2 ${r.view}: no WCAG 2.x A/AA violation axe can find`);
     t.eq(r.icons, [], `5 ${r.view}: every icon-only button has a name in words`);
   }
+  t.eq(results.filter((r) => !r.unreachable && r.theme !== r.scheme).map((r) => `${r.view}: rendered ${r.theme || "unknown"}`), [],
+    "6 every screen was scanned in its pass's theme (a dark pass used to fall back to light after a reload)");
   t.ok(/^\d+%$/.test(tsa), `3 text scales with the system text size: the root's text-size-adjust is set at startup (${tsa || "unset"})`);
   t.eq(EXCLUDED_RULES, ["meta-viewport"], "4 one rule is excluded, and only that one (the native pinch-zoom lock, see the header)");
   t.summary("A11Y (browser)");
