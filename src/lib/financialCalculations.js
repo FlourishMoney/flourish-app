@@ -1032,12 +1032,29 @@ export function debtLinkKey(debt) {
 export function newDebtId() {
   return `debt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
+// A debt's id when it is first given one on load (demo-fixes C1): derived from its place in the list
+// and what it holds, so two loads of the same saved data, on this device or another, give it the same
+// id even before that id has been saved. Once saved the id is kept, whatever the debt later becomes.
+function _fnv(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36); }
+export function stableDebtId(debt, index) {
+  const d = debt || {};
+  return `debt-${index}-${_fnv([index, d.name, d.balance, d.rate, d.min, d.dueDay].map(x => String(x ?? "")).join("|"))}`;
+}
 // Give every debt that has no link key an id, once. Returns the SAME array when nothing needed one,
-// so a caller can tell there is nothing to write.
-export function withDebtIds(debts, makeId = newDebtId) {
+// so a caller can tell there is nothing to write. The id is stableDebtId's unless a caller passes its
+// own maker; it never repeats an id already in the list. (A bank-imported debt keeps its bank account
+// id as its key: it is identified by that, stably, and a bank resync replaces the object.)
+export function withDebtIds(debts, makeId = stableDebtId) {
   const list = Array.isArray(debts) ? debts : [];
   if (!list.some(d => d && !debtLinkKey(d))) return debts;
-  return list.map(d => (d && !debtLinkKey(d)) ? { ...d, id: makeId() } : d);
+  const taken = new Set(list.map(d => d && d.id).filter(x => x != null && x !== "").map(String));
+  return list.map((d, i) => {
+    if (!d || debtLinkKey(d)) return d;
+    let id = String(makeId(d, i)), n = 2;
+    while (taken.has(id)) id = `${id}-${n++}`;
+    taken.add(id);
+    return { ...d, id };
+  });
 }
 
 // The debt minimums still to pay on their own: every debt with a minimum above zero that no bill
@@ -1175,7 +1192,7 @@ export function isBaseCurrencyAccount(account, data) {
 //   - they share the last 4 digits (from the name or the account's mask);
 //   - the balances are within $1.00.
 // Each debt is paired with at most one account and each account with at most one debt, the strongest
-// reason first (last 4 digits, then issuer, then balance).
+// reason first (last 4 digits, then issuer, then balance). Debts are identified by id only (C1).
 const _ISSUERS = ["visa", "mastercard", "master card", "amex", "american express", "discover", "chase", "sapphire", "capital one", "citi", "citibank",
   "barclays", "synchrony", "wells fargo", "bank of america", "us bank", "u.s. bank", "td", "rbc", "bmo", "scotia", "scotiabank", "cibc", "tangerine",
   "simplii", "desjardins", "national bank", "pc financial", "mbna", "rogers", "triangle", "hsbc", "neo", "koho", "brim", "home trust", "costco"];
@@ -1187,8 +1204,11 @@ const _isBankCreditAccount = (a) => {
   return t === "credit" || t === "credit card" || s === "credit card" || t === "line of credit";
 };
 const _isCardLikeDebt = (d) => { const n = String(d && d.name || ""); return /credit card|line of credit|\bloc\b|\bcard\b|\bcredit\b/i.test(n) || _issuersIn(n).size > 0; };
+// demo-fixes C1: a debt is identified by its id and nothing else. Names are usually the debt's type
+// ("Credit Card"), so two cards can share one; keying on the name linked both. Every debt is given a
+// stable id on load (withDebtIds); one without an id is never offered, linked or dismissed.
 export function debtKey(d) {
-  return d && d.id != null ? `id:${d.id}` : `name:${String(d && d.name || "").trim().toLowerCase().replace(/\s+/g, " ")}`;
+  return d && d.id != null && d.id !== "" ? String(d.id) : null;
 }
 export function accountLabelWithMask(a) {
   const name = String((a && a.name) || "your card");
@@ -1202,7 +1222,7 @@ export function likelyDebtAccountMatches(data = {}) {
   const dismissed = new Set(Array.isArray(data.debtLinkDismissed) ? data.debtLinkDismissed : []);
   const candidates = [];
   debts.forEach((d, debtIndex) => {
-    if (!d || d.fromBank || (d.account_id && cardIds.has(d.account_id)) || (d.sameAsAccountId && cardIds.has(d.sameAsAccountId))) return;
+    if (!d || debtKey(d) == null || d.fromBank || (d.account_id && cardIds.has(d.account_id)) || (d.sameAsAccountId && cardIds.has(d.sameAsAccountId))) return;
     if (!_isCardLikeDebt(d) || !(num(d.balance) > 0)) return;
     for (const a of cards) {
       if (linkedIds.has(a.id)) continue;
@@ -1232,11 +1252,12 @@ export function likelyDebtAccountMatches(data = {}) {
 // "Yes, link them": the debt is the same card as the account. Net worth counts it once.
 export function linkDebtToAccount(data = {}, match) {
   if (!match) return data;
-  return { ...data, debts: (data.debts || []).map(d => debtKey(d) === match.debtKey && !d.sameAsAccountId ? { ...d, sameAsAccountId: match.accountId } : d) };
+  if (!match || match.debtKey == null) return data;
+  return { ...data, debts: (data.debts || []).map(d => debtKey(d) != null && debtKey(d) === String(match.debtKey) && !d.sameAsAccountId ? { ...d, sameAsAccountId: match.accountId } : d) };
 }
 // "No, they're different": never ask about this pair again.
 export function dismissDebtAccountMatch(data = {}, match) {
-  if (!match) return data;
+  if (!match || match.debtKey == null) return data;
   const prev = Array.isArray(data.debtLinkDismissed) ? data.debtLinkDismissed : [];
   return prev.includes(match.pairKey) ? data : { ...data, debtLinkDismissed: [...prev, match.pairKey] };
 }

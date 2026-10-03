@@ -46,8 +46,8 @@ const { loadApp, textOf, describe } = require("./_renderApp.cjs");
 
   // ── 1. Before: found, marked, and summed as shown ───────────────────────────────────────────────
   const matches = F.likelyDebtAccountMatches(before);
-  t.eq(matches.map(m => [m.debtKey, m.accountId, m.accountLabel, m.reasons.join("+")]), [["id:d1", "v1", "Visa ••1111", "issuer+balance"]],
-    "1a the hand-entered Visa is matched to the bank's Visa ••1111 (same issuer, balances within $1)");
+  t.eq(matches.map(m => [m.debtKey, m.accountId, m.accountLabel, m.reasons.join("+")]), [["d1", "v1", "Visa ••1111", "issuer+balance"]],
+    "1a the hand-entered Visa is matched to the bank's Visa ••1111 (same issuer, balances within $1), keyed on its id");
   const r0 = F.netWorthRows(before);
   t.eq(r0.rows.map(r => [r.label, r.cents, !!r.mayCountTwice]), [["Chequing", 215037, false], ["Savings", 400000, false], ["Visa ••1111", -128742, true], ["Visa", -128742, true], ["Car loan", -987510, false]],
     "1b both Visa rows are listed and marked \"may be counted twice\"; nothing is dropped");
@@ -78,9 +78,9 @@ const { loadApp, textOf, describe } = require("./_renderApp.cjs");
   // ── 4. No, they're different: both stay, unmarked, never asked again ─────────────────────────────
   const no = F.dismissDebtAccountMatch(before, matches[0]);
   const r2 = F.netWorthRows(no);
-  t.eq([no.debtLinkDismissed, F.likelyDebtAccountMatches(no).length, r2.totalCents, r2.rows.some(r => r.mayCountTwice)], [["id:d1|v1"], 0, -629957, false],
+  t.eq([no.debtLinkDismissed, F.likelyDebtAccountMatches(no).length, r2.totalCents, r2.rows.some(r => r.mayCountTwice)], [["d1|v1"], 0, -629957, false],
     "4a No stores the pair, asks nothing more, and both cards count (−$6,299.57, no mark)");
-  t.eq(F.dismissDebtAccountMatch(no, matches[0]).debtLinkDismissed, ["id:d1|v1"], "4b …once");
+  t.eq(F.dismissDebtAccountMatch(no, matches[0]).debtLinkDismissed, ["d1|v1"], "4b …once, keyed on the debt's id");
 
   // ── 5. The rule ─────────────────────────────────────────────────────────────────────────────────
   const card = (name, balance, extra = {}) => ({ id: "x", name, type: "credit", balance, ...extra });
@@ -90,12 +90,47 @@ const { loadApp, textOf, describe } = require("./_renderApp.cjs");
   t.eq(one({ id: 1, name: "Credit Card", balance: "1500.40" }, card("Card ••0001", -1500)), ["balance"], "5c balances within $1");
   t.eq(one({ id: 1, name: "Credit Card", balance: "1502" }, card("Card ••0001", -1500)), [], "5d …not $2 apart");
   t.eq(one({ id: 1, name: "Line of Credit", balance: "3000" }, { id: "l", name: "TD Line of Credit", type: "line of credit", balance: -3000 }), ["balance"], "5e a line of credit");
+  t.eq(one({ name: "Visa", balance: "900" }, card("Visa ••1", -900)), [], "5l a debt with no id is never offered (it is given one on load)");
   t.eq(one({ id: 1, name: "Car Loan", balance: "1500" }, card("Card ••0001", -1500)), [], "5f a car loan is never matched to a card, whatever its balance");
   t.eq(one({ id: 1, name: "Visa", balance: "900", fromBank: true }, card("Visa ••1", -900)), [], "5g a debt that came from the bank is already that account");
   t.eq(F.likelyDebtAccountMatches({ accounts: [card("Visa ••1", -900)], debts: [{ id: 1, name: "Visa", balance: "900" }, { id: 2, name: "Visa", balance: "900", account_id: "x" }] }), [],
     "5h an account another debt is already linked to is not offered again");
   t.eq(F.likelyDebtAccountMatches({ accounts: [card("Visa ••1", -900), { id: "y", name: "Visa ••2", type: "credit", balance: -900 }], debts: [{ id: 1, name: "Visa", balance: "900" }] }).length, 1,
     "5i one debt is paired with one account at most");
+
+  // ── 7. Two debts with one name (demo-fixes C1) ────────────────────────────────────────────────
+  // MATH-LOCK: chequing +2,150.37, Visa ••1111 (bank card) −1,287.42, two hand-entered debts both named
+  // "Credit Card", −1,287.42 (id cc-a) and −640.25 (id cc-b). Net worth −1,064.72. Yes on cc-a links
+  // cc-a only: +1,287.42 exactly, to +222.70, and cc-b is still counted. (Keyed on the name, Yes linked
+  // both, and net worth jumped by 1,927.67.)
+  {
+    const two = { profile: { country: "CA" }, accounts: [{ id: "c1", name: "Chequing", type: "checking", balance: 2150.37 }, { id: "v1", name: "Visa ••1111", type: "credit", balance: -1287.42 }],
+      debts: [{ id: "cc-a", name: "Credit Card", balance: "1287.42", rate: "19.99", min: "40" }, { id: "cc-b", name: "Credit Card", balance: "640.25", rate: "21.99", min: "25" }] };
+    const nw = (d) => F.netWorthRows(d).totalCents;
+    t.eq(nw(two), -106472, "7a two Credit Card debts and the bank Visa: −$1,064.72");
+    t.eq(F.likelyDebtAccountMatches(two).map(m => [m.debtKey, m.accountId]), [["cc-a", "v1"]], "7b cc-a is offered for Visa ••1111 (equal balances)");
+    const linked = F.linkDebtToAccount(two, { debtKey: "cc-a", accountId: "v1", pairKey: "cc-a|v1" });
+    t.eq(linked.debts.map(d => [d.id, d.sameAsAccountId || null]), [["cc-a", "v1"], ["cc-b", null]], "7c Yes on cc-a links cc-a only, by its id");
+    t.eq([nw(linked), nw(linked) - nw(two)], [22270, 128742], "7d net worth changes by exactly that debt's balance: +$1,287.42, to +$222.70");
+    t.ok(F.netWorthRows(linked).rows.some(r => r.kind === "debt" && r.id === "cc-b" && r.cents === -64025), "7e the other Credit Card is still counted, −$640.25");
+    t.eq(F.dismissDebtAccountMatch(two, { debtKey: "cc-a", accountId: "v1", pairKey: "cc-a|v1" }).debtLinkDismissed, ["cc-a|v1"], "7f a dismissal is keyed on the id too");
+    // The same with names that qualify, so the second debt's own prompt can be seen.
+    const visas = { ...two, debts: [{ id: "v-a", name: "Visa", balance: "1287.42", rate: "19.99", min: "40" }, { id: "v-b", name: "Visa", balance: "640.25", rate: "21.99", min: "25" }] };
+    const m1 = F.likelyDebtAccountMatches(visas);
+    t.eq(m1.map(m => [m.debtKey, m.accountId]), [["v-a", "v1"]], "7g two debts both named Visa: the one whose balance is closer is offered for Visa ••1111");
+    const l1 = F.linkDebtToAccount(visas, m1[0]);
+    t.eq([l1.debts.map(d => d.sameAsAccountId || null), nw(l1) - nw(visas)], [["v1", null], 128742], "7h Yes links that one only, +$1,287.42");
+    const more = { ...l1, accounts: [...l1.accounts, { id: "v2", name: "Visa ••2222", type: "credit", balance: -640.25 }] };
+    t.eq(F.likelyDebtAccountMatches(more).map(m => [m.debtKey, m.accountId]), [["v-b", "v2"]], "7i the other Visa is still eligible for its own prompt (here, against Visa ••2222)");
+    const d1 = F.dismissDebtAccountMatch(visas, m1[0]);
+    t.eq(F.likelyDebtAccountMatches(d1).map(m => [m.debtKey, m.accountId]), [["v-b", "v1"]], "7j …and No on the first leaves the second free to be asked about the same card");
+    // Stable ids: the same saved data gives the same ids on every load and device, and two debts with one name get two ids.
+    const legacy = [{ name: "Credit Card", balance: "1287.42" }, { name: "Credit Card", balance: "640.25" }, { name: "Visa card", balance: "3420", account_id: "a3" }];
+    const once = F.withDebtIds(legacy), again = F.withDebtIds(legacy.map(d => ({ ...d })));
+    t.eq(once.map(d => d.id), again.map(d => d.id), "7k ids given on load are the same on every load of the same data");
+    t.ok(once[0].id && once[1].id && once[0].id !== once[1].id && once[2].id === undefined, "7l two debts named Credit Card get two ids; a bank-imported debt keeps its bank account id as its key");
+    t.ok(F.withDebtIds(once) === once && F.withDebtIds(once.map((d, i) => i === 0 ? { ...d, balance: "1000" } : d))[0].id === once[0].id, "7m once given, an id is kept when the debt changes");
+  }
 
   // ── 6. On screen ────────────────────────────────────────────────────────────────────────────────
   let A = {};
