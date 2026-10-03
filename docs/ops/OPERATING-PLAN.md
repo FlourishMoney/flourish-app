@@ -129,6 +129,8 @@ Bug triage: Sev-1 (money, data loss, wrong number, security) fixed same day; Sev
 
 Release checklist: gate green, build clean, coach QA run and green for any change to prompts, guards or coach.js, changelog written, a rollback runbook line for this deploy (which flag values and which migrations must stay or revert; rolling back code with ENFORCE_PLAN_LIMITS true would put the old 1-a-day rule on every non-founder), Sentry confirmed reporting the new release, quiet for 30 minutes after deploy, smoke run against the deploy that is actually live (record ids after the last push of the day), App Store screenshots match the build.
 
+Landing screens: after any merged UI change, run `npm run screens:landing` (scripts/capture-landing-screens.mjs), check the four images in public/app-screens against the app, and commit them with the change.
+
 Rollback: Netlify one-click publish of the previous deploy (production only; there is no preview to drill on), with the runbook naming the flag and migration state; migrations are additive except where a function is replaced (0006 replaces handle_new_user, so its rollback SQL is written before it runs); Stripe and RevenueCat webhooks are idempotent through stripe_events. The drill happens on Tuesday of week 1 after the smoke: publish the previous deploy, confirm, re-publish; nobody is charged and "rollback proven once" is met on day 2.
 
 Daily (CL): Sentry and support triage. Weekly (CC): coach QA run, device pass if a release is due. Monthly (CC): restore-drill procedure check (the founder performs the restore, department 11). Before the cohort: the free path proven live (a test account with trial_started_at backdated 15 days sends three messages; the third is refused with "this week"; the row is restored).

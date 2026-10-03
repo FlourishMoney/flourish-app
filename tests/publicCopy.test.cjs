@@ -78,7 +78,7 @@ const FORBIDDEN = [
 
     // The check cannot pass by scanning nothing: it must be reading real copy.
     const app = fs.readFileSync(path.join(srcDir, "App.jsx"), "utf8");
-    t.ok(/Coming soon to iOS, Android, and Windows/.test(app), "sanity: the landing still names the platforms it ships on");
+    t.ok(/Coming soon to iPhone and Android/.test(app), "sanity: the landing still names the platforms it ships on");
   }
 
   // ── 2. index.html, where a person can read it ─────────────────────────────────────────────────

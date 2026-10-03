@@ -144,8 +144,12 @@ const { create } = require("./_runner.cjs");
       "5d the old hard-coded account arrays are gone — including the unreferenced MOCK_ACCOUNTS_US, which was the Canadian balances under American names");
     t.ok(/onTryDemo\(waitlistCountry\)/.test(app),
       "5e the landing page's demo button passes the CHOSEN country, not nothing");
-    t.eq((app.match(/onTryDemo\(waitlistCountry\)/g) || []).length, 2,
-      "5f …at both of its demo entry points (web and the iOS shell)");
+    // landing-screens A1: the strip's screenshots and its "Try the interactive demo" button are entry
+    // points too. Every demo entry in AuthScreen passes the chosen country; there are four.
+    const auth = app.slice(app.indexOf("function AuthScreen("), app.indexOf("\n}\n", app.indexOf("function AuthScreen(")));
+    const calls = auth.match(/onTryDemo\([^)]*\)/g) || [];
+    t.eq([calls.length, calls.filter(c => c === "onTryDemo(waitlistCountry)").length], [4, 4],
+      "5f …at all four of its demo entry points (the hero link, each screenshot, the button under the strip, and the iOS shell), and no call passes anything else");
     t.ok(/onTryDemo=\{\(country\)=>\{ const dd=buildDemoState\(country\);/.test(app),
       "5g and the handler feeds that country straight into buildDemoState");
     t.ok(/onComplete\(buildDemoState\(p\.country\)\)/.test(app),
