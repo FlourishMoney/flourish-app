@@ -18,6 +18,12 @@
 //   90-day forecast minimums (due Nov 1 and Dec 1): linked $80; unlinked $80, or $160 in the variant
 //   Meet's week ahead (Oct 28): linked, one $40; unlinked variant, two
 //   Today's Total debt: linked $1.3k, "1 account"; unlinked $2.6k (2,574.84), "2 accounts"
+//   Do tab payoff (C8d), the one payoff model (What-If's) with the tab's +$50/mo:
+//     linked: Visa ••1111 $1,287.42 at 19.99%, $40 → paid off in 1y 5m (17 months, $195.55 interest)
+//             against 47 months and $572.61 at the minimum: 2y 6m and $377 saved
+//     unlinked, as synced: the bank's row first, 20% (assumed), $25.75 (estimated) → 1y 9m; 7y 4m, $1,265
+//     unlinked variant: the bank's row, 20% (assumed), its $40 → 1y 5m; 2y 6m, $377 saved
+//   Family "Min payments": linked $40/mo in both; unlinked $40, or $80 in the variant
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -141,6 +147,46 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     t.eq([tile(demoNow("CA")), tile(demoNow("US"))], ["$11.6k 2 accounts", "$22.6k 2 accounts"], "3c the demos are unchanged: CA $11.6k, US $22.6k, 2 accounts each");
   } catch (e) { t.ok(false, `3 Dashboard renders: ${describe(e)}`); }
 
+  // ── 4. The Do tab, Family and every other debt total read the same helpers (C8d) ───────────────
+  let G = {}, FM = {};
+  try { G = loadApp(["Goals", "debtScenarioResult"]); } catch (e) { t.ok(false, `App.jsx bundles Goals: ${describe(e)}`); }
+  try { FM = loadApp(["familyDebtMetric"]); } catch (e) { t.ok(false, `App.jsx has familyDebtMetric, Family's "Debt progress" line: ${describe(e).slice(0, 80)}`); }
+  const doTab = (d) => { try { return textOf(G.render(G.h(G.Goals, { data: d, initialTab: "sim", setScreen: noop, setAppData: noop }))); } catch (e) { return `render failed: ${describe(e)}`; } };
+  const has = (txt, parts) => parts.filter(p => !txt.includes(p));
+  const Hn = household("", now), Vn = household("40", now);
+  t.eq(has(doTab(link(Hn)), ["Visa ••1111", "$1,287.42", "19.99% interest · $40/mo minimum", "1y 5m", "Time saved 2y 6m", "Interest saved $377", "All Debts (1)", "Visa ••1111 $1,287.42 · 19.99%"]), [],
+    "4a Do tab, linked: one debt, the bank's balance at the debt's 19.99% and $40; paid off in 1y 5m with +$50, 2y 6m and $377 saved");
+  t.ok(!doTab(link(Hn)).includes("Credit Card") && !doTab(link(Hn)).includes("may be the same"), "4a2 …the hand-entered debt is not listed a second time, and nothing is marked");
+  t.eq(has(doTab(link(Vn)), ["19.99% interest · $40/mo minimum", "1y 5m", "Time saved 2y 6m", "Interest saved $377", "All Debts (1)"]), [], "4b Do tab, linked variant: the same, one $40 minimum");
+  t.eq(has(doTab(Hn), ["All Debts (2)", "20% interest (assumed) · $25.75/mo minimum (estimated)", "1y 9m", "Time saved 7y 4m", "Interest saved $1,265", "May be the same card as another debt in your list.",
+    "Visa ••1111, may be the same card $1,287.42 · 20%", "Credit Card, may be the same card $1,287.42 · 19.99%"]), [],
+    "4c Do tab, unlinked: both listed, each marked; the bank's row is simulated at 20% (assumed) and $25.75 (estimated): 1y 9m, 7y 4m and $1,265 saved");
+  t.eq(has(doTab(Vn), ["All Debts (2)", "20% interest (assumed) · $40/mo minimum", "1y 5m", "Time saved 2y 6m", "Interest saved $377"]), [], "4d Do tab, unlinked variant: the bank's row with its own $40");
+  try {
+    const e0 = F.buildDebtListForSimulator(HL.debts, undefined, HL)[0], w = G.debtScenarioResult(e0, 50, [e0]);
+    t.eq([w.boostedMonths, w.monthsSaved, w.interestSaved, w.baselineMonths, w.baselineInterest], [17, 30, 377.06, 47, 572.61], "4e What-If on the same entry gives the same payoff: 17 months, 30 saved, $377.06 interest saved (47 months, $572.61 at the minimum)");
+  } catch (e) { t.ok(false, `4e What-If: ${describe(e)}`); }
+  // Family's "Debt progress" line: the same pair-aware minimums.
+  const fam = (d) => { try { return FM.familyDebtMetric(F.FinancialCalcEngine.netWorth(d).liabilities, d); } catch (e) { return `failed: ${describe(e).slice(0, 60)}`; } };
+  t.eq([fam(HL), fam(H), fam(VL), fam(V)], ["Total debt: $1,287.42 · Min payments: $40/mo", "Total debt: $2,574.84 · Min payments: $40/mo", "Total debt: $1,287.42 · Min payments: $40/mo", "Total debt: $2,574.84 · Min payments: $80/mo"],
+    "4f Family: one linked card is one $40 minimum (variant too); unlinked, both are kept, $80 in the variant");
+  const APPSRC = SRC("src/App.jsx");
+  const famDebt = APPSRC.slice(APPSRC.indexOf('if(item.id==="debt"){'), APPSRC.indexOf('if(item.id==="debt"){') + 2000);
+  t.ok(/metric:familyDebtMetric\(totalDebt, data\)/.test(APPSRC) && /buildDebtListForSimulator\(data\.debts, data\.liabilities, data\)/.test(famDebt) && !/d\.apr/.test(famDebt),
+    "4g Family's debt list reads the pair-aware list, at each debt's rate (it read d.apr, a field debts do not have, so every rate showed 0%)");
+  const doSrc = APPSRC.slice(APPSRC.indexOf("function Goals("), APPSRC.indexOf('{tab==="worth"&&(()=>{'));
+  t.ok(/const debts *= *buildDebtListForSimulator\(data\.debts, data\.liabilities, data\);/.test(doSrc) && /simulateDebtPayoffForDebt\(debt, extra\)/.test(doSrc) && !/const calc *= *\(xtra\)/.test(doSrc),
+    "4h the Do tab builds no list of its own and runs What-If's payoff model, not a second loop");
+  const budget = APPSRC.slice(APPSRC.indexOf("function BudgetScreen("), APPSRC.indexOf("function BudgetScreen(") + 30000);
+  t.ok(/unbilledDebtMinimums\(data\.debts, data\.bills\)\.map\(/.test(budget) && !/\(data\.debts\|\|\[\]\)\.map\(\(d,i\)=>/.test(budget),
+    "4i Budget's fixed rows list the same minimums as its \"Total fixed\" (unbilledDebtMinimums), so the rows add up to the total");
+  const coach = APPSRC.slice(APPSRC.indexOf("function AICoach("), APPSRC.indexOf("function AICoach(") + 8000);
+  t.ok(/const debts = buildDebtListForSimulator\(data\.debts, data\.liabilities, data\)/.test(coach), "4j the coach is told about each debt once, from the same list");
+  // Health score's debt ratio: the same total as Today's Total debt.
+  const income12 = (d) => F.FinancialCalcEngine.cashFlow(d, {}, T).monthlyIncome * 12;
+  t.eq([HL, H, VL, V].map(d => Math.round(F.FinancialCalcEngine.debtRatio(d, {}, T) * income12(d) * 100)), [128742, 257484, 128742, 257484],
+    "4k health score's debt ratio uses the same total as Today: $1,287.42 linked, $2,574.84 until answered (it summed every debt row, so a synced card counted twice)");
+
   // ── 9. The demos are unchanged (their card debts carry account_id; nothing is linked by sameAsAccountId) ─
   const demoSim = (d) => F.buildDebtListForSimulator(d.debts, d.liabilities, d).map(e => [e.name, e.balance, e.rate, Math.round(e.min * 100) / 100, e.source, e.mayBeSame || null, !!e.linked]);
   t.eq(demoSim(demo("CA")), [["Visa card", 3420, 19.99, 68, "manual", null, false], ["Car Loan", 8200, 6.99, 280, "manual", null, false]], "9a CA demo: the simulator's list is unchanged");
@@ -148,6 +194,13 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
   const demoMins = (d) => [mins(d), F.debtMinimumDates(d, T, 90).map(m => [m.day, m.amount]), SafeSpendEngine.calculate(d, T).debtPayments, Math.round(SafeSpendEngine.calculate(d, T).safeAmount * 100), DE.displayedSafeToSpend(d, T)];
   t.eq(demoMins(demo("CA")), [[["Visa card", 68], ["Car Loan", 280]], [[30, 68], [60, 68], [30, 280], [60, 280]], 348, 194488, 1944], "9c CA demo: minimums, their dates and safe to spend unchanged");
   t.eq(demoMins(demo("US")), [[["Chase Sapphire", 105], ["Federal Student Loan", 195]], [[30, 105], [60, 105], [30, 195], [60, 195]], 300, 241555, 2415], "9d US demo: unchanged");
+  const demoNowC = (c) => ({ ...demo(c), incomes: D.buildDemoIncomes(now, c), bills: D.buildDemoBills(now, c), transactions: D.buildDemoTxns(now, c) });
+  t.eq(has(doTab(demoNowC("CA")), ["Visa card $3,420 19.99% interest · $68/mo minimum", "3y 4m", "Time saved 5y 11m", "Interest saved $2,778", "All Debts (2)", "Visa card $3,420 · 19.99%", "Car Loan $8,200 · 6.99%"]), [],
+    "9e CA demo Do tab unchanged: Visa card $3,420 at 19.99%, $68: 3y 4m with +$50, 5y 11m and $2,778 saved");
+  t.eq(has(doTab(demoNowC("US")), ["Chase Sapphire $4,180 24.99% interest · $105/mo minimum", "3y 5m", "Time saved 3y 9m", "Interest saved $2,797", "All Debts (2)"]), [],
+    "9f US demo Do tab unchanged: Chase Sapphire $4,180 at 24.99%, $105: 3y 5m, 3y 9m and $2,797 saved");
+  t.eq([fam(demo("CA")), fam(demo("US"))], ["Total debt: $11,620 · Min payments: $348/mo", "Total debt: $22,580 · Min payments: $300/mo"], "9g demo Family lines unchanged");
+  t.eq(["CA", "US"].map(c => [Math.round(F.FinancialCalcEngine.debtRatio(demo(c), {}, T) * 1e5), DE.calcHealthScore(demo(c), {}, T).score]), [[14422, 66], [32658, 63]], "9h demo debt ratio and health score unchanged");
 
   t.summary("linkedDebtPair.test");
   setImmediate(() => process.exit(process.exitCode || 0));

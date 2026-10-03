@@ -485,6 +485,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities, data = {}) {
       rate: rate > 0 ? rate : DEFAULT_APR_CREDIT,
       rateEstimated: !(rate > 0),
       min: debtMinimumPayment({ min, balance }),
+      ...(min > 0 ? {} : { minEstimated: true }), // C8d: no minimum entered; the payment is the estimate
       source: "manual",
       debtType: "manual",
       manualIndex, // a rate entered here is saved on the hand-entered debt, which is read first
@@ -526,6 +527,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities, data = {}) {
           rate: real > 0 ? real : DEFAULT_APR_CREDIT,
           rateEstimated: !(real > 0), // Sprint 4b: flag fabricated APRs so the UI can label them
           min: debtMinimumPayment(d),
+          ...(num(d.min) > 0 ? {} : { minEstimated: true }),
           source: "manual",
           debtType: "manual",
           manualIndex, // where applyDebtRate writes a rate the household enters
@@ -553,6 +555,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities, data = {}) {
         rate: real > 0 ? real : DEFAULT_APR_CREDIT, // Plaid sometimes returns null APR
         rateEstimated: !(real > 0),
         min: debtMinimumPayment({ min: hand && num(hand.min) > 0 ? hand.min : c.minPayment, balance: c.balance }),
+        ...((hand && num(hand.min) > 0) || num(c.minPayment) > 0 ? {} : { minEstimated: true }),
         source: "plaid_liability",
         debtType: "credit_card",
         account_id: c.account_id,
@@ -571,6 +574,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities, data = {}) {
         rate: real > 0 ? real : DEFAULT_RATE_MORTGAGE,
         rateEstimated: !(real > 0),
         min: m.monthlyPayment || Math.max(25, (m.balance || 0) * 0.005), // 0.5%/mo as last-resort default
+        ...(m.monthlyPayment ? {} : { minEstimated: true }),
         source: "plaid_liability",
         debtType: "mortgage",
         account_id: m.account_id,
@@ -587,6 +591,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities, data = {}) {
         rate: real > 0 ? real : DEFAULT_RATE_STUDENT,
         rateEstimated: !(real > 0),
         min: Math.max(25, (s.balance || 0) * 0.01), // Plaid student liabilities don't return min payment; default 1% of balance
+        minEstimated: true,
         source: "plaid_liability",
         debtType: "student",
         account_id: s.account_id,
@@ -608,6 +613,7 @@ export function buildDebtListForSimulator(manualDebts, liabilities, data = {}) {
         rate: real > 0 ? real : DEFAULT_APR_CREDIT,
         rateEstimated: !(real > 0),
         min: debtMinimumPayment(d),
+        ...(num(d.min) > 0 ? {} : { minEstimated: true }),
         source: "manual",
         debtType: "manual",
         manualIndex,
@@ -1119,12 +1125,11 @@ export function withDebtIds(debts, makeId = stableDebtId) {
 // The debt minimums still to pay on their own: every debt with a minimum above zero that no bill
 // already pays. Safe to spend reserves these and the forecast subtracts them, so both screens count
 // the same money once. [{ debt, amount }]
-// demo-fixes C8b: a hand-entered debt the household linked to a bank account (sameAsAccountId) and that
-// account's own debt row are one debt: one minimum, the hand-entered debt's when it has one, else the
-// bank row's, never the sum; and a bill that pays either one pays it. A pair not yet answered keeps
-// both minimums until the household answers.
-export function unbilledDebtMinimums(debts, bills) {
-  const bs = bills || [];
+// demo-fixes C8b/C8d: every debt's minimum, with a hand-entered debt the household linked to a bank
+// account (sameAsAccountId) and that account's own debt row as ONE debt: the hand-entered minimum when it
+// has one, else the bank row's, never the sum. A pair not yet answered keeps both until the household
+// answers. [{ debt, amount, partner }], partner being the other half of a linked pair.
+export function debtMinimums(debts) {
   const list = debts || [];
   const handFor = new Map(); // bank account id → the hand-entered debt linked to it
   for (const d of list) {
@@ -1141,13 +1146,17 @@ export function unbilledDebtMinimums(debts, bills) {
     return null;
   };
   return list
-    .map(debt => ({ debt, amount: num(debt && debt.min) }))
-    .filter(x => {
-      if (!(x.amount > 0)) return false;
-      const p = partnerOf(x.debt);
-      if (p && x.debt.account_id != null && handFor.get(String(x.debt.account_id)) === p && num(p.min) > 0) return false; // the hand-entered minimum is the pair's
-      return !bs.some(b => billPaysDebt(b, x.debt) || (p != null && billPaysDebt(b, p)));
-    });
+    .map(debt => ({ debt, amount: num(debt && debt.min), partner: partnerOf(debt) }))
+    .filter(x => x.amount > 0 && !(x.partner && x.debt.account_id != null && handFor.get(String(x.debt.account_id)) === x.partner && num(x.partner.min) > 0));
+}
+
+// The minimums safe to spend and the forecast still have to cover: debtMinimums, less any a bill already
+// pays (billPaysDebt). A bill that pays either half of a linked pair pays the pair.
+export function unbilledDebtMinimums(debts, bills) {
+  const bs = bills || [];
+  return debtMinimums(debts)
+    .filter(x => !bs.some(b => billPaysDebt(b, x.debt) || (x.partner != null && billPaysDebt(b, x.partner))))
+    .map(({ debt, amount }) => ({ debt, amount }));
 }
 
 // The day of the month a debt's minimum is due: its dueDay when it has one, otherwise the 1st.
@@ -1492,7 +1501,9 @@ export const FinancialCalcEngine = {
   /** Debt ratio = total debt / annual income (uses only monthlyIncome, override-independent — threaded for API uniformity) */
   debtRatio(data, catOverrides = {}, currentDate = new Date()) {
     const { monthlyIncome } = FinancialCalcEngine.cashFlow(data, catOverrides, currentDate);
-    const totalDebt = (data.debts||[]).reduce((s,d) => s + num(d.balance), 0);
+    // demo-fixes C8d: the same total as Today's Total debt (netWorthRows). Summing every debt row counted a
+    // synced card twice (its live-balance row and the hand-entered debt), linked or not.
+    const totalDebt = FinancialCalcEngine.netWorth(data).liabilities;
     return monthlyIncome > 0 ? totalDebt / (monthlyIncome * 12) : 0;
   },
 

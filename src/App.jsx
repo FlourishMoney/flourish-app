@@ -12,7 +12,7 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, summarizeScenarioForCoach, simulateDebtPayoffForDebt, debtMinimumPayment, debtLinkKey, withDebtIds, newDebtId, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, applyDebtRate, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
-  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums, netWorthRows, likelyDebtAccountMatches, linkDebtToAccount, dismissDebtAccountMatch } from "./lib/financialCalculations.js";
+  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums, debtMinimums, netWorthRows, likelyDebtAccountMatches, linkDebtToAccount, dismissDebtAccountMatch } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
 import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multibank.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
@@ -8967,21 +8967,20 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
   const [showForm, setShowForm] = useState(false);
   const [editIdx, setEditIdx] = useState(null);
   const [form, setForm] = useState({name:"",target:"",saved:"",monthly:"",notes:""});
-  const debts=data.debts||[];
+  // demo-fixes C8d: the Do tab reads What-If's list (one entry per linked pair; an unanswered pair is two
+  // entries, each marked) and runs What-If's payoff model on the debt chosen, so the two screens agree. It
+  // used to list every stored debt row and run its own loop, at 0% for a debt with no rate and $68 for one
+  // with no minimum.
+  const debts=buildDebtListForSimulator(data.debts, data.liabilities, data);
   const safeSelDebt=Math.min(selDebt,Math.max(0,debts.length-1));
-  const debt=debts.length>0?debts[safeSelDebt]:{name:"Credit Card",balance:"3420",rate:"19.99",min:"68"};
+  const debt=debts.length>0?debts[safeSelDebt]:{name:"Credit Card",balance:3420,rate:19.99,min:68};
   const noDebts = debts.length === 0;
-  const bal=parseFloat(debt.balance||0),rate=parseFloat(debt.rate||0),minPay=parseFloat(debt.min||68);
-  const mRate=rate/100/12;
-  const calc=(xtra)=>{
-    const pay=minPay+xtra;if(pay<=bal*mRate)return{months:999,interest:999999};
-    let b=bal,m=0,int=0;while(b>0&&m<600){const i=b*mRate;int+=i;b=b+i-pay;m++;}
-    return{months:m,interest:Math.max(0,int)};
-  };
-  const base=calc(0),curr=calc(extra);
-  const saved=base.months-curr.months,intSaved=base.interest-curr.interest;
-  const toYM=(m)=>{if(m>=600)return"Never";const y=Math.floor(m/12),mo=m%12;return y>0?`${y}y ${mo}m`:`${mo}mo`;};
-  const payoffDate=()=>{const d=new Date();d.setMonth(d.getMonth()+curr.months);return d.toLocaleDateString("en",{month:"long",year:"numeric"});};
+  const bal=debt.balance,rate=debt.rate,minPay=Math.round(debt.min*100)/100;
+  const payoff=simulateDebtPayoffForDebt(debt, extra);
+  const curr={months:payoff.boosted.monthsToPayoff};
+  const saved=payoff.monthsSaved||0,intSaved=payoff.interestSaved||0;
+  const toYM=(m)=>{if(!(m<600))return"Never";const y=Math.floor(m/12),mo=m%12;return y>0?`${y}y ${mo}m`:`${mo}mo`;};
+  const payoffDate=()=>{if(!Number.isFinite(curr.months))return"Never";const d=new Date();d.setMonth(d.getMonth()+curr.months);return d.toLocaleDateString("en",{month:"long",year:"numeric"});};
   const { netWorth, liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -9220,7 +9219,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
 
     {tab==="sim"&&<>
       {noDebts&&<EmptyState icon="🎯" title="No debts tracked yet" body="Add debts during setup to simulate payoff strategies and see how much interest you can save." action="Add Debts in Settings" onAction={()=>window.dispatchEvent(new CustomEvent("flourish:settings"))} color={C.purple}/>}
-      {!noDebts&&debts.every(d=>!parseFloat(d.rate||0))&&(
+      {!noDebts&&debts.every(d=>d.rateEstimated)&&(
         <div style={{background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:14,padding:"12px 14px",marginBottom:12,display:"flex",gap:10,alignItems:"flex-start"}}>
           <span style={{fontSize:16,flexShrink:0}}>⚡</span>
           <div>
@@ -9234,8 +9233,9 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
           <div>
             <div style={{color:C.muted,fontSize:13}}>{debt.name}</div>
+            {debt.mayBeSame&&<div style={{color:C.mutedHi,fontSize:13}}>May be the same {debt.mayBeSame} as another debt in your list.</div>}
             <div style={{fontSize:36,fontWeight:900,color:C.purpleBright,fontFamily:"Georgia,serif",letterSpacing:-1}}>{`$${bal.toLocaleString()}`}</div>
-            <div style={{color:C.muted,fontSize:13}}>{rate}% interest · ${minPay}/mo minimum</div>
+            <div style={{color:C.muted,fontSize:13}}>{rate}% interest{debt.rateEstimated?" (assumed)":""} · ${minPay}/mo minimum{debt.minEstimated?" (estimated)":""}</div>
           </div>
           <div style={{textAlign:"right",background:C.green+"18",borderRadius:12,padding:"8px 12px",border:`1px solid ${C.green}33`}}>
             <div style={{color:C.muted,fontSize:13}}>Paid off</div>
@@ -9278,11 +9278,11 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
       </Card>
       {debts.length>0&&<Card>
         <div style={{color:C.cream,fontWeight:700,marginBottom:12}}>All Debts ({debts.length})</div>
-        {[...debts].sort((a,b)=>parseFloat(b.rate||0)-parseFloat(a.rate||0)).map((d,i)=>{
+        {[...debts].sort((a,b)=>b.rate-a.rate).map((d,i)=>{
           const colors=[C.red,C.gold,C.blue,C.purple];
           return <div key={i} style={{marginBottom:12}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{color:C.cream,fontSize:13}}>{d.name}</span><span style={{color:colors[i%4],fontWeight:700}}>${parseFloat(d.balance).toLocaleString()} · {d.rate}%</span></div>
-            <Bar v={parseFloat(d.balance)} max={totalDebt} color={colors[i%4]}/>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{color:C.cream,fontSize:13}}>{d.name}{d.mayBeSame?`, may be the same ${d.mayBeSame}`:""}</span><span style={{color:colors[i%4],fontWeight:700}}>${d.balance.toLocaleString()} · {d.rate}%</span></div>
+            <Bar v={d.balance} max={totalDebt} color={colors[i%4]}/>
           </div>;
         })}
       </Card>}
@@ -10023,6 +10023,14 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData }){
   );
 }
 
+// demo-fixes C8d: Family's "Debt progress" line. The total is Today's Total debt (net worth's liabilities)
+// and the minimums are the pair-aware ones, so a card linked to its hand-entered debt is one minimum.
+function familyDebtMetric(totalDebt, data) {
+  if (!(totalDebt > 0)) return "No debt tracked. Nice work.";
+  const mins = debtMinimums(data && data.debts).reduce((a, x) => a + x.amount, 0);
+  return `Total debt: $${totalDebt.toLocaleString()} · Min payments: $${mins.toFixed(0)}/mo`;
+}
+
 function Family({data,setAppData,household,setHousehold,setScreen}){
   const [tab,setTab]=useState("meeting");
   const [householdTab,setHouseholdTab]=useState("join");
@@ -10210,7 +10218,7 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
      metricColor:C.tealBright,
      prompt:"Was any category a surprise? What would you do differently?"},
     {id:"debt",icon:"📉",title:"Debt progress",desc:"Any change in a balance counts.",
-     metric:totalDebt>0?`Total debt: $${totalDebt.toLocaleString()} · Min payments: $${(data.debts||[]).reduce((a,d)=>a+parseFloat(d.min||0),0).toFixed(0)}/mo`:"No debt tracked. Nice work.",
+     metric:familyDebtMetric(totalDebt, data),
      metricColor:totalDebt>0?C.orangeBright:C.greenBright,
      prompt:"Did you make any extra payments? What felt hard this week?"},
     {id:"goal",icon:"🎯",title:"Check in on your shared goal",desc:"Emergency fund? Vacation? House?",
@@ -10444,7 +10452,9 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
               </div>;
             }
             if(item.id==="debt"){
-              const debts=(data.debts||[]).slice().sort((a,b)=>parseFloat(b.apr||0)-parseFloat(a.apr||0));
+              // demo-fixes C8d: What-If's pair-aware list, at each debt's rate (this read an "apr" field, which
+              // debts do not have, so every rate showed 0% and every interest figure $0).
+              const debts=buildDebtListForSimulator(data.debts, data.liabilities, data).sort((a,b)=>b.rate-a.rate);
               return debts.length===0?<div style={{color:C.greenBright,fontSize:13,textAlign:"center",padding:"8px 0"}}>No debts tracked.</div>:
               <div style={{display:"flex",flexDirection:"column",gap:5,marginTop:8}}>
                 <div style={{display:"flex",justifyContent:"space-between",padding:"4px 10px"}}>
@@ -10452,17 +10462,17 @@ function Family({data,setAppData,household,setHousehold,setScreen}){
                   <span style={{color:C.muted,fontSize:13}}>APR</span>
                 </div>
                 {debts.map((d,i)=>{
-                  const bal=parseFloat(d.balance||0);
-                  const apr=parseFloat(d.apr||0);
+                  const bal=d.balance;
+                  const apr=d.rate;
                   const interestPerMo=(bal*(apr/100)/12);
                   return<div key={i} style={{padding:"8px 10px",background:C.bg,borderRadius:10,border:`1px solid ${i===0?C.redBright+"33":C.border}`}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
-                      <span style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{d.name||"Debt"}</span>
-                      <span style={{color:i===0?C.redBright:C.muted,fontSize:13,fontWeight:700}}>{apr}%</span>
+                      <span style={{color:C.cream,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{d.name||"Debt"}{d.mayBeSame?`, may be the same ${d.mayBeSame}`:""}</span>
+                      <span style={{color:i===0?C.redBright:C.muted,fontSize:13,fontWeight:700}}>{apr}%{d.rateEstimated?" (assumed)":""}</span>
                     </div>
                     <div style={{display:"flex",justifyContent:"space-between"}}>
                       <span style={{color:C.orangeBright,fontSize:13}}>Balance: ${bal.toLocaleString()}</span>
-                      <span style={{color:C.muted,fontSize:13}}>Interest: ${interestPerMo.toFixed(0)}/mo · Min: ${parseFloat(d.min||0).toFixed(0)}/mo</span>
+                      <span style={{color:C.muted,fontSize:13}}>Interest: ${interestPerMo.toFixed(0)}/mo · Min: ${d.min.toFixed(0)}/mo{d.minEstimated?" (estimated)":""}</span>
                     </div>
                   </div>;
                 })}
@@ -12341,7 +12351,9 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
     ).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`${sanitizeField(k,60)}: $${(v||0).toFixed(0)}`).join(", ");
     const goals = (data.goals||[]).map(g=>`${sanitizeField(g.name,80)}: $${parseFloat(g.saved||0).toFixed(0)} saved of $${parseFloat(g.target||0).toFixed(0)} target${g.monthly?`, $${parseFloat(g.monthly)||0}/mo contribution`:""}`).join("; ")||"none set";
     const bills = (data.bills||[]).map(b=>`${sanitizeField(b.name,80)} $${billMonthlyAmount(b).toFixed(0)}/mo${b.arrears?` (arrears: $${parseFloat(b.arrears)||0})`:""}` ).join("; ")||"none tracked";
-    const debts = (data.debts||[]).map(d=>`${sanitizeField(d.name,80)} $${parseFloat(d.balance||0).toFixed(0)}${d.rate?` @ ${parseFloat(d.rate)||0}%`:""}`).join("; ")||"none";
+    // demo-fixes C8d: each debt once, from What-If's pair-aware list (a linked card is one debt; an unanswered
+    // pair is marked so the coach does not add both).
+    const debts = buildDebtListForSimulator(data.debts, data.liabilities, data).map(d=>`${sanitizeField(d.name,80)} $${d.balance.toFixed(0)}${d.rateEstimated?"":` @ ${d.rate}%`}${d.mayBeSame?` (may be the same ${d.mayBeSame} as another debt listed)`:""}`).join("; ")||"none";
     const ret = profile.retirement||{};
     const retInfo = Object.entries(ret).filter(([,v])=>parseFloat(v)>0).map(([k,v])=>`${sanitizeField(k,40)}: $${parseFloat(v)||0}`).join(", ")||"none entered";
     const birthYear = parseInt(profile.birthYear||"0");
@@ -15082,7 +15094,9 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
                   </div>
                 </div>
               ))}
-                {(data.debts||[]).map((d,i)=>(
+                {/* demo-fixes C8d: the minimums "Total fixed" adds up (unbilledDebtMinimums): a linked pair once, and
+                    none a bill above already pays. */}
+                {unbilledDebtMinimums(data.debts, data.bills).map(({debt:d, amount},i)=>(
                   <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
                     <div style={{display:"flex",alignItems:"center",gap:7}}>
                       <span style={{fontSize:14}}>💳</span>
@@ -15091,7 +15105,7 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
                         <div style={{color:C.muted,fontSize:13}}>minimum payment</div>
                       </div>
                     </div>
-                    <span style={{color:C.muted,fontWeight:700,fontSize:13}}>${parseFloat(d.min||0).toFixed(0)}/mo</span>
+                    <span style={{color:C.muted,fontWeight:700,fontSize:13}}>${amount.toFixed(0)}/mo</span>
                   </div>
                 ))}
                 <div style={{display:"flex",justifyContent:"space-between",padding:"6px 10px",borderTop:`1px solid ${C.border}`,marginTop:2}}>
