@@ -105,16 +105,18 @@ const UNTAPPED = () => {
       await p.getByRole("button", { name: `${r}d`, exact: true }).click(); await p.waitForTimeout(500);
       t.ok(await p.getByText(`Today and the next ${r} days`, { exact: true }).count() === 1, `3a ${r}d: the summary names the range`);
       t.eq(await p.evaluate(UNTAPPED), [], `3b ${r}d: every figure on Watch is a tap target`);
-      const rows = p.locator('button[aria-label$=": how Flourish got it"]').filter({ hasText: /Lowest balance|Balance on|Money in|Bills and minimum payments|Everyday spending/ });
+      const rows = p.locator('button[aria-label$=": how Flourish got it"]').filter({ hasText: /Starting balance, to the cent|Lowest balance|Balance on|Money in|Bills and minimum payments|Everyday spending/ });
       const n = await rows.count();
-      t.eq(n, 5, `3c ${r}d: five summary figures`);
+      t.eq(n, 6, `3c ${r}d: six summary figures (the five the check line adds up, and the lowest balance)`);
       seen[r] = await rows.allInnerTexts();
       for (let i = 0; i < n; i++) await opensWorking(rows.nth(i), `3d ${r}d "${seen[r][i].split("\n")[0]}"`);
       await opensWorking(p.locator('button[aria-label^="The check: "]').first(), `3e ${r}d the check line`);
     }
-    for (let i = 1; i < 5; i++) {
-      const v = [7, 30, 90].map(r => (seen[r][i] || "").replace(/\s+/g, " ").replace(/^.*?(-?\$[\d,]+).*$/, "$1"));
-      t.eq(new Set(v).size, 3, `3f "${(seen[7][i] || "").split("\n")[0]}" changes with the range (${v.join(", ")})`);
+    // Compared by label, not position: the starting balance is the same at every range, and the
+    // lowest balance is the same at 30 and 90 days when its day falls inside both.
+    for (const label of ["Money in", "Bills and minimum payments", "Everyday spending", "Balance on"]) {
+      const v = [7, 30, 90].map(r => ((seen[r] || []).find(x => x.startsWith(label)) || "").replace(/\s+/g, " ").replace(/^.*?(-?\$[\d,]+(?:\.\d{2})?).*$/, "$1"));
+      t.eq(new Set(v).size, 3, `3f "${label}" changes with the range (${v.join(", ")})`);
     }
 
     // Meet.

@@ -7275,19 +7275,24 @@ function ManualBillForm({data, setAppData, onClose}){
 // The selected range, added up (watch-meet-fixes item 1, lib/watchRange.js). Every figure is a button
 // that opens How we got this; the check line is the working, to the cent.
 function WatchRangeSummary({ summary, range, dayLabel, onOpen }) {
+  // demo-fixes B3: every figure the check line adds up is shown to the cent, in the order the check
+  // line adds them, so the numbers on screen add up exactly. (The headline above keeps the whole-dollar
+  // balance Today shows, rounded down; this row says it is the same balance to the cent.) The lowest
+  // balance is not in the check line and stays in whole dollars, as the day list shows it.
   const rows = [
+    { key: "start", open: "end", label: "Starting balance, to the cent", value: summary.check.start },
+    { key: "in",    label: "Money in", value: summary.check.in },
+    { key: "bills", label: "Bills and minimum payments", value: summary.check.bills },
+    { key: "spend", label: "Everyday spending", note: "Estimated from your usual spending", value: summary.check.spend },
+    { key: "end",   label: `Balance on ${dayLabel({ day: summary.endDay, date: summary.endDate })}`, value: summary.check.end },
     { key: "low",   label: "Lowest balance", value: `${summary.text.low} ${summary.lowDay === 0 ? "today" : `on ${dayLabel(summary.low)}`}` },
-    { key: "end",   label: `Balance on ${dayLabel({ day: summary.endDay, date: summary.endDate })}`, value: summary.text.end },
-    { key: "in",    label: "Money in", value: summary.text.in },
-    { key: "bills", label: "Bills and minimum payments", value: summary.text.bills },
-    { key: "spend", label: "Everyday spending", note: "Estimated from your usual spending", value: summary.text.spend },
   ];
   return (
     <div style={{marginTop:SPACE.md,borderTop:`1px solid ${C.border}`,paddingTop:SPACE.md}}>
       <div style={{color:C.mutedHi,...TYPE.subhead,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{rangeLabel(range)}</div>
       <div style={{display:"flex",flexDirection:"column",gap:GAP.controlToControl,marginTop:GAP.textToControl}}>
       {rows.map(r => (
-        <button key={r.key} onClick={() => onOpen(r.key)} aria-label={`${r.label}, ${r.value}: how Flourish got it`}
+        <button key={r.key} onClick={() => onOpen(r.open || r.key)} aria-label={`${r.label}, ${r.value}: how Flourish got it`}
           style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",gap:SPACE.md,minHeight:LAYOUT.minTap,
             background:"none",border:"none",borderBottom:`1px solid ${C.border}44`,padding:`${SPACE.sm}px 0`,cursor:"pointer",textAlign:"left",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
           <span style={{minWidth:0}}>
