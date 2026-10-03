@@ -5397,6 +5397,9 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const today       = new Date().getDate();
   const monthlyIncome = FinancialCalcEngine.cashFlow(data, getCatOv()).monthlyIncome;
   const { netWorth, liabilities: totalDebt } = FinancialCalcEngine.netWorth(data);
+  // demo-fixes C8c: the count under Total debt comes from the same rows as the total (netWorthRows), so a
+  // bank card linked to its hand-entered debt is one account. A row with nothing owed is not counted.
+  const owedCount = netWorthRows(data).rows.filter(r => (r.kind === "credit" || r.kind === "debt") && r.cents < 0).length;
   // Badge reads live from localStorage so it updates after Notifications marks-read
   const getUnreadCount = () => {
     try {
@@ -5942,7 +5945,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         <div style={{...anim(110),display:"flex",flexDirection:"column",gap:SPACE.sm}}>
           {[
             {label:"Due soon",value:formatMoney(dueSoonTotal||0),sub:dueSoon.windowLabel,color:C.gold,icon:"calendar",screen:"plan"},
-            {label:totalDebt>0?"Total debt":"Debt free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${(data.debts||[]).length} accounts`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
+            {label:totalDebt>0?"Total debt":"Debt free!",value:totalDebt>0?`$${((totalDebt||0)/1000).toFixed(1)}k`:"🎉",sub:totalDebt>0?`${owedCount} account${owedCount===1?"":"s"}`:"Amazing!",color:C.red,icon:"trendUp",screen:"goals",tab:"sim"},
             // Week-2 defect b: colour follows the sign. A negative net worth is not a teal figure —
             // teal is this app's gain colour, and "-$14.5k" painted as a gain is the opposite of the fact.
             {label:"Net worth",value:`${netWorth>=0?"+":""}${formatCompactMoney(netWorth)}`,sub:"total net worth",color:netWorth<0?C.red:C.teal,icon:"chartUp",screen:"goals",tab:"worth"},

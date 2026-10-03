@@ -17,6 +17,7 @@
 //                        unlinked $40, or $80 in the variant (both kept until the household answers)
 //   90-day forecast minimums (due Nov 1 and Dec 1): linked $80; unlinked $80, or $160 in the variant
 //   Meet's week ahead (Oct 28): linked, one $40; unlinked variant, two
+//   Today's Total debt: linked $1.3k, "1 account"; unlinked $2.6k (2,574.84), "2 accounts"
 // -----------------------------------------------------------------------------
 "use strict";
 const { create } = require("./_runner.cjs");
@@ -40,6 +41,8 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
       { name: "Credit Card", balance: "1287.42", rate: "19.99", min: "40" }]),
   });
   const link = (d) => F.linkDebtToAccount(d, F.likelyDebtAccountMatches(d)[0]);
+  const demo = (c) => ({ profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), incomes: D.buildDemoIncomes(T, c),
+    bills: D.buildDemoBills(T, c), transactions: D.buildDemoTxns(T, c), goals: [], bankConnected: true, demo: true });
   const H = household(""), HL = link(H), V = household("40"), VL = link(V);
   const feed = { credit: [{ account_id: "v1", name: "Visa ••1111", balance: 1287.42, apr: null, minPayment: 40 }], mortgage: [], student: [] };
   const sim = (d, L = d.liabilities) => F.buildDebtListForSimulator(d.debts, L, d).map(e => [e.name, e.balance, e.rate, Math.round(e.min * 100) / 100, e.mayBeSame || null, !!e.linked]);
@@ -119,9 +122,26 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
   t.eq([Math.round((fvl.safe.safeAmount - fv.safe.safeAmount) * 100), fv.safe.debtPayments - fvl.safe.debtPayments, day90(fvl) - day90(fv), JSON.stringify(fvl.flow) === JSON.stringify(fv.flow), fvl.daily === fv.daily, fvl.assets === fv.assets],
     [4000, 40, 8000, true, true, true], "2i variant: linking releases exactly the bank row's $40 (safe to spend +$40.00, day 90 +$80.00); nothing else moves");
 
+  // ── 3. Today's Total debt tile (C8c) ─────────────────────────────────────────────────────────
+  let B = {};
+  try { B = loadApp(["Dashboard"]); } catch (e) { t.ok(false, `App.jsx bundles Dashboard: ${describe(e)}`); }
+  const noop = () => {};
+  const tile = (d) => {
+    const txt = textOf(B.render(B.h(B.Dashboard, { data: d, setAppData: noop, setScreen: noop, setShowNotifs: noop, onUpgrade: noop, onWhatIf: noop })));
+    const i = txt.indexOf("Total debt");
+    const m = i < 0 ? null : txt.slice(i, i + 40).match(/Total debt\s*(\d+ accounts?)\s*(\$[\d.]+k)/); // the tile reads its count, then the figure
+    return m ? `${m[2]} ${m[1]}` : txt.slice(i, i + 40);
+  };
+  try {
+    const Hn = household("", now);
+    t.eq([tile(link(Hn)), tile(Hn)], ["$1.3k 1 account", "$2.6k 2 accounts"], "3a Total debt: one linked card is $1.3k, \"1 account\"; unlinked, $2.6k, \"2 accounts\" (the same rows as the total)");
+    const paidOff = { ...link(Hn), accounts: [...Hn.accounts, { id: "v2", name: "Rewards ••2222", type: "credit", balance: 0 }] };
+    t.eq(tile(paidOff), "$1.3k 1 account", "3b a card with nothing owed adds nothing to the total and is not counted");
+    const demoNow = (c) => ({ ...demo(c), incomes: D.buildDemoIncomes(now, c), bills: D.buildDemoBills(now, c), transactions: D.buildDemoTxns(now, c) });
+    t.eq([tile(demoNow("CA")), tile(demoNow("US"))], ["$11.6k 2 accounts", "$22.6k 2 accounts"], "3c the demos are unchanged: CA $11.6k, US $22.6k, 2 accounts each");
+  } catch (e) { t.ok(false, `3 Dashboard renders: ${describe(e)}`); }
+
   // ── 9. The demos are unchanged (their card debts carry account_id; nothing is linked by sameAsAccountId) ─
-  const demo = (c) => ({ profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), incomes: D.buildDemoIncomes(T, c),
-    bills: D.buildDemoBills(T, c), transactions: D.buildDemoTxns(T, c), goals: [], bankConnected: true, demo: true });
   const demoSim = (d) => F.buildDebtListForSimulator(d.debts, d.liabilities, d).map(e => [e.name, e.balance, e.rate, Math.round(e.min * 100) / 100, e.source, e.mayBeSame || null, !!e.linked]);
   t.eq(demoSim(demo("CA")), [["Visa card", 3420, 19.99, 68, "manual", null, false], ["Car Loan", 8200, 6.99, 280, "manual", null, false]], "9a CA demo: the simulator's list is unchanged");
   t.eq(demoSim(demo("US")), [["Chase Sapphire", 4180, 24.99, 105, "manual", null, false], ["Federal Student Loan", 18400, 5.5, 195, "manual", null, false]], "9b US demo: unchanged");
