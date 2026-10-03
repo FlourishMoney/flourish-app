@@ -14531,6 +14531,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-frame{ background:#15271a; border-radius:30px; padding:6px; box-shadow:0 22px 50px rgba(22,58,28,0.18); }
             .fll-frame img{ display:block; width:100%; height:auto; border-radius:25px; }
             .fll-cap{ text-align:center; font-size:13px; color:#52624f; margin-top:11px; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-sample{ text-align:center; font-size:13px; color:#52624f; margin:14px auto 0; font-family:'Plus Jakarta Sans',sans-serif; }
 
             .fll-benefits{ display:grid; grid-template-columns:1fr; gap:14px; max-width:760px; margin:0 auto; }
             .fll-card{ background:#fff; border:1px solid rgba(46,139,46,0.13); border-radius:18px; padding:22px; box-shadow:0 6px 22px rgba(22,58,28,0.05); }
@@ -14593,10 +14594,13 @@ function AuthScreen({ onAuth, onTryDemo }) {
             <p className="fll-lede">Real screens from the app you'll get on day one.</p>
             <div className="fll-proof">
               {[
-                ["/app-screens/home.jpg", "Your Safe-to-Spend number"],
-                ["/app-screens/whatif.jpg", "Test a decision before you make it"],
-                ["/app-screens/coach.jpg", "Coaching in plain English"],
-                ["/app-screens/networth.jpg", "Everything in one place"],
+                // Captured from the demo by `npm run screens:landing` (scripts/capture-landing-screens.mjs).
+                // The fourth caption names safe to spend rather than "any number": not every figure on
+                // Today opens its working, which is why Today has no "Tap any number" tip (PR #46).
+                ["/app-screens/home.jpg", "Safe to spend until payday"],
+                ["/app-screens/watch.jpg", "Every bill and payday, up to 90 days ahead"],
+                ["/app-screens/meet.jpg", "A 15-minute weekly money meeting"],
+                ["/app-screens/how-we-got-this.jpg", "Tap safe to spend to see the math"],
               ].map(([src, cap]) => (
                 <div className="fll-shot" key={src}>
                   <div className="fll-frame"><img src={src} alt={cap} loading="lazy" width={680} height={1474} /></div>
@@ -14604,6 +14608,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
                 </div>
               ))}
             </div>
+            <p className="fll-sample">Example, sample data.</p>
           </div>
 
           {/* Benefits */}
