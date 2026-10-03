@@ -46,8 +46,8 @@ const { loadApp, textOf, describe } = require("./_renderApp.cjs");
 
   // ── 1. Before: found, marked, and summed as shown ───────────────────────────────────────────────
   const matches = F.likelyDebtAccountMatches(before);
-  t.eq(matches.map(m => [m.debtKey, m.accountId, m.accountLabel, m.reasons.join("+")]), [["d1", "v1", "Visa ••1111", "issuer+balance"]],
-    "1a the hand-entered Visa is matched to the bank's Visa ••1111 (same issuer, balances within $1), keyed on its id");
+  t.eq(matches.map(m => [m.debtKey, m.accountId, m.accountLabel, m.reasons.join("+"), m.balanceGap]), [["d1", "v1", "Visa ••1111", "issuer", 0]],
+    "1a the hand-entered Visa is matched to the bank's Visa ••1111 by issuer, keyed on its id (balance gap $0 only ranks it)");
   const r0 = F.netWorthRows(before);
   t.eq(r0.rows.map(r => [r.label, r.cents, !!r.mayCountTwice]), [["Chequing", 215037, false], ["Savings", 400000, false], ["Visa ••1111", -128742, true], ["Visa", -128742, true], ["Car loan", -987510, false]],
     "1b both Visa rows are listed and marked \"may be counted twice\"; nothing is dropped");
@@ -87,9 +87,16 @@ const { loadApp, textOf, describe } = require("./_renderApp.cjs");
   const one = (debt, acct) => F.likelyDebtAccountMatches({ accounts: [acct], debts: [debt] }).map(m => m.reasons.join("+"));
   t.eq(one({ id: 1, name: "Credit Card 4471", balance: "900" }, card("Rewards ••4471", -2000)), ["last4"], "5a the last 4 digits");
   t.eq(one({ id: 1, name: "Mastercard", balance: "900" }, card("World Elite Mastercard", -2000)), ["issuer"], "5b the issuer or network");
-  t.eq(one({ id: 1, name: "Credit Card", balance: "1500.40" }, card("Card ••0001", -1500)), ["balance"], "5c balances within $1");
-  t.eq(one({ id: 1, name: "Credit Card", balance: "1502" }, card("Card ••0001", -1500)), [], "5d …not $2 apart");
-  t.eq(one({ id: 1, name: "Line of Credit", balance: "3000" }, { id: "l", name: "TD Line of Credit", type: "line of credit", balance: -3000 }), ["balance"], "5e a line of credit");
+  // demo-fixes C2: balances alone never make a pair.
+  t.eq(one({ id: 1, name: "Credit Card", balance: "1500.40" }, card("Card ••0001", -1500)), [], "5c balances within $1 alone do not (C2)");
+  t.eq(one({ id: 1, name: "Credit Card", balance: "1500" }, card("Card ••0001", -1500)), [], "5d …not even equal ones");
+  t.eq(one({ id: 1, name: "TD Line of Credit", balance: "3000" }, { id: "l", name: "TD Line of Credit", type: "line of credit", balance: -3000 }), ["issuer"], "5e a line of credit, by its issuer");
+  t.eq(one({ id: 1, name: "Line of Credit", balance: "3000" }, { id: "l", name: "TD Line of Credit", type: "line of credit", balance: -3000 }), [], "5e2 …not by its balance");
+  t.eq(F.likelyDebtAccountMatches({ accounts: [card("Rewards ••1234", -2500), { id: "y", name: "Everyday ••5678", type: "credit", balance: -900 }],
+    debts: [{ id: "a", name: "Credit Card", balance: "2500" }, { id: "b", name: "Mastercard ••9999", balance: "900" }] }), [],
+    "5j two different cards with equal balances and no shared digits, issuer or network: no prompt");
+  const ranked = F.likelyDebtAccountMatches({ accounts: [card("Visa ••1111", -1287.42)], debts: [{ id: "far", name: "Visa", balance: "300" }, { id: "near", name: "Visa", balance: "1287.00" }] });
+  t.eq(ranked.map(m => [m.debtKey, m.balanceGap]), [["near", 0.42]], "5k between two that qualify (both Visa), the closer balance ranks first");
   t.eq(one({ name: "Visa", balance: "900" }, card("Visa ••1", -900)), [], "5l a debt with no id is never offered (it is given one on load)");
   t.eq(one({ id: 1, name: "Car Loan", balance: "1500" }, card("Card ••0001", -1500)), [], "5f a car loan is never matched to a card, whatever its balance");
   t.eq(one({ id: 1, name: "Visa", balance: "900", fromBank: true }, card("Visa ••1", -900)), [], "5g a debt that came from the bank is already that account");
@@ -108,7 +115,7 @@ const { loadApp, textOf, describe } = require("./_renderApp.cjs");
       debts: [{ id: "cc-a", name: "Credit Card", balance: "1287.42", rate: "19.99", min: "40" }, { id: "cc-b", name: "Credit Card", balance: "640.25", rate: "21.99", min: "25" }] };
     const nw = (d) => F.netWorthRows(d).totalCents;
     t.eq(nw(two), -106472, "7a two Credit Card debts and the bank Visa: −$1,064.72");
-    t.eq(F.likelyDebtAccountMatches(two).map(m => [m.debtKey, m.accountId]), [["cc-a", "v1"]], "7b cc-a is offered for Visa ••1111 (equal balances)");
+    t.eq(F.likelyDebtAccountMatches(two), [], "7b (neither is offered: \"Credit Card\" shares no digits, issuer or network with Visa ••1111, C2)");
     const linked = F.linkDebtToAccount(two, { debtKey: "cc-a", accountId: "v1", pairKey: "cc-a|v1" });
     t.eq(linked.debts.map(d => [d.id, d.sameAsAccountId || null]), [["cc-a", "v1"], ["cc-b", null]], "7c Yes on cc-a links cc-a only, by its id");
     t.eq([nw(linked), nw(linked) - nw(two)], [22270, 128742], "7d net worth changes by exactly that debt's balance: +$1,287.42, to +$222.70");

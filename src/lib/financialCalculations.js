@@ -1188,11 +1188,11 @@ export function isBaseCurrencyAccount(account, data) {
 // a bank credit account) and is a card or a line of credit (the app records a debt's type as its name:
 // "Credit Card", "Line of Credit", or a name that says card or credit or names a card network or
 // issuer), paired with a bank credit account no other debt is linked to, when any of these hold:
-//   - the names share an issuer or network (Visa, Mastercard, Amex, Chase, TD, RBC, ...);
-//   - they share the last 4 digits (from the name or the account's mask);
-//   - the balances are within $1.00.
+//   - they share the last 4 digits (from the name or the account's mask); or
+//   - the names share an issuer or network (Visa, Mastercard, Amex, Chase, TD, RBC, ...).
+// Balances alone never make a pair (C2): the closer balance only ranks pairs that already qualify.
 // Each debt is paired with at most one account and each account with at most one debt, the strongest
-// reason first (last 4 digits, then issuer, then balance). Debts are identified by id only (C1).
+// first (last 4 digits, then issuer, then the smaller balance gap). Debts are identified by id only (C1).
 const _ISSUERS = ["visa", "mastercard", "master card", "amex", "american express", "discover", "chase", "sapphire", "capital one", "citi", "citibank",
   "barclays", "synchrony", "wells fargo", "bank of america", "us bank", "u.s. bank", "td", "rbc", "bmo", "scotia", "scotiabank", "cibc", "tangerine",
   "simplii", "desjardins", "national bank", "pc financial", "mbna", "rogers", "triangle", "hsbc", "neo", "koho", "brim", "home trust", "costco"];
@@ -1231,16 +1231,19 @@ export function likelyDebtAccountMatches(data = {}) {
       const aName = `${a.name || ""} ${a.institution || ""}`;
       const d4 = _last4(d.name), a4 = a.mask ? String(a.mask).slice(-4) : _last4(a.name);
       const shared = [..._issuersIn(d.name)].filter(x => _issuersIn(aName).has(x));
+      // demo-fixes C2: only a shared last 4 digits or a shared issuer or network makes a pair. Two
+      // cards with the same balance are not the same card; closeness of balance only ranks pairs that
+      // already qualify.
       const reasons = [];
       if (d4 && a4 && d4 === a4) reasons.push("last4");
       if (shared.length) reasons.push("issuer");
-      if (Math.abs(num(d.balance) - Math.abs(num(a.balance))) <= 1) reasons.push("balance");
-      if (reasons.length) candidates.push({ debtIndex, debtKey: debtKey(d), accountId: a.id, pairKey, reasons,
+      const balanceGap = Math.round(Math.abs(num(d.balance) - Math.abs(num(a.balance))) * 100) / 100;
+      if (reasons.length) candidates.push({ debtIndex, debtKey: debtKey(d), accountId: a.id, pairKey, reasons, balanceGap,
         debtLabel: String(d.name || "Debt"), accountLabel: accountLabelWithMask(a),
-        score: (reasons.includes("last4") ? 4 : 0) + (reasons.includes("issuer") ? 2 : 0) + (reasons.includes("balance") ? 1 : 0) });
+        score: (reasons.includes("last4") ? 4 : 0) + (reasons.includes("issuer") ? 2 : 0) });
     }
   });
-  candidates.sort((x, y) => y.score - x.score || x.debtIndex - y.debtIndex);
+  candidates.sort((x, y) => y.score - x.score || x.balanceGap - y.balanceGap || x.debtIndex - y.debtIndex);
   const usedDebts = new Set(), usedAccounts = new Set(), out = [];
   for (const c of candidates) {
     if (usedDebts.has(c.debtIndex) || usedAccounts.has(c.accountId)) continue;
