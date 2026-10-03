@@ -3482,7 +3482,9 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
           </button>
         ))}
       </div>
-      <button onClick={()=>mood&&setStep(1)} style={{background:mood?`linear-gradient(135deg,${C.green},${C.greenBright})`:"#e0e0e0",color:mood?"#fff":C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px",borderRadius:99,border:"none",cursor:mood?"pointer":"default",transition:"all .2s"}}>Next →</button>
+      {/* demo-fixes C9: before a mood is picked this was the theme's muted text on a fixed #e0e0e0 (1.05:1 in the
+          dark theme); it now uses the app's disabled button colours, and the picked state's text clears AA on the green. */}
+      <button onClick={()=>mood&&setStep(1)} style={{background:mood?`linear-gradient(135deg,${C.green},${C.greenBright})`:C.cardAlt,color:mood?textOn(C.green,C.greenBright):C.muted,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:800,fontSize:15,padding:"14px",borderRadius:99,border:"none",cursor:mood?"pointer":"default",transition:"all .2s"}}>Next →</button>
     </div>,
 
     // Step 1: Surprise
@@ -14811,7 +14813,9 @@ function ModalHost() {
   const isConfirm = m.kind === "confirm", isPrompt = m.kind === "prompt";
   const finish = (result) => { const r = m._resolve; setM(null); if (r) r(result); };
   const accentBg = m.destructive ? C.red : C.green;
-  const accentFg = m.destructive ? "#fff" : (C.isDark ? "#041810" : "#FFFFFF");
+  // demo-fixes C9: white on the dark theme's red (#FF4F6A) is 3.19:1; textOn picks white or the dark ink,
+  // whichever clears AA on the fill (white stays on the light theme's darker red).
+  const accentFg = m.destructive ? textOn(C.red) : (C.isDark ? "#041810" : "#FFFFFF");
   return (
     <div role="dialog" aria-modal="true" aria-label={m.title || "Dialog"}
       style={{position:"fixed",inset:0,zIndex:10000,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}
