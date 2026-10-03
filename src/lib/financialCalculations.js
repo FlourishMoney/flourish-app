@@ -1156,6 +1156,91 @@ export function isBaseCurrencyAccount(account, data) {
   return accountCurrencyOf(account, data) === baseCurrencyOf(data);
 }
 
+// THE SAME CARD, ENTERED TWICE (demo-fixes B4). A household that links its bank and also adds the
+// card as a debt by hand has one card in two places: a bank credit account, and a debt with no link to
+// it. Net worth counts both (it never pairs them by name, Sprint Z3 #8), so it is off by the balance.
+// likelyDebtAccountMatches finds the likely pairs and the Worth screen and the debt editor ask once:
+// "Is this the same as your Visa ••1234?". Yes sets debt.sameAsAccountId (linkDebtToAccount); No
+// stores the pair in data.debtLinkDismissed (dismissDebtAccountMatch) so it is never asked again.
+//
+// sameAsAccountId is read by netWorthRows and nothing else. It is deliberately not account_id: that
+// field also lends the debt's rate to the bank's card in the debt simulator, and disconnecting the
+// bank deletes debts carrying it. Saying "yes, it's the same card" changes net worth and nothing else.
+//
+// THE MATCH RULE. A debt that is not linked (no fromBank, no account_id or sameAsAccountId that names
+// a bank credit account) and is a card or a line of credit (the app records a debt's type as its name:
+// "Credit Card", "Line of Credit", or a name that says card or credit or names a card network or
+// issuer), paired with a bank credit account no other debt is linked to, when any of these hold:
+//   - the names share an issuer or network (Visa, Mastercard, Amex, Chase, TD, RBC, ...);
+//   - they share the last 4 digits (from the name or the account's mask);
+//   - the balances are within $1.00.
+// Each debt is paired with at most one account and each account with at most one debt, the strongest
+// reason first (last 4 digits, then issuer, then balance).
+const _ISSUERS = ["visa", "mastercard", "master card", "amex", "american express", "discover", "chase", "sapphire", "capital one", "citi", "citibank",
+  "barclays", "synchrony", "wells fargo", "bank of america", "us bank", "u.s. bank", "td", "rbc", "bmo", "scotia", "scotiabank", "cibc", "tangerine",
+  "simplii", "desjardins", "national bank", "pc financial", "mbna", "rogers", "triangle", "hsbc", "neo", "koho", "brim", "home trust", "costco"];
+const _words = (s) => " " + String(s || "").toLowerCase().replace(/[^a-z0-9.]+/g, " ").trim() + " ";
+const _issuersIn = (s) => { const w = _words(s); return new Set(_ISSUERS.filter(x => w.includes(" " + x + " "))); };
+const _last4 = (s) => { const m = String(s || "").match(/(\d{4})(?!.*\d{4})/); return m ? m[1] : null; };
+const _isBankCreditAccount = (a) => {
+  const t = (a && a.type || "").toLowerCase(), s = (a && a.subtype || "").toLowerCase();
+  return t === "credit" || t === "credit card" || s === "credit card" || t === "line of credit";
+};
+const _isCardLikeDebt = (d) => { const n = String(d && d.name || ""); return /credit card|line of credit|\bloc\b|\bcard\b|\bcredit\b/i.test(n) || _issuersIn(n).size > 0; };
+export function debtKey(d) {
+  return d && d.id != null ? `id:${d.id}` : `name:${String(d && d.name || "").trim().toLowerCase().replace(/\s+/g, " ")}`;
+}
+export function accountLabelWithMask(a) {
+  const name = String((a && a.name) || "your card");
+  return /••\s?\d{4}/.test(name) || !(a && a.mask) ? name : `${name} ••${a.mask}`;
+}
+export function likelyDebtAccountMatches(data = {}) {
+  const accounts = data.accounts || [], debts = data.debts || [];
+  const cards = accounts.filter(_isBankCreditAccount);
+  const cardIds = new Set(cards.map(a => a.id));
+  const linkedIds = new Set(debts.flatMap(d => [d && d.account_id, d && d.sameAsAccountId]).filter(id => id != null && cardIds.has(id)));
+  const dismissed = new Set(Array.isArray(data.debtLinkDismissed) ? data.debtLinkDismissed : []);
+  const candidates = [];
+  debts.forEach((d, debtIndex) => {
+    if (!d || d.fromBank || (d.account_id && cardIds.has(d.account_id)) || (d.sameAsAccountId && cardIds.has(d.sameAsAccountId))) return;
+    if (!_isCardLikeDebt(d) || !(num(d.balance) > 0)) return;
+    for (const a of cards) {
+      if (linkedIds.has(a.id)) continue;
+      const pairKey = `${debtKey(d)}|${a.id}`;
+      if (dismissed.has(pairKey)) continue;
+      const aName = `${a.name || ""} ${a.institution || ""}`;
+      const d4 = _last4(d.name), a4 = a.mask ? String(a.mask).slice(-4) : _last4(a.name);
+      const shared = [..._issuersIn(d.name)].filter(x => _issuersIn(aName).has(x));
+      const reasons = [];
+      if (d4 && a4 && d4 === a4) reasons.push("last4");
+      if (shared.length) reasons.push("issuer");
+      if (Math.abs(num(d.balance) - Math.abs(num(a.balance))) <= 1) reasons.push("balance");
+      if (reasons.length) candidates.push({ debtIndex, debtKey: debtKey(d), accountId: a.id, pairKey, reasons,
+        debtLabel: String(d.name || "Debt"), accountLabel: accountLabelWithMask(a),
+        score: (reasons.includes("last4") ? 4 : 0) + (reasons.includes("issuer") ? 2 : 0) + (reasons.includes("balance") ? 1 : 0) });
+    }
+  });
+  candidates.sort((x, y) => y.score - x.score || x.debtIndex - y.debtIndex);
+  const usedDebts = new Set(), usedAccounts = new Set(), out = [];
+  for (const c of candidates) {
+    if (usedDebts.has(c.debtIndex) || usedAccounts.has(c.accountId)) continue;
+    usedDebts.add(c.debtIndex); usedAccounts.add(c.accountId);
+    const { score, ...m } = c; out.push(m);
+  }
+  return out.sort((x, y) => x.debtIndex - y.debtIndex);
+}
+// "Yes, link them": the debt is the same card as the account. Net worth counts it once.
+export function linkDebtToAccount(data = {}, match) {
+  if (!match) return data;
+  return { ...data, debts: (data.debts || []).map(d => debtKey(d) === match.debtKey && !d.sameAsAccountId ? { ...d, sameAsAccountId: match.accountId } : d) };
+}
+// "No, they're different": never ask about this pair again.
+export function dismissDebtAccountMatch(data = {}, match) {
+  if (!match) return data;
+  const prev = Array.isArray(data.debtLinkDismissed) ? data.debtLinkDismissed : [];
+  return prev.includes(match.pairKey) ? data : { ...data, debtLinkDismissed: [...prev, match.pairKey] };
+}
+
 // NET WORTH, ROW BY ROW (demo-fixes B1). The ONE owner of what net worth is made of: every account and
 // debt it counts, each as a signed row, in the order a household reads them (cash, investments, cards,
 // debts). netWorth() below is the sum of these rows, and the Worth screen lists exactly these rows and
@@ -1191,55 +1276,44 @@ export function netWorthRows(data = {}) {
     const v = -Math.abs(num(a.balance));
     rows.push({ id: a.id ?? null, label: label(a), kind: "credit", value: v, cents: cents(v) });
   }
-  // Every bank-credit account, foreign ones included, so a foreign card's debt is not re-added.
+  // Every bank-credit account, foreign ones included, so a foreign card's debt is not re-added. A debt
+  // the household said is the same card (sameAsAccountId, B4) is that account too.
   const bankCreditAcctIds = new Set(accounts.filter(isBankCredit).map(a => a.id));
-  for (const d of debts.filter(d => !d.fromBank && !(d.account_id && bankCreditAcctIds.has(d.account_id)))) {
+  const linked = (d) => (d.account_id && bankCreditAcctIds.has(d.account_id)) || (d.sameAsAccountId && bankCreditAcctIds.has(d.sameAsAccountId));
+  debts.forEach((d, debtIndex) => {
+    if (!d || d.fromBank || linked(d)) return;
     const v = -Math.max(0, num(d.balance));
-    rows.push({ id: d.id ?? null, label: String(d.name || "Debt"), kind: "debt", value: v, cents: cents(v) });
+    rows.push({ id: d.id ?? null, label: String(d.name || "Debt"), kind: "debt", value: v, cents: cents(v), debtIndex });
+  });
+  // B4: a likely pair not yet answered stays in, both rows marked. The total is still the sum of
+  // the rows shown: nothing is dropped on a guess.
+  const matches = likelyDebtAccountMatches(data);
+  for (const m of matches) {
+    for (const r of rows) {
+      if ((r.kind === "credit" && r.id === m.accountId) || (r.kind === "debt" && r.debtIndex === m.debtIndex)) r.mayCountTwice = true;
+    }
   }
   const totalCents = rows.reduce((s, r) => s + r.cents, 0);
-  return { rows, totalCents, total: totalCents / 100 };
+  return { rows, totalCents, total: totalCents / 100, matches };
 }
 
 export const FinancialCalcEngine = {
-  /** Net Worth = all assets − all liabilities: the sum of netWorthRows. */
+  /** Net Worth = all assets − all liabilities: the sum of netWorthRows (demo-fixes B1, B4). */
   netWorth(data) {
+    // Sprint Z3 #6: currency-mix safety. v1 has no FX conversion, so foreign-currency accounts are
+    // detected and left out (netWorthRows applies the same rule to every row).
     const accounts = data.accounts || [];
-    const debts    = data.debts    || [];
-    // Sprint Z3 #6: currency-mix safety. v1 has no FX conversion, so summing CAD+USD 1:1 gives
-    // cross-border users wrong totals. DETECT + EXCLUDE foreign-currency accounts (FX is a v1.x feature).
-    // Base = profile.baseCurrency, else USD for US profiles, else CAD. account.currency is stamped from
-    // Plaid (balance.iso_currency_code) and defaults CAD for legacy/unstamped accounts — so a
-    // single-currency CAD user sees IDENTICAL totals to before (every account stays in-base).
     const base = baseCurrencyOf(data);
-    const isBase = a => accountCurrencyOf(a, data) === base;
-    const mixedCurrencyDetected = accounts.some(a => !isBase(a));
-    const baseAccts = accounts.filter(isBase); // foreign-currency accounts are excluded from every sum
-    // Assets: only positive-balance accounts (cash + investment). Credit accounts have
-    // negative balances and are already captured in liabilities.
-    const assets = baseAccts
-      .filter(a => isCashAccount(a) || isInvestmentAccount(a))
-      .reduce((s,a) => s + Math.max(0, num(a.balance)), 0);
-    const isBankCredit = a => {
-      const t = (a.type||"").toLowerCase(), s = (a.subtype||"").toLowerCase();
-      return t==="credit" || t==="credit card" || s==="credit card" || t==="line of credit";
-    };
-    const bankCreditAccounts = baseAccts.filter(isBankCredit);
-    const bankCreditLiabilities = bankCreditAccounts
-      .reduce((s,a) => s + Math.abs(num(a.balance)), 0);
-    // Sprint Z3 #8: dedupe Plaid debts by ACCOUNT_ID, not name. fromBank debts are already represented by
-    // the credit ACCOUNTS above, and any debt whose account_id matches a bank-credit account is that same
-    // account — skip it. Manual debts (no account_id, not fromBank) ALWAYS count: a name coincidence with a
-    // bank account no longer silently drops a real user-entered debt. (ids from ALL bank-credit accounts,
-    // incl. excluded foreign ones, so a foreign-account debt isn't re-added into the base-currency total.)
-    const bankCreditAcctIds = new Set(accounts.filter(isBankCredit).map(a => a.id));
-    const manualNonBankDebts = debts
-      .filter(d => !d.fromBank && !(d.account_id && bankCreditAcctIds.has(d.account_id)))
-      .reduce((s,d) => s + Math.max(0, num(d.balance)), 0);
+    const mixedCurrencyDetected = accounts.some(a => accountCurrencyOf(a, data) !== base);
+    // The rows are the one owner (each counted account and debt, signed, with a debt linked to its
+    // bank card by account_id or by the household's yes counted once); these sums are read from them,
+    // so the headline, the Today tile and the Worth list cannot disagree.
+    const { rows } = netWorthRows(data);
+    const sumCents = (kinds) => rows.filter(r => kinds.includes(r.kind)).reduce((s, r) => s + r.cents, 0);
+    const assets = sumCents(["cash", "investment"]) / 100;
+    const bankCreditLiabilities = -sumCents(["credit"]) / 100;
+    const manualNonBankDebts = -sumCents(["debt"]) / 100;
     const liabilities = bankCreditLiabilities + manualNonBankDebts;
-    // The rows are the owner; these sums are kept for the callers that read assets and liabilities.
-    // They are the same accounts and debts by the same rules, so the two cannot disagree (and
-    // tests/netWorthRows.test.cjs checks it to the cent).
     return { assets, liabilities, netWorth: assets - liabilities, bankCreditLiabilities, manualNonBankDebts, mixedCurrencyDetected };
   },
 

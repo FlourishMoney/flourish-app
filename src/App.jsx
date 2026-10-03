@@ -12,7 +12,7 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { parseAmountFromQuery, simulatePurchaseImpact, summarizeScenarioForCoach, simulateDebtPayoffForDebt, debtMinimumPayment, debtLinkKey, withDebtIds, newDebtId, simulateInvestmentGrowth, detectScenarioType, detectLumpSum, isCashAccount, isCheckingAccount, isSavingsAccount, isCreditLiability, isInvestmentAccount, buildDebtListForSimulator, applyDebtRate, enrichTxns, toMonthly, billMonthlyAmount, billNextDue, billOccursOnDate, computeNextDueDate, dateToISO,
   CC_PAYMENT_KEYWORDS, CC_INSTITUTION_PATTERNS, INTERNAL_TRANSFER_PATTERNS, isInternalTransfer,
-  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums, netWorthRows } from "./lib/financialCalculations.js";
+  BILL_CATS, NON_SPEND_CATS, isCCPayment, isCashAdvance, CAT_META, isBillArchived, FinancialCalcEngine, baseCurrencyOf, accountCurrencyOf, daysUntilDueDay, num, unbilledDebtMinimums, netWorthRows, likelyDebtAccountMatches, linkDebtToAccount, dismissDebtAccountMatch } from "./lib/financialCalculations.js";
 import { normaliseTxns, detectIncomeFromTxns, detectCadence, detectRecurringBills, billCandidateExpenses, groupByMerchant, billSpreadVerdicts, markTransfers, mergeById, removeByIds, normalizeAccountBalance } from "./lib/plaidNormalize.js";
 import { retainAccounts, retainLiabilities, promoteAccounts } from "./lib/multibank.js";
 import { SafeSpendEngine, lowBalanceThreshold } from "./lib/safeSpendEngine.js";
@@ -6822,6 +6822,23 @@ function BillManager({data, setAppData, onClose}){
 // Every figure in here is handed in by the caller from an engine. This sheet computes nothing and
 // asks nothing of the AI; it reads back what was already worked out, which is the only reason it
 // can be trusted as an explanation.
+// demo-fixes B4: one calm question when a hand-entered debt looks like a card the bank already
+// lists. Yes links them (net worth counts the card once; nothing else changes); No is remembered for
+// that pair. The match rule is in lib/financialCalculations.js, likelyDebtAccountMatches.
+function DebtLinkPrompt({ match, setAppData }) {
+  if (!match || !setAppData) return null;
+  return (
+    <div role="group" aria-labelledby={`debt-link-${match.pairKey}`} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:LAYOUT.cardPadding,marginBottom:LAYOUT.cardGap}}>
+      <div id={`debt-link-${match.pairKey}`} style={{color:C.cream,...TYPE.headline,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Is this the same as your {match.accountLabel}?</div>
+      <div style={{color:C.mutedHi,...TYPE.footnote,marginTop:SPACE.xs,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Your debt "{match.debtLabel}" may be that card. Until you say, net worth counts both, so it may be counted twice.</div>
+      <div style={{display:"flex",gap:GAP.controlToControl,marginTop:GAP.textToControl,flexWrap:"wrap"}}>
+        <button onClick={()=>setAppData(prev=>linkDebtToAccount(prev, match))} style={{flex:"1 1 140px",minHeight:LAYOUT.minTap,background:C.green+"1A",border:`1px solid ${C.green}55`,borderRadius:12,color:C.greenInk,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Yes, link them</button>
+        <button onClick={()=>setAppData(prev=>dismissDebtAccountMatch(prev, match))} style={{flex:"1 1 140px",minHeight:LAYOUT.minTap,background:"none",border:`1px solid ${C.border}`,borderRadius:12,color:C.mutedHi,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>No, they're different</button>
+      </div>
+    </div>
+  );
+}
+
 function HowWeGotThis({ title, value, meaning, inputs = [], source, changeLabel, onChange, onClose }) {
   return (
     <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
@@ -9263,7 +9280,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
       const acctById = new Map(allAccts.map(a => [a.id, a]));
       const ROW_STYLE = { cash:{type:"asset",color:C.green,icon:"🏦"}, investment:{type:"investment",color:C.purple,icon:"📈"}, credit:{type:"debt",color:C.red,icon:"💳"}, debt:{type:"debt",color:C.red,icon:"💳"} };
       const allItems = nwRows.rows.map(r => { const a = r.kind === "investment" ? acctById.get(r.id) : null;
-        return { label:r.label, value:Math.abs(r.value), cents:r.cents, ...ROW_STYLE[r.kind], ticker:a&&a.ticker, gainPct:a&&a.gainPct, gain:a&&a.gain }; });
+        return { label:r.label, value:Math.abs(r.value), cents:r.cents, ...ROW_STYLE[r.kind], ticker:a&&a.ticker, gainPct:a&&a.gainPct, gain:a&&a.gain, mayCountTwice:!!r.mayCountTwice }; });
       return <>
       <div style={{background:`linear-gradient(135deg,${C.tealDim} 0%,${C.card} 100%)`,borderRadius:20,padding:"22px",border:`1px solid ${C.teal}44`}}>
         <div style={{color:C.muted,fontSize:13,marginBottom:4,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600}}>Your Net Worth</div>
@@ -9289,6 +9306,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
           </div>
         </div>}
       </div>
+      {nwRows.matches[0]&&<DebtLinkPrompt match={nwRows.matches[0]} setAppData={setAppData}/>}
       {allItems.map((item,i)=>(
         <div key={i} style={{background:C.card,borderRadius:16,padding:"14px 16px",border:`1px solid ${item.type==="investment"?C.purple+"33":C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
@@ -9297,6 +9315,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
               <div style={{color:C.cream,fontWeight:600,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.label}</div>
               {item.ticker&&<div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{item.ticker}{item.gainPct?` · +${item.gainPct}%`:""}</div>}
               <Chip label={item.type==="investment"?"Investment 📈":item.type==="asset"?"Asset ↑":"Liability ↓"} color={item.color}/>
+              {item.mayCountTwice&&<div style={{color:C.mutedHi,fontSize:13,marginTop:SPACE.xs}}>May be counted twice</div>}
             </div>
           </div>
           <div style={{textAlign:"right"}}>
@@ -9306,8 +9325,8 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
         </div>
       ))}
       {explainNetWorth&&<HowWeGotThis title="Net worth" value={`${nwRows.totalCents<0?"-":"+"}${formatMoney(Math.abs(nwRows.totalCents)/100,{cents:true})}`}
-        meaning="Every account and debt listed on this screen, added up: what you have, less what you owe. A card that is both a bank account and a debt is counted once. Accounts in another currency are left out."
-        inputs={[...nwRows.rows.map(r=>({label:r.label, value:`${r.cents<0?"−":"+"}${formatMoney(Math.abs(r.cents)/100,{cents:true})}`})),
+        meaning={`Every account and debt listed on this screen, added up: what you have, less what you owe. A debt linked to its bank card is counted once. Accounts in another currency are left out.${nwRows.matches.length?" Two rows marked below may be the same card counted twice: answer the question on this screen to link them.":""}`}
+        inputs={[...nwRows.rows.map(r=>({label:r.mayCountTwice?`${r.label}, may be counted twice`:r.label, value:`${r.cents<0?"−":"+"}${formatMoney(Math.abs(r.cents)/100,{cents:true})}`})),
           {label:"= Net worth", value:`${nwRows.totalCents<0?"-":"+"}${formatMoney(Math.abs(nwRows.totalCents)/100,{cents:true})}`}]}
         source="Your accounts and debts" onClose={()=>setExplainNetWorth(false)}/>}
       </>; })()}
@@ -11162,6 +11181,7 @@ function InlineDebtEditor({data, setAppData, color, navToScreen}){
           <div style={{color:C.muted,fontSize:13,lineHeight:1.65}}>Connect your bank to auto-import credit cards, or tap + Add Debt below.</div>
         </div>
       )}
+      {(()=>{ const m = likelyDebtAccountMatches(data)[0]; return m ? <DebtLinkPrompt match={m} setAppData={setAppData}/> : null; })()}
       {(data.debts||[]).some(d=>d.fromBank)&&(
         <div style={{background:C.green+"0A",border:`1px solid ${C.green}22`,borderRadius:10,padding:"8px 12px",marginBottom:8,display:"flex",gap:6,alignItems:"center"}}>
           <span style={{fontSize:13}}>🏦</span>
