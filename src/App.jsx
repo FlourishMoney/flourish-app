@@ -14504,10 +14504,13 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-login:hover{ background:rgba(46,139,46,0.08); }
 
             .fll-hero{ text-align:center; padding-top:30px; padding-bottom:14px; }
-            .fll-hero-grid{ display:grid; grid-template-columns:minmax(0,1fr); grid-template-areas:"text" "card" "form"; gap:${SPACE.xl}px; }
+            .fll-hero-grid{ display:grid; grid-template-columns:minmax(0,1fr); grid-template-areas:"text" "form" "card" "demo"; gap:${SPACE.xl}px; }
             .fll-hero-text{ grid-area:text; }
             .fll-hero-card{ grid-area:card; justify-self:center; margin-block:0; margin-inline:0; width:100%; max-width:400px; }
-            .fll-hero-form{ grid-area:form; justify-self:center; width:100%; max-width:440px; }
+            .fll-hero-form, .fll-hero-demo{ justify-self:center; width:100%; max-width:440px; }
+            .fll-hero-form{ grid-area:form; }
+            .fll-hero-demo{ grid-area:demo; }
+            .fll-hero-demo .fll-demo{ margin-top:0; }
             .fll-hero-card-btn{ display:block; width:100%; padding:0; border:1px solid rgba(46,139,46,0.18); background:#fff; border-radius:22px; overflow:hidden; cursor:pointer; box-shadow:0 18px 44px rgba(22,58,28,0.14); }
             .fll-hero-card-btn:focus-visible{ outline:3px solid #1b5e20; outline-offset:4px; }
             .fll-hero-card img{ display:block; width:100%; height:auto; }
@@ -14564,10 +14567,12 @@ function AuthScreen({ onAuth, onTryDemo }) {
             }
             @media(min-width:960px){
               .fll-hero{ text-align:left; }
-              .fll-hero-grid{ grid-template-columns:minmax(0,1.08fr) minmax(0,0.92fr); grid-template-areas:"text card" "form card"; column-gap:${SPACE.xxl + SPACE.xl}px; row-gap:${SPACE.xl}px; align-items:start; }
+              .fll-hero-grid{ grid-template-columns:minmax(0,1.08fr) minmax(0,0.92fr); grid-template-areas:"text card" "form card" "demo card"; column-gap:${SPACE.xxl + SPACE.xl}px; row-gap:${SPACE.xl}px; align-items:start; }
               .fll-hero-text .fll-h1, .fll-hero-text .fll-sub{ margin-left:0; }
               .fll-hero-card{ max-width:440px; justify-self:end; align-self:center; }
-              .fll-hero-form{ justify-self:start; }
+              .fll-hero-form, .fll-hero-demo{ justify-self:start; }
+              .fll-hero-grid{ grid-template-rows:auto auto 1fr; }
+              .fll-hero-demo{ margin-top:-${SPACE.md}px; }
               .fll-hero-form .fll-capture{ margin-inline:0; }
               .fll-trust-row{ text-align:left; }
             }
@@ -14586,8 +14591,9 @@ function AuthScreen({ onAuth, onTryDemo }) {
             <button className="fll-login" onClick={goLogin}>Log in</button>
           </div>
 
-          {/* Hero. Mobile, one column: pill, H1, subline, the card, then the form. Desktop: text and form
-              on the left, the card on the right (grid areas in .fll-hero-grid). */}
+          {/* Hero. Mobile, one column: pill, H1, subline, the form (field, Join, consent line), the card, then
+              the demo button and the read-only line, so Join is on screen at 390 x 844. Desktop: text, form
+              and demo button on the left, the card on the right (grid areas in .fll-hero-grid). */}
           <div className="fll-wrap fll-hero">
             <div className="fll-hero-grid">
               <div className="fll-hero-text">
@@ -14615,6 +14621,8 @@ function AuthScreen({ onAuth, onTryDemo }) {
               </figure>
               <div className="fll-hero-form">
                 <WaitlistForm source="hero"/>
+              </div>
+              <div className="fll-hero-demo">
                 {onTryDemo && <button type="button" className="fll-demo" onClick={() => onTryDemo(waitlistCountry)}>Try the demo with {waitlistCountry === "US" ? "US" : "Canadian"} sample data →</button>}
                 <div className="fll-trust-row"><span className="fll-trust">🔒 Read-only. Flourish can't move your money.</span></div>
               </div>

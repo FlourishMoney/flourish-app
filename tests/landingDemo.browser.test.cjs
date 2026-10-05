@@ -9,8 +9,9 @@
 // the button by keyboard (Tab focus, Enter); and every one is at least 44 x 44.
 //
 // The hero (landing-hero): the safe-to-spend card cropped from the real capture, and the outlined
-// "Try the demo with Canadian sample data →" button under the form, both start the demo too. At 390 x 844
-// the hero reads pill, H1, subline, card, form; the card's top is on screen without scrolling; the
+// "Try the demo with Canadian sample data →" button, both start the demo too. At 390 x 844 the hero reads
+// pill, H1, subline, email field, Join, consent line, card, demo button, read-only line; the field, the
+// whole Join button and the card's top are on screen without scrolling; the
 // email field, the Join button and the demo button sit inside the page's side padding; the demo button is
 // at least 48 px tall and full width; one consent line sits under the Join button.
 // -----------------------------------------------------------------------------
@@ -107,18 +108,21 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     const m = await page.evaluate(() => {
       const hero = document.querySelector(".fll-hero"), r = (el) => el && el.getBoundingClientRect();
       const q = (s) => hero.querySelector(s);
-      const parts = { pill: r(q(".fll-badge")), h1: r(q(".fll-h1")), sub: r(q(".fll-sub")), card: r(q(".fll-hero-card img")), input: r(q(".fll-input")), join: r(q(".fll-btn")), consent: r(q(".fll-consent")), demo: r(q(".fll-demo")) };
+      const parts = { pill: r(q(".fll-badge")), h1: r(q(".fll-h1")), sub: r(q(".fll-sub")), card: r(q(".fll-hero-card img")), input: r(q(".fll-input")), join: r(q(".fll-btn")), consent: r(q(".fll-consent")), demo: r(q(".fll-demo")), trust: r(q(".fll-trust")) };
       const pad = parseFloat(getComputedStyle(hero).paddingLeft);
       return { parts, pad, scrollW: document.documentElement.scrollWidth, consent: q(".fll-consent").textContent, cardSrc: q(".fll-hero-card img").getAttribute("src"),
         h1: q(".fll-h1").innerHTML, emColor: getComputedStyle(q(".fll-h1 em")).color, emStyle: getComputedStyle(q(".fll-h1 em")).fontStyle, h1Font: getComputedStyle(q(".fll-h1")).fontFamily };
     });
     const p = m.parts;
-    t.ok(p.pill.top < p.h1.top && p.h1.top < p.sub.top && p.sub.top < p.card.top && p.card.top < p.input.top, "6a at 390px the hero reads pill, H1, subline, card, then the form");
-    t.ok(p.card.top < 844, `6b the card's top is on screen without scrolling (top at ${Math.round(p.card.top)}px of 844)`);
+    t.ok(p.pill.top < p.h1.top && p.h1.top < p.sub.top && p.sub.top < p.input.top && p.input.top < p.join.top && p.join.top < p.consent.top
+      && p.consent.bottom <= p.card.top && p.card.bottom <= p.demo.top && p.demo.bottom <= p.trust.top,
+      "6a at 390px the hero reads pill, H1, subline, email field, Join, consent line, card, demo button, read-only line");
+    t.ok(p.input.bottom <= 844 && p.join.bottom <= 844, `6b the email field and the whole Join button are on screen without scrolling (Join's bottom at ${Math.round(p.join.bottom)}px of 844)`);
+    t.ok(p.card.top < 844, `6b2 …and so is the card's top (at ${Math.round(p.card.top)}px of 844)`);
     t.ok(m.pad >= 16 && [p.input, p.join, p.demo].every(b => b.left >= m.pad - 0.5 && b.right <= 390 - m.pad + 0.5) && m.scrollW <= 390,
       `6c the email field, Join and the demo button sit inside the ${m.pad}px side padding (field ${Math.round(p.input.left)} to ${Math.round(p.input.right)}), and nothing scrolls sideways`);
-    t.ok(p.demo.height >= 48 && Math.abs(p.demo.width - p.join.width) < 1 && p.demo.top > p.join.bottom, `6d the demo button is under Join, full width, at least 48px tall (${Math.round(p.demo.width)} x ${Math.round(p.demo.height)})`);
-    t.ok(p.consent.top >= p.join.bottom && p.consent.bottom <= p.demo.top, "6e one consent line sits under the Join button");
+    t.ok(p.demo.height >= 48 && Math.abs(p.demo.width - p.join.width) < 1 && p.demo.top > p.card.bottom, `6d the demo button is under the card, full width, at least 48px tall (${Math.round(p.demo.width)} x ${Math.round(p.demo.height)})`);
+    t.ok(p.consent.top >= p.join.bottom && p.consent.bottom <= p.card.top, "6e one consent line sits directly under the Join button");
     t.ok(/^Stop doing the money math <em>in your head\.<\/em>$/.test(m.h1) && m.emStyle === "italic" && /rgb\(46, 139, 46\)/.test(m.emColor) && /Playfair Display/.test(m.h1Font),
       "6f the H1 is the ad's line, with \"in your head.\" in the serif italic green");
     t.eq(m.cardSrc, "/app-screens/hero-card.jpg", "6g the card is the crop of the real capture");
