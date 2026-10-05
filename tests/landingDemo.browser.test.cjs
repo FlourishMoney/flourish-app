@@ -4,7 +4,7 @@
 //
 // Tapping a screenshot in the "real app" strip did nothing. Each of the four now opens the demo with
 // the Canadian sample household, the same action as the hero's "Try the demo with Canadian sample data"
-// button, and a visible "Try the interactive demo" button sits under the strip. Checked in Chromium on
+// button (landing-contact removed the second button that sat under the strip). Checked in Chromium on
 // the built page at 430px: each screenshot and the button, by tap, start the demo; one screenshot and
 // the button by keyboard (Tab focus, Enter); and every one is at least 44 x 44.
 //
@@ -53,7 +53,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     const page = await ctx.newPage();
     page.setDefaultTimeout(15000);
     await page.goto(base, { waitUntil: "domcontentloaded" });
-    await page.getByText("This is flourish. No mockups.").waitFor();
+    await page.getByText("Real screens from the app.").waitFor();
     return { ctx, page };
   };
   // The demo has started: its AI disclosure appears first, then the demo itself.
@@ -68,8 +68,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
 
   const HERO_CARD = "Safe to spend until next payday, $1,944, sample data: try the demo with Canadian sample data";
   const HERO_DEMO = "Try the demo with Canadian sample data →";
-  const targets = [...CAPTIONS.map(c => ({ name: `the "${c}" screenshot`, label: `${c}: try the interactive demo` })), { name: "the \"Try the interactive demo\" button", label: "Try the interactive demo" },
-    { name: "the hero's safe-to-spend card", label: HERO_CARD }, { name: "the hero's demo button", label: HERO_DEMO }];
+  const targets = [...CAPTIONS.map(c => ({ name: `the "${c}" screenshot`, label: `${c}: try the interactive demo` })), { name: "the hero's safe-to-spend card", label: HERO_CARD }, { name: "the hero's demo button", label: HERO_DEMO }];
   for (const tg of targets) {
     const { ctx, page } = await fresh();
     try {
@@ -79,12 +78,12 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       t.ok(box && box.width >= 44 && box.height >= 44, `1 ${tg.name} is at least 44 x 44 (${box ? `${Math.round(box.width)} x ${Math.round(box.height)}` : "not found"})`);
       await btn.scrollIntoViewIfNeeded(); await btn.tap();
       t.ok(await demoStarted(page), `2 tapping ${tg.name} starts the demo`);
-      if (tg.label !== "Try the interactive demo" && tg.label !== HERO_DEMO) t.ok(await page.getByText("Hey Alex", { exact: false }).first().isVisible().catch(() => false), `2b …with the Canadian sample household`);
+      if (tg.label !== HERO_DEMO) t.ok(await page.getByText("Hey Alex", { exact: false }).first().isVisible().catch(() => false), `2b …with the Canadian sample household`);
     } catch (e) { t.ok(false, `${tg.name}: ${String(e.message).split("\n")[0].slice(0, 140)}`); }
     await ctx.close();
   }
   // Keyboard: focus by Tab, start with Enter.
-  for (const label of [`${CAPTIONS[0]}: try the interactive demo`, "Try the interactive demo"]) {
+  for (const label of [`${CAPTIONS[0]}: try the interactive demo`, HERO_DEMO]) {
     const { ctx, page } = await fresh();
     try {
       let focused = "";
@@ -98,12 +97,14 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     } catch (e) { t.ok(false, `keyboard ${label}: ${String(e.message).split("\n")[0].slice(0, 140)}`); }
     await ctx.close();
   }
+  t.eq(await (async () => { const { ctx, page } = await fresh(); const n = await page.getByRole("button", { name: "Try the interactive demo", exact: true }).count(); await ctx.close(); return n; })(), 0,
+    "5 the second demo button under the strip is gone; the hero's button and card are the demo's way in");
   // ── The hero at 390 x 844 (a phone) and 1440 x 900 (a desktop) ───────────────────────────────
   {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     const page = await ctx.newPage(); page.setDefaultTimeout(15000);
     await page.goto(base, { waitUntil: "domcontentloaded" });
-    await page.getByText("This is flourish. No mockups.").waitFor();
+    await page.getByText("Real screens from the app.").waitFor();
     await page.locator(".fll-hero-card img").evaluate(img => img.decode());
     const m = await page.evaluate(() => {
       const hero = document.querySelector(".fll-hero"), r = (el) => el && el.getBoundingClientRect();
@@ -130,7 +131,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     const dctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const d = await dctx.newPage(); d.setDefaultTimeout(15000);
     await d.goto(base, { waitUntil: "domcontentloaded" });
-    await d.getByText("This is flourish. No mockups.").waitFor();
+    await d.getByText("Real screens from the app.").waitFor();
     const dm = await d.evaluate(() => { const r = (s) => document.querySelector(".fll-hero " + s).getBoundingClientRect(); return { h1: r(".fll-h1"), form: r(".fll-input"), card: r(".fll-hero-card img") }; });
     t.ok(dm.card.left > dm.h1.right && dm.card.left > dm.form.right && dm.form.top > dm.h1.top && dm.card.top < 900,
       "6h at 1440px the hero is two columns: text and form on the left, the card on the right, above the fold");

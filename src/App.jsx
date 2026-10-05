@@ -14143,6 +14143,7 @@ const WAITLIST_FORM_CSS = `
             .fll-done{ background:#fff; border:1px solid rgba(46,139,46,0.2); border-radius:18px; padding:22px 20px; box-shadow:0 10px 30px rgba(22,58,28,0.07); }
             .fll-done-t{ font-family:'Playfair Display',serif; font-weight:900; font-size:21px; color:#15321a; margin-bottom:6px; }
             .fll-done-b{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13.5px; line-height:1.55; color:#52624f; max-width:340px; margin:0 auto; }
+            .fll-contact-link{ color:#1b5e20; font-weight:700; text-decoration:underline; text-underline-offset:2px; }
             .fll-consent{ flex-basis:100%; margin-block:2px 0; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; line-height:1.5; color:#52624f; }
             @media(min-width:560px){
               .fll-form{ flex-direction:row; flex-wrap:wrap; }
@@ -14205,9 +14206,13 @@ function WaitlistForm({ source = "landing" }) {
         <button className="fll-btn" onClick={submit} disabled={busy}>
           {busy ? "Joining…" : "Join the waitlist"}
         </button>
-        {/* One line under the button with every CASL element: purpose, sender, mailing address, contact
-            and unsubscribe (consent version 2026-10-05, lib/waitlistConsent.js). */}
-        <p className="fll-consent" id={`fll-consent-${tag}`}>{CONSENT_TEXT}</p>
+        {/* One line under the button (consent version 2026-10-06, lib/waitlistConsent.js): the purpose and
+            unsubscribe, and a link to the page's Contact block, which names the sender, its mailing address
+            and its contact (the owner keeps the company name and address out of the form itself). */}
+        <p className="fll-consent" id={`fll-consent-${tag}`}>{(() => {
+          const i = CONSENT_TEXT.lastIndexOf("Contact");
+          return i < 0 ? CONSENT_TEXT : <>{CONSENT_TEXT.slice(0, i)}<a className="fll-contact-link" href="#contact" onClick={e => { const el = document.getElementById("contact"); if (el) { e.preventDefault(); el.scrollIntoView({ behavior: "smooth", block: "start" }); } }}>Contact</a>{CONSENT_TEXT.slice(i + "Contact".length)}</>;
+        })()}</p>
       </div>
       {status === "invalid" && <div className="fll-err">Please enter a valid email address.</div>}
       {status === "error" && <div className="fll-err">Something went wrong. Please try again.</div>}
@@ -14542,9 +14547,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-sample{ text-align:center; font-size:13px; color:#52624f; margin:14px auto 0; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-shot-btn .fll-frame{ display:block; }
             .fll-shot-btn{ display:block; width:100%; padding:0; margin:0; border:none; background:none; cursor:pointer; border-radius:30px; text-align:inherit; }
-            .fll-shot-btn:focus-visible, .fll-try:focus-visible{ outline:3px solid #1b5e20; outline-offset:4px; }
-            .fll-try{ display:inline-flex; align-items:center; justify-content:center; min-height:44px; min-width:44px; margin:18px auto 0; padding:12px 24px; border-radius:99px; border:1.5px solid #2E8B2E; background:#fff; color:#1b5e20; font-size:15px; font-weight:700; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
-            .fll-try:hover{ background:#eef5ee; }
+            .fll-shot-btn:focus-visible{ outline:3px solid #1b5e20; outline-offset:4px; }
 
             .fll-benefits{ display:grid; grid-template-columns:1fr; gap:14px; max-width:760px; margin:0 auto; }
             .fll-card{ background:#fff; border:1px solid rgba(46,139,46,0.13); border-radius:18px; padding:22px; box-shadow:0 6px 22px rgba(22,58,28,0.05); }
@@ -14558,6 +14561,9 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-foot-in{ width:100%; max-width:1080px; margin:0 auto; padding:24px 22px; display:flex; flex-wrap:wrap; gap:12px 22px; align-items:center; justify-content:space-between; }
             .fll-foot a{ color:#52624f; font-size:13px; text-decoration:none; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-foot a:hover{ color:#2E8B2E; }
+            .fll-contact{ flex-basis:100%; scroll-margin-top:16px; }
+            .fll-contact h2{ font-family:'Plus Jakarta Sans',sans-serif; font-size:15px; font-weight:800; color:#15321a; margin-block:0 6px; }
+            .fll-contact p{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; line-height:1.6; color:#52624f; margin-block:0 2px; }
             .fll-foot span{ color:#52624f; font-size:13px; font-family:'Plus Jakarta Sans',sans-serif; }
 
             @media(min-width:760px){
@@ -14624,7 +14630,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
               </div>
               <div className="fll-hero-demo">
                 {onTryDemo && <button type="button" className="fll-demo" onClick={() => onTryDemo(waitlistCountry)}>Try the demo with {waitlistCountry === "US" ? "US" : "Canadian"} sample data →</button>}
-                <div className="fll-trust-row"><span className="fll-trust">🔒 Read-only. Flourish can't move your money.</span></div>
+                <div className="fll-trust-row"><span className="fll-trust">🔒 Bank connections are read-only. flourish can't move your money.</span></div>
               </div>
             </div>
           </div>
@@ -14632,8 +14638,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
           {/* Proof — real app screenshots */}
           <div className="fll-section" style={{ paddingBottom: 6 }}>
             <div className="fll-eyebrow">The real app</div>
-            <h2 className="fll-h2">This is flourish. No mockups.</h2>
-            <p className="fll-lede">Real screens from the app you'll get on day one.</p>
+            <h2 className="fll-h2">Real screens from the app.</h2>
             <div className="fll-proof">
               {[
                 // Captured from the demo by `npm run screens:landing` (scripts/capture-landing-screens.mjs).
@@ -14656,16 +14661,15 @@ function AuthScreen({ onAuth, onTryDemo }) {
               ))}
             </div>
             <p className="fll-sample">Example, sample data.</p>
-            {onTryDemo && <div style={{ textAlign: "center" }}><button type="button" className="fll-try" onClick={() => onTryDemo(waitlistCountry)}>Try the interactive demo</button></div>}
           </div>
 
           {/* Benefits */}
           <div className="fll-wrap fll-section">
             <div className="fll-eyebrow">Why flourish</div>
-            <h2 className="fll-h2">Coaching that helps you understand your money.</h2>
+            <h2 className="fll-h2">Tools that help you understand your money.</h2>
             <div className="fll-benefits" style={{ marginTop: 24 }}>
               {[
-                [<DollarSign size={20} color="#2E8B2E" strokeWidth={2}/>, "Safe to Spend", "Know what's safe to spend before your next payday. Your bills, buffer and balances in one honest number."],
+                [<DollarSign size={20} color="#2E8B2E" strokeWidth={2}/>, "Safe to Spend", "Know what's safe to spend before your next payday. It accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount."],
                 [<Target size={20} color="#2E8B2E" strokeWidth={2}/>, "What-If Simulator", "Test a decision, like a big purchase or an extra debt payment, and see the result before you commit."],
                 [<Sparkles size={20} color="#2E8B2E" strokeWidth={2}/>, "AI Coach", "The coach explains the numbers flourish calculates and your options, and leaves the decisions to you. It isn't a licensed adviser."],
                 [<Shield size={20} color="#2E8B2E" strokeWidth={2}/>, "Built in Canada", "flourish knows Canadian accounts like the RRSP and TFSA. Bank connections are read-only, so flourish can't move your money."],
@@ -14691,6 +14695,11 @@ function AuthScreen({ onAuth, onTryDemo }) {
           {/* Footer */}
           <div className="fll-foot">
             <div className="fll-foot-in">
+              <div id="contact" className="fll-contact">
+                <h2>Contact</h2>
+                <p>flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0.</p>
+                <p><a href="mailto:hello@flourishmoney.app">hello@flourishmoney.app</a></p>
+              </div>
               <span>© 2026 GrowSmart Inc. · Flourish Money</span>
               <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
                 <a href="/privacy">Privacy</a>

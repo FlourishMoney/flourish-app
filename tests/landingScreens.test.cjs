@@ -77,7 +77,7 @@ function imageSize(file) {
   // There is no Windows build, and What-If tests a handful of decision types, not "any".
   const fn = (name) => { const i = APP.indexOf(`function ${name}(`); return i < 0 ? "" : APP.slice(i, APP.indexOf("\n}\n", i)); };
   const landing = [fn("AuthScreen"), fn("WaitlistForm"), fs.readFileSync(path.join(ROOT, "src", "lib", "waitlistConsent.js"), "utf8"), fs.readFileSync(path.join(ROOT, "index.html"), "utf8")].join("\n");
-  t.ok(landing.length > 20000 && /This is flourish\. No mockups\./.test(landing), "5 (the scan reads the landing page, its waitlist form and consent, and index.html)");
+  t.ok(landing.length > 20000 && /Real screens from the app\./.test(landing), "5 (the scan reads the landing page, its waitlist form and consent, and index.html)");
   t.ok(!/windows/i.test(landing), "5a the landing page never says Windows");
   t.ok(!/any money decision/i.test(landing), "5b …or \"any money decision\"");
   t.ok(/Coming soon to iPhone and Android/.test(landing)
