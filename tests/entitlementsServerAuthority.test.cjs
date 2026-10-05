@@ -23,7 +23,7 @@ const S = require("../netlify/functions/_lib/planRules.js");
 const REPO = path.join(__dirname, "..");
 const read = (...p) => fs.readFileSync(path.join(REPO, ...p), "utf8");
 const DAY = 86400000;
-const NOW = Date.parse("2026-09-21T12:00:00Z");
+const NOW = Date.now(); // the code under test reads the real clock, so its fixtures must too (a fixed date expired its "fresh" trial on 2026-10-04)
 const ago = (d) => new Date(NOW - d * DAY).toISOString();
 const ahead = (d) => new Date(NOW + d * DAY).toISOString();
 

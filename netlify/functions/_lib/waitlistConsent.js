@@ -33,7 +33,7 @@ const WAITLIST_PLACEMENTS = ["landing", "hero", "bottom_cta", "calendar", "clawb
 // WHICH CAMPAIGN brought them (stored in the source column). The campaign links carry ?src=<one of these>.
 // A known src is stored as is; an unknown or missing one is stored as "direct". The column never holds
 // free text and is never empty.
-const WAITLIST_SRCS = ["ig", "fb", "tt", "calendar", "clawback", "email", "press"];
+const WAITLIST_SRCS = ["ig", "fb", "tt", "calendar", "clawback", "email", "press", "meta_a", "meta_b"];
 const WAITLIST_SRC_DEFAULT = "direct";
 function waitlistSourceFor(src) {
   const v = typeof src === "string" ? src.trim().toLowerCase() : "";
