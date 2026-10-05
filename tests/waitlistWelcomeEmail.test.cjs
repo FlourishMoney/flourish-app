@@ -112,7 +112,7 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     res = await handler({
       httpMethod: "POST",
       headers: { origin: "https://flourishmoney.app" },
-      body: JSON.stringify({ action, email, country: "CA", source: "landing", consentVersion: "2026-10-01" }),
+      body: JSON.stringify({ action, email, country: "CA", source: "landing", consentVersion: require(path.join(__dirname, "..", "netlify", "functions", "_lib", "waitlistConsent.js")).CONSENT_VERSION }),
     });
   } finally {
     global.fetch = realFetch;

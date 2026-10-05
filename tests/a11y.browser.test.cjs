@@ -4,7 +4,7 @@
 //
 // axe-core (a dev dependency) runs in Chromium at 430px over every screen a person can reach, as two
 // people, each in the light and the dark theme:
-//   the demo                 the sample household, through "preview the app with … sample data";
+//   the demo                 the sample household, through "Try the demo with … sample data";
 //   a signed-in new account  onboarded, with no bank, bills, income, debts or goals. It is served by
 //                            tests/_mockSupabase.cjs from this test's own server: no real account,
 //                            nothing sent anywhere.
@@ -139,7 +139,7 @@ function buildApp(supabaseUrl) {
     const ready = async () => {
       if (who === "demo") {
         // The demo survives a reload; only the first load goes through the welcome page.
-        const demo = page.getByText("Demo mode", { exact: false }).first(), welcome = page.getByText("preview the app with", { exact: false }).first();
+        const demo = page.getByText("Demo mode", { exact: false }).first(), welcome = page.getByText("Try the demo with", { exact: false }).first();
         await demo.or(welcome).waitFor({ timeout: 40000 });
         if (!(await demo.isVisible())) {
           await welcome.click();

@@ -2,8 +2,9 @@
 // -----------------------------------------------------------------------------
 // THE WAITLIST MEETS CANADA'S ANTI-SPAM LAW (CASL) BEFORE ANY EMAIL IS SENT.
 //
-//   1. The form shows the consent line and the sender's identity, word for word, directly under the
-//      email field, and one copy of that wording is shared by the browser and the server.
+//   1. The form shows the consent line, word for word, directly under the Join button: purpose, sender,
+//      mailing address, contact and unsubscribe in one line (version 2026-10-05); one copy of that
+//      wording is shared by the browser and the server, and every earlier version keeps its own words.
 //   2. A signup stores the version of the consent wording it was shown, with the time; a signup
 //      without the current version is refused.
 //   3. The source must be one of ours (the homepage's, plus "calendar" and "clawback"); any other is
@@ -28,7 +29,10 @@ const FN = (f) => path.join(REPO, "netlify", "functions", f);
 const fresh = (p) => { delete require.cache[require.resolve(p)]; return require(p); };
 const KEY_NAME = ["RESEND", "API", "KEY"].join("_");
 
-const BRIEF_CONSENT = "Email me when flourish launches in Canada, plus a few updates before then. Unsubscribe any time.";
+// Consent version 2026-10-05 (landing hero rework): one line under the button carrying every CASL element.
+const BRIEF_CONSENT = "We'll email you when flourish launches in Canada, plus a few updates before then. From GrowSmart Inc. (flourish), PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. Unsubscribe any time.";
+// Version 2026-10-01's two lines, kept word for word for the rows that saw them.
+const V1_CONSENT = "Email me when flourish launches in Canada, plus a few updates before then. Unsubscribe any time.";
 const BRIEF_IDENTITY = "flourish is made by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. You can unsubscribe at any time.";
 
 function env() {
@@ -80,13 +84,17 @@ async function join(body, insertAnswer = { status: 201, body: [{ id: "row-1" }] 
     t.eq([web.CONSENT_VERSION, web.CONSENT_TEXT, web.IDENTITY_TEXT, web.WAITLIST_PLACEMENTS.join(","), web.WAITLIST_SRCS.join(",")],
       [C.CONSENT_VERSION, C.CONSENT_TEXT, C.IDENTITY_TEXT, C.WAITLIST_PLACEMENTS.join(","), C.WAITLIST_SRCS.join(",")], "1c the browser's copy is identical to the server's");
     t.eq(C.CONSENT_VERSIONS[C.CONSENT_VERSION].consent, C.CONSENT_TEXT, "1d the current version resolves to the wording shown");
+    t.eq([C.CONSENT_VERSION, C.CONSENT_VERSIONS["2026-10-01"].consent, C.CONSENT_VERSIONS["2026-10-01"].identity], ["2026-10-05", V1_CONSENT, BRIEF_IDENTITY],
+      "1d2 the new wording is a new version (2026-10-05); version 2026-10-01 still resolves to the two lines its rows saw");
+    t.ok(["GrowSmart Inc.", "PO Box 29, Foxboro ON K0K 2B0", "hello@flourishmoney.app", "Unsubscribe any time", "when flourish launches in Canada"].every(x => C.CONSENT_TEXT.includes(x)),
+      "1d3 the one line keeps every CASL element: purpose, sender, mailing address, contact, unsubscribe");
     let A = {};
     try { A = loadApp(["WaitlistForm"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
     if (A.WaitlistForm) {
       const html = A.render(A.h(A.WaitlistForm, { source: "calendar" }));
-      const iInput = html.indexOf("<input"), iConsent = html.indexOf(BRIEF_CONSENT.replace(/'/g, "&#x27;")), iIdentity = html.indexOf("flourish is made by GrowSmart Inc."), iBtn = html.indexOf("Join the waitlist");
-      t.ok(iInput >= 0 && iConsent > iInput && iIdentity > iConsent && iBtn > iIdentity,
-        "1e the form renders the email field, then the consent line, then the identity line (then the button)");
+      const iInput = html.indexOf("<input"), iConsent = html.indexOf(BRIEF_CONSENT.replace(/'/g, "&#x27;")), iBtn = html.indexOf("Join the waitlist");
+      t.ok(iInput >= 0 && iBtn > iInput && iConsent > iBtn && html.indexOf("flourish is made by GrowSmart Inc.") < 0,
+        "1e the form renders the email field, then the button, then the one consent line under it (the old second line is gone)");
       t.ok(/aria-describedby="fll-consent-calendar"/.test(html) && /id="fll-consent-calendar"/.test(html), "1f the email field is described by the consent text");
       t.ok(/\.fll-form\{/.test(html), "1g the form carries its own styles, so any page can render it");
       t.ok(!/United States|🇺🇸|fll-country/.test(html), "7a the form offers no country choice: launch is Canada only");
@@ -103,12 +111,12 @@ async function join(body, insertAnswer = { status: 201, body: [{ id: "row-1" }] 
   // ── 2. Consent version stored ────────────────────────────────────────────────────────────────
   {
     const before = Date.now();
-    const ok = await join({ source: "hero", consentVersion: "2026-10-01" });
+    const ok = await join({ source: "hero", consentVersion: C.CONSENT_VERSION });
     t.eq([ok.status, ok.body.joined], [200, true], "2a a signup with the current consent version joins");
-    t.eq(ok.insert && ok.insert.consent_version, "2026-10-01", "2b …and the row stores that version");
+    t.eq(ok.insert && ok.insert.consent_version, "2026-10-05", "2b …and the row stores that version");
     const at = ok.insert && Date.parse(ok.insert.consented_at);
     t.ok(at >= before - 1000 && at <= Date.now() + 1000, "2c …with the time consent was given");
-    for (const [label, v] of [["no version", undefined], ["an old version", "pre-2026-10-01"], ["a made-up version", "2099-01-01"]]) {
+    for (const [label, v] of [["no version", undefined], ["an old version", "pre-2026-10-01"], ["a page still showing version 2026-10-01", "2026-10-01"], ["a made-up version", "2099-01-01"]]) {
       const r = await join({ source: "hero", consentVersion: v });
       t.eq([r.status, r.body.error, r.insert], [400, "Consent required", null], `2d ${label} is refused, and nothing is stored`);
     }
@@ -117,11 +125,11 @@ async function join(body, insertAnswer = { status: 201, body: [{ id: "row-1" }] 
   // ── 3. Unknown placement rejected (the campaign source is waitlistSrc.test's) ───────────────
   {
     for (const pl of ["landing", "hero", "bottom_cta", "calendar", "clawback"]) {
-      const r = await join({ placement: pl, consentVersion: "2026-10-01" });
+      const r = await join({ placement: pl, consentVersion: C.CONSENT_VERSION });
       t.eq([r.status, r.insert && r.insert.metadata.placement], [200, pl], `3a placement "${pl}" is accepted and stored in metadata.placement`);
     }
     for (const [label, pl] of [["an unknown placement", "partner_site"], ["no placement", undefined], ["a non-string placement", { x: 1 }], ["a near miss", "Calendar"]]) {
-      const r = await join({ placement: pl, consentVersion: "2026-10-01" });
+      const r = await join({ placement: pl, consentVersion: C.CONSENT_VERSION });
       t.eq([r.status, r.body.error, r.insert], [400, "Unknown placement", null], `3b ${label} is refused, and nothing is stored`);
     }
   }
@@ -203,7 +211,7 @@ async function join(body, insertAnswer = { status: 201, body: [{ id: "row-1" }] 
   {
     // Canada only, whatever a client sends.
     for (const c of ["US", "", undefined, "FR"]) {
-      const r = await join({ source: "hero", consentVersion: "2026-10-01", country: c });
+      const r = await join({ source: "hero", consentVersion: C.CONSENT_VERSION, country: c });
       t.eq(r.insert && r.insert.country, "CA", `7c a signup sending country ${JSON.stringify(c)} is stored as Canada`);
     }
 
@@ -237,12 +245,12 @@ async function join(body, insertAnswer = { status: 201, body: [{ id: "row-1" }] 
     // Signing up again after unsubscribing re-subscribes, with the new consent recorded.
     const before = Date.now();
     for (const [label, answer] of [["409", { status: 409, body: {}, text: "" }], ["23505", { ok: false, status: 400, body: {}, text: '{"code":"23505","message":"duplicate key value"}' }]]) {
-      const r = await join({ source: "calendar", consentVersion: "2026-10-01" }, answer);
+      const r = await join({ source: "calendar", consentVersion: C.CONSENT_VERSION }, answer);
       t.eq([r.status, r.body.alreadyJoined], [200, true], `7k a repeat signup (${label}) is told it is on the list`);
       const p = r.patches[0];
       t.ok(p && /\/rest\/v1\/waitlist\?email=eq\.person%40example\.com$/.test(p.url), `7l …and updates that address's row (${label})`);
       const b = p ? JSON.parse(p.body) : {};
-      t.eq([b.unsubscribed_at, b.consent_version, Object.keys(b).sort().join(",")], [null, "2026-10-01", "consent_version,consented_at,unsubscribed_at"],
+      t.eq([b.unsubscribed_at, b.consent_version, Object.keys(b).sort().join(",")], [null, C.CONSENT_VERSION, "consent_version,consented_at,unsubscribed_at"],
         `7m …clearing unsubscribed_at and recording the current consent_version, and nothing else (${label})`);
       const at = Date.parse(b.consented_at);
       t.ok(at >= before - 1000 && at <= Date.now() + 1000, `7n …with consented_at set to now (${label})`);

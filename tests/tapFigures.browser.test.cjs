@@ -76,7 +76,7 @@ const UNTAPPED = () => {
   p.on("pageerror", (e) => errors.push(String(e.message).slice(0, 120)));
   try {
     await p.goto(`http://127.0.0.1:${port}/`, { waitUntil: "domcontentloaded" });
-    await p.getByText("preview the app with", { exact: false }).first().click({ timeout: 30000 });
+    await p.getByText("Try the demo with", { exact: false }).first().click({ timeout: 30000 });
     await p.getByText("I Understand & Accept").first().click({ timeout: 30000 });
     await p.getByText("Demo mode", { exact: false }).first().waitFor({ timeout: 40000 });
     await p.waitForTimeout(600);
