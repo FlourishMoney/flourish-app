@@ -10,4 +10,4 @@ export const IDENTITY_TEXT = "flourish is made by GrowSmart Inc., PO Box 29, Fox
 
 // Where on the page the form sat (metadata.placement), and the campaign srcs the server stores in source.
 export const WAITLIST_PLACEMENTS = ["landing", "hero", "bottom_cta", "calendar", "clawback"];
-export const WAITLIST_SRCS = ["ig", "fb", "tt", "calendar", "clawback", "email", "press"];
+export const WAITLIST_SRCS = ["ig", "fb", "tt", "calendar", "clawback", "email", "press", "meta_a", "meta_b"];

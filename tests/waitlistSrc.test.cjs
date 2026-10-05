@@ -2,7 +2,7 @@
 // -----------------------------------------------------------------------------
 // THE WAITLIST RECORDS WHICH CAMPAIGN BROUGHT EACH SIGNUP.
 //
-// Campaign links carry ?src= (ig, fb, tt, calendar, clawback, email, press). The form reads it on page
+// Campaign links carry ?src= (ig, fb, tt, calendar, clawback, email, press, meta_a, meta_b). The form reads it on page
 // load, keeps it for the browser session, and sends it with the join. The server stores a known src in
 // the source column and anything else as "direct" (never empty, never free text), moves the form's
 // position into metadata.placement, and keeps utm_* exactly as captured.
@@ -15,7 +15,7 @@ const path = require("path");
 
 const REPO = path.join(__dirname, "..");
 const BETA = path.join(REPO, "netlify", "functions", "beta.js");
-const KNOWN = ["ig", "fb", "tt", "calendar", "clawback", "email", "press"];
+const KNOWN = ["ig", "fb", "tt", "calendar", "clawback", "email", "press", "meta_a", "meta_b"];
 
 async function join(extra) {
   process.env.SUPABASE_URL = "https://example.supabase.co";
@@ -52,6 +52,17 @@ function fakeStorage() {
     t.eq([r.status, r.row && r.row.source], [200, src], `1 src "${src}" is stored as source`);
   }
   t.eq((await join({ src: " IG " })).row.source, "ig", "1b case and surrounding spaces do not make a known src unknown");
+  // The Meta ads (live since 2026-10-05) link to https://flourishmoney.app/?src=meta_a and ?src=meta_b: from the
+  // landing URL, through the browser helper, to the stored row.
+  {
+    const W = await import("../src/lib/waitlistSrc.js");
+    for (const src of ["meta_a", "meta_b"]) {
+      const r = await join({ src: W.captureWaitlistSrc(`?src=${src}`, fakeStorage()) });
+      t.eq([r.status, r.row && r.row.source], [200, src], `1c a visitor from https://flourishmoney.app/?src=${src} is stored with source "${src}"`);
+    }
+    const r = await join({ src: W.captureWaitlistSrc("?src=meta_c", fakeStorage()) });
+    t.eq([r.status, r.row && r.row.source], [200, "direct"], "1d an unknown src (?src=meta_c) is still stored as \"direct\"");
+  }
 
   // ── 2. Unknown or missing src is stored as "direct" (never empty, never free text) ───────────
   for (const [label, src] of [["an unknown src", "tiktok_ads"], ["free text", "hello <b>world</b>"], ["no src", undefined], ["an empty src", ""],
