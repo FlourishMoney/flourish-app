@@ -13,12 +13,12 @@
 // -----------------------------------------------------------------------------
 "use strict";
 
-// 2026-10-05: one line under the button, with every CASL element in it (purpose, sender, mailing
-// address, contact, unsubscribe). It replaced 2026-10-01's two lines, which stay below, word for word,
-// for the rows that saw them.
-const CONSENT_VERSION = "2026-10-05";
+// 2026-10-06: the purpose and unsubscribe, with "Contact" linking to the page's Contact block, which
+// names the sender, its mailing address and its contact (the owner keeps the company name and address
+// out of the form). Every earlier version stays below, word for word, for the rows that saw it.
+const CONSENT_VERSION = "2026-10-06";
 
-const CONSENT_TEXT = "We'll email you when flourish launches in Canada, plus a few updates before then. From GrowSmart Inc. (flourish), PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. Unsubscribe any time.";
+const CONSENT_TEXT = "We'll email you when flourish launches in Canada, plus a few updates before then. Unsubscribe any time. Who we are: see Contact below.";
 // The sender's identity on its own: the welcome email's footer (waitlistWelcome.js), and the second of
 // the two lines version 2026-10-01 showed.
 const IDENTITY_TEXT = "flourish is made by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. You can unsubscribe at any time.";
@@ -27,7 +27,8 @@ const IDENTITY_TEXT = "flourish is made by GrowSmart Inc., PO Box 29, Foxboro ON
 // LEGACY_CONSENT_VERSION (set by migration 0012); it has no wording because none was shown.
 const CONSENT_VERSIONS = {
   "2026-10-01": { consent: "Email me when flourish launches in Canada, plus a few updates before then. Unsubscribe any time.", identity: IDENTITY_TEXT },
-  "2026-10-05": { consent: CONSENT_TEXT, identity: null }, // the identity is inside the one line
+  "2026-10-05": { consent: "We'll email you when flourish launches in Canada, plus a few updates before then. From GrowSmart Inc. (flourish), PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. Unsubscribe any time.", identity: null }, // the identity is inside the one line
+  "2026-10-06": { consent: CONSENT_TEXT, identity: null, identityAt: "the page's Contact block: flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0. hello@flourishmoney.app" },
 };
 const LEGACY_CONSENT_VERSION = "pre-2026-10-01";
 

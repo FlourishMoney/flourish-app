@@ -29,8 +29,12 @@ const FN = (f) => path.join(REPO, "netlify", "functions", f);
 const fresh = (p) => { delete require.cache[require.resolve(p)]; return require(p); };
 const KEY_NAME = ["RESEND", "API", "KEY"].join("_");
 
-// Consent version 2026-10-05 (landing hero rework): one line under the button carrying every CASL element.
-const BRIEF_CONSENT = "We'll email you when flourish launches in Canada, plus a few updates before then. From GrowSmart Inc. (flourish), PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. Unsubscribe any time.";
+// Consent version 2026-10-06 (landing-contact): the purpose and unsubscribe, and "Contact" linking to the
+// page's Contact block, which names the sender, its mailing address and its contact.
+const BRIEF_CONSENT = "We'll email you when flourish launches in Canada, plus a few updates before then. Unsubscribe any time. Who we are: see Contact below.";
+const BRIEF_CONTACT = "flourish is operated by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0.";
+// Version 2026-10-05's one line, kept word for word for the rows that saw it.
+const V5_CONSENT = "We'll email you when flourish launches in Canada, plus a few updates before then. From GrowSmart Inc. (flourish), PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. Unsubscribe any time.";
 // Version 2026-10-01's two lines, kept word for word for the rows that saw them.
 const V1_CONSENT = "Email me when flourish launches in Canada, plus a few updates before then. Unsubscribe any time.";
 const BRIEF_IDENTITY = "flourish is made by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. You can unsubscribe at any time.";
@@ -84,17 +88,19 @@ async function join(body, insertAnswer = { status: 201, body: [{ id: "row-1" }] 
     t.eq([web.CONSENT_VERSION, web.CONSENT_TEXT, web.IDENTITY_TEXT, web.WAITLIST_PLACEMENTS.join(","), web.WAITLIST_SRCS.join(",")],
       [C.CONSENT_VERSION, C.CONSENT_TEXT, C.IDENTITY_TEXT, C.WAITLIST_PLACEMENTS.join(","), C.WAITLIST_SRCS.join(",")], "1c the browser's copy is identical to the server's");
     t.eq(C.CONSENT_VERSIONS[C.CONSENT_VERSION].consent, C.CONSENT_TEXT, "1d the current version resolves to the wording shown");
-    t.eq([C.CONSENT_VERSION, C.CONSENT_VERSIONS["2026-10-01"].consent, C.CONSENT_VERSIONS["2026-10-01"].identity], ["2026-10-05", V1_CONSENT, BRIEF_IDENTITY],
-      "1d2 the new wording is a new version (2026-10-05); version 2026-10-01 still resolves to the two lines its rows saw");
-    t.ok(["GrowSmart Inc.", "PO Box 29, Foxboro ON K0K 2B0", "hello@flourishmoney.app", "Unsubscribe any time", "when flourish launches in Canada"].every(x => C.CONSENT_TEXT.includes(x)),
-      "1d3 the one line keeps every CASL element: purpose, sender, mailing address, contact, unsubscribe");
+    t.eq([C.CONSENT_VERSION, C.CONSENT_VERSIONS["2026-10-05"].consent, C.CONSENT_VERSIONS["2026-10-01"].consent, C.CONSENT_VERSIONS["2026-10-01"].identity], ["2026-10-06", V5_CONSENT, V1_CONSENT, BRIEF_IDENTITY],
+      "1d2 the new wording is a new version (2026-10-06); 2026-10-05 and 2026-10-01 still resolve to the words their rows saw");
+    t.ok(["when flourish launches in Canada", "Unsubscribe any time", "see Contact below"].every(x => C.CONSENT_TEXT.includes(x)) && !/GrowSmart|PO Box/.test(C.CONSENT_TEXT)
+      && C.CONSENT_VERSIONS["2026-10-06"].identityAt.includes(BRIEF_CONTACT) && C.CONSENT_VERSIONS["2026-10-06"].identityAt.includes("hello@flourishmoney.app"),
+      "1d3 the line keeps the purpose and unsubscribe and points to Contact; the version records where the sender, address and contact were shown");
     let A = {};
     try { A = loadApp(["WaitlistForm"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
     if (A.WaitlistForm) {
       const html = A.render(A.h(A.WaitlistForm, { source: "calendar" }));
-      const iInput = html.indexOf("<input"), iConsent = html.indexOf(BRIEF_CONSENT.replace(/'/g, "&#x27;")), iBtn = html.indexOf("Join the waitlist");
-      t.ok(iInput >= 0 && iBtn > iInput && iConsent > iBtn && html.indexOf("flourish is made by GrowSmart Inc.") < 0,
-        "1e the form renders the email field, then the button, then the one consent line under it (the old second line is gone)");
+      const iInput = html.indexOf("<input"), iConsent = html.indexOf("We&#x27;ll email you when flourish launches in Canada"), iBtn = html.indexOf("Join the waitlist");
+      t.ok(iInput >= 0 && iBtn > iInput && iConsent > iBtn && !/GrowSmart|PO Box/.test(html), "1e the form renders the email field, then the button, then the one consent line, with no company name or address");
+      t.eq(textOf(html.slice(html.indexOf('class="fll-consent"') - 3)).trim().slice(0, BRIEF_CONSENT.length), BRIEF_CONSENT, "1e2 the consent line reads the approved text, word for word");
+      t.ok(/<a class="fll-contact-link" href="#contact"[^>]*>Contact<\/a>/.test(html), "1e3 \"Contact\" in it is a link to #contact on the same page");
       t.ok(/aria-describedby="fll-consent-calendar"/.test(html) && /id="fll-consent-calendar"/.test(html), "1f the email field is described by the consent text");
       t.ok(/\.fll-form\{/.test(html), "1g the form carries its own styles, so any page can render it");
       t.ok(!/United States|🇺🇸|fll-country/.test(html), "7a the form offers no country choice: launch is Canada only");
@@ -103,6 +109,15 @@ async function join(body, insertAnswer = { status: 201, body: [{ id: "row-1" }] 
     }
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     t.ok(/<WaitlistForm source="hero"/.test(app) && /<WaitlistForm source="bottom_cta"/.test(app), "1i the homepage uses the component at both spots");
+    {
+      // landing-contact (owner rule): the company name and mailing address sit only in the footer's Contact block.
+      const auth = app.slice(app.indexOf("function AuthScreen("), app.indexOf("\n}\n", app.indexOf("function AuthScreen(")));
+      const hero = auth.slice(auth.indexOf("{/* Hero."), auth.indexOf("{/* Proof"));
+      const cta2 = auth.slice(auth.indexOf("{/* Second email capture */}"), auth.indexOf("{/* Footer */}"));
+      t.ok(hero.length > 500 && cta2.length > 100 && ![hero, cta2].some(x => /GrowSmart|PO Box/.test(x)), "1l the hero and the \"Be first to know\" form hold no \"GrowSmart\" and no \"PO Box\"");
+      const contact = auth.slice(auth.indexOf('<div id="contact"'), auth.indexOf("</div>", auth.indexOf('<div id="contact"')));
+      t.ok(contact.includes("<h2>Contact</h2>") && contact.includes(BRIEF_CONTACT) && contact.includes("hello@flourishmoney.app"), "1m #contact exists and holds the company, its mailing address and the contact email");
+    }
     t.ok(/consentVersion: CONSENT_VERSION/.test(app), "1j the form sends the version of the wording it showed");
     t.ok(/country: "CA", placement: tag/.test(app), "7b …and always sends Canada");
     t.ok(!/No spam, just the launch news/.test(app), "1k the success message no longer contradicts the consent line");
@@ -113,10 +128,10 @@ async function join(body, insertAnswer = { status: 201, body: [{ id: "row-1" }] 
     const before = Date.now();
     const ok = await join({ source: "hero", consentVersion: C.CONSENT_VERSION });
     t.eq([ok.status, ok.body.joined], [200, true], "2a a signup with the current consent version joins");
-    t.eq(ok.insert && ok.insert.consent_version, "2026-10-05", "2b …and the row stores that version");
+    t.eq(ok.insert && ok.insert.consent_version, "2026-10-06", "2b …and the row stores that version");
     const at = ok.insert && Date.parse(ok.insert.consented_at);
     t.ok(at >= before - 1000 && at <= Date.now() + 1000, "2c …with the time consent was given");
-    for (const [label, v] of [["no version", undefined], ["an old version", "pre-2026-10-01"], ["a page still showing version 2026-10-01", "2026-10-01"], ["a made-up version", "2099-01-01"]]) {
+    for (const [label, v] of [["no version", undefined], ["an old version", "pre-2026-10-01"], ["a page still showing version 2026-10-01", "2026-10-01"], ["a page still showing version 2026-10-05", "2026-10-05"], ["a made-up version", "2099-01-01"]]) {
       const r = await join({ source: "hero", consentVersion: v });
       t.eq([r.status, r.body.error, r.insert], [400, "Consent required", null], `2d ${label} is refused, and nothing is stored`);
     }
