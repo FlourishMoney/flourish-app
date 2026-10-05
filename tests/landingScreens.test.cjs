@@ -43,18 +43,25 @@ function imageSize(file) {
   const onDisk = fs.readdirSync(DIR).filter(f => !f.startsWith(".")).sort();
   const referenced = entries.map(e => e.file).sort();
   t.eq(referenced.filter(f => !onDisk.includes(f)), [], "1 every image the strip references exists in public/app-screens");
-  t.eq(onDisk.filter(f => !referenced.includes(f)), [], "2 no image is left in public/app-screens that the strip does not reference");
+  t.eq(onDisk.filter(f => !referenced.includes(f)), ["hero-card.jpg"], "2 no image is left in public/app-screens that the strip does not reference, except the hero's card, cut from home.jpg");
   for (const f of referenced.filter(x => onDisk.includes(x))) {
     t.eq(imageSize(path.join(DIR, f)), { width: 680, height: 1474 }, `1b ${f} is 680 x 1474, the strip's size`);
   }
-  t.ok(!/app-screens\//.test(APP.slice(0, start) + APP.slice(end)), "1c nothing else in App.jsx points into app-screens");
+  t.eq([...(APP.slice(0, start) + APP.slice(end)).matchAll(/app-screens\/[\w.-]+/g)].map(m => m[0]).sort(), ["app-screens/hero-card.jpg", "app-screens/hero-card.jpg"],
+    "1c outside the strip, App.jsx points into app-screens only at the hero's card (the demo button and the plain image)");
 
   // ── 3. The capture script makes exactly these ─────────────────────────────────────────────────
   const script = fs.readFileSync(path.join(ROOT, "scripts", "capture-landing-screens.mjs"), "utf8");
   const made = [...script.slice(script.indexOf("LANDING_SCREENS"), script.indexOf("];", script.indexOf("LANDING_SCREENS"))).matchAll(/file: "([^"]+)"/g)].map(m => m[1]).sort();
   t.eq(made, referenced, "3 npm run screens:landing regenerates exactly the strip's images");
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
-  t.eq(pkg.scripts["screens:landing"], "node scripts/capture-landing-screens.mjs", "3b the npm script runs it");
+  t.eq(pkg.scripts["screens:landing"], "node scripts/capture-landing-screens.mjs && node scripts/crop-hero-card.mjs", "3b the npm script runs it, then cuts the hero's card from the new home.jpg");
+  // The hero's card: a crop of home.jpg, never redrawn.
+  const crop = fs.readFileSync(path.join(ROOT, "scripts", "crop-hero-card.mjs"), "utf8");
+  t.ok(/export const SOURCE = path\.join\(ROOT, "public", "app-screens", "home\.jpg"\);/.test(crop) && /export const CROP = \{ x: 28, y: 252, width: 624, height: 524 \};/.test(crop)
+    && /page\.screenshot\(\{ path: OUT, type: "jpeg", quality: 90, clip: CROP \}\)/.test(crop) && /SOURCE_SIZE\.width/.test(crop),
+    "3e the hero card is cut from home.jpg at a fixed rectangle, at the capture's own pixel size, and the script stops on a capture of another size");
+  t.eq(imageSize(path.join(DIR, "hero-card.jpg")), { width: 624, height: 524 }, "3f hero-card.jpg is the 624 x 524 crop");
   t.ok(/deviceScaleFactor: SCALE/.test(script) && /const SCALE = 3;/.test(script) && /const SIZE = \{ width: 680, height: 1474 \};/.test(script)
     && /sampleLabelInFrame/.test(script), "3c it captures at device scale factor 3, saves 680 x 1474, and refuses a screen without the sample-data label");
   t.ok(/npm run screens:landing/.test(fs.readFileSync(path.join(ROOT, "docs", "ops", "OPERATING-PLAN.md"), "utf8")), "3d the release checklist says to run it after a merged UI change");
@@ -74,7 +81,8 @@ function imageSize(file) {
   t.ok(!/windows/i.test(landing), "5a the landing page never says Windows");
   t.ok(!/any money decision/i.test(landing), "5b …or \"any money decision\"");
   t.ok(/Coming soon to iPhone and Android/.test(landing)
-    && /See exactly what's safe to spend before payday, test a money decision before you make it, and understand your finances in plain English\./.test(landing)
+    && /Stop doing the money math <em>in your head\.<\/em>/.test(landing)
+    && /flourish accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount, then shows what's safe to spend until payday\./.test(landing)
     && /Test a decision, like a big purchase or an extra debt payment, and see the result before you commit\./.test(landing)
     && /Join the waitlist and we'll email you the moment flourish launches in Canada\./.test(landing), "5c the badge, the hero, the What-If card and the waitlist line, word for word");
 

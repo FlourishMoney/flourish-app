@@ -32,7 +32,7 @@ async function join(extra) {
   };
   try {
     const res = await beta.handler({ httpMethod: "POST", headers: {}, body: JSON.stringify({
-      action: "join_waitlist", email: "person@example.com", consentVersion: "2026-10-01", placement: "hero", ...extra }) });
+      action: "join_waitlist", email: "person@example.com", consentVersion: require(path.join(REPO, "netlify", "functions", "_lib", "waitlistConsent.js")).CONSENT_VERSION, placement: "hero", ...extra }) });
     const ins = calls.find(c => c.method === "POST" && c.url.endsWith("/rest/v1/waitlist"));
     return { status: res.statusCode, body: JSON.parse(res.body || "{}"), row: ins ? JSON.parse(ins.body) : null };
   } finally { global.fetch = real; console.error = quiet; }

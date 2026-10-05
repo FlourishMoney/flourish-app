@@ -114,7 +114,7 @@ async function main() {
   page.setDefaultTimeout(30000);
   await page.goto(base, { waitUntil: "domcontentloaded" });
   // The welcome page's demo button is the Canadian sample household (waitlistCountry, App.jsx).
-  await page.getByText("preview the app with", { exact: false }).first().click();
+  await page.getByText("Try the demo with", { exact: false }).first().click();
   await page.getByText("I Understand & Accept").first().click();
   await page.getByText("Demo mode", { exact: false }).first().waitFor();
   await page.waitForTimeout(900);

@@ -13,15 +13,21 @@
 // -----------------------------------------------------------------------------
 "use strict";
 
-const CONSENT_VERSION = "2026-10-01";
+// 2026-10-05: one line under the button, with every CASL element in it (purpose, sender, mailing
+// address, contact, unsubscribe). It replaced 2026-10-01's two lines, which stay below, word for word,
+// for the rows that saw them.
+const CONSENT_VERSION = "2026-10-05";
 
-const CONSENT_TEXT = "Email me when flourish launches in Canada, plus a few updates before then. Unsubscribe any time.";
+const CONSENT_TEXT = "We'll email you when flourish launches in Canada, plus a few updates before then. From GrowSmart Inc. (flourish), PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. Unsubscribe any time.";
+// The sender's identity on its own: the welcome email's footer (waitlistWelcome.js), and the second of
+// the two lines version 2026-10-01 showed.
 const IDENTITY_TEXT = "flourish is made by GrowSmart Inc., PO Box 29, Foxboro ON K0K 2B0, hello@flourishmoney.app. You can unsubscribe at any time.";
 
 // Every version ever shown, with its exact words. Rows from before the consent line existed carry
 // LEGACY_CONSENT_VERSION (set by migration 0012); it has no wording because none was shown.
 const CONSENT_VERSIONS = {
-  "2026-10-01": { consent: CONSENT_TEXT, identity: IDENTITY_TEXT },
+  "2026-10-01": { consent: "Email me when flourish launches in Canada, plus a few updates before then. Unsubscribe any time.", identity: IDENTITY_TEXT },
+  "2026-10-05": { consent: CONSENT_TEXT, identity: null }, // the identity is inside the one line
 };
 const LEGACY_CONSENT_VERSION = "pre-2026-10-01";
 

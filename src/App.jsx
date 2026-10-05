@@ -58,7 +58,7 @@ import { rateUrl } from "./lib/storeReview.js";
 import { FEEDBACK_KINDS, WEEK_ONE_KIND, WEEK_ONE_QUESTION, MAX_MESSAGE, submitFeedback, weekOneDue } from "./lib/feedback.js";
 import WHATS_NEW from "./whatsNew.json";
 import { creditAvailable, facilitatorAvailable, coachUnlimited } from "./lib/featureAccess.js";
-import { CONSENT_VERSION, CONSENT_TEXT, IDENTITY_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
+import { CONSENT_VERSION, CONSENT_TEXT, WAITLIST_PLACEMENTS } from "./lib/waitlistConsent.js";
 import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
@@ -14143,16 +14143,11 @@ const WAITLIST_FORM_CSS = `
             .fll-done{ background:#fff; border:1px solid rgba(46,139,46,0.2); border-radius:18px; padding:22px 20px; box-shadow:0 10px 30px rgba(22,58,28,0.07); }
             .fll-done-t{ font-family:'Playfair Display',serif; font-weight:900; font-size:21px; color:#15321a; margin-bottom:6px; }
             .fll-done-b{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13.5px; line-height:1.55; color:#52624f; max-width:340px; margin:0 auto; }
-            .fll-consent{ order:1; flex-basis:100%; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; line-height:1.5; color:#52624f; }
-            .fll-consent p{ margin:0 0 4px; }
-            .fll-form .fll-input{ order:0; }
-            .fll-form .fll-btn{ order:2; }
+            .fll-consent{ flex-basis:100%; margin-block:2px 0; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; line-height:1.5; color:#52624f; }
             @media(min-width:560px){
               .fll-form{ flex-direction:row; flex-wrap:wrap; }
               .fll-input{ width:auto; }
               .fll-btn{ width:auto; }
-              .fll-form .fll-btn{ order:1; }
-              .fll-consent{ order:2; }
             }
 `;
 function WaitlistForm({ source = "landing" }) {
@@ -14207,13 +14202,12 @@ function WaitlistForm({ source = "landing" }) {
           placeholder="you@example.com" value={email} aria-label="Email address" aria-describedby={`fll-consent-${tag}`}
           onChange={e => { setEmail(e.target.value); if (status === "invalid" || status === "error" || status === "stale") setStatus(null); }}
           onKeyDown={e => { if (e.key === "Enter") submit(); }} />
-        <div className="fll-consent" id={`fll-consent-${tag}`}>
-          <p>{CONSENT_TEXT}</p>
-          <p>{IDENTITY_TEXT}</p>
-        </div>
         <button className="fll-btn" onClick={submit} disabled={busy}>
           {busy ? "Joining…" : "Join the waitlist"}
         </button>
+        {/* One line under the button with every CASL element: purpose, sender, mailing address, contact
+            and unsubscribe (consent version 2026-10-05, lib/waitlistConsent.js). */}
+        <p className="fll-consent" id={`fll-consent-${tag}`}>{CONSENT_TEXT}</p>
       </div>
       {status === "invalid" && <div className="fll-err">Please enter a valid email address.</div>}
       {status === "error" && <div className="fll-err">Something went wrong. Please try again.</div>}
@@ -14506,21 +14500,35 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-nav{ display:flex; align-items:center; justify-content:space-between; width:100%; max-width:1080px; margin:0 auto; padding:18px 22px; }
             .fll-brand{ display:flex; align-items:center; gap:12px; }
             .fll-brand span{ font-family:'Plus Jakarta Sans',sans-serif; font-weight:800; font-size:32px; color:#163a1c; letter-spacing:-0.3px; }
-            .fll-login{ background:transparent; border:1px solid rgba(46,139,46,0.45); color:#1b5e20; border-radius:99px; padding:8px 18px; font-size:13px; font-weight:700; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-login{ background:transparent; border:1px solid rgba(46,139,46,0.2); color:#52624f; border-radius:99px; padding:8px 18px; font-size:13px; font-weight:600; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-login:hover{ background:rgba(46,139,46,0.08); }
 
-            .fll-hero{ text-align:center; padding:38px 0 14px; }
+            .fll-hero{ text-align:center; padding-top:30px; padding-bottom:14px; }
+            .fll-hero-grid{ display:grid; grid-template-columns:minmax(0,1fr); grid-template-areas:"text" "form" "card" "demo"; gap:${SPACE.xl}px; }
+            .fll-hero-text{ grid-area:text; }
+            .fll-hero-card{ grid-area:card; justify-self:center; margin-block:0; margin-inline:0; width:100%; max-width:400px; }
+            .fll-hero-form, .fll-hero-demo{ justify-self:center; width:100%; max-width:440px; }
+            .fll-hero-form{ grid-area:form; }
+            .fll-hero-demo{ grid-area:demo; }
+            .fll-hero-demo .fll-demo{ margin-top:0; }
+            .fll-hero-card-btn{ display:block; width:100%; padding:0; border:1px solid rgba(46,139,46,0.18); background:#fff; border-radius:22px; overflow:hidden; cursor:pointer; box-shadow:0 18px 44px rgba(22,58,28,0.14); }
+            .fll-hero-card-btn:focus-visible{ outline:3px solid #1b5e20; outline-offset:4px; }
+            .fll-hero-card img{ display:block; width:100%; height:auto; }
+            .fll-hero-card > img{ border-radius:22px; border:1px solid rgba(46,139,46,0.18); }
+            .fll-hero-card .fll-sample{ margin-top:10px; }
             .fll-badge{ display:inline-flex; align-items:center; gap:7px; background:rgba(46,139,46,0.09); border:1px solid rgba(46,139,46,0.28); color:#1b5e20; border-radius:99px; padding:7px 15px; font-size:13px; font-weight:700; margin-bottom:22px; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-h1{ font-family:'Playfair Display',serif; font-weight:900; font-size:clamp(33px,6.2vw,58px); line-height:1.06; letter-spacing:-0.6px; color:#15321a; margin:0 auto 18px; max-width:13ch; }
             .fll-h1 em{ font-style:italic; color:#2E8B2E; }
-            .fll-sub{ font-family:'Plus Jakarta Sans',sans-serif; font-size:clamp(15px,2.2vw,19px); line-height:1.6; color:#52624f; max-width:560px; margin:0 auto 30px; }
+            .fll-sub{ font-family:'Plus Jakarta Sans',sans-serif; font-size:clamp(15px,2.2vw,19px); line-height:1.6; color:#52624f; max-width:560px; margin:0 auto; }
 
 
-            .fll-demo{ display:inline-block; margin-top:16px; background:none; border:none; color:#52624f; font-size:13px; font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:3px; font-family:'Plus Jakarta Sans',sans-serif; }
-            .fll-demo:hover{ color:#2E8B2E; }
-            .fll-trust{ display:inline-flex; align-items:center; gap:7px; margin-top:20px; font-size:13px; color:#52624f; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-demo{ display:flex; align-items:center; justify-content:center; width:100%; min-height:48px; margin-top:12px; padding:12px 12px; border-radius:13px; border:1.5px solid #2E8B2E; background:#fff; color:#1b5e20; font-size:14px; font-weight:700; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-demo:hover{ background:#eef5ee; }
+            .fll-demo:focus-visible{ outline:3px solid #1b5e20; outline-offset:3px; }
+            .fll-trust-row{ text-align:center; }
+            .fll-trust{ display:inline-flex; align-items:center; gap:7px; margin-top:14px; font-size:13px; color:#52624f; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; }
 
-            .fll-section{ padding:44px 0; }
+            .fll-section{ padding-top:44px; padding-bottom:44px; }
             .fll-eyebrow{ text-align:center; font-size:13px; font-weight:800;   color:#1b5e20; margin-bottom:10px; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-h2{ font-family:'Playfair Display',serif; font-weight:900; font-size:clamp(24px,4vw,34px); color:#15321a; text-align:center; line-height:1.15; margin:0 auto 8px; max-width:20ch; }
             .fll-lede{ text-align:center; font-size:15px; color:#52624f; max-width:520px; margin:0 auto 28px; line-height:1.6; font-family:'Plus Jakarta Sans',sans-serif; }
@@ -14553,9 +14561,20 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-foot span{ color:#52624f; font-size:13px; font-family:'Plus Jakarta Sans',sans-serif; }
 
             @media(min-width:760px){
-              .fll-hero{ padding:58px 0 22px; }
-              .fll-section{ padding:58px 0; }
+              .fll-hero{ padding-top:46px; padding-bottom:22px; }
+              .fll-section{ padding-top:58px; padding-bottom:58px; }
               .fll-benefits{ grid-template-columns:1fr 1fr; }
+            }
+            @media(min-width:960px){
+              .fll-hero{ text-align:left; }
+              .fll-hero-grid{ grid-template-columns:minmax(0,1.08fr) minmax(0,0.92fr); grid-template-areas:"text card" "form card" "demo card"; column-gap:${SPACE.xxl + SPACE.xl}px; row-gap:${SPACE.xl}px; align-items:start; }
+              .fll-hero-text .fll-h1, .fll-hero-text .fll-sub{ margin-left:0; }
+              .fll-hero-card{ max-width:440px; justify-self:end; align-self:center; }
+              .fll-hero-form, .fll-hero-demo{ justify-self:start; }
+              .fll-hero-grid{ grid-template-rows:auto auto 1fr; }
+              .fll-hero-demo{ margin-top:-${SPACE.md}px; }
+              .fll-hero-form .fll-capture{ margin-inline:0; }
+              .fll-trust-row{ text-align:left; }
             }
             @media(min-width:1040px){
               .fll-proof{ justify-content:center; overflow-x:visible; flex-wrap:wrap; }
@@ -14572,22 +14591,42 @@ function AuthScreen({ onAuth, onTryDemo }) {
             <button className="fll-login" onClick={goLogin}>Log in</button>
           </div>
 
-          {/* Hero */}
+          {/* Hero. Mobile, one column: pill, H1, subline, the form (field, Join, consent line), the card, then
+              the demo button and the read-only line, so Join is on screen at 390 x 844. Desktop: text, form
+              and demo button on the left, the card on the right (grid areas in .fll-hero-grid). */}
           <div className="fll-wrap fll-hero">
-            <span className="fll-badge">
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }} aria-hidden="true">
-                {/* Apple / App Store */}
-                <svg width="12" height="12" viewBox="0 0 384 512" fill="currentColor"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
-                {/* Google Play */}
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            <div className="fll-hero-grid">
+              <div className="fll-hero-text">
+              <span className="fll-badge">
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }} aria-hidden="true">
+                  {/* Apple / App Store */}
+                  <svg width="12" height="12" viewBox="0 0 384 512" fill="currentColor"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
+                  {/* Google Play */}
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                </span>
+                Coming soon to iPhone and Android
               </span>
-              Coming soon to iPhone and Android
-            </span>
-            <h1 className="fll-h1">Understand your money, <em>coaching, not just tracking.</em></h1>
-            <p className="fll-sub">See exactly what's safe to spend before payday, test a money decision before you make it, and understand your finances in plain English.</p>
-            <WaitlistForm source="hero"/>
-            {onTryDemo && <button className="fll-demo" onClick={() => onTryDemo(waitlistCountry)}>or preview the app with {waitlistCountry === "US" ? "🇺🇸 US" : "🇨🇦 Canadian"} sample data →</button>}
-            <div><span className="fll-trust">🔒 Read-only. Flourish can't move your money.</span></div>
+                <h1 className="fll-h1">Stop doing the money math <em>in your head.</em></h1>
+                <p className="fll-sub">flourish accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount, then shows what's safe to spend until payday.</p>
+              </div>
+              {/* The real Today card, cropped from the demo capture by scripts/crop-hero-card.mjs (never
+                  redrawn): every figure in it is one the demo showed. Tapping it opens the demo. */}
+              <figure className="fll-hero-card">
+                {onTryDemo
+                  ? <button type="button" className="fll-hero-card-btn" onClick={() => onTryDemo(waitlistCountry)} aria-label="Safe to spend until next payday, $1,944, sample data: try the demo with Canadian sample data">
+                      <img src="/app-screens/hero-card.jpg" alt="" width={624} height={524} />
+                    </button>
+                  : <img src="/app-screens/hero-card.jpg" alt="Safe to spend until next payday, $1,944, sample data" width={624} height={524} />}
+                <figcaption className="fll-sample">Example, sample data.</figcaption>
+              </figure>
+              <div className="fll-hero-form">
+                <WaitlistForm source="hero"/>
+              </div>
+              <div className="fll-hero-demo">
+                {onTryDemo && <button type="button" className="fll-demo" onClick={() => onTryDemo(waitlistCountry)}>Try the demo with {waitlistCountry === "US" ? "US" : "Canadian"} sample data →</button>}
+                <div className="fll-trust-row"><span className="fll-trust">🔒 Read-only. Flourish can't move your money.</span></div>
+              </div>
+            </div>
           </div>
 
           {/* Proof — real app screenshots */}
@@ -14626,10 +14665,10 @@ function AuthScreen({ onAuth, onTryDemo }) {
             <h2 className="fll-h2">Coaching that helps you understand your money.</h2>
             <div className="fll-benefits" style={{ marginTop: 24 }}>
               {[
-                [<DollarSign size={20} color="#2E8B2E" strokeWidth={2}/>, "Safe to Spend", "Know exactly what's safe to spend before your next payday. Your bills, buffer, and balances in one honest number."],
+                [<DollarSign size={20} color="#2E8B2E" strokeWidth={2}/>, "Safe to Spend", "Know what's safe to spend before your next payday. Your bills, buffer and balances in one honest number."],
                 [<Target size={20} color="#2E8B2E" strokeWidth={2}/>, "What-If Simulator", "Test a decision, like a big purchase or an extra debt payment, and see the result before you commit."],
-                [<Sparkles size={20} color="#2E8B2E" strokeWidth={2}/>, "AI Coach", "Flourish does the math. The coach explains what your numbers mean and your options, and leaves the decisions to you. It never invents a number and it isn't a licensed adviser."],
-                [<Shield size={20} color="#2E8B2E" strokeWidth={2}/>, "Built for Canada & the US", "RRSP & TFSA or 401(k) & HSA: flourish understands your country's accounts. Privacy-first: your data stays yours."],
+                [<Sparkles size={20} color="#2E8B2E" strokeWidth={2}/>, "AI Coach", "The coach explains the numbers flourish calculates and your options, and leaves the decisions to you. It isn't a licensed adviser."],
+                [<Shield size={20} color="#2E8B2E" strokeWidth={2}/>, "Built in Canada", "flourish knows Canadian accounts like the RRSP and TFSA. Bank connections are read-only, so flourish can't move your money."],
               ].map(([icon, title, body]) => (
                 <div className="fll-card" key={title}>
                   <div className="fll-ico">{icon}</div>

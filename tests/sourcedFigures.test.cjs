@@ -416,6 +416,9 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       ". Cancel any time from Settings.", "Start your trial to run the meeting with your coach.",
       // Kids chores (parked: nothing renders them, launchTab 3a4).
       "💰 Payday! Pay out $",
+      // The landing page's headline, locked to the live Meta ad (landing-hero, 2026-10-05). "Stop" is about
+      // doing the arithmetic in your head, not about what to do with money; its italic tail is a separate string.
+      "Stop doing the money math",
     ]);
     // Legal text: Terms and Privacy state obligations and disclaimers, not money advice.
     const LEGAL = /^(You must be at least 18 years old|Flourish Money requires a registered account|Flourish Money is an educational financial tool|Almost nothing\. Tax and accounting rules)/;
