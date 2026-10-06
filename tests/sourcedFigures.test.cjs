@@ -485,7 +485,7 @@ const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g;
       t.ok(debtsShown && today.includes("Trip fund") && today.includes("$400") && today.includes("saved of $2,000"), `12g ${c}: goals and debts are listed by name with their own balances`);
       t.ok(!/For Emergency Fund|For Savings|Extra for |toward this goal|Left over|more a month|part of what is spare|Move to |Extra toward/.test(today), `12h ${c}: no amount is assigned to savings, a debt or a goal anywhere on Today`);
       const hero = DE.displayedSafeToSpend(data);
-      t.ok(today.includes(`${formatMoney(hero)} safe to spend spread over`), `12h2 ${c}: Today's pace line quotes the displayed safe to spend (${formatMoney(hero)}), not the raw engine figure`);
+      t.ok(today.includes(`days stay within ${formatMoney(hero)} safe to spend`), `12h2 ${c}: Today's pace line quotes the displayed safe to spend (${formatMoney(hero)}), not the raw engine figure`);
     }
     // The Decisions tab's card says the same, with the same working, and offers no debt amount.
     {

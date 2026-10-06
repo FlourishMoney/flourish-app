@@ -33,6 +33,11 @@ const FORBIDDEN = [
   [/\bwithout (?:downloading|installing)\b/i, "says it works without installing"],
   [/\bno app store\b/i, "says the app store is not needed"],
   [/\bno need to (?:download|install)\b/i, "says there is no need to install"],
+  // demo-clarity item 9: safe to spend is what is left after four lines (bills due before payday, minimum
+  // debt payments, a spending buffer, a savings amount); it does not promise everything else is covered.
+  [/Spending up to this leaves everything else covered/i, "promises safe to spend leaves everything else covered"],
+  [/so spending up to it leaves everything else covered/i, "promises safe to spend leaves everything else covered"],
+  [/\bleaves everything else covered\b/i, "promises safe to spend leaves everything else covered"],
 ];
 
 (async () => {
@@ -106,6 +111,23 @@ const FORBIDDEN = [
       for (const [rx, what] of FORBIDDEN) if (rx.test(body)) hits.push(`${f}: ${what}`);
     }
     t.eq(hits, [], `nothing served from public/ makes such a claim (${served.length} text files)`);
+  }
+
+  // ── demo-clarity: the tour and the demo coach's scripted lines state facts ────────────────────
+  {
+    const TOUR_BANNED = [/held back/i, /holds? back/i, /sets? aside/i, /\blearns\b/i, /\bremembers\b/i, /never invents/i, /\bcovered\b/i, /\bcover you\b/i, /tempt you/i, /\bI never\b/];
+    const { TOUR_STEPS } = await import("../src/lib/tour.js");
+    const DC = await import("../src/lib/demoCoach.js");
+    const D = await import("../src/lib/demoFixture.js");
+    const lines = TOUR_STEPS.map(st => `tour ${st.title}: ${st.body}`);
+    for (const c of D.DEMO_COUNTRIES) {
+      const now = new Date();
+      const data = { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), incomes: D.buildDemoIncomes(now, c), bills: D.buildDemoBills(now, c), transactions: D.buildDemoTxns(now, c), goals: [], demo: true };
+      DC.demoCoachExchanges(data, now).forEach(x => lines.push(`coach ${c}: ${x.q} ${x.a}`));
+      const fl = DC.demoFacilitatorLine(data, now); if (fl) lines.push(`facilitator ${c}: ${fl}`);
+    }
+    t.ok(lines.length >= 10, `(the sweep read ${lines.length} tour and scripted coach lines)`);
+    t.eq(lines.filter(l => TOUR_BANNED.some(r => r.test(l))), [], "no tour step or scripted coach line says held back, holds back, sets aside, learns, remembers, never invents, covered, cover you, tempt you or I never");
   }
 
   t.summary("publicCopy.test");

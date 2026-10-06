@@ -143,7 +143,6 @@ function buildApp(supabaseUrl) {
         await demo.or(welcome).waitFor({ timeout: 40000 });
         if (!(await demo.isVisible())) {
           await welcome.click();
-          await page.getByText("I Understand & Accept").first().click({ timeout: 30000 });
           await demo.waitFor({ timeout: 40000 });
         }
       } else {

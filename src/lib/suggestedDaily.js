@@ -52,3 +52,10 @@ export function suggestedDailyView(safeValue, incomes, transactions, today = new
     weeklyText: formatMoney(weekly),
   };
 }
+
+// demo-clarity: the daily pace is safe to spend divided over the window and rounded DOWN to whole dollars
+// ($1,944 / 14 = $138.86 shows as $138), so the days stay within safe to spend. Every surface says so the
+// same way. pace.daily x pace.daysLeft is at most safe to spend, and within a dollar a day of it.
+export function paceSentence(pace, safeValue) {
+  return `Today's pace is ${pace.dailyText} a day, rounded down so ${pace.daysLeft} days stay within ${formatMoney(safeValue)} safe to spend.`;
+}

@@ -115,7 +115,6 @@ async function main() {
   await page.goto(base, { waitUntil: "domcontentloaded" });
   // The welcome page's demo button is the Canadian sample household (waitlistCountry, App.jsx).
   await page.getByText("Try the demo with", { exact: false }).first().click();
-  await page.getByText("I Understand & Accept").first().click();
   await page.getByText("Demo mode", { exact: false }).first().waitFor();
   await page.waitForTimeout(900);
 

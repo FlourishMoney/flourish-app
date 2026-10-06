@@ -12,7 +12,7 @@ import { FinancialCalcEngine, isInvestmentAccount, simulateDebtPayoffForDebt, is
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { ForecastEngine } from "./forecastEngine.js";
 import { safeToSpendView } from "./safeToSpendView.js";
-import { computeDailySpendLimit, suggestedDailyView } from "./suggestedDaily.js";
+import { computeDailySpendLimit, suggestedDailyView, paceSentence } from "./suggestedDaily.js";
 
 // ── DecisionEngine "what to do today" math (Sprint MATH-LOCK Group F) ─────────────────────────────
 // Pure helpers extracted from the DecisionEngine UI component. The component calls these, then builds
@@ -274,7 +274,7 @@ export const AutopilotEngine = {
     ].filter(Boolean);
 
     return {
-      dailySpendLimit, spare, spareFrom, debtsOwed, goalsSaved,
+      dailySpendLimit, paceText: paceSentence(pace, safeToSpendView(ss).headline), spare, spareFrom, debtsOwed, goalsSaved,
       spareReason: spareInfo.tight ? "tight" : spareInfo.overdraft ? "overdraft" : spare > 0 ? null : "none",
       cashTight, alerts, mode, modeLabel,
       daysLeft, adherence, adaptations,

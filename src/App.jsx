@@ -63,7 +63,7 @@ import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
-import { suggestedDailyView } from "./lib/suggestedDaily.js";
+import { suggestedDailyView, paceSentence } from "./lib/suggestedDaily.js";
 import { forecastWalk } from "./lib/forecastWalk.js";
 import { affordabilityCheck } from "./lib/affordability.js";
 import { demoCoachExchanges, demoFacilitatorLine } from "./lib/demoCoach.js";
@@ -1082,11 +1082,11 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       type: "daily",
       icon: "💡",
       color: C.teal,
-      title: `Suggested spend today: ${dailyPace.dailyText}`,
+      title: `Today's pace: ${dailyPace.dailyText} a day`,
       // The coach's wording, which is the accurate one: the figure is safe to spend spread over a
       // window of at least 14 days. It is a pace, not a limit, and it does not by itself keep anyone
       // covered to the next deposit (that window can be shorter or longer than the pace's).
-      detail: `That paces ${formatMoney(safe)} safe to spend over ${dailyPace.daysLeft} days. It's a pace, not a limit.`,
+      detail: `${paceSentence(dailyPace, safe)} It's a pace, not a limit.`,
       action: "See forecast", screen: "plan"
     });
   }
@@ -1181,8 +1181,8 @@ function AutopilotCard({data, setScreen}) {
 
   const lineItems = [
     plan.dailySpendLimit > 0 && {
-      icon:"💡", label:"Safe to spend per day", amount:formatMoney(plan.dailySpendLimit),
-      color:C.green, detail:`for the next ${plan.daysLeft} day${plan.daysLeft!==1?"s":""}`,
+      icon:"💡", label:"Today's pace", amount:`${formatMoney(plan.dailySpendLimit)} a day`,
+      color:C.green, detail:plan.paceText,
     },
     // Prompt 3e: the spare amount as a fact (spareUntilDeposit, the figure Decisions and Meet show),
     // with how it was worked out. It is not split: the old 40% savings / 40% debt / 50% goal amounts
@@ -2099,6 +2099,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [inputVal, setInputVal] = useState(initialQuery || "");
+  const [needAmount, setNeedAmount] = useState(false); // a purchase was asked with no amount (demo-clarity item 8)
   const presets = [
     {label: "Buy a $800 laptop",        type: "purchase"},
     {label: "Take a $1,200 vacation",   type: "purchase"},
@@ -2115,6 +2116,15 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
   const simulate = async (q, typeOverride) => {
     const qText = q || inputVal;
     if (!qText.trim()) return;
+    // demo-clarity item 8: a purchase needs an amount. "Buy a $" (the Buy something chip's starting text) has
+    // none, which used to show "Spending $0 takes safe to spend … from $1,944 to $1,944." beside "This purchase
+    // will reduce your safe-to-spend balance." With no amount there is nothing to simulate: ask for it, show no
+    // result, and count no simulation.
+    if ((typeOverride || detectScenarioType(qText)) === "purchase" && !(parseAmountFromQuery(qText) > 0)) {
+      setQuery(qText); setResult(null); setNeedAmount(true);
+      return;
+    }
+    setNeedAmount(false);
 
     // ── PAYWALL GATE (Phase 2) ───────────────────────────────────────────
     // Free tier: 3 simulations/day. Premium and beta_founder: unlimited.
@@ -2306,6 +2316,8 @@ Rules: do not invent or quote any number not in the calculated results above. St
     try {
       // Phase D3: AI opt-out — skip the prose enhancement; existing catch provides neutral fallback
       ensureAiEnabled("AI disabled"); // Step 8: single gate — no request reaches /api/coach when AI is off
+      // demo-clarity: the demo has no sign-in, which /api/coach refuses; the neutral fallback below is what it showed anyway.
+      if (data.demo) throw new Error("demo: no AI request");
       const _jwt = await getJwt();
       const r = await fetch(`${API_BASE}/api/coach`, {
         method:"POST",
@@ -2388,7 +2400,7 @@ Rules: do not invent or quote any number not in the calculated results above. St
           <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:GAP.textToControl}}>Quick scenarios</div>
           <div style={{display:"flex",gap:GAP.controlToControl,flexWrap:"wrap"}}>
             {presets.map(p=>(
-              <button key={p.label} onClick={()=>simulate(p.label, p.type)} style={{background:query===p.label?C.greenDim:C.cardAlt,border:`1px solid ${query===p.label?C.green+"55":C.border}`,color:query===p.label?C.green:C.mutedHi,borderRadius:99,padding:"6px 12px",minHeight:LAYOUT.minTap,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer",transition:"all .15s"}}>{p.label}</button>
+              <button key={p.label} onClick={()=>{ setInputVal(p.label); simulate(p.label, p.type); }} style={{background:query===p.label?C.greenDim:C.cardAlt,border:`1px solid ${query===p.label?C.green+"55":C.border}`,color:query===p.label?C.green:C.mutedHi,borderRadius:99,padding:"6px 12px",minHeight:LAYOUT.minTap,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer",transition:"all .15s"}}>{p.label}</button>
             ))}
           </div>
         </div>
@@ -2397,13 +2409,19 @@ Rules: do not invent or quote any number not in the calculated results above. St
         <div style={{display:"flex",gap:GAP.controlToControl,marginBottom:20}}>
           <input
             value={inputVal}
-            onChange={e=>setInputVal(e.target.value)}
+            onChange={e=>{ setInputVal(e.target.value); if (needAmount) setNeedAmount(false); }}
             onKeyDown={e=>e.key==="Enter"&&simulate()}
             placeholder="e.g. Buy a $450 TV…"
             style={{flex:1,minWidth:0,padding:"12px 16px",minHeight:LAYOUT.minTap,boxSizing:"border-box",borderRadius:14,border:`1.5px solid ${C.border}`,background:C.surface,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,outline:"none"}}
           />
           <button onClick={()=>simulate()} style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",border:"none",borderRadius:14,padding:"12px 18px",minHeight:LAYOUT.minTap,flexShrink:0,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>Simulate →</button>
         </div>
+
+        {needAmount && !loading && (
+          <div role="status" style={{marginTop:-SPACE.sm,marginBottom:SPACE.lg,padding:"12px 14px",borderRadius:14,background:C.gold+"14",border:`1px solid ${C.gold}44`,color:C.cream,fontSize:13,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            Type the amount too, like "Buy a $800 laptop", then press Simulate.
+          </div>
+        )}
 
         {/* Loading */}
         {loading && (
@@ -3438,6 +3456,8 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
     try {
       // Phase D3: AI opt-out — skip the AI tip; the catch below says so rather than inventing one
       ensureAiEnabled("AI disabled"); // Step 8: single gate — no request reaches /api/coach when AI is off
+      // demo-clarity: the demo has no sign-in, which /api/coach refuses; the catch below is what it showed anyway.
+      if (data.demo) throw new Error("demo: no AI request");
       const _jwt = await getJwt();
       const r = await fetch(`${API_BASE}/api/coach`, {
         method:"POST",
@@ -4594,6 +4614,9 @@ const INIT_NOTIFS=[
   {id:1,icon:"sparkles",title:"Welcome to Flourish 🌱",body:"Your financial dashboard is ready. Connect your bank for live insights.",read:false,time:"Just now",type:"autopilot",color:NOTIF_COLORS.autopilot},
 ];
 
+// demo-clarity: the welcome notice is not counted on the badge in the demo (it is still in the list).
+function badgeInitNotifs(data) { return data && data.demo ? INIT_NOTIFS.filter(n => n.id !== 1) : INIT_NOTIFS; }
+
 // Generate real notifications from user's actual bills and data
 function buildLiveNotifs(data) {
   const notifs = [];
@@ -5406,7 +5429,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const getUnreadCount = () => {
     try {
       const readIds = new Set(safeLoadLS("flourish_read_notifs", []));
-      return [...INIT_NOTIFS, ...(data ? buildLiveNotifs(data) : [])].filter(n=>!readIds.has(n.id)).length;
+      return [...badgeInitNotifs(data), ...(data ? buildLiveNotifs(data) : [])].filter(n=>!readIds.has(n.id)).length;
     } catch { return 0; }
   };
   const unread = getUnreadCount();
@@ -5460,202 +5483,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   // ── Net worth invest ─────────────────────────────────────────────────────────
   const invAccts=(data.accounts||[]).filter(a=>isInvestmentAccount(a));
 
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:14}}>
-      {showCustomize&&dashLayout&&<DashCustomize layout={dashLayout} onChange={setDashLayout} onClose={()=>setShowCustomize(false)}/>}
-      {showTransparency&&<DataTransparencyPanel data={data} onClose={()=>setShowTransparency(false)}/>}
-      {/* Every figure below is handed in from an engine; this sheet reads back, it never works out. */}
-      {explain==="safeToSpend"&&(
-        <HowWeGotThis
-          title="Safe to spend until next payday"
-          value={ssView.headlineText}
-          meaning="What is left after the bills, debt payments and savings already committed before your next deposit. Spending up to this leaves everything else covered."
-          inputs={[
-            {label:"In your accounts", value:ssView.balanceText},
-            ...ssView.rows.filter(r=>r.kind!=="balance").map(r=>({label:`${r.sign||""} ${r.label}`.trim(), value:r.value})),
-          ]}
-          changeLabel="See the full working"
-          onChange={()=>{setExplain(null);setShowTransparency(true);}}
-          onClose={()=>setExplain(null)}/>
-      )}
-      {showTerm&&(
-        <HowWeGotThis
-          title={showTerm}
-          meaning={TERMS[showTerm]}
-          onClose={()=>setShowTerm(null)}/>
-      )}
-
-      {/* ── Top status bar ───────────────────────────────────────────────── */}
-      {/* Demo's "Example · sample data" is longer than "Live · up to date". At 390px it no longer fits
-          beside the date and Reorder, and without wrapping all three broke into two-line fragments. In
-          demo the row may wrap, each label stays whole, and the date + Reorder group stays right-aligned
-          on its own line. Non-demo markup is unchanged. */}
-      <div style={{...anim(0),display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:2,...(data.demo?{flexWrap:"wrap",rowGap:8}:{})}}>
-        {/* In demo this was a GREEN-tinted pill — rgba(0,204,133,…) background and border, the live
-            colour family — with a gold dot and a gold-but-not-tagInk label inside it. A fourth look
-            for the one label whose job is to say the numbers are not yours. In demo the chip IS the
-            example tag: exampleTagStyle(), no dot (a dot beside a label is a liveness signal), and
-            no green. Non-demo markup is unchanged. */}
-        <div onClick={()=>setShowTransparency(true)}
-          style={data.demo
-            ? {...exampleTagStyle(),display:"inline-flex",alignItems:"center",cursor:"pointer"}
-            : {display:"flex",alignItems:"center",gap:7,background:"rgba(0,204,133,0.06)",border:"1px solid rgba(0,204,133,0.12)",borderRadius:99,padding:"4px 10px",cursor:"pointer"}}
-          title="How is this calculated?">
-          {(()=>{
-            // Wording comes from demoStatus.js: in demo mode every figure is sample data, so this chip
-            // must say so (the same "Example · sample data" Meet uses) rather than "Live".
-            const chip = statusChip({demo:!!data.demo, lastRefreshRaw:localStorage.getItem("flourish_last_refresh"), nowMs:Date.now()});
-            if (data.demo) return chip.label;
-            return <>
-              <div style={{width:6,height:6,borderRadius:"50%",background:C.green,boxShadow:`0 0 8px ${C.green}`,animation:"pulse 2.8s ease-in-out infinite",flexShrink:0}}/>
-              <span style={{color:C.green,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>{chip.label}</span>
-              {chip.detail&&<span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{chip.detail}</span>}
-            </>;
-          })()}
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:GAP.textToControl,...(data.demo?{marginLeft:"auto"}:{})}}>
-          <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2,...(data.demo?{whiteSpace:"nowrap"}:{})}}>{new Date().toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}</span>
-          {setDashLayout&&<button onClick={()=>setShowCustomize(true)} style={{background:`linear-gradient(135deg,${C.green}22,${C.teal}11)`,border:`1px solid ${C.green}44`,borderRadius:99,padding:"0 14px",minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer",letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}>⠿ Reorder</button>}
-        </div>
-      </div>
-
-      {/* ── Greeting + Bell ──────────────────────────────────────────────── */}
-      <div style={{...anim(30),display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div>
-          <div style={{fontSize:27,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",lineHeight:1.15,letterSpacing:-0.5}}>
-            Hey {data.profile?.name||"there"} 👋
-          </div>
-          <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>
-            {urgentBill?`⚠️ ${urgentBill.name} due in ${daysUntilDueDay(urgentBill.date, new Date())} day${daysUntilDueDay(urgentBill.date, new Date())===1?"":"s"}`:isPayday?"🎉 Payday: a great time to save":"Here's your financial pulse"}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Phase 3a: Today / Decisions tab bar ─────────────────────────── */}
-      <div style={{display:"flex",gap:GAP.controlToControl,marginBottom:SPACE.lg,padding:SPACE.xs,background:C.cardAlt,borderRadius:14,border:`1px solid ${C.border}`}}>
-        {[
-          {id:"today",     label:"Today"},
-          {id:"decisions", label:"Decisions"},
-        ].map(t=>(
-          <button key={t.id} onClick={()=>setDashTab(t.id)} style={{
-            flex:1,padding:"10px 8px",minHeight:LAYOUT.minTap,fontSize:13,fontWeight:700,
-            background: dashTab===t.id ? C.green+"22" : "transparent",
-            border:     dashTab===t.id ? `1px solid ${C.green}44` : "1px solid transparent",
-            borderRadius:10,
-            color:      dashTab===t.id ? C.greenInk : C.muted,
-            cursor:"pointer",
-            fontFamily:"'Plus Jakarta Sans',sans-serif",
-            transition:"all .15s",
-          }}>{t.label}</button>
-        ))}
-      </div>
-
-      {/* Phase 3b: Today tab content guard */}
-      {dashTab === "today" && (<>
-
-      {/* ── Pre-bank estimated insight — replaces generic "sample data" banner ── */}
-      {(!data.transactions||data.transactions.length===0)&&(()=>{
-        // Calculate a real estimate from their onboarding data
-        const toMo = toMonthly; // Bug 1: canonical converter
-        const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
-        const monthlyBills = (data.bills||[]).reduce((s,b)=>s+billMonthlyAmount(b),0);
-        const safetyBuffer = monthlyIncome * 0.15;
-        const estimatedSpend = monthlyIncome * 0.68; // avg spend rate
-        const surplus = monthlyIncome - monthlyBills - safetyBuffer;
-        const overspend = estimatedSpend - (monthlyIncome - monthlyBills - safetyBuffer);
-        const hasData = monthlyIncome > 0;
-        return(
-          <div style={{...anim(50),background:hasData?(overspend>0?C.red+"12":C.green+"10"):C.gold+"10",
-            border:`1px solid ${hasData?(overspend>0?C.red+"33":C.green+"30"):C.gold+"33"}`,
-            borderRadius:16,padding:"14px 16px",cursor:"pointer"}}
-            onClick={()=>setScreen("coach")}>
-            <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📊 Estimate · Based on your setup. Connect your bank for real numbers</div>
-            <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-              <span style={{fontSize:20,flexShrink:0}}>{hasData?(overspend>0?"⚠️":"💡"):"🔗"}</span>
-              <div style={{flex:1}}>
-                {hasData?(
-                  <>
-                    <div style={{color:overspend>0?C.redBright:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:3}}>
-                      {overspend>0
-                        ? `Based on your setup, you may be overspending by $${Math.round(overspend).toLocaleString()}/mo`
-                        : `Based on your setup, you have ~$${Math.round(Math.max(0,surplus)).toLocaleString()}/mo to work with`}
-                    </div>
-                    <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>
-                      {overspend>0
-                        ? "Connect your bank to see exactly where it's going, and fix it."
-                        : "Connect your bank to track it live and make it work harder."}
-                    </div>
-                    <div style={{marginTop:8,display:"flex",gap:8}}>
-                      <button onClick={e=>{e.stopPropagation();setScreen("coach");}} style={{background:overspend>0?C.red+"22":C.green+"22",border:`1px solid ${overspend>0?C.red+"44":C.green+"44"}`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:overspend>0?C.redBright:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                        Ask Coach →
-                      </button>
-                      <button onClick={e=>{e.stopPropagation();window.dispatchEvent(new CustomEvent("flourish:settings"));}} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:C.mutedHi,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                        Connect Bank
-                      </button>
-                    </div>
-                  </>
-                ):(
-                  <>
-                    <span style={{color:C.goldBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Estimates based on your setup</span>
-                    <span style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginLeft:6}}>Connect your bank for live data</span>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Income accuracy: folded into priority tile below */}
-
-      {/* ═══════════════════════════════════════════════════════════════════
-          BENTO GRID — rendered in user's custom order from dashLayout
-      ═══════════════════════════════════════════════════════════════════ */}
-      <div style={{display:"flex",flexDirection:"column",gap:12}}>
-
-        {/* Step 7 / COPY-CHANGES §6: Today priorities — one thing to know (Forecast/SafeSpend),
-            one thing you could do (deterministic from the engine's safe number), Explain this → Learn.
-            Everything else stays below. Numbers are engine outputs; no AI is involved. */}
-        {isVisible('hero')&&(()=>{
-          // Item 4: the "know" line is the highest-priority forecast/bill item — NEVER the safe-to-spend
-          // hero figure. If no such item exists, hide the line and keep "one thing you could do".
-          const know = todayKnowItem({ overdraftImmediate, sevenDayOverdraft, nextBill: (soonBills||[])[0] });
-          // Consolidation 1: the daily number is the ONE suggested pace (same as Decisions), never a
-          // second division of safe. The weekly framing is that daily figure, not safe/7.
-          // Prompt 3d: the engine's pace as a fact, not an instruction. "deposit", not "paycheque":
-          // this surface has not established WHICH income arrives next.
-          const doIt = safe>0
-            // The displayed headline (ssView), so this reads the same figure as the hero above (prompt 3e fix).
-            ? `Today's pace is ${dailyPace.dailyText}: ${formatMoney(ssView.headline)} safe to spend spread over ${dailyPace.daysLeft} days.`
-            : "Nothing is left to spend until your next deposit lands.";
-          return (
-            <div style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"14px 16px",marginBottom:12}}>
-              {know && <>
-              <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>One thing to know</div>
-              <div style={{color:C.cream,fontSize:13.5,lineHeight:1.55,margin:"3px 0 10px"}}>{know}</div>
-              </>}
-              <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Today's pace</div>
-              <div style={{color:C.cream,fontSize:13.5,lineHeight:1.55,margin:"3px 0 4px"}}>{doIt}</div>
-              {/* The row this rule was written for. It said space-between with flex:1 on the button:
-                  the button grew until there was no space left to put between anything, and the
-                  sentence ended flush against it. row() wraps instead, and the button no longer
-                  grows. See docs/design/LAYOUT-RULES.md. */}
-              <div style={row({justifyContent:"space-between",marginTop:SPACE.md})}>
-                <CalcByFlourish/>
-                <button onClick={()=>setScreen&&setScreen("coach")} style={{...rowControl(),background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:99,padding:"11px 14px",color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Explain this →</button>
-              </div>
-            </div>
-          );
-        })()}
-        {/* Ask, don't guess: a deposit that doesn't yet count as income, raised once */}
-        <DepositQuestionCard data={data} setAppData={setAppData} style={{...anim(55),marginBottom:12}}/>
-        {showSetupChecklist(data,{numberSeen,dismissed:checklistDismissed})&&(
-          <SetupChecklistCard items={setupChecklist(data,{numberSeen})} style={{...anim(57),marginBottom:12}}
-            onDismiss={()=>{ try{localStorage.setItem(CHECKLIST_DISMISSED_KEY,"1");}catch{} setChecklistDismissed(true); }}/>
-        )}
-        <WeekOneCard data={data} setAppData={setAppData} style={{...anim(58),marginBottom:12}}/>
-        {/* ── HERO: Safe to Spend ── full width ─────────────────────────── */}
-        {isVisible('hero')&&(
+  // The safe-to-spend card, defined once: Today shows it first in the demo (demo-clarity) and after the priorities otherwise.
+  const heroCard = isVisible('hero')&&(
         <div style={{...anim(60),cursor:"pointer",position:"relative",overflow:"hidden",borderRadius:28,
           background:overdraftImmediate
             ?(C.isDark?"linear-gradient(155deg,rgba(24,6,16,0.92) 0%,rgba(32,8,16,0.85) 45%,rgba(12,5,10,0.90) 100%)":"linear-gradient(155deg,rgba(255,240,244,0.96) 0%,rgba(255,232,238,0.94) 45%,rgba(244,241,235,0.96) 100%)")
@@ -5675,7 +5504,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           <div style={{position:"relative",padding:"24px 24px 20px"}}>
             {/* columnGap stays 8 so the pulsing dot sits tight against its label; InfoDot adds its own
                 4px either side, which is what makes the clearance to text 12. rowGap comes from row(). */}
-            <div style={row({columnGap:SPACE.sm,marginBottom:"0.8em"})}>
+            <div data-tour="today" style={row({columnGap:SPACE.sm,marginBottom:"0.8em"})}>
               <div style={{width:6,height:6,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 10px ${heroColor}`,animation:"pulse 2.5s ease-in-out infinite"}}/>
               <span style={{color:heroColorBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Safe to spend until next payday</span>
               <InfoDot term="Safe to spend" onOpen={setShowTerm}/>
@@ -5695,7 +5524,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               <div style={{color:C.mutedHi,fontSize:13,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Safe-to-spend plans around your bills using your income →</div>
             </div>
             ) : (
-            <button onClick={e=>{e.stopPropagation();setExplain("safeToSpend");}} aria-label="How Flourish got this number"
+            <button onClick={e=>{e.stopPropagation();setExplain("safeToSpend");}} data-tour="today" aria-label="How Flourish got this number"
               style={{background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",
               fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:1,marginBottom:18,position:"relative",display:"inline-block"}}>
               {ssView.isShort&&<span style={{fontSize:76,color:heroColorBright,letterSpacing:"-0.053em",fontWeight:900}}>-</span>}<span style={{fontSize:24,color:heroColorBright,verticalAlign:"top",marginTop:"0.46em",display:"inline-block",fontWeight:700}}>$</span>
@@ -5752,7 +5581,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               const rowColor = (r) => r.kind === "balance" ? heroColorBright : (r.key === "upcomingBills" || r.key === "debtPayments") ? C.gold : C.mutedHi;
               const breakdownRows = ssView.rows.map(r => ({ label:r.label, value:r.value, sign:r.sign, color:rowColor(r) }));
               return (
-                <div style={{marginBottom:14}}>
+                <div data-tour="today" style={{marginBottom:14}}>
                   {breakdownRows.map((r,i)=>(
                     <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"2px 0"}}>
                       <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign} {r.label}</span>
@@ -5915,7 +5744,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
                 {onWhatIf&&<button onClick={e=>{e.stopPropagation();onWhatIf();}} style={{background:"rgba(255,255,255,0.08)",border:`1px solid rgba(255,255,255,0.12)`,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:13,padding:"6px 12px",borderRadius:99,cursor:"pointer",minHeight:LAYOUT.minTap}}>What if? →</button>}
               </div>
               {/* Tap affordance — prominent pill, clear action */}
-              <div onClick={e=>{e.stopPropagation();overdraft?setScreen("plan"):setShowTransparency(true);}}
+              {/* demo-clarity: "Why this number?" opens How we got this for THIS figure (the full working is one tap on from there). */}
+              <div onClick={e=>{e.stopPropagation();overdraft?setScreen("plan"):setExplain("safeToSpend");}}
                 style={{display:"flex",alignItems:"center",gap:6,
                   background:`linear-gradient(135deg,${heroColor}22,${heroColor}12)`,
                   border:`1px solid ${heroColor}44`,
@@ -5934,7 +5764,205 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             </div>}
           </div>
         </div>
+        );
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      {showCustomize&&dashLayout&&<DashCustomize layout={dashLayout} onChange={setDashLayout} onClose={()=>setShowCustomize(false)}/>}
+      {showTransparency&&<DataTransparencyPanel data={data} onClose={()=>setShowTransparency(false)}/>}
+      {/* Every figure below is handed in from an engine; this sheet reads back, it never works out. */}
+      {explain==="safeToSpend"&&(
+        <HowWeGotThis
+          title="Safe to spend until next payday"
+          value={ssView.headlineText}
+          meaning="What is left after the bills, debt payments and savings already committed before your next deposit."
+          inputs={[
+            {label:"In your accounts", value:ssView.balanceText},
+            ...ssView.rows.filter(r=>r.kind!=="balance").map(r=>({label:`${r.sign||""} ${r.label}`.trim(), value:r.value})),
+          ]}
+          changeLabel="See the full working"
+          onChange={()=>{setExplain(null);setShowTransparency(true);}}
+          onClose={()=>setExplain(null)}/>
+      )}
+      {showTerm&&(
+        <HowWeGotThis
+          title={showTerm}
+          meaning={TERMS[showTerm]}
+          onClose={()=>setShowTerm(null)}/>
+      )}
+
+      {/* ── Top status bar ───────────────────────────────────────────────── */}
+      {/* Demo's "Example · sample data" is longer than "Live · up to date". At 390px it no longer fits
+          beside the date and Reorder, and without wrapping all three broke into two-line fragments. In
+          demo the row may wrap, each label stays whole, and the date + Reorder group stays right-aligned
+          on its own line. Non-demo markup is unchanged. */}
+      <div style={{...anim(0),display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:2,...(data.demo?{flexWrap:"wrap",rowGap:8}:{})}}>
+        {/* In demo this was a GREEN-tinted pill — rgba(0,204,133,…) background and border, the live
+            colour family — with a gold dot and a gold-but-not-tagInk label inside it. A fourth look
+            for the one label whose job is to say the numbers are not yours. In demo the chip IS the
+            example tag: exampleTagStyle(), no dot (a dot beside a label is a liveness signal), and
+            no green. Non-demo markup is unchanged. */}
+        <div onClick={()=>setShowTransparency(true)}
+          style={data.demo
+            ? {...exampleTagStyle(),display:"inline-flex",alignItems:"center",cursor:"pointer"}
+            : {display:"flex",alignItems:"center",gap:7,background:"rgba(0,204,133,0.06)",border:"1px solid rgba(0,204,133,0.12)",borderRadius:99,padding:"4px 10px",cursor:"pointer"}}
+          title="How is this calculated?">
+          {(()=>{
+            // Wording comes from demoStatus.js: in demo mode every figure is sample data, so this chip
+            // must say so (the same "Example · sample data" Meet uses) rather than "Live".
+            const chip = statusChip({demo:!!data.demo, lastRefreshRaw:localStorage.getItem("flourish_last_refresh"), nowMs:Date.now()});
+            if (data.demo) return chip.label;
+            return <>
+              <div style={{width:6,height:6,borderRadius:"50%",background:C.green,boxShadow:`0 0 8px ${C.green}`,animation:"pulse 2.8s ease-in-out infinite",flexShrink:0}}/>
+              <span style={{color:C.green,...TYPE.footnote,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,letterSpacing:0.4}}>{chip.label}</span>
+              {chip.detail&&<span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{chip.detail}</span>}
+            </>;
+          })()}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:GAP.textToControl,...(data.demo?{marginLeft:"auto"}:{})}}>
+          <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",letterSpacing:0.2,...(data.demo?{whiteSpace:"nowrap"}:{})}}>{new Date().toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}</span>
+          {setDashLayout&&<button onClick={()=>setShowCustomize(true)} style={{background:`linear-gradient(135deg,${C.green}22,${C.teal}11)`,border:`1px solid ${C.green}44`,borderRadius:99,padding:"0 14px",minHeight:LAYOUT.minTap,color:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer",letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}>⠿ Reorder</button>}
+        </div>
+      </div>
+
+      {/* ── Greeting + Bell ──────────────────────────────────────────────── */}
+      <div style={{...anim(30),display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div>
+          <div style={{fontSize:27,fontWeight:900,color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",lineHeight:1.15,letterSpacing:-0.5}}>
+            Hey {data.profile?.name||"there"} 👋
+          </div>
+          <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:2}}>
+            {urgentBill?`⚠️ ${urgentBill.name} due in ${daysUntilDueDay(urgentBill.date, new Date())} day${daysUntilDueDay(urgentBill.date, new Date())===1?"":"s"}`:isPayday?"🎉 Payday: a great time to save":"Here's your financial pulse"}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Phase 3a: Today / Decisions tab bar ─────────────────────────── */}
+      <div style={{display:"flex",gap:GAP.controlToControl,marginBottom:SPACE.lg,padding:SPACE.xs,background:C.cardAlt,borderRadius:14,border:`1px solid ${C.border}`}}>
+        {[
+          {id:"today",     label:"Today"},
+          {id:"decisions", label:"Decisions"},
+        ].map(t=>(
+          <button key={t.id} onClick={()=>setDashTab(t.id)} style={{
+            flex:1,padding:"10px 8px",minHeight:LAYOUT.minTap,fontSize:13,fontWeight:700,
+            background: dashTab===t.id ? C.green+"22" : "transparent",
+            border:     dashTab===t.id ? `1px solid ${C.green}44` : "1px solid transparent",
+            borderRadius:10,
+            color:      dashTab===t.id ? C.greenInk : C.muted,
+            cursor:"pointer",
+            fontFamily:"'Plus Jakarta Sans',sans-serif",
+            transition:"all .15s",
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* Phase 3b: Today tab content guard */}
+      {dashTab === "today" && (<>
+
+      {/* ── Pre-bank estimated insight — replaces generic "sample data" banner ── */}
+      {(!data.transactions||data.transactions.length===0)&&(()=>{
+        // Calculate a real estimate from their onboarding data
+        const toMo = toMonthly; // Bug 1: canonical converter
+        const monthlyIncome = (data.incomes||[]).filter(i=>parseFloat(i.amount)>0).reduce((s,i)=>s+toMo(i.amount,i.freq),0);
+        const monthlyBills = (data.bills||[]).reduce((s,b)=>s+billMonthlyAmount(b),0);
+        const safetyBuffer = monthlyIncome * 0.15;
+        const estimatedSpend = monthlyIncome * 0.68; // avg spend rate
+        const surplus = monthlyIncome - monthlyBills - safetyBuffer;
+        const overspend = estimatedSpend - (monthlyIncome - monthlyBills - safetyBuffer);
+        const hasData = monthlyIncome > 0;
+        return(
+          <div style={{...anim(50),background:hasData?(overspend>0?C.red+"12":C.green+"10"):C.gold+"10",
+            border:`1px solid ${hasData?(overspend>0?C.red+"33":C.green+"30"):C.gold+"33"}`,
+            borderRadius:16,padding:"14px 16px",cursor:"pointer"}}
+            onClick={()=>setScreen("coach")}>
+            <div style={{color:C.muted,fontSize:13,fontWeight:700,marginBottom:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>📊 Estimate · Based on your setup. Connect your bank for real numbers</div>
+            <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+              <span style={{fontSize:20,flexShrink:0}}>{hasData?(overspend>0?"⚠️":"💡"):"🔗"}</span>
+              <div style={{flex:1}}>
+                {hasData?(
+                  <>
+                    <div style={{color:overspend>0?C.redBright:C.greenBright,fontWeight:800,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:3}}>
+                      {overspend>0
+                        ? `Based on your setup, you may be overspending by $${Math.round(overspend).toLocaleString()}/mo`
+                        : `Based on your setup, you have ~$${Math.round(Math.max(0,surplus)).toLocaleString()}/mo to work with`}
+                    </div>
+                    <div style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",lineHeight:1.6}}>
+                      {overspend>0
+                        ? "Connect your bank to see exactly where it's going, and fix it."
+                        : "Connect your bank to track it live and make it work harder."}
+                    </div>
+                    <div style={{marginTop:8,display:"flex",gap:8}}>
+                      <button onClick={e=>{e.stopPropagation();setScreen("coach");}} style={{background:overspend>0?C.red+"22":C.green+"22",border:`1px solid ${overspend>0?C.red+"44":C.green+"44"}`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:overspend>0?C.redBright:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                        Ask Coach →
+                      </button>
+                      <button onClick={e=>{e.stopPropagation();window.dispatchEvent(new CustomEvent("flourish:settings"));}} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${C.border}`,borderRadius:99,padding:"11px 14px",flex:1,minHeight:LAYOUT.minTap,color:C.mutedHi,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+                        Connect Bank
+                      </button>
+                    </div>
+                  </>
+                ):(
+                  <>
+                    <span style={{color:C.goldBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Estimates based on your setup</span>
+                    <span style={{color:C.mutedHi,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginLeft:6}}>Connect your bank for live data</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Income accuracy: folded into priority tile below */}
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          BENTO GRID — rendered in user's custom order from dashLayout
+      ═══════════════════════════════════════════════════════════════════ */}
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+
+        {/* demo-clarity: in the demo the safe-to-spend card comes first, above "One thing to know". */}
+        {data.demo&&heroCard}
+        {/* Step 7 / COPY-CHANGES §6: Today priorities — one thing to know (Forecast/SafeSpend),
+            one thing you could do (deterministic from the engine's safe number), Explain this → Learn.
+            Everything else stays below. Numbers are engine outputs; no AI is involved. */}
+        {isVisible('hero')&&(()=>{
+          // Item 4: the "know" line is the highest-priority forecast/bill item — NEVER the safe-to-spend
+          // hero figure. If no such item exists, hide the line and keep "one thing you could do".
+          const know = todayKnowItem({ overdraftImmediate, sevenDayOverdraft, nextBill: (soonBills||[])[0] });
+          // Consolidation 1: the daily number is the ONE suggested pace (same as Decisions), never a
+          // second division of safe. The weekly framing is that daily figure, not safe/7.
+          // Prompt 3d: the engine's pace as a fact, not an instruction. "deposit", not "paycheque":
+          // this surface has not established WHICH income arrives next.
+          const doIt = safe>0
+            // The displayed headline (ssView), so this reads the same figure as the hero above (prompt 3e fix).
+            ? paceSentence(dailyPace, ssView.headline)
+            : "Nothing is left to spend until your next deposit lands.";
+          return (
+            <div style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"14px 16px",marginBottom:12}}>
+              {know && <>
+              <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>One thing to know</div>
+              <div style={{color:C.cream,fontSize:13.5,lineHeight:1.55,margin:"3px 0 10px"}}>{know}</div>
+              </>}
+              <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Today's pace</div>
+              <div style={{color:C.cream,fontSize:13.5,lineHeight:1.55,margin:"3px 0 4px"}}>{doIt}</div>
+              {/* The row this rule was written for. It said space-between with flex:1 on the button:
+                  the button grew until there was no space left to put between anything, and the
+                  sentence ended flush against it. row() wraps instead, and the button no longer
+                  grows. See docs/design/LAYOUT-RULES.md. */}
+              <div style={row({justifyContent:"space-between",marginTop:SPACE.md})}>
+                <CalcByFlourish/>
+                <button onClick={()=>setScreen&&setScreen("coach")} style={{...rowControl(),background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:99,padding:"11px 14px",color:C.greenBright,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Explain this →</button>
+              </div>
+            </div>
+          );
+        })()}
+        {/* Ask, don't guess: a deposit that doesn't yet count as income, raised once */}
+        {!data.demo&&<DepositQuestionCard data={data} setAppData={setAppData} style={{...anim(55),marginBottom:12}}/>}
+        {showSetupChecklist(data,{numberSeen,dismissed:checklistDismissed})&&(
+          <SetupChecklistCard items={setupChecklist(data,{numberSeen})} style={{...anim(57),marginBottom:12}}
+            onDismiss={()=>{ try{localStorage.setItem(CHECKLIST_DISMISSED_KEY,"1");}catch{} setChecklistDismissed(true); }}/>
         )}
+        <WeekOneCard data={data} setAppData={setAppData} style={{...anim(58),marginBottom:12}}/>
+        {/* ── HERO: Safe to Spend ── full width (heroCard, above; first on the demo's Today) */}
+        {!data.demo&&heroCard}
 
         {/* No "Tap any number" tip on Today (watch-meet-fixes item 2): the tip may only show where every
             figure on the screen opens How we got this, and Today's cards carry figures that do not
@@ -6888,7 +6916,7 @@ function HowWeGotThis({ title, value, meaning, inputs = [], source, changeLabel,
 // "Bills" needs no explanation. "Safe to spend" sounds like a balance and is not one. Everything
 // else explains itself by being tapped, because the number opens HowWeGotThis.
 const TERMS = {
-  "Safe to spend": "Not your balance. What is left after the bills, debt payments and savings already committed before your next deposit, so spending up to it leaves everything else covered.",
+  "Safe to spend": "Not your balance. What is left after the bills, debt payments and savings already committed before your next deposit.",
   "Time Machine": "A what-if. It replays your own numbers forward with one thing changed, so you can see a decision before you make it. Nothing is saved and no money moves.",
   "Money meeting": "A short, structured check-in on the week: what went well, what changed, what is coming. Flourish writes the agenda from your numbers, and you and your coach work through it.",
   "Health score": "A single 0 to 100 read on how your money is holding up, from your buffer, your bills, your debts and how steady your spending is. It moves slowly on purpose.",
@@ -7540,7 +7568,7 @@ function PlanAhead({data, setAppData, setScreen, initialRange = 30}){
       </div>
       <button onClick={()=>setShowExpected(true)} style={{...rowControl(),background:C.green+"22",border:`1px solid ${C.green}44`,color:C.greenInk,borderRadius:99,padding:"11px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>+ Add</button>
     </Card>}
-    <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
+    <div data-tour="watch" style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
     {(()=>{
       const avgDailySpend = FinancialCalcEngine.avgDailySpend(data);
       // The overdraft card's low day is listed too, even with nothing landing on it (usually the eve of a
@@ -7557,7 +7585,7 @@ function PlanAhead({data, setAppData, setScreen, initialRange = 30}){
         const stopToggle=e=>{e.stopPropagation();toggleDay();};
         const dayName=day.d.toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"});
         return (
-          <div key={i} style={{background:isToday?C.greenDim:neg?C.redDim:C.card,borderRadius:20,border:`1px solid ${borderColor}`,boxShadow:isToday?`0 0 24px ${C.green}18`:neg?`0 0 24px ${C.red}18`:"none",overflow:"hidden"}}>
+          <div key={i} data-tour={i<2?"watch":undefined} style={{background:isToday?C.greenDim:neg?C.redDim:C.card,borderRadius:20,border:`1px solid ${borderColor}`,boxShadow:isToday?`0 0 24px ${C.green}18`:neg?`0 0 24px ${C.red}18`:"none",overflow:"hidden"}}>
             {/* The whole card still opens the breakdown on a tap, but the controls in it are separate
                 buttons rather than one role="button" wrapped round the line buttons (nested controls, which
                 a screen reader cannot use): the date, the balance, and every line. A line with no edit
@@ -9926,7 +9954,7 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData }){
       <NotAdviceLine style={{textAlign:"left",marginBottom:SPACE.sm}}/>
       <div style={{color:C.muted,fontSize:13,marginBottom:14,lineHeight:1.5}}>Flourish writes this agenda from your week, using the numbers it already worked out.{facilitatorGate === "ready" ? " The coach keeps it calm and about the numbers." : ""}</div>
 
-      <div style={card}>
+      <div style={card} data-tour="meet">
         <div style={sTitle}>This week</div>
         {items.length>0
           ? <div style={{display:"flex",flexDirection:"column",gap:GAP.controlToControl}}>{items.map((it,i)=>it.explain
@@ -12632,12 +12660,14 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
            same engines the rest of the demo reads, so the coach never contradicts the Today card. The
            real coach path below is untouched for signed-in users. */
         <div style={{flex:1,overflowY:"auto",padding:"14px 16px 20px",display:"flex",flexDirection:"column",gap:12}}>
+          {/* demo-clarity: what this screen is, before the scripted conversation (tour step 4 lands here). */}
+          <div style={{color:C.cream,fontSize:13,lineHeight:1.55,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Sample conversation. In the app, the coach explains figures Flourish has already calculated. It isn't a licensed adviser.</div>
           <div style={{background:C.gold+"14",border:`1px solid ${C.gold}44`,borderRadius:12,padding:"10px 12px"}}>
             <div style={{color:C.goldBright,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Example conversation · sample data</div>
             <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.55,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>A scripted preview of how your coach answers. Every figure is calculated by Flourish from this demo's numbers, so it matches the rest of the demo, but this is not a live chat.</div>
           </div>
           {demoCoachExchanges(data, new Date()).map((x,i)=>(
-            <div key={i} style={{display:"flex",flexDirection:"column",gap:7}}>
+            <div key={i} data-tour={i===0?"coach":undefined} style={{display:"flex",flexDirection:"column",gap:7}}>
               <div style={{alignSelf:"flex-end",maxWidth:"86%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:"14px 14px 4px 14px",padding:"9px 12px",color:C.cream,fontSize:13,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{x.q}</div>
               <div style={{alignSelf:"flex-start",maxWidth:"94%",background:C.purpleDim,border:`1px solid ${C.purple}44`,borderRadius:"14px 14px 14px 4px",padding:"10px 13px",color:C.cream,fontSize:13,lineHeight:1.62,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{x.a}</div>
             </div>
@@ -14221,6 +14251,68 @@ function WaitlistForm({ source = "landing" }) {
   );
 }
 
+// demo-clarity: "See how it works", one short video per screen (approved by ChatGPT and Grok; 1080 x 1920,
+// H.264 with an AI voice, captions burned in). Posters are each video's first frame. An Overview video will
+// be added later as the FIRST entry here (public/video/overview.mp4). One video shows at a time; each is
+// muted by default (sound on from its controls), preload="none" so only the small poster loads with the
+// page, and plays muted on its own only when the block is in view, never under prefers-reduced-motion.
+const HOWTO_VIDEOS = [
+  { id: "today", tab: "Today", label: "How the Today screen works, with sample data" },
+  { id: "watch", tab: "Watch", label: "How the Watch screen works, with sample data" },
+  { id: "meet", tab: "Meet", label: "How the Meet screen works, with sample data" },
+];
+function LandingHowTo() {
+  const [active, setActive] = useState(HOWTO_VIDEOS[0].id);
+  const box = useRef(null), vids = useRef({}), inView = useRef(false), autoplayed = useRef(new Set());
+  const reduce = () => { try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } };
+  const playIfAllowed = (id) => {
+    const v = vids.current[id];
+    if (!v || !inView.current || reduce() || autoplayed.current.has(id)) return;
+    autoplayed.current.add(id); // plays on its own once; after that the controls are the visitor's
+    v.muted = true; const pr = v.play(); if (pr && pr.catch) pr.catch(() => {});
+  };
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        inView.current = e.isIntersecting && e.intersectionRatio >= 0.5;
+        const v = vids.current[active];
+        if (inView.current) playIfAllowed(active);
+        else if (v && !v.paused) v.pause();
+      }
+    }, { threshold: [0, 0.5] });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
+  const choose = (id) => {
+    Object.entries(vids.current).forEach(([k, v]) => { if (k !== id && v && !v.paused) v.pause(); });
+    setActive(id);
+  };
+  return (
+    <section className="fll-walk" ref={box} aria-labelledby="fll-walk-t">
+      <h2 className="fll-walk-t" id="fll-walk-t">See how it works</h2>
+      <div className="fll-walk-tabs" role="tablist" aria-label="Choose a screen">
+        {HOWTO_VIDEOS.map(v => (
+          <button key={v.id} type="button" role="tab" id={`fll-walk-tab-${v.id}`} aria-selected={active === v.id} aria-controls={`fll-walk-panel-${v.id}`}
+            tabIndex={active === v.id ? 0 : -1} className={active === v.id ? "on" : ""} onClick={() => choose(v.id)}
+            onKeyDown={e => { if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return; e.preventDefault();
+              const k = HOWTO_VIDEOS.findIndex(x => x.id === active), n = HOWTO_VIDEOS[(k + (e.key === "ArrowRight" ? 1 : HOWTO_VIDEOS.length - 1)) % HOWTO_VIDEOS.length];
+              choose(n.id); setTimeout(() => { const b = document.getElementById(`fll-walk-tab-${n.id}`); if (b) b.focus(); }, 0); }}>{v.tab}</button>
+        ))}
+      </div>
+      {HOWTO_VIDEOS.map(v => (
+        <div key={v.id} role="tabpanel" id={`fll-walk-panel-${v.id}`} aria-labelledby={`fll-walk-tab-${v.id}`} hidden={active !== v.id}>
+          <video ref={el => { vids.current[v.id] = el; }} className="fll-walk-v" src={`/video/${v.id}.mp4`} poster={`/video/${v.id}-poster.jpg`}
+            muted playsInline controls preload="none" width={720} height={1280} aria-label={v.label}
+            onLoadedMetadata={() => { if (active === v.id) playIfAllowed(v.id); }} />
+        </div>
+      ))}
+      <p className="fll-walk-note">Voice is AI-generated. Example, sample data.</p>
+    </section>
+  );
+}
+
 function AuthScreen({ onAuth, onTryDemo }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
@@ -14516,6 +14608,14 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-hero-form{ grid-area:form; }
             .fll-hero-demo{ grid-area:demo; }
             .fll-hero-demo .fll-demo{ margin-top:0; }
+            .fll-walk{ margin-block:0 16px; margin-inline:0; text-align:center; }
+            .fll-walk-t{ font-family:'Plus Jakarta Sans',sans-serif; font-size:15px; font-weight:800; color:#15321a; margin-block:0 10px; }
+            .fll-walk-tabs{ display:inline-flex; gap:${SPACE.xs}px; padding:${SPACE.xs}px; margin-block:0 12px; border-radius:99px; background:rgba(46,139,46,0.08); border:1px solid rgba(46,139,46,0.18); }
+            .fll-walk-tabs button{ min-height:44px; min-width:72px; padding:0 16px; border:none; border-radius:99px; background:none; color:#52624f; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; font-weight:700; cursor:pointer; }
+            .fll-walk-tabs button.on{ background:#fff; color:#1b5e20; box-shadow:0 2px 8px rgba(22,58,28,0.12); }
+            .fll-walk-tabs button:focus-visible{ outline:3px solid #1b5e20; outline-offset:2px; }
+            .fll-walk-note{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; color:#52624f; margin-block:10px 0; }
+            .fll-walk-v{ display:block; width:100%; max-width:360px; height:auto; aspect-ratio:9/16; margin-inline:auto; border-radius:22px; background:#15271a; box-shadow:0 18px 44px rgba(22,58,28,0.14); }
             .fll-hero-card-btn{ display:block; width:100%; padding:0; border:1px solid rgba(46,139,46,0.18); background:#fff; border-radius:22px; overflow:hidden; cursor:pointer; box-shadow:0 18px 44px rgba(22,58,28,0.14); }
             .fll-hero-card-btn:focus-visible{ outline:3px solid #1b5e20; outline-offset:4px; }
             .fll-hero-card img{ display:block; width:100%; height:auto; }
@@ -14581,6 +14681,8 @@ function AuthScreen({ onAuth, onTryDemo }) {
               .fll-hero-demo{ margin-top:-${SPACE.md}px; }
               .fll-hero-form .fll-capture{ margin-inline:0; }
               .fll-trust-row{ text-align:left; }
+              .fll-walk{ text-align:left; }
+              .fll-walk-v{ margin-inline:0; }
             }
             @media(min-width:1040px){
               .fll-proof{ justify-content:center; overflow-x:visible; flex-wrap:wrap; }
@@ -14629,6 +14731,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
                 <WaitlistForm source="hero"/>
               </div>
               <div className="fll-hero-demo">
+                <LandingHowTo/>
                 {onTryDemo && <button type="button" className="fll-demo" onClick={() => onTryDemo(waitlistCountry)}>Try the demo with {waitlistCountry === "US" ? "US" : "Canadian"} sample data →</button>}
                 <div className="fll-trust-row"><span className="fll-trust">🔒 Bank connections are read-only. flourish can't move your money.</span></div>
               </div>
@@ -15732,6 +15835,37 @@ export default function FlourishApp(){
   const [showNotifs,setShowNotifs]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
   const [tourStep,setTourStep]=useState(()=>{ try{return localStorage.getItem(TOUR_DONE_KEY)==="1"?null:0;}catch{return 0;} });
+  // demo-clarity: each tour step brings what it describes (TOUR_STEPS[n].target, the [data-tour] elements)
+  // into view between the app header and the sheet. When it is too tall for that gap, the sheet moves to
+  // the top (tourSheetTop, px) and the target sits between the sheet and the tab bar. Never covered.
+  const [tourSheetTop,setTourSheetTop]=useState(null);
+  useEffect(()=>{
+    if(tourStep===null) return;
+    const step=TOUR_STEPS[tourStep];
+    if(!step||!step.target){ setTourSheetTop(null); return; }
+    let tries=0, timer=null;
+    const scrollerOf=(el)=>{ for(let p=el.parentElement;p&&p!==document.body;p=p.parentElement){ const o=getComputedStyle(p).overflowY; if((o==="auto"||o==="scroll")&&p.scrollHeight>p.clientHeight+1) return p; } return null; };
+    const place=()=>{
+      const els=[...document.querySelectorAll(`[data-tour="${step.target}"]`)];
+      const sheet=document.getElementById("tour-sheet");
+      if(!els.length||!sheet){ if(tries++<30) timer=setTimeout(place,100); return; }
+      const rs=els.map(e=>e.getBoundingClientRect());
+      const top=Math.min(...rs.map(r=>r.top)), bottom=Math.max(...rs.map(r=>r.bottom)), h=bottom-top;
+      const bell=document.querySelector('[aria-label="Notifications"]');
+      const sc=scrollerOf(els[0]);
+      // Below the app header, and below the top of an inner scroller (the coach scrolls under its own bar).
+      const topSafe=Math.round(Math.max((bell?bell.getBoundingClientRect().bottom:0), sc?sc.getBoundingClientRect().top:0)+12);
+      const vh=window.innerHeight, sh=sheet.offsetHeight, gap=12, tabBar=100;
+      const fitsAbove = h <= (vh-tabBar-sh-gap) - topSafe;
+      const sheetTop = fitsAbove ? null : topSafe;
+      const want = fitsAbove ? topSafe : topSafe + sh + gap; // where the target's top should sit
+      const dy=Math.round(top-want);
+      if(sc) sc.scrollTop+=dy; else window.scrollBy(0,dy);
+      setTourSheetTop(sheetTop);
+    };
+    timer=setTimeout(place,150);
+    return ()=>{ if(timer) clearTimeout(timer); };
+  },[tourStep,screen]); // eslint-disable-line react-hooks/exhaustive-deps
   const dismissTour=()=>{ try{localStorage.setItem(TOUR_DONE_KEY,"1");}catch{} setTourStep(null); };
   // "Replay the tour" in Settings → Help & Support: back to step 1, on Today.
   const replayTour=()=>{ setShowSettings(false); setScreen(TOUR_STEPS[0].screen); setTourStep(0); };
@@ -16758,7 +16892,7 @@ export default function FlourishApp(){
   // It must NOT pre-accept the AI disclosure: demo is the path App Review takes (the iOS-only
   // "Try the demo" button), so auto-accepting hid the 5.1.2(i) screen from the exact audience it
   // exists for. Demo users now fall through to the disclosure gate below like everyone else.
-  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); }}/>;
+  if(!user && !appData?.demo)return <AuthScreen onAuth={u=>setUser(u)} onTryDemo={(country)=>{ const dd=buildDemoState(country); setAppData({...dd, transactions: markTransfers(dd.transactions||[], t => isInternalTransfer(t) || isCCPayment(t, dd.debts || []), isCashAdvance)}); setOnboarded(true); /* demo-clarity: the demo replaces the landing in the same page, so start it at the top, not wherever the landing was scrolled to */ try{ window.scrollTo(0,0); }catch{} }}/>;
 
   // Hold the onboarding + disclosure gates until the DB hydrate resolves. Both `onboarded` and
   // `aiDisclosureSeen` initialise from localStorage, which is EMPTY on a fresh install / new device,
@@ -16772,7 +16906,10 @@ export default function FlourishApp(){
   if(user && !hydrated && !onboarded)return <div style={{minHeight:"100dvh",background:"#050D09",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{animation:"pulse 1.5s infinite"}}><FlourishMark size={72}/></div></div>;
 
   // ── AI disclosure gate (Apple 5.1.2(i)) — must precede onboarding + all AI features ──
-  if(!aiDisclosureSeen)return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={declineAIDisclosure} onViewLegal={s=>setScreen(s)}/>;
+  // demo-clarity: the demo opens straight on Today. No demo feature sends anything to the AI (the coach chat
+  // is scripted, Meet's facilitator and the What-If and Check-In explanations make no request in the demo),
+  // so the disclosure is shown where a real account first meets the AI, and the coach screen keeps its own gate.
+  if(!aiDisclosureSeen && !appData?.demo)return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={declineAIDisclosure} onViewLegal={s=>setScreen(s)}/>;
 
   if(showWrapped)return <MoneyWrapped data={appData||{}} onClose={()=>setShowWrapped(false)}/>;
   if(showWhatIf)return <WhatIfSimulator data={appData||{}} setAppData={setAppData} initialQuery={whatIfQuery} initialType={whatIfType} autoRun={whatIfAutoRun} onScenarioChange={setActiveScenario} onUpgrade={()=>setShowPaywall(true)} onClose={()=>{setShowWhatIf(false);setWhatIfQuery("");setWhatIfType(null);setWhatIfAutoRun(false);}}/>;
@@ -16796,14 +16933,15 @@ export default function FlourishApp(){
       setOnboarded(true);
     }} onViewLegal={s=>setScreen(s)} userId={user?.id}/>;
   // First-visit focused screen — shown once after onboarding, dismissed permanently
-  if(!firstVisitDone&&appData)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}/>;
+  // demo-clarity: the demo has one intro, the five-step tour over Today; the "You're covered" screen is for a real account.
+  if(!firstVisitDone&&appData&&!appData.demo)return <FirstVisitScreen data={appData} onDismiss={dismissFirstVisit}/>;
   if(showUpgrade && billingUi.show)return <UpgradeScreen status={billingStatus} mode={billingUi.mode} notice={billingNotice} onClose={()=>{setShowUpgrade(false);setBillingNotice(null);}}/>;
   if(showPaywall && !isNativeApp())return <Paywall onClose={()=>setShowPaywall(false)} onPromoValid={async ()=>{ await refreshPlanFromProfile(user?.id); setShowPaywall(false); }} country={appData?.profile?.country||"CA"}/>;
 
   const unread = (() => {
     try {
       const readIds = new Set(safeLoadLS("flourish_read_notifs", []));
-      const all = [...INIT_NOTIFS, ...(appData ? buildLiveNotifs(appData) : [])];
+      const all = [...badgeInitNotifs(appData), ...(appData ? buildLiveNotifs(appData) : [])];
       return all.filter(n=>!readIds.has(n.id)).length;
     } catch { return 0; }
   })();
@@ -16975,7 +17113,7 @@ export default function FlourishApp(){
     if(screen==="do"||screen==="budget"||screen==="goals"||screen==="credit"){
       const editBudget = ()=>{ setBudgetEditRequested(true); setScreen("budget"); };
       const sub = (screen==="goals"||screen==="credit"||screen==="budget") ? screen : "budget";
-      return <><SegTabs tabs={[["budget","Budget"],["goals","Goals"],["credit","Credit"]]} value={sub} onChange={setScreen}/>
+      return <><div data-tour="do"><SegTabs tabs={[["budget","Budget"],["goals","Goals"],["credit","Credit"]]} value={sub} onChange={setScreen}/></div>
         {sub==="goals"
           ? <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen} onEditBudget={editBudget}/>
           : sub==="credit"
@@ -16985,7 +17123,8 @@ export default function FlourishApp(){
     if(screen==="coach"){
       // Phase D3: AI gates — opt-out check first, then first-time disclosure
       if(!aiCoachEnabled) return <AIDisabledNotice onOpenSettings={()=>setShowSettings(true)} onClose={()=>setScreen("home")}/>;
-      if(!aiDisclosureSeen) return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={()=>{declineAIDisclosure();setScreen("home");}} onViewLegal={s=>setScreen(s)}/>;
+      // demo-clarity: the demo's coach is a scripted conversation (no /api/coach request), so no disclosure there.
+      if(!aiDisclosureSeen && !appData?.demo) return <AIDisclosureScreen onAccept={acceptAIDisclosure} onDecline={()=>{declineAIDisclosure();setScreen("home");}} onViewLegal={s=>setScreen(s)}/>;
       // Phase D7: gate via library (handles trial unlimited + post-trial daily caps + tiers)
       // A store app: the weekly limit applies to every user, so only a paid or founder flag lifts it;
       // the trial does not (lib/featureAccess.js). The web is unchanged.
@@ -17268,7 +17407,7 @@ input,button,select,textarea { font-family:inherit; }
             <div style={{position:"fixed",inset:0,zIndex:200,pointerEvents:"none"}}>
               <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.72)",pointerEvents:"auto"}}
                 onClick={()=>{if(isLast) dismissTour();}}/>
-              <div role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-body" style={{position:"absolute",bottom:100,left:"50%",transform:"translateX(-50%)",
+              <div id="tour-sheet" role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-body" style={{position:"absolute",...(tourSheetTop!=null?{top:tourSheetTop}:{bottom:100}),left:"50%",transform:"translateX(-50%)",
                 width:"calc(100% - 40px)",maxWidth:390,
                 background:C.surface,borderRadius:20,padding:"20px 20px 16px",
                 border:`1px solid ${C.green}44`,boxShadow:`0 8px 40px rgba(0,0,0,0.6)`,
