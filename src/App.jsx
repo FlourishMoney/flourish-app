@@ -29,6 +29,7 @@ import { shouldPromptIncome, applyDetectedIncome, cadenceLabel, frequencyLabel }
 import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill } from "./lib/billReeval.js";
 import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate } from "./lib/statementImport.js";
 import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
+import { foundingOfferCopy, foundingLiveLine, fetchFoundingSpots } from "./lib/foundingOffer.js";
 import { isNativeApp, billingUiState, offeredPlans, billingReturnNotice, BILLING_RETURN_PARAMS } from "./lib/billingVisibility.js";
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/signupUi.js";
@@ -14313,6 +14314,30 @@ function LandingHowTo() {
   );
 }
 
+// The founding offer, directly under the hero's waitlist form (Amanda's decision, 2026-10-06). The
+// live line is the number /api/founding returned and nothing else: until it answers, or if it fails,
+// there is no line (src/lib/foundingOffer.js). Web only: a store app renders nothing and asks nothing.
+function FoundingOffer() {
+  const [spotsLeft, setSpotsLeft] = useState(null);
+  useEffect(() => {
+    if (isNativeApp()) return undefined;
+    let live = true;
+    fetchFoundingSpots().then(n => { if (live) setSpotsLeft(n); });
+    return () => { live = false; };
+  }, []);
+  if (isNativeApp()) return null;
+  const copy = foundingOfferCopy();
+  const liveLine = foundingLiveLine(spotsLeft);
+  return (
+    <section className="fll-founding" aria-labelledby="fll-founding-h">
+      <h2 className="fll-founding-h" id="fll-founding-h">{copy.heading}</h2>
+      <p className="fll-founding-p">{copy.price}</p>
+      <p className="fll-founding-p">{copy.join}</p>
+      {liveLine && <p className="fll-founding-live" data-founding-live="">{liveLine}</p>}
+    </section>
+  );
+}
+
 function AuthScreen({ onAuth, onTryDemo }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
@@ -14608,6 +14633,10 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-hero-form{ grid-area:form; }
             .fll-hero-demo{ grid-area:demo; }
             .fll-hero-demo .fll-demo{ margin-top:0; }
+            .fll-founding{ margin-block:${SPACE.lg}px 0; margin-inline:0; padding:${SPACE.lg}px; border-radius:${SPACE.lg}px; background:#fff; border:1px solid rgba(46,139,46,0.22); text-align:left; font-family:'Plus Jakarta Sans',sans-serif; }
+            .fll-founding-h{ font-size:16px; font-weight:800; line-height:1.35; color:#15321a; margin-block:0 ${SPACE.xs}px; }
+            .fll-founding-p{ font-size:14px; line-height:1.55; color:#3f4f3c; margin-block:${SPACE.xs}px 0; }
+            .fll-founding-live{ font-size:14px; font-weight:700; line-height:1.4; color:#1b5e20; margin-block:${SPACE.sm}px 0; }
             .fll-walk{ margin-block:0 16px; margin-inline:0; text-align:center; }
             .fll-walk-t{ font-family:'Plus Jakarta Sans',sans-serif; font-size:15px; font-weight:800; color:#15321a; margin-block:0 10px; }
             .fll-walk-tabs{ display:inline-flex; gap:${SPACE.xs}px; padding:${SPACE.xs}px; margin-block:0 12px; border-radius:99px; background:rgba(46,139,46,0.08); border:1px solid rgba(46,139,46,0.18); }
@@ -14729,6 +14758,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
               </figure>
               <div className="fll-hero-form">
                 <WaitlistForm source="hero"/>
+                <FoundingOffer/>
               </div>
               <div className="fll-hero-demo">
                 <LandingHowTo/>
