@@ -200,7 +200,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       `8b the laptop preset fills the input, and Simulate after it still reads "Spending $800 … from $1,944 to $1,144." (input "${input}")`);
     await ctx.close();
   }
-  // ── demo-clarity: "See how it works", three tabbed videos ──────────────────────────────────────
+  // ── howto-series: "See how it works", seven tabbed videos ──────────────────────────────────────
   {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: "reduce" });
     const page = await ctx.newPage(); page.setDefaultTimeout(15000);
@@ -216,17 +216,32 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
         width: Math.max(...[...box.querySelectorAll("video")].map(x => x.getBoundingClientRect().width)), radius: getComputedStyle(box.querySelector("video")).borderTopLeftRadius,
         tabH: Math.min(...[...box.querySelectorAll("[role=tab]")].map(b => b.getBoundingClientRect().height)) };
     });
-    t.eq([v.title, v.tabs, v.note], ["See how it works", [["Today", "true"], ["Watch", "false"], ["Meet", "false"]], "Voice is AI-generated. Example, sample data."],
-      "9a \"See how it works\": three tabs, Today first, and the note under the block");
-    t.eq(v.vids.map(x => [x.src, x.poster, x.shown]), [["/video/today.mp4", "/video/today-poster.jpg", true], ["/video/watch.mp4", "/video/watch-poster.jpg", false], ["/video/meet.mp4", "/video/meet-poster.jpg", false]],
-      "9b one video shows at a time, each with its own poster");
-    t.ok(v.vids.every(x => x.muted && x.playsInline && x.controls && x.preload === "none" && !x.autoplay && /^How the (Today|Watch|Meet) screen works, with sample data$/.test(x.label)),
+    const SERIES = ["Overview", "Today", "Decisions", "Watch", "Do", "Learn", "Meet"], IDS = SERIES.map(x => x.toLowerCase());
+    t.eq([v.title, v.tabs, v.note], ["See how it works", SERIES.map((x, i) => [x, i === 0 ? "true" : "false"]), "Voice is AI-generated. Example, sample data."],
+      "9a \"See how it works\": seven tabs in order, Overview first and chosen, and the note under the block");
+    t.eq(v.vids.map(x => [x.src, x.poster, x.shown]), IDS.map((id, i) => [`/video/${id}.mp4`, `/video/${id}-poster.jpg`, i === 0]),
+      "9b one video shows at a time, each its own file with its own poster");
+    t.ok(v.vids.every(x => x.muted && x.playsInline && x.controls && x.preload === "none" && !x.autoplay && /^(How the (Today|Decisions|Watch|Do|Learn|Meet) screen works|An overview of how flourish works), with sample data$/.test(x.label)),
       "9c each video is muted, plays inline, has controls, preload none, no autoplay attribute, and a label naming its screen");
     t.ok(v.above && v.width <= 360 && parseFloat(v.radius) > 0 && v.tabH >= 44, "9d the block sits directly above the demo button, videos at most 360px wide with rounded corners, tabs at least 44px tall");
     await page.locator(".fll-walk").scrollIntoViewIfNeeded(); await page.waitForTimeout(1200);
     t.ok(await page.locator(".fll-walk video").first().evaluate(x => x.paused) && asked.length === 0, "9e with reduced motion set nothing plays on its own, and no video file is fetched until asked");
     await page.getByRole("tab", { name: "Watch" }).click();
-    t.eq(await page.evaluate(() => [...document.querySelectorAll(".fll-hero .fll-walk [role=tabpanel]")].map(p => !p.hidden)), [false, true, false], "9f choosing Watch shows the Watch video only");
+    t.eq(await page.evaluate(() => [...document.querySelectorAll(".fll-hero .fll-walk [role=tabpanel]")].map(p => !p.hidden)), IDS.map(id => id === "watch"), "9f choosing Watch shows the Watch video only");
+    // Seven tabs do not fit a phone: the row scrolls sideways inside itself, the page never does, and the
+    // chosen tab is moved into view. Every tab shows its own file.
+    const rowAt = async () => page.evaluate(() => { const r = document.querySelector(".fll-hero .fll-walk-tabs"), rb = r.getBoundingClientRect(), on = r.querySelector("[aria-selected=true]").getBoundingClientRect();
+      return { scrolls: r.scrollWidth > r.clientWidth + 1, overflow: getComputedStyle(r).overflowX, inView: on.left >= rb.left - 1 && on.right <= rb.right + 1,
+        pageScroll: document.documentElement.scrollWidth > document.documentElement.clientWidth, minTap: Math.min(...[...r.querySelectorAll("[role=tab]")].map(b => b.getBoundingClientRect().height)) }; });
+    const r0 = await rowAt();
+    t.ok(r0.scrolls && r0.overflow === "auto" && !r0.pageScroll && r0.minTap >= 44, `9i at 390px the tab row scrolls inside itself, the page has no sideways scroll, tabs at least 44px (${JSON.stringify(r0)})`);
+    const shown = [];
+    for (const name of SERIES) {
+      await page.getByRole("tab", { name, exact: true }).click(); await page.waitForTimeout(150);
+      const st = await rowAt();
+      shown.push([name, await page.evaluate(() => document.querySelector(".fll-hero .fll-walk [role=tabpanel]:not([hidden]) video").getAttribute("src")), st.inView && !st.pageScroll]);
+    }
+    t.eq(shown, SERIES.map(n => [n, `/video/${n.toLowerCase()}.mp4`, true]), "9j each tab shows its own file, stays in view in the row, and never scrolls the page");
     await ctx.close();
     const c2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     const p2 = await c2.newPage(); const early = []; p2.on("request", r => { if (/\/video\/\w+\.mp4/.test(r.url())) early.push(r.url()); });
@@ -234,7 +249,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     t.eq(early.length, 0, "9g on load, with the block below the fold, no video file is fetched (it cannot compete with the hero for LCP)");
     await p2.locator(".fll-walk").scrollIntoViewIfNeeded(); await p2.waitForTimeout(2500);
     const st = await p2.locator(".fll-walk video").first().evaluate(x => ({ paused: x.paused, muted: x.muted }));
-    t.ok(!st.paused && st.muted && early.every(u => /today\.mp4/.test(u)), "9h scrolled into view, the Today video plays, muted, and only it is fetched");
+    t.ok(!st.paused && st.muted && early.every(u => /overview\.mp4/.test(u)), "9h scrolled into view, the Overview video plays, muted, and only it is fetched");
     await c2.close();
   }
   // ── The hero at 390 x 844 (a phone) and 1440 x 900 (a desktop) ───────────────────────────────
