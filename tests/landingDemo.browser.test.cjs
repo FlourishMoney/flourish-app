@@ -223,7 +223,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
         pageScroll: document.documentElement.scrollWidth > document.documentElement.clientWidth };
     });
     const tag = `at ${w}px`;
-    t.eq([v.title, v.sub, v.note], ["See how it works", "Short videos, under 30 seconds each. Tap one to play with sound.", "Voice is AI-generated. Example, sample data."], `9a ${tag} the heading, the subline and the AI-voice line`);
+    t.eq([v.title, v.sub, v.note], ["See how it works", "Short videos, 30 seconds or less. Tap one to play with sound.", "Voice is AI-generated. Example, sample data."], `9a ${tag} the heading, the subline and the AI-voice line`);
     t.eq([v.videos, v.src, v.poster, v.preload, v.autoplay, v.paused], [1, "/video/overview.mp4", "/video/overview-poster.jpg", "none", false, true], `9b ${tag} one player, Overview's first frame as its poster, preload none, no autoplay, paused`);
     t.eq([v.play, v.playLabel], ["▶ Play with sound", "Play Overview video, 30 seconds, with sound"], `9c ${tag} the big centred button says it plays with sound`);
     t.eq(v.tiles, SERIES.map(([id, n, s], i) => [`Play ${n} video, ${s} seconds, with sound`, n, `${s} s ▶`, `/video/${id}-poster.jpg`, i === 0 ? "true" : "false"]),

@@ -14253,8 +14253,9 @@ function WaitlistForm({ source = "landing" }) {
 
 // "See how it works": the approved how-to series (ChatGPT and Grok; 1080 x 1920, H.264, AI voice, captions
 // burned in). ONE list, in order: a "Getting started" video goes in as the first entry later and becomes the
-// first tile. `secs` is each file's length, rounded. One large player shows the chosen video's poster (its
-// first frame) behind a "Play with sound" button; nothing plays until a visitor taps, and that tap is the
+// first tile. `secs` is each file's length, rounded. One large player shows the chosen video's poster (a real
+// frame from that video: the first, except Overview at 12.5 s and Today at 4.5 s, where the $1,944 card covers
+// the empty "Can I afford this?" field that would otherwise read as a result) behind a "Play with sound" button; nothing plays until a visitor taps, and that tap is the
 // gesture that lets it play unmuted. Under it, a grid of tiles (2 across on a phone, 4 on a desktop): tapping
 // one loads it into the player, plays it with sound and brings the player into view. preload="none", so only
 // the posters load with the page.
@@ -14302,7 +14303,7 @@ function LandingHowTo() {
   return (
     <section className="fll-walk" aria-labelledby="fll-walk-t">
       <h2 className="fll-walk-t" id="fll-walk-t">See how it works</h2>
-      <p className="fll-walk-sub">Short videos, under 30 seconds each. Tap one to play with sound.</p>
+      <p className="fll-walk-sub">Short videos, 30 seconds or less. Tap one to play with sound.</p>
       <div className="fll-walk-stage" ref={stage}>
         <video ref={video} className="fll-walk-v" src={howtoSrc(first)} poster={howtoPoster(first)} preload="none" playsInline controls={playing}
           width={720} height={1280} aria-label={`${cur.name} video, ${cur.secs} seconds, with sample data`}
