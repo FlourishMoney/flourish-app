@@ -48,7 +48,9 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
   const logs = [];
   const realFetch = global.fetch;
   const realError = console.error, realLog = console.log, realWarn = console.warn;
-  const capture = (...args) => logs.push(args.map(a => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
+  // The per-response access line (`[beta] action=… status=…`, tests/betaLogging.test.cjs) is not one of the
+  // diagnostic lines these checks count, so it is left out of `logs`.
+  const capture = (...args) => { const line = args.map(a => (typeof a === "string" ? a : JSON.stringify(a))).join(" "); if (!line.startsWith("[beta] action=")) logs.push(line); };
 
   const prevKey = process.env[KEY_NAME];
   process.env.SUPABASE_URL = "https://example.supabase.co";
