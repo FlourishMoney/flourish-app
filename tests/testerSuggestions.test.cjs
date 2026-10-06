@@ -40,7 +40,7 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
       "Your number. What's safe to spend until payday, after bills, minimum debt payments, a spending buffer and a savings amount are accounted for. Tap it to see the math.",
       "Every bill and payday on one dated list, so a tight day shows up before it arrives.",
       "Your plans. Budgets, goals and debt payoff dates, calculated from your numbers.",
-      "Your coach. Ask what a number means. It explains Flourish's math and never invents a figure.",
+      "Your coach. Ask what a number means, and it explains how Flourish worked it out.",
       "15 minutes a week. An agenda built from your week, for you or for you and your partner.",
     ], "1c the copy, word for word (Watch without \"The next 90 days.\": Watch opens on 30 days)");
     noBanned("1d tour", T.TOUR_STEPS.map(s => s.title + " " + s.body).join(" "));

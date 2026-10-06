@@ -24,7 +24,7 @@ export const TOUR_STEPS = [
   { screen: "home", target: "today",   title: "Today", body: "Your number. What's safe to spend until payday, after bills, minimum debt payments, a spending buffer and a savings amount are accounted for. Tap it to see the math." },
   { screen: "watch", target: "watch",  title: "Watch", body: "Every bill and payday on one dated list, so a tight day shows up before it arrives." },
   { screen: "do",   target: "do",   title: "Do",    body: "Your plans. Budgets, goals and debt payoff dates, calculated from your numbers." },
-  { screen: "coach", target: "coach",  title: "Learn", body: "Your coach. Ask what a number means. It explains Flourish's math and never invents a figure." },
+  { screen: "coach", target: "coach",  title: "Learn", body: "Your coach. Ask what a number means, and it explains how Flourish worked it out." },
   { screen: "family", target: "meet", title: "Meet",  body: "15 minutes a week. An agenda built from your week, for you or for you and your partner." },
 ];
 

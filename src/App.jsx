@@ -5504,7 +5504,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           <div style={{position:"relative",padding:"24px 24px 20px"}}>
             {/* columnGap stays 8 so the pulsing dot sits tight against its label; InfoDot adds its own
                 4px either side, which is what makes the clearance to text 12. rowGap comes from row(). */}
-            <div style={row({columnGap:SPACE.sm,marginBottom:"0.8em"})}>
+            <div data-tour="today" style={row({columnGap:SPACE.sm,marginBottom:"0.8em"})}>
               <div style={{width:6,height:6,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 10px ${heroColor}`,animation:"pulse 2.5s ease-in-out infinite"}}/>
               <span style={{color:heroColorBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700}}>Safe to spend until next payday</span>
               <InfoDot term="Safe to spend" onOpen={setShowTerm}/>
@@ -15850,13 +15850,14 @@ export default function FlourishApp(){
       const rs=els.map(e=>e.getBoundingClientRect());
       const top=Math.min(...rs.map(r=>r.top)), bottom=Math.max(...rs.map(r=>r.bottom)), h=bottom-top;
       const bell=document.querySelector('[aria-label="Notifications"]');
-      const topSafe=Math.round((bell?bell.getBoundingClientRect().bottom:0)+12);
+      const sc=scrollerOf(els[0]);
+      // Below the app header, and below the top of an inner scroller (the coach scrolls under its own bar).
+      const topSafe=Math.round(Math.max((bell?bell.getBoundingClientRect().bottom:0), sc?sc.getBoundingClientRect().top:0)+12);
       const vh=window.innerHeight, sh=sheet.offsetHeight, gap=12, tabBar=100;
       const fitsAbove = h <= (vh-tabBar-sh-gap) - topSafe;
       const sheetTop = fitsAbove ? null : topSafe;
       const want = fitsAbove ? topSafe : topSafe + sh + gap; // where the target's top should sit
       const dy=Math.round(top-want);
-      const sc=scrollerOf(els[0]);
       if(sc) sc.scrollTop+=dy; else window.scrollBy(0,dy);
       setTourSheetTop(sheetTop);
     };

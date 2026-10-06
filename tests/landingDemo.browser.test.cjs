@@ -134,8 +134,10 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
         const els = [...document.querySelectorAll(`[data-tour="${tg}"]`)], sheet = document.getElementById("tour-sheet").getBoundingClientRect();
         if (!els.length) return { missing: true };
         const rs = els.map(e => e.getBoundingClientRect()), top = Math.min(...rs.map(r => r.top)), bottom = Math.max(...rs.map(r => r.bottom));
-        const bell = document.querySelector('[aria-label="Notifications"]').getBoundingClientRect().bottom;
-        return { top: Math.round(top), bottom: Math.round(bottom), sheetTop: Math.round(sheet.top), sheetBottom: Math.round(sheet.bottom), header: Math.round(bell), vh: innerHeight };
+        let header = document.querySelector('[aria-label="Notifications"]').getBoundingClientRect().bottom;
+        // An inner scroller (the coach scrolls under its own bar) clips at its own top.
+        for (let p = els[0].parentElement; p && p !== document.body; p = p.parentElement) { const o = getComputedStyle(p).overflowY; if ((o === "auto" || o === "scroll") && p.scrollHeight > p.clientHeight + 1) { header = Math.max(header, p.getBoundingClientRect().top); break; } }
+        return { top: Math.round(top), bottom: Math.round(bottom), sheetTop: Math.round(sheet.top), sheetBottom: Math.round(sheet.bottom), header: Math.round(header), vh: innerHeight };
       }, targets[k]);
       const clear = !m.missing && m.top >= m.header && m.bottom <= m.vh - 90 && (m.bottom <= m.sheetTop || m.top >= m.sheetBottom);
       t.ok(clear, `10 ${vp.width}x${vp.height} step ${k + 1} (${names[k]}): what it describes is on screen and not under the sheet (target ${m.top}-${m.bottom}, sheet ${m.sheetTop}-${m.sheetBottom}, header ${m.header})`);

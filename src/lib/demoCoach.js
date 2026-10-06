@@ -62,13 +62,16 @@ export function demoCoachExchanges(data, today = new Date()) {
   const out = [];
 
   // 1 — the headline number, explained from its own displayed components.
+  // demo-clarity: facts, not "I've held back … to cover you". Every amount is the displayed row's own value.
+  const PHRASE = { upcomingBills: (v) => `${v} in upcoming bills`, debtPayments: (v) => `${v} in minimum debt payments`,
+                   safetyBuf: (v) => `a ${v} spending buffer`, savingsAlloc: (v) => `${v} in savings` };
   const deductions = f.view.rows
     .filter(r => r.kind === "deduction")
-    .map(r => `${r.value} ${r.label.toLowerCase()}`);
+    .map(r => (PHRASE[r.key] ? PHRASE[r.key](r.value) : `${r.value} in ${r.label.toLowerCase()}`));
   out.push({
     q: "What's actually safe for me to spend right now?",
-    a: `${f.view.headlineText}. You have ${f.view.balanceText} in cash, and I've held back ${_list(deductions)}.` +
-       (f.nd ? ` That's what's left to cover you until your next deposit on ${_date(f.nd.date, data.profile?.country)}.` : ""),
+    a: `${f.view.headlineText}. You have ${f.view.balanceText} in your accounts. Flourish accounts for ${_list(deductions)}.` +
+       (f.nd ? ` That's what's safe to spend until your next deposit on ${_date(f.nd.date, data.profile?.country)}.` : ""),
   });
 
   // 2 — the daily pace, and why it is not a spending cap.
