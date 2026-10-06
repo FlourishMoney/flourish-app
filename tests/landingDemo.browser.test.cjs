@@ -56,13 +56,11 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     await page.getByText("Real screens from the app.").waitFor();
     return { ctx, page };
   };
-  // The demo has started: its AI disclosure appears first, then the demo itself.
+  // The demo has started (demo-clarity: straight onto Today, no AI disclosure or welcome screen first).
   const demoStarted = async (page) => {
     try {
-      await page.getByText("About AI in Flourish", { exact: false }).first().waitFor();
-      await page.getByText("I Understand & Accept").first().click();
       await page.getByText("Demo mode", { exact: false }).first().waitFor();
-      return true;
+      return !(await page.getByText("About AI in Flourish", { exact: false }).count());
     } catch { return false; }
   };
 
@@ -99,6 +97,61 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
   }
   t.eq(await (async () => { const { ctx, page } = await fresh(); const n = await page.getByRole("button", { name: "Try the interactive demo", exact: true }).count(); await ctx.close(); return n; })(), 0,
     "5 the second demo button under the strip is gone; the hero's button and card are the demo's way in");
+  // ── demo-clarity: the demo's first screens, as a new visitor sees them (no flags set) ─────────
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const page = await ctx.newPage(); page.setDefaultTimeout(15000);
+    await page.goto(base, { waitUntil: "domcontentloaded" });
+    const scrolledTo = await page.getByRole("button", { name: HERO_DEMO, exact: true }).evaluate(b => { b.scrollIntoView({ block: "center" }); return Math.round(scrollY); });
+    await page.getByRole("button", { name: HERO_DEMO, exact: true }).tap();
+    await page.getByText("Demo mode", { exact: false }).first().waitFor();
+    await page.waitForTimeout(800);
+    const top = await page.evaluate(() => { const el = [...document.querySelectorAll("div")].find(d => /^Safe to spend until next payday/.test(d.textContent.trim()) && d.textContent.length < 60); return { y: Math.round(scrollY), card: el ? Math.round(el.getBoundingClientRect().top) : null }; });
+    t.ok(scrolledTo > 400 && top.y === 0 && top.card !== null && top.card >= 0 && top.card < 844, `7f tapped from ${scrolledTo}px down the landing, the demo opens at the top of Today with the safe-to-spend card on screen (at ${top.card}px)`);
+    const first = await page.evaluate(() => document.body.innerText);
+    t.ok(!/About AI in Flourish/.test(first) && !/You're covered/.test(first), "7a the demo opens on Today: no AI disclosure and no \"You're covered\" screen first");
+    t.ok(/Step 1 of 5/.test(first), "7b …with the one intro, the five-step tour");
+    const order = await page.evaluate(() => { const t = document.body.innerText; return [t.indexOf("Safe to spend until next payday"), t.indexOf("One thing to know")]; });
+    t.ok(order[0] >= 0 && (order[1] < 0 || order[0] < order[1]), "7c the safe-to-spend card is the first card on Today, above \"One thing to know\"");
+    t.ok(!/Is this income\?/.test(first), "7d no \"Is this income?\" prompt in the demo");
+    t.eq(await page.getByRole("button", { name: "Notifications", exact: true }).first().evaluate(b => b.textContent.trim()).catch(() => "?"), "", "7e no welcome badge on the demo's notifications bell");
+    await ctx.close();
+  }
+  // ── demo-clarity: "Why this number?" opens How we got this for the safe-to-spend figure ───────
+  {
+    const { ctx, page } = await fresh();
+    await page.getByRole("button", { name: HERO_DEMO, exact: true }).tap();
+    await page.getByText("Demo mode", { exact: false }).first().waitFor();
+    await page.getByText("Why this number?", { exact: true }).first().click();
+    await page.waitForTimeout(500);
+    const txt = await page.evaluate(() => document.body.innerText);
+    t.ok(/How Flourish got this\s*\n?\s*Safe to spend until next payday/.test(txt) && !/How it's calculated/.test(txt), "8 \"Why this number?\" opens How we got this for the safe-to-spend figure, not the generic sheet");
+    await ctx.close();
+  }
+  // ── demo-clarity: the walkthrough video ───────────────────────────────────────────────────────
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: "reduce" });
+    const page = await ctx.newPage(); page.setDefaultTimeout(15000);
+    const asked = []; page.on("request", r => { if (/walkthrough\.mp4/.test(r.url())) asked.push(r.url()); });
+    await page.goto(base, { waitUntil: "load" });
+    await page.getByText("Real screens from the app.").waitFor();
+    const v = await page.evaluate(() => { const v = document.querySelector(".fll-hero video"); const d = document.querySelector(".fll-hero .fll-demo").getBoundingClientRect(), w = document.querySelector(".fll-walk").getBoundingClientRect();
+      return { muted: v.muted, playsInline: v.playsInline, controls: v.controls, preload: v.getAttribute("preload"), poster: v.getAttribute("poster"), label: v.getAttribute("aria-label"), autoplay: v.autoplay,
+        title: document.querySelector(".fll-walk-t").textContent, width: v.getBoundingClientRect().width, radius: getComputedStyle(v).borderTopLeftRadius, above: w.bottom <= d.top }; });
+    t.ok(v.muted && v.playsInline && v.controls && v.preload === "none" && v.poster === "/video/walkthrough-poster.jpg" && !v.autoplay && v.label === "22-second walkthrough of flourish with sample data",
+      "9a the video is muted, plays inline, has controls, preload none, the poster and its label, and no autoplay attribute");
+    t.ok(v.title === "See how it works (22 seconds)" && v.above && v.width <= 360 && parseFloat(v.radius) > 0, "9b \"See how it works (22 seconds)\" sits directly above the demo button, at most 360px wide, with rounded corners");
+    await page.locator(".fll-walk-v").scrollIntoViewIfNeeded(); await page.waitForTimeout(1200);
+    t.ok(await page.locator(".fll-walk-v").evaluate(x => x.paused) && asked.length === 0, "9c with reduced motion set it never plays on its own, and the video file is not fetched until asked");
+    await ctx.close();
+    const c2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const p2 = await c2.newPage(); const early = []; p2.on("request", r => { if (/walkthrough\.mp4/.test(r.url())) early.push(r.url()); });
+    await p2.goto(base, { waitUntil: "load" }); await p2.getByText("Real screens from the app.").waitFor(); await p2.waitForTimeout(800);
+    t.eq(early.length, 0, "9d on load, with the video below the fold, the video file is not fetched (it cannot compete with the hero for LCP)");
+    await p2.locator(".fll-walk-v").scrollIntoViewIfNeeded(); await p2.waitForTimeout(2500);
+    t.ok(!(await p2.locator(".fll-walk-v").evaluate(x => x.paused)) && await p2.locator(".fll-walk-v").evaluate(x => x.muted), "9e scrolled into view, it plays, muted");
+    await c2.close();
+  }
   // ── The hero at 390 x 844 (a phone) and 1440 x 900 (a desktop) ───────────────────────────────
   {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });

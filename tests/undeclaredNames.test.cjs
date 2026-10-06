@@ -23,7 +23,7 @@ const path = require("path");
 const BROWSER_GLOBALS = new Set([
   "window", "document", "navigator", "localStorage", "console", "fetch",
   "setTimeout", "clearTimeout", "setInterval", "clearInterval", "getComputedStyle",
-  "URL", "URLSearchParams", "Blob", "CustomEvent", "ResizeObserver", "caches",
+  "URL", "URLSearchParams", "Blob", "CustomEvent", "ResizeObserver", "IntersectionObserver", "caches",
 ]);
 
 (async () => {

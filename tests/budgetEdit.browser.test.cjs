@@ -58,7 +58,6 @@ function serve(dir) {
     page.on("pageerror", (e) => errors.push(String(e.message).slice(0, 120)));
     await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "domcontentloaded" });
     await page.getByText("Try the demo with", { exact: false }).first().click({ timeout: 30000 });
-    await page.getByText("I Understand & Accept").first().click({ timeout: 30000 });
     await page.getByText("Demo mode", { exact: false }).first().waitFor({ timeout: 40000 });
 
     // Do → Goals → its Budget tab.

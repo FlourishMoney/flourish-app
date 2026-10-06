@@ -309,7 +309,6 @@ async function sweep(browser, base, width, scale) {
     // Google Fonts may be unreachable in CI, so never wait for the network to fall idle.
     await page.goto(base, { waitUntil: "domcontentloaded" });
     await page.getByText("Try the demo with", { exact: false }).first().click({ timeout: 30000 });
-    await page.getByText("I Understand & Accept").first().click({ timeout: 30000 });
     await page.getByText("Demo mode", { exact: false }).first().waitFor({ timeout: 40000 });
     await page.waitForTimeout(700);
     return { ctx, page };
