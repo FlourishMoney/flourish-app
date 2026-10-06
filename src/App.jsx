@@ -14251,14 +14251,19 @@ function WaitlistForm({ source = "landing" }) {
   );
 }
 
-// demo-clarity: "See how it works", one short video per screen (approved by ChatGPT and Grok; 1080 x 1920,
-// H.264 with an AI voice, captions burned in). Posters are each video's first frame. An Overview video will
-// be added later as the FIRST entry here (public/video/overview.mp4). One video shows at a time; each is
-// muted by default (sound on from its controls), preload="none" so only the small poster loads with the
-// page, and plays muted on its own only when the block is in view, never under prefers-reduced-motion.
+// demo-clarity / howto-series: "See how it works", one short video per screen (approved by ChatGPT and Grok;
+// 1080 x 1920, H.264 with an AI voice, captions burned in), Overview first. Posters are each video's first
+// frame. One video shows at a time; each is muted by default (sound on from its controls), preload="none" so
+// only the small poster loads with the page, and plays muted on its own only when the block is in view, never
+// under prefers-reduced-motion. Seven tabs do not fit a phone, so the tab row scrolls sideways inside itself
+// (the page never does) and keeps the chosen tab in view.
 const HOWTO_VIDEOS = [
+  { id: "overview", tab: "Overview", label: "An overview of how flourish works, with sample data" },
   { id: "today", tab: "Today", label: "How the Today screen works, with sample data" },
+  { id: "decisions", tab: "Decisions", label: "How the Decisions screen works, with sample data" },
   { id: "watch", tab: "Watch", label: "How the Watch screen works, with sample data" },
+  { id: "do", tab: "Do", label: "How the Do screen works, with sample data" },
+  { id: "learn", tab: "Learn", label: "How the Learn screen works, with sample data" },
   { id: "meet", tab: "Meet", label: "How the Meet screen works, with sample data" },
 ];
 function LandingHowTo() {
@@ -14285,6 +14290,15 @@ function LandingHowTo() {
     io.observe(el);
     return () => io.disconnect();
   }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Keep the chosen tab inside the row's visible part by moving the row itself, never the page.
+  const tabsRef = useRef(null);
+  useEffect(() => {
+    const row = tabsRef.current, b = row && row.querySelector(`#fll-walk-tab-${active}`);
+    if (!row || !b) return;
+    const pad = 8, l = b.offsetLeft - row.offsetLeft, r = l + b.offsetWidth;
+    if (l - pad < row.scrollLeft) row.scrollLeft = Math.max(0, l - pad);
+    else if (r + pad > row.scrollLeft + row.clientWidth) row.scrollLeft = r + pad - row.clientWidth;
+  }, [active]);
   const choose = (id) => {
     Object.entries(vids.current).forEach(([k, v]) => { if (k !== id && v && !v.paused) v.pause(); });
     setActive(id);
@@ -14292,7 +14306,7 @@ function LandingHowTo() {
   return (
     <section className="fll-walk" ref={box} aria-labelledby="fll-walk-t">
       <h2 className="fll-walk-t" id="fll-walk-t">See how it works</h2>
-      <div className="fll-walk-tabs" role="tablist" aria-label="Choose a screen">
+      <div className="fll-walk-tabs" ref={tabsRef} role="tablist" aria-label="Choose a screen">
         {HOWTO_VIDEOS.map(v => (
           <button key={v.id} type="button" role="tab" id={`fll-walk-tab-${v.id}`} aria-selected={active === v.id} aria-controls={`fll-walk-panel-${v.id}`}
             tabIndex={active === v.id ? 0 : -1} className={active === v.id ? "on" : ""} onClick={() => choose(v.id)}
@@ -14610,8 +14624,9 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-hero-demo .fll-demo{ margin-top:0; }
             .fll-walk{ margin-block:0 16px; margin-inline:0; text-align:center; }
             .fll-walk-t{ font-family:'Plus Jakarta Sans',sans-serif; font-size:15px; font-weight:800; color:#15321a; margin-block:0 10px; }
-            .fll-walk-tabs{ display:inline-flex; gap:${SPACE.xs}px; padding:${SPACE.xs}px; margin-block:0 12px; border-radius:99px; background:rgba(46,139,46,0.08); border:1px solid rgba(46,139,46,0.18); }
-            .fll-walk-tabs button{ min-height:44px; min-width:72px; padding:0 16px; border:none; border-radius:99px; background:none; color:#52624f; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; font-weight:700; cursor:pointer; }
+            .fll-walk-tabs{ display:flex; width:max-content; max-width:100%; margin-inline:auto; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:none; -webkit-overflow-scrolling:touch; gap:${SPACE.xs}px; padding:${SPACE.xs}px; margin-block:0 12px; border-radius:99px; background:rgba(46,139,46,0.08); border:1px solid rgba(46,139,46,0.18); }
+            .fll-walk-tabs::-webkit-scrollbar{ display:none; }
+            .fll-walk-tabs button{ flex:0 0 auto; min-height:44px; min-width:72px; padding:0 16px; border:none; border-radius:99px; background:none; color:#52624f; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; font-weight:700; cursor:pointer; }
             .fll-walk-tabs button.on{ background:#fff; color:#1b5e20; box-shadow:0 2px 8px rgba(22,58,28,0.12); }
             .fll-walk-tabs button:focus-visible{ outline:3px solid #1b5e20; outline-offset:2px; }
             .fll-walk-note{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; color:#52624f; margin-block:10px 0; }
@@ -14683,6 +14698,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
               .fll-trust-row{ text-align:left; }
               .fll-walk{ text-align:left; }
               .fll-walk-v{ margin-inline:0; }
+              .fll-walk-tabs{ margin-inline:0; }
             }
             @media(min-width:1040px){
               .fll-proof{ justify-content:center; overflow-x:visible; flex-wrap:wrap; }
