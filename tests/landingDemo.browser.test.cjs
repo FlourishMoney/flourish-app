@@ -121,16 +121,35 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     await ctx.close();
   }
   // ── demo-clarity: no tour step covers what it describes (390 x 844 and 430 x 932) ─────────────
-  for (const vp of [{ width: 390, height: 844 }, { width: 430, height: 932 }]) {
-    const ctx = await browser.newContext({ viewport: vp, isMobile: true, hasTouch: true });
+  // demo-tour-scroll: and whatever the landing page went through first. The "scrolled" path scrolls to
+  // the video block, plays a video and stays more than 3 s (longer than the tour's own retries), then
+  // taps "Try the demo" from there without scrolling back up. Before the fix step 1 was never placed on
+  // that path and the sheet sat on $1,944. Both paths, reduced motion on and off.
+  const RUNS = [];
+  for (const rm of ["reduce", "no-preference"]) for (const path of ["top", "scrolled"]) RUNS.push({ vp: { width: 390, height: 844 }, rm, path });
+  RUNS.push({ vp: { width: 430, height: 932 }, rm: "no-preference", path: "top" });
+  for (const { vp, rm, path: route } of RUNS) {
+    const ctx = await browser.newContext({ viewport: vp, isMobile: true, hasTouch: true, reducedMotion: rm });
     const page = await ctx.newPage(); page.setDefaultTimeout(15000);
     await page.goto(base, { waitUntil: "domcontentloaded" });
+    const tag = `${vp.width}x${vp.height} ${route} path, reduced motion ${rm === "reduce" ? "on" : "off"}`;
+    if (route === "scrolled") {
+      await page.locator(".fll-walk").scrollIntoViewIfNeeded();
+      const played = await page.evaluate(async () => { const v = [...document.querySelectorAll(".fll-walk-v")].find(x => x.offsetParent !== null); if (!v) return 0; v.muted = true; try { await v.play(); } catch (e) { return 0; } await new Promise(r => setTimeout(r, 1200)); return v.currentTime; });
+      t.ok(played > 0, `10a ${tag}: a video played on the landing page first (${played.toFixed(2)} s)`);
+      await page.waitForTimeout(3500);
+      t.ok(await page.evaluate(() => scrollY) > 400, `10b ${tag}: the landing is still scrolled down when the demo is opened`);
+    }
     await page.getByRole("button", { name: HERO_DEMO, exact: true }).tap();
     await page.getByText("Demo mode", { exact: false }).first().waitFor();
     const names = ["Today", "Watch", "Do", "Learn", "Meet"], targets = ["today", "watch", "do", "coach", "meet"];
     for (let k = 0; k < 5; k++) {
-      await page.getByText(`Step ${k + 1} of 5`).waitFor(); await page.waitForTimeout(900);
-      const m = await page.evaluate((tg) => {
+      await page.getByText(`Step ${k + 1} of 5`).waitFor();
+      // The tour places a step once the screen's slide-in has ended (about a second on Today with motion
+      // on), so the check is polled for up to 4 s, and the time it took is reported.
+      const t0 = Date.now(); let m, clear;
+      for (;;) {
+        m = await page.evaluate((tg) => {
         const els = [...document.querySelectorAll(`[data-tour="${tg}"]`)], sheet = document.getElementById("tour-sheet").getBoundingClientRect();
         if (!els.length) return { missing: true };
         const rs = els.map(e => e.getBoundingClientRect()), top = Math.min(...rs.map(r => r.top)), bottom = Math.max(...rs.map(r => r.bottom));
@@ -139,8 +158,11 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
         for (let p = els[0].parentElement; p && p !== document.body; p = p.parentElement) { const o = getComputedStyle(p).overflowY; if ((o === "auto" || o === "scroll") && p.scrollHeight > p.clientHeight + 1) { header = Math.max(header, p.getBoundingClientRect().top); break; } }
         return { top: Math.round(top), bottom: Math.round(bottom), sheetTop: Math.round(sheet.top), sheetBottom: Math.round(sheet.bottom), header: Math.round(header), vh: innerHeight };
       }, targets[k]);
-      const clear = !m.missing && m.top >= m.header && m.bottom <= m.vh - 90 && (m.bottom <= m.sheetTop || m.top >= m.sheetBottom);
-      t.ok(clear, `10 ${vp.width}x${vp.height} step ${k + 1} (${names[k]}): what it describes is on screen and not under the sheet (target ${m.top}-${m.bottom}, sheet ${m.sheetTop}-${m.sheetBottom}, header ${m.header})`);
+        clear = !m.missing && m.top >= m.header && m.bottom <= m.vh - 90 && (m.bottom <= m.sheetTop || m.top >= m.sheetBottom);
+        if (clear || Date.now() - t0 > 4000) break;
+        await page.waitForTimeout(100);
+      }
+      t.ok(clear, `10 ${tag} step ${k + 1} (${names[k]}): what it describes is on screen and not under the sheet (target ${m.top}-${m.bottom}, sheet ${m.sheetTop}-${m.sheetBottom}, header ${m.header}, placed in ${Date.now() - t0} ms)`);
       if (k < 4) await page.getByRole("button", { name: /^Next/ }).last().click();
     }
     await ctx.close();
