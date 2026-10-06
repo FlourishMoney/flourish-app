@@ -389,7 +389,9 @@ exports.handler = async (event) => {
       };
     }
 
-    // The row is saved. Only now: send the confirmation, and record it if Resend accepted it. Both
+    // The row is saved. Only now: send the confirmation, and record it if Resend accepted it. The row as
+    // returned carries founding_position (set by the database inside the insert, migration 0014): when it
+    // is 1 to 50 the email says so, and otherwise it carries no offer line. Both
     // steps are best effort. The signup has already succeeded, so neither failure changes this response.
     let insertedRow = null;
     try {
@@ -401,7 +403,7 @@ exports.handler = async (event) => {
     // The row as inserted: current consent, not unsubscribed. The returned representation, when there is
     // one, takes precedence.
     const rowForGuard = { consent_version: CONSENT_VERSION, unsubscribed_at: null, ...(insertedRow || {}) };
-    if (mayEmailWaitlistRow(rowForGuard, "welcome") && await sendWelcomeEmail(emailAddr, insertedRow && insertedRow.id)) {
+    if (mayEmailWaitlistRow(rowForGuard, "welcome") && await sendWelcomeEmail(emailAddr, insertedRow && insertedRow.id, insertedRow && insertedRow.founding_position)) {
       await markWelcomed(supabaseUrl, secretKey, insertedRow, emailAddr);
     }
 

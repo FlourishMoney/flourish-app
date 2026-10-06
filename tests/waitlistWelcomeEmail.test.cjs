@@ -165,11 +165,27 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     t.ok(/background-color:#F4F1EB/.test(p.html), "2g the HTML is on the app's cream background");
     t.ok(!/<img|background-image|url\(/i.test(p.html), "2h no images");
     t.ok(!/—|–/.test(p.text + p.html), "2i no em dashes anywhere in the email");
-    t.ok(!/launch (date|day) is|guarantee|free|beta|trial|price|\$\d|plan\b|founding|founder offer|\/mo\b/i.test(p.text), "2j no claim or offer the copy does not make: no price, trial, plan or founding offer");
+    t.ok(!/launch (date|day) is|guarantee|free|beta|trial|price|\$\d|plan\b|founding|founder offer|\/mo\b/i.test(p.text), "2j no claim or offer the copy does not make: no price, trial, plan or founding offer (a row with no founding position)");
     t.ok(!/won't send anything else/.test(p.text), "2j2 the old \"nothing else in the meantime\" promise is gone: the consent line allows a few updates");
     const REMOVED = "calm money coach";
     t.ok(!p.text.includes(REMOVED) && !p.html.includes(REMOVED), "2k the product-description sentence is gone from both bodies");
     t.eq(EXPECTED_PARAGRAPHS.length, 4, "2l four paragraphs before the footer: thanks, the launch email, reply, sign-off");
+  }
+
+  // ── 2b. A founding household is told its position, and nobody else is offered anything ──────
+  // Amanda's decision, 2026-10-06: a row the database gave a founding position (1 to 50, migration 0014)
+  // gets one line, second, after the thanks. 2j above still holds for every other row.
+  {
+    const LINE = "You're founding household #7 of 50. We'll email your link to the founding price when payments open on October 26.";
+    const p = (await run({ insert: { ok: true, status: 201, body: [{ id: 42, founding_position: 7 }] } })).payload;
+    const unsubUrl = (/Unsubscribe with one click: (\S+)$/.exec(p.text) || [])[1];
+    t.eq(p.text, [EXPECTED_PARAGRAPHS[0], LINE, ...EXPECTED_PARAGRAPHS.slice(1), WHY, IDENTITY, `Unsubscribe with one click: ${unsubUrl}`].join("\n\n"),
+      "2m a row with founding position 7: the approved copy with the founding line second, word for word");
+    t.ok(p.html.includes(`>${LINE}</p>`), "2n …and the HTML carries the same line as its own paragraph");
+    for (const pos of [null, 0, 51, "7", 7.5]) {
+      const q = (await run({ insert: { ok: true, status: 201, body: [{ id: 42, founding_position: pos }] } })).payload;
+      t.ok(!/founding|price|\$\d/i.test(q.text) && !/founding/i.test(q.html), `2o founding_position ${JSON.stringify(pos)}: no offer line at all`);
+    }
   }
 
   // ── 3. Someone already on the list is not emailed again ────────────────────────────────────

@@ -67,9 +67,10 @@ async function run({ count = 0, rows = pendingRows(3), resend = { ok: true }, wi
       const header = count && count.noHeader ? null : `0-0/${typeof count === "number" ? count : 0}`;
       return { ok: true, status: 200, headers: { get: (h) => (h.toLowerCase() === "content-range" ? header : null) }, json: async () => [] };
     }
-    // The pending select.
-    if (rows && rows.fail) return { ok: false, status: rows.fail, json: async () => [], text: async () => "" };
-    return { ok: true, status: 200, json: async () => rows, text: async () => "" };
+    // The pending select. `rows` may be a function of the URL, to answer one select differently from another.
+    const answer = typeof rows === "function" ? rows(u) : rows;
+    if (answer && answer.fail) return { ok: false, status: answer.fail, json: async () => [], text: async () => "" };
+    return { ok: true, status: 200, json: async () => answer, text: async () => "" };
   };
   console.error = capture; console.log = capture; console.warn = capture;
 
@@ -142,6 +143,21 @@ async function run({ count = 0, rows = pendingRows(3), resend = { ok: true }, wi
     t.eq(body.text, lib.welcomeEmailPayload(body.to[0], rows[0].id).text, "3f the body is the shared copy, not a second version of it");
     t.eq(body.subject, lib.WELCOME_SUBJECT, "3g …with the shared subject");
     t.eq(r.result.sent, 3, "3h the run reports what it sent");
+  }
+
+  // ── 3b. A founding household's welcome carries its line (2026-10-06, migration 0014) ──────────
+  {
+    const { foundingWelcomeLine } = require(path.join(__dirname, "..", "netlify", "functions", "_lib", "foundingWaitlist.js"));
+    const rows = pendingRows(3).map((x, i) => ({ ...x, founding_position: [3, null, 51][i] }));
+    const r = await run({ rows });
+    t.ok(/select=id,email,created_at,unsubscribed_at,consent_version,founding_position&/.test(r.selects[0].url), "3i the select asks for founding_position too");
+    const texts = r.sends.map(s => JSON.parse(s.body).text);
+    t.eq(texts[0].split("\n\n")[1], foundingWelcomeLine(3), "3j a row with position 3 gets the founding line as its second paragraph");
+    t.ok(!/founding/i.test(texts[1]) && !/founding/i.test(texts[2]), "3k a row with no position, or one outside 1 to 50, gets no offer line");
+    // Before migration 0014 the column does not exist: PostgREST answers 400 to the select that names it.
+    const pre = await run({ rows: (u) => (u.includes("founding_position") ? { fail: 400 } : pendingRows(2)) });
+    t.eq([pre.selects.length, pre.sends.length, pre.result.skipped], [2, 2, null], "3l before 0014 is applied, the sweep asks again without the column and still sends");
+    t.ok(!/founding_position/.test(pre.selects[1].url) && pre.sends.every(s => !/founding/i.test(JSON.parse(s.body).text)), "3m …with no offer line");
   }
 
   // ── 4. A send that fails leaves the row for the next run ───────────────────────────────────
