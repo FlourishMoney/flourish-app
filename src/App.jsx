@@ -1082,7 +1082,7 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       type: "daily",
       icon: "💡",
       color: C.teal,
-      title: `Today's pace: about ${dailyPace.dailyText} a day`,
+      title: `Today's pace: ${dailyPace.dailyText} a day`,
       // The coach's wording, which is the accurate one: the figure is safe to spend spread over a
       // window of at least 14 days. It is a pace, not a limit, and it does not by itself keep anyone
       // covered to the next deposit (that window can be shorter or longer than the pace's).
@@ -1181,7 +1181,7 @@ function AutopilotCard({data, setScreen}) {
 
   const lineItems = [
     plan.dailySpendLimit > 0 && {
-      icon:"💡", label:"Today's pace", amount:`about ${formatMoney(plan.dailySpendLimit)} a day`,
+      icon:"💡", label:"Today's pace", amount:`${formatMoney(plan.dailySpendLimit)} a day`,
       color:C.green, detail:plan.paceText,
     },
     // Prompt 3e: the spare amount as a fact (spareUntilDeposit, the figure Decisions and Meet show),
@@ -12660,6 +12660,8 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
            same engines the rest of the demo reads, so the coach never contradicts the Today card. The
            real coach path below is untouched for signed-in users. */
         <div style={{flex:1,overflowY:"auto",padding:"14px 16px 20px",display:"flex",flexDirection:"column",gap:12}}>
+          {/* demo-clarity: what this screen is, before the scripted conversation (tour step 4 lands here). */}
+          <div style={{color:C.cream,fontSize:13,lineHeight:1.55,fontWeight:600,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Sample conversation. In the app, the coach explains figures Flourish has already calculated. It isn't a licensed adviser.</div>
           <div style={{background:C.gold+"14",border:`1px solid ${C.gold}44`,borderRadius:12,padding:"10px 12px"}}>
             <div style={{color:C.goldBright,fontSize:13,fontWeight:800,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Example conversation · sample data</div>
             <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.55,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>A scripted preview of how your coach answers. Every figure is calculated by Flourish from this demo's numbers, so it matches the rest of the demo, but this is not a live chat.</div>

@@ -3,7 +3,7 @@
 // DEMO CLARITY, THE PARTS A NODE TEST CAN HOLD (the browser parts are in landingDemo.browser.test.cjs).
 //
 //   10. The daily pace is safe to spend spread over the window and rounded DOWN to whole dollars, so it
-//       says "about": "Today's pace is about $138 a day: $1,944 safe to spend spread over 14 days."
+//       says so: "Today's pace is $138 a day, rounded down so 14 days stay within $1,944 safe to spend."
 //       ($1,944 / 14 = $138.86.) For any safe-to-spend figure and window, pace x days is at most safe to
 //       spend and within one dollar a day of it, and every surface that shows the pace uses that sentence.
 //    8. A purchase with no amount is never simulated: "Buy a $" has no amount, so What-If asks for one
@@ -35,7 +35,7 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     }
     t.eq(bad.slice(0, 5), [], "10a for every safe-to-spend figure and window, pace x days is at most safe to spend and within one dollar a day of it");
     const p = { daily: 138, dailyText: "$138", daysLeft: 14 };
-    t.eq(SD.paceSentence(p, 1944), "Today's pace is about $138 a day: $1,944 safe to spend spread over 14 days.", "10b the sentence says \"about … a day\" ($1,944 / 14 = $138.86, rounded down)");
+    t.eq(SD.paceSentence(p, 1944), "Today's pace is $138 a day, rounded down so 14 days stay within $1,944 safe to spend.", "10b the sentence says it is rounded down ($1,944 / 14 = $138.86)");
     for (const c of D.DEMO_COUNTRIES) {
       const now = new Date();
       const data = { profile: D.demoProfileFor(c), accounts: D.demoAccountsFor(c), debts: D.demoDebtsFor(c), incomes: D.buildDemoIncomes(now, c), bills: D.buildDemoBills(now, c), transactions: D.buildDemoTxns(now, c) };
