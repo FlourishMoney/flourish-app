@@ -15839,8 +15839,13 @@ export default function FlourishApp(){
   // into view between the app header and the sheet. When it is too tall for that gap, the sheet moves to
   // the top (tourSheetTop, px) and the target sits between the sheet and the tab bar. Never covered.
   const [tourSheetTop,setTourSheetTop]=useState(null);
+  // demo-tour-scroll: place a step only once the app (not the landing page) is on screen, and again when
+  // it appears. The app mounts behind the landing page with tourStep 0; placing then found no target, gave
+  // up after its retries, and opening the demo later changed neither tourStep nor screen, so step 1 was
+  // never placed and the sheet sat on the figure. Same conditions as the sheet's own render below.
+  const tourShown=tourStep!==null&&onboarded&&!showNotifs&&!showSettings&&!!(user||appData?.demo);
   useEffect(()=>{
-    if(tourStep===null) return;
+    if(tourStep===null||!tourShown) return;
     const step=TOUR_STEPS[tourStep];
     if(!step||!step.target){ setTourSheetTop(null); return; }
     let tries=0, timer=null;
@@ -15849,6 +15854,10 @@ export default function FlourishApp(){
       const els=[...document.querySelectorAll(`[data-tour="${step.target}"]`)];
       const sheet=document.getElementById("tour-sheet");
       if(!els.length||!sheet){ if(tries++<30) timer=setTimeout(place,100); return; }
+      // Measured only once the screen has stopped moving: the demo's cards slide in as it opens, and a
+      // position read mid-slide put step 1 a few px under the header. Looping animations do not count.
+      const moving=typeof document.getAnimations==="function"&&document.getAnimations().some(a=>{ try{ const tm=a.effect&&a.effect.getComputedTiming(); return a.playState==="running"&&tm&&Number.isFinite(tm.endTime); }catch{ return false; } });
+      if(moving&&tries++<30){ timer=setTimeout(place,100); return; }
       const rs=els.map(e=>e.getBoundingClientRect());
       const top=Math.min(...rs.map(r=>r.top)), bottom=Math.max(...rs.map(r=>r.bottom)), h=bottom-top;
       const bell=document.querySelector('[aria-label="Notifications"]');
@@ -15865,7 +15874,7 @@ export default function FlourishApp(){
     };
     timer=setTimeout(place,150);
     return ()=>{ if(timer) clearTimeout(timer); };
-  },[tourStep,screen]); // eslint-disable-line react-hooks/exhaustive-deps
+  },[tourStep,screen,tourShown]); // eslint-disable-line react-hooks/exhaustive-deps
   const dismissTour=()=>{ try{localStorage.setItem(TOUR_DONE_KEY,"1");}catch{} setTourStep(null); };
   // "Replay the tour" in Settings → Help & Support: back to step 1, on Today.
   const replayTour=()=>{ setShowSettings(false); setScreen(TOUR_STEPS[0].screen); setTourStep(0); };
