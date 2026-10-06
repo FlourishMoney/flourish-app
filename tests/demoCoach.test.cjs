@@ -112,7 +112,9 @@ const { create } = require("./_runner.cjs");
 
   // The facilitator line reads the agenda and nothing else.
   {
-    const d = new Date("2026-09-16T12:00:00");
+    // Today's date, not a fixed one: meetAgendaFor reads the real clock (the spare amount), so a fixed
+    // Sep 16 week had no decision from Oct 6 on and this check read null.
+    const d = new Date();
     const snap = snapFor(d);
     const line = demoFacilitatorLine(snap, d);
     const decision = (meetAgendaFor(snap).decisions || [])[0];
