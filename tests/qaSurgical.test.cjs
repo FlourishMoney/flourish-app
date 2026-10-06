@@ -110,9 +110,9 @@ const { loadApp, textOf, describe, REPO } = require("./_renderApp.cjs");
     t.eq((buildMeetSnapshot(demoMadeOn(now2)).decisions || []).length, 1, "2k (a fresh demo still gets its Meet decision)");
 
     // 4. The daily card's wording.
-    t.ok(/Suggested spend today: \$138/.test(fixed) && /That paces \$1,944 safe to spend over 14 days\. It's a pace, not a limit\./.test(fixed),
-         "4a the daily card: a 14-day pace of what is safe to spend, not a limit");
-    t.ok(/That paces \$973 safe to spend over 14 days/.test(qa), "4b …$973 over 14 days in the QA demo");
+    t.ok(/Today's pace: about \$138 a day/.test(fixed) && /Today's pace is about \$138 a day: \$1,944 safe to spend spread over 14 days\. It's a pace, not a limit\./.test(fixed),
+         "4a the daily card: about $138 a day, a 14-day pace of what is safe to spend, not a limit (demo-clarity item 10)");
+    t.ok(/\$973 safe to spend spread over 14 days/.test(qa), "4b …$973 over 14 days in the QA demo");
     t.ok(!/Keeps you safe until/.test(qa + fixed), "4c …and it no longer claims to keep anyone safe until the next deposit");
 
     // 5. No invented rates.

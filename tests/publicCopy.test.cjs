@@ -33,6 +33,11 @@ const FORBIDDEN = [
   [/\bwithout (?:downloading|installing)\b/i, "says it works without installing"],
   [/\bno app store\b/i, "says the app store is not needed"],
   [/\bno need to (?:download|install)\b/i, "says there is no need to install"],
+  // demo-clarity item 9: safe to spend is what is left after four lines (bills due before payday, minimum
+  // debt payments, a spending buffer, a savings amount); it does not promise everything else is covered.
+  [/Spending up to this leaves everything else covered/i, "promises safe to spend leaves everything else covered"],
+  [/so spending up to it leaves everything else covered/i, "promises safe to spend leaves everything else covered"],
+  [/\bleaves everything else covered\b/i, "promises safe to spend leaves everything else covered"],
 ];
 
 (async () => {

@@ -21,7 +21,7 @@
 
 import { SafeSpendEngine } from "./safeSpendEngine.js";
 import { safeToSpendView } from "./safeToSpendView.js";
-import { suggestedDailyView } from "./suggestedDaily.js";
+import { suggestedDailyView, paceSentence } from "./suggestedDaily.js";
 import { nextDepositFor, daysToNextDepositFor } from "./forecastEdits.js";
 import { selectHighestRateDebt } from "./decisionEngine.js";
 import { meetAgendaFor } from "./meetSnapshot.js";
@@ -75,7 +75,7 @@ export function demoCoachExchanges(data, today = new Date()) {
   if (f.pace.daily > 0) {
     out.push({
       q: "So how much can I spend today?",
-      a: `${f.pace.dailyText}. That paces ${f.view.headlineText} over ${f.pace.daysLeft} days. ` +
+      a: `${paceSentence(f.pace, f.view.headline)} ` +
          `It's a pace, not a limit. Safe to Spend is the total until your next deposit; this spreads it across the days. ` +
          `I never divide by fewer than 14 days, so a deposit landing soon doesn't tempt you into spending it all at once.`,
     });

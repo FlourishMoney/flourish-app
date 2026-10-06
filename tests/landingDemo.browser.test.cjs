@@ -128,28 +128,63 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     t.ok(/How Flourish got this\s*\n?\s*Safe to spend until next payday/.test(txt) && !/How it's calculated/.test(txt), "8 \"Why this number?\" opens How we got this for the safe-to-spend figure, not the generic sheet");
     await ctx.close();
   }
-  // ── demo-clarity: the walkthrough video ───────────────────────────────────────────────────────
+  // ── demo-clarity item 8: What-If never shows a $0 purchase (AI off, the demo's "Don't use AI" path) ──
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await ctx.addInitScript(() => { try { localStorage.setItem("flourish_tour_done", "1"); localStorage.setItem("flourish_ai_coach_enabled", "0"); } catch (e) {} });
+    const page = await ctx.newPage(); page.setDefaultTimeout(15000);
+    await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: HERO_DEMO, exact: true }).tap();
+    await page.getByText("Demo mode", { exact: false }).first().waitFor();
+    await page.getByRole("button", { name: "Decisions", exact: true }).first().click();
+    await page.getByText("💸 Buy something").first().click();
+    const sim = page.getByRole("button", { name: /Simulate/ }).first();
+    await sim.click(); await page.waitForTimeout(800);
+    let txt = await page.evaluate(() => document.body.innerText);
+    t.ok(!/Spending \$0\b/.test(txt) && /Type the amount too/.test(txt), "8a Simulate on \"Buy a $\" (no amount) asks for the amount; no \"Spending $0\" result");
+    await page.getByRole("button", { name: "Buy a $800 laptop", exact: true }).click(); await page.waitForTimeout(1200);
+    const input = await page.locator("input[placeholder^='e.g. Buy a $450']").inputValue();
+    await sim.click(); await page.waitForTimeout(1500);
+    txt = await page.evaluate(() => document.body.innerText);
+    t.ok(input === "Buy a $800 laptop" && /Spending \$800 takes safe to spend until payday from \$1,944 to \$1,144\./.test(txt) && !/Spending \$0\b/.test(txt),
+      `8b the laptop preset fills the input, and Simulate after it still reads "Spending $800 … from $1,944 to $1,144." (input "${input}")`);
+    await ctx.close();
+  }
+  // ── demo-clarity: "See how it works", three tabbed videos ──────────────────────────────────────
   {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: "reduce" });
     const page = await ctx.newPage(); page.setDefaultTimeout(15000);
-    const asked = []; page.on("request", r => { if (/walkthrough\.mp4/.test(r.url())) asked.push(r.url()); });
+    const asked = []; page.on("request", r => { if (/\/video\/\w+\.mp4/.test(r.url())) asked.push(r.url()); });
     await page.goto(base, { waitUntil: "load" });
     await page.getByText("Real screens from the app.").waitFor();
-    const v = await page.evaluate(() => { const v = document.querySelector(".fll-hero video"); const d = document.querySelector(".fll-hero .fll-demo").getBoundingClientRect(), w = document.querySelector(".fll-walk").getBoundingClientRect();
-      return { muted: v.muted, playsInline: v.playsInline, controls: v.controls, preload: v.getAttribute("preload"), poster: v.getAttribute("poster"), label: v.getAttribute("aria-label"), autoplay: v.autoplay,
-        title: document.querySelector(".fll-walk-t").textContent, width: v.getBoundingClientRect().width, radius: getComputedStyle(v).borderTopLeftRadius, above: w.bottom <= d.top }; });
-    t.ok(v.muted && v.playsInline && v.controls && v.preload === "none" && v.poster === "/video/walkthrough-poster.jpg" && !v.autoplay && v.label === "22-second walkthrough of flourish with sample data",
-      "9a the video is muted, plays inline, has controls, preload none, the poster and its label, and no autoplay attribute");
-    t.ok(v.title === "See how it works (22 seconds)" && v.above && v.width <= 360 && parseFloat(v.radius) > 0, "9b \"See how it works (22 seconds)\" sits directly above the demo button, at most 360px wide, with rounded corners");
-    await page.locator(".fll-walk-v").scrollIntoViewIfNeeded(); await page.waitForTimeout(1200);
-    t.ok(await page.locator(".fll-walk-v").evaluate(x => x.paused) && asked.length === 0, "9c with reduced motion set it never plays on its own, and the video file is not fetched until asked");
+    const v = await page.evaluate(() => {
+      const box = document.querySelector(".fll-hero .fll-walk"), d = document.querySelector(".fll-hero .fll-demo").getBoundingClientRect();
+      const vids = [...box.querySelectorAll("video")].map(x => ({ src: x.getAttribute("src"), poster: x.getAttribute("poster"), label: x.getAttribute("aria-label"), muted: x.muted, playsInline: x.playsInline,
+        controls: x.controls, preload: x.getAttribute("preload"), autoplay: x.autoplay, shown: !x.closest("[role=tabpanel]").hidden }));
+      return { title: box.querySelector(".fll-walk-t").textContent, tabs: [...box.querySelectorAll("[role=tab]")].map(b => [b.textContent, b.getAttribute("aria-selected")]),
+        note: box.querySelector(".fll-walk-note").textContent, vids, above: box.getBoundingClientRect().bottom <= d.top,
+        width: Math.max(...[...box.querySelectorAll("video")].map(x => x.getBoundingClientRect().width)), radius: getComputedStyle(box.querySelector("video")).borderTopLeftRadius,
+        tabH: Math.min(...[...box.querySelectorAll("[role=tab]")].map(b => b.getBoundingClientRect().height)) };
+    });
+    t.eq([v.title, v.tabs, v.note], ["See how it works", [["Today", "true"], ["Watch", "false"], ["Meet", "false"]], "Voice is AI-generated. Example, sample data."],
+      "9a \"See how it works\": three tabs, Today first, and the note under the block");
+    t.eq(v.vids.map(x => [x.src, x.poster, x.shown]), [["/video/today.mp4", "/video/today-poster.jpg", true], ["/video/watch.mp4", "/video/watch-poster.jpg", false], ["/video/meet.mp4", "/video/meet-poster.jpg", false]],
+      "9b one video shows at a time, each with its own poster");
+    t.ok(v.vids.every(x => x.muted && x.playsInline && x.controls && x.preload === "none" && !x.autoplay && /^How the (Today|Watch|Meet) screen works, with sample data$/.test(x.label)),
+      "9c each video is muted, plays inline, has controls, preload none, no autoplay attribute, and a label naming its screen");
+    t.ok(v.above && v.width <= 360 && parseFloat(v.radius) > 0 && v.tabH >= 44, "9d the block sits directly above the demo button, videos at most 360px wide with rounded corners, tabs at least 44px tall");
+    await page.locator(".fll-walk").scrollIntoViewIfNeeded(); await page.waitForTimeout(1200);
+    t.ok(await page.locator(".fll-walk video").first().evaluate(x => x.paused) && asked.length === 0, "9e with reduced motion set nothing plays on its own, and no video file is fetched until asked");
+    await page.getByRole("tab", { name: "Watch" }).click();
+    t.eq(await page.evaluate(() => [...document.querySelectorAll(".fll-hero .fll-walk [role=tabpanel]")].map(p => !p.hidden)), [false, true, false], "9f choosing Watch shows the Watch video only");
     await ctx.close();
     const c2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
-    const p2 = await c2.newPage(); const early = []; p2.on("request", r => { if (/walkthrough\.mp4/.test(r.url())) early.push(r.url()); });
+    const p2 = await c2.newPage(); const early = []; p2.on("request", r => { if (/\/video\/\w+\.mp4/.test(r.url())) early.push(r.url()); });
     await p2.goto(base, { waitUntil: "load" }); await p2.getByText("Real screens from the app.").waitFor(); await p2.waitForTimeout(800);
-    t.eq(early.length, 0, "9d on load, with the video below the fold, the video file is not fetched (it cannot compete with the hero for LCP)");
-    await p2.locator(".fll-walk-v").scrollIntoViewIfNeeded(); await p2.waitForTimeout(2500);
-    t.ok(!(await p2.locator(".fll-walk-v").evaluate(x => x.paused)) && await p2.locator(".fll-walk-v").evaluate(x => x.muted), "9e scrolled into view, it plays, muted");
+    t.eq(early.length, 0, "9g on load, with the block below the fold, no video file is fetched (it cannot compete with the hero for LCP)");
+    await p2.locator(".fll-walk").scrollIntoViewIfNeeded(); await p2.waitForTimeout(2500);
+    const st = await p2.locator(".fll-walk video").first().evaluate(x => ({ paused: x.paused, muted: x.muted }));
+    t.ok(!st.paused && st.muted && early.every(u => /today\.mp4/.test(u)), "9h scrolled into view, the Today video plays, muted, and only it is fetched");
     await c2.close();
   }
   // ── The hero at 390 x 844 (a phone) and 1440 x 900 (a desktop) ───────────────────────────────

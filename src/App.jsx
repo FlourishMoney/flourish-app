@@ -63,7 +63,7 @@ import { captureWaitlistSrc } from "./lib/waitlistSrc.js";
 import { AutopilotEngine, spareUntilDeposit, calcHealthScore, creditScoreEntered, HEALTH_SCORE_PARTIAL_LABEL, HEALTH_SCORE_PARTIAL_SHORT, HEALTH_SCORE_PARTIAL_COACH, selectHighestRateDebt, computeDebtPayoffImpact, displayedSafeToSpend, coachSafeToSpendLine, coachPurchaseLine, computeSavingsOpportunity, cashIsTight } from "./lib/decisionEngine.js";
 import { nextFutureDeposit, daysToNextFutureDeposit, isDepositToday, perDepositAmount } from "./lib/incomeSchedule.js";
 import { safeToSpendView } from "./lib/safeToSpendView.js";
-import { suggestedDailyView } from "./lib/suggestedDaily.js";
+import { suggestedDailyView, paceSentence } from "./lib/suggestedDaily.js";
 import { forecastWalk } from "./lib/forecastWalk.js";
 import { affordabilityCheck } from "./lib/affordability.js";
 import { demoCoachExchanges, demoFacilitatorLine } from "./lib/demoCoach.js";
@@ -1082,11 +1082,11 @@ function DecisionEngine({data, safe, bal, monthlyIncome, soonBills, todayDate, d
       type: "daily",
       icon: "💡",
       color: C.teal,
-      title: `Suggested spend today: ${dailyPace.dailyText}`,
+      title: `Today's pace: about ${dailyPace.dailyText} a day`,
       // The coach's wording, which is the accurate one: the figure is safe to spend spread over a
       // window of at least 14 days. It is a pace, not a limit, and it does not by itself keep anyone
       // covered to the next deposit (that window can be shorter or longer than the pace's).
-      detail: `That paces ${formatMoney(safe)} safe to spend over ${dailyPace.daysLeft} days. It's a pace, not a limit.`,
+      detail: `${paceSentence(dailyPace, safe)} It's a pace, not a limit.`,
       action: "See forecast", screen: "plan"
     });
   }
@@ -1181,8 +1181,8 @@ function AutopilotCard({data, setScreen}) {
 
   const lineItems = [
     plan.dailySpendLimit > 0 && {
-      icon:"💡", label:"Safe to spend per day", amount:formatMoney(plan.dailySpendLimit),
-      color:C.green, detail:`for the next ${plan.daysLeft} day${plan.daysLeft!==1?"s":""}`,
+      icon:"💡", label:"Today's pace", amount:`about ${formatMoney(plan.dailySpendLimit)} a day`,
+      color:C.green, detail:plan.paceText,
     },
     // Prompt 3e: the spare amount as a fact (spareUntilDeposit, the figure Decisions and Meet show),
     // with how it was worked out. It is not split: the old 40% savings / 40% debt / 50% goal amounts
@@ -2099,6 +2099,7 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [inputVal, setInputVal] = useState(initialQuery || "");
+  const [needAmount, setNeedAmount] = useState(false); // a purchase was asked with no amount (demo-clarity item 8)
   const presets = [
     {label: "Buy a $800 laptop",        type: "purchase"},
     {label: "Take a $1,200 vacation",   type: "purchase"},
@@ -2115,6 +2116,15 @@ function WhatIfSimulator({data, onClose, initialQuery, initialType, autoRun, onS
   const simulate = async (q, typeOverride) => {
     const qText = q || inputVal;
     if (!qText.trim()) return;
+    // demo-clarity item 8: a purchase needs an amount. "Buy a $" (the Buy something chip's starting text) has
+    // none, which used to show "Spending $0 takes safe to spend … from $1,944 to $1,944." beside "This purchase
+    // will reduce your safe-to-spend balance." With no amount there is nothing to simulate: ask for it, show no
+    // result, and count no simulation.
+    if ((typeOverride || detectScenarioType(qText)) === "purchase" && !(parseAmountFromQuery(qText) > 0)) {
+      setQuery(qText); setResult(null); setNeedAmount(true);
+      return;
+    }
+    setNeedAmount(false);
 
     // ── PAYWALL GATE (Phase 2) ───────────────────────────────────────────
     // Free tier: 3 simulations/day. Premium and beta_founder: unlimited.
@@ -2390,7 +2400,7 @@ Rules: do not invent or quote any number not in the calculated results above. St
           <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,marginBottom:GAP.textToControl}}>Quick scenarios</div>
           <div style={{display:"flex",gap:GAP.controlToControl,flexWrap:"wrap"}}>
             {presets.map(p=>(
-              <button key={p.label} onClick={()=>simulate(p.label, p.type)} style={{background:query===p.label?C.greenDim:C.cardAlt,border:`1px solid ${query===p.label?C.green+"55":C.border}`,color:query===p.label?C.green:C.mutedHi,borderRadius:99,padding:"6px 12px",minHeight:LAYOUT.minTap,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer",transition:"all .15s"}}>{p.label}</button>
+              <button key={p.label} onClick={()=>{ setInputVal(p.label); simulate(p.label, p.type); }} style={{background:query===p.label?C.greenDim:C.cardAlt,border:`1px solid ${query===p.label?C.green+"55":C.border}`,color:query===p.label?C.green:C.mutedHi,borderRadius:99,padding:"6px 12px",minHeight:LAYOUT.minTap,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,cursor:"pointer",transition:"all .15s"}}>{p.label}</button>
             ))}
           </div>
         </div>
@@ -2399,13 +2409,19 @@ Rules: do not invent or quote any number not in the calculated results above. St
         <div style={{display:"flex",gap:GAP.controlToControl,marginBottom:20}}>
           <input
             value={inputVal}
-            onChange={e=>setInputVal(e.target.value)}
+            onChange={e=>{ setInputVal(e.target.value); if (needAmount) setNeedAmount(false); }}
             onKeyDown={e=>e.key==="Enter"&&simulate()}
             placeholder="e.g. Buy a $450 TV…"
             style={{flex:1,minWidth:0,padding:"12px 16px",minHeight:LAYOUT.minTap,boxSizing:"border-box",borderRadius:14,border:`1.5px solid ${C.border}`,background:C.surface,color:C.cream,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:13,outline:"none"}}
           />
           <button onClick={()=>simulate()} style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:"#021208",border:"none",borderRadius:14,padding:"12px 18px",minHeight:LAYOUT.minTap,flexShrink:0,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>Simulate →</button>
         </div>
+
+        {needAmount && !loading && (
+          <div role="status" style={{marginTop:-SPACE.sm,marginBottom:SPACE.lg,padding:"12px 14px",borderRadius:14,background:C.gold+"14",border:`1px solid ${C.gold}44`,color:C.cream,fontSize:13,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            Type the amount too, like "Buy a $800 laptop", then press Simulate.
+          </div>
+        )}
 
         {/* Loading */}
         {loading && (
@@ -5758,7 +5774,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
         <HowWeGotThis
           title="Safe to spend until next payday"
           value={ssView.headlineText}
-          meaning="What is left after the bills, debt payments and savings already committed before your next deposit. Spending up to this leaves everything else covered."
+          meaning="What is left after the bills, debt payments and savings already committed before your next deposit."
           inputs={[
             {label:"In your accounts", value:ssView.balanceText},
             ...ssView.rows.filter(r=>r.kind!=="balance").map(r=>({label:`${r.sign||""} ${r.label}`.trim(), value:r.value})),
@@ -5917,7 +5933,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
           // this surface has not established WHICH income arrives next.
           const doIt = safe>0
             // The displayed headline (ssView), so this reads the same figure as the hero above (prompt 3e fix).
-            ? `Today's pace is ${dailyPace.dailyText}: ${formatMoney(ssView.headline)} safe to spend spread over ${dailyPace.daysLeft} days.`
+            ? paceSentence(dailyPace, ssView.headline)
             : "Nothing is left to spend until your next deposit lands.";
           return (
             <div style={{...anim(50),background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"14px 16px",marginBottom:12}}>
@@ -6900,7 +6916,7 @@ function HowWeGotThis({ title, value, meaning, inputs = [], source, changeLabel,
 // "Bills" needs no explanation. "Safe to spend" sounds like a balance and is not one. Everything
 // else explains itself by being tapped, because the number opens HowWeGotThis.
 const TERMS = {
-  "Safe to spend": "Not your balance. What is left after the bills, debt payments and savings already committed before your next deposit, so spending up to it leaves everything else covered.",
+  "Safe to spend": "Not your balance. What is left after the bills, debt payments and savings already committed before your next deposit.",
   "Time Machine": "A what-if. It replays your own numbers forward with one thing changed, so you can see a decision before you make it. Nothing is saved and no money moves.",
   "Money meeting": "A short, structured check-in on the week: what went well, what changed, what is coming. Flourish writes the agenda from your numbers, and you and your coach work through it.",
   "Health score": "A single 0 to 100 read on how your money is holding up, from your buffer, your bills, your debts and how steady your spending is. It moves slowly on purpose.",
@@ -14233,32 +14249,65 @@ function WaitlistForm({ source = "landing" }) {
   );
 }
 
-// demo-clarity: the 22-second walkthrough (public/video/walkthrough.mp4, approved by ChatGPT and Grok; its
-// poster is the opening frame at 0.6 s, the first frame being black). preload="none", so nothing but the small
-// poster loads with the page; it plays muted when scrolled into view, never under prefers-reduced-motion.
-function LandingWalkthrough() {
-  const ref = useRef(null);
+// demo-clarity: "See how it works", one short video per screen (approved by ChatGPT and Grok; 1080 x 1920,
+// H.264 with an AI voice, captions burned in). Posters are each video's first frame. An Overview video will
+// be added later as the FIRST entry here (public/video/overview.mp4). One video shows at a time; each is
+// muted by default (sound on from its controls), preload="none" so only the small poster loads with the
+// page, and plays muted on its own only when the block is in view, never under prefers-reduced-motion.
+const HOWTO_VIDEOS = [
+  { id: "today", tab: "Today", label: "How the Today screen works, with sample data" },
+  { id: "watch", tab: "Watch", label: "How the Watch screen works, with sample data" },
+  { id: "meet", tab: "Meet", label: "How the Meet screen works, with sample data" },
+];
+function LandingHowTo() {
+  const [active, setActive] = useState(HOWTO_VIDEOS[0].id);
+  const box = useRef(null), vids = useRef({}), inView = useRef(false), autoplayed = useRef(new Set());
+  const reduce = () => { try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } };
+  const playIfAllowed = (id) => {
+    const v = vids.current[id];
+    if (!v || !inView.current || reduce() || autoplayed.current.has(id)) return;
+    autoplayed.current.add(id); // plays on its own once; after that the controls are the visitor's
+    v.muted = true; const pr = v.play(); if (pr && pr.catch) pr.catch(() => {});
+  };
   useEffect(() => {
-    const v = ref.current;
-    if (!v || typeof window === "undefined" || typeof IntersectionObserver === "undefined") return;
-    let reduce = false;
-    try { reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { reduce = false; }
-    if (reduce) return;
+    const el = box.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {
-        if (e.isIntersecting && e.intersectionRatio >= 0.6) { v.muted = true; const p = v.play(); if (p && p.catch) p.catch(() => {}); }
-        else if (!e.isIntersecting && !v.paused) v.pause();
+        inView.current = e.isIntersecting && e.intersectionRatio >= 0.5;
+        const v = vids.current[active];
+        if (inView.current) playIfAllowed(active);
+        else if (v && !v.paused) v.pause();
       }
-    }, { threshold: [0, 0.6] });
-    io.observe(v);
+    }, { threshold: [0, 0.5] });
+    io.observe(el);
     return () => io.disconnect();
-  }, []);
+  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
+  const choose = (id) => {
+    Object.entries(vids.current).forEach(([k, v]) => { if (k !== id && v && !v.paused) v.pause(); });
+    setActive(id);
+  };
   return (
-    <figure className="fll-walk">
-      <figcaption className="fll-walk-t">See how it works (22 seconds)</figcaption>
-      <video ref={ref} className="fll-walk-v" src="/video/walkthrough.mp4" poster="/video/walkthrough-poster.jpg"
-        muted playsInline controls preload="none" width={720} height={1280} aria-label="22-second walkthrough of flourish with sample data" />
-    </figure>
+    <section className="fll-walk" ref={box} aria-labelledby="fll-walk-t">
+      <h2 className="fll-walk-t" id="fll-walk-t">See how it works</h2>
+      <div className="fll-walk-tabs" role="tablist" aria-label="Choose a screen">
+        {HOWTO_VIDEOS.map(v => (
+          <button key={v.id} type="button" role="tab" id={`fll-walk-tab-${v.id}`} aria-selected={active === v.id} aria-controls={`fll-walk-panel-${v.id}`}
+            tabIndex={active === v.id ? 0 : -1} className={active === v.id ? "on" : ""} onClick={() => choose(v.id)}
+            onKeyDown={e => { if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return; e.preventDefault();
+              const k = HOWTO_VIDEOS.findIndex(x => x.id === active), n = HOWTO_VIDEOS[(k + (e.key === "ArrowRight" ? 1 : HOWTO_VIDEOS.length - 1)) % HOWTO_VIDEOS.length];
+              choose(n.id); setTimeout(() => { const b = document.getElementById(`fll-walk-tab-${n.id}`); if (b) b.focus(); }, 0); }}>{v.tab}</button>
+        ))}
+      </div>
+      {HOWTO_VIDEOS.map(v => (
+        <div key={v.id} role="tabpanel" id={`fll-walk-panel-${v.id}`} aria-labelledby={`fll-walk-tab-${v.id}`} hidden={active !== v.id}>
+          <video ref={el => { vids.current[v.id] = el; }} className="fll-walk-v" src={`/video/${v.id}.mp4`} poster={`/video/${v.id}-poster.jpg`}
+            muted playsInline controls preload="none" width={720} height={1280} aria-label={v.label}
+            onLoadedMetadata={() => { if (active === v.id) playIfAllowed(v.id); }} />
+        </div>
+      ))}
+      <p className="fll-walk-note">Voice is AI-generated. Example, sample data.</p>
+    </section>
   );
 }
 
@@ -14559,6 +14608,11 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-hero-demo .fll-demo{ margin-top:0; }
             .fll-walk{ margin-block:0 16px; margin-inline:0; text-align:center; }
             .fll-walk-t{ font-family:'Plus Jakarta Sans',sans-serif; font-size:15px; font-weight:800; color:#15321a; margin-block:0 10px; }
+            .fll-walk-tabs{ display:inline-flex; gap:${SPACE.xs}px; padding:${SPACE.xs}px; margin-block:0 12px; border-radius:99px; background:rgba(46,139,46,0.08); border:1px solid rgba(46,139,46,0.18); }
+            .fll-walk-tabs button{ min-height:44px; min-width:72px; padding:0 16px; border:none; border-radius:99px; background:none; color:#52624f; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; font-weight:700; cursor:pointer; }
+            .fll-walk-tabs button.on{ background:#fff; color:#1b5e20; box-shadow:0 2px 8px rgba(22,58,28,0.12); }
+            .fll-walk-tabs button:focus-visible{ outline:3px solid #1b5e20; outline-offset:2px; }
+            .fll-walk-note{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; color:#52624f; margin-block:10px 0; }
             .fll-walk-v{ display:block; width:100%; max-width:360px; height:auto; aspect-ratio:9/16; margin-inline:auto; border-radius:22px; background:#15271a; box-shadow:0 18px 44px rgba(22,58,28,0.14); }
             .fll-hero-card-btn{ display:block; width:100%; padding:0; border:1px solid rgba(46,139,46,0.18); background:#fff; border-radius:22px; overflow:hidden; cursor:pointer; box-shadow:0 18px 44px rgba(22,58,28,0.14); }
             .fll-hero-card-btn:focus-visible{ outline:3px solid #1b5e20; outline-offset:4px; }
@@ -14675,7 +14729,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
                 <WaitlistForm source="hero"/>
               </div>
               <div className="fll-hero-demo">
-                <LandingWalkthrough/>
+                <LandingHowTo/>
                 {onTryDemo && <button type="button" className="fll-demo" onClick={() => onTryDemo(waitlistCountry)}>Try the demo with {waitlistCountry === "US" ? "US" : "Canadian"} sample data →</button>}
                 <div className="fll-trust-row"><span className="fll-trust">🔒 Bank connections are read-only. flourish can't move your money.</span></div>
               </div>
