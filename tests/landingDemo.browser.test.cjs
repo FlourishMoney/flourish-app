@@ -200,57 +200,48 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       `8b the laptop preset fills the input, and Simulate after it still reads "Spending $800 … from $1,944 to $1,144." (input "${input}")`);
     await ctx.close();
   }
-  // ── howto-series: "See how it works", seven tabbed videos ──────────────────────────────────────
-  {
-    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: "reduce" });
+  // ── howto-picker: "See how it works", one player and a grid of seven tiles ─────────────────────
+  // Visitors could not tell there were several videos or that they had sound. Now: a subline that says
+  // both, one player with a "Play with sound" button over the first frame (no autoplay), and a tile per
+  // video with its name and length. A tap plays with sound and shows a sound control.
+  const SERIES = [["overview", "Overview", 30], ["today", "Today", 30], ["decisions", "Decisions", 23], ["watch", "Watch", 22], ["do", "Do", 24], ["learn", "Learn", 17], ["meet", "Meet", 23]];
+  for (const [w, h, cols] of [[390, 844, 2], [1440, 900, 4]]) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: h }, ...(w < 768 ? { isMobile: true, hasTouch: true } : {}) });
     const page = await ctx.newPage(); page.setDefaultTimeout(15000);
-    const asked = []; page.on("request", r => { if (/\/video\/\w+\.mp4/.test(r.url())) asked.push(r.url()); });
+    const asked = []; page.on("request", r => { if (/\/video\/[\w-]+\.mp4/.test(r.url())) asked.push(r.url().split("/").pop()); });
     await page.goto(base, { waitUntil: "load" });
-    await page.getByText("Real screens from the app.").waitFor();
+    await page.getByText("Real screens from the app.").waitFor(); await page.waitForTimeout(1200);
     const v = await page.evaluate(() => {
-      const box = document.querySelector(".fll-hero .fll-walk"), d = document.querySelector(".fll-hero .fll-demo").getBoundingClientRect();
-      const vids = [...box.querySelectorAll("video")].map(x => ({ src: x.getAttribute("src"), poster: x.getAttribute("poster"), label: x.getAttribute("aria-label"), muted: x.muted, playsInline: x.playsInline,
-        controls: x.controls, preload: x.getAttribute("preload"), autoplay: x.autoplay, shown: !x.closest("[role=tabpanel]").hidden }));
-      return { title: box.querySelector(".fll-walk-t").textContent, tabs: [...box.querySelectorAll("[role=tab]")].map(b => [b.textContent, b.getAttribute("aria-selected")]),
-        note: box.querySelector(".fll-walk-note").textContent, vids, above: box.getBoundingClientRect().bottom <= d.top,
-        width: Math.max(...[...box.querySelectorAll("video")].map(x => x.getBoundingClientRect().width)), radius: getComputedStyle(box.querySelector("video")).borderTopLeftRadius,
-        tabH: Math.min(...[...box.querySelectorAll("[role=tab]")].map(b => b.getBoundingClientRect().height)) };
+      const box = document.querySelector(".fll-hero .fll-walk"), d = document.querySelector(".fll-hero .fll-demo").getBoundingClientRect(), vid = box.querySelector("video"), play = box.querySelector(".fll-walk-play");
+      const tiles = [...box.querySelectorAll(".fll-walk-tile")];
+      return { title: box.querySelector(".fll-walk-t").textContent, sub: box.querySelector(".fll-walk-sub").textContent, note: box.querySelector(".fll-walk-note").textContent,
+        videos: box.querySelectorAll("video").length, src: vid.getAttribute("src"), poster: vid.getAttribute("poster"), preload: vid.getAttribute("preload"), autoplay: vid.autoplay, paused: vid.paused,
+        play: play && play.textContent.trim(), playLabel: play && play.getAttribute("aria-label"), playH: play && play.getBoundingClientRect().height,
+        tiles: tiles.map(t => [t.getAttribute("aria-label"), t.querySelector(".fll-walk-tile-n").textContent, t.querySelector(".fll-walk-tile-s").textContent.trim(), t.querySelector("img").getAttribute("src"), t.getAttribute("aria-pressed")]),
+        tileH: Math.min(...tiles.map(t => t.getBoundingClientRect().height)), cols: getComputedStyle(box.querySelector(".fll-walk-grid")).gridTemplateColumns.split(" ").length,
+        outline: getComputedStyle(tiles[0]).outlineColor, above: box.getBoundingClientRect().bottom <= d.top,
+        pageScroll: document.documentElement.scrollWidth > document.documentElement.clientWidth };
     });
-    const SERIES = ["Overview", "Today", "Decisions", "Watch", "Do", "Learn", "Meet"], IDS = SERIES.map(x => x.toLowerCase());
-    t.eq([v.title, v.tabs, v.note], ["See how it works", SERIES.map((x, i) => [x, i === 0 ? "true" : "false"]), "Voice is AI-generated. Example, sample data."],
-      "9a \"See how it works\": seven tabs in order, Overview first and chosen, and the note under the block");
-    t.eq(v.vids.map(x => [x.src, x.poster, x.shown]), IDS.map((id, i) => [`/video/${id}.mp4`, `/video/${id}-poster.jpg`, i === 0]),
-      "9b one video shows at a time, each its own file with its own poster");
-    t.ok(v.vids.every(x => x.muted && x.playsInline && x.controls && x.preload === "none" && !x.autoplay && /^(How the (Today|Decisions|Watch|Do|Learn|Meet) screen works|An overview of how flourish works), with sample data$/.test(x.label)),
-      "9c each video is muted, plays inline, has controls, preload none, no autoplay attribute, and a label naming its screen");
-    t.ok(v.above && v.width <= 360 && parseFloat(v.radius) > 0 && v.tabH >= 44, "9d the block sits directly above the demo button, videos at most 360px wide with rounded corners, tabs at least 44px tall");
-    await page.locator(".fll-walk").scrollIntoViewIfNeeded(); await page.waitForTimeout(1200);
-    t.ok(await page.locator(".fll-walk video").first().evaluate(x => x.paused) && asked.length === 0, "9e with reduced motion set nothing plays on its own, and no video file is fetched until asked");
-    await page.getByRole("tab", { name: "Watch" }).click();
-    t.eq(await page.evaluate(() => [...document.querySelectorAll(".fll-hero .fll-walk [role=tabpanel]")].map(p => !p.hidden)), IDS.map(id => id === "watch"), "9f choosing Watch shows the Watch video only");
-    // Seven tabs do not fit a phone: the row scrolls sideways inside itself, the page never does, and the
-    // chosen tab is moved into view. Every tab shows its own file.
-    const rowAt = async () => page.evaluate(() => { const r = document.querySelector(".fll-hero .fll-walk-tabs"), rb = r.getBoundingClientRect(), on = r.querySelector("[aria-selected=true]").getBoundingClientRect();
-      return { scrolls: r.scrollWidth > r.clientWidth + 1, overflow: getComputedStyle(r).overflowX, inView: on.left >= rb.left - 1 && on.right <= rb.right + 1,
-        pageScroll: document.documentElement.scrollWidth > document.documentElement.clientWidth, minTap: Math.min(...[...r.querySelectorAll("[role=tab]")].map(b => b.getBoundingClientRect().height)) }; });
-    const r0 = await rowAt();
-    t.ok(r0.scrolls && r0.overflow === "auto" && !r0.pageScroll && r0.minTap >= 44, `9i at 390px the tab row scrolls inside itself, the page has no sideways scroll, tabs at least 44px (${JSON.stringify(r0)})`);
-    const shown = [];
-    for (const name of SERIES) {
-      await page.getByRole("tab", { name, exact: true }).click(); await page.waitForTimeout(150);
-      const st = await rowAt();
-      shown.push([name, await page.evaluate(() => document.querySelector(".fll-hero .fll-walk [role=tabpanel]:not([hidden]) video").getAttribute("src")), st.inView && !st.pageScroll]);
-    }
-    t.eq(shown, SERIES.map(n => [n, `/video/${n.toLowerCase()}.mp4`, true]), "9j each tab shows its own file, stays in view in the row, and never scrolls the page");
+    const tag = `at ${w}px`;
+    t.eq([v.title, v.sub, v.note], ["See how it works", "Short videos, under 30 seconds each. Tap one to play with sound.", "Voice is AI-generated. Example, sample data."], `9a ${tag} the heading, the subline and the AI-voice line`);
+    t.eq([v.videos, v.src, v.poster, v.preload, v.autoplay, v.paused], [1, "/video/overview.mp4", "/video/overview-poster.jpg", "none", false, true], `9b ${tag} one player, Overview's first frame as its poster, preload none, no autoplay, paused`);
+    t.eq([v.play, v.playLabel], ["▶ Play with sound", "Play Overview video, 30 seconds, with sound"], `9c ${tag} the big centred button says it plays with sound`);
+    t.eq(v.tiles, SERIES.map(([id, n, s], i) => [`Play ${n} video, ${s} seconds, with sound`, n, `${s} s ▶`, `/video/${id}-poster.jpg`, i === 0 ? "true" : "false"]),
+      `9d ${tag} seven tiles in order, each with its poster, name, length, ▶ and a spoken label; Overview selected`);
+    t.ok(v.cols === cols && v.tileH >= 44 && v.playH >= 44 && v.outline === "rgb(77, 124, 15)" && v.above && !v.pageScroll,
+      `9e ${tag} ${cols} tile columns, 44px targets, the lime outline on the selected tile, the block above the demo button, no sideways page scroll (${JSON.stringify({ cols: v.cols, tileH: v.tileH, outline: v.outline, pageScroll: v.pageScroll })})`);
+    t.eq(asked, [], `9f ${tag} no video file is fetched before a tap`);
+    await page.getByRole("button", { name: "Play Today video, 30 seconds, with sound" }).click();
+    await page.waitForFunction(() => { const x = document.querySelector(".fll-walk video"); return x && !x.paused && x.currentTime > 0.2; }, null, { timeout: 15000 }).catch(() => {});
+    const p = await page.evaluate(() => { const x = document.querySelector(".fll-walk video"), s = document.querySelector(".fll-walk-sound"), st = document.querySelector(".fll-walk-stage").getBoundingClientRect();
+      return { src: x.getAttribute("src"), playing: !x.paused, muted: x.muted, controls: x.controls, sound: s && s.textContent.trim(), soundH: s && s.getBoundingClientRect().height,
+        selected: document.querySelector(".fll-walk-tile[aria-pressed=true] .fll-walk-tile-n").textContent, inView: st.top >= -1 && st.bottom <= innerHeight + 1, playBtn: !!document.querySelector(".fll-walk-play") }; });
+    t.eq([p.src, p.playing, p.muted, p.controls, p.sound, p.selected, p.inView, p.playBtn], ["/video/today.mp4", true, false, true, "🔊 Sound on", "Today", true, false],
+      `9g ${tag} tapping the Today tile plays it with sound in the player, in view, with controls and a "Sound on" button`);
+    await page.locator(".fll-walk-sound").click();
+    t.eq(await page.evaluate(() => [document.querySelector(".fll-walk video").muted, document.querySelector(".fll-walk-sound").textContent.trim(), document.querySelector(".fll-walk-sound").getAttribute("aria-pressed")]),
+      [true, "🔇 Sound off", "true"], `9h ${tag} the sound button mutes, and says so (44px: ${p.soundH})`);
     await ctx.close();
-    const c2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
-    const p2 = await c2.newPage(); const early = []; p2.on("request", r => { if (/\/video\/\w+\.mp4/.test(r.url())) early.push(r.url()); });
-    await p2.goto(base, { waitUntil: "load" }); await p2.getByText("Real screens from the app.").waitFor(); await p2.waitForTimeout(800);
-    t.eq(early.length, 0, "9g on load, with the block below the fold, no video file is fetched (it cannot compete with the hero for LCP)");
-    await p2.locator(".fll-walk").scrollIntoViewIfNeeded(); await p2.waitForTimeout(2500);
-    const st = await p2.locator(".fll-walk video").first().evaluate(x => ({ paused: x.paused, muted: x.muted }));
-    t.ok(!st.paused && st.muted && early.every(u => /overview\.mp4/.test(u)), "9h scrolled into view, the Overview video plays, muted, and only it is fetched");
-    await c2.close();
   }
   // ── The hero at 390 x 844 (a phone) and 1440 x 900 (a desktop) ───────────────────────────────
   {
