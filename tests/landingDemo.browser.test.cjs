@@ -106,8 +106,11 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     await page.getByRole("button", { name: HERO_DEMO, exact: true }).tap();
     await page.getByText("Demo mode", { exact: false }).first().waitFor();
     await page.waitForTimeout(800);
-    const top = await page.evaluate(() => { const el = [...document.querySelectorAll("div")].find(d => /^Safe to spend until next payday/.test(d.textContent.trim()) && d.textContent.length < 60); return { y: Math.round(scrollY), card: el ? Math.round(el.getBoundingClientRect().top) : null }; });
-    t.ok(scrolledTo > 400 && top.y === 0 && top.card !== null && top.card >= 0 && top.card < 844, `7f tapped from ${scrolledTo}px down the landing, the demo opens at the top of Today with the safe-to-spend card on screen (at ${top.card}px)`);
+    // The demo starts at the top of Today (not at the landing's scroll); tour step 1 then brings the figure
+    // and its breakdown just under the header, so the page may sit a little below 0.
+    const top = await page.evaluate(() => { const f = document.querySelector('[data-tour="today"]'), bell = document.querySelector('[aria-label="Notifications"]').getBoundingClientRect().bottom;
+      return { y: Math.round(scrollY), fig: f ? Math.round(f.getBoundingClientRect().top) : null, header: Math.round(bell) }; });
+    t.ok(scrolledTo > 400 && top.y < 400 && top.fig !== null && top.fig >= top.header && top.fig < 844, `7f tapped from ${scrolledTo}px down the landing, the demo opens on Today (scrolled ${top.y}px) with the $1,944 figure on screen (at ${top.fig}px, header ${top.header}px)`);
     const first = await page.evaluate(() => document.body.innerText);
     t.ok(!/About AI in Flourish/.test(first) && !/You're covered/.test(first), "7a the demo opens on Today: no AI disclosure and no \"You're covered\" screen first");
     t.ok(/Step 1 of 5/.test(first), "7b …with the one intro, the five-step tour");
@@ -115,6 +118,29 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     t.ok(order[0] >= 0 && (order[1] < 0 || order[0] < order[1]), "7c the safe-to-spend card is the first card on Today, above \"One thing to know\"");
     t.ok(!/Is this income\?/.test(first), "7d no \"Is this income?\" prompt in the demo");
     t.eq(await page.getByRole("button", { name: "Notifications", exact: true }).first().evaluate(b => b.textContent.trim()).catch(() => "?"), "", "7e no welcome badge on the demo's notifications bell");
+    await ctx.close();
+  }
+  // ── demo-clarity: no tour step covers what it describes (390 x 844 and 430 x 932) ─────────────
+  for (const vp of [{ width: 390, height: 844 }, { width: 430, height: 932 }]) {
+    const ctx = await browser.newContext({ viewport: vp, isMobile: true, hasTouch: true });
+    const page = await ctx.newPage(); page.setDefaultTimeout(15000);
+    await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: HERO_DEMO, exact: true }).tap();
+    await page.getByText("Demo mode", { exact: false }).first().waitFor();
+    const names = ["Today", "Watch", "Do", "Learn", "Meet"], targets = ["today", "watch", "do", "coach", "meet"];
+    for (let k = 0; k < 5; k++) {
+      await page.getByText(`Step ${k + 1} of 5`).waitFor(); await page.waitForTimeout(900);
+      const m = await page.evaluate((tg) => {
+        const els = [...document.querySelectorAll(`[data-tour="${tg}"]`)], sheet = document.getElementById("tour-sheet").getBoundingClientRect();
+        if (!els.length) return { missing: true };
+        const rs = els.map(e => e.getBoundingClientRect()), top = Math.min(...rs.map(r => r.top)), bottom = Math.max(...rs.map(r => r.bottom));
+        const bell = document.querySelector('[aria-label="Notifications"]').getBoundingClientRect().bottom;
+        return { top: Math.round(top), bottom: Math.round(bottom), sheetTop: Math.round(sheet.top), sheetBottom: Math.round(sheet.bottom), header: Math.round(bell), vh: innerHeight };
+      }, targets[k]);
+      const clear = !m.missing && m.top >= m.header && m.bottom <= m.vh - 90 && (m.bottom <= m.sheetTop || m.top >= m.sheetBottom);
+      t.ok(clear, `10 ${vp.width}x${vp.height} step ${k + 1} (${names[k]}): what it describes is on screen and not under the sheet (target ${m.top}-${m.bottom}, sheet ${m.sheetTop}-${m.sheetBottom}, header ${m.header})`);
+      if (k < 4) await page.getByRole("button", { name: /^Next/ }).last().click();
+    }
     await ctx.close();
   }
   // ── demo-clarity: "Why this number?" opens How we got this for the safe-to-spend figure ───────

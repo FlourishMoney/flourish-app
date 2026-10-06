@@ -18,12 +18,14 @@
 //          a couple a money meeting.
 // -----------------------------------------------------------------------------
 
+// target: the [data-tour] element(s) each step describes. The app scrolls them into view and keeps the
+// step's sheet off them (demo-clarity: step 1's sheet used to cover the figure it tells you to tap).
 export const TOUR_STEPS = [
-  { screen: "home",   title: "Today", body: "Your number. What's safe to spend until payday, after bills, minimum debt payments, a spending buffer and a savings amount are accounted for. Tap it to see the math." },
-  { screen: "watch",  title: "Watch", body: "Every bill and payday on one dated list, so a tight day shows up before it arrives." },
-  { screen: "do",     title: "Do",    body: "Your plans. Budgets, goals and debt payoff dates, calculated from your numbers." },
-  { screen: "coach",  title: "Learn", body: "Your coach. Ask what a number means. It explains Flourish's math and never invents a figure." },
-  { screen: "family", title: "Meet",  body: "15 minutes a week. An agenda built from your week, for you or for you and your partner." },
+  { screen: "home", target: "today",   title: "Today", body: "Your number. What's safe to spend until payday, after bills, minimum debt payments, a spending buffer and a savings amount are accounted for. Tap it to see the math." },
+  { screen: "watch", target: "watch",  title: "Watch", body: "Every bill and payday on one dated list, so a tight day shows up before it arrives." },
+  { screen: "do",   target: "do",   title: "Do",    body: "Your plans. Budgets, goals and debt payoff dates, calculated from your numbers." },
+  { screen: "coach", target: "coach",  title: "Learn", body: "Your coach. Ask what a number means. It explains Flourish's math and never invents a figure." },
+  { screen: "family", target: "meet", title: "Meet",  body: "15 minutes a week. An agenda built from your week, for you or for you and your partner." },
 ];
 
 export const TOUR_DONE_KEY = "flourish_tour_done";

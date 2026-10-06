@@ -5524,7 +5524,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               <div style={{color:C.mutedHi,fontSize:13,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Safe-to-spend plans around your bills using your income →</div>
             </div>
             ) : (
-            <button onClick={e=>{e.stopPropagation();setExplain("safeToSpend");}} aria-label="How Flourish got this number"
+            <button onClick={e=>{e.stopPropagation();setExplain("safeToSpend");}} data-tour="today" aria-label="How Flourish got this number"
               style={{background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",
               fontFamily:"'Playfair Display',Georgia,serif",fontWeight:900,lineHeight:1,marginBottom:18,position:"relative",display:"inline-block"}}>
               {ssView.isShort&&<span style={{fontSize:76,color:heroColorBright,letterSpacing:"-0.053em",fontWeight:900}}>-</span>}<span style={{fontSize:24,color:heroColorBright,verticalAlign:"top",marginTop:"0.46em",display:"inline-block",fontWeight:700}}>$</span>
@@ -5581,7 +5581,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               const rowColor = (r) => r.kind === "balance" ? heroColorBright : (r.key === "upcomingBills" || r.key === "debtPayments") ? C.gold : C.mutedHi;
               const breakdownRows = ssView.rows.map(r => ({ label:r.label, value:r.value, sign:r.sign, color:rowColor(r) }));
               return (
-                <div style={{marginBottom:14}}>
+                <div data-tour="today" style={{marginBottom:14}}>
                   {breakdownRows.map((r,i)=>(
                     <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"2px 0"}}>
                       <span style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{r.sign} {r.label}</span>
@@ -7568,7 +7568,7 @@ function PlanAhead({data, setAppData, setScreen, initialRange = 30}){
       </div>
       <button onClick={()=>setShowExpected(true)} style={{...rowControl(),background:C.green+"22",border:`1px solid ${C.green}44`,color:C.greenInk,borderRadius:99,padding:"11px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>+ Add</button>
     </Card>}
-    <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
+    <div data-tour="watch" style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Day-by-Day Cash Flow</div>
     {(()=>{
       const avgDailySpend = FinancialCalcEngine.avgDailySpend(data);
       // The overdraft card's low day is listed too, even with nothing landing on it (usually the eve of a
@@ -7585,7 +7585,7 @@ function PlanAhead({data, setAppData, setScreen, initialRange = 30}){
         const stopToggle=e=>{e.stopPropagation();toggleDay();};
         const dayName=day.d.toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"});
         return (
-          <div key={i} style={{background:isToday?C.greenDim:neg?C.redDim:C.card,borderRadius:20,border:`1px solid ${borderColor}`,boxShadow:isToday?`0 0 24px ${C.green}18`:neg?`0 0 24px ${C.red}18`:"none",overflow:"hidden"}}>
+          <div key={i} data-tour={i<2?"watch":undefined} style={{background:isToday?C.greenDim:neg?C.redDim:C.card,borderRadius:20,border:`1px solid ${borderColor}`,boxShadow:isToday?`0 0 24px ${C.green}18`:neg?`0 0 24px ${C.red}18`:"none",overflow:"hidden"}}>
             {/* The whole card still opens the breakdown on a tap, but the controls in it are separate
                 buttons rather than one role="button" wrapped round the line buttons (nested controls, which
                 a screen reader cannot use): the date, the balance, and every line. A line with no edit
@@ -9954,7 +9954,7 @@ function MeetAgenda({ data, isCouple, setScreen, setAppData }){
       <NotAdviceLine style={{textAlign:"left",marginBottom:SPACE.sm}}/>
       <div style={{color:C.muted,fontSize:13,marginBottom:14,lineHeight:1.5}}>Flourish writes this agenda from your week, using the numbers it already worked out.{facilitatorGate === "ready" ? " The coach keeps it calm and about the numbers." : ""}</div>
 
-      <div style={card}>
+      <div style={card} data-tour="meet">
         <div style={sTitle}>This week</div>
         {items.length>0
           ? <div style={{display:"flex",flexDirection:"column",gap:GAP.controlToControl}}>{items.map((it,i)=>it.explain
@@ -12665,7 +12665,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
             <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.55,marginTop:4,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>A scripted preview of how your coach answers. Every figure is calculated by Flourish from this demo's numbers, so it matches the rest of the demo, but this is not a live chat.</div>
           </div>
           {demoCoachExchanges(data, new Date()).map((x,i)=>(
-            <div key={i} style={{display:"flex",flexDirection:"column",gap:7}}>
+            <div key={i} data-tour={i===0?"coach":undefined} style={{display:"flex",flexDirection:"column",gap:7}}>
               <div style={{alignSelf:"flex-end",maxWidth:"86%",background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:"14px 14px 4px 14px",padding:"9px 12px",color:C.cream,fontSize:13,lineHeight:1.5,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{x.q}</div>
               <div style={{alignSelf:"flex-start",maxWidth:"94%",background:C.purpleDim,border:`1px solid ${C.purple}44`,borderRadius:"14px 14px 14px 4px",padding:"10px 13px",color:C.cream,fontSize:13,lineHeight:1.62,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{x.a}</div>
             </div>
@@ -15833,6 +15833,36 @@ export default function FlourishApp(){
   const [showNotifs,setShowNotifs]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
   const [tourStep,setTourStep]=useState(()=>{ try{return localStorage.getItem(TOUR_DONE_KEY)==="1"?null:0;}catch{return 0;} });
+  // demo-clarity: each tour step brings what it describes (TOUR_STEPS[n].target, the [data-tour] elements)
+  // into view between the app header and the sheet. When it is too tall for that gap, the sheet moves to
+  // the top (tourSheetTop, px) and the target sits between the sheet and the tab bar. Never covered.
+  const [tourSheetTop,setTourSheetTop]=useState(null);
+  useEffect(()=>{
+    if(tourStep===null) return;
+    const step=TOUR_STEPS[tourStep];
+    if(!step||!step.target){ setTourSheetTop(null); return; }
+    let tries=0, timer=null;
+    const scrollerOf=(el)=>{ for(let p=el.parentElement;p&&p!==document.body;p=p.parentElement){ const o=getComputedStyle(p).overflowY; if((o==="auto"||o==="scroll")&&p.scrollHeight>p.clientHeight+1) return p; } return null; };
+    const place=()=>{
+      const els=[...document.querySelectorAll(`[data-tour="${step.target}"]`)];
+      const sheet=document.getElementById("tour-sheet");
+      if(!els.length||!sheet){ if(tries++<30) timer=setTimeout(place,100); return; }
+      const rs=els.map(e=>e.getBoundingClientRect());
+      const top=Math.min(...rs.map(r=>r.top)), bottom=Math.max(...rs.map(r=>r.bottom)), h=bottom-top;
+      const bell=document.querySelector('[aria-label="Notifications"]');
+      const topSafe=Math.round((bell?bell.getBoundingClientRect().bottom:0)+12);
+      const vh=window.innerHeight, sh=sheet.offsetHeight, gap=12, tabBar=100;
+      const fitsAbove = h <= (vh-tabBar-sh-gap) - topSafe;
+      const sheetTop = fitsAbove ? null : topSafe;
+      const want = fitsAbove ? topSafe : topSafe + sh + gap; // where the target's top should sit
+      const dy=Math.round(top-want);
+      const sc=scrollerOf(els[0]);
+      if(sc) sc.scrollTop+=dy; else window.scrollBy(0,dy);
+      setTourSheetTop(sheetTop);
+    };
+    timer=setTimeout(place,150);
+    return ()=>{ if(timer) clearTimeout(timer); };
+  },[tourStep,screen]); // eslint-disable-line react-hooks/exhaustive-deps
   const dismissTour=()=>{ try{localStorage.setItem(TOUR_DONE_KEY,"1");}catch{} setTourStep(null); };
   // "Replay the tour" in Settings → Help & Support: back to step 1, on Today.
   const replayTour=()=>{ setShowSettings(false); setScreen(TOUR_STEPS[0].screen); setTourStep(0); };
@@ -17080,7 +17110,7 @@ export default function FlourishApp(){
     if(screen==="do"||screen==="budget"||screen==="goals"||screen==="credit"){
       const editBudget = ()=>{ setBudgetEditRequested(true); setScreen("budget"); };
       const sub = (screen==="goals"||screen==="credit"||screen==="budget") ? screen : "budget";
-      return <><SegTabs tabs={[["budget","Budget"],["goals","Goals"],["credit","Credit"]]} value={sub} onChange={setScreen}/>
+      return <><div data-tour="do"><SegTabs tabs={[["budget","Budget"],["goals","Goals"],["credit","Credit"]]} value={sub} onChange={setScreen}/></div>
         {sub==="goals"
           ? <Goals data={dataWithHousehold} setAppData={setAppData} onUpgrade={()=>setShowPaywall(true)} initialTab={goalsTab} setScreen={setScreen} onEditBudget={editBudget}/>
           : sub==="credit"
@@ -17374,7 +17404,7 @@ input,button,select,textarea { font-family:inherit; }
             <div style={{position:"fixed",inset:0,zIndex:200,pointerEvents:"none"}}>
               <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.72)",pointerEvents:"auto"}}
                 onClick={()=>{if(isLast) dismissTour();}}/>
-              <div role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-body" style={{position:"absolute",bottom:100,left:"50%",transform:"translateX(-50%)",
+              <div id="tour-sheet" role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-body" style={{position:"absolute",...(tourSheetTop!=null?{top:tourSheetTop}:{bottom:100}),left:"50%",transform:"translateX(-50%)",
                 width:"calc(100% - 40px)",maxWidth:390,
                 background:C.surface,borderRadius:20,padding:"20px 20px 16px",
                 border:`1px solid ${C.green}44`,boxShadow:`0 8px 40px rgba(0,0,0,0.6)`,
