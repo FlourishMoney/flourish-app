@@ -115,7 +115,7 @@ const FORBIDDEN = [
 
   // ── demo-clarity: the tour and the demo coach's scripted lines state facts ────────────────────
   {
-    const TOUR_BANNED = [/held back/i, /holds? back/i, /sets? aside/i, /\blearns\b/i, /\bremembers\b/i, /never invents/i, /\bcovered\b/i, /\bcover you\b/i];
+    const TOUR_BANNED = [/held back/i, /holds? back/i, /sets? aside/i, /\blearns\b/i, /\bremembers\b/i, /never invents/i, /\bcovered\b/i, /\bcover you\b/i, /tempt you/i, /\bI never\b/];
     const { TOUR_STEPS } = await import("../src/lib/tour.js");
     const DC = await import("../src/lib/demoCoach.js");
     const D = await import("../src/lib/demoFixture.js");
@@ -127,7 +127,7 @@ const FORBIDDEN = [
       const fl = DC.demoFacilitatorLine(data, now); if (fl) lines.push(`facilitator ${c}: ${fl}`);
     }
     t.ok(lines.length >= 10, `(the sweep read ${lines.length} tour and scripted coach lines)`);
-    t.eq(lines.filter(l => TOUR_BANNED.some(r => r.test(l))), [], "no tour step or scripted coach line says held back, holds back, sets aside, learns, remembers, never invents, covered or cover you");
+    t.eq(lines.filter(l => TOUR_BANNED.some(r => r.test(l))), [], "no tour step or scripted coach line says held back, holds back, sets aside, learns, remembers, never invents, covered, cover you, tempt you or I never");
   }
 
   t.summary("publicCopy.test");

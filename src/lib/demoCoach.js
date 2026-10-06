@@ -80,7 +80,7 @@ export function demoCoachExchanges(data, today = new Date()) {
       q: "So how much can I spend today?",
       a: `${paceSentence(f.pace, f.view.headline)} ` +
          `It's a pace, not a limit. Safe to Spend is the total until your next deposit; this spreads it across the days. ` +
-         `I never divide by fewer than 14 days, so a deposit landing soon doesn't tempt you into spending it all at once.`,
+         `The pace always uses at least 14 days, even when a deposit is closer.`,
     });
   }
 
