@@ -14806,7 +14806,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
             <h2 className="fll-h2">Tools that help you understand your money.</h2>
             <div className="fll-benefits" style={{ marginTop: 24 }}>
               {[
-                [<DollarSign size={20} color="#2E8B2E" strokeWidth={2}/>, "Safe to Spend", "Know what's safe to spend before your next payday. It accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount."],
+                [<DollarSign size={20} color="#2E8B2E" strokeWidth={2}/>, "Safe to spend", "Know what's safe to spend before your next payday. It accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount."],
                 [<Target size={20} color="#2E8B2E" strokeWidth={2}/>, "What-If Simulator", "Test a decision, like a big purchase or an extra debt payment, and see the result before you commit."],
                 [<Sparkles size={20} color="#2E8B2E" strokeWidth={2}/>, "AI Coach", "The coach explains the numbers flourish calculates and your options, and leaves the decisions to you. It isn't a licensed adviser."],
                 [<Shield size={20} color="#2E8B2E" strokeWidth={2}/>, "Built in Canada", "flourish knows Canadian accounts like the RRSP and TFSA. Bank connections are read-only, so flourish can't move your money."],
