@@ -25,7 +25,7 @@ const PLAID_BASE = {
   production:  "https://production.plaid.com",
 };
 
-const { corsHeadersFor } = require("./_lib/cors");
+const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
 
 // Plaid REST wrapper — 8s timeout so we never exceed Netlify's 10s limit
 async function plaid(endpoint, body) {
@@ -165,7 +165,7 @@ exports.handler = async (event) => {
       // Sprint Q item 11: free tier connects ONE bank; multi-bank is a paid feature. Plan is read
       // server-authoritatively from the profiles table (never client state). FLAG: chosen freemium
       // policy — adjust the limit or remove this block if free should allow multiple banks.
-      const { unlimited } = await getUserPlan(user_id);
+      const { unlimited } = await getUserPlan(user_id, { native: isNativeRequest(event) }); // Apple 3.1.3(b)
       if (ENFORCE_PLAN_LIMITS && !unlimited) {
         const adminChk = getAdminClient();
         const { count } = await adminChk.from("plaid_items").select("item_id", { count: "exact", head: true }).eq("user_id", user_id).eq("status", "active");
@@ -566,7 +566,7 @@ exports.handler = async (event) => {
       const failures = [];
       // Sprint Q item 11: enforce the free-tier one-bank cap here too (migrate_items is a SECOND
       // write path into plaid_items). Re-migrating an already-active item is always allowed.
-      const { unlimited } = await getUserPlan(user_id);
+      const { unlimited } = await getUserPlan(user_id, { native: isNativeRequest(event) }); // Apple 3.1.3(b)
       const capBanks = ENFORCE_PLAN_LIMITS && !unlimited; // v1: flag off → no cap
       let existingIds = new Set(), activeCount = 0;
       if (capBanks) {

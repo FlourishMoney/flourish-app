@@ -90,7 +90,14 @@ function isPaidSubscription(sub, now = Date.now()) {
 // A paid subscription can only ADD. It never downgrades someone the profile already entitles —
 // a founder stays a founder, and an unexpired trial stays a trial even after the card is charged,
 // so nobody loses trial days by paying early.
-function deriveEntitlement(profile, subscription, now = Date.now()) {
+//
+// STORE APPS: THE SUBSCRIPTION IS IGNORED (Apple 3.1.3(b); the Play build follows the same rule).
+// Subscriptions are sold only on the web, through Stripe. Until in-app purchase exists, a web
+// subscription must not unlock anything in the iOS or Android app, so for a request from a store
+// app (native: true, _lib/cors.js isNativeRequest) the answer comes from the profile alone: the
+// 14-day trial, then the free tier. The founder flag is not a purchase and still applies.
+function deriveEntitlement(profile, subscription, now = Date.now(), { native = false } = {}) {
+  if (native) subscription = null;
   const fromProfile = derivePlan(profile, now);
   if (fromProfile !== "free") {
     return { plan: fromProfile, unlimited: true, paidSubscription: isPaidSubscription(subscription, now) };
