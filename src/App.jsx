@@ -29,7 +29,7 @@ import { shouldPromptIncome, applyDetectedIncome, cadenceLabel, frequencyLabel }
 import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill } from "./lib/billReeval.js";
 import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate } from "./lib/statementImport.js";
 import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
-import { foundingOfferCopy, foundingLiveLine, sharedFoundingSpots, foundingLineParts } from "./lib/foundingOffer.js";
+import { foundingOfferCopy, foundingLiveLine, sharedFoundingSpots, foundingCardParts } from "./lib/foundingOffer.js";
 import { isNativeApp, billingUiState, offeredPlans, billingReturnNotice, BILLING_RETURN_PARAMS } from "./lib/billingVisibility.js";
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/signupUi.js";
@@ -14431,10 +14431,11 @@ function FoundingOffer() {
   );
 }
 
-// THE FOUNDING LINE (2026-10-07): phones and tablets only (the one-column layout), directly above the hero's
-// email field. Same count as the block below, from the same single read (sharedFoundingSpots). No count:
-// no last sentence. 0 left: no line. Tapping it scrolls to the founding block. Hidden at 960px and up.
-function FoundingLine() {
+// THE FOUNDING CARD (2026-10-07, replacing the one-line version): phones and tablets only (the one-column
+// layout), directly above the hero's email field. Same count as the block below, from the same single read
+// (sharedFoundingSpots). No count: no pill. 0 left: no card. Tapping it scrolls to the founding block.
+// Hidden at 960px and up. A button, so its rows are spans laid out as blocks.
+function FoundingCard() {
   const [spotsLeft, setSpotsLeft] = useState(null);
   useEffect(() => {
     if (isNativeApp()) return undefined;
@@ -14443,7 +14444,7 @@ function FoundingLine() {
     return () => { live = false; };
   }, []);
   if (isNativeApp()) return null;
-  const parts = foundingLineParts(spotsLeft);
+  const parts = foundingCardParts(spotsLeft);
   if (!parts) return null;
   const toBlock = () => {
     const el = document.querySelector(".fll-founding");
@@ -14452,8 +14453,15 @@ function FoundingLine() {
     el.scrollIntoView({ block: "start", behavior: smooth ? "smooth" : "auto" });
   };
   return (
-    <button type="button" className="fll-founding-line" onClick={toBlock}>
-      <strong>{parts.bold}</strong>{parts.rest}{parts.count}
+    <button type="button" className="fll-founding-card" onClick={toBlock}>
+      <span className="fll-fc-eyebrow">{parts.eyebrow}</span>
+      <span className="fll-fc-row">
+        <span className="fll-fc-price">{parts.price}</span>
+        <s className="fll-fc-regular">{parts.regular}</s>
+        {parts.pill && <span className="fll-fc-pill" data-founding-pill="">{parts.pill}</span>}
+      </span>
+      <span className="fll-fc-save">{parts.save}</span>
+      <span className="fll-fc-small">{parts.small}</span>
     </button>
   );
 }
@@ -14756,10 +14764,17 @@ function AuthScreen({ onAuth, onTryDemo }) {
             /* One column (phones, small tablets): the founding block comes after the $1,944 card, so the
                card's top stays in the first screen at 390 x 844 even with the live line. */
             .fll-founding{ grid-area:founding; justify-self:center; width:100%; max-width:440px; box-sizing:border-box; margin-block:0; margin-inline:0; padding:${SPACE.lg}px; border-radius:${SPACE.lg}px; background:#fff; border:1px solid rgba(46,139,46,0.22); text-align:left; font-family:'Plus Jakarta Sans',sans-serif; }
-            /* The founding line above the hero's email field (phones and tablets; hidden at 960px and up). */
-            .fll-founding-line{ display:block; width:100%; box-sizing:border-box; min-height:44px; margin-block:0 ${SPACE.md}px; margin-inline:0; padding:${SPACE.sm}px ${SPACE.md}px; border-radius:${SPACE.md}px; background:rgba(46,139,46,0.10); border:1px solid rgba(46,139,46,0.32); color:#15321a; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; font-weight:500; line-height:1.45; cursor:pointer; }
-            .fll-founding-line strong{ font-weight:800; color:#1b5e20; }
-            .fll-founding-line:focus-visible{ outline:3px solid #1b5e20; outline-offset:2px; }
+            /* The founding card above the hero's email field (phones and tablets; hidden at 960px and up).
+               Dark green, cream text, a lime pill: it reads as an offer, not as a second Join button. */
+            .fll-founding-card{ display:block; width:100%; box-sizing:border-box; margin-block:0 ${SPACE.md}px; margin-inline:0; padding:${SPACE.md}px; border:0; border-radius:${SPACE.lg}px; background:#15321a; color:#fdf6ec; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; box-shadow:0 10px 24px rgba(21,50,26,0.18); }
+            .fll-fc-eyebrow{ display:block; font-size:13px; font-weight:800; letter-spacing:0.08em; line-height:1.3; color:#c8f169; }
+            .fll-fc-row{ display:flex; flex-wrap:wrap; align-items:center; column-gap:${SPACE.sm}px; row-gap:${SPACE.xs}px; margin-block:${SPACE.xs}px; }
+            .fll-fc-price{ font-family:'Playfair Display',serif; font-weight:900; font-size:24px; line-height:1.1; color:#fdf6ec; }
+            .fll-fc-regular{ font-size:13px; font-weight:600; color:#c5d3c1; text-decoration-thickness:2px; }
+            .fll-fc-pill{ display:inline-block; padding:${SPACE.xs}px ${SPACE.sm}px; border-radius:99px; background:#c8f169; color:#15321a; font-size:13px; font-weight:800; line-height:1.2; white-space:nowrap; }
+            .fll-fc-save{ display:block; font-size:14px; font-weight:800; line-height:1.35; color:#fdf6ec; }
+            .fll-fc-small{ display:block; margin-top:${SPACE.xs}px; font-size:13px; font-weight:500; line-height:1.4; color:#d9e2d6; }
+            .fll-founding-card:focus-visible{ outline:3px solid #1b5e20; outline-offset:3px; }
             .fll-founding-h{ font-size:16px; font-weight:800; line-height:1.35; color:#15321a; margin-block:0 ${SPACE.xs}px; }
             .fll-founding-p{ font-size:14px; line-height:1.55; color:#3f4f3c; margin-block:${SPACE.xs}px 0; }
             .fll-founding-live{ font-size:14px; font-weight:700; line-height:1.4; color:#1b5e20; margin-block:${SPACE.sm}px 0; }
@@ -14829,6 +14844,10 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-contact p{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; line-height:1.6; color:#52624f; margin-block:0 2px; }
             .fll-foot span{ color:#52624f; font-size:13px; font-family:'Plus Jakarta Sans',sans-serif; }
 
+            /* The founding card takes room above the email field, so on phones the hero is a little tighter:
+               Join and the top of the $1,944 card stay in the first screen at 390 x 844 (landingDemo 6b, 6b2). */
+            @media(max-width:759px){ .fll-hero{ padding-top:${SPACE.md}px; } }
+            @media(max-width:959px){ .fll-hero-grid{ row-gap:${SPACE.lg}px; } .fll-h1{ margin-bottom:${SPACE.md}px; } }
             @media(min-width:760px){
               .fll-hero{ padding-top:46px; padding-bottom:22px; }
               .fll-section{ padding-top:58px; padding-bottom:58px; }
@@ -14844,7 +14863,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
               /* Desktop: directly under the form, ${SPACE.lg}px below its consent line exactly as when it sat inside
                  the form: the row gap (${SPACE.xl}px) less ${SPACE.xl - SPACE.lg}px. */
               .fll-founding{ justify-self:start; margin-top:-${SPACE.xl - SPACE.lg}px; }
-              .fll-founding-line{ display:none; }
+              .fll-founding-card{ display:none; }
               .fll-hero-demo{ margin-top:-${SPACE.md}px; }
               .fll-hero-form .fll-capture{ margin-inline:0; }
               .fll-trust-row{ text-align:left; }
@@ -14900,7 +14919,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
                 <figcaption className="fll-sample">Example, sample data.</figcaption>
               </figure>
               <div className="fll-hero-form">
-                <FoundingLine/>
+                <FoundingCard/>
                 <WaitlistForm source="hero"/>
               </div>
               {/* Its own grid item: under the form on desktop, below the card on phones (grid areas). */}

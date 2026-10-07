@@ -273,10 +273,11 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     t.eq(m.cardSrc, "/app-screens/hero-card.jpg", "6g the card is the crop of the real capture");
     await ctx.close();
   }
-  // ── The founding line above the email field: phones and tablets only (2026-10-07) ─────────────
+  // ── The founding card above the email field: phones and tablets only (2026-10-07) ─────────────
   {
-    const WITH = "Founding price: $79.99 a year plus tax for the first 50 households, paid and used on flourishmoney.app. Not yet in the iPhone and Android apps. 35 of 50 spots left.";
-    const WITHOUT = "Founding price: $79.99 a year plus tax for the first 50 households, paid and used on flourishmoney.app. Not yet in the iPhone and Android apps.";
+    const ROWS = ["FOUNDING PRICE · FIRST 50 HOUSEHOLDS", "$79.99 a year", "$99.99 a year", "35 of 50 left",
+      "$20 a year less than the regular $99.99.",
+      "Plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet in the iPhone and Android apps."];
     // count: a 35 the endpoint read; fail: this server answers /api/founding with the page, which is not
     // a count (a real failure); zero: all spots taken.
     for (const mode of ["count", "fail", "zero"]) {
@@ -288,28 +289,31 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       await page.goto(base, { waitUntil: "domcontentloaded" });
       await page.getByText("Real screens from the app.").waitFor();
       await page.locator(".fll-founding").waitFor();
+      await page.locator(".fll-hero-card img").evaluate(img => img.decode());
       await page.waitForTimeout(800);
       const m = await page.evaluate(() => {
         const r = (s) => { const e = document.querySelector(s); return e ? e.getBoundingClientRect() : null; };
-        const line = document.querySelector(".fll-founding-line");
-        return { text: line ? line.textContent : null, bold: line ? (line.querySelector("strong") || {}).textContent : null,
-          line: r(".fll-founding-line"), input: r(".fll-input"), join: r(".fll-btn"), card: r(".fll-hero-card img"),
+        const card = document.querySelector(".fll-founding-card");
+        const rows = card ? [".fll-fc-eyebrow", ".fll-fc-price", ".fll-fc-regular", ".fll-fc-pill", ".fll-fc-save", ".fll-fc-small"].map(s => (card.querySelector(s) || {}).textContent || null) : null;
+        return { rows, struck: card ? getComputedStyle(card.querySelector(".fll-fc-regular")).textDecorationLine : null,
+          card: r(".fll-founding-card"), input: r(".fll-input"), join: r(".fll-btn"), top: r(".fll-hero-card img"),
           live: (document.querySelector("[data-founding-live]") || {}).textContent || null };
       });
-      t.eq(calls, 1, `10a ${mode}: one /api/founding request, shared by the line and the block`);
+      t.eq(calls, 1, `10a ${mode}: one /api/founding request, shared by the card and the block`);
       if (mode === "zero") {
-        t.eq(m.text, null, "10b 0 left: no founding line");
+        t.eq(m.rows, null, "10b 0 left: no founding card");
         t.eq(m.live, "Founding spots are full. Join the waitlist for launch news.", "10c …and the block still says the spots are full");
       } else {
-        t.eq(m.text, mode === "count" ? WITH : WITHOUT, mode === "count" ? "10d the line, word for word, with the live count" : "10e no count read: the last sentence is left out, the rest is kept");
-        t.eq(m.bold, "Founding price: $79.99 a year", `10f ${mode}: "Founding price: $79.99 a year" is bold`);
-        t.ok(m.line.top >= 0 && m.line.bottom <= 844 && m.line.bottom <= m.input.top && m.input.top - m.line.bottom <= 16,
-          `10g ${mode}: the line is fully on screen (${Math.round(m.line.top)} to ${Math.round(m.line.bottom)}), directly above the email field`);
-        t.ok(m.join.bottom <= 844 && m.card.top < 844, `10h ${mode}: Join (bottom ${Math.round(m.join.bottom)}) and the card's top (${Math.round(m.card.top)}) stay above the fold`);
-        await page.locator(".fll-founding-line").click();
+        t.eq(m.rows, mode === "count" ? ROWS : ROWS.map((r, k) => (k === 3 ? null : r)),
+          mode === "count" ? "10d the card, row by row, with the live count in the pill" : "10e no count read: only the pill is left out");
+        t.eq(m.struck, "line-through", `10f ${mode}: the regular price is struck through`);
+        t.ok(m.card.top >= 0 && m.card.bottom <= 844 && m.card.bottom <= m.input.top && m.input.top - m.card.bottom <= 16,
+          `10g ${mode}: the card is fully on screen (${Math.round(m.card.top)} to ${Math.round(m.card.bottom)}), directly above the email field`);
+        t.ok(m.join.bottom <= 844 && m.top.top < 844, `10h ${mode}: Join (bottom ${Math.round(m.join.bottom)}) and the $1,944 card's top (${Math.round(m.top.top)}) stay above the fold`);
+        await page.locator(".fll-founding-card").click();
         await page.waitForTimeout(900);
         const top = await page.evaluate(() => document.querySelector(".fll-founding").getBoundingClientRect().top);
-        t.ok(top >= -1 && top < 60, `10i ${mode}: tapping the line scrolls to the founding block (its top at ${Math.round(top)}px)`);
+        t.ok(top >= -1 && top < 60, `10i ${mode}: tapping the card scrolls to the founding block (its top at ${Math.round(top)}px)`);
       }
       await ctx.close();
     }
@@ -318,7 +322,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     await fd.route("**/api/founding", r => r.fulfill({ status: 200, contentType: "application/json", body: '{"spotsLeft":35}' }));
     await fd.goto(base, { waitUntil: "domcontentloaded" });
     await fd.getByText("Real screens from the app.").waitFor(); await fd.waitForTimeout(800);
-    t.eq(await fd.locator(".fll-founding-line").evaluate(e => getComputedStyle(e).display), "none", "10j desktop: the line is not shown");
+    t.eq(await fd.locator(".fll-founding-card").evaluate(e => getComputedStyle(e).display), "none", "10j desktop: the card is not shown");
     await fctx.close();
     const dctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const d = await dctx.newPage(); d.setDefaultTimeout(15000);

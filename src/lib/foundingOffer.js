@@ -39,22 +39,23 @@ export function foundingLiveLine(spotsLeft) {
   return `${spotsLeft} of ${FOUNDING_HOUSEHOLDS} founding spots left`;
 }
 
-// THE FOUNDING LINE above the hero's email field, on phones and tablets (2026-10-07). Bold lead, the rest,
-// and the live count as its last sentence. No count read: no last sentence. 0 left: no line at all (the
-// block below still says the spots are full). The prices are read from pricing.js, never typed here.
-export function foundingLineParts(spotsLeft) {
+// THE FOUNDING CARD above the hero's email field, on phones and tablets (2026-10-07; replaces the one-line
+// version). Four rows. The prices are read from pricing.js and the saving is worked out from the two annual
+// prices, never typed here. No count read: no pill. 0 left: no card (the block below still says full).
+const _wholeOrCents = (n) => (Number.isInteger(n) ? `$${n}` : formatPrice(n));
+export function foundingCardParts(spotsLeft) {
   if (spotsLeft === 0) return null;
   const p = getPricing("CA");
   const n = Number.isInteger(spotsLeft) && spotsLeft > 0 && spotsLeft <= FOUNDING_HOUSEHOLDS ? spotsLeft : null;
+  const saving = Math.round((p.annual - p.foundingAnnual) * 100) / 100;
   return {
-    bold: `Founding price: ${formatPrice(p.foundingAnnual)} a year`,
-    rest: ` plus tax for the first ${FOUNDING_HOUSEHOLDS} households, paid and used on flourishmoney.app. Not yet in the iPhone and Android apps.`,
-    count: n === null ? "" : ` ${n} of ${FOUNDING_HOUSEHOLDS} spots left.`,
+    eyebrow: `FOUNDING PRICE · FIRST ${FOUNDING_HOUSEHOLDS} HOUSEHOLDS`,
+    price: `${formatPrice(p.foundingAnnual)} a year`,
+    regular: `${formatPrice(p.annual)} a year`,
+    pill: n === null ? null : `${n} of ${FOUNDING_HOUSEHOLDS} left`,
+    save: `${_wholeOrCents(saving)} a year less than the regular ${formatPrice(p.annual)}.`,
+    small: "Plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet in the iPhone and Android apps.",
   };
-}
-export function foundingLineText(spotsLeft) {
-  const l = foundingLineParts(spotsLeft);
-  return l ? l.bold + l.rest + l.count : null;
 }
 
 // One read of the endpoint: the number, or null on any failure. Never throws.
