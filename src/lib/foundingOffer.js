@@ -20,7 +20,7 @@ export function foundingOfferCopy() {
   const p = getPricing("CA");
   return {
     heading: `Founding price for the first ${FOUNDING_HOUSEHOLDS} households`,
-    price: `${formatPrice(p.foundingAnnual)} a year plus tax, for as long as you stay subscribed. Paid on flourishmoney.app.`,
+    price: `${formatPrice(p.foundingAnnual)} a year plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.`,
     regular: `Regular price: ${formatPrice(p.annual)} a year or ${formatPrice(p.monthly)} a month, plus tax.`,
     join: `Join the waitlist. The first ${FOUNDING_HOUSEHOLDS} households on the waitlist get the founding price. Payments open October 26. Joining is free.`,
   };

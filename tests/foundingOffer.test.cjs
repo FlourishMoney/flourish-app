@@ -28,7 +28,7 @@ const fresh = (p) => { delete require.cache[require.resolve(p)]; return require(
 const stripSql = (src) => src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--.*$/gm, " ");
 
 const HEADING = "Founding price for the first 50 households";
-const PRICE_LINE = "$79.99 a year plus tax, for as long as you stay subscribed. Paid on flourishmoney.app.";
+const PRICE_LINE = "$79.99 a year plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.";
 const REGULAR_LINE = "Regular price: $99.99 a year or $11.99 a month, plus tax.";
 const JOIN_LINE = "Join the waitlist. The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free.";
 const FULL_LINE = "Founding spots are full. Join the waitlist for launch news.";
