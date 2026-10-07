@@ -619,7 +619,17 @@ read it, rather than keeping a second tally per device.
 
 ---
 
-## 23. Account deletion leaves the payment processor's records behind
+## 23. Account deletion leaves the payment processor's records behind — subscription cancellation FIXED 2026-10-07
+
+**Fixed (prelaunch-fixes-1):** `delete_account` now cancels every Stripe subscription that could still
+charge (read, then `DELETE /v1/subscriptions/{id}`) before anything is erased. If it cannot cancel, or
+cannot tell whether a charge is live, the deletion stops at `billing_cancel` with nothing changed and the
+app says to try again or email hello@flourishmoney.app. A founding subscription's waitlist number is
+stamped ended; the number is never freed. Stripe's later cancellation event for the deleted account is
+acknowledged. Tests: `tests/deleteAccountStripe.test.cjs`. The Stripe customer and its invoices are still
+kept by Stripe as billing records, as the /delete-account page says.
+
+The original report:
 
 **Rating: MEDIUM now, HIGH once billing ships.** Found by the same review.
 

@@ -65,8 +65,12 @@ const PAGE = APP.slice(APP.indexOf("function DeleteAccount({onBack})"), APP.inde
     "4b so the page promises our tokens are deleted and revocation is requested, not guaranteed");
   t.ok(!/so no further data can be fetched\./.test(PAGE),
     "4c …and no longer claims fetching is impossible, which a failed revocation would make untrue");
-  // Nothing in the deletion path touches Stripe, so "nothing is kept" was untrue.
-  t.eq(/stripe/i.test(PLAID), false, "4d the deletion handler does not touch the payment processor");
+  // KNOWN-DEFECTS 23 (fixed 2026-10-07): the deletion cancels the Stripe subscription first, so nobody is
+  // charged after deleting. It does NOT delete the Stripe customer or its invoices: those are the processor's
+  // own billing record, which the page says we cannot delete. Both halves are pinned, so the page stays true.
+  const del = PLAID.slice(PLAID.indexOf('if (action === "delete_account")'));
+  t.ok(/stripeDelete\(`\/subscriptions\/\$\{id\}`/.test(del) && !/\/customers/.test(del),
+    "4d the deletion cancels the subscription at Stripe and leaves the processor's customer and invoices (its billing record)");
   t.ok(/payment processor also keeps its own\s*\n?\s*billing record/.test(PAGE.replace(/\s+/g, " ").replace(/ /g, " "))
     || /payment processor also keeps its own/.test(PAGE.replace(/\s+/g, " ")),
     "4e so the page says the processor keeps its own record rather than claiming nothing is kept");

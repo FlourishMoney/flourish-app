@@ -17270,6 +17270,11 @@ export default function FlourishApp(){
       console.error("[deleteAllData] account NOT fully deleted:", criticalErrors);
       // Round-3: "nothing was changed" only when the server stopped before touching anything (it
       // could not load the bank links). A later stop has already removed some data, so say that.
+      // KNOWN-DEFECTS 23: the subscription is cancelled before anything is erased; if it could not be, nothing was.
+      if (criticalErrors.some(e => e.step === "billing_cancel")) {
+        alertModal({message:"We couldn't cancel your subscription, so your account was not deleted and nothing was changed. Please try again, or email hello@flourishmoney.app."});
+        return; // FAIL CLOSED
+      }
       const untouched = criticalErrors.length > 0 && criticalErrors.every(e => e.step === "load_items");
       alertModal({message: untouched
         ? "Your account could not be deleted, so nothing was changed. Please try again, or contact privacy@flourishmoney.app."

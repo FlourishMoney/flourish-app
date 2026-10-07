@@ -213,6 +213,27 @@ exports.handler = async (event) => {
         if (curErr) throw new Error(curErr.message);
         if (!cur?.founding_ended_at) patch.founding_ended_at = eventAtIso || new Date().toISOString();
       }
+      const subscriptionOver = evt.type === "customer.subscription.deleted" || object.status === "canceled";
+      const accountGone = async () => {
+        // Only Supabase saying the user does not exist counts. A lookup that fails for any other reason
+        // is thrown, so Stripe retries rather than the event being dropped.
+        const { data: who, error: whoErr } = await admin.auth.admin.getUserById(user_id);
+        if (whoErr) {
+          if (whoErr.status === 404 || /not found/i.test(String(whoErr.message || ""))) return true;
+          throw new Error(`account lookup: ${whoErr.message}`);
+        }
+        return !(who && who.user);
+      };
+      if (!existing?.user_id && user_id && subscriptionOver && !(await subscriptionRowFor("user_id", user_id)) && (await accountGone())) {
+        // THE ACCOUNT WAS DELETED (KNOWN-DEFECTS 23). delete_account cancels the subscription first, then erases
+        // this row and the sign-in, so Stripe's cancellation arrives with nothing left to update, and writing a
+        // row for an account that no longer exists would fail and be retried for days. It is acknowledged
+        // instead. delete_account has already stamped the founding number if there was one.
+        await admin.from("billing_events").update({
+          status: "ignored", processed_at: new Date().toISOString(), error: "no account: the subscription ended with the account",
+        }).eq("event_id", evt.id);
+        return reply(200, { received: true, ignored: true });
+      }
       if (existing?.user_id) {
         const { error } = await q.update(patch).eq("user_id", existing.user_id);
         if (error) throw new Error(error.message);
