@@ -300,6 +300,13 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
           live: (document.querySelector("[data-founding-live]") || {}).textContent || null };
       });
       t.eq(calls, 1, `10a ${mode}: one /api/founding request, shared by the card and the block`);
+      // Under 960px the block does not repeat the card's price or count.
+      const block = await page.evaluate(() => document.querySelector(".fll-founding").innerText.split("\n").map(x => x.trim()).filter(Boolean));
+      t.eq(block, ["How founding spots work", "The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free.",
+        "Regular price: $99.99 a year or $11.99 a month, plus tax.", ...(mode === "zero" ? ["Founding spots are full. Join the waitlist for launch news."] : [])],
+        `10k ${mode}: the founding block says how the spots work${mode === "zero" ? ", and that they are full" : ""}`);
+      t.eq(await page.evaluate(() => (document.body.innerText.match(/\$79\.99/g) || []).length), mode === "zero" ? 0 : 1,
+        `10l ${mode}: the founding price shows ${mode === "zero" ? "nowhere (the spots are gone)" : "once, on the card"}`);
       if (mode === "zero") {
         t.eq(m.rows, null, "10b 0 left: no founding card");
         t.eq(m.live, "Founding spots are full. Join the waitlist for launch news.", "10c …and the block still says the spots are full");
@@ -323,6 +330,10 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     await fd.goto(base, { waitUntil: "domcontentloaded" });
     await fd.getByText("Real screens from the app.").waitFor(); await fd.waitForTimeout(800);
     t.eq(await fd.locator(".fll-founding-card").evaluate(e => getComputedStyle(e).display), "none", "10j desktop: the card is not shown");
+    t.eq(await fd.evaluate(() => document.querySelector(".fll-founding").innerText.split("\n").map(x => x.trim()).filter(Boolean)),
+      ["Founding price for the first 50 households", "$79.99 a year plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.",
+        "Regular price: $99.99 a year or $11.99 a month, plus tax.", "Join the waitlist. The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free.",
+        "35 of 50 founding spots left"], "10m desktop: the founding block is unchanged, with its count");
     await fctx.close();
     const dctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const d = await dctx.newPage(); d.setDefaultTimeout(15000);

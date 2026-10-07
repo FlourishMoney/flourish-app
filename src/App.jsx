@@ -14422,11 +14422,15 @@ function FoundingOffer() {
   const liveLine = foundingLiveLine(spotsLeft);
   return (
     <section className="fll-founding" ref={box} aria-labelledby="fll-founding-h">
-      <h2 className="fll-founding-h" id="fll-founding-h">{copy.heading}</h2>
-      <p className="fll-founding-p">{copy.price}</p>
+      {/* Two versions, switched by CSS at 960px (.fll-fo-desk / .fll-fo-phone). Under 960px the founding card
+          at the top already shows the price and the count, so this block says how the spots work. Desktop
+          reads as it always has. "Founding spots are full" shows at every width. */}
+      <h2 className="fll-founding-h" id="fll-founding-h"><span className="fll-fo-desk">{copy.heading}</span><span className="fll-fo-phone">{copy.phoneHeading}</span></h2>
+      <p className="fll-founding-p fll-fo-desk">{copy.price}</p>
+      <p className="fll-founding-p fll-fo-phone">{copy.phoneJoin}</p>
       <p className="fll-founding-p">{copy.regular}</p>
-      <p className="fll-founding-p">{copy.join}</p>
-      {liveLine && <p className="fll-founding-live" data-founding-live="">{liveLine}</p>}
+      <p className="fll-founding-p fll-fo-desk">{copy.join}</p>
+      {liveLine && <p className={`fll-founding-live${spotsLeft > 0 ? " fll-fo-desk" : ""}`} data-founding-live="">{liveLine}</p>}
     </section>
   );
 }
@@ -14844,6 +14848,8 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-contact p{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; line-height:1.6; color:#52624f; margin-block:0 2px; }
             .fll-foot span{ color:#52624f; font-size:13px; font-family:'Plus Jakarta Sans',sans-serif; }
 
+            /* The founding block's two versions: under 960px the phone one, from 960px the desktop one. */
+            @media(max-width:959px){ .fll-fo-desk{ display:none; } }
             /* The founding card takes room above the email field, so on phones the hero is a little tighter:
                Join and the top of the $1,944 card stay in the first screen at 390 x 844 (landingDemo 6b, 6b2). */
             @media(max-width:759px){ .fll-hero{ padding-top:${SPACE.md}px; } }
@@ -14864,6 +14870,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
                  the form: the row gap (${SPACE.xl}px) less ${SPACE.xl - SPACE.lg}px. */
               .fll-founding{ justify-self:start; margin-top:-${SPACE.xl - SPACE.lg}px; }
               .fll-founding-card{ display:none; }
+              .fll-fo-phone{ display:none; }
               .fll-hero-demo{ margin-top:-${SPACE.md}px; }
               .fll-hero-form .fll-capture{ margin-inline:0; }
               .fll-trust-row{ text-align:left; }

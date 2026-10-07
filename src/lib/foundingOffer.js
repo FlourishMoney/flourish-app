@@ -23,6 +23,10 @@ export function foundingOfferCopy() {
     price: `${formatPrice(p.foundingAnnual)} a year plus tax, for as long as you stay subscribed. Paid and used on flourishmoney.app. Not yet available in the iPhone and Android apps.`,
     regular: `Regular price: ${formatPrice(p.annual)} a year or ${formatPrice(p.monthly)} a month, plus tax.`,
     join: `Join the waitlist. The first ${FOUNDING_HOUSEHOLDS} households on the waitlist get the founding price. Payments open October 26. Joining is free.`,
+    // Under 960px the founding card at the top already shows the price and the count, so the block
+    // says how the spots work instead (2026-10-07): this heading, phoneJoin, then the regular price.
+    phoneHeading: "How founding spots work",
+    phoneJoin: `The first ${FOUNDING_HOUSEHOLDS} households on the waitlist get the founding price. Payments open October 26. Joining is free.`,
   };
 }
 
