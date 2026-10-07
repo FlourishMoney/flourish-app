@@ -152,15 +152,22 @@ does not arrive by webhook.
 - **`past_due` is not treated as paid.** A failed renewal removes access at once. Whether
   there should be a grace period is a product decision nobody has made; when it is made it
   is one entry in `SUBSCRIPTION_PAID_STATUSES` in `_lib/planRules.js`, with no migration.
-- **Founding eligibility is a waitlist founding position (Amanda's decision, 2026-10-06).** The
-  founding price goes to the first 50 households on the WAITLIST, not the first 50 checkouts.
-  `_lib/foundingCohort.js` asks Postgres (`waitlist_founding_position_for_email`, migration 0016)
-  for the position held by the account's own confirmed email, ignoring case and whitespace and
-  skipping test rows; only 1 to 50 qualifies. Positions never move: a household that joins and
-  never pays keeps its place, and paying frees nothing. `status` and `create_checkout_session`
-  ask the same question; anyone else, including a beta tester with `profiles.founder_flag`, is
-  offered monthly and annual, and a founding checkout without a position gets a 403. The cohort
-  size, 50, appears once in code, as `FOUNDING_COHORT_LIMIT`. Fails closed: if the lookup fails,
-  the founding price is not offered.
+- **Founding eligibility (Amanda's decision, 2026-10-06; rules of 2026-10-07).** `_lib/foundingCohort.js`
+  decides, for `status` and `create_checkout_session` alike, in this order:
+  1. **Ended is final.** An account with `subscriptions.founding_ended_at` set is offered monthly
+     and annual only. The webhook stamps it, once, when a founding subscription is `canceled`
+     (`past_due` and `unpaid` are not ended), and also stamps the household's waitlist number
+     (`waitlist_founding_ledger.ended_at`, which outlives account deletion). A founding checkout
+     after that is a 403.
+  2. **Beta founders** (`profiles.founder_flag`) keep the founding price. They are outside the 50:
+     the waitlist is never read or written for them.
+  3. **The first 50 on the waitlist.** Otherwise the account's confirmed email must hold waitlist
+     number 1 to 50 (`waitlist_founding_position_for_email`, migration 0016), on a row that is not
+     a test row, whose founding subscription never ended.
+  Numbers are issued once, recorded in `waitlist_founding_ledger` and never reissued: a household
+  that never pays, ends its subscription or deletes its account keeps its number, and nobody moves
+  up. `waitlist_founding_start()` runs once; a second call raises an error and changes nothing.
+  The cohort size, 50, appears once in code, as `FOUNDING_COHORT_LIMIT`. Fails closed: if a read
+  fails, the founding price is not offered.
 - **Quebec (P17)** is not enforced in the billing path. Signup-time exclusion is where that
   belongs, and it does not exist yet.

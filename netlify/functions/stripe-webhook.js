@@ -54,6 +54,17 @@ function subscriptionPatch(sub, extra = {}) {
   };
 }
 
+// A FOUNDING SUBSCRIPTION THAT HAS ENDED (rule of 2026-10-07). The founding price is "for as long as
+// you stay subscribed": once a founding subscription is over, that household is offered the regular
+// prices only, and its waitlist number is never given to anyone else. Stripe's last word on an ended
+// subscription is status "canceled" (customer.subscription.deleted carries it too). plan_key is ours,
+// written into the subscription's metadata at checkout. past_due and unpaid are NOT ended: Stripe is
+// still trying to collect, and the subscription can recover.
+function foundingSubscriptionEnded(evtType, sub) {
+  if (sub?.metadata?.plan_key !== "founding_annual") return false;
+  return evtType === "customer.subscription.deleted" || sub?.status === "canceled";
+}
+
 function userIdFrom(object) {
   return object?.metadata?.user_id || object?.client_reference_id || null;
 }
@@ -181,10 +192,11 @@ exports.handler = async (event) => {
 
     if (evt.type === "customer.subscription.updated" || evt.type === "customer.subscription.deleted") {
       const user_id = userIdFrom(object);
+      const foundingEnded = foundingSubscriptionEnded(evt.type, object);
       const patch = subscriptionPatch(object,
         evt.type === "customer.subscription.deleted"
           ? { status: "canceled", founding_locked_at: null }     // the lock ends with the subscription
-          : {});
+          : (foundingEnded ? { founding_locked_at: null } : {}));
       let q = admin.from("subscriptions");
       // Prefer the subscription id; fall back to metadata's user_id for a row written at checkout
       // before the first subscription event arrived.
@@ -193,6 +205,14 @@ exports.handler = async (event) => {
       // checkout wrote, which the subscription id does not find until the first update lands.
       if (staleAgainst(existing || await subscriptionRowFor("user_id", user_id))) return await acknowledgeStale();
       if (eventAtIso) patch.last_event_at = eventAtIso;
+      const accountId = existing?.user_id || user_id;
+      if (foundingEnded && accountId) {
+        // Stamped once: the first end is the one that counts, and nothing ever clears it.
+        const { data: cur, error: curErr } = await admin
+          .from("subscriptions").select("founding_ended_at").eq("user_id", accountId).maybeSingle();
+        if (curErr) throw new Error(curErr.message);
+        if (!cur?.founding_ended_at) patch.founding_ended_at = eventAtIso || new Date().toISOString();
+      }
       if (existing?.user_id) {
         const { error } = await q.update(patch).eq("user_id", existing.user_id);
         if (error) throw new Error(error.message);
@@ -201,6 +221,17 @@ exports.handler = async (event) => {
         if (error) throw new Error(error.message);
       } else {
         throw new Error(`no account for subscription ${object.id}`);
+      }
+      if (foundingEnded) {
+        // And on the waitlist number, which outlives the account (deleting an account deletes its waitlist
+        // row, not the number's ledger entry). A failure here is a 5xx, so Stripe retries the event.
+        const { data: u, error: uErr } = await admin.auth.admin.getUserById(accountId);
+        if (uErr) throw new Error(`founding end: ${uErr.message}`);
+        const email = u?.user?.email;
+        if (email) {
+          const { error: endErr } = await admin.rpc("waitlist_founding_mark_ended", { p_email: email });
+          if (endErr) throw new Error(`founding end: ${endErr.message}`);
+        }
       }
     }
 

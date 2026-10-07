@@ -99,7 +99,7 @@ exports.handler = async (event) => {
 
       // Same question the checkout asks, of the same account. If the two disagreed, the screen would
       // offer a price the next call refuses.
-      const foundingAvailable = await mayBuyFoundingPrice(admin, await authUser(admin, user_id));
+      const foundingAvailable = await mayBuyFoundingPrice(admin, user_id, await authUser(admin, user_id));
       return json(200, CORS, {
         enabled: true,
         paid: PAID_STATUSES.includes(row?.status),
@@ -115,9 +115,9 @@ exports.handler = async (event) => {
       const user = await authUser(admin, user_id);
 
       // The founding rule is enforced HERE, not only in what the screen offers. A client can post
-      // this action directly; only the plan key is read from it, and the waitlist position is looked
-      // up for the account's own confirmed email.
-      if (planKey === "founding_annual" && !(await mayBuyFoundingPrice(admin, user))) {
+      // this action directly; only the plan key is read from it. Ended, beta founder and waitlist
+      // number are all looked up for this account (_lib/foundingCohort.js).
+      if (planKey === "founding_annual" && !(await mayBuyFoundingPrice(admin, user_id, user))) {
         // Refused outright rather than downgraded to the standard price: charging someone
         // $99.99 when they clicked $79.99 is worse than an error they can read.
         return json(403, CORS, { error: "founding_price_not_available" });

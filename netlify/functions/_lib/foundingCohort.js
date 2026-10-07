@@ -1,16 +1,20 @@
 // netlify/functions/_lib/foundingCohort.js
 // -----------------------------------------------------------------------------
-// WHO MAY BUY THE FOUNDING PRICE (Amanda's decision, 2026-10-06).
+// WHO MAY BUY THE FOUNDING PRICE (Amanda's decision, 2026-10-06; rules of 2026-10-07).
 //
-// The founding price ($79.99 a year plus tax, locked in while subscribed) belongs to the first 50
-// households on the WAITLIST, not to the first 50 checkouts. A checkout gets it only when the buyer's
-// account email matches a waitlist row that holds a founding position from 1 to 50 and is not a test
-// row. Everyone else is offered the regular prices.
+// The founding price is $79.99 a year plus tax, "for as long as you stay subscribed". In order:
+//   1. ENDED IS FINAL. An account that has had a founding subscription that ended
+//      (subscriptions.founding_ended_at, stamped by the webhook) is offered the regular prices only.
+//   2. BETA FOUNDERS. A beta tester flagged as a founder (profiles.founder_flag) keeps the founding price
+//      they were promised. They are outside the 50: this never reads or touches the waitlist.
+//   3. THE FIRST 50 ON THE WAITLIST. Otherwise the account's confirmed email must hold waitlist number
+//      1 to 50, on a row that is not a test row, whose founding subscription has never ended.
+// Everyone else is offered the regular prices.
 //
-// The positions are the database's (migration 0014): set once, at insert or by
-// waitlist_founding_start(), in created_at order, unique, 1 to 50 or null. Nothing here assigns,
-// frees or counts them, so:
-//   • a household that joins and never pays keeps its position, and the 51st joiner never gets it;
+// The numbers are the database's (migration 0014): issued once, in created_at order, recorded in a
+// ledger and never reissued. Nothing here assigns, frees or counts them, so:
+//   • a household that joins and never pays keeps its number, and the 51st joiner never gets it;
+//   • a household whose founding subscription ends keeps its number too: nobody else is given it;
 //   • paying, or not paying, moves nobody up or down.
 //
 // THE SERVER DECIDES. The client sends a plan key and nothing else; it is told whether the founding
@@ -56,10 +60,40 @@ async function foundingPositionForEmail(admin, email) {
   }
 }
 
-// The account as Supabase Auth holds it -> may it buy the founding price?
-async function mayBuyFoundingPrice(admin, user) {
+// Has this account had a founding subscription that ended? true, false, or null when it cannot be read
+// (the column is not applied yet, or the read failed), which the caller treats as "yes": fail closed.
+async function foundingEndedForAccount(admin, user_id) {
+  try {
+    const { data, error } = await admin
+      .from("subscriptions").select("founding_ended_at").eq("user_id", user_id).maybeSingle();
+    if (error) return null;
+    return !!(data && data.founding_ended_at);
+  } catch {
+    return null;
+  }
+}
+
+// A beta tester flagged as a founder. A failed read is "not flagged": they still get the waitlist check.
+async function isBetaFounder(admin, user_id) {
+  try {
+    const { data, error } = await admin
+      .from("profiles").select("founder_flag").eq("user_id", user_id).maybeSingle();
+    return !error && !!(data && data.founder_flag === true);
+  } catch {
+    return false;
+  }
+}
+
+// The account (its id, and the user as Supabase Auth holds it) -> may it buy the founding price?
+async function mayBuyFoundingPrice(admin, user_id, user) {
+  if (!user_id) return false;
+  if ((await foundingEndedForAccount(admin, user_id)) !== false) return false;
+  if (await isBetaFounder(admin, user_id)) return true;
   if (!user || !user.email || !user.email_confirmed_at) return false;
   return (await foundingPositionForEmail(admin, user.email)) !== null;
 }
 
-module.exports = { FOUNDING_COHORT_LIMIT, normalizeEmail, isFoundingPosition, foundingPositionForEmail, mayBuyFoundingPrice };
+module.exports = {
+  FOUNDING_COHORT_LIMIT, normalizeEmail, isFoundingPosition, foundingPositionForEmail,
+  foundingEndedForAccount, isBetaFounder, mayBuyFoundingPrice,
+};
