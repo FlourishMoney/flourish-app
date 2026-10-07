@@ -258,6 +258,25 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
       "6d the desktop card reserves that space below itself, so it centres where it would without the block");
   }
 
+  // ── 7. Under 960px the block does not repeat the card's price or count (2026-10-07) ──────────
+  {
+    const c = O.foundingOfferCopy();
+    t.eq([c.phoneHeading, c.phoneJoin], ["How founding spots work",
+      "The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free."], "7a the phone heading and sentence, word for word");
+    t.eq([c.heading, c.price, c.regular, c.join], [HEADING, PRICE_LINE, REGULAR_LINE, JOIN_LINE], "7b the desktop wording is unchanged");
+    const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
+    const comp = app.slice(app.indexOf("function FoundingOffer()"), app.indexOf("function FoundingCard()"));
+    t.ok(/<span className="fll-fo-desk">\{copy\.heading\}<\/span><span className="fll-fo-phone">\{copy\.phoneHeading\}<\/span>/.test(comp),
+      "7c one heading, its desktop and phone words switched by CSS");
+    t.ok(/<p className="fll-founding-p fll-fo-desk">\{copy\.price\}<\/p>\s+<p className="fll-founding-p fll-fo-phone">\{copy\.phoneJoin\}<\/p>\s+<p className="fll-founding-p">\{copy\.regular\}<\/p>\s+<p className="fll-founding-p fll-fo-desk">\{copy\.join\}<\/p>/.test(comp),
+      "7d phones: how the spots work, then the regular price; desktop: price, regular, join, as before");
+    t.ok(/className=\{`fll-founding-live\$\{spotsLeft > 0 \? " fll-fo-desk" : ""\}`\}/.test(comp),
+      "7e the \"X of 50 founding spots left\" line is desktop only; \"spots are full\" shows at every width");
+    const desk = app.slice(app.indexOf("@media(min-width:960px){"), app.indexOf("@media(min-width:960px){") + 3000);
+    t.ok(/@media\(max-width:959px\)\{ \.fll-fo-desk\{ display:none; \} \}/.test(app) && /\.fll-fo-phone\{ display:none; \}/.test(desk),
+      "7f under 960px the desktop words are hidden; from 960px the phone words are");
+  }
+
   t.summary("foundingOffer.test");
   setImmediate(() => process.exit(process.exitCode || 0));
 })();
