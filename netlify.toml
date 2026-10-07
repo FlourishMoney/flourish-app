@@ -63,6 +63,13 @@
   to     = "/.netlify/functions/billing"
   status = 200
 
+# Redirect: the landing page's founding offer reads /api/founding → Netlify function.
+# GET only; answers a count of spots left and nothing else (netlify/functions/founding.js).
+[[redirects]]
+  from   = "/api/founding"
+  to     = "/.netlify/functions/founding"
+  status = 200
+
 # SPA fallback — all routes → index.html
 [[redirects]]
   from   = "/*"

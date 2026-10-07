@@ -94,9 +94,13 @@ async function countWelcomedSince(supabaseUrl, secretKey, sinceIso) {
 
 // The rows waiting for their email: never welcomed, old enough not to race the request path, oldest
 // first so nobody is left behind while newer signups jump the queue.
-async function selectPending(supabaseUrl, secretKey, cutoffIso, limit) {
+// founding_position (migration 0014) is asked for so a founding household's welcome carries its line.
+// Before 0014 is applied that column does not exist and PostgREST answers 400; the sweep then asks again
+// without it, so applying the migration later is never what stops the welcome emails.
+const PENDING_COLUMNS = ["id,email,created_at,unsubscribed_at,consent_version,founding_position", "id,email,created_at,unsubscribed_at,consent_version"];
+async function selectPending(supabaseUrl, secretKey, cutoffIso, limit, columns = PENDING_COLUMNS[0]) {
   const url = `${supabaseUrl}/rest/v1/waitlist`
-    + `?select=id,email,created_at,unsubscribed_at,consent_version`
+    + `?select=${columns}`
     + `&welcomed_at=is.null`
     // CASL: an unsubscribed row never receives email (migration 0012), and a row whose consent predates
     // the consent line only ever gets the launch-day email, which this is not. neq also excludes a null
@@ -109,6 +113,7 @@ async function selectPending(supabaseUrl, secretKey, cutoffIso, limit) {
   const res = await fetchWithDeadline(url, { headers: authHeaders(secretKey) }, READ_TIMEOUT_MS, "pending select");
   if (!res) return null;
   if (!res.ok) {
+    if (res.status === 400 && columns === PENDING_COLUMNS[0]) return selectPending(supabaseUrl, secretKey, cutoffIso, limit, PENDING_COLUMNS[1]);
     // A 400 here is what a missing created_at or id column looks like. The counts-only check queries in
     // migration 0006 are what confirm those columns exist before this ships.
     console.error("[waitlist-sweep] pending select failed", res.status);
@@ -166,7 +171,7 @@ async function runSweep(opts = {}) {
     if (Date.now() - startedAt >= budgetMs) { stoppedEarly = true; break; }
     if (!row || !row.email) { failed++; continue; }
     if (!mayEmailWaitlistRow(row, "welcome")) continue; // unsubscribed or pre-consent: never a welcome email, whatever the query returned
-    if (await sendWelcomeEmail(row.email, row.id)) {
+    if (await sendWelcomeEmail(row.email, row.id, row.founding_position)) {
       await markWelcomed(supabaseUrl, secretKey, row, row.email);
       sent++;
     } else {

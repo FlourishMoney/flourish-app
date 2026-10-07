@@ -9,7 +9,7 @@
 //
 // What this pins:
 //   • every billing surface is hidden while the flag is off, and the status call 404s
-//   • the founding offer disappears once the cohort is full — counted by the SERVER
+//   • the founding offer is shown only to a waitlist founding household (1 to 50) — decided by the SERVER
 //   • the success redirect never changes anybody's plan
 //   • nothing billing-related renders in a native shell
 //   • the free-limit prompt keeps its ordinary message when billing is off
@@ -24,7 +24,8 @@ const AUTH_PATH = require.resolve("../netlify/functions/_lib/auth.js");
 const API_PATH = require.resolve("../netlify/functions/_lib/stripeApi.js");
 const BILLING_PATH = require.resolve("../netlify/functions/billing.js");
 
-// A fake supabase-js surface. `not(col,'is',null)` is here because the founding count uses it.
+// A fake supabase-js surface. rpc() answers the 0016 founding lookup the way the SQL does: case and
+// whitespace ignored, test rows skipped, positions 1 to 50 only.
 function fakeAdmin(state) {
   const api = (table) => {
     const q = {
@@ -38,7 +39,15 @@ function fakeAdmin(state) {
     };
     return q;
   };
-  return { from: api, auth: { admin: { getUserById: async () => ({ data: { user: { email: "a@b.c" } } }) } } };
+  const norm = (e) => String(e || "").replace(/\s+/g, "").toLowerCase();
+  const rpc = async (name, args) => {
+    if (name !== "waitlist_founding_position_for_email") return { data: null, error: { message: "no such function" } };
+    const hits = (state.rows.waitlist || []).filter(r => norm(r.email) === norm(args.p_email) && norm(args.p_email)
+      && !r.is_test && Number.isInteger(r.founding_position) && r.founding_position >= 1 && r.founding_position <= 50);
+    return { data: hits.length ? Math.min(...hits.map(r => r.founding_position)) : null, error: null };
+  };
+  const user = state.user || { email: "a@b.c", email_confirmed_at: "2026-10-01T00:00:00Z" };
+  return { from: api, rpc, auth: { admin: { getUserById: async () => ({ data: { user } }) } } };
 }
 
 function loadBilling({ user_id = "u1", state, stripePost }) {
@@ -58,9 +67,11 @@ function loadBilling({ user_id = "u1", state, stripePost }) {
   return mod;
 }
 const post = (body) => ({ httpMethod: "POST", headers: {}, body: JSON.stringify(body) });
-const founders = (n) => Array.from({ length: n }, (_, i) => ({
-  user_id: `f${i}`, plan_key: "founding_annual", founding_locked_at: "2026-10-26T00:00:00Z", status: "active",
+// A waitlist of n households holding positions 1..n (and none after 50, as the 0014 trigger does).
+const waitlist = (n) => Array.from({ length: n }, (_, i) => ({
+  email: `h${i + 1}@example.test`, is_test: false, founding_position: i < 50 ? i + 1 : null,
 }));
+const confirmed = (email) => ({ email, email_confirmed_at: "2026-10-01T00:00:00Z" });
 
 (async () => {
   const t = create();
@@ -94,39 +105,41 @@ const founders = (n) => Array.from({ length: n }, (_, i) => ({
       "1g …and the screen becomes visible on that answer alone");
   }
 
-  // ── 2. The founding offer disappears at the cohort limit ─────────────────────────────────────
+  // ── 2. The founding offer belongs to waitlist positions 1 to 50 ─────────────────────────────
   {
     process.env.BILLING_ENABLED = "true";
     t.eq(cohort.FOUNDING_COHORT_LIMIT, 50, "2a the cohort is 50 households");
-    t.eq(cohort.foundingSlotsOpen(49), true, "2b 49 taken: there is room");
-    t.eq(cohort.foundingSlotsOpen(50), false, "2c 50 taken: there is not");
-    t.eq(cohort.foundingSlotsOpen(51), false, "2d …and it does not reopen past the limit");
-    t.eq(cohort.foundingSlotsOpen(null), false, "2e a count that could not be established is NOT room");
+    t.eq(cohort.isFoundingPosition(1), true, "2b position 1 is a founding position");
+    t.eq(cohort.isFoundingPosition(50), true, "2c …and so is 50");
+    t.eq(cohort.isFoundingPosition(51), false, "2d …but 51 is not, and it does not reopen past the limit");
+    t.eq(cohort.isFoundingPosition(null), false, "2e a position that could not be established is NOT a founding position");
 
-    const ask = async (taken) => {
-      const state = { rows: { profiles: [{ user_id: "u1", founder_flag: true }], subscriptions: founders(taken) } };
+    // Whatever the paid count is, only the waitlist position matters.
+    const ask = async (email) => {
+      const state = { rows: { waitlist: waitlist(60), subscriptions: [] }, user: confirmed(email) };
       const billing = loadBilling({ state });
       return JSON.parse((await billing.handler(post({ action: "status" }))).body);
     };
-    const at49 = await ask(49), at50 = await ask(50);
-    t.eq(at49.founding.available, true, "2f at 49 founding subscriptions the server offers the founding price");
-    t.eq(at50.founding.available, false, "2g at 50 it does not — the SERVER counts, not the client");
+    const at50 = await ask("h50@example.test"), at51 = await ask("h51@example.test");
+    t.eq(at50.founding.available, true, "2f waitlist household #50 is offered the founding price");
+    t.eq(at51.founding.available, false, "2g #51 is not — the SERVER decides, from the waitlist, not the client");
     t.eq(at50.founding.cohortLimit, 50, "2h …and the limit travels with the answer, so the label cannot drift");
 
-    t.ok(vis.offeredPlans({ status: at49 }).some(p => p.key === "founding_annual"),
-      "2i the screen shows the founding plan while there is room");
-    t.ok(vis.offeredPlans({ status: at50 }).every(p => p.key !== "founding_annual"),
-      "2j …and drops it once the cohort is full");
-    t.eq(vis.offeredPlans({ status: at49 }).find(p => p.key === "founding_annual").note,
+    t.ok(vis.offeredPlans({ status: at50 }).some(p => p.key === "founding_annual"),
+      "2i the screen shows the founding plan to a founding household");
+    t.ok(vis.offeredPlans({ status: at51 }).every(p => p.key !== "founding_annual"),
+      "2j …and not to anyone else, who still sees the regular plans");
+    t.eq(vis.offeredPlans({ status: at51 }).map(p => p.key).join(","), "monthly,annual", "2j2 …monthly and annual");
+    t.eq(vis.offeredPlans({ status: at50 }).find(p => p.key === "founding_annual").note,
       "Founding price for the first 50 households. Locked in while you stay subscribed.",
       "2k the label is exactly the approved sentence, with the server's number in it");
 
-    // And the cap is enforced where money changes hands, not only where the price is shown.
+    // And the rule is enforced where money changes hands, not only where the price is shown.
     let stripeCalls = 0;
-    const full = { rows: { profiles: [{ user_id: "u1", founder_flag: true }], subscriptions: founders(50) } };
-    const billing = loadBilling({ state: full, stripePost: async () => { stripeCalls++; return { url: "x" }; } });
+    const state = { rows: { waitlist: waitlist(60) }, user: confirmed("h51@example.test") };
+    const billing = loadBilling({ state, stripePost: async () => { stripeCalls++; return { url: "x" }; } });
     const res = await billing.handler(post({ action: "create_checkout_session", plan_key: "founding_annual" }));
-    t.eq(res.statusCode, 403, "2l a client posting for the founding price once it is full is refused");
+    t.eq(res.statusCode, 403, "2l a client posting for the founding price without a founding position is refused");
     t.eq(stripeCalls, 0, "2m …before Stripe is asked for anything");
   }
 

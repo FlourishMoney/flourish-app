@@ -32,12 +32,15 @@ const WELCOME_REPLY_TO = "hello@flourishmoney.app";
 const WELCOME_SUBJECT  = "You're on the Flourish waitlist";
 
 // The copy. Do not add claims, launch dates, prices, trials, plans or offers: the one promise is the
-// launch-day email. The person consented (CASL, consent version in _lib/waitlistConsent.js) to that email
+// launch-day email. THE ONE EXCEPTION is the founding line (Amanda's decision, 2026-10-06): a row the
+// database gave a founding position (1 to 50, migration 0014) gets foundingWelcomeLine() as its second
+// paragraph, and no other row gets any offer line. The words are in _lib/foundingWaitlist.js. The person consented (CASL, consent version in _lib/waitlistConsent.js) to that email
 // "plus a few updates before then", so this message says so, carries the sender's identity and a working
 // one-click unsubscribe link, and goes out with List-Unsubscribe headers. That replaces the 2026-09-19
 // "transactional only, nothing else in the meantime" wording, which the new consent line contradicts.
 const { IDENTITY_TEXT } = require("./waitlistConsent");
 const { unsubscribeUrl, listUnsubscribeHeaders } = require("./waitlistUnsubscribe");
+const { foundingWelcomeLine } = require("./foundingWaitlist");
 
 const WELCOME_PARAGRAPHS = [
   "Thanks for joining the Flourish waitlist.",
@@ -53,14 +56,19 @@ const footerLines = (url) => [WHY_LINE, IDENTITY_TEXT, `Unsubscribe with one cli
 // Cream background (#F4F1EB) and ink (#1A2035) are the app's own light-theme values. No images.
 const _para = (text, extra) => `<p style="margin:0 0 16px;${extra || ""}">${text}</p>`;
 const _small = "font-size:13px;color:rgba(26,32,53,0.66);";
-function welcomeHtml(url) {
+// The paragraphs for one row: the four above, with the founding line second when the row has a position.
+function welcomeParagraphs(foundingPosition) {
+  const line = foundingWelcomeLine(foundingPosition);
+  return line ? [WELCOME_PARAGRAPHS[0], line, ...WELCOME_PARAGRAPHS.slice(1)] : WELCOME_PARAGRAPHS.slice();
+}
+function welcomeHtml(url, paragraphs) {
   return [
     '<!doctype html>',
     '<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>' + WELCOME_SUBJECT + '</title></head>',
     '<body style="margin:0;padding:0;background-color:#F4F1EB;">',
     '<div style="max-width:560px;margin:0 auto;padding:32px 24px;background-color:#F4F1EB;color:#1A2035;',
     'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;">',
-    WELCOME_PARAGRAPHS.map(t => _para(t)).join(""),
+    paragraphs.map(t => _para(t)).join(""),
     _para(WHY_LINE, "margin-top:24px;" + _small),
     _para(IDENTITY_TEXT, _small),
     _para(`<a href="${url}" style="color:#1A2035;">Unsubscribe with one click</a>`, _small),
@@ -70,29 +78,32 @@ function welcomeHtml(url) {
 
 // The whole message for one waitlist row, or null when no signed unsubscribe link can be made for it
 // (no row id, or no signing secret). A waitlist email without a working unsubscribe is never sent.
-function welcomeEmailPayload(to, rowId) {
+// foundingPosition is the row's founding_position exactly as the database returned it; anything but a
+// whole number from 1 to 50 means no offer line.
+function welcomeEmailPayload(to, rowId, foundingPosition) {
   const url = unsubscribeUrl(rowId);
   const headers = listUnsubscribeHeaders(rowId);
   if (!url || !headers) return null;
+  const paragraphs = welcomeParagraphs(foundingPosition);
   return {
     from:     WELCOME_FROM,
     reply_to: WELCOME_REPLY_TO,
     to:       [to],
     subject:  WELCOME_SUBJECT,
-    text:     [...WELCOME_PARAGRAPHS, ...footerLines(url)].join("\n\n"),
-    html:     welcomeHtml(url),
+    text:     [...paragraphs, ...footerLines(url)].join("\n\n"),
+    html:     welcomeHtml(url, paragraphs),
     headers,
   };
 }
 
 // True only when Resend accepted the message. On failure it logs the words "welcome email failed"
 // and the HTTP status, and nothing else: never the address, the key, the payload or the response body.
-async function sendWelcomeEmail(to, rowId) {
+async function sendWelcomeEmail(to, rowId, foundingPosition) {
   const key = (process.env.RESEND_API_KEY || "").trim();
   if (!key) return false; // no key configured: previews and local runs send nothing, silently
   // No row id or no signing secret means no unsubscribe link, and no waitlist email goes out without
   // one. welcomed_at stays null, so the sweep sends it once the row (and its id) can be read.
-  const payload = welcomeEmailPayload(to, rowId);
+  const payload = welcomeEmailPayload(to, rowId, foundingPosition);
   if (!payload) {
     console.error("[waitlist] welcome email skipped", "no_unsubscribe_link");
     return false;
@@ -174,6 +185,7 @@ module.exports = {
   WELCOME_SUBJECT,
   WELCOME_PARAGRAPHS,
   WHY_LINE,
+  welcomeParagraphs,
   welcomeEmailPayload,
   sendWelcomeEmail,
   markWelcomed,

@@ -11,7 +11,10 @@
 //      refused.
 //   4. The one-click unsubscribe link works, is per row, and cannot be forged.
 //   5. An unsubscribed row is never emailed.
-//   6. No price, trial, plan or founding offer on the form or in the welcome email.
+//   6. No price, trial, plan or founding offer on the form or in the welcome email. (Since 2026-10-06 the
+//      founding offer has its own block beside the form, and a row with a founding position gets one
+//      line in its welcome email: foundingOffer.test and waitlistWelcomeEmail 2m-2o. The form itself
+//      still carries no offer, 1h.)
 //   7. Amanda's decisions of 2026-09-30: Canada only (no country choice, stored as Canada); rows whose
 //      consent predates the consent line only ever get the launch-day email; signing up again after
 //      unsubscribing re-subscribes, with the new consent recorded.
