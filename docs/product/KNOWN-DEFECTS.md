@@ -1356,3 +1356,20 @@ someone in an account they cannot delete. The failure is recorded as `plaid_remo
 
 **Fix (suggested, not built)** Queue failed revocations and retry them server-side after the
 account is gone.
+
+## 62. Flaky layout check: "Tour step 1" at 390px and 1.3x text
+
+**Rating: LOW (test only; no user impact).** Seen 2026-10-07 on main a12caca, in a full local gate run.
+
+**Where** `tests/layout.browser.test.cjs`, check 2b, the "Tour step 1" screen (`scope: "overlay"`,
+`reload: true`) at 390px with text scaled 1.3x.
+
+**What happens** Once in a while the check measures the tour overlay before step 1 has drawn, finds
+"0 controls, 0 texts" and fails 2b ("every one of them had controls and text to measure"). The same test
+passed 1001/1001 when run alone twice straight after, the next full gate run passed (153 suites, 7,886
+assertions), and CI passed on the same commit. It looks like timing under load on this Mac, not a layout
+defect.
+
+**What to do** Wait in the test for the tour step's own content (its "Step 1 of 5" text or its Next button)
+before measuring, instead of measuring right after the reload. Do not loosen 2b: a screen with nothing to
+measure must still fail.
