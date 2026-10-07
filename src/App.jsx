@@ -14261,6 +14261,7 @@ function WaitlistForm({ source = "landing" }) {
 // the posters load with the page.
 const HOWTO_VIDEOS = [
   { id: "overview", name: "Overview", secs: 30 },
+  { id: "getting-started", name: "Getting started", secs: 30 },
   { id: "today", name: "Today", secs: 30 },
   { id: "decisions", name: "Decisions", secs: 23 },
   { id: "watch", name: "Watch", secs: 22 },

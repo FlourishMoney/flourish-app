@@ -200,11 +200,11 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       `8b the laptop preset fills the input, and Simulate after it still reads "Spending $800 … from $1,944 to $1,144." (input "${input}")`);
     await ctx.close();
   }
-  // ── howto-picker: "See how it works", one player and a grid of seven tiles ─────────────────────
+  // ── howto-picker: "See how it works", one player and a grid of eight tiles ─────────────────────
   // Visitors could not tell there were several videos or that they had sound. Now: a subline that says
   // both, one player with a "Play with sound" button over the first frame (no autoplay), and a tile per
   // video with its name and length. A tap plays with sound and shows a sound control.
-  const SERIES = [["overview", "Overview", 30], ["today", "Today", 30], ["decisions", "Decisions", 23], ["watch", "Watch", 22], ["do", "Do", 24], ["learn", "Learn", 17], ["meet", "Meet", 23]];
+  const SERIES = [["overview", "Overview", 30], ["getting-started", "Getting started", 30], ["today", "Today", 30], ["decisions", "Decisions", 23], ["watch", "Watch", 22], ["do", "Do", 24], ["learn", "Learn", 17], ["meet", "Meet", 23]];
   for (const [w, h, cols] of [[390, 844, 2], [1440, 900, 4]]) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, ...(w < 768 ? { isMobile: true, hasTouch: true } : {}) });
     const page = await ctx.newPage(); page.setDefaultTimeout(15000);
@@ -227,7 +227,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
     t.eq([v.videos, v.src, v.poster, v.preload, v.autoplay, v.paused], [1, "/video/overview.mp4", "/video/overview-poster.jpg", "none", false, true], `9b ${tag} one player, Overview's first frame as its poster, preload none, no autoplay, paused`);
     t.eq([v.play, v.playLabel], ["▶ Play with sound", "Play Overview video, 30 seconds, with sound"], `9c ${tag} the big centred button says it plays with sound`);
     t.eq(v.tiles, SERIES.map(([id, n, s], i) => [`Play ${n} video, ${s} seconds, with sound`, n, `${s} s ▶`, `/video/${id}-poster.jpg`, i === 0 ? "true" : "false"]),
-      `9d ${tag} seven tiles in order, each with its poster, name, length, ▶ and a spoken label; Overview selected`);
+      `9d ${tag} eight tiles in order, each with its poster, name, length, ▶ and a spoken label; Overview selected`);
     t.ok(v.cols === cols && v.tileH >= 44 && v.playH >= 44 && v.outline === "rgb(77, 124, 15)" && v.above && !v.pageScroll,
       `9e ${tag} ${cols} tile columns, 44px targets, the lime outline on the selected tile, the block above the demo button, no sideways page scroll (${JSON.stringify({ cols: v.cols, tileH: v.tileH, outline: v.outline, pageScroll: v.pageScroll })})`);
     t.eq(asked, [], `9f ${tag} no video file is fetched before a tap`);
