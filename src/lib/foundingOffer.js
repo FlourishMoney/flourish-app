@@ -39,6 +39,24 @@ export function foundingLiveLine(spotsLeft) {
   return `${spotsLeft} of ${FOUNDING_HOUSEHOLDS} founding spots left`;
 }
 
+// THE FOUNDING LINE above the hero's email field, on phones and tablets (2026-10-07). Bold lead, the rest,
+// and the live count as its last sentence. No count read: no last sentence. 0 left: no line at all (the
+// block below still says the spots are full). The prices are read from pricing.js, never typed here.
+export function foundingLineParts(spotsLeft) {
+  if (spotsLeft === 0) return null;
+  const p = getPricing("CA");
+  const n = Number.isInteger(spotsLeft) && spotsLeft > 0 && spotsLeft <= FOUNDING_HOUSEHOLDS ? spotsLeft : null;
+  return {
+    bold: `Founding price: ${formatPrice(p.foundingAnnual)} a year`,
+    rest: ` plus tax for the first ${FOUNDING_HOUSEHOLDS} households, paid and used on flourishmoney.app. Not yet in the iPhone and Android apps.`,
+    count: n === null ? "" : ` ${n} of ${FOUNDING_HOUSEHOLDS} spots left.`,
+  };
+}
+export function foundingLineText(spotsLeft) {
+  const l = foundingLineParts(spotsLeft);
+  return l ? l.bold + l.rest + l.count : null;
+}
+
 // One read of the endpoint: the number, or null on any failure. Never throws.
 export async function fetchFoundingSpots(fetchImpl = (typeof fetch === "function" ? fetch : null)) {
   if (!fetchImpl) return null;
@@ -50,3 +68,13 @@ export async function fetchFoundingSpots(fetchImpl = (typeof fetch === "function
     return null;
   }
 }
+
+// The ONE read per page load. The founding block and the founding line both ask; the first ask
+// starts the request and every later ask gets the same answer, so the page makes one /api/founding call.
+let _shared = null;
+export function sharedFoundingSpots() {
+  if (!_shared) _shared = fetchFoundingSpots();
+  return _shared;
+}
+// For tests: forget the shared answer.
+export function _resetSharedFoundingSpots() { _shared = null; }

@@ -29,7 +29,7 @@ import { shouldPromptIncome, applyDetectedIncome, cadenceLabel, frequencyLabel }
 import { pruneDisqualifiedBills, autoBillKeys, merchantKey, mergeSpreadVerdicts, isAutoDetectedBill } from "./lib/billReeval.js";
 import { validateStatementImport, rowsToImport, isSelectable, classifyRow, parseRowDate } from "./lib/statementImport.js";
 import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
-import { foundingOfferCopy, foundingLiveLine, fetchFoundingSpots } from "./lib/foundingOffer.js";
+import { foundingOfferCopy, foundingLiveLine, sharedFoundingSpots, foundingLineParts } from "./lib/foundingOffer.js";
 import { isNativeApp, billingUiState, offeredPlans, billingReturnNotice, BILLING_RETURN_PARAMS } from "./lib/billingVisibility.js";
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/signupUi.js";
@@ -14397,7 +14397,7 @@ function FoundingOffer() {
   useEffect(() => {
     if (isNativeApp()) return undefined;
     let live = true;
-    fetchFoundingSpots().then(n => { if (live) setSpotsLeft(n); });
+    sharedFoundingSpots().then(n => { if (live) setSpotsLeft(n); });
     return () => { live = false; };
   }, []);
   // On desktop the hero card is centred beside the whole left column, so this block's row would push it
@@ -14428,6 +14428,33 @@ function FoundingOffer() {
       <p className="fll-founding-p">{copy.join}</p>
       {liveLine && <p className="fll-founding-live" data-founding-live="">{liveLine}</p>}
     </section>
+  );
+}
+
+// THE FOUNDING LINE (2026-10-07): phones and tablets only (the one-column layout), directly above the hero's
+// email field. Same count as the block below, from the same single read (sharedFoundingSpots). No count:
+// no last sentence. 0 left: no line. Tapping it scrolls to the founding block. Hidden at 960px and up.
+function FoundingLine() {
+  const [spotsLeft, setSpotsLeft] = useState(null);
+  useEffect(() => {
+    if (isNativeApp()) return undefined;
+    let live = true;
+    sharedFoundingSpots().then(n => { if (live) setSpotsLeft(n); });
+    return () => { live = false; };
+  }, []);
+  if (isNativeApp()) return null;
+  const parts = foundingLineParts(spotsLeft);
+  if (!parts) return null;
+  const toBlock = () => {
+    const el = document.querySelector(".fll-founding");
+    if (!el) return;
+    let smooth = true; try { smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { /* default */ }
+    el.scrollIntoView({ block: "start", behavior: smooth ? "smooth" : "auto" });
+  };
+  return (
+    <button type="button" className="fll-founding-line" onClick={toBlock}>
+      <strong>{parts.bold}</strong>{parts.rest}{parts.count}
+    </button>
   );
 }
 
@@ -14729,6 +14756,10 @@ function AuthScreen({ onAuth, onTryDemo }) {
             /* One column (phones, small tablets): the founding block comes after the $1,944 card, so the
                card's top stays in the first screen at 390 x 844 even with the live line. */
             .fll-founding{ grid-area:founding; justify-self:center; width:100%; max-width:440px; box-sizing:border-box; margin-block:0; margin-inline:0; padding:${SPACE.lg}px; border-radius:${SPACE.lg}px; background:#fff; border:1px solid rgba(46,139,46,0.22); text-align:left; font-family:'Plus Jakarta Sans',sans-serif; }
+            /* The founding line above the hero's email field (phones and tablets; hidden at 960px and up). */
+            .fll-founding-line{ display:block; width:100%; box-sizing:border-box; min-height:44px; margin-block:0 ${SPACE.md}px; margin-inline:0; padding:${SPACE.sm}px ${SPACE.md}px; border-radius:${SPACE.md}px; background:rgba(46,139,46,0.10); border:1px solid rgba(46,139,46,0.32); color:#15321a; text-align:left; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; font-weight:500; line-height:1.45; cursor:pointer; }
+            .fll-founding-line strong{ font-weight:800; color:#1b5e20; }
+            .fll-founding-line:focus-visible{ outline:3px solid #1b5e20; outline-offset:2px; }
             .fll-founding-h{ font-size:16px; font-weight:800; line-height:1.35; color:#15321a; margin-block:0 ${SPACE.xs}px; }
             .fll-founding-p{ font-size:14px; line-height:1.55; color:#3f4f3c; margin-block:${SPACE.xs}px 0; }
             .fll-founding-live{ font-size:14px; font-weight:700; line-height:1.4; color:#1b5e20; margin-block:${SPACE.sm}px 0; }
@@ -14813,6 +14844,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
               /* Desktop: directly under the form, ${SPACE.lg}px below its consent line exactly as when it sat inside
                  the form: the row gap (${SPACE.xl}px) less ${SPACE.xl - SPACE.lg}px. */
               .fll-founding{ justify-self:start; margin-top:-${SPACE.xl - SPACE.lg}px; }
+              .fll-founding-line{ display:none; }
               .fll-hero-demo{ margin-top:-${SPACE.md}px; }
               .fll-hero-form .fll-capture{ margin-inline:0; }
               .fll-trust-row{ text-align:left; }
@@ -14868,6 +14900,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
                 <figcaption className="fll-sample">Example, sample data.</figcaption>
               </figure>
               <div className="fll-hero-form">
+                <FoundingLine/>
                 <WaitlistForm source="hero"/>
               </div>
               {/* Its own grid item: under the form on desktop, below the card on phones (grid areas). */}

@@ -272,6 +272,54 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
       "6f the H1 is the ad's line, with \"in your head.\" in the serif italic green");
     t.eq(m.cardSrc, "/app-screens/hero-card.jpg", "6g the card is the crop of the real capture");
     await ctx.close();
+  }
+  // ── The founding line above the email field: phones and tablets only (2026-10-07) ─────────────
+  {
+    const WITH = "Founding price: $79.99 a year plus tax for the first 50 households, paid and used on flourishmoney.app. Not yet in the iPhone and Android apps. 35 of 50 spots left.";
+    const WITHOUT = "Founding price: $79.99 a year plus tax for the first 50 households, paid and used on flourishmoney.app. Not yet in the iPhone and Android apps.";
+    // count: a 35 the endpoint read; fail: this server answers /api/founding with the page, which is not
+    // a count (a real failure); zero: all spots taken.
+    for (const mode of ["count", "fail", "zero"]) {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+      const page = await ctx.newPage(); page.setDefaultTimeout(15000);
+      let calls = 0;
+      page.on("request", r => { if (/\/api\/founding/.test(r.url())) calls++; });
+      if (mode !== "fail") await page.route("**/api/founding", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ spotsLeft: mode === "zero" ? 0 : 35 }) }));
+      await page.goto(base, { waitUntil: "domcontentloaded" });
+      await page.getByText("Real screens from the app.").waitFor();
+      await page.locator(".fll-founding").waitFor();
+      await page.waitForTimeout(800);
+      const m = await page.evaluate(() => {
+        const r = (s) => { const e = document.querySelector(s); return e ? e.getBoundingClientRect() : null; };
+        const line = document.querySelector(".fll-founding-line");
+        return { text: line ? line.textContent : null, bold: line ? (line.querySelector("strong") || {}).textContent : null,
+          line: r(".fll-founding-line"), input: r(".fll-input"), join: r(".fll-btn"), card: r(".fll-hero-card img"),
+          live: (document.querySelector("[data-founding-live]") || {}).textContent || null };
+      });
+      t.eq(calls, 1, `10a ${mode}: one /api/founding request, shared by the line and the block`);
+      if (mode === "zero") {
+        t.eq(m.text, null, "10b 0 left: no founding line");
+        t.eq(m.live, "Founding spots are full. Join the waitlist for launch news.", "10c …and the block still says the spots are full");
+      } else {
+        t.eq(m.text, mode === "count" ? WITH : WITHOUT, mode === "count" ? "10d the line, word for word, with the live count" : "10e no count read: the last sentence is left out, the rest is kept");
+        t.eq(m.bold, "Founding price: $79.99 a year", `10f ${mode}: "Founding price: $79.99 a year" is bold`);
+        t.ok(m.line.top >= 0 && m.line.bottom <= 844 && m.line.bottom <= m.input.top && m.input.top - m.line.bottom <= 16,
+          `10g ${mode}: the line is fully on screen (${Math.round(m.line.top)} to ${Math.round(m.line.bottom)}), directly above the email field`);
+        t.ok(m.join.bottom <= 844 && m.card.top < 844, `10h ${mode}: Join (bottom ${Math.round(m.join.bottom)}) and the card's top (${Math.round(m.card.top)}) stay above the fold`);
+        await page.locator(".fll-founding-line").click();
+        await page.waitForTimeout(900);
+        const top = await page.evaluate(() => document.querySelector(".fll-founding").getBoundingClientRect().top);
+        t.ok(top >= -1 && top < 60, `10i ${mode}: tapping the line scrolls to the founding block (its top at ${Math.round(top)}px)`);
+      }
+      await ctx.close();
+    }
+    const fctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const fd = await fctx.newPage(); fd.setDefaultTimeout(15000);
+    await fd.route("**/api/founding", r => r.fulfill({ status: 200, contentType: "application/json", body: '{"spotsLeft":35}' }));
+    await fd.goto(base, { waitUntil: "domcontentloaded" });
+    await fd.getByText("Real screens from the app.").waitFor(); await fd.waitForTimeout(800);
+    t.eq(await fd.locator(".fll-founding-line").evaluate(e => getComputedStyle(e).display), "none", "10j desktop: the line is not shown");
+    await fctx.close();
     const dctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const d = await dctx.newPage(); d.setDefaultTimeout(15000);
     await d.goto(base, { waitUntil: "domcontentloaded" });
