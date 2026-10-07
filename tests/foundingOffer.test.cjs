@@ -137,7 +137,7 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     }
     const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
     const comp = app.slice(app.indexOf("function FoundingOffer("), app.indexOf("function AuthScreen("));
-    t.ok(/fetchFoundingSpots\(\)\.then\(n => \{ if \(live\) setSpotsLeft\(n\); \}\)/.test(comp) && /useState\(null\)/.test(comp) && /\{liveLine && <p/.test(comp),
+    t.ok(/sharedFoundingSpots\(\)\.then\(n => \{ if \(live\) setSpotsLeft\(n\); \}\)/.test(comp) && /useState\(null\)/.test(comp) && /\{liveLine && <p/.test(comp),
       "1q the component starts with no number, sets only what the read returned, and draws the line only when there is one");
     t.ok(!/setSpotsLeft\((?!n\))/.test(comp), "1r …and sets spotsLeft nowhere else");
   }
