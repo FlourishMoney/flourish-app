@@ -28,8 +28,9 @@ const fresh = (p) => { delete require.cache[require.resolve(p)]; return require(
 const stripSql = (src) => src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--.*$/gm, " ");
 
 const HEADING = "Founding price for the first 50 households";
-const PRICE_LINE = "$79.99 a year plus tax, for as long as you stay subscribed. Regular price: $99.99 a year or $11.99 a month.";
-const JOIN_LINE = "Join the waitlist to claim a spot. Payments open October 26. Joining is free.";
+const PRICE_LINE = "$79.99 a year plus tax, for as long as you stay subscribed. Paid on flourishmoney.app.";
+const REGULAR_LINE = "Regular price: $99.99 a year or $11.99 a month, plus tax.";
+const JOIN_LINE = "Join the waitlist. The first 50 households on the waitlist get the founding price. Payments open October 26. Joining is free.";
 const FULL_LINE = "Founding spots are full. Join the waitlist for launch news.";
 const EMAIL_LINE = (n) => `You're founding household #${n} of 50. We'll email your link to the founding price when payments open on October 26.`;
 
@@ -196,7 +197,7 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
   // ── 4. The copy, exactly, and where it sits ───────────────────────────────────────────────────
   {
     const c = O.foundingOfferCopy();
-    t.eq([c.heading, c.price, c.join], [HEADING, PRICE_LINE, JOIN_LINE], "4a the heading and both lines are the approved words");
+    t.eq([c.heading, c.price, c.regular, c.join], [HEADING, PRICE_LINE, REGULAR_LINE, JOIN_LINE], "4a the heading and all three lines are the approved words");
     const pricing = fs.readFileSync(path.join(REPO, "src", "lib", "foundingOffer.js"), "utf8");
     t.ok(!/\d+\.\d{2}/.test(pricing), "4b …with every price read from pricing.js, none typed in the block");
     t.eq([1, 7, 50].map(W.foundingWelcomeLine), [EMAIL_LINE(1), EMAIL_LINE(7), EMAIL_LINE(50)], "4c the welcome email's founding line, word for word");
@@ -206,11 +207,19 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     if (A.AuthScreen) {
       const html = A.render(A.h(A.AuthScreen, { onAuth: () => {}, onTryDemo: () => {} }));
       const formAt = html.indexOf('class="fll-hero-form"'), consentAt = html.indexOf('id="fll-consent-hero"'), offerAt = html.indexOf('class="fll-founding"'), demoAt = html.indexOf('class="fll-hero-demo"');
-      t.ok(formAt > 0 && consentAt > formAt && offerAt > consentAt && demoAt > offerAt, "4e the block is inside the hero form's column, right after the form's consent line, before the demo column");
+      t.ok(formAt > 0 && consentAt > formAt && offerAt > consentAt && demoAt > offerAt, "4e the block comes right after the hero form and its consent line, before the demo column");
+      const app4 = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
+      t.ok(/grid-template-areas:"text" "form" "card" "founding" "demo"/.test(app4),
+        "4e2 one column (phones): the block sits BELOW the $1,944 card, so the card's top stays in the first screen");
+      const desk4 = app4.slice(app4.indexOf("@media(min-width:960px){"), app4.indexOf("@media(min-width:960px){") + 2500);
+      t.ok(/grid-template-areas:"text card" "form card" "founding card" "demo card"/.test(desk4) && /\.fll-founding\{ justify-self:start; margin-top:-\$\{SPACE\.xl - SPACE\.lg\}px; \}/.test(desk4),
+        "4e3 desktop: directly under the form, the same distance below the consent line as before");
       const block = textOf(html.slice(offerAt, demoAt));
-      t.ok(block.includes(HEADING) && block.includes(PRICE_LINE) && block.includes(JOIN_LINE), "4f the rendered block reads the approved words");
+      t.ok(block.includes(HEADING) && block.includes(PRICE_LINE) && block.includes(REGULAR_LINE) && block.includes(JOIN_LINE), "4f the rendered block reads the approved words");
+      t.ok(block.indexOf(HEADING) < block.indexOf(PRICE_LINE) && block.indexOf(PRICE_LINE) < block.indexOf(REGULAR_LINE) && block.indexOf(REGULAR_LINE) < block.indexOf(JOIN_LINE),
+        "4f2 …in the approved order: heading, founding price, regular price, how to get it");
       t.eq((html.match(/class="fll-founding"/g) || []).length, 1, "4g one block, in the hero only");
-      t.ok(!/[—–]/.test(HEADING + PRICE_LINE + JOIN_LINE + FULL_LINE + EMAIL_LINE(1)), "4h no em or en dashes in any of it");
+      t.ok(!/[—–]/.test(HEADING + PRICE_LINE + REGULAR_LINE + JOIN_LINE + FULL_LINE + EMAIL_LINE(1)), "4h no em or en dashes in any of it");
     }
   }
 

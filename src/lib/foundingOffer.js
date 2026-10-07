@@ -15,13 +15,14 @@ import { getPricing, formatPrice } from "./pricing.js";
 export const FOUNDING_HOUSEHOLDS = 50;
 export const FOUNDING_ENDPOINT = "/api/founding";
 
-// The words, exactly as approved. The prices are read from pricing.js, never typed here.
+// The words, exactly as approved (2026-10-07 review). The prices are read from pricing.js, never typed here.
 export function foundingOfferCopy() {
   const p = getPricing("CA");
   return {
     heading: `Founding price for the first ${FOUNDING_HOUSEHOLDS} households`,
-    price: `${formatPrice(p.foundingAnnual)} a year plus tax, for as long as you stay subscribed. Regular price: ${formatPrice(p.annual)} a year or ${formatPrice(p.monthly)} a month.`,
-    join: "Join the waitlist to claim a spot. Payments open October 26. Joining is free.",
+    price: `${formatPrice(p.foundingAnnual)} a year plus tax, for as long as you stay subscribed. Paid on flourishmoney.app.`,
+    regular: `Regular price: ${formatPrice(p.annual)} a year or ${formatPrice(p.monthly)} a month, plus tax.`,
+    join: `Join the waitlist. The first ${FOUNDING_HOUSEHOLDS} households on the waitlist get the founding price. Payments open October 26. Joining is free.`,
   };
 }
 

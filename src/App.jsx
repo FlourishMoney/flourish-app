@@ -14350,15 +14350,16 @@ function FoundingOffer() {
     fetchFoundingSpots().then(n => { if (live) setSpotsLeft(n); });
     return () => { live = false; };
   }, []);
-  // On desktop the hero card is centred beside the whole left column, so this block's height would
-  // push it down by half that height. The grid gets the block's height (with its top margin) as
-  // --fll-founding-h, and the desktop card reserves the same space below itself: it centres exactly
-  // where it would without the block. Re-measured when the block changes height (the live line).
+  // On desktop the hero card is centred beside the whole left column, so this block's row would push it
+  // down by half its height. The grid gets the space the block's row adds (its height, its top margin and
+  // one row gap) as --fll-founding-h, and the desktop card reserves the same space below itself: it
+  // centres exactly where it would without the block. Re-measured when the block changes height (the
+  // live line). On phones the card does not use it: there the block simply follows the card.
   useEffect(() => {
     const el = box.current, grid = el && el.closest(".fll-hero-grid");
     if (!grid) return undefined;
     const measure = () => {
-      const h = el.offsetHeight + (parseFloat(getComputedStyle(el).marginTop) || 0);
+      const h = el.offsetHeight + (parseFloat(getComputedStyle(el).marginTop) || 0) + (parseFloat(getComputedStyle(grid).rowGap) || 0);
       grid.style.setProperty("--fll-founding-h", `${Math.round(h)}px`);
     };
     measure();
@@ -14373,6 +14374,7 @@ function FoundingOffer() {
     <section className="fll-founding" ref={box} aria-labelledby="fll-founding-h">
       <h2 className="fll-founding-h" id="fll-founding-h">{copy.heading}</h2>
       <p className="fll-founding-p">{copy.price}</p>
+      <p className="fll-founding-p">{copy.regular}</p>
       <p className="fll-founding-p">{copy.join}</p>
       {liveLine && <p className="fll-founding-live" data-founding-live="">{liveLine}</p>}
     </section>
@@ -14667,14 +14669,16 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-login:hover{ background:rgba(46,139,46,0.08); }
 
             .fll-hero{ text-align:center; padding-top:30px; padding-bottom:14px; }
-            .fll-hero-grid{ display:grid; grid-template-columns:minmax(0,1fr); grid-template-areas:"text" "form" "card" "demo"; gap:${SPACE.xl}px; }
+            .fll-hero-grid{ display:grid; grid-template-columns:minmax(0,1fr); grid-template-areas:"text" "form" "card" "founding" "demo"; gap:${SPACE.xl}px; }
             .fll-hero-text{ grid-area:text; }
             .fll-hero-card{ grid-area:card; justify-self:center; margin-block:0; margin-inline:0; width:100%; max-width:400px; }
             .fll-hero-form, .fll-hero-demo{ justify-self:center; width:100%; max-width:440px; }
             .fll-hero-form{ grid-area:form; }
             .fll-hero-demo{ grid-area:demo; }
             .fll-hero-demo .fll-demo{ margin-top:0; }
-            .fll-founding{ margin-block:${SPACE.lg}px 0; margin-inline:0; padding:${SPACE.lg}px; border-radius:${SPACE.lg}px; background:#fff; border:1px solid rgba(46,139,46,0.22); text-align:left; font-family:'Plus Jakarta Sans',sans-serif; }
+            /* One column (phones, small tablets): the founding block comes after the $1,944 card, so the
+               card's top stays in the first screen at 390 x 844 even with the live line. */
+            .fll-founding{ grid-area:founding; justify-self:center; width:100%; max-width:440px; box-sizing:border-box; margin-block:0; margin-inline:0; padding:${SPACE.lg}px; border-radius:${SPACE.lg}px; background:#fff; border:1px solid rgba(46,139,46,0.22); text-align:left; font-family:'Plus Jakarta Sans',sans-serif; }
             .fll-founding-h{ font-size:16px; font-weight:800; line-height:1.35; color:#15321a; margin-block:0 ${SPACE.xs}px; }
             .fll-founding-p{ font-size:14px; line-height:1.55; color:#3f4f3c; margin-block:${SPACE.xs}px 0; }
             .fll-founding-live{ font-size:14px; font-weight:700; line-height:1.4; color:#1b5e20; margin-block:${SPACE.sm}px 0; }
@@ -14751,11 +14755,14 @@ function AuthScreen({ onAuth, onTryDemo }) {
             }
             @media(min-width:960px){
               .fll-hero{ text-align:left; }
-              .fll-hero-grid{ grid-template-columns:minmax(0,1.08fr) minmax(0,0.92fr); grid-template-areas:"text card" "form card" "demo card"; column-gap:${SPACE.xxl + SPACE.xl}px; row-gap:${SPACE.xl}px; align-items:start; }
+              .fll-hero-grid{ grid-template-columns:minmax(0,1.08fr) minmax(0,0.92fr); grid-template-areas:"text card" "form card" "founding card" "demo card"; column-gap:${SPACE.xxl + SPACE.xl}px; row-gap:${SPACE.xl}px; align-items:start; }
               .fll-hero-text .fll-h1, .fll-hero-text .fll-sub{ margin-left:0; }
               .fll-hero-card{ max-width:440px; justify-self:end; align-self:center; margin-bottom:var(--fll-founding-h, 0px); }
               .fll-hero-form, .fll-hero-demo{ justify-self:start; }
-              .fll-hero-grid{ grid-template-rows:auto auto 1fr; }
+              .fll-hero-grid{ grid-template-rows:auto auto auto 1fr; }
+              /* Desktop: directly under the form, ${SPACE.lg}px below its consent line exactly as when it sat inside
+                 the form: the row gap (${SPACE.xl}px) less ${SPACE.xl - SPACE.lg}px. */
+              .fll-founding{ justify-self:start; margin-top:-${SPACE.xl - SPACE.lg}px; }
               .fll-hero-demo{ margin-top:-${SPACE.md}px; }
               .fll-hero-form .fll-capture{ margin-inline:0; }
               .fll-trust-row{ text-align:left; }
@@ -14812,8 +14819,9 @@ function AuthScreen({ onAuth, onTryDemo }) {
               </figure>
               <div className="fll-hero-form">
                 <WaitlistForm source="hero"/>
-                <FoundingOffer/>
               </div>
+              {/* Its own grid item: under the form on desktop, below the card on phones (grid areas). */}
+              <FoundingOffer/>
               <div className="fll-hero-demo">
                 <LandingHowTo/>
                 {onTryDemo && <button type="button" className="fll-demo" onClick={() => onTryDemo(waitlistCountry)}>Try the demo with {waitlistCountry === "US" ? "US" : "Canadian"} sample data →</button>}
