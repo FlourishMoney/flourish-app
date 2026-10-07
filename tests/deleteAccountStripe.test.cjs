@@ -24,6 +24,9 @@ const API_PATH = require.resolve("../netlify/functions/_lib/stripeApi.js");
 const FN_PATH = require.resolve("../netlify/functions/plaid.js");
 const HOOK_PATH = require.resolve("../netlify/functions/stripe-webhook.js");
 const USER = "00000000-0000-4000-8000-000000000001";
+// Production today (2026-10-07): no public.subscriptions table (0009/0010 not applied). PostgREST answers
+// both the read and the delete with exactly this (checked against a local PostgREST v16.2, HTTP 404):
+const PGRST205 = { code: "PGRST205", details: null, hint: null, message: "Could not find the table 'public.subscriptions' in the schema cache" };
 const SUB = (over = {}) => ({ provider_subscription_id: "sub_live_1", status: "active", plan_key: "annual", ...over });
 
 // db: { subs: [...rows] | "missing" | "error" }, stripe: { status, getStatus, getFails, cancelFails }, rpcFails
@@ -34,12 +37,15 @@ async function run({ subs = [], stripe = {}, rpcFails = false, key = true } = {}
       select: () => ({ eq: async () => {
         if (table === "subscriptions") {
           if (subs === "missing") return { data: null, error: { code: "42P01", message: 'relation "subscriptions" does not exist' } };
+          if (subs === "prod") return { data: null, error: PGRST205 };
           if (subs === "error") return { data: null, error: { message: "connection reset" } };
           return { data: subs, error: null };
         }
         return { data: [{ item_id: "item-1", access_token: "access-sandbox-x" }], error: null };
       } }),
-      delete: () => ({ eq: async () => { log.deletes.push(table); log.events.push(`delete:${table}`); return { error: null }; } }),
+      delete: () => ({ eq: async () => {
+        if (table === "subscriptions" && subs === "prod") { log.events.push("delete:subscriptions:missing"); return { error: PGRST205 }; }
+        log.deletes.push(table); log.events.push(`delete:${table}`); return { error: null }; } }),
     }),
     rpc: async (name, args) => { log.rpc.push([name, args]); return rpcFails ? { data: null, error: { message: "rpc down" } } : { data: 1, error: null }; },
     auth: { admin: {
@@ -176,6 +182,38 @@ const stopped = (t, r, why) => {
     finally { console.error = quiet; if (saved === undefined) delete process.env.STRIPE_WEBHOOK_SECRET; else process.env.STRIPE_WEBHOOK_SECRET = saved; delete require.cache[HOOK_PATH]; }
     t.eq([res.statusCode, JSON.parse(res.body).ignored], [200, true], "5a the cancellation event for a deleted account is acknowledged (200), not retried");
     t.eq([state.rows.length, state.billing[0] && state.billing[0].status], [0, "ignored"], "5b …nothing is written for the account that no longer exists, and the event is recorded as ignored");
+  }
+
+  // ── 6. production today: no subscriptions table, billing off ───────────────────────────────
+  {
+    const savedFlag = process.env.BILLING_ENABLED; delete process.env.BILLING_ENABLED;
+    try {
+      // 6a: a household with no Stripe customer and no subscriptions table deletes successfully.
+      const r = await run({ subs: "prod", key: false });
+      t.eq([r.body.deleted, steps(r.body), r.log.authDeleted], [true, [], true],
+        "6a production today (no subscriptions table, billing off, no Stripe key): the account is deleted");
+      t.ok(["meeting_records", "feedback", "plaid_items", "user_data", "coach_usage", "profiles"].every(x => r.log.deletes.includes(x))
+        && r.log.events.includes("delete:subscriptions:missing"), "6a …everything else is erased, and the missing subscriptions table counts as nothing to delete");
+      t.eq(r.log.fetches.filter(f => f.includes("stripe")), [], "6a …with no call to Stripe");
+
+      // 6b: a missing table or a missing Stripe customer is "no live charge", not "can't tell".
+      for (const [opts, why] of [
+        [{ subs: "prod" }, "the table is missing (PGRST205, as production answers)"],
+        [{ subs: "missing" }, "the table is missing (42P01, older PostgREST)"],
+        [{ subs: [] }, "no Stripe customer: no row at all"],
+        [{ subs: [{ provider_subscription_id: null, status: "incomplete", plan_key: null }] }, "a row with no Stripe subscription"],
+        [{ subs: [SUB()], stripe: { getFails: 404 } }, "Stripe has no such subscription (404)"],
+      ]) {
+        const x = await run({ ...opts });
+        t.eq([x.body.deleted, steps(x.body)], [true, []], `6b ${why}: no live charge, so the account is deleted`);
+      }
+
+      // 6c: only a real Stripe error, for an account that has a Stripe subscription, blocks deletion.
+      for (const [stripe, why] of [[{ getFails: 500 }, "Stripe errors reading the subscription"], [{ getFails: 429 }, "Stripe rate-limits the read"],
+        [{ cancelFails: true }, "Stripe errors cancelling it"]]) {
+        stopped(t, await run({ subs: [SUB()], stripe }), `6c ${why}`);
+      }
+    } finally { if (savedFlag === undefined) delete process.env.BILLING_ENABLED; else process.env.BILLING_ENABLED = savedFlag; }
   }
 
   t.summary("deleteAccountStripe.test");
