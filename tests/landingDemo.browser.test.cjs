@@ -16,6 +16,7 @@
 // at least 48 px tall and full width; one consent line sits under the Join button.
 // -----------------------------------------------------------------------------
 "use strict";
+const { tempDir } = require("./_tmp.cjs"); // removed when this test ends, pass or fail
 const { create } = require("./_runner.cjs");
 const http = require("http");
 const fs = require("fs");
@@ -32,7 +33,7 @@ const CAPTIONS = ["Safe to spend until payday", "Every bill and payday, up to 90
   const t = create();
   let playwright;
   try { playwright = require("playwright"); } catch { t.ok(false, "playwright is installed"); t.summary("LANDING DEMO (browser)"); return; }
-  const dist = fs.mkdtempSync(path.join(os.tmpdir(), "flourish-landingdemo-"));
+  const dist = tempDir("landingdemo");
   execFileSync(process.platform === "win32" ? "npx.cmd" : "npx", ["vite", "build", "--outDir", dist, "--emptyOutDir", "--logLevel", "warn"],
     { cwd: ROOT, stdio: "inherit", env: { ...process.env, VITE_SUPABASE_URL: "https://placeholder.invalid", VITE_SUPABASE_PUBLISHABLE_KEY: "placeholder" } });
   const server = http.createServer((req, res) => {

@@ -13,6 +13,7 @@
 // these Canadian descriptor shapes in it.
 // -----------------------------------------------------------------------------
 "use strict";
+const { tempDir } = require("./_tmp.cjs"); // removed when this test ends, pass or fail
 const { create } = require("./_runner.cjs");
 const { execFileSync } = require("child_process");
 const fs = require("fs");
@@ -23,7 +24,7 @@ const REPO = path.join(__dirname, "..");
 
 // A throwaway checkout of origin/main's src/lib, so "what main produced" is main's real code.
 function mainLibDir() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "flourish-main-"));
+  const dir = tempDir("main");
   const tar = execFileSync("git", ["-C", REPO, "archive", "origin/main", "src/lib"], { maxBuffer: 64 * 1024 * 1024 });
   const tarPath = path.join(dir, "lib.tar");
   fs.writeFileSync(tarPath, tar);

@@ -26,6 +26,7 @@ const PLAID_BASE = {
 };
 
 const { corsHeadersFor, isNativeRequest } = require("./_lib/cors");
+const { stripeGet, stripeDelete } = require("./_lib/stripeApi");
 
 // Plaid REST wrapper — 8s timeout so we never exceed Netlify's 10s limit
 async function plaid(endpoint, body) {
@@ -648,13 +649,67 @@ exports.handler = async (event) => {
         return stop("load_items"); // nothing deleted yet
       }
 
+      // A table that does not exist in this database yet holds nothing for this user.
+      const missingTable = (e) => !!e && (e.code === "42P01" || e.code === "PGRST205" ||
+        /does not exist|could not find the table/i.test(String(e.message || "")));
+
+      // 1b. KNOWN-DEFECTS 23: NOBODY KEEPS BEING CHARGED AFTER DELETING. Every Stripe subscription that could
+      // still charge is cancelled now, BEFORE anything is erased. If that cannot be done, or it cannot be
+      // known whether a charge is live, the deletion stops here with nothing changed ("billing_cancel"), and
+      // the person is told to try again or email hello@flourishmoney.app. An account is never deleted while
+      // a live charge is left behind. A subscription Stripe already shows as ended, or no longer has, needs
+      // nothing. Billing switched off (BILLING_ENABLED) does not skip this: a row that can charge is cancelled.
+      const ENDED = ["canceled", "incomplete_expired"];
+      const { data: subRows, error: subErr } = await admin
+        .from("subscriptions")
+        .select("provider_subscription_id, status, plan_key")
+        .eq("user_id", user_id);
+      if (subErr && !missingTable(subErr)) {
+        console.error("[delete_account] subscriptions read:", subErr.message);
+        return stop("billing_cancel"); // cannot tell whether a charge is live; nothing deleted yet
+      }
+      const subs = (Array.isArray(subRows) ? subRows : []).filter(r => r && r.provider_subscription_id);
+      for (const r of subs) {
+        if (ENDED.includes(r.status)) continue;
+        const id = encodeURIComponent(r.provider_subscription_id);
+        try {
+          let live = true;
+          try {
+            const current = await stripeGet(`/subscriptions/${id}`);
+            live = !ENDED.includes(current && current.status);
+          } catch (e) {
+            if (e && e.statusCode === 404) live = false;   // Stripe has no such subscription: nothing to charge
+            else throw e;
+          }
+          if (live) {
+            await stripeDelete(`/subscriptions/${id}`, { idempotencyKey: `delete-account:${user_id}:${r.provider_subscription_id}` });
+          }
+        } catch (e) {
+          // Stripe's message can name the account; only the status goes to the log.
+          console.error("[delete_account] stripe cancel failed:", e && e.statusCode ? e.statusCode : "no_status");
+          return stop("billing_cancel"); // nothing deleted yet
+        }
+      }
+      // A founding subscription has now ENDED (cancelled above, or earlier): the household's waitlist number is
+      // stamped, as the webhook would, so the founding price does not come back with a new account on the same
+      // email. Idempotent, so a retry after a failure here stamps again rather than skipping it. A checkout
+      // that never completed (incomplete) was never a founding subscription. The number itself stays issued:
+      // deleting an account never frees one (nothing here, or anywhere, deletes from the ledger).
+      if (subs.some(r => r.plan_key === "founding_annual" && !["incomplete", "incomplete_expired"].includes(r.status))) {
+        const { data: fu } = await admin.auth.admin.getUserById(user_id);
+        const fEmail = fu && fu.user && fu.user.email;
+        const { error: endErr } = fEmail ? await admin.rpc("waitlist_founding_mark_ended", { p_email: fEmail }) : { error: null };
+        if (endErr) {
+          console.error("[delete_account] founding end:", endErr.message);
+          return stop("billing_cancel"); // the charge is cancelled; nothing deleted yet, so a retry finishes it
+        }
+      }
+
       // 2. Round-3: the meeting's stored answers and the billing row, BEFORE anything irreversible at
       // Plaid. Both reference auth.users with ON DELETE CASCADE, but they are deleted explicitly and
       // CRITICALLY: if either fails, we stop with the bank links and the sign-in still in place, so a
       // retry finishes the job. A table that does not exist in this database yet holds nothing for
       // this user, so "no such table" counts as done rather than trapping everyone in their account.
-      const missingTable = (e) => !!e && (e.code === "42P01" || e.code === "PGRST205" ||
-        /does not exist|could not find the table/i.test(String(e.message || "")));
       for (const table of ["meeting_records", "subscriptions", "feedback"]) {
         const { error: tErr } = await admin.from(table).delete().eq("user_id", user_id);
         if (tErr && !missingTable(tErr)) {

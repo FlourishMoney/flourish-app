@@ -1,6 +1,6 @@
 // netlify/functions/_lib/stripeApi.js
 // -----------------------------------------------------------------------------
-// The two Stripe calls this app makes, over fetch. No SDK, for the same reason the rest
+// The Stripe calls this app makes, over fetch. No SDK, for the same reason the rest
 // of this tree hand-rolls its providers: one less dependency in the function bundle, and
 // the request shape stays visible.
 //
@@ -51,4 +51,23 @@ async function stripePost(path, params, opts = {}) {
   return data;
 }
 
-module.exports = { stripePost, formEncode, STRIPE_BASE };
+// GET and DELETE, for account deletion (KNOWN-DEFECTS 23): read a subscription's status, and cancel it
+// at once. Same key handling and the same thrown error (statusCode, stripeCode) as stripePost.
+async function stripeRequest(method, path, opts = {}) {
+  const env = opts.env || process.env;
+  const headers = { "Authorization": `Bearer ${secretKey(env)}` };
+  if (opts.idempotencyKey) headers["Idempotency-Key"] = opts.idempotencyKey;
+  const res = await fetch(`${STRIPE_BASE}${path}`, { method, headers });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data?.error?.message || `stripe ${res.status}`);
+    err.statusCode = res.status;
+    err.stripeCode = data?.error?.code || null;
+    throw err;
+  }
+  return data;
+}
+const stripeGet = (path, opts) => stripeRequest("GET", path, opts);
+const stripeDelete = (path, opts) => stripeRequest("DELETE", path, opts);
+
+module.exports = { stripePost, stripeGet, stripeDelete, formEncode, STRIPE_BASE };

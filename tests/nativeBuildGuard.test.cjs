@@ -14,6 +14,7 @@
 //   the boot fallback, which turns the white screen into a sentence if one ever exists.
 // -----------------------------------------------------------------------------
 "use strict";
+const { tempDir } = require("./_tmp.cjs"); // removed when this test ends, pass or fail
 const { create } = require("./_runner.cjs");
 const { execFileSync } = require("node:child_process");
 const fs = require("fs");
@@ -26,7 +27,7 @@ const MAIN = fs.readFileSync(path.join(ROOT, "src", "main.jsx"), "utf8");
 
 // Run the guard in a throwaway directory so the repo's own .env files cannot make it pass.
 function runGuard(env, files = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "guard-"));
+  const dir = tempDir("guard");
   try {
     for (const [rel, body] of Object.entries(files)) {
       fs.mkdirSync(path.join(dir, path.dirname(rel)), { recursive: true });

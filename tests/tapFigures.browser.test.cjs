@@ -12,6 +12,7 @@
 // The browser demo is the Canadian one; the US demo is checked without a browser in tapFigures.test.cjs.
 // -----------------------------------------------------------------------------
 "use strict";
+const { tempDir } = require("./_tmp.cjs"); // removed when this test ends, pass or fail
 const { create } = require("./_runner.cjs");
 const http = require("http");
 const fs = require("fs");
@@ -24,7 +25,7 @@ const TIP = "Tap any number to see how Flourish got it.";
 
 function buildApp() {
   if (process.env.LAYOUT_DIST) return process.env.LAYOUT_DIST;
-  const out = fs.mkdtempSync(path.join(os.tmpdir(), "flourish-tapfig-"));
+  const out = tempDir("tapfig");
   execFileSync(process.platform === "win32" ? "npx.cmd" : "npx", ["vite", "build", "--outDir", out, "--emptyOutDir", "--logLevel", "warn"],
     { cwd: ROOT, stdio: "inherit", env: { ...process.env,
       VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL || "https://placeholder.invalid",

@@ -9,6 +9,7 @@
 // Chromium, the same way layout.browser.test does. LAYOUT_DIST reuses an existing build.
 // -----------------------------------------------------------------------------
 "use strict";
+const { tempDir } = require("./_tmp.cjs"); // removed when this test ends, pass or fail
 const { create } = require("./_runner.cjs");
 const fs = require("fs");
 const os = require("os");
@@ -20,7 +21,7 @@ const ROOT = path.join(__dirname, "..");
 
 function buildApp() {
   if (process.env.LAYOUT_DIST) return process.env.LAYOUT_DIST;
-  const out = fs.mkdtempSync(path.join(os.tmpdir(), "flourish-budget-edit-"));
+  const out = tempDir("budget-edit");
   execFileSync(process.platform === "win32" ? "npx.cmd" : "npx",
     ["vite", "build", "--outDir", out, "--emptyOutDir", "--logLevel", "warn"],
     { cwd: ROOT, stdio: "inherit", env: { ...process.env,
