@@ -53,6 +53,14 @@ if (fs.existsSync(supportSrc) && fs.readFileSync(supportSrc, "utf8").includes(`=
 }
 
 if (mode === "artifact") {
+  // The landing page's media must not ship inside the store apps (scripts/strip-landing-media.mjs).
+  const { LANDING_ONLY } = await import("./strip-landing-media.mjs");
+  const shipped = LANDING_ONLY.filter((name) => fs.existsSync(path.join(root, "dist", name)));
+  if (shipped.length) {
+    die(`dist/ still holds landing-only media (${shipped.join(", ")}), which would ship inside the iOS and ` +
+        `Android apps.\n    build:native runs scripts/strip-landing-media.mjs after vite build; run that, then this check.`);
+  }
+  console.log("  no landing media   dist/");
   const dir = path.join(root, "dist", "assets");
   if (!fs.existsSync(dir)) die("dist/assets does not exist — run the build before this check.");
   const js = fs.readdirSync(dir).filter((f) => f.endsWith(".js")).map((f) => path.join(dir, f));
