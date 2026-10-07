@@ -29,6 +29,7 @@
 // and text at 1.3x by the same sweep. Icon-only buttons are checked here: axe accepts "✕" as a name.
 // -----------------------------------------------------------------------------
 "use strict";
+const { tempDir } = require("./_tmp.cjs"); // removed when this test ends, pass or fail
 const { create } = require("./_runner.cjs");
 const http = require("http");
 const fs = require("fs");
@@ -100,7 +101,7 @@ const VIEWS = [
 ];
 
 function buildApp(supabaseUrl) {
-  const out = fs.mkdtempSync(path.join(os.tmpdir(), "flourish-a11y-"));
+  const out = tempDir("a11y");
   execFileSync(process.platform === "win32" ? "npx.cmd" : "npx", ["vite", "build", "--outDir", out, "--emptyOutDir", "--logLevel", "warn"],
     { cwd: ROOT, stdio: "inherit", env: { ...process.env, VITE_SUPABASE_URL: supabaseUrl, VITE_SUPABASE_PUBLISHABLE_KEY: "test-publishable-key" } });
   return out;

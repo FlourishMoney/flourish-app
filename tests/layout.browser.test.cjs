@@ -24,6 +24,7 @@
 // width with a particular string in the label, and no amount of reading style objects reveals them.
 // -----------------------------------------------------------------------------
 "use strict";
+const { tempDir } = require("./_tmp.cjs"); // removed when this test ends, pass or fail
 const { create } = require("./_runner.cjs");
 const http = require("http");
 const fs = require("fs");
@@ -258,7 +259,7 @@ const VIEWS = [
 // ─── build + serve ────────────────────────────────────────────────────────────
 function buildApp() {
   if (process.env.LAYOUT_DIST) return process.env.LAYOUT_DIST;
-  const out = fs.mkdtempSync(path.join(os.tmpdir(), "flourish-layout-"));
+  const out = tempDir("layout");
   // Placeholder Supabase values only: the demo never authenticates, but the client throws at import
   // without them and the app boots straight into its failure screen.
   execFileSync(process.platform === "win32" ? "npx.cmd" : "npx",

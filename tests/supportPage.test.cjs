@@ -11,6 +11,7 @@
 // it in is one edit in one place.
 // -----------------------------------------------------------------------------
 "use strict";
+const { tempDir } = require("./_tmp.cjs"); // removed when this test ends, pass or fail
 const { create } = require("./_runner.cjs");
 const fs = require("fs");
 const path = require("path");
@@ -62,7 +63,7 @@ const launchScreen = (url) => { const u = new URL(url); return new Function("win
     const os = require("os");
     const SCRIPT = path.join(__dirname, "..", "scripts", "check-native-build.mjs");
     const run = (files, args) => {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "support-guard-"));
+      const dir = tempDir("support-guard");
       try {
         for (const [rel, body] of Object.entries(files)) { fs.mkdirSync(path.join(dir, path.dirname(rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); }
         execFileSync(process.execPath, [SCRIPT, ...args], { cwd: dir, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8",
