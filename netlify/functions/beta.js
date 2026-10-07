@@ -198,7 +198,7 @@ async function sendConfirmation(email, event) {
   }
 }
 
-exports.handler = async (event) => {
+async function handle(event) {
   // Phase D2: per-request CORS (origin-aware). Inner references can keep using CORS.
   const CORS = corsHeadersFor(event);
 
@@ -580,4 +580,31 @@ exports.handler = async (event) => {
       body: JSON.stringify({ error: err.message, allowed: true }), // fail open so signups aren't blocked by an error
     };
   }
+}
+
+// One log line per response, so refusals are countable in the function logs. Only fixed fields, each
+// reduced to a short token: never the email, the IP, a password, a code or any free text.
+const SAFE = /^[A-Za-z0-9_.:-]{1,40}$/;
+const tok = (v) => (typeof v === "string" && SAFE.test(v) && !v.includes("@") ? v : (v == null || v === "" ? "-" : "other"));
+function reasonFor(status, resBody) {
+  let b = null; try { b = JSON.parse(resBody || "null"); } catch { /* not JSON */ }
+  if (b && typeof b.error === "string") return tok(b.error.replace(/\s+/g, "_"));
+  if (b && b.alreadyJoined === true) return "alreadyJoined";
+  if (status >= 400) return "status_" + status;
+  return "ok";
+}
+function logLine(event, res) {
+  let body = {}; try { body = JSON.parse(event.body || "{}") || {}; } catch { /* unparseable */ }
+  const action = event.httpMethod !== "POST" ? event.httpMethod : (body.action || "count");
+  const placement = typeof body.placement === "string" ? body.placement : body.source;
+  return `[beta] action=${tok(action)} status=${res.statusCode} reason=${reasonFor(res.statusCode, res.body)} src=${tok(body.src)} placement=${tok(placement)} consentVersion=${tok(body.consentVersion)}`;
+}
+
+exports.handler = async (event) => {
+  let res;
+  try { res = await handle(event); }
+  catch (e) { console.log(logLine(event, { statusCode: 500, body: JSON.stringify({ error: "threw" }) })); throw e; }
+  console.log(logLine(event, res));
+  return res;
 };
+exports._logLine = logLine;

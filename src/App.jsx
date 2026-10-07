@@ -14252,64 +14252,88 @@ function WaitlistForm({ source = "landing" }) {
   );
 }
 
-// demo-clarity: "See how it works", one short video per screen (approved by ChatGPT and Grok; 1080 x 1920,
-// H.264 with an AI voice, captions burned in). Posters are each video's first frame. An Overview video will
-// be added later as the FIRST entry here (public/video/overview.mp4). One video shows at a time; each is
-// muted by default (sound on from its controls), preload="none" so only the small poster loads with the
-// page, and plays muted on its own only when the block is in view, never under prefers-reduced-motion.
+// "See how it works": the approved how-to series (ChatGPT and Grok; 1080 x 1920, H.264, AI voice, captions
+// burned in). ONE list, in order: a "Getting started" video goes in as the first entry later and becomes the
+// first tile. `secs` is each file's length, rounded. One large player shows the chosen video's poster (a real
+// frame from that video: the first, except Overview at 12.5 s and Today at 4.5 s, where the $1,944 card covers
+// the empty "Can I afford this?" field that would otherwise read as a result) behind a "Play with sound" button; nothing plays until a visitor taps, and that tap is the
+// gesture that lets it play unmuted. Under it, a grid of tiles (2 across on a phone, 4 on a desktop): tapping
+// one loads it into the player, plays it with sound and brings the player into view. preload="none", so only
+// the posters load with the page.
 const HOWTO_VIDEOS = [
-  { id: "today", tab: "Today", label: "How the Today screen works, with sample data" },
-  { id: "watch", tab: "Watch", label: "How the Watch screen works, with sample data" },
-  { id: "meet", tab: "Meet", label: "How the Meet screen works, with sample data" },
+  { id: "overview", name: "Overview", secs: 30 },
+  { id: "getting-started", name: "Getting started", secs: 30 },
+  { id: "today", name: "Today", secs: 30 },
+  { id: "decisions", name: "Decisions", secs: 23 },
+  { id: "watch", name: "Watch", secs: 22 },
+  { id: "do", name: "Do", secs: 24 },
+  { id: "learn", name: "Learn", secs: 17 },
+  { id: "meet", name: "Meet", secs: 23 },
 ];
+const howtoSrc = (v) => `/video/${v.id}.mp4`;
+const howtoPoster = (v) => `/video/${v.id}-poster.jpg`;
 function LandingHowTo() {
-  const [active, setActive] = useState(HOWTO_VIDEOS[0].id);
-  const box = useRef(null), vids = useRef({}), inView = useRef(false), autoplayed = useRef(new Set());
-  const reduce = () => { try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } };
-  const playIfAllowed = (id) => {
-    const v = vids.current[id];
-    if (!v || !inView.current || reduce() || autoplayed.current.has(id)) return;
-    autoplayed.current.add(id); // plays on its own once; after that the controls are the visitor's
-    v.muted = true; const pr = v.play(); if (pr && pr.catch) pr.catch(() => {});
+  const [sel, setSel] = useState(HOWTO_VIDEOS[0].id);
+  const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const video = useRef(null), stage = useRef(null);
+  // React renders src and poster ONCE; after that only playWithSound changes them. If React owned them, the
+  // re-render after a tap would set src again, start a second load and abort the play the tap began.
+  const [first] = useState(HOWTO_VIDEOS[0]);
+  const cur = HOWTO_VIDEOS.find(v => v.id === sel) || HOWTO_VIDEOS[0];
+  // Called inside the tap itself, so the browser counts it as the user's gesture and allows sound.
+  const playWithSound = (v) => {
+    const el = video.current;
+    if (!el) return;
+    if (el.getAttribute("src") !== howtoSrc(v)) { el.setAttribute("src", howtoSrc(v)); el.setAttribute("poster", howtoPoster(v)); el.load(); }
+    el.muted = false; setMuted(false);
+    const pr = el.play(); if (pr && pr.catch) pr.catch(() => {});
   };
-  useEffect(() => {
-    const el = box.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver((entries) => {
-      for (const e of entries) {
-        inView.current = e.isIntersecting && e.intersectionRatio >= 0.5;
-        const v = vids.current[active];
-        if (inView.current) playIfAllowed(active);
-        else if (v && !v.paused) v.pause();
+  const pick = (v) => {
+    setSel(v.id);
+    playWithSound(v);
+    const box = stage.current;
+    if (box) {
+      const r = box.getBoundingClientRect();
+      if (r.top < 0 || r.bottom > window.innerHeight) {
+        let smooth = true; try { smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { /* default */ }
+        box.scrollIntoView({ block: "nearest", behavior: smooth ? "smooth" : "auto" });
       }
-    }, { threshold: [0, 0.5] });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
-  const choose = (id) => {
-    Object.entries(vids.current).forEach(([k, v]) => { if (k !== id && v && !v.paused) v.pause(); });
-    setActive(id);
+    }
   };
+  const toggleSound = () => { const el = video.current; if (!el) return; el.muted = !el.muted; setMuted(el.muted); };
   return (
-    <section className="fll-walk" ref={box} aria-labelledby="fll-walk-t">
+    <section className="fll-walk" aria-labelledby="fll-walk-t">
       <h2 className="fll-walk-t" id="fll-walk-t">See how it works</h2>
-      <div className="fll-walk-tabs" role="tablist" aria-label="Choose a screen">
-        {HOWTO_VIDEOS.map(v => (
-          <button key={v.id} type="button" role="tab" id={`fll-walk-tab-${v.id}`} aria-selected={active === v.id} aria-controls={`fll-walk-panel-${v.id}`}
-            tabIndex={active === v.id ? 0 : -1} className={active === v.id ? "on" : ""} onClick={() => choose(v.id)}
-            onKeyDown={e => { if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return; e.preventDefault();
-              const k = HOWTO_VIDEOS.findIndex(x => x.id === active), n = HOWTO_VIDEOS[(k + (e.key === "ArrowRight" ? 1 : HOWTO_VIDEOS.length - 1)) % HOWTO_VIDEOS.length];
-              choose(n.id); setTimeout(() => { const b = document.getElementById(`fll-walk-tab-${n.id}`); if (b) b.focus(); }, 0); }}>{v.tab}</button>
-        ))}
+      <p className="fll-walk-sub">Short videos, 30 seconds or less. Tap one to play with sound.</p>
+      <div className="fll-walk-stage" ref={stage}>
+        <video ref={video} className="fll-walk-v" src={howtoSrc(first)} poster={howtoPoster(first)} preload="none" playsInline controls={playing}
+          width={720} height={1280} aria-label={`${cur.name} video, ${cur.secs} seconds, with sample data`}
+          onPlay={() => setPlaying(true)} onVolumeChange={e => setMuted(e.currentTarget.muted)} />
+        {!playing && (
+          <button type="button" className="fll-walk-play" onClick={() => playWithSound(cur)} aria-label={`Play ${cur.name} video, ${cur.secs} seconds, with sound`}>
+            <span aria-hidden="true">▶</span> Play with sound
+          </button>
+        )}
+        {playing && (
+          <button type="button" className="fll-walk-sound" onClick={toggleSound} aria-pressed={muted} aria-label={muted ? "Sound is off. Turn sound on" : "Sound is on. Turn sound off"}>
+            <span aria-hidden="true">{muted ? "🔇" : "🔊"}</span> {muted ? "Sound off" : "Sound on"}
+          </button>
+        )}
       </div>
-      {HOWTO_VIDEOS.map(v => (
-        <div key={v.id} role="tabpanel" id={`fll-walk-panel-${v.id}`} aria-labelledby={`fll-walk-tab-${v.id}`} hidden={active !== v.id}>
-          <video ref={el => { vids.current[v.id] = el; }} className="fll-walk-v" src={`/video/${v.id}.mp4`} poster={`/video/${v.id}-poster.jpg`}
-            muted playsInline controls preload="none" width={720} height={1280} aria-label={v.label}
-            onLoadedMetadata={() => { if (active === v.id) playIfAllowed(v.id); }} />
-        </div>
-      ))}
       <p className="fll-walk-note">Voice is AI-generated. Example, sample data.</p>
+      <ul className="fll-walk-grid" aria-label="How-to videos">
+        {HOWTO_VIDEOS.map(v => (
+          <li key={v.id}>
+            <button type="button" className={`fll-walk-tile${v.id === sel ? " on" : ""}`} aria-pressed={v.id === sel} onClick={() => pick(v)}
+              aria-label={`Play ${v.name} video, ${v.secs} seconds, with sound`}>
+              <img src={howtoPoster(v)} alt="" width={720} height={1280} loading="lazy" decoding="async" />
+              <span className="fll-walk-tile-n">{v.name}</span>
+              <span className="fll-walk-tile-s">{v.secs} s <span aria-hidden="true">▶</span></span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -14639,10 +14663,18 @@ function AuthScreen({ onAuth, onTryDemo }) {
             .fll-founding-live{ font-size:14px; font-weight:700; line-height:1.4; color:#1b5e20; margin-block:${SPACE.sm}px 0; }
             .fll-walk{ margin-block:0 16px; margin-inline:0; text-align:center; }
             .fll-walk-t{ font-family:'Plus Jakarta Sans',sans-serif; font-size:15px; font-weight:800; color:#15321a; margin-block:0 10px; }
-            .fll-walk-tabs{ display:inline-flex; gap:${SPACE.xs}px; padding:${SPACE.xs}px; margin-block:0 12px; border-radius:99px; background:rgba(46,139,46,0.08); border:1px solid rgba(46,139,46,0.18); }
-            .fll-walk-tabs button{ min-height:44px; min-width:72px; padding:0 16px; border:none; border-radius:99px; background:none; color:#52624f; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; font-weight:700; cursor:pointer; }
-            .fll-walk-tabs button.on{ background:#fff; color:#1b5e20; box-shadow:0 2px 8px rgba(22,58,28,0.12); }
-            .fll-walk-tabs button:focus-visible{ outline:3px solid #1b5e20; outline-offset:2px; }
+            .fll-walk-sub{ font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; color:#52624f; margin-block:0 ${SPACE.md}px; }
+            .fll-walk-stage{ position:relative; width:100%; max-width:360px; margin-inline:auto; }
+            .fll-walk-play{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); min-height:56px; padding:0 ${SPACE.xl}px; border:none; border-radius:99px; background:#1b5e20; color:#fff; font-family:'Plus Jakarta Sans',sans-serif; font-size:17px; font-weight:800; box-shadow:0 10px 30px rgba(0,0,0,0.35); cursor:pointer; white-space:nowrap; }
+            .fll-walk-play:focus-visible, .fll-walk-sound:focus-visible, .fll-walk-tile:focus-visible{ outline:3px solid #1b5e20; outline-offset:3px; }
+            .fll-walk-sound{ position:absolute; top:${SPACE.md}px; right:${SPACE.md}px; min-height:44px; min-width:44px; padding:0 ${SPACE.md}px; border:none; border-radius:99px; background:rgba(0,0,0,0.62); color:#fff; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; font-weight:700; cursor:pointer; }
+            .fll-walk-grid{ list-style:none; padding:0; margin-block:${SPACE.md}px 0; margin-inline:auto; max-width:360px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:${SPACE.sm}px; }
+            .fll-walk-grid > li{ display:flex; }
+            .fll-walk-tile{ width:100%; height:100%; min-height:44px; display:grid; grid-template-columns:auto 1fr; grid-template-areas:"img n" "img s"; column-gap:${SPACE.sm}px; align-items:center; text-align:left; padding:${SPACE.xs}px; border:1px solid rgba(46,139,46,0.18); border-radius:14px; background:#fff; cursor:pointer; }
+            .fll-walk-tile img{ grid-area:img; width:40px; height:auto; aspect-ratio:9/16; object-fit:cover; border-radius:8px; display:block; }
+            .fll-walk-tile-n{ grid-area:n; align-self:end; font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; font-weight:800; color:#15321a; }
+            .fll-walk-tile-s{ grid-area:s; align-self:start; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; color:#52624f; }
+            .fll-walk-tile.on{ outline:3px solid #4d7c0f; outline-offset:-1px; border-color:#4d7c0f; }
             .fll-walk-note{ font-family:'Plus Jakarta Sans',sans-serif; font-size:13px; color:#52624f; margin-block:10px 0; }
             .fll-walk-v{ display:block; width:100%; max-width:360px; height:auto; aspect-ratio:9/16; margin-inline:auto; border-radius:22px; background:#15271a; box-shadow:0 18px 44px rgba(22,58,28,0.14); }
             .fll-hero-card-btn{ display:block; width:100%; padding:0; border:1px solid rgba(46,139,46,0.18); background:#fff; border-radius:22px; overflow:hidden; cursor:pointer; box-shadow:0 18px 44px rgba(22,58,28,0.14); }
@@ -14712,6 +14744,11 @@ function AuthScreen({ onAuth, onTryDemo }) {
               .fll-trust-row{ text-align:left; }
               .fll-walk{ text-align:left; }
               .fll-walk-v{ margin-inline:0; }
+              .fll-walk-stage, .fll-walk-grid{ margin-inline:0; }
+              .fll-walk-grid{ max-width:none; grid-template-columns:repeat(4,minmax(0,1fr)); }
+              .fll-walk-tile{ grid-template-columns:1fr; grid-template-areas:"img" "n" "s"; grid-template-rows:auto 1fr auto; row-gap:${SPACE.xs}px; justify-items:center; text-align:center; padding:${SPACE.sm}px ${SPACE.xs}px; }
+              .fll-walk-tile-n{ align-self:start; }
+              .fll-walk-tile-s{ align-self:end; }
             }
             @media(min-width:1040px){
               .fll-proof{ justify-content:center; overflow-x:visible; flex-wrap:wrap; }
@@ -14802,7 +14839,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
             <h2 className="fll-h2">Tools that help you understand your money.</h2>
             <div className="fll-benefits" style={{ marginTop: 24 }}>
               {[
-                [<DollarSign size={20} color="#2E8B2E" strokeWidth={2}/>, "Safe to Spend", "Know what's safe to spend before your next payday. It accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount."],
+                [<DollarSign size={20} color="#2E8B2E" strokeWidth={2}/>, "Safe to spend", "Know what's safe to spend before your next payday. It accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount."],
                 [<Target size={20} color="#2E8B2E" strokeWidth={2}/>, "What-If Simulator", "Test a decision, like a big purchase or an extra debt payment, and see the result before you commit."],
                 [<Sparkles size={20} color="#2E8B2E" strokeWidth={2}/>, "AI Coach", "The coach explains the numbers flourish calculates and your options, and leaves the decisions to you. It isn't a licensed adviser."],
                 [<Shield size={20} color="#2E8B2E" strokeWidth={2}/>, "Built in Canada", "flourish knows Canadian accounts like the RRSP and TFSA. Bank connections are read-only, so flourish can't move your money."],
@@ -15869,8 +15906,13 @@ export default function FlourishApp(){
   // into view between the app header and the sheet. When it is too tall for that gap, the sheet moves to
   // the top (tourSheetTop, px) and the target sits between the sheet and the tab bar. Never covered.
   const [tourSheetTop,setTourSheetTop]=useState(null);
+  // demo-tour-scroll: place a step only once the app (not the landing page) is on screen, and again when
+  // it appears. The app mounts behind the landing page with tourStep 0; placing then found no target, gave
+  // up after its retries, and opening the demo later changed neither tourStep nor screen, so step 1 was
+  // never placed and the sheet sat on the figure. Same conditions as the sheet's own render below.
+  const tourShown=tourStep!==null&&onboarded&&!showNotifs&&!showSettings&&!!(user||appData?.demo);
   useEffect(()=>{
-    if(tourStep===null) return;
+    if(tourStep===null||!tourShown) return;
     const step=TOUR_STEPS[tourStep];
     if(!step||!step.target){ setTourSheetTop(null); return; }
     let tries=0, timer=null;
@@ -15879,6 +15921,10 @@ export default function FlourishApp(){
       const els=[...document.querySelectorAll(`[data-tour="${step.target}"]`)];
       const sheet=document.getElementById("tour-sheet");
       if(!els.length||!sheet){ if(tries++<30) timer=setTimeout(place,100); return; }
+      // Measured only once the screen has stopped moving: the demo's cards slide in as it opens, and a
+      // position read mid-slide put step 1 a few px under the header. Looping animations do not count.
+      const moving=typeof document.getAnimations==="function"&&document.getAnimations().some(a=>{ try{ const tm=a.effect&&a.effect.getComputedTiming(); return a.playState==="running"&&tm&&Number.isFinite(tm.endTime); }catch{ return false; } });
+      if(moving&&tries++<30){ timer=setTimeout(place,100); return; }
       const rs=els.map(e=>e.getBoundingClientRect());
       const top=Math.min(...rs.map(r=>r.top)), bottom=Math.max(...rs.map(r=>r.bottom)), h=bottom-top;
       const bell=document.querySelector('[aria-label="Notifications"]');
@@ -15895,7 +15941,7 @@ export default function FlourishApp(){
     };
     timer=setTimeout(place,150);
     return ()=>{ if(timer) clearTimeout(timer); };
-  },[tourStep,screen]); // eslint-disable-line react-hooks/exhaustive-deps
+  },[tourStep,screen,tourShown]); // eslint-disable-line react-hooks/exhaustive-deps
   const dismissTour=()=>{ try{localStorage.setItem(TOUR_DONE_KEY,"1");}catch{} setTourStep(null); };
   // "Replay the tour" in Settings → Help & Support: back to step 1, on Today.
   const replayTour=()=>{ setShowSettings(false); setScreen(TOUR_STEPS[0].screen); setTourStep(0); };
