@@ -52,6 +52,32 @@ function scrubPII(event) {
   return event;
 }
 
+// NOISE FROM INJECTED CODE (Sentry CAPACITOR-8). Facebook's in-app browser injects a script that calls
+// window.webkit.messageHandlers, which does not exist in that browser, so it throws
+//   undefined is not an object (evaluating 'window.webkit.messageHandlers...')
+// from code that is not ours. That event is dropped ONLY when no frame of its stack comes from our own
+// bundle (Vite's /assets/*.js on any origin: the site, a deploy preview, either store app's shell; or
+// /src/ under the dev server). The same text thrown from our own code still reaches Sentry.
+const INJECTED_WEBKIT = /undefined is not an object \(evaluating 'window\.webkit\.messageHandlers/;
+const OUR_FILE = /\/assets\/[^/?#]+\.js(?:[?#:]|$)|\/src\/[^?#]+\.jsx?(?:[?#:]|$)/;
+function isOurFrame(frame) {
+  const file = frame && (frame.filename || frame.abs_path || "");
+  return typeof file === "string" && OUR_FILE.test(file);
+}
+export function isInjectedWebkitNoise(event) {
+  const values = (event && event.exception && event.exception.values) || [];
+  const text = [event && event.message, ...values.map(v => v && v.value)].filter(s => typeof s === "string").join("\n");
+  if (!INJECTED_WEBKIT.test(text)) return false;
+  return !values.some(v => ((v && v.stacktrace && v.stacktrace.frames) || []).some(isOurFrame));
+}
+
+// What Sentry is handed before it sends anything: injected noise is dropped (null), everything else is
+// scrubbed of personal data.
+export function beforeSendEvent(event) {
+  if (isInjectedWebkitNoise(event)) return null;
+  return scrubPII(event);
+}
+
 // The deploy this bundle came from, or null when the build had no SHA to bake (a plain local run).
 function buildRelease() {
   const sha = import.meta.env.VITE_BUILD_SHA;
@@ -75,7 +101,7 @@ export async function initErrorReporting() {
       ...(buildRelease() ? { release: buildRelease() } : {}),
       sendDefaultPii: false,   // don't auto-attach IP / headers / cookies
       tracesSampleRate: 0,     // v1: error reporting only, no performance tracing
-      beforeSend: scrubPII,
+      beforeSend: beforeSendEvent,   // drops injected window.webkit noise (CAPACITOR-8), scrubs PII
     });
     _sentry = Sentry;
   } catch (e) {
