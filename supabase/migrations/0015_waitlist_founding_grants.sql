@@ -1,6 +1,6 @@
 -- 0015_waitlist_founding_grants.sql
 -- -----------------------------------------------------------------------------
--- Explicit grants for 0014_waitlist_founding.sql's two columns and two functions. Run after 0014.
+-- Explicit grants for 0014_waitlist_founding.sql's two columns and three functions. Run after 0014.
 --
 -- public.waitlist is read and written only by our Netlify functions with the service role (RLS on, no
 -- policy). The new columns keep that: the service role reads both (the spots-left count, the welcome
@@ -29,3 +29,10 @@ grant update (is_test) on table public.waitlist to service_role;
 revoke all on function public.waitlist_assign_founding_position() from public, anon, authenticated;
 grant execute on function public.waitlist_assign_founding_position() to service_role;
 revoke all on function public.waitlist_founding_start() from public, anon, authenticated, service_role;
+
+-- The address key (0014) is used inside the trigger and by 0016's lookups; no Data API role needs to
+-- call it directly except the service role.
+revoke all on function public.waitlist_email_key(text) from public, anon, authenticated;
+grant execute on function public.waitlist_email_key(text) to service_role;
+
+-- public.waitlist_founding_ledger (created in 0014, with its grants there): service role only, RLS on.

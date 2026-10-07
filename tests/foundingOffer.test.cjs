@@ -77,9 +77,12 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     t.ok(/max-age=60/.test(ok.res.headers["Cache-Control"]) && /max-age=60/.test(ok.res.headers["Netlify-CDN-Cache-Control"]), "1b a good answer is cached for 60 s");
     t.eq(ok.calls.length, 1, "1c one read of Supabase");
     t.ok(ok.calls[0].method === "HEAD" && ok.calls[0].headers.Prefer === "count=exact", "1d …a HEAD with count=exact, so no row comes back at all");
-    t.ok(/\/rest\/v1\/waitlist\?select=id&is_test=is\.false$/.test(ok.calls[0].url), "1e …of the waitlist rows that are not test rows");
+    t.ok(/\/rest\/v1\/waitlist_founding_ledger\?select=position$/.test(ok.calls[0].url), "1e …of the founding numbers issued (the ledger, which is never freed)");
     t.eq(JSON.stringify((await callEndpoint({ supabase: { range: "*/64" } })).body), '{"spotsLeft":0}', "1f 64 eligible rows: 0 left, never below 0");
-    t.eq(JSON.stringify((await callEndpoint({ supabase: { range: "*/0" } })).body), '{"spotsLeft":50}', "1g an empty list: 50 left");
+    const empty = await callEndpoint({ supabase: { range: "*/0" } });
+    t.ok(empty.res.statusCode === 503 && JSON.stringify(empty.body) === '{"error":"unavailable"}' && empty.res.headers["Cache-Control"] === "no-store",
+      "1g an empty ledger (start() has not run yet) is unavailable, never \"50 left\"");
+    t.eq(JSON.stringify((await callEndpoint({ supabase: { range: "*/1" } })).body), '{"spotsLeft":49}', "1g2 one number issued: 49 left");
     const fails = {
       "no Supabase env": { env: false },
       "Supabase 400 (migration 0014 not applied: no is_test column)": { supabase: { status: 400 } },
@@ -147,15 +150,24 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     t.ok(/create unique index if not exists waitlist_founding_position_key\s+on public\.waitlist \(founding_position\) where founding_position is not null/.test(sql), "2c no two rows can hold the same position");
     const trig = sql.slice(sql.indexOf("function public.waitlist_assign_founding_position()"), sql.indexOf("$$;", sql.indexOf("function public.waitlist_assign_founding_position()")));
     t.ok(/before insert on public\.waitlist\s+for each row execute function public\.waitlist_assign_founding_position\(\)/.test(sql), "2d the position is set BEFORE INSERT, in the insert's own transaction");
-    const lockAt = trig.indexOf("pg_advisory_xact_lock("), countAt = trig.indexOf("select count(*) from public.waitlist where not is_test"), pickAt = trig.indexOf("select min(g) from generate_series(1, 50)");
+    const lockAt = trig.indexOf("pg_advisory_xact_lock("), countAt = trig.indexOf("select count(*) into issued from public.waitlist_founding_ledger"), pickAt = trig.indexOf("values (issued + 1, k)");
     t.ok(lockAt > 0 && countAt > lockAt && pickAt > countAt, "2e under a transaction-scoped lock, taken before the count and the pick, so a second signup waits for the first to commit");
-    t.ok(/>= 50 then\s+new\.founding_position := null;/.test(trig), "2f once 50 eligible rows exist, a new row gets null");
-    t.ok(/where not exists \(select 1 from public\.waitlist w where w\.founding_position = g\)/.test(trig), "2g otherwise the lowest free position from 1 to 50");
+    t.ok(/if issued >= 50 then\s+return new;/.test(trig) && /new\.founding_position := null;/.test(trig), "2f once 50 numbers have been issued, a new row gets null");
+    t.ok(/insert into public\.waitlist_founding_ledger \(position, email_key\) values \(issued \+ 1, k\);\s+new\.founding_position := issued \+ 1;/.test(trig),
+      "2g otherwise the next number, recorded in the ledger: a number is issued once and never reissued");
+    t.ok(/create table if not exists public\.waitlist_founding_ledger/.test(sql) && !/delete from public\.waitlist_founding_ledger/.test(sql),
+      "2g2 the ledger is only ever added to");
+    t.ok(/select l\.position into prior from public\.waitlist_founding_ledger l where l\.email_key = k;/.test(trig),
+      "2g3 a household that comes back gets its old number, never a new one");
     t.ok(/new\.created_at := clock_timestamp\(\);/.test(trig) && trig.indexOf("clock_timestamp") > lockAt, "2h created_at is the moment the row takes the lock, so position order is created_at order");
     t.ok(/new\.founding_position := /.test(trig) && !/new\.founding_position\s*:=\s*new\./.test(trig), "2i a position the caller sent is always overwritten, never kept");
     const start = sql.slice(sql.indexOf("function public.waitlist_founding_start()"));
-    t.ok(/row_number\(\) over \(order by created_at, id\)/.test(start) && /o\.n <= 50/.test(start) && /enable trigger waitlist_founding_position/.test(start),
-      "2j the backfill numbers existing rows 1 to 50 in created_at order, then switches the trigger on");
+    t.ok(/row_number\(\) over \(order by w\.created_at, w\.id\)/.test(start) && /where n <= 50/.test(start)
+      && /insert into public\.waitlist_founding_ledger \(position, email_key\)/.test(start) && /enable trigger waitlist_founding_position/.test(start),
+      "2j the backfill numbers existing rows 1 to 50 in created_at order, records them in the ledger, then switches the trigger on");
+    const guardAt = start.indexOf("raise exception 'waitlist_founding_start() has already run"), firstWrite = start.indexOf("insert into public.waitlist_founding_ledger");
+    t.ok(guardAt > 0 && guardAt < firstWrite && /tgenabled <> 'D'/.test(start) && /exists \(select 1 from public\.waitlist_founding_ledger\)/.test(start),
+      "2j2 start() runs once: if the trigger is on or any number is issued, it raises before writing anything");
     t.ok(/if not exists \(select 1 from pg_trigger where tgname = 'waitlist_founding_position'/.test(sql) && !/drop trigger/.test(sql),
       "2k running 0014 again never switches an enabled trigger back off");
     t.ok(!/\bdrop\s+(table|column)|\bdelete\s+from|\btruncate\b/i.test(sql), "2l nothing is dropped or deleted");
@@ -170,11 +182,11 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
   {
     const sql = stripSql(fs.readFileSync(MIG, "utf8"));
     const trig = sql.slice(sql.indexOf("function public.waitlist_assign_founding_position()"), sql.indexOf("$$;", sql.indexOf("function public.waitlist_assign_founding_position()")));
-    t.ok(/if new\.is_test then\s+new\.founding_position := null;\s+return new;/.test(trig), "3a a test row never gets a position");
-    t.ok(/where not is_test\)\s*>= 50/.test(trig), "3b …and the trigger's count of rows leaves test rows out");
-    t.ok(/from public\.waitlist\s+where not is_test\s*\)/.test(sql.slice(sql.indexOf("function public.waitlist_founding_start()"))), "3c …and so does the backfill");
+    t.ok(/new\.founding_position := null;\s+if new\.is_test then\s+return new;/.test(trig), "3a a test row never gets a number");
+    t.ok(trig.indexOf("if new.is_test then") < trig.indexOf("insert into public.waitlist_founding_ledger"), "3b …and never enters the ledger, so it never uses up one of the 50");
+    t.ok(/from public\.waitlist w\s+where not w\.is_test/.test(sql.slice(sql.indexOf("function public.waitlist_founding_start()"))), "3c …and the backfill leaves test rows out");
     const ep = fs.readFileSync(FN, "utf8");
-    t.ok(/is_test=is\.false/.test(ep), "3d …and so does the spots-left count");
+    t.ok(/waitlist_founding_ledger\?select=position/.test(ep), "3d …and so does the spots-left count, which counts only numbers issued");
     t.eq([W.spotsLeftFromCount(0), W.spotsLeftFromCount(37), W.spotsLeftFromCount(50), W.spotsLeftFromCount(51), W.spotsLeftFromCount(-1), W.spotsLeftFromCount(3.5), W.spotsLeftFromCount(null)],
       [50, 13, 0, 0, null, null, null], "3e spots left is max(0, 50 - eligible rows), and null for anything that is not a count");
     const raw = fs.readFileSync(MIG, "utf8") + fs.readFileSync(GRANTS, "utf8");

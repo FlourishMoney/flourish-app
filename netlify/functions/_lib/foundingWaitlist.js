@@ -3,10 +3,11 @@
 // THE FOUNDING OFFER ON THE WAITLIST (Amanda's decision, 2026-10-06).
 //
 // The first 50 households on the waitlist, in created_at order, get the founding price. Test rows
-// (is_test, migration 0014) never count. Each new row's position, 1 to 50 or null after 50, is set by
-// the database at insert time (the 0014 trigger), so this module never assigns one: it only reads.
+// (is_test, migration 0014) never count. Each new row's number, 1 to 50 or null after 50, is set by
+// the database at insert time (the 0014 trigger) and recorded in a ledger that is never freed, so this
+// module never assigns one: it only reads.
 //
-//   spotsLeftFromCount(n)  50 less the eligible rows, never below 0; null for anything not a count.
+//   spotsLeftFromCount(n)  50 less the numbers issued, never below 0; null for anything not a count.
 //   foundingWelcomeLine(p) the welcome email's one offer line for position p, or null.
 //
 // Billing honours these positions: _lib/foundingCohort.js sells the founding price only to a confirmed
