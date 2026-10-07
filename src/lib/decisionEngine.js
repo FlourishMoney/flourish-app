@@ -64,11 +64,11 @@ export function coachSafeToSpendLine(data = {}, todayDate = new Date()) {
   const ss = SafeSpendEngine.calculate(data, todayDate);
   const hasCash = (data.accounts || []).filter(a => isCashAccount(a)).length > 0;
   if (!hasCash || ss.noIncome) {
-    return "- Safe-to-spend RIGHT NOW: none shown (Today shows no figure until the household has a cash account and has entered income; do not estimate one)";
+    return "- Safe to spend RIGHT NOW: none shown (Today shows no figure until the household has a cash account and has entered income; do not estimate one)";
   }
   const shown = displayedSafeToSpend(data, todayDate);
   const text = `${shown < 0 ? "-" : ""}$${Math.abs(shown).toLocaleString("en-US")}`;
-  return `- Safe-to-spend RIGHT NOW: ${text} (the figure Today shows; this is the truthful "can-I-afford" number, balance minus upcoming bills, minimum debt payments, safety buffer, savings allocation)`;
+  return `- Safe to spend RIGHT NOW: ${text} (the figure Today shows; this is the truthful "can-I-afford" number, balance minus upcoming bills, minimum debt payments, safety buffer, savings allocation)`;
 }
 
 // For a purchase question ("can I afford a $600 phone?"), the purchase against the figure Today shows

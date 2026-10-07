@@ -14,7 +14,7 @@ function _ordinal(day) {
 }
 
 export function todayKnowItem({ overdraftImmediate, sevenDayOverdraft, nextBill } = {}) {
-  if (overdraftImmediate) return "Your balance can't cover the bills due before payday. Tap Safe to Spend to see which bill does it.";
+  if (overdraftImmediate) return "Your balance can't cover the bills due before payday. Tap safe to spend to see which bill does it.";
   if (sevenDayOverdraft) return "Your balance is on track to go negative within a week.";
   if (nextBill && nextBill.name) {
     const amt = Number(nextBill.amount);

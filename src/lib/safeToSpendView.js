@@ -92,8 +92,8 @@ export function safeToSpendView(ss, setup = null) {
       headline: null, isShort: false, shortfall: 0, headlineText: null, headlineNumber: null,
       needsSetup: true,
       setupPrompt: setup.hasIncome
-        ? "Connect a bank or import a statement to see your safe-to-spend."
-        : "Connect a bank or import a statement, and add your pay, to see your safe-to-spend.",
+        ? "Connect a bank or import a statement to see your safe to spend."
+        : "Connect a bank or import a statement, and add your pay, to see your safe to spend.",
       totalLabel: "= Safe until next payday",
     };
   }

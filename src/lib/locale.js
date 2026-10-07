@@ -79,6 +79,12 @@ export function savingsAccountTerm(country) {
  * accounts this product already teaches (CC.CA.taxTips covers the RRSP and TFSA, CC.US.taxTips
  * covers the 401(k) and the Roth IRA), so nothing new is invented here.
  */
+// The tax authority that decides a household's tax and benefit questions: the CRA in Canada, the IRS in
+// the US. Never "CRA or IRS" (Muse demo review, item 1): a household has one country.
+export function taxAuthority(country) {
+  return isUS(country) ? "IRS" : "CRA";
+}
+
 export function retirementAccountsLabel(country) {
   return isUS(country) ? "401(k)/IRA" : "RRSP/TFSA";
 }

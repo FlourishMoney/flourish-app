@@ -78,7 +78,7 @@ function callSites() {
   t.ok(!!sim, "3a the simulator call site is found");
   t.ok(/if \(!r\.ok\) throw new Error\(`coach \$\{r\.status\}`\)/.test(sim.body),
     "3b an HTTP error throws, so the neutral fallback prose in the catch actually runs");
-  t.ok(/This purchase will reduce your safe-to-spend balance\./.test(APP),
+  t.ok(/This purchase will reduce your safe to spend balance\./.test(APP),
     "3c (control) that neutral fallback still exists to be reached");
 
   // ── 4. a statement that could not be read does not read as an empty statement ────────────────

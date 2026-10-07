@@ -156,13 +156,13 @@ const BANNED = /\blearns\b|\bremembers\b|\bsmarter\b|better over time|GST\/HST c
       "What's left until your next payday after bills due before payday, minimum debt payments, a spending buffer and a savings amount are accounted for. Tap the number to see the math.",
       "Bank connections go through Plaid and are read-only. Flourish never sees or stores your bank password and cannot move money.",
       "Import a PDF or CSV statement, or enter your numbers by hand. Everything works without a bank connection.",
-      "Flourish calculates your figures from your accounts, bills and paydays. Tax and benefit amounts come from the CRA or IRS, with the year, and What-If shows any rate it assumes. The coach explains the numbers and never makes one up.",
+      "Flourish calculates your figures from your accounts, bills and paydays. Tax and benefit amounts come from the CRA, with the year, and What-If shows any rate it assumes. The coach explains the numbers and never makes one up.",
       A.TERMS["Money meeting"],
       "Yes, in Settings. With it off, nothing is sent to AI, and every number, forecast and what-if still works.",
       "No. Flourish explains your numbers and your options. It isn't a licensed adviser, and the decisions are yours.",
       "Settings, then Delete Account. You can also use flourishmoney.app/delete-account.",
       `Email ${SUPPORT_EMAIL}.`,
-    ], "4b the answers (the money meeting is TERMS[\"Money meeting\"]; contact is SUPPORT_EMAIL; \"where do the numbers come from\" corrected to what is true)");
+    ], "4b the answers (the money meeting is TERMS[\"Money meeting\"]; contact is SUPPORT_EMAIL; \"where do the numbers come from\" corrected to what is true; the CRA for Canada, Muse review item 1)");
     noBanned("4c FAQ", A.FAQ.map(f => f.q + " " + f.a).join(" "));
     noAdvice("4d FAQ", A.FAQ.map(f => f.a));
     const support = textOf(A.render(A.h(A.SupportPage, { onBack: noop })));
