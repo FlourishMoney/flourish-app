@@ -14343,17 +14343,34 @@ function LandingHowTo() {
 // there is no line (src/lib/foundingOffer.js). Web only: a store app renders nothing and asks nothing.
 function FoundingOffer() {
   const [spotsLeft, setSpotsLeft] = useState(null);
+  const box = useRef(null);
   useEffect(() => {
     if (isNativeApp()) return undefined;
     let live = true;
     fetchFoundingSpots().then(n => { if (live) setSpotsLeft(n); });
     return () => { live = false; };
   }, []);
+  // On desktop the hero card is centred beside the whole left column, so this block's height would
+  // push it down by half that height. The grid gets the block's height (with its top margin) as
+  // --fll-founding-h, and the desktop card reserves the same space below itself: it centres exactly
+  // where it would without the block. Re-measured when the block changes height (the live line).
+  useEffect(() => {
+    const el = box.current, grid = el && el.closest(".fll-hero-grid");
+    if (!grid) return undefined;
+    const measure = () => {
+      const h = el.offsetHeight + (parseFloat(getComputedStyle(el).marginTop) || 0);
+      grid.style.setProperty("--fll-founding-h", `${Math.round(h)}px`);
+    };
+    measure();
+    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
+    if (ro) ro.observe(el);
+    return () => { if (ro) ro.disconnect(); grid.style.removeProperty("--fll-founding-h"); };
+  }, []);
   if (isNativeApp()) return null;
   const copy = foundingOfferCopy();
   const liveLine = foundingLiveLine(spotsLeft);
   return (
-    <section className="fll-founding" aria-labelledby="fll-founding-h">
+    <section className="fll-founding" ref={box} aria-labelledby="fll-founding-h">
       <h2 className="fll-founding-h" id="fll-founding-h">{copy.heading}</h2>
       <p className="fll-founding-p">{copy.price}</p>
       <p className="fll-founding-p">{copy.join}</p>
@@ -14736,7 +14753,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
               .fll-hero{ text-align:left; }
               .fll-hero-grid{ grid-template-columns:minmax(0,1.08fr) minmax(0,0.92fr); grid-template-areas:"text card" "form card" "demo card"; column-gap:${SPACE.xxl + SPACE.xl}px; row-gap:${SPACE.xl}px; align-items:start; }
               .fll-hero-text .fll-h1, .fll-hero-text .fll-sub{ margin-left:0; }
-              .fll-hero-card{ max-width:440px; justify-self:end; align-self:center; }
+              .fll-hero-card{ max-width:440px; justify-self:end; align-self:center; margin-bottom:var(--fll-founding-h, 0px); }
               .fll-hero-form, .fll-hero-demo{ justify-self:start; }
               .fll-hero-grid{ grid-template-rows:auto auto 1fr; }
               .fll-hero-demo{ margin-top:-${SPACE.md}px; }

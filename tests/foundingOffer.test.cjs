@@ -222,6 +222,21 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     t.ok(/useEffect\(\(\) => \{\s*if \(isNativeApp\(\)\) return undefined;/.test(comp), "5d a store app never calls /api/founding");
   }
 
+  // ── 6. The block does not push the desktop hero card down ─────────────────────────────────────
+  {
+    const app = fs.readFileSync(path.join(REPO, "src", "App.jsx"), "utf8");
+    const comp = app.slice(app.indexOf("function FoundingOffer()"), app.indexOf("function AuthScreen("));
+    t.ok(/grid\.style\.setProperty\("--fll-founding-h"/.test(comp) && /closest\("\.fll-hero-grid"\)/.test(comp),
+      "6a the block gives the hero grid its own height as --fll-founding-h");
+    t.ok(/el\.offsetHeight \+ \(parseFloat\(getComputedStyle\(el\)\.marginTop\)/.test(comp),
+      "6b …measured with its top margin, the whole space it adds to the left column");
+    t.ok(/new ResizeObserver\(measure\)/.test(comp) && /removeProperty\("--fll-founding-h"\)/.test(comp),
+      "6c …re-measured when the live line appears, and removed when the block goes");
+    const desk = app.slice(app.indexOf("@media(min-width:960px){"), app.indexOf("@media(min-width:960px){") + 2000);
+    t.ok(/\.fll-hero-card\{[^}]*align-self:center;[^}]*margin-bottom:var\(--fll-founding-h, 0px\);/.test(desk),
+      "6d the desktop card reserves that space below itself, so it centres where it would without the block");
+  }
+
   t.summary("foundingOffer.test");
   setImmediate(() => process.exit(process.exitCode || 0));
 })();
