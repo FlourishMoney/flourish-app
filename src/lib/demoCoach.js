@@ -66,7 +66,7 @@ export function demoCheckInInsight(data, today = new Date()) {
     .filter(r => r.kind === "deduction")
     .map(r => (PHRASE[r.key] ? PHRASE[r.key](r.value) : `${r.value} in ${r.label.toLowerCase()}`));
   const until = f.nd ? ` until your next deposit on ${_date(f.nd.date, data.profile?.country)}` : " until your next deposit";
-  return `This week, ${f.view.headlineText} is safe to spend${until}. It starts from ${f.view.balanceText} in your accounts` +
+  return `${f.view.headlineText} is safe to spend${until}. It starts from ${f.view.balanceText} in your accounts` +
     (deductions.length ? `, less ${_list(deductions)}.` : ".");
 }
 

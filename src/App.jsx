@@ -7983,7 +7983,7 @@ const BUDGET_CAT_META = {
 
 // The note under one suggested category: what that figure is (Muse review item 7).
 function suggestionRowNote(basis) {
-  return basis && basis.basis === "observed" ? "Your monthly average" : "Typical starting point";
+  return basis && basis.basis === "observed" ? "Your monthly average" : "Starting point";
 }
 
 function generateBudgetSuggestions(data) {
@@ -15575,7 +15575,7 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
                 <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
                 <div style={{ fontFamily: "'Playfair Display',serif", color: C.cream, fontWeight: 900, fontSize: 20, marginBottom: 6 }}>Build Your Budget Plan</div>
                 <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6, maxWidth: 360, margin: "0 auto" }}>
-                  We analyze your income, bills, and spending to suggest how much to allocate to groceries, dining, clothing, and more, then track it in real time.
+                  We start from your income and bills. After 30 days of your own transactions, these rows use your monthly averages.
                 </div>
               </div>
               <div style={{ background: C.cardAlt, borderRadius: 12, padding: "12px 14px", marginBottom: 14, border: `1px solid ${C.border}` }}>

@@ -6,7 +6,7 @@
 //   4. The demo's check-in never calls the AI. It shows a fixed "Sample insight" built only from the
 //      demo's own figures.
 //   5. The bell badge and the notification panel read ONE unread count.
-//   7. Budget suggestions say "Typical starting points" until the household has 30 or more days of its
+//   7. Budget suggestions say "Starting points" until the household has 30 or more days of its
 //      own transactions; from then on they are its observed spending. The demo stays typical.
 //   +  No user-visible string says "Safe to Spend", "safe-to-spend" or "CRA or IRS".
 // -----------------------------------------------------------------------------
@@ -76,6 +76,8 @@ const iso = (d) => new Date(d).toISOString().slice(0, 10);
       const today = new Date();
       const text = DC.demoCheckInInsight(demoCA, today);
       const view = safeToSpendView(SafeSpendEngine.calculate(demoCA, today));
+      t.ok(typeof text === "string" && text.startsWith(`${view.headlineText} is safe to spend until your next deposit on `),
+        `4e0 the insight opens "${view.headlineText} is safe to spend until your next deposit on [date]"`);
       t.ok(typeof text === "string" && text.includes(view.headlineText) && text.includes(view.balanceText),
         `4e the insight states the demo's own safe to spend (${view.headlineText}) and balance (${view.balanceText})`);
       const shown = new Set(view.rows.map(r => r.value).concat([view.headlineText]));
@@ -119,7 +121,7 @@ const iso = (d) => new Date(d).toISOString().slice(0, 10);
     const t29 = house([tx(28, 120, "Groceries"), tx(3, 40, "Coffee & Dining")]);
     const t30 = house([tx(29, 300, "Groceries"), tx(10, 300, "Groceries"), tx(5, 60, "Coffee & Dining"), tx(4, 900, "Rent"), tx(2, -2840, "Income")]);
     t.eq([B.ownHistoryDays(t29, today), B.budgetSuggestionBasis(t29, today).basis, B.budgetSuggestionBasis(t29, today).label],
-      [29, "typical", "Typical starting points"], "7a 29 days of its own transactions: \"Typical starting points\"");
+      [29, "typical", "Starting points"], "7a 29 days of its own transactions: \"Starting points\"");
     t.eq([B.ownHistoryDays(t30, today), B.budgetSuggestionBasis(t30, today).basis], [30, "observed"], "7b 30 days: based on its observed spending");
     t.eq(B.budgetSuggestionBasis(t30, today).label, "Based on your spending over the last 30 days", "7c …and says so");
     t.eq(B.observedMonthlySpend(t30, today), { "Groceries": 610, "Coffee & Dining": 60 },
@@ -128,7 +130,7 @@ const iso = (d) => new Date(d).toISOString().slice(0, 10);
     t.eq(B.budgetSuggestionBasis({ ...t30, demo: true }, today).basis, "typical", "7f the demo is sample data: always typical, whatever its dates");
     if (demoCA && A.generateBudgetSuggestions) {
       const g = A.generateBudgetSuggestions(demoCA);
-      t.eq([g.basis.basis, g.basis.label], ["typical", "Typical starting points"], "7g the demo's budget suggestions are typical starting points");
+      t.eq([g.basis.basis, g.basis.label], ["typical", "Starting points"], "7g the demo's budget suggestions are typical starting points");
       const now = new Date();
       const own = { ...demoCA, demo: false, transactions: [
         { date: iso(now.getTime() - 40 * DAY), amount: 400, cat: "Groceries", name: "Grocer" },
@@ -141,8 +143,10 @@ const iso = (d) => new Date(d).toISOString().slice(0, 10);
       // does not run; the label's wiring is checked here and the demo screens are checked in a browser.
       t.eq((APP.match(/<div data-budget-basis=\{basis\.basis\} [^>]*>\{basis\.label\}<\/div>/g) || []).length, 2,
         "7j both budget editors show the basis label above the suggested rows");
-      t.ok(!APP.includes("Suggested for your household") && /return basis && basis\.basis === "observed" \? "Your monthly average" : "Typical starting point";/.test(APP),
-        "7k each suggested row says \"Typical starting point\" (or \"Your monthly average\"), not \"Suggested for your household\"");
+      t.ok(!APP.includes("Suggested for your household") && /return basis && basis\.basis === "observed" \? "Your monthly average" : "Starting point";/.test(APP),
+        "7k each suggested row says \"Starting point\" (or \"Your monthly average\"), not \"Suggested for your household\"");
+      t.ok(APP.includes("We start from your income and bills. After 30 days of your own transactions, these rows use your monthly averages.") && !APP.includes("We analyze your income"),
+        "7l the budget intro says what the rows start from and when they switch to the household's averages");
     }
   }
 

@@ -4,7 +4,7 @@
 //
 // Until a household has 30 or more days of its OWN transactions, the suggestions are typical
 // starting points for a household of its size and income (generateBudgetSuggestions in App.jsx), and
-// they say so: "Typical starting points". From 30 days on they are its observed spending: each
+// they say so: "Starting points". From 30 days on they are its observed spending: each
 // category's monthly average over the days it has, rounded to $5.
 //
 // The demo is a sample household. Its transactions are sample data, not its own, so the demo always
@@ -19,7 +19,7 @@ import { BILL_CATS, NON_SPEND_CATS } from "./financialCalculations.js";
 
 export const OWN_HISTORY_DAYS = 30;
 export const OBSERVED_WINDOW_MAX_DAYS = 90;
-export const TYPICAL_LABEL = "Typical starting points";
+export const TYPICAL_LABEL = "Starting points";
 const DAY = 86400000;
 const AVG_DAYS_PER_MONTH = 30.44;
 
