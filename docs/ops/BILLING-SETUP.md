@@ -152,9 +152,15 @@ does not arrive by webhook.
 - **`past_due` is not treated as paid.** A failed renewal removes access at once. Whether
   there should be a grace period is a product decision nobody has made; when it is made it
   is one entry in `SUBSCRIPTION_PAID_STATUSES` in `_lib/planRules.js`, with no migration.
-- **Founding eligibility is `profiles.founder_flag` AND an open slot.** P4 caps the cohort at 50
-  (changed from 100 on 2026-09-23). The count lives in `_lib/foundingCohort.js`, which is the only
-  place the number appears in code; `status` and `create_checkout_session` both ask it. A
-  non-founder, or anyone arriving once the cohort is full, gets a 403.
+- **Founding eligibility is a waitlist founding position (Amanda's decision, 2026-10-06).** The
+  founding price goes to the first 50 households on the WAITLIST, not the first 50 checkouts.
+  `_lib/foundingCohort.js` asks Postgres (`waitlist_founding_position_for_email`, migration 0016)
+  for the position held by the account's own confirmed email, ignoring case and whitespace and
+  skipping test rows; only 1 to 50 qualifies. Positions never move: a household that joins and
+  never pays keeps its place, and paying frees nothing. `status` and `create_checkout_session`
+  ask the same question; anyone else, including a beta tester with `profiles.founder_flag`, is
+  offered monthly and annual, and a founding checkout without a position gets a 403. The cohort
+  size, 50, appears once in code, as `FOUNDING_COHORT_LIMIT`. Fails closed: if the lookup fails,
+  the founding price is not offered.
 - **Quebec (P17)** is not enforced in the billing path. Signup-time exclusion is where that
   belongs, and it does not exist yet.

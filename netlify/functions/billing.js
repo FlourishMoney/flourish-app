@@ -18,8 +18,8 @@
 "use strict";
 
 const { getUserFromRequest, getAdminClient, unauthorized } = require("./_lib/auth");
-const { priceIdFor, isValidPlanKey, mayBuyFoundingPrice } = require("./_lib/billingPlans");
-const { FOUNDING_COHORT_LIMIT, foundingSlotsOpen, countFoundingSubscriptions } = require("./_lib/foundingCohort");
+const { priceIdFor, isValidPlanKey } = require("./_lib/billingPlans");
+const { FOUNDING_COHORT_LIMIT, mayBuyFoundingPrice } = require("./_lib/foundingCohort");
 const { stripePost } = require("./_lib/stripeApi");
 const { SUBSCRIPTION_PAID_STATUSES: PAID_STATUSES } = require("./_lib/planRules");
 
@@ -37,6 +37,17 @@ const billingEnabled = () => process.env.BILLING_ENABLED === "true";
 
 const APP_ORIGIN = () => (process.env.APP_ORIGIN || "https://flourishmoney.app").trim();
 const json = (statusCode, headers, body) => ({ statusCode, headers, body: JSON.stringify(body) });
+
+// The account as Supabase Auth holds it: its email and whether that email is confirmed. Never the
+// client's word for either.
+async function authUser(admin, user_id) {
+  try {
+    const { data } = await admin.auth.admin.getUserById(user_id);
+    return data?.user || null;
+  } catch {
+    return null;
+  }
+}
 
 // The Stripe customer for this user, created once and remembered on the subscriptions row.
 async function ensureCustomer(admin, user_id, email) {
@@ -83,17 +94,12 @@ exports.handler = async (event) => {
     // paying, and whether the founding price is available to THEM. No price ids, no amounts (those
     // come from src/lib/pricing.js), and no count of how many slots are gone.
     if (action === "status") {
-      const { data: profile } = await admin
-        .from("profiles").select("founder_flag").eq("user_id", user_id).maybeSingle();
       const { data: row } = await admin
         .from("subscriptions").select("status, provider_customer_id").eq("user_id", user_id).maybeSingle();
 
-      let foundingAvailable = false;
-      if (mayBuyFoundingPrice(profile)) {
-        // Same question the checkout asks. If the two disagreed, the screen would offer a price
-        // the next call refuses.
-        foundingAvailable = foundingSlotsOpen(await countFoundingSubscriptions(admin));
-      }
+      // Same question the checkout asks, of the same account. If the two disagreed, the screen would
+      // offer a price the next call refuses.
+      const foundingAvailable = await mayBuyFoundingPrice(admin, await authUser(admin, user_id));
       return json(200, CORS, {
         enabled: true,
         paid: PAID_STATUSES.includes(row?.status),
@@ -106,15 +112,12 @@ exports.handler = async (event) => {
       const planKey = body.plan_key;
       if (!isValidPlanKey(planKey)) return json(400, CORS, { error: "unknown_plan" });
 
-      const { data: profile } = await admin
-        .from("profiles").select("founder_flag").eq("user_id", user_id).maybeSingle();
+      const user = await authUser(admin, user_id);
 
-      // The cap is enforced HERE, not only in what the screen offers. A client can post this
-      // action directly, and the screen's copy is a promise about the price we can honour.
-      if (planKey === "founding_annual" && !foundingSlotsOpen(await countFoundingSubscriptions(admin))) {
-        return json(403, CORS, { error: "founding_cohort_full" });
-      }
-      if (planKey === "founding_annual" && !mayBuyFoundingPrice(profile)) {
+      // The founding rule is enforced HERE, not only in what the screen offers. A client can post
+      // this action directly; only the plan key is read from it, and the waitlist position is looked
+      // up for the account's own confirmed email.
+      if (planKey === "founding_annual" && !(await mayBuyFoundingPrice(admin, user))) {
         // Refused outright rather than downgraded to the standard price: charging someone
         // $99.99 when they clicked $79.99 is worse than an error they can read.
         return json(403, CORS, { error: "founding_price_not_available" });
@@ -126,8 +129,7 @@ exports.handler = async (event) => {
         return json(500, CORS, { error: priceError });
       }
 
-      const { data: userRes } = await admin.auth.admin.getUserById(user_id);
-      const customerId = await ensureCustomer(admin, user_id, userRes?.user?.email);
+      const customerId = await ensureCustomer(admin, user_id, user?.email);
 
       const session = await stripePost("/checkout/sessions", {
         mode: "subscription",
