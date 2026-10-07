@@ -39,7 +39,8 @@ import { SPACE, LAYOUT, GAP, tap, row, rowControl, rowText, wrapText } from "./l
 import { meetAgendaFor, agendaToText, facilitatorGateState, quietWeekAgendaFor, quietWeekFiguresFor, withWeekAhead, agendaIsEmpty } from "./lib/meetSnapshot.js";
 import { todayKnowItem } from "./lib/todayPriorities.js";
 import { formatMoney, formatNumber, ordinalSuffix, formatBalance, roundBalanceDown, formatCompactMoney } from "./lib/format.js";
-import { payWord, savingsAccountTerm, retirementAccountsLabel } from "./lib/locale.js";
+import { payWord, savingsAccountTerm, retirementAccountsLabel, taxAuthority } from "./lib/locale.js";
+import { budgetSuggestionBasis, observedMonthlySpend } from "./lib/budgetBasis.js";
 import { DEMO_STATUS_LABEL, statusChip, heroFreshness, refreshStamp } from "./lib/demoStatus.js";
 import { analyzeSubscriptions } from "./lib/subscriptions.js";
 import { ForecastEngine } from "./lib/forecastEngine.js";
@@ -67,7 +68,7 @@ import { safeToSpendView } from "./lib/safeToSpendView.js";
 import { suggestedDailyView, paceSentence } from "./lib/suggestedDaily.js";
 import { forecastWalk } from "./lib/forecastWalk.js";
 import { affordabilityCheck } from "./lib/affordability.js";
-import { demoCoachExchanges, demoFacilitatorLine } from "./lib/demoCoach.js";
+import { demoCoachExchanges, demoFacilitatorLine, demoCheckInInsight } from "./lib/demoCoach.js";
 import { DEMO, DEMO_INCOMES, buildDemoIncomes, buildDemoBills, buildDemoTxns,
          demoAccountsFor, demoDebtsFor, demoProfileFor, DEMO_COUNTRIES } from "./lib/demoFixture.js";
 import { captureError } from "./lib/errorReporting.js";
@@ -159,7 +160,9 @@ const CC = {
       // The Ontario Trillium Benefit is NOT a base Canadian tip — it is Ontario-only, and sitting here
       // meant a household in British Columbia was told to apply for it. It is added by the
       // province === "ON" block further down, which was always the intended path.
-      {title:"Disability Tax Credit (DTC)",body:`If you or a dependent has a severe disability, the DTC reduces the federal tax you owe by up to ~$${creditWorth(TAX_DATA.CA.INDEXED_2026.disabilityAmount).toLocaleString()}/year (${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% × the $${TAX_DATA.CA.INDEXED_2026.disabilityAmount.toLocaleString()} disability amount for ${TAX_DATA.CA.INDEXED_2026.taxYear}), plus retroactive claims. Often missed. A doctor fills out T2201.`,savings:`~$${creditWorth(TAX_DATA.CA.INDEXED_2026.disabilityAmount).toLocaleString()} federal tax reduction`,flag:"🇨🇦",priority:"medium",action:"Form T2201"},
+      {title:"Disability Tax Credit (DTC)",body:`If you or a dependent has a severe disability, the DTC reduces the federal tax you owe by up to ~$${creditWorth(TAX_DATA.CA.INDEXED_2026.disabilityAmount).toLocaleString()}/year (${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}% × the $${TAX_DATA.CA.INDEXED_2026.disabilityAmount.toLocaleString()} disability amount for ${TAX_DATA.CA.INDEXED_2026.taxYear}), plus retroactive claims. Often missed. A doctor fills out T2201.`,savings:`~$${creditWorth(TAX_DATA.CA.INDEXED_2026.disabilityAmount).toLocaleString()} federal tax reduction`,flag:"🇨🇦",priority:"medium",action:"Form T2201",
+       // Muse review item 8: where the 14% comes from, from the same TAX_DATA entry the figure uses.
+       source:`${TAX_DATA.CA.FEDERAL_LOWEST_RATE.year} federal rate ${(TAX_DATA.CA.FEDERAL_LOWEST_RATE.value*100).toFixed(0)}%`},
       {title:"Child Care Expense Deduction",body:"Daycare, after-school programs, summer camp. Most childcare costs are deductible, and the deduction is normally claimed by the lower-income spouse. The annual limit per child depends on the child's age and is set by the CRA. Check the current limits on line 21400 before you file.",savings:"Deduction, limit set per child",flag:"🇨🇦",priority:"high",action:"Line 21400"},
       {title:"RESP: Government Grants on Top",body:"In an RESP the government adds the Canada Education Savings Grant on top of contributions, and the Canada Learning Bond for lower-income families even with no contributions. Check the current grant rates on Canada.ca.",savings:"Government grant on top of what you save",flag:"🇨🇦",priority:"high",action:"Details: canada.ca"},
       {title:"Canada Workers Benefit (CWB)",body:`A refundable credit for people who work and earn a low income. You need working income, not just a low income, so earnings are what qualify you. Outside ${TAX_DATA.CA.CWB.variesIn.join(", ")}, the ${TAX_DATA.CA.CWB.taxYear} maximum is $${TAX_DATA.CA.CWB.maxSingle.toLocaleString()} single or $${TAX_DATA.CA.CWB.maxFamily.toLocaleString()} for a family, paid in full under $${TAX_DATA.CA.CWB.reduceOverSingle.toLocaleString()} single / $${TAX_DATA.CA.CWB.reduceOverFamily.toLocaleString()} family and nothing above $${TAX_DATA.CA.CWB.nilOverSingle.toLocaleString()} / $${TAX_DATA.CA.CWB.nilOverFamily.toLocaleString()}. ${TAX_DATA.CA.CWB.variesIn.join(", ")} set their own amounts and cut-offs. Check the CRA page for yours. Many low-income workers miss this entirely.`,savings:`Up to $${TAX_DATA.CA.CWB.maxSingle.toLocaleString()} single / $${TAX_DATA.CA.CWB.maxFamily.toLocaleString()} family outside ${TAX_DATA.CA.CWB.variesIn.join(", ")}`,flag:"🇨🇦",priority:"medium",action:"Details: canada.ca"},
@@ -1732,7 +1735,7 @@ function DailySpendSheet({ data, setAppData, onClose }) {
   const a = _parseAmt(v);
   const write = (val) => { setAppData(prev => ({ ...prev, forecastEdits: setDailySpend(prev.forecastEdits, val) })); onClose(); };
   return (
-    <Sheet title="Est. daily spend" subtitle="Your everyday spending. Flourish uses it for every day of the forecast and in safe-to-spend." onClose={onClose}>
+    <Sheet title="Est. daily spend" subtitle="Your everyday spending. Flourish uses it for every day of the forecast and in safe to spend." onClose={onClose}>
       <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", display: "flex", justifyContent: "space-between", gap: 10, fontSize:13 }}>
         <span style={{ color: C.muted }}>Flourish's estimate</span>
         <span style={{ color: C.mutedHi, fontWeight: 700 }}>{formatMoney(est)}/day</span>
@@ -2337,7 +2340,7 @@ Rules: do not invent or quote any number not in the calculated results above. St
       // Network/parse failure: use neutral fallback prose. The numbers are
       // still correct because they came from JS, not Claude.
       prose = {
-        cashDetail:    "This purchase will reduce your safe-to-spend balance.",
+        cashDetail:    "This purchase will reduce your safe to spend balance.",
         debtDetail:    "No direct debt change.",
       };
     }
@@ -2353,7 +2356,7 @@ Rules: do not invent or quote any number not in the calculated results above. St
       title:            "The result",
       summary:          `Spending ${formatMoney(impact.amount)} takes safe to spend until payday from ${formatMoney(safeToSpend)} to ${formatMoney(impact.newSafeToSpend)}.`,
       // Claude-written explanations:
-      cashDetail:    prose.cashDetail    || "This purchase will reduce your safe-to-spend balance.",
+      cashDetail:    prose.cashDetail    || "This purchase will reduce your safe to spend balance.",
       debtDetail:    prose.debtDetail    || "No direct debt change.",
     });
     setLoading(false);
@@ -2438,7 +2441,7 @@ Rules: do not invent or quote any number not in the calculated results above. St
           <div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeUp 0.3s ease both"}}>
             {/* Tier 2.9: persistent AI disclosure (Apple 5.1.2(i)) — top of result, before AI prose */}
             <div style={{color:C.muted,fontSize:13,fontStyle:"italic",lineHeight:1.5,textAlign:"center",padding:"0 4px"}}>
-              Educational guidance only. Not financial, tax, or investment advice. Verify with a professional or official sources (CRA/IRS) before making decisions. AI can make mistakes.
+              Educational guidance only. Not financial, tax, or investment advice. Verify with a professional or official sources ({taxAuthority(data?.profile?.country)}) before making decisions. AI can make mistakes.
             </div>
             {/* Verdict */}
             <div style={{background:verdictBg,border:`2px solid ${verdictColor}33`,borderRadius:20,padding:"18px 20px",textAlign:"center"}}>
@@ -3428,6 +3431,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
   const [win, setWin] = useState("");
   const [insight, setInsight] = useState(null);
   const [insightError, setInsightError] = useState(null); // the tip failed; the check-in itself did not
+  const [insightIsSample, setInsightIsSample] = useState(false); // the demo's fixed insight, never the AI's
   const [loading, setLoading] = useState(false);
 
   const moods = [
@@ -3442,6 +3446,16 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
   const winOpts = ["Skipped a purchase","Paid a bill early","Saved something","Stuck to budget","Paid extra on debt","Nothing yet"];
 
   const fetchInsight = async () => {
+    // Muse review item 4: the demo NEVER calls the AI. It shows a fixed insight, labelled "Sample
+    // insight", built only from the demo's own figures (lib/demoCoach.js demoCheckInInsight).
+    if (data.demo) {
+      const sample = demoCheckInInsight(data);
+      setInsightError(null);
+      if (sample) { setInsight(sample); setInsightIsSample(true); }
+      else setInsightError("There's no sample insight for these numbers. Tap Done to record your check-in.");
+      setStep(4);
+      return;
+    }
     setLoading(true);
     const txns = (data.transactions || []).slice(0, 15).map(t=>`${sanitizeField(t.name||t.merchant||"Purchase",80)} $${Math.abs(parseFloat(t.amount)||0)}`).join(", ");
     const {score,partial:healthPartial} = calcHealthScore(data, getCatOv());
@@ -3551,7 +3565,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
       <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900,color:C.green,lineHeight:1.2}}>Check-In Complete!</div>
       {insight ? (
         <div style={{background:C.greenDim,border:`1.5px solid ${C.green}33`,borderRadius:20,padding:"18px 20px",textAlign:"left"}}>
-          <div style={{color:C.green,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>Your AI Coach Says</div>
+          <div style={{color:C.green,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:8}}>{insightIsSample ? "Sample insight" : "Your AI Coach Says"}</div>
           <div style={{color:C.cream,fontSize:14,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{insight}</div>
         </div>
       ) : (
@@ -3601,7 +3615,7 @@ function WeeklyCheckInModal({data, onClose, onComplete}) {
 // ─── DASHBOARD TILE REGISTRY ──────────────────────────────────────────────────
 const DASH_TILES = [
   // Core sections — always on dashboard, user can hide or reorder
-  { id: 'hero',        label: 'Safe-to-Spend',       lucide:'dollar-sign',  alwaysVisible: true },
+  { id: 'hero',        label: 'Safe to spend',       lucide:'dollar-sign',  alwaysVisible: true },
   { id: 'bento',       label: 'Stats Row',            lucide:'bar-chart-2'  },
   { id: 'healthrow',   label: 'Health & Streak',      lucide:'heart'        },
   { id: 'action',      label: 'Action Alert',         lucide:'zap'          },
@@ -4615,8 +4629,17 @@ const INIT_NOTIFS=[
   {id:1,icon:"sparkles",title:"Welcome to Flourish 🌱",body:"Your financial dashboard is ready. Connect your bank for live insights.",read:false,time:"Just now",type:"autopilot",color:NOTIF_COLORS.autopilot},
 ];
 
-// demo-clarity: the welcome notice is not counted on the badge in the demo (it is still in the list).
-function badgeInitNotifs(data) { return data && data.demo ? INIT_NOTIFS.filter(n => n.id !== 1) : INIT_NOTIFS; }
+// ONE LIST, ONE UNREAD COUNT (Muse review item 5). The bell badge on Today, the badge in the app shell
+// and the panel's "N unread" all read notifListFor/unreadNotifCount, so they can never disagree. A
+// notification is read when its id is in readIds (flourish_read_notifs). demo-clarity: in the demo the
+// welcome notice is in the list but already read, so it is not counted anywhere.
+function notifListFor(data, readIds = new Set()) {
+  const base = data ? [...buildLiveNotifs(data), ...INIT_NOTIFS] : INIT_NOTIFS;
+  return base.map(n => ({ ...n, read: readIds.has(n.id) || (!!(data && data.demo) && n.id === 1) }));
+}
+function unreadNotifCount(data, readIds = new Set()) {
+  return notifListFor(data, readIds).filter(n => !n.read).length;
+}
 
 // Generate real notifications from user's actual bills and data
 function buildLiveNotifs(data) {
@@ -4668,11 +4691,10 @@ function buildLiveNotifs(data) {
 function Notifications({onClose, data, onMarkAllRead}){
   // useState with inline lazy initialiser — avoids TDZ from named function before hook
   const [readIds, setReadIds] = useState(()=>{ try { return new Set(safeLoadLS("flourish_read_notifs", [])); } catch { return new Set(); } });
-  const liveNotifs = data ? [...buildLiveNotifs(data), ...INIT_NOTIFS] : INIT_NOTIFS;
-  const notifs = liveNotifs.map(n=>({...n, read: readIds.has(n.id)}));
-  const unread = notifs.filter(n=>!n.read).length;
+  const notifs = notifListFor(data, readIds);
+  const unread = unreadNotifCount(data, readIds);   // the same count the bell badge shows
   const markAll = () => {
-    const ids = new Set(liveNotifs.map(n=>n.id));
+    const ids = new Set(notifs.map(n=>n.id));
     setReadIds(ids);
     try { localStorage.setItem("flourish_read_notifs", JSON.stringify([...ids])); } catch {}
     if(onMarkAllRead) onMarkAllRead();
@@ -5159,7 +5181,7 @@ function DataTransparencyPanel({data, onClose}) {
               ))}
               <div style={{marginTop:8,background:C.gold+"11",border:`1px solid ${C.gold}33`,borderRadius:12,padding:"10px 12px"}}>
                 <div style={{...s,fontSize:13,color:C.goldBright,lineHeight:1.65}}>
-                  💡 Your credit card balance is money you owe, not money you have. Flourish tracks it as debt so your Safe-to-Spend only shows cash you can actually spend.
+                  💡 Your credit card balance is money you owe, not money you have. Flourish tracks it as debt so your safe to spend only shows cash you can actually spend.
                 </div>
               </div>
             </>}
@@ -5430,7 +5452,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
   const getUnreadCount = () => {
     try {
       const readIds = new Set(safeLoadLS("flourish_read_notifs", []));
-      return [...badgeInitNotifs(data), ...(data ? buildLiveNotifs(data) : [])].filter(n=>!readIds.has(n.id)).length;
+      return unreadNotifCount(data, readIds);   // the same count the panel shows
     } catch { return 0; }
   };
   const unread = getUnreadCount();
@@ -5522,7 +5544,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             /* Sprint Q item 3: no income → prompt to set it up, not a misleading safe-to-spend */
             <div style={{marginBottom:18,maxWidth:320}}>
               <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:heroColorBright,fontSize:19,fontWeight:800,lineHeight:1.3}}>Add your income to see what's safe to spend</div>
-              <div style={{color:C.mutedHi,fontSize:13,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Safe-to-spend plans around your bills using your income →</div>
+              <div style={{color:C.mutedHi,fontSize:13,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Safe to spend plans around your bills using your income →</div>
             </div>
             ) : (
             <button onClick={e=>{e.stopPropagation();setExplain("safeToSpend");}} data-tour="today" aria-label="How Flourish got this number"
@@ -5543,7 +5565,7 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
             )) : (
             /* Sprint 1: no fake number when no cash account is connected */
             <div style={{marginBottom:18,maxWidth:320}}>
-              <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:heroColorBright,fontSize:19,fontWeight:800,lineHeight:1.3}}>Connect an account to see your safe-to-spend</div>
+              <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",color:heroColorBright,fontSize:19,fontWeight:800,lineHeight:1.3}}>Connect an account to see your safe to spend</div>
               <div style={{color:C.mutedHi,fontSize:13,fontWeight:600,marginTop:6,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Add a bank or enter your balances to get started →</div>
               {onTryDemo && !data.demo && (
                 /* Sprint Z #15: explore the full app with sample data — no bank login (App reviewers). */
@@ -5944,6 +5966,8 @@ function Dashboard({data,setAppData,setScreen,setShowNotifs,onUpgrade,checkInBon
               </>}
               <div style={{color:C.muted,fontSize:13,fontWeight:700,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Today's pace</div>
               <div style={{color:C.cream,fontSize:13.5,lineHeight:1.55,margin:"3px 0 4px"}}>{doIt}</div>
+              {/* Muse review item 6: why the pace can look low just before a deposit. Only under a pace. */}
+              {safe>0&&<div data-pace-floor="" style={{color:C.mutedHi,fontSize:13,lineHeight:1.5,marginBottom:SPACE.xs}}>The pace always uses at least 14 days, even when a deposit is closer.</div>}
               {/* The row this rule was written for. It said space-between with flex:1 on the button:
                   the button grew until there was no space left to put between anything, and the
                   sentence ended flush against it. row() wraps instead, and the button no longer
@@ -6933,17 +6957,20 @@ const TERMS = {
 // balances, transactions and tax amounts are shown as they come, with their source).
 const WHAT_MAKES_DIFFERENT = "Flourish shows what's safe to spend before payday, not just what you spent. Safe to spend shows its math, line by line. A weekly 15-minute money meeting is built from your own week. Bank connections are read-only, and it works without one.";
 
-const FAQ = [
+// The tax authority is the household's (Muse review item 1): the CRA in Canada, the IRS in the US, never
+// both. /support is public, so with no household it reads for Canada, where Flourish launches.
+function faqFor(country = "CA") { return [
   { q: "What is safe to spend?", a: "What's left until your next payday after bills due before payday, minimum debt payments, a spending buffer and a savings amount are accounted for. Tap the number to see the math." },
   { q: "Is my bank login safe?", a: "Bank connections go through Plaid and are read-only. Flourish never sees or stores your bank password and cannot move money." },
   { q: "My bank won't connect.", a: "Import a PDF or CSV statement, or enter your numbers by hand. Everything works without a bank connection." },
-  { q: "Where do the numbers come from?", a: "Flourish calculates your figures from your accounts, bills and paydays. Tax and benefit amounts come from the CRA or IRS, with the year, and What-If shows any rate it assumes. The coach explains the numbers and never makes one up." },
+  { q: "Where do the numbers come from?", a: `Flourish calculates your figures from your accounts, bills and paydays. Tax and benefit amounts come from the ${taxAuthority(country)}, with the year, and What-If shows any rate it assumes. The coach explains the numbers and never makes one up.` },
   { q: "What is the money meeting?", a: TERMS["Money meeting"] },
   { q: "Can I turn the AI coach off?", a: "Yes, in Settings. With it off, nothing is sent to AI, and every number, forecast and what-if still works." },
   { q: "Is this financial advice?", a: "No. Flourish explains your numbers and your options. It isn't a licensed adviser, and the decisions are yours." },
   { q: "How do I delete my account?", a: "Settings, then Delete Account. You can also use flourishmoney.app/delete-account.", link: { href: "/delete-account", text: "flourishmoney.app/delete-account" } },
   { q: "How do I contact you?", a: `Email ${SUPPORT_EMAIL}.`, link: { href: `mailto:${SUPPORT_EMAIL}`, text: SUPPORT_EMAIL } },
-];
+]; }
+const FAQ = faqFor("CA");
 
 // The ONE ⓘ. Only beside a term a new reader cannot guess from the words themselves — never beside
 // an obvious label, where it is just noise that has to be read and dismissed.
@@ -7954,6 +7981,11 @@ const BUDGET_CAT_META = {
   "Education":         { emoji:"📚", colorKey:"blue",   why:"Courses, books, tuition" },
 };
 
+// The note under one suggested category: what that figure is (Muse review item 7).
+function suggestionRowNote(basis) {
+  return basis && basis.basis === "observed" ? "Your monthly average" : "Typical starting point";
+}
+
 function generateBudgetSuggestions(data) {
   const profile   = data.profile || {};
   const isCA      = (profile.country||"CA") === "CA";
@@ -8020,6 +8052,19 @@ function generateBudgetSuggestions(data) {
   suggestions["Subscriptions"]   = r(hSize<=2?45:65);
   if(numKids>0) suggestions["Kids & Extracurricular"] = r(numKids*(isCA?165:180));
 
+  // Muse review item 7: the figures above are TYPICAL STARTING POINTS. Once the household has 30 or
+  // more days of its own transactions, the suggestions are its observed spending instead (each
+  // category's monthly average, lib/budgetBasis.js). The demo is sample data, so it stays typical.
+  const _catOv = getCatOv();
+  const basis = budgetSuggestionBasis(data, new Date(), t => effCat(t, _catOv));
+  if (basis.basis === "observed") {
+    const observed = observedMonthlySpend(data, new Date(), t => effCat(t, _catOv));
+    if (Object.keys(observed).length) {
+      Object.keys(suggestions).forEach(k => { delete suggestions[k]; });
+      Object.assign(suggestions, observed);
+    }
+  }
+
   const totalSugg  = Object.values(suggestions).reduce((s,v)=>s+v,0);
   const canAfford  = totalSugg <= discret;
   const shortfall  = Math.max(0, totalSugg - discret);
@@ -8057,7 +8102,7 @@ function generateBudgetSuggestions(data) {
   return {
     suggestions, netMo, grossMo, fixedMo, billsMo, debtsMo,
     savingsMo, savingsRate, goalsMo, discret, wantsPool,
-    hSize, numKids, hasPartner, totalSugg, canAfford, shortfall, cutSuggestions
+    hSize, numKids, hasPartner, totalSugg, canAfford, shortfall, cutSuggestions, basis
   };
 }
 
@@ -8072,7 +8117,7 @@ function BudgetPlanCard({data, setAppData}) {
   const [customCat, setCustomCat] = useState("");
   const [showAddCat, setShowAddCat] = useState(false);
 
-  const { suggestions, netMo, discret, savingsMo, savingsRate, numKids, totalSugg } = useMemo(()=>generateBudgetSuggestions(data),[data]);
+  const { suggestions, netMo, discret, savingsMo, savingsRate, numKids, totalSugg, basis } = useMemo(()=>generateBudgetSuggestions(data),[data]);
 
   // Open panel: seed edit values from saved budgets or suggestions
   const handleOpen = () => {
@@ -8235,13 +8280,16 @@ function BudgetPlanCard({data, setAppData}) {
         </div>
       </div>
 
-      {/* Category rows */}
+      {/* Category rows. Muse review item 7: the suggestions say what they are based on. */}
+      {Object.keys(suggestions).length>0&&<div data-budget-basis={basis.basis} style={{color:C.mutedHi,fontSize:13,fontWeight:700,marginBottom:SPACE.sm}}>{basis.label}</div>}
       <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:10}}>
         {Object.entries(editVals).map(([cat,val])=>{
           const cc = catColors[cat]||C.muted;
           const emoji = catEmoji[cat]||"📌";
-          const meta = BUDGET_CAT_META[cat];
+          // A suggested row's note says what the figure is; a category's own "why" (some claim history,
+          // "Based on your dining history") stays only on rows that are not suggestions.
           const isSuggested = !!suggestions[cat];
+          const meta = isSuggested ? { why: suggestionRowNote(basis) } : BUDGET_CAT_META[cat];
           return (
             <div key={cat} style={{display:"flex",alignItems:"center",gap:8,
               padding:"8px 10px",background:C.cardAlt,borderRadius:10,border:`1px solid ${C.border}`}}>
@@ -9440,6 +9488,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
                 <div style={{flex:1,paddingRight:12}}>
                   <div style={{color:C.cream,fontWeight:800,fontSize:15,fontFamily:"'Playfair Display',serif",lineHeight:1.3,marginBottom:6}}>{tip.title}</div>
                   <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.7,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{tip.body}</div>
+                  {tip.source&&<div data-tip-source="" style={{color:C.muted,fontSize:13,lineHeight:1.5,marginTop:SPACE.sm,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{tip.source}</div>}
                 </div>
                 <div style={{background:C.gold+"18",borderRadius:12,padding:"8px 10px",textAlign:"center",flexShrink:0,minWidth:56}}>
                   <div style={{fontSize:18}}>{tip.flag}</div>
@@ -9472,6 +9521,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
                 <div style={{flex:1,paddingRight:10}}>
                   <div style={{color:C.cream,fontWeight:700,fontSize:14,fontFamily:"'Playfair Display',serif",lineHeight:1.3,marginBottom:5}}>{tip.title}</div>
                   <div style={{color:C.mutedHi,fontSize:13,lineHeight:1.65,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{tip.body}</div>
+                  {tip.source&&<div data-tip-source="" style={{color:C.muted,fontSize:13,lineHeight:1.5,marginTop:SPACE.sm,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{tip.source}</div>}
                 </div>
                 <div style={{fontSize:18,flexShrink:0,marginLeft:8}}>{tip.flag}</div>
               </div>
@@ -9511,7 +9561,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
         <div style={{background:C.green+"10",border:`1px solid ${C.green}28`,borderRadius:16,padding:"14px 18px",textAlign:"center",marginTop:4}}>
           <div style={{fontSize:20,marginBottom:6}}>🌱</div>
           <div style={{color:C.greenBright,fontWeight:700,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4}}>Not sure what applies to you?</div>
-          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>The coach can explain how each of these relates to your situation. Eligibility is decided by the CRA or IRS.</div>
+          <div style={{color:C.muted,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>The coach can explain how each of these relates to your situation. Eligibility is decided by the {taxAuthority(data.profile?.country)}.</div>
         </div>
 
       </div>;
@@ -9529,7 +9579,7 @@ function Goals({data,initialTab="sim",onUpgrade,setScreen,setAppData, onEditBudg
       return <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={{background:C.blueDim,border:`1px solid ${C.blue}33`,borderRadius:16,padding:"14px 16px"}}>
           <div style={{color:C.blueBright,fontWeight:700,fontSize:13,marginBottom:4}}>{cfg.flag} Registered & Tax-Advantaged Accounts</div>
-          <div style={{color:C.muted,fontSize:13,lineHeight:1.6}}>Accounts with tax rules of their own. Limits are from the CRA or IRS, with the year.</div>
+          <div style={{color:C.muted,fontSize:13,lineHeight:1.6}}>Accounts with tax rules of their own. Limits are from the {taxAuthority(data.profile?.country)}, with the year.</div>
         </div>
 
         {/* ── My Balances & Contributions ─────────────────────── */}
@@ -11019,7 +11069,7 @@ function WidgetScreen({data,onBack}){
           <div style={{width:8,height:8,borderRadius:"50%",background:heroColorBright,boxShadow:`0 0 8px ${heroColor}`}}/>
         </div>
         <div>
-          <div style={{color:heroColorBright+"88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:3}}>Safe to Spend</div>
+          <div style={{color:heroColorBright+"88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:3}}>Safe to spend</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:32,color:heroColorBright,letterSpacing:-1,lineHeight:1}}>{formatMoney(ssView.headline)}</div>
           <div style={{color:"rgba(237,233,226,0.55)",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>{today}</div>
         </div>
@@ -11074,7 +11124,7 @@ function WidgetScreen({data,onBack}){
         </div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
           <div>
-            <div style={{color:heroColorBright+"88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:3}}>Safe to Spend</div>
+            <div style={{color:heroColorBright+"88",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:3}}>Safe to spend</div>
             <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:38,color:heroColorBright,letterSpacing:-1,lineHeight:1}}>{formatMoney(ssView.headline)}</div>
           </div>
           {medTiles.length>0&&<div style={{textAlign:"right"}}>
@@ -11103,7 +11153,7 @@ function WidgetScreen({data,onBack}){
           </div>
         </div>
         <div style={{background:`rgba(${overdraft?"255,79,106":"0,204,133"},0.08)`,borderRadius:16,padding:"14px 16px",border:`1px solid ${heroColor}28`}}>
-          <div style={{color:heroColorBright+"77",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:4}}>Safe to Spend Today</div>
+          <div style={{color:heroColorBright+"77",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,marginBottom:4}}>Safe to spend today</div>
           <div style={{fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:46,color:heroColorBright,letterSpacing:-2,lineHeight:1}}>{formatMoney(ssView.headline)}</div>
           {wContent.balance&&<div style={{color:"rgba(237,233,226,0.45)",fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginTop:4}}>Balance: {ssView.balanceText}</div>}
         </div>
@@ -12307,7 +12357,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
       const saved = safeLoadLS("flourish_coach_history", null);
       if (Array.isArray(saved) && saved.length > 0) return saved.slice(-40);
     } catch {}
-    return [{role:"assistant", content:"I'm your Flourish coach. I work from the numbers Flourish has calculated: your safe-to-spend, forecast, spending patterns, debts and goals. I explain what they mean and lay out your options with their trade-offs; the decisions are yours. I don't move money and I'm not a licensed adviser. Where do you want to start?"}];
+    return [{role:"assistant", content:"I'm your Flourish coach. I work from the numbers Flourish has calculated: your safe to spend, forecast, spending patterns, debts and goals. I explain what they mean and lay out your options with their trade-offs; the decisions are yours. I don't move money and I'm not a licensed adviser. Where do you want to start?"}];
   });
   const [sessionDate] = useState(()=>new Date().toLocaleDateString("en-CA",{month:"short",day:"numeric"}));
   const [input, setInput] = useState("");
@@ -12323,7 +12373,7 @@ function AICoach({data, isOnline, isPremium=false, coachMsgCount=0, onSend=()=>{
   // A refused coach message (a limit, a consent refusal, a failure) rules out a review ask for a while.
   useEffect(()=>{ if(limitNote||error) noteReviewTrouble(); },[limitNote,error]);
   const STORAGE_KEY = "flourish_coach_history";
-  const WELCOME = {role:"assistant", content:"I'm your Flourish coach. I work from the numbers Flourish has calculated: your safe-to-spend, forecast, spending patterns, debts and goals. I explain what they mean and lay out your options with their trade-offs; the decisions are yours. I don't move money and I'm not a licensed adviser. Where do you want to start?"};
+  const WELCOME = {role:"assistant", content:"I'm your Flourish coach. I work from the numbers Flourish has calculated: your safe to spend, forecast, spending patterns, debts and goals. I explain what they mean and lay out your options with their trade-offs; the decisions are yours. I don't move money and I'm not a licensed adviser. Where do you want to start?"};
   const freeMsgsLeft=isPremium?Infinity:Math.max(0,FREE_LIMIT-coachMsgCount);
 
   // Persist messages to localStorage whenever they change
@@ -12458,7 +12508,7 @@ CRITICAL: Balances are live. NEVER tell user to check their bank app. Flourish I
 
 AFFORDABILITY RULE (Phase 1C):
 - "Can I afford X?" / "Buy a $X Y" / "Should I buy X?" questions are AFFORDABILITY questions, not savings-goal questions.
-- State the purchase amount against "Safe-to-spend RIGHT NOW" above, and what would be left after it, quoting "Safe to spend after it" from the snapshot. If that line is not in the snapshot, do not work it out; offer a What-If.
+- State the purchase amount against "Safe to spend RIGHT NOW" above, and what would be left after it, quoting "Safe to spend after it" from the snapshot. If that line is not in the snapshot, do not work it out; offer a What-If.
 - Give no verdict: do not call the purchase affordable or unaffordable, and do not recommend buying or not buying. Ask what the user wants to do.
 - Do NOT default to "let's set this up as a savings goal" unless the user explicitly asks to save toward something.
 
@@ -12684,7 +12734,7 @@ STRICT NUMBER POLICY (non-negotiable trust rule):
       {/* Tier 2.9: persistent AI disclosure (Apple 5.1.2(i)) — inline, non-dismissible */}
       <div style={{padding:"8px 20px",borderBottom:`1px solid ${C.border}`,background:C.cardAlt,flexShrink:0}}>
         <div style={{color:C.muted,fontSize:13,fontStyle:"italic",lineHeight:1.5,textAlign:"center"}}>
-          Educational guidance only. Not financial, tax, or investment advice. Verify with a professional or official sources (CRA/IRS) before making decisions. AI can make mistakes.
+          Educational guidance only. Not financial, tax, or investment advice. Verify with a professional or official sources ({taxAuthority(data?.profile?.country)}) before making decisions. AI can make mistakes.
         </div>
       </div>
 
@@ -12914,7 +12964,7 @@ function PrivacyPolicy({onBack}){
 
       <div style={h2}>5. Data Storage & Security</div>
       <div style={p}>Your data is stored on your device (locally via localStorage) and, if you create an account, in our secure cloud database provided by Supabase (hosted in data centres compliant with SOC 2 Type II). Data transmitted between your device and our servers is encrypted using TLS 1.2+. AI coaching queries are processed by Anthropic's API and are subject to Anthropic's data-handling policies, no conversation history is stored server-side by Flourish.</div>
-      <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Important:</strong> financial calculations (balances, safe-to-spend, debt payoff projections, investment growth) are computed in JavaScript on your device. Anthropic only generates plain-language explanations of numbers we calculate ourselves. Anthropic does not train AI models on data sent through their API. You can turn the AI coach off in Settings. When it is off, no financial data is sent to Anthropic.</div>
+      <div style={{...p,marginTop:10}}><strong style={{color:C.cream}}>Important:</strong> financial calculations (balances, safe to spend, debt payoff projections, investment growth) are computed in JavaScript on your device. Anthropic only generates plain-language explanations of numbers we calculate ourselves. Anthropic does not train AI models on data sent through their API. You can turn the AI coach off in Settings. When it is off, no financial data is sent to Anthropic.</div>
 
       <div style={h2}>6. Data Sharing</div>
       <div style={p}>We share data with the following service providers solely to operate the App:</div>
@@ -12970,7 +13020,7 @@ function ConfirmedPage(){
 
 // /support: the page App Store Connect's support URL points at. Same shell and type as /privacy
 // and /delete-account. Contact details live in src/lib/supportContact.js.
-function SupportPage({onBack}){
+function SupportPage({onBack, country = "CA"}){
   const s={fontFamily:"'Plus Jakarta Sans',sans-serif"};
   const h2={...s,fontSize:16,fontWeight:800,color:C.cream,marginTop:SPACE.xl,marginBottom:SPACE.sm};
   const p={...s,fontSize:13,color:C.mutedHi,lineHeight:1.75};
@@ -12993,7 +13043,7 @@ function SupportPage({onBack}){
 
       <h2 style={h2}>Questions and answers</h2>
       <div>
-        {FAQ.map((f,i)=>(
+        {faqFor(country).map((f,i)=>(
           <details key={i} style={{borderTop:`1px solid ${C.border}`,padding:`${SPACE.sm}px 0`}}>
             <summary style={{...s,color:C.cream,fontSize:14,fontWeight:700,cursor:"pointer",minHeight:LAYOUT.minTap,display:"flex",alignItems:"center"}}>{f.q}</summary>
             <div style={{...p,marginTop:SPACE.xs}}>
@@ -13442,7 +13492,7 @@ function FirstVisitScreen({data, onDismiss}) {
           {hasCashAccount && noIncome ? (
             <div style={{marginTop:8}}>
               <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:900,color:C.greenBright,marginBottom:8,lineHeight:1.2}}>Add your income to see what's safe to spend</div>
-              <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",maxWidth:300,margin:"0 auto"}}>Safe-to-spend plans around your bills using your income.</div>
+              <div style={{color:C.mutedHi,fontSize:14,lineHeight:1.6,fontFamily:"'Plus Jakarta Sans',sans-serif",maxWidth:300,margin:"0 auto"}}>Safe to spend plans around your bills using your income.</div>
             </div>
           ) : hasCashAccount ? (<>
             <div style={{color:ssView.isShort?C.cream:C.greenBright,fontSize:13,fontFamily:"'Plus Jakarta Sans',sans-serif",marginBottom:4,fontWeight:700,letterSpacing:0.3,maxWidth:300,marginLeft:"auto",marginRight:"auto",lineHeight:1.5}}>
@@ -13483,7 +13533,7 @@ function FirstVisitScreen({data, onDismiss}) {
             ? null
             : incomeAmt > 0
               ? "Bills due before payday, minimum debt payments, a spending buffer and a savings amount are accounted for."
-              : "Add your income in Settings to see your personalised safe-to-spend number."}
+              : "Add your income in Settings to see your personalised safe to spend number."}
         </div>
 
         {/* Breakdown — progressive disclosure. Never when needsSetup: there are no rows and no
@@ -15186,7 +15236,7 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
   const {
     suggestions, netMo, fixedMo, discret, savingsMo, savingsRate,
     grossMo, goalsMo, canAfford, shortfall, cutSuggestions,
-    hSize, numKids, totalSugg
+    hSize, numKids, totalSugg, basis
   } = generateBudgetSuggestions(data);
   // The goals goalsMo adds up, filtered exactly as generateBudgetSuggestions filters them, so the
   // goal savings reminder counts and lists what that amount is made of.
@@ -15392,6 +15442,7 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
               </div>
             </div>
 
+            {Object.keys(suggestions).length>0&&<div data-budget-basis={basis.basis} style={{color:C.mutedHi,fontSize:13,fontWeight:700,marginBottom:SPACE.sm}}>{basis.label}</div>}
             <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
               {Object.entries(editVals).map(([cat,val])=>{
                 const color = catColor[cat]||C.muted;
@@ -15402,7 +15453,7 @@ function BudgetScreen({data, setAppData, setScreen, startInEdit=false, onEditSta
                     <span style={{fontSize:15,flexShrink:0}}>{emoji}</span>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{color:C.cream,fontSize:13,fontWeight:600}}>{cat}</div>
-                      {isSugg&&<div style={{color:C.muted,fontSize:13,marginTop:1}}>Suggested for your household</div>}
+                      {isSugg&&<div style={{color:C.muted,fontSize:13,marginTop:1}}>{suggestionRowNote(basis)}</div>}
                     </div>
                     <div style={{display:"flex",alignItems:"center",background:C.card,border:`1px solid ${color}55`,borderRadius:8,overflow:"hidden",flexShrink:0}}>
                       <span style={{color:C.muted,padding:"0 4px 0 8px",fontSize:13}}>$</span>
@@ -16982,7 +17033,7 @@ export default function FlourishApp(){
   if(screen==="privacy")return <div style={legalShell}><PrivacyPolicy onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="terms")return <div style={legalShell}><TermsOfService onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
   if(screen==="delete-account")return <div style={legalShell}><DeleteAccount onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
-  if(screen==="support")return <div style={legalShell}><SupportPage onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}}/></div>;
+  if(screen==="support")return <div style={legalShell}><SupportPage onBack={()=>{window.history.replaceState(null,"","/");setScreen("home");}} country={appData?.profile?.country||"CA"}/></div>;
   if(screen==="confirmed")return <ConfirmedPage/>;
 
   // ── Auth gate ───────────────────────────────────────────────────
@@ -17042,8 +17093,7 @@ export default function FlourishApp(){
   const unread = (() => {
     try {
       const readIds = new Set(safeLoadLS("flourish_read_notifs", []));
-      const all = [...badgeInitNotifs(appData), ...(appData ? buildLiveNotifs(appData) : [])];
-      return all.filter(n=>!readIds.has(n.id)).length;
+      return unreadNotifCount(appData, readIds);   // the same count the panel shows
     } catch { return 0; }
   })();
   const dataWithHousehold={...appData,household,isPremium};

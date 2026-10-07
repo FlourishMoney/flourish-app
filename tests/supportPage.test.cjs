@@ -35,7 +35,7 @@ const launchScreen = (url) => { const u = new URL(url); return new Function("win
   t.ok(routeAt > 0 && gateAt > routeAt, "1e …before the auth gate, so it needs no account");
 
   // ── 2. What the page says ─────────────────────────────────────────────────────────────────────
-  const page = APP.slice(APP.indexOf("function SupportPage({onBack}){"), APP.indexOf("function DeleteAccount({onBack}){"));
+  const page = APP.slice(APP.indexOf("function SupportPage({onBack, country = \"CA\"}){"), APP.indexOf("function DeleteAccount({onBack}){"));
   t.ok(page.length > 200, "2a SupportPage exists");
   t.eq(C.SUPPORT_EMAIL, "hello@flourishmoney.app", "2b the support email is hello@flourishmoney.app");
   t.ok(/href=\{`mailto:\$\{SUPPORT_EMAIL\}`\}/.test(page) && /\{SUPPORT_EMAIL\}<\/a>/.test(page), "2c …as a mailto link showing the address");

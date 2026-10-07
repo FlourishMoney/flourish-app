@@ -53,6 +53,23 @@ function facts(data, today) {
   return { ss, view, pace, nd, days, debt, decision };
 }
 
+// The demo's weekly check-in insight (Muse review item 4). The demo never calls the AI, so instead of
+// "the coach didn't answer" the check-in shows this, labelled "Sample insight". It explains one pattern
+// in this week's numbers, built ONLY from the figures the demo's Today card shows (the same rows, the
+// same next deposit): no invented number, no instruction, no promise.
+export function demoCheckInInsight(data, today = new Date()) {
+  const f = facts(data, today);
+  if (f.view.headline == null) return null;
+  const PHRASE = { upcomingBills: (v) => `${v} in upcoming bills`, debtPayments: (v) => `${v} in minimum debt payments`,
+                   safetyBuf: (v) => `a ${v} spending buffer`, savingsAlloc: (v) => `${v} in savings` };
+  const deductions = f.view.rows
+    .filter(r => r.kind === "deduction")
+    .map(r => (PHRASE[r.key] ? PHRASE[r.key](r.value) : `${r.value} in ${r.label.toLowerCase()}`));
+  const until = f.nd ? ` until your next deposit on ${_date(f.nd.date, data.profile?.country)}` : " until your next deposit";
+  return `This week, ${f.view.headlineText} is safe to spend${until}. It starts from ${f.view.balanceText} in your accounts` +
+    (deductions.length ? `, less ${_list(deductions)}.` : ".");
+}
+
 /**
  * Three-to-four pre-written exchanges, filled in from the engines.
  * Returns [{ q, a }]. Pure; safe to call on every render.
@@ -79,7 +96,7 @@ export function demoCoachExchanges(data, today = new Date()) {
     out.push({
       q: "So how much can I spend today?",
       a: `${paceSentence(f.pace, f.view.headline)} ` +
-         `It's a pace, not a limit. Safe to Spend is the total until your next deposit; this spreads it across the days. ` +
+         `It's a pace, not a limit. Safe to spend is the total until your next deposit; this spreads it across the days. ` +
          `The pace always uses at least 14 days, even when a deposit is closer.`,
     });
   }
