@@ -4607,7 +4607,7 @@ function Onboarding({onComplete,onViewLegal,userId,connectedAccounts=[],onAccoun
   ];
 
   return (
-    <div style={{background:C.bg,minHeight:"100dvh",display:"flex",justifyContent:"center",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"background .4s"}}>
+    <div style={{background:C.bg,minHeight:"100dvh",display:"flex",justifyContent:"center",fontFamily:"'Plus Jakarta Sans',sans-serif",transition:"background .4s",...safeX(0)}}>
       <div style={{width:"100%",maxWidth:430,padding:"max(28px, env(safe-area-inset-top)) 20px 60px"}}>
         {step>0&&step<7&&(
           <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",marginBottom:24}}>
@@ -13016,7 +13016,7 @@ function PrivacyPolicy({onBack}){
 // renders; this page's only job is to say so.
 function ConfirmedPage(){
   return (
-    <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+    <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",...overlaySafe(24, { bottom: true }),fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
       <div style={{maxWidth:420,textAlign:"center"}}>
         <div style={{fontSize:40,marginBottom:16}}>✓</div>
         <h1 style={{color:C.cream,fontFamily:"'Playfair Display',Georgia,serif",fontSize:26,fontWeight:900,margin:"0 0 10px"}}>You're confirmed.</h1>
@@ -13292,7 +13292,7 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
   };
 
   return(
-    <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center"}}>
+    <div style={{background:C.bg,minHeight:"100dvh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.cream,display:"flex",justifyContent:"center",paddingTop:INSET.top,...safeX(0)}}>
       <div style={{width:"100%",maxWidth:430,padding:"24px 20px 60px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
           <div style={{fontSize:20,fontWeight:800,display:"flex",alignItems:"center",gap:7}}>Flourish Plus</div>
@@ -14011,7 +14011,7 @@ function KidsMiniSite({country}){ // `country` threaded from the render site (pr
   const lessons=KIDS_LESSONS;
 
   return(
-    <div style={{minHeight:"100dvh",background:theme.bg,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"0 0 80px",transition:"background .4s"}}>
+    <div style={{minHeight:"100dvh",background:theme.bg,fontFamily:"'Plus Jakarta Sans',sans-serif",padding:"0 0 80px",...safeX(0),transition:"background .4s"}}>
 
       {/* Header */}
       <div style={{background:theme.header,padding:"28px 20px 16px",borderBottom:`1px solid ${theme.primaryBorder}`}}>
@@ -14173,7 +14173,7 @@ function ResetPasswordScreen({ onDone, onCancel }) {
   };
   const inp = { width: "100%", padding: "14px 16px", borderRadius: 14, background: "rgba(255,255,255,0.06)", border: "1.5px solid rgba(255,255,255,0.12)", color: "#EDE9E2", fontSize: 15, fontFamily: "'Plus Jakarta Sans',sans-serif", outline: "none", boxSizing: "border-box", marginBottom: 12 };
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: 24, background: "#050D09" }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: 24, ...overlaySafe(24, { bottom: true }), background: "#050D09" }}>
       <div style={{ width: "100%", maxWidth: 400 }}>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}><FlourishLockup size={56} color="#EDE9E2" /></div>
         <div style={{ background: "#0D1F12", borderRadius: 24, padding: 28, border: "1px solid rgba(255,255,255,0.08)" }}>
@@ -15258,7 +15258,7 @@ function MfaGate({ onPass, onSignOut }) {
   const inp = { width:"100%", padding:"14px 16px", borderRadius:14, background:"rgba(255,255,255,0.06)", border:"1.5px solid rgba(255,255,255,0.12)", color:"#EDE9E2", fontSize:22, letterSpacing:6 /* code field: spacing separates the characters, it is not a label */, textAlign:"center", fontFamily:"'Plus Jakarta Sans',sans-serif", outline:"none", boxSizing:"border-box", marginBottom:16 };
   const btnS = (active) => ({ width:"100%", padding:15, borderRadius:14, border:"none", fontFamily:"'Plus Jakarta Sans',sans-serif", fontWeight:700, fontSize:15, cursor:active?"pointer":"default", background:active?"#00D68F":"rgba(255,255,255,0.1)", color:active?"#021208":"#6B7A6E" });
   const wrap = (children) => (
-    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100dvh", padding:24, background:"#050D09" }}>
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100dvh", padding:24, ...overlaySafe(24, { bottom: true }), background:"#050D09" }}>
       <div style={{ width:"100%", maxWidth:400, animation:"fadeUp .5s ease both" }}>
         <div style={{ display:"flex", justifyContent:"center", marginBottom:18 }}><FlourishLockup size={56} color="#EDE9E2" /></div>
         <div style={{ background:"#0D1F12", borderRadius:24, padding:28, border:"1px solid rgba(255,255,255,0.08)" }}>{children}</div>
