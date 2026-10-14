@@ -36,9 +36,10 @@ production's shape; never touches production), and `tests/billingDayMigrations.t
 5. **Deploy D0.** After step 3, trigger one deploy with billing still off. Write down its deploy id.
    D0 is the instant way back (section 7): it has the live webhook secret and billing off.
 6. **Decide how a founding household gets an account.** Signup is invite-only unless `OPEN_SIGNUP` is
-   exactly `true`. A founding household with no account cannot reach checkout. Either open signup (a
-   variable and a deploy) or send each one an invite code. The founding link email (section 5) tells
-   them to sign in or create an account, so it waits for this.
+   exactly `true`. A founding household with no account cannot reach checkout. An invite code alone may
+   not be enough: with signup shut, a full 30-seat beta cap refuses even a valid code (section 10,
+   item 1). In practice that means `OPEN_SIGNUP=true` and a deploy. The founding link email (section 5)
+   tells them to sign in or create an account, so it waits for this.
 7. **PR #69 (0017) stays held** unless Amanda decides otherwise. Section 9 says what that means Monday.
 8. **No merges to `main` on Monday.** "Deploy site" builds the latest `main`; Monday's deploys should all
    be the same code.
@@ -52,9 +53,10 @@ again; a second call raises an error and changes nothing). `public.subscriptions
 not applied.
 
 **The order is 0009, then 0010, then 0016.** 0016 adds a column to `public.subscriptions`, which 0009
-creates: run 0016 first and it fails with "relation public.subscriptions does not exist". Because the
-editor sends a pasted file as one query, that failure undoes the whole file and nothing is left behind
-(proved locally). 0010 does not depend on 0009. None of the three drops, deletes, truncates, renumbers,
+creates: run 0016 first and it fails with "relation public.subscriptions does not exist". Postgres runs
+a file sent as one query as one transaction, so that failure undoes the whole file and nothing is left
+behind (proved locally, sending each file the way the editor sends a paste). Do not rely on it: run them
+in order. 0010 does not depend on 0009. None of the three drops, deletes, truncates, renumbers,
 frees or reassigns anything; each can be re-run safely.
 
 ### 2.1 Pre-check (read-only)
@@ -315,3 +317,57 @@ Proved on the local copy of production's shape (`scripts/billing-day-proof/run.s
 addresses never take a number, and the next real household gets #29. It runs after 0016 or before it
 (both orders end the same, proved locally). Applied without merging #69, main's lookup still honours real
 holders, but the landing page keeps saying 22 until #69 merges.
+
+---
+
+## 10. Reported, not fixed: what could stop a household paying, or getting what it paid for
+
+Found while preparing this checklist (2026-10-14). None is fixed on this branch; each is Amanda's call.
+Worst first.
+
+1. **A founding household may not be able to create an account.** Checkout needs a signed-in account
+   with a confirmed email. Signup is invite-only unless `OPEN_SIGNUP` is exactly `true`, and with the
+   door shut a full 30-seat beta cap refuses even a valid invite code (`beta.js`, `cap_reached`;
+   `beta_signups` was backfilled from every existing account). So unless `OPEN_SIGNUP=true` is set (and
+   deployed) on Monday, most founding households cannot pay at all. Section 1 step 6.
+2. **A paying household whose trial has ended still gets the free tier in the app.** The app takes its
+   plan from the `profiles` row only (`refreshPlanFromProfile`); the Stripe webhook writes
+   `subscriptions` only and never `profiles`. The server knows they paid (`getUserPlan`), but the app's
+   own gates do not: Credit stays locked, the coach keeps its weekly free limit, and the Meet
+   facilitator stays off. This hits beta testers whose 14-day trial has ended as soon as they pay, and
+   every founding household created on Monday from about 2026-11-09, when their trial ends.
+   `tests/nativeWebPurchase.test.cjs` 5b and 5d pin "the app's plan comes from the profiles row alone"
+   on purpose, for the store apps (Apple 3.1.3(b)), so a fix must keep a store app free: for example,
+   read the billing status's `paid` on the web only.
+3. **Five screens still open the old paywall, which says paid plans are not open.** Today, Goals, the
+   Credit gate, the coach's out-of-messages gate and What-If call `setShowPaywall(true)` directly (six
+   call sites). That screen's button answers "Paid plans aren't open yet. Nothing has been charged…".
+   Only Settings → Flourish Plus → See plans, and the coach composer's limit, go through `openUpgrade()`
+   to the real checkout. A household can pay, but only from those two places.
+4. **The earliest founding households will not get the founding link email.** Rows whose consent is
+   from before the consent line (`pre-2026-10-01`) agreed only to the launch-day email
+   (`mayEmailWaitlistRow`), so the sweep skips them. Numbering ran in join order, so they likely hold the
+   lowest numbers, and their welcome email predates the founding line: nothing has told them they are
+   founding. Section 5 step 2 counts them. Whether Monday's email counts as the launch-day email for them
+   is a CASL decision.
+5. **The Stripe customer portal could sell the founding price to anyone.** If plan switching is enabled
+   and the founding price is listed, a subscriber can switch to $79.99 in the portal; our founding rules
+   only run in our checkout. Section 1 step 2. The checkout screen's own "manage" text says "switch plan".
+6. **Turning a flag on or off needs a deploy.** Netlify functions keep the variables of their deploy.
+   Comments in `billing.js` and `_lib/signupGate.js`, and `docs/ops/WEEK-02-2026-09-21.md`, say otherwise.
+   Followed as written, "set `BILLING_ENABLED`, no deploy" leaves billing off; worse, removing it to stop
+   billing would leave billing on. Sections 3 and 7 use deploys.
+7. **A refused founding checkout shows the wrong message.** The server answers 403
+   `founding_price_not_available`; the checkout screen only recognises `founding_cohort_full`, so the
+   household reads "Couldn't reach checkout. Try again in a moment." and retrying never helps.
+8. **The webhook may store no period end.** Since Stripe API version 2025-03-31, `current_period_end`
+   is on the subscription's items, not the subscription. A live endpoint on a current API version leaves
+   `subscriptions.current_period_end` empty, and access then follows `status` alone: still correct, but
+   without the "period ended and we missed the webhook" safety net.
+9. **No tax is charged, while every page says "plus tax".** Stripe Tax is off (P16), so the household
+   pays the bare price. Not a blocker for paying; a tax question (P8) for GrowSmart.
+10. Smaller: the welcome email still says "when payments open on October 26" after that date; the
+    Resend daily allowance is shared by the welcome sweep (50 a day), the founding sweep (40) and
+    GrowSmart; after paying, the checkout screen can still show the plans until the page reloads,
+    because the status is read once per sign-in; `beta.js` writes an address into its "ORPHAN SEAT" log
+    lines (not billing).

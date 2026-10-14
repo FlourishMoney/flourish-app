@@ -132,7 +132,8 @@ const M0016 = "0016_waitlist_founding_billing.sql";
     t.ok(!/@(?!flourishmoney\.app)[a-z0-9-]+\.[a-z]/i.test(blocks.join("\n")), "8h no SQL block holds an email address");
     t.ok(/curl -s -o \/dev\/null -w '%\{http_code\}\\n' -X POST https:\/\/flourishmoney\.app\/api\/billing/.test(doc), "8i it gives the no-secret on/off check (401 on, 404 off)");
     for (const h of ["## 3. Turn billing on", "## 4. The first smoke purchase, and its refund", "## 6. The first hour",
-      "## 7. The stop condition, and turning billing off", "## 8. What cannot be undone once a real charge clears", "## 9. Holding 0017 (PR #69): what it means on Monday"]) {
+      "## 7. The stop condition, and turning billing off", "## 8. What cannot be undone once a real charge clears", "## 9. Holding 0017 (PR #69): what it means on Monday",
+      "## 10. Reported, not fixed: what could stop a household paying, or getting what it paid for"]) {
       t.ok(doc.includes(h), `8j it has the section "${h.replace(/^## /, "")}"`);
     }
     t.ok(/create a new deploy/.test(doc) && /Trigger deploy/.test(doc), "8k it says a variable change needs a deploy (Netlify functions keep the values they were deployed with)");
