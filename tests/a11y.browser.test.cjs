@@ -25,6 +25,11 @@
 // scanned in the light theme while reported as dark. Two dark-theme contrast failures hid that way.
 // Each pass now starts with its theme chosen, and check 6 confirms every screen was scanned in it.
 //
+// THE iPHONE DUO. The same screens, both people, light and dark, again at the Duo's four viewports
+// with its safe-area insets emulated (tests/_duo.cjs): axe, and the layout measurement
+// (tests/_layoutScan.cjs) for what a fold breaks: nothing overlaps, nothing scrolls sideways, no text
+// is cut short with an ellipsis, and no text or control sits in the 84 px strip on any side (check 7).
+//
 // What axe cannot see is covered elsewhere: 44px tap targets and spacing by layout.browser.test.cjs,
 // and text at 1.3x by the same sweep. Icon-only buttons are checked here: axe accepts "✕" as a name.
 // -----------------------------------------------------------------------------
@@ -37,10 +42,25 @@ const path = require("path");
 const os = require("os");
 const { execFileSync } = require("child_process");
 const MOCK = require("./_mockSupabase.cjs");
+const { SCAN } = require("./_layoutScan.cjs");
+const { DUO_VIEWPORTS, insetLabel, applyInsets, READ_INSETS } = require("./_duo.cjs");
 
 const ROOT = path.join(__dirname, "..");
 const WIDTH = 430;
 const EXCLUDED_RULES = ["meta-viewport"];
+const CONCURRENCY = Number(process.env.A11Y_CONCURRENCY || 4);
+// The one screen whose text may end in an ellipsis on the Duo, named so the exception cannot widen:
+// the Home Screen Widget preview is a picture of an iOS widget at its fixed platform size, where the
+// OS clips, and LAYOUT-RULES.md rule 3 marks it as the exception (WTile in App.jsx).
+const ELLIPSIS_OK = ["Settings/Home Screen Widget"];
+const pool = async (items, n, fn) => {
+  const res = new Array(items.length);
+  let i = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (i < items.length) { const k = i++; res[k] = await fn(items[k]); }
+  }));
+  return res;
+};
 
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml",
   ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".woff": "font/woff", ".woff2": "font/woff2", ".ico": "image/x-icon" };
@@ -126,8 +146,10 @@ function buildApp(supabaseUrl) {
   dist = buildApp(base);
   const browser = await playwright.chromium.launch();
 
-  const open = async (who, scheme, tour) => {
-    const ctx = await browser.newContext({ viewport: { width: WIDTH, height: 932 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: scheme });
+  // vp: the viewport, and on a Duo pass its safe-area insets. Unset, the phone at 430 x 932.
+  const open = async (who, scheme, tour, vp = null) => {
+    const ctx = await browser.newContext({ viewport: { width: vp ? vp.width : WIDTH, height: vp ? vp.height : 932 },
+      deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: scheme });
     await ctx.addInitScript(([who, tour, key, session, scheme]) => { try {
       // The pass's theme, chosen, so a reload cannot fall back to another (check 6).
       localStorage.setItem("flourish_theme", scheme); localStorage.setItem("flourish_theme_manual", "1");
@@ -136,6 +158,7 @@ function buildApp(supabaseUrl) {
       if (who === "empty") localStorage.setItem(key, session);
     } catch (e) {} }, [who, !!tour, MOCK.storageKey(base), JSON.stringify(MOCK.makeSession()), scheme]);
     const page = await ctx.newPage();
+    if (vp) await applyInsets(ctx, page, vp.insets);
     page.setDefaultTimeout(10000);
     const ready = async () => {
       if (who === "demo") {
@@ -173,37 +196,49 @@ function buildApp(supabaseUrl) {
     return { violations, icons };
   };
 
-  // Four passes in parallel: demo and new account, light and dark.
+  // The layout measurement on a Duo pass, scoped to the sheet when one is open.
+  const measure = async (page, overlay) => {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const safe = await page.evaluate(READ_INSETS);
+    const opts = { textCtrlMin: 12, ctrlCtrlMin: 8, minTap: 44, safe };
+    let res = overlay ? await page.evaluate(SCAN, { ...opts, scope: "overlay" }) : null;
+    if (!res || res.error) res = await page.evaluate(SCAN, { ...opts, scope: "page" });   // a full-screen panel, not a sheet
+    return { safe, overlaps: (res.violations || []).filter((x) => x.kind === "overlap"), hOverflow: res.hOverflow,
+      clipped: res.clipped || [], unsafe: res.unsafe || [], counts: res.counts };
+  };
+
+  // Demo and new account, light and dark: at 430px, then at each of the Duo's four viewports.
   const passes = [];
-  for (const who of ["demo", "empty"]) for (const scheme of ["light", "dark"]) passes.push({ who, scheme });
+  for (const who of ["demo", "empty"]) for (const scheme of ["light", "dark"]) passes.push({ who, scheme, vp: null });
+  for (const vp of DUO_VIEWPORTS) for (const who of ["demo", "empty"]) for (const scheme of ["light", "dark"]) passes.push({ who, scheme, vp });
   let tsa = "";
-  const results = (await Promise.all(passes.map(async ({ who, scheme }) => {
+  const results = (await pool(passes, CONCURRENCY, async ({ who, scheme, vp }) => {
     const out = [];
-    const main = await open(who, scheme, false);
+    const main = await open(who, scheme, false, vp);
     let tourCtx = null;
-    if (who === "demo" && scheme === "light") tsa = await main.page.evaluate(() => document.documentElement.style.webkitTextSizeAdjust || document.documentElement.style.textSizeAdjust || "");
+    if (!vp && who === "demo" && scheme === "light") tsa = await main.page.evaluate(() => document.documentElement.style.webkitTextSizeAdjust || document.documentElement.style.textSizeAdjust || "");
     for (const v of VIEWS.filter((x) => !x.who || x.who === who)) {
-      const label = `${v.name} (${who}, ${scheme})`;
+      const label = `${v.name} (${who}, ${scheme}${vp ? `, ${vp.name} ${vp.width}x${vp.height} ${insetLabel(vp.insets)}` : ""})`;
       try {
         let page = main.page;
-        if (v.tour) { if (tourCtx) await tourCtx.ctx.close(); tourCtx = await open(who, scheme, true); page = tourCtx.page; }
+        if (v.tour) { if (tourCtx) await tourCtx.ctx.close(); tourCtx = await open(who, scheme, true, vp); page = tourCtx.page; }
         else if (v.overlay) await main.reload();
         await v.go(page);
         await page.waitForTimeout(600);
         const theme = await page.evaluate(() => { try { return localStorage.getItem("flourish_theme"); } catch { return null; } });
-        out.push({ view: label, scheme, theme, ...(await scan(page)) });
+        out.push({ view: label, scheme, theme, vp, ...(await scan(page)), ...(vp ? { duo: await measure(page, v.overlay || v.tour) } : {}) });
       } catch (e) {
-        out.push({ view: label, unreachable: String(e.message).split("\n")[0].slice(0, 160) });
+        out.push({ view: label, vp, unreachable: String(e.message).split("\n")[0].slice(0, 160) });
         try { await main.reload(); } catch {}
       }
     }
     await main.ctx.close(); if (tourCtx) await tourCtx.ctx.close();
     return out;
-  }))).flat();
+  })).flat();
   await browser.close(); server.close();
   if (process.env.A11Y_JSON) fs.writeFileSync(process.env.A11Y_JSON, JSON.stringify(results, null, 1));
 
-  t.ok(results.length >= 4 * 40, `0 the sweep covered ${results.length} screen-and-theme combinations`);
+  t.ok(results.length >= 4 * 40 * 5, `0 the sweep covered ${results.length} screen-and-theme combinations (430px and the Duo's four viewports)`);
   t.eq(results.filter((r) => r.unreachable).map((r) => `${r.view}: ${r.unreachable}`), [], "1 every screen in the check opened");
   for (const r of results.filter((x) => !x.unreachable)) {
     t.eq(r.violations.map((v) => `${v.id} (${v.impact}, ${v.n}): ${v.nodes.join(" | ")}`), [], `2 ${r.view}: no WCAG 2.x A/AA violation axe can find`);
@@ -211,6 +246,20 @@ function buildApp(supabaseUrl) {
   }
   t.eq(results.filter((r) => !r.unreachable && r.theme !== r.scheme).map((r) => `${r.view}: rendered ${r.theme || "unknown"}`), [],
     "6 every screen was scanned in its pass's theme (a dark pass used to fall back to light after a reload)");
+  // ── 7. the iPhone Duo ─────────────────────────────────────────────────────
+  for (const r of results.filter((x) => !x.unreachable && x.duo)) {
+    const d = r.duo;
+    t.eq(insetLabel(d.safe), insetLabel(r.vp.insets), `7a ${r.view}: env(safe-area-inset-*) reported the emulated insets`);
+    t.ok(d.counts && d.counts.controls > 0 && d.counts.texts > 0, `7b ${r.view}: the layout measurement saw the screen (${d.counts ? d.counts.controls : 0} controls)`);
+    t.eq(d.overlaps.map((x) => `OVERLAP by ${-x.gap}px — "${x.a}" [${x.ax}] over "${x.b}" [${x.bx}]`), [], `7c ${r.view}: nothing overlaps`);
+    t.ok(d.hOverflow <= 1, `7d ${r.view}: no horizontal scroll (${d.hOverflow}px)`);
+    if (!ELLIPSIS_OK.some((n) => r.view.startsWith(n + " (")))
+      t.eq(d.clipped.map((c) => `<${c.tag}> "${c.text}"`), [], `7e ${r.view}: no text cut short with an ellipsis`);
+    t.eq(d.unsafe.map((u) => `<${u.tag}> "${u.a}" [${u.at}]: ${u.bad}`), [], `7f ${r.view}: no text or control in the safe-area strip`);
+  }
+  t.eq(results.filter((x) => x.vp).length, results.filter((x) => !x.vp).length * 4, "7g every screen was checked at each of the Duo's four viewports");
+  t.eq(ELLIPSIS_OK, ["Settings/Home Screen Widget"], "7h one screen may show an ellipsis, and only that one (the widget picture, see ELLIPSIS_OK)");
+
   t.ok(/^\d+%$/.test(tsa), `3 text scales with the system text size: the root's text-size-adjust is set at startup (${tsa || "unset"})`);
   t.eq(EXCLUDED_RULES, ["meta-viewport"], "4 one rule is excluded, and only that one (the native pinch-zoom lock, see the header)");
   t.summary("A11Y (browser)");
