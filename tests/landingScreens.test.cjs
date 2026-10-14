@@ -86,5 +86,8 @@ function imageSize(file) {
     && /Test a decision, like a big purchase or an extra debt payment, and see the result before you commit\./.test(landing)
     && /Join the waitlist and we'll email you the moment flourish launches in Canada\./.test(landing), "5c the badge, the hero, the What-If card and the waitlist line, word for word");
 
+  // ── 6. landing-voc copy (2026-10-14) ─────────────────────────────────────────────────────────
+  t.ok(/<p className="fll-sub">Built around your paydays, not the calendar month\. flourish accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount, then shows what's safe to spend until payday\.<\/p>/.test(landing),
+    "6a the hero subline opens with the paydays sentence, word for word");
   t.summary("landingScreens.test");
 })();

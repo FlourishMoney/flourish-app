@@ -14913,7 +14913,7 @@ function AuthScreen({ onAuth, onTryDemo }) {
                 Coming soon to iPhone and Android
               </span>
                 <h1 className="fll-h1">Stop doing the money math <em>in your head.</em></h1>
-                <p className="fll-sub">flourish accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount, then shows what's safe to spend until payday.</p>
+                <p className="fll-sub">Built around your paydays, not the calendar month. flourish accounts for bills due before payday, minimum debt payments, a spending buffer and a savings amount, then shows what's safe to spend until payday.</p>
               </div>
               {/* The real Today card, cropped from the demo capture by scripts/crop-hero-card.mjs (never
                   redrawn): every figure in it is one the demo showed. Tapping it opens the demo. */}
