@@ -128,5 +128,16 @@ export function billingReturnNotice(search) {
   return null;
 }
 
+// WHAT THE CHECKOUT SCREEN SAYS WHEN STARTING A CHECKOUT FAILS. billing.js answers 403
+// "founding_price_not_available" when this account may not have the founding price (no founding spot on
+// its email, or a founding subscription that has ended); retrying never changes that, so it gets its own
+// words. "founding_cohort_full" is an older name for the same refusal. Anything else is worth a retry.
+export const FOUNDING_REFUSED_TEXT = "The founding price isn't available to this account. It goes to the email address that holds a founding spot on the waitlist, and not after a founding subscription has ended. Monthly and annual are still available.";
+export function checkoutErrorText({ status, error } = {}) {
+  if (status === 403 && (error === "founding_price_not_available" || error === "founding_cohort_full")) return FOUNDING_REFUSED_TEXT;
+  if (error === "signed_out") return "Sign in again to continue.";
+  return "Couldn't reach checkout. Try again in a moment.";
+}
+
 // The query keys this feature owns, so the caller can strip them from the URL afterwards.
 export const BILLING_RETURN_PARAMS = Object.freeze(["billing", "session_id"]);

@@ -356,9 +356,10 @@ Worst first.
    Comments in `billing.js` and `_lib/signupGate.js`, and `docs/ops/WEEK-02-2026-09-21.md`, say otherwise.
    Followed as written, "set `BILLING_ENABLED`, no deploy" leaves billing off; worse, removing it to stop
    billing would leave billing on. Sections 3 and 7 use deploys.
-7. **A refused founding checkout shows the wrong message.** The server answers 403
-   `founding_price_not_available`; the checkout screen only recognises `founding_cohort_full`, so the
-   household reads "Couldn't reach checkout. Try again in a moment." and retrying never helps.
+7. **Fixed (round 2): a refused founding checkout says why.** The checkout screen now reads the server's
+   real 403 `founding_price_not_available` and says the founding price isn't available to this account
+   (it goes to the address holding a founding spot, and not after a founding subscription has ended), and
+   that monthly and annual still are. `tests/checkoutRefusal.test.cjs`.
 8. **Fixed (round 2): the webhook stores the paid period on either Stripe API version** (on the
    subscription before 2025-03-31, on its item after), so "paid until the period ends" holds.
 9. **No tax is charged, while every page says "plus tax".** Stripe Tax is off (P16), so the household

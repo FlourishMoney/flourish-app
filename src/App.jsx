@@ -33,7 +33,7 @@ import { enterBalance, enteredBalanceNote, isEditableAccount, accountKindOf, amo
          kindLabel, balanceSourceLine, debtTileKind, BALANCE_KINDS, LOAN_TYPES } from "./lib/manualBalances.js";
 import { getPricing, annualSavingsPercent, monthlyEquivalentOfAnnual, formatPrice } from "./lib/pricing.js";
 import { foundingOfferCopy, foundingLiveLine, sharedFoundingSpots, foundingCardParts } from "./lib/foundingOffer.js";
-import { isNativeApp, billingIsOn, billingUiState, offeredPlans, billingReturnNotice, BILLING_RETURN_PARAMS } from "./lib/billingVisibility.js";
+import { isNativeApp, billingIsOn, billingUiState, offeredPlans, billingReturnNotice, checkoutErrorText, BILLING_RETURN_PARAMS } from "./lib/billingVisibility.js";
 import { foundingLinkInUrl, withoutFoundingLink, foundingLinkAction, foundingLinkNotice, rememberFoundingLink, forgetFoundingLink, foundingLinkPending, FOUNDING_SIGN_IN_NOTE } from "./lib/foundingLink.js";
 import { tabForScreen } from "./lib/navigation.js";
 import { signupCodeState, statusFromResponse, signupSubmittable } from "./lib/signupUi.js";
@@ -13562,15 +13562,16 @@ function UpgradeScreen({status, mode, notice, onClose, onManage}){
           : {action:"create_checkout_session", plan_key:planKey}),
       });
       const body = await res.json().catch(()=>({}));
-      // The founding price can sell out between the screen rendering and the tap.
-      if(res.status===403 && body.error==="founding_cohort_full"){
-        setError("The founding price has just been taken up. The annual plan is still available.");
+      // The server refused the founding price for this account (billing.js 403). Retrying never helps,
+      // so it is said plainly, not as a connection error (src/lib/billingVisibility.js checkoutErrorText).
+      if(res.status===403){
+        setError(checkoutErrorText({ status: res.status, error: body.error }));
         setBusy(null); return;
       }
       if(!res.ok || !body.url) throw new Error(body.error||"unavailable");
       window.location.assign(body.url);      // Stripe Checkout, hosted by Stripe
     }catch(e){
-      setError(e.message==="signed_out" ? "Sign in again to continue." : "Couldn't reach checkout. Try again in a moment.");
+      setError(checkoutErrorText({ error: e.message }));
       setBusy(null);
     }
   };
