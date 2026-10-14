@@ -42,12 +42,15 @@ function welcomePositionFor(row) {
   return isFoundingPosition(row.founding_position) ? row.founding_position : null;
 }
 
-// "#n of 50" while n is within 50. A number past 50 (issued after test numbers were voided) drops
-// "of 50", which would read as a contradiction. PENDING AMANDA'S APPROVAL of that wording (2026-10-14).
+// The welcome email never shows a founding number above 50 (Amanda, 2026-10-14). Within 50: "#n of 50",
+// the approved line. Past 50 (a number issued after test numbers were voided, 0017): the household is
+// still one of the first 50 real ones, so it is told that, with no number.
 function foundingWelcomeLine(position) {
   if (!isFoundingPosition(position)) return null;
-  const which = position <= FOUNDING_WAITLIST_LIMIT ? `#${position} of ${FOUNDING_WAITLIST_LIMIT}` : `#${position}`;
-  return `You're founding household ${which}. We'll email your link to the founding price when payments open on October 26.`;
+  const first = position <= FOUNDING_WAITLIST_LIMIT
+    ? `You're founding household #${position} of ${FOUNDING_WAITLIST_LIMIT}.`
+    : `You're one of the first ${FOUNDING_WAITLIST_LIMIT} founding households.`;
+  return `${first} We'll email your link to the founding price when payments open on October 26.`;
 }
 
 module.exports = { FOUNDING_WAITLIST_LIMIT, TEST_EMAIL_DOMAINS, spotsLeftFromCount, countFromContentRange, isFoundingPosition, isTestEmail, welcomePositionFor, foundingWelcomeLine };

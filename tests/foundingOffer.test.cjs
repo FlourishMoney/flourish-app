@@ -207,8 +207,12 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     t.ok(!/\d+\.\d{2}/.test(pricing), "4b …with every price read from pricing.js, none typed in the block");
     t.eq([1, 7, 50].map(W.foundingWelcomeLine), [EMAIL_LINE(1), EMAIL_LINE(7), EMAIL_LINE(50)], "4c the welcome email's founding line, word for word");
     t.eq([0, -1, null, undefined, "7", 7.5].map(W.foundingWelcomeLine), [null, null, null, null, null, null], "4d …and no line for a row without a founding number");
-    // A number past 50 (issued after test numbers were voided, 0017) drops "of 50". Wording pending Amanda.
-    t.eq(W.foundingWelcomeLine(53), "You're founding household #53. We'll email your link to the founding price when payments open on October 26.", "4d2 a number past 50 reads \"#53\", not \"#53 of 50\"");
+    // Amanda, 2026-10-14: never a number above 50. A number past 50 (issued after test numbers were
+    // voided, 0017) is still one of the first 50 real households, and is told exactly that.
+    const PAST_50 = "You're one of the first 50 founding households. We'll email your link to the founding price when payments open on October 26.";
+    t.eq([51, 53, 62].map(W.foundingWelcomeLine), [PAST_50, PAST_50, PAST_50], "4d2 a number above 50: \"one of the first 50 founding households\"");
+    t.ok([51, 53, 62].every((n) => !W.foundingWelcomeLine(n).includes(String(n))), "4d3 …and the number itself is never shown");
+    t.eq(W.foundingWelcomeLine(50), EMAIL_LINE(50), "4d4 #50 still reads \"#50 of 50\"");
     let A = {};
     try { A = loadApp(["AuthScreen"]); } catch (e) { t.ok(false, `App.jsx bundles: ${describe(e)}`); }
     if (A.AuthScreen) {
@@ -330,6 +334,26 @@ async function callEndpoint({ supabase = { range: "0-36/37" }, env = true, metho
     t.eq(JSON.stringify(ok.body), '{"spotsLeft":26}', "8q 24 real holders (28 issued, 4 void): 26 spots left");
     t.ok(/void_at=is\.null/.test(ok.calls[0].url), "8r …counted from the numbers that are not void");
     t.eq((await callEndpoint({ supabase: { status: 400 } })).res.statusCode, 503, "8s before 0017 (no void_at column): no number, never the old count");
+    // Step 9 (2026-10-14): the twelve numbers Amanda confirmed were her test sign-ups, rows deleted by her.
+    const PROD_TEST_NUMBERS = "16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28";
+    const step9 = (sql.match(/update public\.waitlist_founding_ledger l\s[\s\S]*?;/g) || []);
+    t.eq(step9.length, 1, "8t one ledger update in the data step: the confirmed test numbers");
+    const s9 = step9[0] || "";
+    t.ok(s9.includes(`where l.position in (${PROD_TEST_NUMBERS})`) && /set void_at = now\(\)/.test(s9), "8u …voids exactly 16 to 21 and 23 to 28, by number (22 is a real household)");
+    t.ok(/and not exists \(select 1 from public\.waitlist w where w\.founding_position = l\.position\)/.test(s9)
+      && /and not exists \(select 1 from public\.waitlist w where not w\.is_test and public\.waitlist_email_key\(w\.email\) = l\.email_key\)/.test(s9),
+      "8v …only where no waitlist row holds the number, and no household's row has its address: a real row is never voided by the list");
+    t.ok(/and l\.void_at is null/.test(s9), "8w …and only numbers not already void, so a second run changes nothing");
+    t.ok(raw.includes("Amanda confirmed 2026-10-14: test sign-ups, rows deleted by her"), "8x …commented as Amanda confirmed it");
+    const dry = raw.slice(raw.indexOf("READ-ONLY DRY RUN"), raw.indexOf("READ-ONLY CHECK AFTERWARDS"));
+    const after = raw.slice(raw.indexOf("READ-ONLY CHECK AFTERWARDS"));
+    t.ok(["positions_to_void", "issued_at_et", "issued_now", "real_holders_after", "spots_left_after"].every((c) => dry.includes(` as ${c}`)) && dry.includes(`(${PROD_TEST_NUMBERS})`),
+      "8y the dry run shows the positions it will void, when they were issued, issued_now, real_holders_after and spots_left_after");
+    t.ok(["voided_positions", "issued_now", "real_holders_after", "spots_left_after", "next_number"].every((c) => after.includes(` as ${c}`)), "8z …and the check afterwards the same, plus the next number");
+    t.ok(/real_holders_after 16, spots_left_after 34/.test(dry) && /real_holders_after 16, spots_left_after 34, next_number 29/.test(after), "8z2 both state the expected production result: 16 real holders, 34 spots left, next number 29");
+    const dryOut = dry.slice(dry.lastIndexOf("select (select array_agg"), dry.indexOf("Expected in production"));
+    const afterOut = after.slice(after.indexOf("select array_agg"), after.indexOf("from public.waitlist_founding_ledger;"));
+    t.ok(dryOut.length > 50 && afterOut.length > 50 && !/email/i.test(dryOut.replace(/email_key/g, "")) && !/email/i.test(afterOut), "8z3 neither query returns an address: their output columns are numbers and dates");
   }
 
   t.summary("foundingOffer.test");

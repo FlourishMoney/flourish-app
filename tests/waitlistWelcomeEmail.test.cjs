@@ -184,6 +184,18 @@ async function run({ insert = { ok: true, status: 201, body: [{ id: 42 }] }, res
     t.eq(p.text, [EXPECTED_PARAGRAPHS[0], LINE, ...EXPECTED_PARAGRAPHS.slice(1), WHY, IDENTITY, `Unsubscribe with one click: ${unsubUrl}`].join("\n\n"),
       "2m a row with founding position 7: the approved copy with the founding line second, word for word");
     t.ok(p.html.includes(`>${LINE}</p>`), "2n …and the HTML carries the same line as its own paragraph");
+    // Amanda, 2026-10-14: the welcome never shows a number above 50. #50 keeps "#50 of 50"; #51 and up
+    // (issued after test numbers were voided, 0017) are "one of the first 50 founding households".
+    {
+      const at50 = (await run({ insert: { ok: true, status: 201, body: [{ id: 43, founding_position: 50 }] } })).payload;
+      t.ok(at50.text.includes("You're founding household #50 of 50. ") && at50.html.includes("You're founding household #50 of 50. "), "2n2 #50: \"You're founding household #50 of 50.\"");
+      for (const pos of [51, 54]) {
+        const q = (await run({ insert: { ok: true, status: 201, body: [{ id: 44, founding_position: pos }] } })).payload;
+        const PAST = "You're one of the first 50 founding households. We'll email your link to the founding price when payments open on October 26.";
+        t.ok(q.text.split("\n\n")[1] === PAST && q.html.includes(`>${PAST}</p>`), `2n3 #${pos}: "You're one of the first 50 founding households.", second paragraph, text and HTML`);
+        t.ok(!q.text.includes(`#${pos}`) && !q.html.includes(`#${pos}`) && !new RegExp(`\\b${pos}\\b`).test(q.text.split("\n\n")[1]), `2n4 #${pos}: the number is not shown anywhere`);
+      }
+    }
     // 51 is no longer in this list: since 0017 a number past 50 can be a real holder's (4d2 in foundingOffer).
     for (const pos of [null, 0, -1, "7", 7.5]) {
       const q = (await run({ insert: { ok: true, status: 201, body: [{ id: 42, founding_position: pos }] } })).payload;

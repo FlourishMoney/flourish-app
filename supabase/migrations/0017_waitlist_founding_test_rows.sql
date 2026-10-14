@@ -2,9 +2,11 @@
 -- -----------------------------------------------------------------------------
 -- TEST SIGN-UPS NEVER HOLD A FOUNDING NUMBER (Amanda, 2026-10-14).
 --
--- Since numbering started on 2026-10-07, Amanda's own test sign-ups took founding numbers (#18, #19, #21
--- and #24, at getgrowsmart.com and flourishmoney.app). They are not households. The promise is "the first
--- 50 households on the waitlist", so 50 real households must still get the founding price.
+-- Since numbering started on 2026-10-07, Amanda's own test sign-ups took founding numbers. They are not
+-- households. The promise is "the first 50 households on the waitlist", so 50 real households must still
+-- get the founding price. In production (read-only check, 2026-10-14) the ledger had issued 28 numbers;
+-- 16 waitlist rows hold 1 to 15 and 22, and the other 12 (16 to 21, 23 to 28) were Amanda's test
+-- sign-ups, whose rows she has already deleted. Step 9 voids those 12 by number.
 --
 -- THE DESIGN: COUNT REAL HOLDERS, NOT THE HIGHEST NUMBER.
 --   • A test row's number is VOIDED in the ledger (void_at). A void number is never reissued (the
@@ -195,26 +197,58 @@ update public.waitlist
  where (public.waitlist_is_test_email(email) and not is_test)
     or (is_test and founding_position is not null);
 
+-- 9. Amanda confirmed 2026-10-14: test sign-ups, rows deleted by her. These twelve numbers were issued to
+--    her own test sign-ups (in bursts on 2026-10-08 9:58 pm, 10-09 8:32 am and 10-10 12:52 am ET) and their
+--    rows are gone, so step 8 cannot reach them. Each is voided by its number, and only where no waitlist
+--    row holds that number and no household's row has that number's address: a real household can never
+--    be voided by this list. Voided numbers are never issued again. Running it twice changes nothing.
+update public.waitlist_founding_ledger l
+   set void_at = now()
+ where l.position in (16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28)
+   and l.void_at is null
+   and not exists (select 1 from public.waitlist w where w.founding_position = l.position)
+   and not exists (select 1 from public.waitlist w where not w.is_test and public.waitlist_email_key(w.email) = l.email_key);
+
 -- -----------------------------------------------------------------------------
--- READ-ONLY DRY RUN. Run BEFORE this file (it needs nothing this file creates). Numbers and dates only,
--- never an address.
+-- READ-ONLY DRY RUN. Run BEFORE this file (it needs nothing this file creates: 0014's ledger and
+-- waitlist_email_key only). One row. Numbers and dates only, never an address.
 --
---   with t as (
---     select w.founding_position, w.created_at, w.is_test
+--   with ledger as (
+--     select position, email_key, issued_at from public.waitlist_founding_ledger
+--   ),
+--   marked as (  -- step 8: rows at a test domain, or test rows, that still hold a number
+--     select w.founding_position as position
 --     from public.waitlist w
---     where lower(regexp_replace(w.email, '\s+', '', 'g')) ~ '@([a-z0-9-]+\.)*(getgrowsmart\.com|flourishmoney\.app)$'
---        or (w.is_test and w.founding_position is not null)
---   )
---   select founding_position, created_at, is_test as already_test,
---          (select count(*) from public.waitlist_founding_ledger) as issued_now,
---          (select count(*) from t where founding_position is not null) as numbers_to_void,
---          greatest(0, 50 - ((select count(*) from public.waitlist_founding_ledger)
---                           - (select count(*) from t where founding_position is not null))) as spots_left_after
---   from t order by created_at;
+--     where w.founding_position is not null
+--       and (lower(regexp_replace(w.email, '\s+', '', 'g')) ~ '@([a-z0-9-]+\.)*(getgrowsmart\.com|flourishmoney\.app)$'
+--            or w.is_test)
+--   ),
+--   listed as (  -- step 9: the twelve Amanda confirmed, where no waitlist row holds the number
+--     select l.position
+--     from ledger l
+--     where l.position in (16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28)
+--       and not exists (select 1 from public.waitlist w where w.founding_position = l.position)
+--       and not exists (select 1 from public.waitlist w where not w.is_test and public.waitlist_email_key(w.email) = l.email_key)
+--   ),
+--   to_void as (select position from marked union select position from listed)
+--   select (select array_agg(v.position order by v.position) from to_void v) as positions_to_void,
+--          (select array_agg(to_char(l.issued_at at time zone 'America/New_York', 'YYYY-MM-DD HH24:MI') order by l.position)
+--             from ledger l join to_void v using (position)) as issued_at_et,
+--          (select count(*) from ledger) as issued_now,
+--          (select count(*) from ledger) - (select count(*) from to_void) as real_holders_after,
+--          greatest(0, 50 - ((select count(*) from ledger) - (select count(*) from to_void))) as spots_left_after;
 --
--- READ-ONLY CHECK AFTERWARDS (counts only):
---   select count(*) filter (where void_at is null) as real_holders,
---          count(*) filter (where void_at is not null) as voided,
---          greatest(0, 50 - count(*) filter (where void_at is null)) as spots_left
+--   Expected in production (2026-10-14): positions_to_void {16,17,18,19,20,21,23,24,25,26,27,28},
+--   their twelve issue times, issued_now 28, real_holders_after 16, spots_left_after 34.
+--
+-- READ-ONLY CHECK AFTERWARDS. One row, numbers only:
+--   select array_agg(position order by position) filter (where void_at is not null) as voided_positions,
+--          count(*) as issued_now,
+--          count(*) filter (where void_at is null) as real_holders_after,
+--          greatest(0, 50 - count(*) filter (where void_at is null)) as spots_left_after,
+--          max(position) + 1 as next_number
 --   from public.waitlist_founding_ledger;
+--
+--   Expected: voided_positions {16,17,18,19,20,21,23,24,25,26,27,28}, issued_now 28,
+--   real_holders_after 16, spots_left_after 34, next_number 29.
 -- -----------------------------------------------------------------------------
